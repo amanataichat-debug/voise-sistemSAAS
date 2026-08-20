@@ -116,9 +116,11 @@ def create_tables_with_full_tracking(engine):
                     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     plan_id UUID REFERENCES subscription_plans(id),
                     external_payment_id VARCHAR(100),
-                    payment_system VARCHAR(50) DEFAULT 'robokassa',
+                    payment_system VARCHAR(50) DEFAULT 'finik',
                     amount NUMERIC(10, 2) NOT NULL,
-                    currency VARCHAR(3) DEFAULT 'RUB',
+                    currency VARCHAR(3) DEFAULT 'KGS',
+                    finik_transaction_id VARCHAR(100),
+                    payment_url VARCHAR(1000),
                     status VARCHAR(20) DEFAULT 'pending',
                     is_processed BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -133,6 +135,9 @@ def create_tables_with_full_tracking(engine):
                 CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactions(status);
                 CREATE INDEX IF NOT EXISTS idx_payment_transactions_external_id ON payment_transactions(external_payment_id);
                 CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON payment_transactions(created_at);
+                -- Идемпотентность webhook'ов Finik: один transactionId — одно зачисление
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_finik_tx
+                    ON payment_transactions(finik_transaction_id) WHERE finik_transaction_id IS NOT NULL;
                 """
                 conn.execute(text(create_payment_transactions_sql))
                 logger.info("✅ Created payment_transactions table with indexes")

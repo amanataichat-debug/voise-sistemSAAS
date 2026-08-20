@@ -25,14 +25,14 @@
 
 ## Связи с другими частями проекта
 - Используется: `../main.py`, `../app.py` (импортируют роутеры/модели/сервисы/планировщики), `../alembic/` (миграции по `models/base.Base`).
-- Использует: внешние API (OpenAI, Google Gemini, xAI Grok, ElevenLabs, Cartesia, OpenRouter, Pinecone, Cloudflare R2, Robokassa, Voximplant, Telegram, Google Sheets, SMTP), PostgreSQL.
+- Использует: внешние API (OpenAI, Google Gemini, xAI Grok, ElevenLabs, Cartesia, OpenRouter, Pinecone, Cloudflare R2, Finik, Voximplant, Telegram, Google Sheets, SMTP), PostgreSQL.
 
 ## На что обратить внимание
 - **Import-redirect.** `../main.py` ставит `MetaPathFinder`, который перенаправляет «голые» импорты (`core.config`, `models.user`) в `backend.*`. Поэтому в коде встречается и `from backend.core...`, и `from core...` — это одно и то же.
 - **Слоистость не строгая.** Часть роутеров (агент, кредиты, voximplant) держит логику/inline-схемы прямо в `api/`, минуя `services/`/`schemas/`. Не предполагайте полную чистоту слоёв.
 - **Дублирование по провайдерам.** Пять видов ассистентов (OpenAI/Gemini/Grok/Cartesia/Translate) + ElevenLabs дублируются на всех слоях (model/api/widget/handler). Общая правка = правка во всех.
 - **Версионные дубли** в `websockets/` (актуальные/легаси/экспериментальные хендлеры) — источник истины — что импортирует роутер.
-- **Платёжка — Robokassa** (не YooKassa, как в корневом CLAUDE.md). Чувствительные данные (API-ключи, Voximplant-пароли) в `users` хранятся без шифрования.
+- **Платёжка — Finik** (finik.kg, QR-эквайринг Кыргызстана, валюта KGS). Чувствительные данные (API-ключи, Voximplant-пароли) в `users` хранятся без шифрования.
 - **Авто-фиксы схемы** на старте в `app.py` (добавление колонок, фикс цен планов) — третий механизм изменения схемы помимо Alembic и `migrations/`.
 
 ## Связанные файлы документации

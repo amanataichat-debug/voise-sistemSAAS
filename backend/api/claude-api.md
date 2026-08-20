@@ -47,7 +47,7 @@
 - `subscriptions.py` — `/api/subscriptions` — планы подписки, `/my-subscription`, `/assistants-usage` (единый расход лимита ассистентов по всем провайдерам — этим эндпоинтом пользуются все страницы агентов и дашборд).
 - `subscription_logs.py` — `/api/subscription-logs` — лог событий подписки.
 - `subscription_status.py` — `/check-access`, `/force-check`. ⚠️ В `app.py` напрямую НЕ зарегистрирован — проверяйте подключение.
-- `payments.py` — `/api/payments` — планы, создание платежа, **`/robokassa-result`** (webhook платёжки Robokassa), success/cancel-страницы, статус, диагностика подписи.
+- `payments.py` — `/api/payments` — планы (цены из БД, в сомах KGS), создание платежа Finik (302 → `payment_url`), **`/finik-webhook`** (webhook платёжки Finik — подпись, идемпотентность, сверка суммы), success-страница (только UX), статус, `/config-check`.
 - `partners.py` — `/api/partners` — реферальная программа, генерация ссылок, комиссии.
 
 ### Прочее
@@ -56,7 +56,7 @@
 - `__init__.py` — агрегирует роутеры для импорта в `app.py`.
 
 ## Ключевые сущности / точки входа
-- **Webhooks (внешние POST'ы, без JWT):** `payments.py` `/api/payments/robokassa-result` (Robokassa, проверка подписи), `voximplant.py` `/api/voximplant/webhook/transcript` и `/log`, `agent_telegram.py` Telegram webhook. Эти эндпоинты — точки входа извне, к ним особое внимание по безопасности.
+- **Webhooks (внешние POST'ы, без JWT):** `payments.py` `/api/payments/finik-webhook` (Finik, проверка RSA-подписи по публичному ключу), `voximplant.py` `/api/voximplant/webhook/transcript` и `/log`, `agent_telegram.py` Telegram webhook. Эти эндпоинты — точки входа извне, к ним особое внимание по безопасности.
 - **Аутентификация:** `auth.py` (`/register`, `/login`) выдаёт JWT; остальные роутеры защищены зависимостью `get_current_user` из `core/dependencies.py`, плюс гейты по подписке/лимитам.
 - **Голосовые WS:** единственная их работа — принять соединение и вызвать соответствующий handler из `backend/websockets/` (см. его доку).
 - **Агент:** `agent.py` `/chat` запускает `ChatOrchestrator`; `/create` собирает `AgentConfig` из документов-промптов; `credits.py` управляет балансом, на котором держится весь обзвон.
@@ -70,7 +70,7 @@
 - **Порядок include_router критичен.** `gemini_ws` и `translate_ws` регистрируются ДО `websocket` (строки 176–178 `app.py`), иначе `/ws/llm-stream`, `/ws/gemini/*`, `/ws/translate/*` перехватит роут `/ws/{assistant_id}`. В `websocket.py` есть явная проверка на эту коллизию.
 - **Встроенные префиксы.** `credits.py`, `llm_streaming.py`, `embeds.py`, `*_ws.py` объявляют пути целиком внутри роутера (в `app.py` подключены без `prefix=` или с тегами). Не добавляйте префикс повторно.
 - **Незарегистрированные роутеры.** `function_logs.py` и `subscription_status.py` присутствуют в папке, но в списке `app.py` их нет — это либо легаси, либо подключаются иначе; не считайте их эндпоинты живыми без проверки.
-- **Платёжка — Robokassa**, а не YooKassa (расхождение с корневым CLAUDE.md). Webhook `/api/payments/robokassa-result` проверяет подпись — критичный для безопасности путь.
+- **Платёжка — Finik (finik.kg, QR-эквайринг, валюта KGS)**. Webhook `/api/payments/finik-webhook` проверяет RSA-подпись и идемпотентность — критичный для безопасности путь.
 - **Дублирование по провайдерам.** Пять почти одинаковых `*_assistants.py` — общие правки нужно вносить во все. Объединённой абстракции нет.
 - **`voximplant.py` большой** (v3.9, ~2000 строк) — ищите конкретный эндпоинт, не читайте целиком.
 - Привилегированные email'ы и спец-лимиты зашиты в `core/dependencies.py` — влияют на доступ к `admin.py` и обход проверок подписки.

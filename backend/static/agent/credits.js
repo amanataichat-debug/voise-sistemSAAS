@@ -91,7 +91,7 @@ async function purchasePackage(code){
     const r = await apiFetch(CREDITS_API + '/purchase', { method:'POST', body: JSON.stringify({ package_code: code }) });
     if(!r || r.status!==200){ alert('Не удалось создать платёж'); return; }
     const data = await r.json();
-    submitRobokassaForm(data);
+    openFinikPayment(data);
   }catch(e){ alert('Ошибка: '+e.message); }
 }
 
@@ -101,23 +101,14 @@ async function subscribeAgent(){
     if(!r || r.status!==200){ alert('Не удалось оформить подписку'); return; }
     const data = await r.json();
     if(data.trial_activated){ alert('Trial активирован! Вам доступно 1 500 кредитов на 3 дня.'); loadCredits(); return; }
-    submitRobokassaForm(data);
+    openFinikPayment(data);
   }catch(e){ alert('Ошибка: '+e.message); }
 }
 
-// Сабмит формы Robokassa (редирект на оплату)
-function submitRobokassaForm(data){
-  if(!data || !data.payment_url || !data.form_params){ alert('Некорректный ответ платёжной системы'); return; }
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = data.payment_url;
-  Object.entries(data.form_params).forEach(([k,v]) => {
-    const inp = document.createElement('input');
-    inp.type='hidden'; inp.name=k; inp.value=v;
-    form.appendChild(inp);
-  });
-  document.body.appendChild(form);
-  form.submit();
+// Редирект на платёжную страницу Finik (QR, оплата в сомах)
+function openFinikPayment(data){
+  if(!data || !data.payment_url){ alert('Некорректный ответ платёжной системы'); return; }
+  window.location.href = data.payment_url;
 }
 
 async function openBillingModal(){

@@ -19,7 +19,7 @@ function PricingSection({ onOpenModal }) {
             <span className="pbadge pb-free">{t('price.free.badge')}</span>
             <h4>{t('price.free.name')}</h4>
             <p className="price-desc">{t('price.free.desc')}</p>
-            <div className="price-amount"><span className="pamt">0 ₽</span> <small>{t('price.free.period')}</small></div>
+            <div className="price-amount"><span className="pamt">0 сом</span> <small>{t('price.free.period')}</small></div>
             <ul className="pf-list">
               <li className="pf-item"><i className="fas fa-check"></i> <span className="hl">{t('price.f.a1')}</span></li>
               <li className="pf-item"><i className="fas fa-check"></i> {t('price.f.widget')}</li>
@@ -36,7 +36,7 @@ function PricingSection({ onOpenModal }) {
             <span className="pbadge pb-basic">{t('price.voice.badge')}</span>
             <h4>{t('price.voice.name')}</h4>
             <p className="price-desc">{t('price.voice.desc')}</p>
-            <div className="price-amount"><span className="pamt">1 490 ₽</span> <small>{t('price.month')}</small></div>
+            <div className="price-amount"><span className="pamt">1 490 сом</span> <small>{t('price.month')}</small></div>
             <ul className="pf-list">
               <li className="pf-item"><i className="fas fa-check"></i> <span className="hl">{t('price.f.a3')}</span></li>
               <li className="pf-item"><i className="fas fa-check"></i> {t('price.f.widget')}</li>
@@ -53,7 +53,7 @@ function PricingSection({ onOpenModal }) {
             <span className="pbadge pb-pop">{t('price.start.badge')}</span>
             <h4>{t('price.start.name')}</h4>
             <p className="price-desc">{t('price.start.desc')}</p>
-            <div className="price-amount"><span className="pamt">2 990 ₽</span> <small>{t('price.month')}</small></div>
+            <div className="price-amount"><span className="pamt">2 990 сом</span> <small>{t('price.month')}</small></div>
             <ul className="pf-list">
               <li className="pf-item"><i className="fas fa-check"></i> <span className="hl">{t('price.f.a5')}</span></li>
               <li className="pf-item"><i className="fas fa-check"></i> {t('price.f.widget')}</li>
@@ -70,7 +70,7 @@ function PricingSection({ onOpenModal }) {
             <span className="pbadge pb-prem">{t('price.profi.badge')}</span>
             <h4>{t('price.profi.name')}</h4>
             <p className="price-desc">{t('price.profi.desc')}</p>
-            <div className="price-amount"><span className="pamt">5 990 ₽</span> <small>{t('price.month')}</small></div>
+            <div className="price-amount"><span className="pamt">5 990 сом</span> <small>{t('price.month')}</small></div>
             <ul className="pf-list">
               <li className="pf-item"><i className="fas fa-check"></i> <span className="hl">{t('price.f.a10')}</span></li>
               <li className="pf-item"><i className="fas fa-check"></i> {t('price.f.widget')}</li>
@@ -87,7 +87,7 @@ function PricingSection({ onOpenModal }) {
             <span className="pbadge pb-agent">{t('price.agent.badge')}</span>
             <h4>{t('price.agent.name')}</h4>
             <p className="price-desc">{t('price.agent.desc')}</p>
-            <div className="price-amount"><span className="pamt">5 490 ₽</span> <small>{t('price.month')}</small></div>
+            <div className="price-amount"><span className="pamt">5 490 сом</span> <small>{t('price.month')}</small></div>
             <ul className="pf-list">
               <li className="pf-item"><i className="fas fa-check"></i> <span className="hl">{t('price.f.ag3')}</span></li>
               <li className="pf-item"><i className="fas fa-check"></i> {t('price.f.selfcall')}</li>

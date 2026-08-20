@@ -533,11 +533,10 @@ async def purchase_cascade_credits(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Создать Robokassa-платёж для покупки пакета кредитов каскада.
+    """Создать Finik-платёж для покупки пакета кредитов каскада.
     Доступно на всех тарифах — подписка не требуется."""
     from backend.models.credit_package import CreditPackage
-    from backend.models.subscription import PaymentTransaction
-    from backend.api.credits import _build_robokassa_payment
+    from backend.api.credits import create_finik_payment_transaction
 
     package = db.query(CreditPackage).filter(
         CreditPackage.code == body.package_code,
@@ -547,35 +546,21 @@ async def purchase_cascade_credits(
     if not package:
         raise HTTPException(status_code=404, detail="package_not_found")
 
-    payment = _build_robokassa_payment(
+    payment = await create_finik_payment_transaction(
+        db=db,
         user=current_user,
         amount=float(package.price_rub),
         description=f"Пакет кредитов Cascade {package.name} ({package.credits} кредитов)",
-        extra_shp={"Shp_cascade_package": package.code},
+        details={"type": "cascade_package", "package_code": package.code, "credits": package.credits},
     )
-
-    transaction = PaymentTransaction(
-        user_id=current_user.id,
-        plan_id=None,
-        external_payment_id=payment["inv_id"],
-        payment_system="robokassa",
-        amount=float(package.price_rub),
-        currency="RUB",
-        status="pending",
-        payment_details=f"Shp_cascade_package={package.code}; credits={package.credits}",
-    )
-    db.add(transaction)
-    db.commit()
-    db.refresh(transaction)
 
     logger.info(
         f"[CASCADE-CREDITS] Purchase payment created for user {current_user.id}, "
-        f"package {package.code}, inv {payment['inv_id']}"
+        f"package {package.code}, payment {payment['payment_id']}"
     )
 
     return {
         **payment,
-        "transaction_id": str(transaction.id),
         "package": package.to_dict(),
     }
 

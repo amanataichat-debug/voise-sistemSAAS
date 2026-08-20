@@ -1063,13 +1063,15 @@ def seed_credits_data():
         with engine.connect() as conn:
             trans = conn.begin()
             try:
-                # Тариф agent (subscription_plans уже существует)
+                # Тариф agent (subscription_plans уже существует).
+                # ⚠️ Цена (в сомах, KGS) задаётся ТОЛЬКО при первой вставке и далее
+                # управляется через БД (UPDATE subscription_plans SET price=...) —
+                # сидинг её больше НЕ перезатирает. Сейчас минимальная тестовая цена.
                 if inspector.has_table('subscription_plans'):
                     conn.execute(text("""
                         INSERT INTO subscription_plans (code, name, price, max_assistants, description, is_active)
-                        VALUES ('agent', 'Voicyfy Agent', 5490, 3, 'AI-оркестратор автономных звонков', TRUE)
+                        VALUES ('agent', 'Voicyfy Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
                         ON CONFLICT (code) DO UPDATE SET
-                            price = EXCLUDED.price,
                             max_assistants = EXCLUDED.max_assistants
                     """))
 
@@ -1641,6 +1643,65 @@ def ensure_agent_public_access_columns():
         logger.error(f"❌ ensure_agent_public_access_columns error: {e}")
 
 
+def ensure_payment_finik_columns():
+    """
+    Идемпотентно добавляет колонки Finik в payment_transactions:
+      - finik_transaction_id (уникальный индекс — идемпотентность webhook'ов);
+      - payment_url (URL платёжной страницы Finik).
+    Существующие записи не меняются (payment_system у них остаётся 'robokassa' —
+    историческая маркировка старых платежей).
+    """
+    try:
+        from sqlalchemy import text, inspect
+
+        inspector = inspect(engine)
+        if not inspector.has_table('payment_transactions'):
+            return
+
+        existing = {c['name'] for c in inspector.get_columns('payment_transactions')}
+
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                if 'finik_transaction_id' not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE payment_transactions "
+                        "ADD COLUMN IF NOT EXISTS finik_transaction_id VARCHAR(100)"
+                    ))
+                    logger.info("✅ Added column payment_transactions.finik_transaction_id")
+                if 'payment_url' not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE payment_transactions "
+                        "ADD COLUMN IF NOT EXISTS payment_url VARCHAR(1000)"
+                    ))
+                    logger.info("✅ Added column payment_transactions.payment_url")
+
+                # Уникальный частичный индекс: один Finik transactionId — одно зачисление
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_finik_tx "
+                    "ON payment_transactions(finik_transaction_id) "
+                    "WHERE finik_transaction_id IS NOT NULL"
+                ))
+
+                # Новые платежи по умолчанию — Finik / KGS
+                conn.execute(text(
+                    "ALTER TABLE payment_transactions "
+                    "ALTER COLUMN payment_system SET DEFAULT 'finik'"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE payment_transactions "
+                    "ALTER COLUMN currency SET DEFAULT 'KGS'"
+                ))
+
+                trans.commit()
+                logger.info("✅ payment_transactions: Finik columns/index ensured")
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"❌ Failed to ensure Finik payment columns: {e}")
+    except Exception as e:
+        logger.error(f"❌ ensure_payment_finik_columns error: {e}")
+
+
 def ensure_agent_webhook_columns():
     """
     Идемпотентно добавляет колонку вебхука оркестратора в agent_configs.
@@ -2079,6 +2140,10 @@ async def startup_event():
 
                 # 🆕 Шаг 22: FK-колонки yandex_assistant_id (агент + задачи)
                 ensure_yandex_agent_columns()
+
+                # 🆕 Шаг 22.5: Колонки Finik в payment_transactions
+                #    (finik_transaction_id + уникальный индекс, payment_url)
+                ensure_payment_finik_columns()
 
                 # 🆕 Шаг 23: Универсальный доводчик — все недостающие колонки
                 #    всех моделей (запускается ПОСЛЕ специализированных шагов,

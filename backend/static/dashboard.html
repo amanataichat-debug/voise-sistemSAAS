@@ -1882,20 +1882,20 @@
         <div class="plan-tabs" id="plan-tabs">
           <button class="plan-tab active" data-plan="ai_voice">
             <span class="tab-name">AI Voice</span>
-            <span class="tab-price">1 490 ₽/мес</span>
+            <span class="tab-price">10 сом/мес</span>
           </button>
           <button class="plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">2 990 ₽/мес</span>
+            <span class="tab-price">20 сом/мес</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="plan-tab" data-plan="profi">
             <span class="tab-name">Profi</span>
-            <span class="tab-price">5 990 ₽/мес</span>
+            <span class="tab-price">30 сом/мес</span>
           </button>
           <button class="plan-tab" data-plan="agent">
             <span class="tab-name">Agent</span>
-            <span class="tab-price">5 490 ₽/мес</span>
+            <span class="tab-price">50 сом/мес</span>
           </button>
         </div>
 
@@ -1920,8 +1920,8 @@
           <div class="payment-plan-assistants" id="modal-plan-assistants">До 3 ассистентов</div>
           
           <div class="payment-plan-price">
-            <span class="price-amount" id="modal-price">1 490</span>
-            <span class="price-currency">₽</span>
+            <span class="price-amount" id="modal-price">10</span>
+            <span class="price-currency">сом</span>
           </div>
           
           <div class="payment-plan-duration">
@@ -1932,13 +1932,13 @@
           <!-- Экономия -->
           <div class="savings-badge hidden" id="modal-savings">
             <i class="fas fa-piggy-bank"></i>
-            <span>Вы экономите <span id="modal-savings-amount">0</span> ₽</span>
+            <span>Вы экономите <span id="modal-savings-amount">0</span> сом</span>
           </div>
 
           <!-- Цена за месяц -->
           <div class="monthly-price-info" id="modal-monthly-price" style="display: none;">
-            <span class="old-price" id="modal-old-price">1 490 ₽/мес</span>
-            <span class="new-price" id="modal-monthly-value">1 192 ₽/мес</span>
+            <span class="old-price" id="modal-old-price">10 сом/мес</span>
+            <span class="new-price" id="modal-monthly-value">8 сом/мес</span>
           </div>
         </div>
         
@@ -1979,7 +1979,7 @@
         </button>
         <button class="btn btn-primary payment-pay-btn" id="payment-pay-btn">
           <i class="fas fa-credit-card"></i>
-          <span id="pay-btn-text">Оплатить 1 490 ₽</span>
+          <span id="pay-btn-text">Оплатить 10 сом</span>
         </button>
       </div>
       
@@ -2040,20 +2040,20 @@
         <div class="expired-plan-tabs" id="expired-plan-tabs">
           <button class="expired-plan-tab active" data-plan="ai_voice">
             <span class="tab-name">AI Voice</span>
-            <span class="tab-price">1 490 ₽</span>
+            <span class="tab-price">10 сом</span>
           </button>
           <button class="expired-plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">2 990 ₽</span>
+            <span class="tab-price">20 сом</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="expired-plan-tab" data-plan="profi">
             <span class="tab-name">Profi</span>
-            <span class="tab-price">5 990 ₽</span>
+            <span class="tab-price">30 сом</span>
           </button>
           <button class="expired-plan-tab" data-plan="agent">
             <span class="tab-name">Agent</span>
-            <span class="tab-price">5 490 ₽</span>
+            <span class="tab-price">50 сом</span>
           </button>
         </div>
 
@@ -2076,11 +2076,11 @@
         <div class="expired-selected-plan">
           <div class="expired-plan-name" id="expired-plan-name">AI Voice</div>
           <div class="expired-plan-assistants" id="expired-plan-assistants">До 3 ассистентов</div>
-          <div class="expired-plan-price" id="expired-price">1 490 ₽</div>
+          <div class="expired-plan-price" id="expired-price">10 сом</div>
           <div class="expired-plan-period" id="expired-period">30 дней доступа</div>
           <div class="expired-savings-badge hidden" id="expired-savings">
             <i class="fas fa-piggy-bank"></i>
-            <span>Экономия <span id="expired-savings-amount">0</span> ₽</span>
+            <span>Экономия <span id="expired-savings-amount">0</span> сом</span>
           </div>
         </div>
       </div>
@@ -2088,7 +2088,7 @@
       <div class="subscription-expired-footer">
         <button class="renew-subscription-btn" id="renew-subscription-btn">
           <i class="fas fa-credit-card"></i>
-          <span id="renew-btn-text">Продлить подписку за 1 490 ₽</span>
+          <span id="renew-btn-text">Продлить подписку за 10 сом</span>
         </button>
         
         <button class="btn btn-secondary" id="expired-logout-btn" style="width: 100%; justify-content: center;">
@@ -2108,10 +2108,12 @@
       // ✅ КОНФИГУРАЦИЯ ТАРИФОВ v3.0
       // ========================================
       const SUBSCRIPTION_PLANS = {
+        // ⚠️ basePrice — плейсхолдеры (тестовые цены, сомы KGS). Реальные цены
+        // подтягиваются из БД через GET /api/payments/plans (loadPlanPrices).
         ai_voice: {
           code: 'ai_voice',
           name: 'AI Voice',
-          basePrice: 1490,
+          basePrice: 10,
           maxAssistants: 3,
           description: 'Базовый тариф для голосовых ассистентов',
           restrictedFeatures: ['crm', 'telephony', 'outbound_calls'],
@@ -2129,7 +2131,7 @@
         start: {
           code: 'start',
           name: 'Тариф Старт',
-          basePrice: 2990,
+          basePrice: 20,
           maxAssistants: 5,
           description: 'Оптимальный тариф для бизнеса',
           restrictedFeatures: [],
@@ -2147,7 +2149,7 @@
         profi: {
           code: 'profi',
           name: 'Profi',
-          basePrice: 5990,
+          basePrice: 30,
           maxAssistants: 10,
           description: 'Максимальные возможности',
           restrictedFeatures: [],
@@ -2165,7 +2167,7 @@
         agent: {
           code: 'agent',
           name: 'VoiceSystem Agent',
-          basePrice: 5490,
+          basePrice: 50,
           maxAssistants: 3,
           description: 'AI-оркестратор автономных звонков',
           restrictedFeatures: [],
@@ -2289,7 +2291,37 @@
         const discount = PERIOD_DISCOUNTS[months] || 0;
         const fullPrice = basePrice * months;
         const discountedPrice = fullPrice * (1 - discount / 100);
-        return Math.round(discountedPrice / 10) * 10; // Округление до 10 рублей
+        return Math.round(discountedPrice); // Округление до целых сомов (как на бэкенде)
+      }
+
+      // ✅ Подтягиваем актуальные цены (сомы, из БД) с бэкенда и обновляем UI
+      async function loadPlanPrices() {
+        try {
+          const data = await api.get('/payments/plans');
+          if (data && data.plans) {
+            Object.keys(data.plans).forEach(code => {
+              if (SUBSCRIPTION_PLANS[code] && data.plans[code].base_price) {
+                SUBSCRIPTION_PLANS[code].basePrice = data.plans[code].base_price;
+              }
+            });
+          }
+          if (data && data.agent_price && SUBSCRIPTION_PLANS.agent) {
+            SUBSCRIPTION_PLANS.agent.basePrice = data.agent_price;
+          }
+          // Обновляем ценники в табах обеих модалок
+          document.querySelectorAll('#plan-tabs .plan-tab').forEach(tab => {
+            const plan = SUBSCRIPTION_PLANS[tab.getAttribute('data-plan')];
+            const priceEl = tab.querySelector('.tab-price');
+            if (plan && priceEl) priceEl.textContent = formatPrice(plan.basePrice) + ' сом/мес';
+          });
+          document.querySelectorAll('#expired-plan-tabs .expired-plan-tab').forEach(tab => {
+            const plan = SUBSCRIPTION_PLANS[tab.getAttribute('data-plan')];
+            const priceEl = tab.querySelector('.tab-price');
+            if (plan && priceEl) priceEl.textContent = formatPrice(plan.basePrice) + ' сом';
+          });
+        } catch (e) {
+          console.warn('⚠️ Не удалось загрузить цены тарифов, используются значения по умолчанию', e);
+        }
       }
 
       function calculateSavings(basePrice, months) {
@@ -2406,8 +2438,8 @@
         const oldPrice = document.getElementById('modal-old-price');
         if (selectedPeriod > 1) {
           const monthlyPrice = Math.round(finalPrice / selectedPeriod);
-          oldPrice.textContent = formatPrice(basePrice) + ' ₽/мес';
-          monthlyValue.textContent = formatPrice(monthlyPrice) + ' ₽/мес';
+          oldPrice.textContent = formatPrice(basePrice) + ' сом/мес';
+          monthlyValue.textContent = formatPrice(monthlyPrice) + ' сом/мес';
           monthlyPriceInfo.style.display = 'block';
         } else {
           monthlyPriceInfo.style.display = 'none';
@@ -2423,7 +2455,7 @@
         `).join('');
 
         // Обновляем кнопку оплаты
-        document.getElementById('pay-btn-text').textContent = `Оплатить ${formatPrice(finalPrice)} ₽`;
+        document.getElementById('pay-btn-text').textContent = `Оплатить ${formatPrice(finalPrice)} сом`;
       }
 
       function updateExpiredModalUI() {
@@ -2454,7 +2486,7 @@
         // Обновляем информацию о плане
         document.getElementById('expired-plan-name').textContent = plan.name;
         document.getElementById('expired-plan-assistants').textContent = plan.assistantsLabel || `До ${plan.maxAssistants} ассистентов`;
-        document.getElementById('expired-price').textContent = formatPrice(finalPrice) + ' ₽';
+        document.getElementById('expired-price').textContent = formatPrice(finalPrice) + ' сом';
         document.getElementById('expired-period').textContent = `${days} дней доступа`;
         
         // Обновляем экономию
@@ -2468,7 +2500,7 @@
         }
 
         // Обновляем кнопку
-        document.getElementById('renew-btn-text').textContent = `Продлить подписку за ${formatPrice(finalPrice)} ₽`;
+        document.getElementById('renew-btn-text').textContent = `Продлить подписку за ${formatPrice(finalPrice)} сом`;
       }
 
       // ========================================
@@ -3109,7 +3141,7 @@
           const plan = SUBSCRIPTION_PLANS[planCode];
           const finalPrice = calculatePrice(plan.basePrice, durationMonths);
 
-          console.log(`🚀 Создаем платеж: ${plan.name}, ${durationMonths} мес, ${finalPrice} ₽`);
+          console.log(`🚀 Создаем платеж: ${plan.name}, ${durationMonths} мес, ${finalPrice} сом`);
 
           // Тариф agent оформляется через кредитный API (30 дней + 20 000 кредитов),
           // остальные тарифы — через стандартный платёжный эндпоинт
@@ -3130,36 +3162,18 @@
             return;
           }
 
-          if (response.payment_url && response.form_params) {
-            console.log('✅ Данные платежа получены, создаем форму...');
-            
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = response.payment_url;
-            form.style.display = 'none';
-            
-            Object.keys(response.form_params).forEach(key => {
-              const input = document.createElement('input');
-              input.type = 'hidden';
-              input.name = key;
-              input.value = response.form_params[key];
-              form.appendChild(input);
-              
-              console.log(`📝 Добавлен параметр: ${key} = ${response.form_params[key]}`);
-            });
-            
-            document.body.appendChild(form);
-            
-            console.log('🌐 Перенаправляем на Robokassa:', response.payment_url);
-            
+          if (response.payment_url) {
+            // ✅ Finik: бэкенд вернул готовый URL платёжной страницы (QR)
+            console.log('🌐 Перенаправляем на страницу оплаты Finik:', response.payment_url);
+
             ui.showNotification('Перенаправляем на страницу оплаты...', 'info');
-            
+
             setTimeout(() => {
-              form.submit();
-            }, 1000);
-            
+              window.location.href = response.payment_url;
+            }, 500);
+
             hidePaymentModal();
-            
+
           } else {
             console.error('❌ Некорректный ответ сервера:', response);
             throw new Error('Некорректный ответ сервера - отсутствуют данные для оплаты');
@@ -3220,7 +3234,10 @@
       // ========================================
       async function initializePage() {
         if (!checkAuth()) return;
-        
+
+        // Подтягиваем актуальные цены тарифов (сомы, из БД)
+        await loadPlanPrices();
+
         // Инициализируем UI модальных окон
         updatePaymentModalUI();
         updateExpiredModalUI();

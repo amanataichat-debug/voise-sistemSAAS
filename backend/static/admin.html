@@ -1329,7 +1329,7 @@
               <div class="stat-icon green">
                 <i class="fas fa-ruble-sign"></i>
               </div>
-              <div class="stat-value" id="revenue-current-month">0 ₽</div>
+              <div class="stat-value" id="revenue-current-month">0 сом</div>
               <div class="stat-label">За текущий месяц</div>
             </div>
             
@@ -1337,7 +1337,7 @@
               <div class="stat-icon">
                 <i class="fas fa-calendar-alt"></i>
               </div>
-              <div class="stat-value" id="revenue-prev-month">0 ₽</div>
+              <div class="stat-value" id="revenue-prev-month">0 сом</div>
               <div class="stat-label">За прошлый месяц</div>
             </div>
             
@@ -1345,7 +1345,7 @@
               <div class="stat-icon purple">
                 <i class="fas fa-coins"></i>
               </div>
-              <div class="stat-value" id="revenue-total">0 ₽</div>
+              <div class="stat-value" id="revenue-total">0 сом</div>
               <div class="stat-label">Всего за всё время</div>
             </div>
             
@@ -2112,6 +2112,12 @@
         },
         
         formatMoney(amount) {
+          // Выручка платежей — в сомах (KGS, Finik)
+          return new Intl.NumberFormat('ru-RU').format(Math.round(amount)) + ' сом';
+        },
+
+        formatRub(amount) {
+          // Стоимость звонков Voximplant — в рублях
           return new Intl.NumberFormat('ru-RU').format(Math.round(amount)) + ' ₽';
         },
         
@@ -2509,8 +2515,8 @@
             inboundCallsElement.textContent = stats.calls.inbound;
             outboundCallsElement.textContent = stats.calls.outbound;
             totalCallDurationElement.textContent = this.formatDuration(stats.calls.total_duration_minutes);
-            totalCallCostElement.textContent = this.formatMoney(stats.calls.total_cost);
-            callCostThisMonthElement.textContent = `За месяц: ${this.formatMoney(stats.calls.cost_this_month)}`;
+            totalCallCostElement.textContent = this.formatRub(stats.calls.total_cost);
+            callCostThisMonthElement.textContent = `За месяц: ${this.formatRub(stats.calls.cost_this_month)}`;
           }
           
           // Недавние пользователи
@@ -2982,7 +2988,7 @@
         plansGrid.forEach(plan => {
           const option = document.createElement('option');
           option.value = plan.code;
-          const price = plan.price ? `${plan.price.toLocaleString('ru-RU')} ₽/мес` : 'бесплатно';
+          const price = plan.price ? `${plan.price.toLocaleString('ru-RU')} сом/мес` : 'бесплатно';
           option.textContent = `${plan.name} — ${price}`;
           planCodeSelect.appendChild(option);
         });

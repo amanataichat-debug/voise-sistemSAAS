@@ -258,7 +258,7 @@ class CreditService:
 
         Идемпотентно по платежу: если для этого payment_transaction уже была
         выдача SUBSCRIPTION_GRANT — повторно не начисляем (защита от повторных
-        callback-ов Robokassa). Возвращает None если уже было начислено.
+        webhook-ов Finik). Возвращает None если уже было начислено.
         """
         amount = credits if credits is not None else cls.SUBSCRIPTION_CREDITS
 

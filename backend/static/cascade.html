@@ -1480,22 +1480,13 @@
       }
     }
 
-    // Сабмит формы Robokassa (редирект на оплату)
-    function submitRobokassaForm(data) {
-      if (!data || !data.payment_url || !data.form_params) {
+    // Редирект на платёжную страницу Finik (QR, оплата в сомах)
+    function openFinikPayment(data) {
+      if (!data || !data.payment_url) {
         showNotification('Некорректный ответ платёжной системы', 'error');
         return;
       }
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = data.payment_url;
-      Object.entries(data.form_params).forEach(([k, v]) => {
-        const inp = document.createElement('input');
-        inp.type = 'hidden'; inp.name = k; inp.value = v;
-        form.appendChild(inp);
-      });
-      document.body.appendChild(form);
-      form.submit();
+      window.location.href = data.payment_url;
     }
 
     async function purchaseCascadePackage(code) {
@@ -1505,7 +1496,7 @@
           method: 'POST',
           body: { package_code: code }
         });
-        submitRobokassaForm(data);
+        openFinikPayment(data);
       } catch (e) {
         showNotification('Ошибка: ' + e.message, 'error');
       } finally {

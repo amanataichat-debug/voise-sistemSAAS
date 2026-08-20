@@ -70,10 +70,14 @@ class PaymentTransaction(Base, BaseModel):
     plan_id = Column(UUID(as_uuid=True), ForeignKey("subscription_plans.id"), nullable=True)
     
     # Данные от платежной системы
-    external_payment_id = Column(String(100), nullable=True)  # InvId от Robokassa
-    payment_system = Column(String(50), default="robokassa")
+    external_payment_id = Column(String(100), nullable=True)  # наш PaymentId (UUID) для Finik; InvId у старых записей Robokassa
+    payment_system = Column(String(50), default="finik")  # 'finik'; у исторических записей — 'robokassa'
     amount = Column(Numeric(10, 2), nullable=False)
-    currency = Column(String(3), default="RUB")
+    currency = Column(String(3), default="KGS")
+
+    # Finik: transactionId из webhook'а (уникальный — идемпотентность) и URL платёжной страницы
+    finik_transaction_id = Column(String(100), nullable=True, unique=True, index=True)
+    payment_url = Column(String(1000), nullable=True)
     
     # Статус транзакции
     status = Column(String(20), default="pending")  # pending, success, failed, cancelled

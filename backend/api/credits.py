@@ -1,11 +1,12 @@
 """
 Credits API — баланс кредитов оркестратора, пакеты докупки, история транзакций,
-покупка пакетов и оформление/продление тарифа `agent` через Robokassa.
+покупка пакетов и оформление/продление тарифа `agent` через Finik (KGS).
 
 Префикс: /api/credits
 """
 
-from datetime import datetime
+import json
+import uuid
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -24,13 +25,16 @@ from backend.services.credit_service import (
     activate_agent_trial,
     AGENT_PLAN_CODE,
 )
-from backend.services.payment_service import RobokassaService
+from backend.services.finik_service import FinikService, FinikError
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/credits", tags=["Credits"])
 
-AGENT_PLAN_PRICE = 5490.0
+# Fallback-цена тарифа agent (сом/мес), если строки нет в БД.
+# Источник истины — БД: UPDATE subscription_plans SET price=<сом> WHERE code='agent';
+# ⚠️ Сейчас минимальная ТЕСТОВАЯ цена для проверки эквайринга Finik.
+AGENT_PLAN_PRICE = 50.0
 
 
 # ============================================================================
@@ -45,69 +49,70 @@ class PurchaseRequest(BaseModel):
 # HELPERS
 # ============================================================================
 
-def _build_robokassa_payment(
+async def create_finik_payment_transaction(
     *,
+    db: Session,
     user: User,
     amount: float,
     description: str,
-    extra_shp: Dict[str, str],
+    details: Dict[str, Any],
+    plan_id=None,
 ) -> Dict[str, Any]:
     """
-    Создать параметры Robokassa-платежа (по аналогии с /api/payments/create-payment).
-    Возвращает dict с payment_url, form_params, inv_id, amount.
+    Создать pending-транзакцию и платёж в Finik.
+    Возвращает dict с payment_url (фронт делает window.location = payment_url),
+    payment_id, amount, transaction_id. Используется также для cascade-пакетов
+    (backend/api/grok_assistants.py).
     """
-    if not settings.ROBOKASSA_MERCHANT_LOGIN or not settings.ROBOKASSA_PASSWORD_1:
+    if not FinikService.is_configured():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Payment system not configured",
         )
 
-    out_sum = f"{amount:.2f}"
-    inv_id = f"{int(datetime.now().timestamp())}"
+    payment_id = str(uuid.uuid4())
 
-    custom_params = None
-    if not RobokassaService.DISABLE_SHP_PARAMS:
-        custom_params = {"Shp_user_id": str(user.id), **extra_shp}
-
-    signature = RobokassaService.generate_signature(
-        RobokassaService.MERCHANT_LOGIN,
-        out_sum,
-        inv_id,
-        RobokassaService.PASSWORD_1,
-        custom_params,
+    transaction = PaymentTransaction(
+        user_id=user.id,
+        plan_id=plan_id,
+        external_payment_id=payment_id,
+        payment_system="finik",
+        amount=amount,
+        currency="KGS",
+        status="pending",
+        payment_details=json.dumps(details, ensure_ascii=False),
     )
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
 
-    form_params: Dict[str, Any] = {
-        "MerchantLogin": RobokassaService.MERCHANT_LOGIN,
-        "OutSum": out_sum,
-        "InvId": inv_id,
-        "Description": description,
-        "SignatureValue": signature,
-        "Culture": "ru",
-        "Encoding": "utf-8",
-    }
+    try:
+        payment_url = await FinikService.create_payment(
+            amount=amount,
+            payment_id=payment_id,
+            description=description,
+            name_en="Voicyfy",
+            lang="ru",
+        )
+    except FinikError as e:
+        transaction.status = "failed"
+        transaction.error_message = str(e)[:500]
+        db.commit()
+        logger.error(f"❌ [CREDITS] Finik payment creation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось создать платёж. Попробуйте позже или обратитесь в поддержку.",
+        )
 
-    if RobokassaService.BASE_URL and not any(
-        x in RobokassaService.BASE_URL for x in ["localhost", "127.0.0.1"]
-    ):
-        form_params["ResultURL"] = RobokassaService.RESULT_URL
-        form_params["SuccessURL"] = RobokassaService.SUCCESS_URL
-        form_params["FailURL"] = RobokassaService.FAIL_URL
-
-    if user.email:
-        form_params["Email"] = user.email
-    if RobokassaService.TEST_MODE:
-        form_params["IsTest"] = "1"
-
-    if custom_params and not RobokassaService.DISABLE_SHP_PARAMS:
-        for key, value in custom_params.items():
-            form_params[key] = value
+    transaction.payment_url = payment_url
+    db.commit()
 
     return {
-        "payment_url": RobokassaService.PAYMENT_URL,
-        "form_params": form_params,
-        "inv_id": inv_id,
-        "amount": out_sum,
+        "payment_url": payment_url,
+        "payment_id": payment_id,
+        "amount": amount,
+        "currency": "KGS",
+        "transaction_id": str(transaction.id),
     }
 
 
@@ -180,7 +185,7 @@ async def purchase_package(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Создать Robokassa-платёж для покупки пакета кредитов."""
+    """Создать Finik-платёж для покупки пакета кредитов."""
     user = db.query(User).filter(User.id == current_user.id).first()
 
     package = db.query(CreditPackage).filter(
@@ -197,33 +202,19 @@ async def purchase_package(
 
     plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == AGENT_PLAN_CODE).first()
 
-    payment = _build_robokassa_payment(
+    payment = await create_finik_payment_transaction(
+        db=db,
         user=user,
         amount=float(package.price_rub),
         description=f"Пакет кредитов {package.name} ({package.credits} кредитов)",
-        extra_shp={"Shp_credits_package": package.code},
-    )
-
-    # Сохраняем pending-транзакцию
-    transaction = PaymentTransaction(
-        user_id=user.id,
+        details={"type": "credits_package", "package_code": package.code, "credits": package.credits},
         plan_id=plan.id if plan else None,
-        external_payment_id=payment["inv_id"],
-        payment_system="robokassa",
-        amount=float(package.price_rub),
-        currency="RUB",
-        status="pending",
-        payment_details=f"Shp_credits_package={package.code}; credits={package.credits}",
     )
-    db.add(transaction)
-    db.commit()
-    db.refresh(transaction)
 
-    logger.info(f"[CREDITS] Purchase payment created for user {user.id}, package {package.code}, inv {payment['inv_id']}")
+    logger.info(f"[CREDITS] Purchase payment created for user {user.id}, package {package.code}, payment {payment['payment_id']}")
 
     return {
         **payment,
-        "transaction_id": str(transaction.id),
         "package": package.to_dict(),
     }
 
@@ -262,31 +253,18 @@ async def subscribe_agent(
 
     amount = float(plan.price) if plan.price else AGENT_PLAN_PRICE
 
-    payment = _build_robokassa_payment(
+    payment = await create_finik_payment_transaction(
+        db=db,
         user=user,
         amount=amount,
-        description=f"Подписка Voicyfy Agent на 30 дней за {int(amount)} ₽",
-        extra_shp={"Shp_plan_code": AGENT_PLAN_CODE},
-    )
-
-    transaction = PaymentTransaction(
-        user_id=user.id,
+        description=f"Подписка Voicyfy Agent на 30 дней за {int(amount)} сом",
+        details={"type": "agent_subscription"},
         plan_id=plan.id,
-        external_payment_id=payment["inv_id"],
-        payment_system="robokassa",
-        amount=amount,
-        currency="RUB",
-        status="pending",
-        payment_details=f"Shp_plan_code={AGENT_PLAN_CODE}",
     )
-    db.add(transaction)
-    db.commit()
-    db.refresh(transaction)
 
-    logger.info(f"[CREDITS] Agent subscription payment created for user {user.id}, inv {payment['inv_id']}")
+    logger.info(f"[CREDITS] Agent subscription payment created for user {user.id}, payment {payment['payment_id']}")
 
     return {
         **payment,
         "trial_activated": False,
-        "transaction_id": str(transaction.id),
     }

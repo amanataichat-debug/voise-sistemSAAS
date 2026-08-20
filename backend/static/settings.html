@@ -1401,11 +1401,11 @@
               <div class="stat-label">Конверсия</div>
             </div>
             <div class="stat-card earnings">
-              <div class="stat-value" id="total-earnings">0 ₽</div>
+              <div class="stat-value" id="total-earnings">0 сом</div>
               <div class="stat-label">Общий заработок</div>
             </div>
             <div class="stat-card earnings">
-              <div class="stat-value" id="month-earnings">0 ₽</div>
+              <div class="stat-value" id="month-earnings">0 сом</div>
               <div class="stat-label">Заработок за месяц</div>
             </div>
           </div>
@@ -1882,7 +1882,7 @@
           // Комиссия
           const commissionCell = document.createElement('td');
           if (referral.stats.total_earned > 0) {
-            commissionCell.textContent = referral.stats.total_earned.toFixed(2) + ' ₽';
+            commissionCell.textContent = referral.stats.total_earned.toFixed(2) + ' сом';
           } else {
             commissionCell.textContent = '—';
           }
@@ -1916,8 +1916,8 @@
         document.getElementById('total-referrals').textContent = data.statistics.total_referrals;
         document.getElementById('paid-referrals').textContent = data.statistics.paid_referrals;
         document.getElementById('conversion-rate').textContent = data.statistics.conversion_rate + '%';
-        document.getElementById('total-earnings').textContent = data.statistics.total_earnings.toFixed(2) + ' ₽';
-        document.getElementById('month-earnings').textContent = data.statistics.this_month_earnings.toFixed(2) + ' ₽';
+        document.getElementById('total-earnings').textContent = data.statistics.total_earnings.toFixed(2) + ' сом';
+        document.getElementById('month-earnings').textContent = data.statistics.this_month_earnings.toFixed(2) + ' сом';
         
         // Заполняем таблицу рефералов будет вызвана отдельно в loadReferrals()
       }
@@ -1998,7 +1998,7 @@
             // Комиссия
             const commissionCell = document.createElement('td');
             if (referral.stats.total_earned > 0) {
-              commissionCell.textContent = referral.stats.total_earned.toFixed(2) + ' ₽';
+              commissionCell.textContent = referral.stats.total_earned.toFixed(2) + ' сом';
             } else {
               commissionCell.textContent = '—';
             }

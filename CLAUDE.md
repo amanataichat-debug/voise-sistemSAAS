@@ -18,7 +18,7 @@ Voicyfy is a SaaS platform for creating and managing AI-powered voice assistants
 - **WebSocket:** Native FastAPI WebSocket for real-time voice streaming
 - **Storage:** Cloudflare R2 (S3-compatible)
 - **Vector DB:** Pinecone (knowledge base search)
-- **External APIs:** OpenAI, Google Gemini, xAI Grok, ElevenLabs, Voximplant, YooKassa (payments)
+- **External APIs:** OpenAI, Google Gemini, xAI Grok, ElevenLabs, Voximplant, Finik (payments, KGS)
 
 ## Project Structure
 
@@ -47,7 +47,7 @@ Voicyfy is a SaaS platform for creating and managing AI-powered voice assistants
 │   │   ├── conversations.py # Conversation history and analytics
 │   │   ├── contacts.py      # CRM contacts management
 │   │   ├── knowledge_base.py # Knowledge base (Pinecone)
-│   │   ├── payments.py      # YooKassa payment processing
+│   │   ├── payments.py      # Finik payment processing (create + webhook)
 │   │   ├── subscriptions.py # Subscription plan management
 │   │   ├── partners.py      # Partner/referral program
 │   │   ├── embeds.py        # Embeddable widget pages
@@ -80,7 +80,8 @@ Voicyfy is a SaaS platform for creating and managing AI-powered voice assistants
 │   │   ├── conversation_service.py  # Conversation CRUD
 │   │   ├── elevenlabs_service.py    # ElevenLabs API client
 │   │   ├── google_sheets_service.py # Google Sheets integration
-│   │   ├── payment_service.py       # YooKassa payment logic
+│   │   ├── payment_service.py       # Finik post-payment business logic
+│   │   ├── finik_service.py         # Finik API client (RSA signing, 302→Location, webhook verify)
 │   │   ├── pinecone_service.py      # Pinecone vector search
 │   │   ├── r2_storage.py            # Cloudflare R2 file storage
 │   │   ├── partner_service.py       # Partner program logic
@@ -203,7 +204,7 @@ cd .. && git add -A backend/static/landing frontend
 | `/api/conversations` | Conversation history |
 | `/api/contacts` | CRM contacts |
 | `/api/knowledge-base` | Knowledge base (Pinecone) |
-| `/api/payments` | YooKassa payments |
+| `/api/payments` | Finik payments (KGS) |
 | `/api/subscriptions` | Subscription plans |
 | `/api/partners` | Partner referral program |
 | `/api/embeds` | Embeddable widget configs |
@@ -226,6 +227,12 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `HOST_URL` — Public URL (e.g., https://voicyfy.ru)
 - `PRODUCTION` — "true" in production (disables docs, enables optimizations)
 - `CORS_ORIGINS` — Allowed CORS origins
+- `FINIK_API_KEY` — Finik API key (QR-эквайринг, валюта KGS)
+- `FINIK_API_URL` — Finik API base URL (prod: https://api.acquiring.averspay.kg, beta: https://beta.api.acquiring.averspay.kg)
+- `FINIK_PRIVATE_PEM` — приватный RSA-ключ мерчанта (содержимое .pem целиком)
+- `FINIK_ACCOUNT_ID` — ID счёта Finik для зачисления средств
+- `FINIK_PUBLIC_KEY` — публичный ключ Finik для проверки подписи webhook'ов (опционально до выдачи)
+- `FINIK_VERIFY_WEBHOOK_SIGNATURE` — проверять подпись webhook'ов (default "True")
 
 Users provide their own API keys for: Google Gemini, xAI Grok, ElevenLabs, Voximplant.
 

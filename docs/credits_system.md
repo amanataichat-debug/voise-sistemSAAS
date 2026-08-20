@@ -125,7 +125,7 @@ WHERE product = 'orchestrator' AND type = 'spend'
 Коды ошибки 402 (`detail`): `subscription_expired`, `subscription_required`,
 `{error: insufficient_credits, required, available}`.
 
-## Платёжный коллбэк (Robokassa)
+## Платёжный коллбэк (Finik)
 
 `process_payment_result` различает три ветви по Shp-параметрам:
 

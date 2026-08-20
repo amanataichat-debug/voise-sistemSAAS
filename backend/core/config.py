@@ -82,14 +82,22 @@ class Settings(BaseSettings):
     # CORS Settings
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
     
-    # ✅ ИСПРАВЛЕНО: Robokassa settings - СТРОГИЕ требования
-    ROBOKASSA_MERCHANT_LOGIN: str = os.getenv("ROBOKASSA_MERCHANT_LOGIN", "")
-    ROBOKASSA_PASSWORD_1: str = os.getenv("ROBOKASSA_PASSWORD_1", "")  
-    ROBOKASSA_PASSWORD_2: str = os.getenv("ROBOKASSA_PASSWORD_2", "")
-    ROBOKASSA_TEST_MODE: bool = os.getenv("ROBOKASSA_TEST_MODE", "True") == "True"
-    
-    # ✅ ИСПРАВЛЕНО: Payment settings
-    SUBSCRIPTION_PRICE: float = 1490.0  # Цена подписки в рублях
+    # =========================================================================
+    # ✅ Finik (finik.kg) — QR-эквайринг, валюта KGS
+    # =========================================================================
+    FINIK_API_KEY: str = os.getenv("FINIK_API_KEY", "")
+    # Прод: https://api.acquiring.averspay.kg, бета: https://beta.api.acquiring.averspay.kg
+    FINIK_API_URL: str = os.getenv("FINIK_API_URL", "https://api.acquiring.averspay.kg")
+    # Приватный RSA-ключ (содержимое .pem целиком, многострочное)
+    FINIK_PRIVATE_PEM: str = os.getenv("FINIK_PRIVATE_PEM", "")
+    # ID счёта Finik, куда зачисляются средства
+    FINIK_ACCOUNT_ID: str = os.getenv("FINIK_ACCOUNT_ID", "")
+    # Публичный ключ Finik для проверки подписи входящих webhook'ов (PEM).
+    # Пока не выдан — проверка подписи пропускается с предупреждением в логах.
+    FINIK_PUBLIC_KEY: str = os.getenv("FINIK_PUBLIC_KEY", "")
+    FINIK_VERIFY_WEBHOOK_SIGNATURE: bool = os.getenv("FINIK_VERIFY_WEBHOOK_SIGNATURE", "True") == "True"
+
+    # Payment settings
     SUBSCRIPTION_DURATION_DAYS: int = 30  # Длительность подписки в днях
     
     # ✅ НОВОЕ: Email settings для верификации
@@ -160,24 +168,19 @@ class Settings(BaseSettings):
     @validator("HOST_URL")
     def validate_host_url(cls, v):
         if not v:
-            raise ValueError("HOST_URL must be set - localhost is not supported for Robokassa payments!")
-        
+            raise ValueError("HOST_URL must be set - payment callbacks require a public URL!")
+
         if not v.startswith(("http://", "https://")):
             raise ValueError("HOST_URL must start with http:// or https://")
-        
-        # ✅ СТРОГАЯ проверка на localhost
+
+        # ✅ СТРОГАЯ проверка на localhost (webhook Finik требует публичный https)
         localhost_indicators = ["localhost", "127.0.0.1", "0.0.0.0", ".local"]
         if any(indicator in v.lower() for indicator in localhost_indicators):
             raise ValueError(
-                "HOST_URL cannot be localhost or local domain - Robokassa requires public access! "
+                "HOST_URL cannot be localhost or local domain - Finik webhooks require public access! "
                 "Use public domain like https://yourdomain.com"
             )
-        
-        # ✅ Проверка на правильный порт (Robokassa работает только с 80/443)
-        if ":8000" in v or ":5000" in v or ":3000" in v:
-            print(f"⚠️ WARNING: HOST_URL contains development port ({v}). "
-                  f"Robokassa only works with ports 80/443!")
-        
+
         return v
     
     @validator("DATABASE_URL")
@@ -193,108 +196,20 @@ class Settings(BaseSettings):
             print("⚠️ WARNING: EMAIL_PASSWORD is not set - email verification will not work!")
         return v
     
-    @validator("ROBOKASSA_MERCHANT_LOGIN")
-    def validate_robokassa_merchant(cls, v):
+    @validator("FINIK_ACCOUNT_ID")
+    def validate_finik_config(cls, v, values):
+        """Мягкая проверка конфигурации Finik — не роняем приложение, только предупреждаем."""
+        missing = []
+        if not values.get("FINIK_API_KEY"):
+            missing.append("FINIK_API_KEY")
+        if not values.get("FINIK_PRIVATE_PEM"):
+            missing.append("FINIK_PRIVATE_PEM")
         if not v:
-            raise ValueError(
-                "ROBOKASSA_MERCHANT_LOGIN must be set! "
-                "Get it from Robokassa personal cabinet -> My Shops"
-            )
-        
-        # ✅ Проверка на демо-значения
-        if v.lower() in ["demo", "test", "example", "merchant"]:
-            print(f"⚠️ WARNING: Using demo Robokassa merchant login '{v}' - this will cause payment errors!")
-        
+            missing.append("FINIK_ACCOUNT_ID")
+        if missing:
+            print(f"⚠️ WARNING: Finik payments not fully configured, missing: {', '.join(missing)}")
         return v
-    
-    @validator("ROBOKASSA_PASSWORD_1")
-    def validate_robokassa_password1(cls, v):
-        if not v:
-            raise ValueError(
-                "ROBOKASSA_PASSWORD_1 must be set! "
-                "Create it in Robokassa personal cabinet -> My Shops -> Technical Settings"
-            )
-        
-        # ✅ Проверка на демо-значения и слабые пароли
-        weak_passwords = ["password_1", "password1", "demo", "test", "123456", "qwerty"]
-        if v.lower() in weak_passwords:
-            print(f"⚠️ WARNING: Using weak/demo Robokassa password 1 - this will cause payment errors!")
-        
-        # ✅ Проверка требований Robokassa к паролю
-        if len(v) < 8:
-            raise ValueError("ROBOKASSA_PASSWORD_1 must be at least 8 characters long")
-        
-        if not any(c.isdigit() for c in v):
-            print(f"⚠️ WARNING: ROBOKASSA_PASSWORD_1 should contain at least one digit")
-        
-        if not any(c.isalpha() for c in v):
-            print(f"⚠️ WARNING: ROBOKASSA_PASSWORD_1 should contain at least one letter")
-        
-        return v
-        
-    @validator("ROBOKASSA_PASSWORD_2")
-    def validate_robokassa_password2(cls, v):
-        if not v:
-            raise ValueError(
-                "ROBOKASSA_PASSWORD_2 must be set! "
-                "Create it in Robokassa personal cabinet -> My Shops -> Technical Settings"
-            )
-        
-        # ✅ Проверка на демо-значения и слабые пароли
-        weak_passwords = ["password_2", "password2", "demo", "test", "123456", "qwerty"]
-        if v.lower() in weak_passwords:
-            print(f"⚠️ WARNING: Using weak/demo Robokassa password 2 - this will cause payment errors!")
-        
-        # ✅ Проверка требований Robokassa к паролю
-        if len(v) < 8:
-            raise ValueError("ROBOKASSA_PASSWORD_2 must be at least 8 characters long")
-        
-        if not any(c.isdigit() for c in v):
-            print(f"⚠️ WARNING: ROBOKASSA_PASSWORD_2 should contain at least one digit")
-        
-        if not any(c.isalpha() for c in v):
-            print(f"⚠️ WARNING: ROBOKASSA_PASSWORD_2 should contain at least one letter")
-        
-        return v
-    
-    @validator("ROBOKASSA_PASSWORD_2")
-    def validate_passwords_different(cls, v, values):
-        """Проверяем, что пароли разные"""
-        password1 = values.get('ROBOKASSA_PASSWORD_1')
-        if password1 and v == password1:
-            raise ValueError(
-                "ROBOKASSA_PASSWORD_1 and ROBOKASSA_PASSWORD_2 must be different! "
-                "Robokassa requires different passwords for initialization and notification."
-            )
-        return v
-    
-    # ✅ НОВЫЙ validator для проверки всей конфигурации Robokassa
-    @validator("ROBOKASSA_TEST_MODE")
-    def validate_robokassa_config(cls, v, values):
-        """Финальная проверка всей конфигурации Robokassa"""
-        
-        # Проверяем, что все параметры заданы
-        required_params = ['ROBOKASSA_MERCHANT_LOGIN', 'ROBOKASSA_PASSWORD_1', 'ROBOKASSA_PASSWORD_2', 'HOST_URL']
-        missing_params = []
-        
-        for param in required_params:
-            if not values.get(param):
-                missing_params.append(param)
-        
-        if missing_params:
-            raise ValueError(
-                f"Missing required Robokassa parameters: {', '.join(missing_params)}. "
-                f"Please check your .env file and Robokassa personal cabinet settings."
-            )
-        
-        # Если тестовый режим выключен, предупреждаем
-        if not v:
-            print("🚀 PRODUCTION MODE: Robokassa test mode is disabled - real payments will be processed!")
-        else:
-            print("🧪 TEST MODE: Robokassa test mode is enabled - no real payments will be charged")
-        
-        return v
-    
+
     # ✅ НОВЫЙ validator для Voximplant Partner Integration
     @validator("VOXIMPLANT_PARENT_API_KEY")
     def validate_voximplant_config(cls, v, values):

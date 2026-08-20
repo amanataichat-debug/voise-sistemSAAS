@@ -1,20 +1,20 @@
 # claude-index — оглавление документации для AI-агентов
 
-Это корневой индекс документации проекта **Voicyfy (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI Realtime, Google Gemini Live, xAI Grok, Cartesia, ElevenLabs; телефония Voximplant; биллинг Robokassa).
+Это корневой индекс документации проекта **Voicyfy (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI Realtime, Google Gemini Live, xAI Grok, Cartesia, ElevenLabs; телефония Voximplant; биллинг Finik (KGS)).
 
 Документация лежит рядом с кодом: в каждой значимой папке — файл `claude-*.md`, объясняющий её назначение, состав, точки входа, связи и подводные камни. Начинайте с этого индекса, спускайтесь к нужному слою.
 
 ## С чего начать (точки входа проекта)
 - `main.py` — запуск Uvicorn/Gunicorn, авто-миграции Alembic при старте, кастомный import-redirect (`core.*` → `backend.core.*`).
 - `app.py` — инициализация FastAPI: регистрация всех роутеров (строки ~168–199), middleware, startup/shutdown-события, монтирование статики, запуск планировщиков.
-- `CLAUDE.md` — обзор проекта и техстека (учтите расхождения: платёжка реально **Robokassa**, не YooKassa).
+- `CLAUDE.md` — обзор проекта и техстека (платёжка — **Finik**, finik.kg).
 - `gunicorn_config.py`, `render.yaml`, `requirements.txt`, `runtime.txt` — деплой (Render, Frankfurt) и зависимости.
 
 ## Backend
 - [`backend/claude-backend.md`](backend/claude-backend.md) — корневой пакет приложения, карта слоёв и потоков (HTTP/WS/агент).
 
 ### Транспортный слой
-- [`backend/api/claude-api.md`](backend/api/claude-api.md) — FastAPI-роутеры: все HTTP- и WS-эндпоинты, префиксы, webhooks (Robokassa, Voximplant, Telegram).
+- [`backend/api/claude-api.md`](backend/api/claude-api.md) — FastAPI-роутеры: все HTTP- и WS-эндпоинты, префиксы, webhooks (Finik, Voximplant, Telegram).
 - [`backend/websockets/claude-websockets.md`](backend/websockets/claude-websockets.md) — реал-тайм голосовые хендлеры и WS-клиенты провайдеров + мост телефонии Voximplant.
 
 ### Бизнес-логика
@@ -58,5 +58,5 @@
 - **Лимит ассистентов — один на всех провайдеров.** Считается в `services/assistant_limit_service.py` (единственный источник правды для `check_assistant_limit` и `GET /api/subscriptions/assistants-usage`). Голосовые ассистенты мастера Voicyfy Agent из подсчёта исключены.
 - **Voicyfy Agent v5.0** — автономный обзвон: оркестратор (`services/agent_orchestrator`) + планировщик звонков (`core/task_scheduler`) + кредиты (`services/credit_service`). Это самостоятельная подсистема со своим биллингом (кредиты, не подписочные минуты).
 - **Версионные дубликаты** в `websockets/` — ориентируйтесь на то, что реально импортирует роутер, а не на имя/комментарий файла.
-- **Платежи — Robokassa**, не YooKassa. **Пароли хешируются SHA-256 без соли**; API-ключи и Voximplant-креды в БД без шифрования.
+- **Платежи — Finik (finik.kg, KGS)**. **Пароли хешируются SHA-256 без соли**; API-ключи и Voximplant-креды в БД без шифрования.
 - **Import-redirect** в `main.py` делает эквивалентными `from backend.x...` и `from x...`.

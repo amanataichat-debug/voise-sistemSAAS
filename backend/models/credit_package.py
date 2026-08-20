@@ -22,6 +22,8 @@ class CreditPackage(Base, BaseModel):
     product = Column(String(20), default="orchestrator", nullable=False)
     name = Column(String(100), nullable=False)
     credits = Column(Integer, nullable=False)
+    # ⚠️ Историческое имя колонки: с миграции на Finik значение хранится в СОМАХ (KGS).
+    # Смена цены пакета: UPDATE credit_packages SET price_rub = <сом> WHERE code = '<код>';
     price_rub = Column(Numeric(10, 2), nullable=False)
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
@@ -37,8 +39,8 @@ class CreditPackage(Base, BaseModel):
             "product": self.product or "orchestrator",
             "name": self.name,
             "credits": self.credits,
-            "price_rub": float(self.price_rub),
-            "price_formatted": f"{int(self.price_rub):,} ₽".replace(",", " "),
+            "price_rub": float(self.price_rub),  # в сомах (KGS), имя поля историческое
+            "price_formatted": f"{int(self.price_rub):,} сом".replace(",", " "),
             "description": self.description,
             "sort_order": self.sort_order,
         }
