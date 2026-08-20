@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Исходящие звонки — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --success-green: #10b981;
+      --error-red: #ef4444;
+      --warning-orange: #f59e0b;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn-success {
+      background-color: var(--success-green);
+      color: var(--white);
+    }
+    
+    .btn-success:hover {
+      background-color: #059669;
+    }
+    
+    .btn-danger {
+      background-color: var(--error-red);
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Карточки */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .card-description {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+    
+    /* Форма */
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    textarea.form-control {
+      resize: vertical;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      line-height: 1.5;
+    }
+    
+    .form-helper {
+      margin-top: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+    
+    /* Кнопки настроек */
+    .settings-buttons {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid var(--success-green);
+    }
+    
+    .notification-error {
+      border-left: 4px solid var(--error-red);
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-warning {
+      border-left: 4px solid var(--warning-orange);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: var(--success-green);
+    }
+    
+    .notification-error .notification-icon {
+      color: var(--error-red);
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-warning .notification-icon {
+      color: var(--warning-orange);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Состояние загрузки */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Список ассистентов */
+    .assistants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    
+    .assistant-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      border: 2px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .assistant-option:hover {
+      background-color: var(--bg-blue-light);
+      border-color: var(--primary-blue-light);
+    }
+    
+    .assistant-option.selected {
+      border-color: var(--primary-blue);
+      background-color: var(--bg-blue-light);
+    }
+    
+    .assistant-option input {
+      margin: 0;
+    }
+    
+    .assistant-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .assistant-name {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .assistant-id {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      font-family: monospace;
+    }
+    
+    /* Прогресс-бар и лог */
+    .progress-container {
+      background-color: var(--bg-blue-light);
+      border: 1px solid var(--primary-blue-light);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+      font-weight: 500;
+    }
+    
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background-color: var(--white);
+      border-radius: 3px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-blue), var(--primary-blue-light));
+      width: 0%;
+      transition: width 0.3s ease;
+      border-radius: 3px;
+    }
+    
+    .current-call {
+      margin-top: 0.75rem;
+      padding: 0.5rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .current-call i {
+      color: var(--primary-blue);
+    }
+    
+    .calls-log {
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background-color: var(--white);
+    }
+    
+    .log-entry {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    
+    .log-entry.success {
+      background-color: #f0fdf4;
+    }
+    
+    .log-entry.error {
+      background-color: #fef2f2;
+    }
+    
+    .log-icon {
+      font-size: 1rem;
+    }
+    
+    .log-entry.success .log-icon {
+      color: var(--success-green);
+    }
+    
+    .log-entry.error .log-icon {
+      color: var(--error-red);
+    }
+    
+    .log-phone {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .log-message {
+      color: var(--text-gray);
+      flex: 1;
+    }
+    
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+      }
+      
+      .content-container {
+        padding: 1rem;
+      }
+      
+      .assistants-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .settings-buttons {
+        flex-direction: column;
+      }
+      
+      .settings-buttons .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-toggle {
+        display: block;
+      }
+    }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 49;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay.show {
+        display: block;
+      }
+    }
+    
+    /* Инструкции */
+    .instructions {
+      background-color: var(--bg-blue-light);
+      border: 1px solid var(--primary-blue-light);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .instructions h4 {
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .instructions ol {
+      padding-left: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      line-height: 1.6;
+    }
+    
+    .instructions li {
+      margin-bottom: 0.5rem;
+    }
+    
+    /* Статус настроек */
+    .settings-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
+    }
+    
+    .settings-status.saved {
+      background-color: #f0fdf4;
+      color: var(--success-green);
+      border: 1px solid #86efac;
+    }
+    
+    .settings-status.not-saved {
+      background-color: #fef2f2;
+      color: var(--error-red);
+      border: 1px solid #fecaca;
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Overlay для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item locked-feature" id="gemini-agents-nav-item">
+        <i class="fas fa-gem"></i> Gemini агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item">
+         <i class="fas fa-comments"></i> Диалоги
+      </a>
+      <a href="/static/crm.html" class="sidebar-nav-item">
+         <i class="fas fa-address-book"></i> CRM
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="page-title">Исходящие звонки</h1>
+      </div>
+      
+      <div class="page-actions">
+        <div class="user-menu">
+          <button class="user-button" id="user-menu-button">
+            <div class="user-avatar" id="user-avatar">АП</div>
+            <span class="user-name" id="user-name">Пользователь</span>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="/static/settings.html" class="dropdown-item">
+              <i class="fas fa-user"></i> Профиль
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/" class="dropdown-item">
+              <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Инструкции -->
+      <div class="instructions">
+        <h4>📋 Как запустить массовый обзвон:</h4>
+        <ol>
+          <li>Сохраните настройки Voximplant (Account ID, API Key, Rule ID, Caller ID)</li>
+          <li>Выберите голосового ассистента</li>
+          <li>Введите номера для обзвона (каждый с новой строки)</li>
+          <li>Нажмите "Запустить обзвон"</li>
+        </ol>
+      </div>
+      
+      <!-- Настройки Voximplant -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Настройки Voximplant</h2>
+          <p class="card-description">Сохраните настройки один раз для использования во всех обзвонах</p>
+          
+          <!-- Статус настроек -->
+          <div id="settings-status" class="settings-status not-saved" style="display: none;">
+            <i class="fas fa-exclamation-circle"></i>
+            <span>Настройки не сохранены</span>
+          </div>
+        </div>
+        
+        <form id="voximplant-settings-form">
+          <!-- Voximplant Account ID -->
+          <div class="form-group">
+            <label for="account-id">Voximplant Account ID *</label>
+            <input 
+              type="text" 
+              id="account-id" 
+              class="form-control" 
+              placeholder="12345678"
+              required
+            >
+            <p class="form-helper">
+              Ваш Account ID из Voximplant (Tools → API Keys)
+            </p>
+          </div>
+          
+          <!-- Voximplant API Key -->
+          <div class="form-group">
+            <label for="api-key">Voximplant API Key *</label>
+            <input 
+              type="text" 
+              id="api-key" 
+              class="form-control" 
+              placeholder="ваш_api_key"
+              required
+            >
+            <p class="form-helper">
+              Ваш API Key из Voximplant (Tools → API Keys)
+            </p>
+          </div>
+          
+          <!-- Rule ID -->
+          <div class="form-group">
+            <label for="rule-id">Rule ID Voximplant *</label>
+            <input 
+              type="text" 
+              id="rule-id" 
+              class="form-control" 
+              placeholder="Например: 123456"
+              required
+            >
+            <p class="form-helper">
+              ID правила из Voximplant (Applications → Routing → Rule ID)
+            </p>
+          </div>
+          
+          <!-- Caller ID -->
+          <div class="form-group">
+            <label for="caller-id">Caller ID (от какого номера звоним) *</label>
+            <input 
+              type="tel" 
+              id="caller-id" 
+              class="form-control" 
+              placeholder="+1234567890"
+              required
+            >
+            <p class="form-helper">
+              Ваш верифицированный номер в Voximplant
+            </p>
+          </div>
+          
+          <!-- Кнопки сохранения/удаления -->
+          <div class="settings-buttons">
+            <button type="button" class="btn btn-primary" id="save-settings-btn">
+              <i class="fas fa-save"></i> Сохранить настройки
+            </button>
+            <button type="button" class="btn btn-danger" id="delete-settings-btn" style="display: none;">
+              <i class="fas fa-trash"></i> Удалить настройки
+            </button>
+          </div>
+        </form>
+      </div>
+      
+      <!-- Форма массового обзвона -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Массовый обзвон</h2>
+          <p class="card-description">Запустите обзвон нескольких номеров с интервалом 1 секунда</p>
+        </div>
+        
+        <form id="outbound-call-form">
+          <!-- Выбор ассистента -->
+          <div class="form-group">
+            <label>Выберите голосового ассистента *</label>
+            <div id="assistants-list" class="assistants-grid">
+              <!-- Загрузится динамически -->
+            </div>
+            <p class="form-helper">
+              Выберите ассистента, который будет вести разговор
+            </p>
+          </div>
+          
+          <!-- Номера телефонов - TEXTAREA -->
+          <div class="form-group">
+            <label for="phone-numbers">Номера телефонов (каждый с новой строки) *</label>
+            <textarea 
+              id="phone-numbers" 
+              class="form-control" 
+              rows="6"
+              placeholder="+79001234567&#10;+79009876543&#10;+79001111111"
+              required
+            ></textarea>
+            <p class="form-helper">
+              Введите номера в международном формате, каждый с новой строки (максимум 50 номеров)
+            </p>
+          </div>
+          
+          <!-- Прогресс-бар -->
+          <div id="call-progress-container" class="progress-container" style="display: none;">
+            <div class="progress-header">
+              <span><i class="fas fa-chart-line"></i> Прогресс обзвона</span>
+              <span id="progress-text">0 / 0</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <div id="current-calling" class="current-call">
+              <i class="fas fa-phone-volume"></i>
+              <span>Ожидание...</span>
+            </div>
+          </div>
+          
+          <!-- Лог звонков -->
+          <div id="calls-log" class="calls-log" style="display: none;">
+            <!-- Логи появятся здесь -->
+          </div>
+          
+          <!-- Кнопка запуска -->
+          <button type="submit" class="btn btn-success" id="start-calls-btn" style="width: 100%; padding: 1rem; font-size: 1rem; margin-top: 1rem;">
+            <i class="fas fa-phone"></i> Запустить обзвон
+          </button>
+        </form>
+      </div>
+      
+      <!-- Дополнительная информация -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Информация о настройке</h3>
+        </div>
+        
+        <div style="color: var(--text-gray); line-height: 1.6;">
+          <p style="margin-bottom: 1rem;">
+            <strong>Что происходит при запуске обзвона:</strong>
+          </p>
+          <ol style="padding-left: 1.5rem; margin-bottom: 1rem;">
+            <li style="margin-bottom: 0.5rem;">Система запускает звонки последовательно с интервалом 1 секунда</li>
+            <li style="margin-bottom: 0.5rem;">Голосовой ассистент ведет разговор согласно настройкам</li>
+          </ol>
+          
+          <p style="margin-top: 1.5rem;">
+            <strong>Примечание:</strong> Убедитесь, что у вас есть активная подписка Voximplant и достаточно средств на балансе для совершения звонков.
+          </p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+
+    <!-- Индикатор загрузки -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+  </main>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Элементы
+      const settingsForm = document.getElementById('voximplant-settings-form');
+      const callForm = document.getElementById('outbound-call-form');
+      const assistantsList = document.getElementById('assistants-list');
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+      const userMenuButton = document.getElementById('user-menu-button');
+      const userDropdown = document.getElementById('user-dropdown');
+      const userEmailDisplay = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      
+      // Элементы настроек
+      const accountIdInput = document.getElementById('account-id');
+      const apiKeyInput = document.getElementById('api-key');
+      const ruleIdInput = document.getElementById('rule-id');
+      const callerIdInput = document.getElementById('caller-id');
+      const saveSettingsBtn = document.getElementById('save-settings-btn');
+      const deleteSettingsBtn = document.getElementById('delete-settings-btn');
+      const settingsStatus = document.getElementById('settings-status');
+      
+      // Элементы прогресс-бара
+      const progressContainer = document.getElementById('call-progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      const currentCalling = document.getElementById('current-calling');
+      const callsLog = document.getElementById('calls-log');
+      const startBtn = document.getElementById('start-calls-btn');
+      
+      let selectedAssistantId = null;
+      let hasSettings = false;
+      
+      // API функции
+      const api = {
+        baseUrl: '/api',
+        
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string') {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+          
+          if (response.status === 401) {
+            localStorage.removeItem('auth_token');
+            window.location.href = '/static/login.html';
+            throw new Error('Требуется авторизация');
+          }
+          
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.detail || 'Произошла ошибка');
+          }
+          
+          return data;
+        },
+        
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+        
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        }
+      };
+      
+      // UI функции
+      function setLoading(loading) {
+        loadingOverlay.style.display = loading ? 'flex' : 'none';
+        
+        const buttons = document.querySelectorAll('.btn');
+        buttons.forEach(button => {
+          button.disabled = loading;
+        });
+      }
+      
+      function showNotification(message, type = 'success') {
+        notification.classList.remove('notification-success', 'notification-error', 'notification-info', 'notification-warning');
+        notification.classList.add(`notification-${type}`);
+        
+        const iconElement = notification.querySelector('.notification-icon i');
+        iconElement.className = type === 'success' ? 'fas fa-check-circle' : 
+                             type === 'error' ? 'fas fa-exclamation-circle' : 
+                             type === 'warning' ? 'fas fa-exclamation-triangle' :
+                             'fas fa-info-circle';
+        
+        notificationMessage.textContent = message;
+        notification.style.display = 'flex';
+        
+        setTimeout(() => {
+          notification.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+          hideNotification();
+        }, 5000);
+      }
+      
+      function hideNotification() {
+        notification.classList.remove('show');
+        setTimeout(() => {
+          notification.style.display = 'none';
+        }, 300);
+      }
+      
+      function addLogEntry(phoneNumber, status, message) {
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${status}`;
+        
+        const icon = status === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+        
+        logEntry.innerHTML = `
+          <i class="fas ${icon} log-icon"></i>
+          <span class="log-phone">${phoneNumber}</span>
+          <span class="log-message">${message}</span>
+        `;
+        
+        callsLog.insertBefore(logEntry, callsLog.firstChild);
+      }
+      
+      function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      
+      function updateSettingsStatus(saved) {
+        hasSettings = saved;
+        
+        if (saved) {
+          settingsStatus.className = 'settings-status saved';
+          settingsStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Настройки сохранены ✓</span>';
+          deleteSettingsBtn.style.display = 'inline-flex';
+        } else {
+          settingsStatus.className = 'settings-status not-saved';
+          settingsStatus.innerHTML = '<i class="fas fa-exclamation-circle"></i><span>Настройки не сохранены</span>';
+          deleteSettingsBtn.style.display = 'none';
+        }
+        
+        settingsStatus.style.display = 'inline-flex';
+      }
+      
+      // Загрузка настроек Voximplant
+      async function loadVoximplantSettings() {
+        try {
+          const settings = await api.get('/users/voximplant-settings');
+          
+          if (settings.account_id) {
+            accountIdInput.value = settings.account_id || '';
+            apiKeyInput.value = settings.api_key || '';  // ✅ Полный ключ
+            ruleIdInput.value = settings.rule_id || '';
+            callerIdInput.value = settings.caller_id || '';
+            
+            updateSettingsStatus(true);
+            showNotification('Настройки Voximplant загружены', 'info');
+          } else {
+            updateSettingsStatus(false);
+          }
+        } catch (error) {
+          console.error('Ошибка загрузки настроек:', error);
+          updateSettingsStatus(false);
+        }
+      }
+      
+      // Сохранение настроек
+      saveSettingsBtn.addEventListener('click', async () => {
+        try {
+          const accountId = accountIdInput.value.trim();
+          const apiKey = apiKeyInput.value.trim();
+          const ruleId = ruleIdInput.value.trim();
+          const callerId = callerIdInput.value.trim();
+          
+          // Валидация
+          if (!accountId || !apiKey || !ruleId || !callerId) {
+            showNotification('Заполните все поля настроек', 'error');
+            return;
+          }
+          
+          setLoading(true);
+          
+          await api.put('/users/voximplant-settings', {
+            account_id: accountId,
+            api_key: apiKey,
+            rule_id: ruleId,
+            caller_id: callerId
+          });
+          
+          showNotification('Настройки Voximplant успешно сохранены!', 'success');
+          
+          // Перезагружаем настройки
+          await loadVoximplantSettings();
+        } catch (error) {
+          showNotification(error.message || 'Ошибка при сохранении настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      });
+      
+      // Удаление настроек
+      deleteSettingsBtn.addEventListener('click', async () => {
+        if (!confirm('Вы уверены, что хотите удалить сохраненные настройки Voximplant?')) {
+          return;
+        }
+        
+        try {
+          setLoading(true);
+          
+          await api.delete('/users/voximplant-settings');
+          
+          // Очищаем поля
+          accountIdInput.value = '';
+          apiKeyInput.value = '';
+          ruleIdInput.value = '';
+          callerIdInput.value = '';
+          
+          updateSettingsStatus(false);
+          showNotification('Настройки Voximplant удалены', 'success');
+        } catch (error) {
+          showNotification(error.message || 'Ошибка при удалении настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      });
+      
+      // Загрузка списка ассистентов
+      async function loadAssistants() {
+        try {
+          setLoading(true);
+          // include_agent_voices=true — с этой страницы можно позвонить и
+          // голосом агента обзвона, хотя в списках ассистентов он скрыт.
+          const assistants = await api.get('/assistants?include_agent_voices=true');
+          
+          if (assistants.length === 0) {
+            assistantsList.innerHTML = `
+              <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-gray);">
+                <i class="fas fa-robot" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                <p>У вас еще нет агентов. <a href="/static/agents.html" style="color: var(--primary-blue);">Создайте агента</a></p>
+              </div>
+            `;
+            return;
+          }
+          
+          assistantsList.innerHTML = '';
+          
+          assistants.forEach((assistant, index) => {
+            const option = document.createElement('label');
+            option.className = 'assistant-option';
+            if (index === 0) {
+              option.classList.add('selected');
+              selectedAssistantId = assistant.id;
+            }
+            
+            option.innerHTML = `
+              <input type="radio" name="assistant" value="${assistant.id}" ${index === 0 ? 'checked' : ''}>
+              <div class="assistant-info">
+                <div class="assistant-name">${assistant.name}</div>
+                <div class="assistant-id">${assistant.id}</div>
+              </div>
+            `;
+            
+            option.addEventListener('click', function() {
+              document.querySelectorAll('.assistant-option').forEach(opt => {
+                opt.classList.remove('selected');
+              });
+              this.classList.add('selected');
+              this.querySelector('input').checked = true;
+              selectedAssistantId = assistant.id;
+            });
+            
+            assistantsList.appendChild(option);
+          });
+        } catch (error) {
+          showNotification(error.message || 'Ошибка при загрузке ассистентов', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      // Загрузка информации о пользователе
+      async function loadUserInfo() {
+        try {
+          const userInfo = await api.get('/users/me');
+          
+          const firstName = userInfo.first_name || '';
+          const lastName = userInfo.last_name || '';
+          
+          if (firstName || lastName) {
+            userEmailDisplay.textContent = firstName + (lastName ? ` ${lastName}` : '');
+            
+            let initials = '';
+            if (firstName) initials += firstName[0];
+            if (lastName) initials += lastName[0];
+            userAvatar.textContent = initials.toUpperCase();
+          } else if (userInfo.company_name) {
+            userEmailDisplay.textContent = userInfo.company_name;
+            userAvatar.textContent = userInfo.company_name.substring(0, 2).toUpperCase();
+          } else {
+            userEmailDisplay.textContent = userInfo.email;
+            userAvatar.textContent = userInfo.email.substring(0, 2).toUpperCase();
+          }
+        } catch (error) {
+          console.error('Ошибка загрузки информации о пользователе:', error);
+        }
+      }
+      
+      // Обработчик отправки формы - МАССОВЫЙ ОБЗВОН
+      callForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        // КРИТИЧНО: Проверяем, сохранены ли настройки
+        if (!hasSettings) {
+          showNotification('⚠️ Сначала сохраните настройки Voximplant!', 'warning');
+          // Скроллим к форме настроек
+          settingsForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        
+        // Получаем номера из textarea
+        const phoneNumbersText = document.getElementById('phone-numbers').value;
+        const phoneNumbers = phoneNumbersText
+          .split('\n')
+          .map(num => num.trim())
+          .filter(num => num.length > 0);
+        
+        // Валидация
+        if (phoneNumbers.length === 0) {
+          showNotification('Введите хотя бы один номер телефона', 'error');
+          return;
+        }
+        
+        if (phoneNumbers.length > 50) {
+          showNotification('Максимум 50 номеров за один раз', 'error');
+          return;
+        }
+        
+        if (!selectedAssistantId) {
+          showNotification('Выберите голосового ассистента', 'error');
+          return;
+        }
+        
+        // Получаем данные из формы (используем сохраненные настройки)
+        const accountId = accountIdInput.value.trim();
+        const apiKey = apiKeyInput.value.trim();
+        const ruleId = ruleIdInput.value.trim();
+        const callerId = callerIdInput.value.trim();
+        
+        // Показываем прогресс
+        progressContainer.style.display = 'block';
+        callsLog.style.display = 'block';
+        callsLog.innerHTML = '';
+        startBtn.disabled = true;
+        
+        progressBar.style.width = '0%';
+        progressText.textContent = `0 / ${phoneNumbers.length}`;
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        showNotification(`Запускаем обзвон ${phoneNumbers.length} номеров...`, 'info');
+        
+        // Запускаем обзвон с таймаутом 1 секунда
+        for (let i = 0; i < phoneNumbers.length; i++) {
+          const phoneNumber = phoneNumbers[i];
+          const progress = Math.round(((i + 1) / phoneNumbers.length) * 100);
+          
+          // Обновляем прогресс
+          progressBar.style.width = `${progress}%`;
+          progressText.textContent = `${i + 1} / ${phoneNumbers.length}`;
+          currentCalling.innerHTML = `
+            <i class="fas fa-phone-volume"></i>
+            <span>Звоним: <strong>${phoneNumber}</strong></span>
+          `;
+          
+          try {
+            // Формируем данные
+            const scriptCustomData = JSON.stringify({
+              phone_number: phoneNumber,
+              assistant_id: selectedAssistantId,
+              caller_id: callerId
+            });
+            
+            // Отправляем запрос
+            const response = await api.post('/voximplant/start-outbound-call', {
+              account_id: accountId,
+              api_key: apiKey,
+              rule_id: ruleId,
+              script_custom_data: scriptCustomData
+            });
+            
+            if (response.success) {
+              successCount++;
+              addLogEntry(phoneNumber, 'success', `✓ Успешно запущен (ID: ${response.call_session_history_id || 'N/A'})`);
+            } else {
+              errorCount++;
+              addLogEntry(phoneNumber, 'error', `✗ Ошибка: ${response.message || 'Неизвестная ошибка'}`);
+            }
+          } catch (error) {
+            errorCount++;
+            addLogEntry(phoneNumber, 'error', `✗ Ошибка: ${error.message || 'Неизвестная ошибка'}`);
+          }
+          
+          // Задержка 1 секунда перед следующим звонком (кроме последнего)
+          if (i < phoneNumbers.length - 1) {
+            await sleep(1000);
+          }
+        }
+        
+        // Завершение
+        currentCalling.innerHTML = `
+          <i class="fas fa-check-circle" style="color: var(--success-green);"></i>
+          <span><strong>Обзвон завершен!</strong> Успешно: ${successCount}, Ошибок: ${errorCount}</span>
+        `;
+        
+        startBtn.disabled = false;
+        
+        if (errorCount === 0) {
+          showNotification(`Все ${successCount} звонков успешно запущены!`, 'success');
+        } else if (successCount > 0) {
+          showNotification(`Завершено: ${successCount} успешно, ${errorCount} с ошибками`, 'info');
+        } else {
+          showNotification(`Обзвон завершен с ошибками (${errorCount})`, 'error');
+        }
+      });
+      
+      // Мобильное меню
+      mobileMenuToggle.addEventListener('click', function() {
+        sidebar.classList.toggle('mobile-open');
+        sidebarOverlay.classList.toggle('show');
+      });
+      
+      sidebarOverlay.addEventListener('click', function() {
+        sidebar.classList.remove('mobile-open');
+        sidebarOverlay.classList.remove('show');
+      });
+      
+      // Выпадающее меню пользователя
+      userMenuButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target) && !userMenuButton.contains(e.target)) {
+          userDropdown.classList.remove('show');
+        }
+      });
+      
+      // Закрытие уведомления
+      notificationClose.addEventListener('click', hideNotification);
+      
+      // Проверка авторизации
+      if (!api.isAuthenticated()) {
+        window.location.href = '/static/login.html';
+        return;
+      }
+      
+      // Инициализация
+      loadUserInfo();
+      loadVoximplantSettings(); // Загружаем настройки при старте
+      loadAssistants();
+    });
+  </script>
+</body>
+</html>

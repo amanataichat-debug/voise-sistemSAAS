@@ -1,0 +1,3452 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini агенты — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --gemini-gradient: linear-gradient(135deg, #8B5CF6, #EC4899);
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo span {
+      font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #2563eb;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .badge-realtime {
+      margin-left: auto;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    /* Заблокированные фичи по тарифу */
+    .plan-locked-feature {
+      opacity: 0.6;
+      cursor: pointer !important;
+      position: relative;
+    }
+
+    .plan-locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    .plan-locked-feature:hover {
+      opacity: 0.8;
+      background-color: var(--bg-blue-light);
+    }
+
+    /* МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ */
+    .feature-blocked-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .feature-blocked-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .feature-blocked-modal .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .feature-blocked-modal .modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 450px;
+      width: 100%;
+      animation: modal-slide-up 0.3s ease-out;
+      overflow: hidden;
+    }
+
+    .feature-blocked-modal .modal-header {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-header i {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .feature-blocked-modal .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .feature-blocked-modal .modal-body {
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-body p {
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .feature-blocked-modal .current-plan-info {
+      background-color: var(--bg-light);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+    }
+
+    .feature-blocked-modal .current-plan-info span {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .feature-blocked-modal .required-plans {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .feature-blocked-modal .required-plans strong {
+      color: var(--primary-blue);
+    }
+
+    .feature-blocked-modal .modal-footer {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .feature-blocked-modal .modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    @keyframes modal-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes modal-slide-up {
+      from { 
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    /* API ключ */
+    .api-key-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: var(--bg-light);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+    
+    .api-key-label {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    
+    .api-key-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    
+    .api-key-input {
+      padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      width: 250px;
+      font-family: monospace;
+    }
+    
+    .api-key-input:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    .api-key-toggle {
+      position: absolute;
+      right: 0.5rem;
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.25rem;
+      display: flex;
+      align-items: center;
+    }
+    
+    .api-key-toggle:hover {
+      color: var(--primary-blue);
+    }
+    
+    .api-key-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .btn-icon {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    
+    .btn-icon:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: background-color 0.2s;
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: background-color 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-outline {
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn-danger {
+      background-color: #ef4444;
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Табы */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+    }
+    
+    .tab {
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    
+    .tab.active {
+      color: var(--primary-blue);
+      border-bottom-color: var(--primary-blue);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* Форма */
+    .form-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    textarea.form-control {
+      min-height: 150px;
+      resize: vertical;
+    }
+    
+    .form-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    
+    /* Селект для голоса */
+    .voice-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+    
+    .voice-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .voice-option:hover {
+      background-color: var(--bg-blue-light);
+    }
+    
+    .voice-option.selected {
+      border-color: var(--primary-blue);
+      background-color: var(--bg-blue-light);
+    }
+    
+    .voice-option input {
+      margin: 0;
+    }
+    
+    .voice-gender {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-left: auto;
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .notification-error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: #10b981;
+    }
+    
+    .notification-error .notification-icon {
+      color: #ef4444;
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Встраивание */
+    .embed-container {
+      background-color: var(--bg-light);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .embed-code {
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-top: 0.5rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      user-select: all;
+      overflow-x: auto;
+    }
+    
+    .embed-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+    
+    /* Стили для блоков виджетов */
+    .widget-type-block {
+      margin-top: 1.5rem;
+      padding: 1.25rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      background-color: var(--white);
+    }
+    
+    .widget-type-block:first-of-type {
+      margin-top: 1rem;
+    }
+    
+    .widget-type-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .widget-type-header i {
+      font-size: 1.25rem;
+    }
+    
+    .widget-type-header h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin: 0;
+    }
+    
+    .widget-type-description {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+    
+    /* Голосовой ассистент - синий акцент */
+    .widget-type-block.voice-only {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .widget-type-block.voice-only .widget-type-header i {
+      color: var(--primary-blue);
+    }
+    
+    /* Ассистент с захватом экрана - фиолетовый акцент */
+    .widget-type-block.screen-capture {
+      border-left: 4px solid #8B5CF6;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.03), rgba(236, 72, 153, 0.03));
+    }
+    
+    .widget-type-block.screen-capture .widget-type-header i {
+      color: #8B5CF6;
+    }
+    
+    .widget-type-block .embed-container {
+      margin-top: 0;
+      background-color: var(--bg-light);
+    }
+    
+    .widget-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+    }
+    
+    .widget-badge.beta {
+      background-color: rgba(139, 92, 246, 0.15);
+      color: #8B5CF6;
+    }
+    
+    /* Стили для блока ID агента */
+    .agent-id-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--primary-blue-light);
+      margin-bottom: 1rem;
+    }
+    
+    .agent-id-label {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .agent-id-value {
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: var(--primary-blue);
+      background-color: var(--white);
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      user-select: all;
+    }
+    
+    .copy-id-btn {
+      margin-left: auto;
+    }
+    
+    /* Стили для списка агентов */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    .agents-list-container {
+      margin-top: 2rem;
+    }
+    
+    .agent-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .agents-count {
+      color: var(--text-gray);
+      font-weight: 500;
+      margin: 0;
+    }
+    
+    .agent-items {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .agent-item {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+      display: flex;
+      gap: 1.25rem;
+      transition: all 0.2s;
+      position: relative;
+    }
+    
+    .agent-item:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    
+    /* Бейдж Gemini */
+    .gemini-badge {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      background: var(--gemini-gradient);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+    
+    .agent-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4a86e8, #2b59c3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    
+    .agent-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .agent-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .agent-description {
+      color: var(--text-gray);
+      margin-bottom: 0.75rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 0.95rem;
+    }
+    
+    .agent-meta {
+      display: flex;
+      gap: 1rem;
+      color: var(--text-light);
+      font-size: 0.875rem;
+    }
+    
+    .agent-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    
+    .empty-icon {
+      font-size: 3rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+    
+    .empty-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    
+    .empty-description {
+      color: var(--text-gray);
+      max-width: 500px;
+      margin: 0 auto 2rem;
+    }
+    
+    /* API Key Setup Screen */
+    .api-key-setup {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      padding: 2rem;
+    }
+    
+    .api-key-setup-icon {
+      font-size: 4rem;
+      background: var(--gemini-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1.5rem;
+    }
+    
+    .api-key-setup-title {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    
+    .api-key-setup-description {
+      color: var(--text-gray);
+      max-width: 600px;
+      text-align: center;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+    
+    .api-key-setup-steps {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: var(--shadow-md);
+      margin-bottom: 2rem;
+    }
+    
+    .api-key-setup-steps h3 {
+      margin-bottom: 1rem;
+    }
+    
+    .api-key-setup-steps ol {
+      padding-left: 1.5rem;
+      line-height: 1.8;
+    }
+    
+    .api-key-setup-steps li {
+      margin-bottom: 0.5rem;
+    }
+    
+    .api-key-setup-steps a {
+      color: var(--primary-blue);
+      text-decoration: none;
+    }
+    
+    .api-key-setup-steps a:hover {
+      text-decoration: underline;
+    }
+    
+    /* Стили для раздела тестирования */
+    .testing-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 2rem;
+    }
+    
+    .testing-container {
+      padding: 1.5rem;
+    }
+    
+    .testing-info-box {
+      background-color: var(--bg-blue-light);
+      border: 1px solid var(--primary-blue-light);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .testing-info-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-dark);
+    }
+    
+    .testing-instructions {
+      display: flex;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .testing-instruction-item {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background-color: var(--white);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+    
+    .testing-instruction-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-blue);
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    
+    .testing-instruction-content h4 {
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      color: var(--text-dark);
+    }
+    
+    .testing-instruction-content p {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+    
+    .testing-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+    
+    .testing-status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: #10b981;
+    }
+    
+    .testing-status-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+    
+    .testing-widget-note {
+      text-align: center;
+      padding: 2rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+      border: 2px dashed var(--border-color);
+    }
+    
+    .testing-widget-note i {
+      font-size: 2rem;
+      color: var(--primary-blue);
+      margin-bottom: 1rem;
+    }
+    
+    .testing-widget-note p {
+      color: var(--text-gray);
+    }
+    
+    /* Состояние загрузки */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Стили для функций */
+    .function-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .function-option:hover {
+      background-color: var(--bg-blue-light);
+    }
+
+    .function-option input {
+      margin: 0;
+    }
+
+    .function-info {
+      border: 1px solid var(--border-color);
+      margin-top: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+    }
+
+    .function-schema {
+      background-color: var(--white);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+      white-space: pre-wrap;
+    }
+
+    .prompt-example {
+      background-color: var(--white);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      margin-top: 1rem;
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .prompt-example pre {
+      background-color: var(--bg-light);
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+    }
+    
+    /* Стили для загрузки функций */
+    .functions-loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-gray);
+    }
+
+    .functions-loading i {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      animation: spin 1s linear infinite;
+    }
+
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+        flex-wrap: wrap;
+      }
+      
+      .content-container {
+        padding: 1rem;
+      }
+      
+      .page-actions {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: stretch;
+        width: 100%;
+      }
+      
+      .api-key-container {
+        width: 100%;
+        flex-wrap: wrap;
+      }
+      
+      .api-key-input {
+        width: 100%;
+      }
+      
+      .agent-items {
+        grid-template-columns: 1fr;
+      }
+      
+      .agent-item {
+        flex-direction: column;
+        text-align: center;
+      }
+      
+      .agent-actions {
+        flex-direction: row;
+        justify-content: center;
+      }
+      
+      .voice-options {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      }
+      
+      .form-footer {
+        flex-direction: column;
+      }
+      
+      .tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+      }
+      
+      .tab {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      
+      .user-dropdown {
+        right: auto;
+        left: 0;
+      }
+      
+      .agent-id-info {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .copy-id-btn {
+        margin-left: 0;
+        width: 100%;
+      }
+      
+      .testing-instructions {
+        flex-direction: column;
+        gap: 1rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .content-container {
+        padding: 0.5rem;
+      }
+      
+      .form-section {
+        padding: 1rem;
+      }
+      
+      .agent-item {
+        padding: 1rem;
+      }
+      
+      .notification {
+        right: 0.5rem;
+        left: 0.5rem;
+        max-width: none;
+      }
+    }
+
+    /* Кнопка мобильного меню */
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-toggle {
+        display: block;
+      }
+    }
+
+    /* Overlay для мобильного меню */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 49;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay.show {
+        display: block;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Overlay для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
+        <i class="fas fa-headset"></i> Агент обзвона
+        <span class="badge-realtime">new</span>
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item active">
+        <i class="fas fa-gem"></i> Gemini агенты
+      </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item">
+        <i class="fas fa-comments"></i> Диалоги
+      </a>
+      <a href="/static/crm.html" class="sidebar-nav-item" data-feature="crm">
+        <i class="fas fa-address-book"></i> CRM
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <!-- Кнопка выхода внизу -->
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="page-title">Gemini агенты</h1>
+      </div>
+      
+      <div class="page-actions">
+        <!-- API ключ контейнер -->
+        <div class="api-key-container" id="api-key-container">
+          <span class="api-key-label">API ключ:</span>
+          <div class="api-key-input-wrapper">
+            <input 
+              type="password" 
+              id="gemini-api-key-input" 
+              class="api-key-input" 
+              placeholder="Введите Google AI API ключ"
+            >
+            <button class="api-key-toggle" id="api-key-toggle" title="Показать/скрыть ключ">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+          <div class="api-key-actions">
+            <button class="btn-icon" id="save-api-key" title="Сохранить ключ">
+              <i class="fas fa-save"></i>
+            </button>
+            <button class="btn-icon" id="delete-api-key" title="Удалить ключ" style="display: none;">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        
+        <button class="btn btn-outline" id="view-embed-code" style="display: none;">
+          <i class="fas fa-code"></i> Код для встраивания
+        </button>
+        <button class="btn btn-danger" id="delete-agent" style="display: none;">
+          <i class="fas fa-trash"></i> Удалить
+        </button>
+        <button class="btn btn-primary" id="save-agent" style="display: none;">
+          <i class="fas fa-save"></i> Сохранить
+        </button>
+        <button class="btn btn-primary" id="create-new-agent-btn">
+          <i class="fas fa-plus"></i> Создать агента
+        </button>
+        
+        <div class="user-menu">
+          <button class="user-button" id="user-menu-button">
+            <div class="user-avatar" id="user-avatar">АП</div>
+            <span class="user-name" id="user-name">Пользователь</span>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="/static/settings.html" class="dropdown-item">
+              <i class="fas fa-user"></i> Профиль
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/" class="dropdown-item" id="dropdown-logout">
+              <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Экран настройки API ключа (показывается когда ключа нет) -->
+      <div id="api-key-setup-screen" style="display: none;">
+        <div class="api-key-setup">
+          <div class="api-key-setup-icon">
+            <i class="fas fa-sparkles"></i>
+          </div>
+          <h2 class="api-key-setup-title">Настройка Google Gemini API</h2>
+          <p class="api-key-setup-description">
+            Для работы с Gemini агентами необходимо добавить API ключ Google AI. 
+            Это позволит вам создавать и использовать голосовых ассистентов на базе Google Gemini.
+          </p>
+          
+          <div class="api-key-setup-steps">
+            <h3>Как получить API ключ:</h3>
+            <ol>
+              <li>Перейдите на <a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank">Google AI Studio</a></li>
+              <li>Войдите с вашей учетной записью Google</li>
+              <li>Создайте новый API ключ (кнопка "Get API Key")</li>
+              <li>Скопируйте ключ и вставьте его в поле выше</li>
+              <li>Нажмите кнопку "Сохранить"</li>
+            </ol>
+          </div>
+          
+          <p style="color: var(--text-light); font-size: 0.875rem; text-align: center;">
+            После добавления ключа вы сможете создавать и управлять Gemini агентами
+          </p>
+        </div>
+      </div>
+      
+      <!-- Контейнер для списка агентов (показывается в режиме списка) -->
+      <div id="agents-list-container" class="agents-list-container">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Ваши голосовые ассистенты на Gemini</h2>
+          </div>
+          <div id="agents-list" class="agents-list">
+            <!-- Содержимое будет заполнено динамически -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Контейнер для редактирования агента (показывается в режиме редактирования) -->
+      <div id="edit-agent-container" style="display: none;">
+        <!-- Табы -->
+        <div class="tabs">
+          <div class="tab active" data-tab="settings">Настройки</div>
+          <div class="tab" data-tab="testing">Тестирование</div>
+          <div class="tab" data-tab="embed">Встраивание</div>
+          <div class="tab" data-tab="functions">Функции</div>
+        </div>
+        
+        <!-- Таб настроек -->
+        <div class="tab-content active" id="settings-tab">
+          <form id="agent-form">
+            <div class="form-section">
+              <div class="form-group">
+                <label for="agent-name">Название агента</label>
+                <input type="text" id="agent-name" class="form-control" placeholder="Введите название" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="agent-description">Описание (опционально)</label>
+                <textarea id="agent-description" class="form-control" placeholder="Описание вашего голосового ассистента"></textarea>
+              </div>
+              
+              <div class="form-group">
+                <label for="greeting-message">Приветственное сообщение</label>
+                <input 
+                  type="text" 
+                  id="greeting-message" 
+                  class="form-control" 
+                  placeholder="Здравствуйте! Чем я могу вам помочь?" 
+                  maxlength="200"
+                >
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Эта фраза будет первым, что скажет ассистент при звонке. Максимум 200 символов.
+                </p>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <div class="form-group">
+                <label for="system-prompt">Системный промпт</label>
+                <textarea id="system-prompt" class="form-control" placeholder="Инструкции для ассистента" required></textarea>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Задайте инструкции для вашего ассистента. Это определит его знания, стиль общения и поведение.
+                </p>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <div class="form-group">
+                <label>Голос ассистента (Google Gemini)</label>
+                <div class="voice-options" id="voice-options">
+                  <!-- Голоса будут добавлены динамически -->
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-footer">
+              <button type="button" class="btn btn-outline" id="cancel-button">Отмена</button>
+              <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+          </form>
+        </div>
+        
+        <!-- Таб тестирования -->
+        <div class="tab-content" id="testing-tab">
+          <div class="card testing-section">
+            <div class="card-header">
+              <h3>Тестирование голосового ассистента</h3>
+            </div>
+            
+            <div class="testing-container">
+              <div class="testing-info-box">
+                <h4 class="testing-info-title">Голосовой ассистент готов к использованию. Для взаимодействия нажмите на кнопку в правом нижнем углу экрана.</h4>
+
+                <!-- Переключатель модели -->
+                <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+                  <button
+                    class="btn btn-primary"
+                    id="test-model-25"
+                    onclick="switchTestModel('2.5')"
+                    style="flex: 1; justify-content: center;">
+                    🔵 Gemini 2.5 Flash (стабильный)
+                  </button>
+                  <button
+                    class="btn btn-outline"
+                    id="test-model-31"
+                    onclick="switchTestModel('3.1')"
+                    style="flex: 1; justify-content: center;">
+                    🟣 Gemini 3.1 Flash Live (новый)
+                  </button>
+                </div>
+
+                <!-- Индикатор активной модели -->
+                <div id="active-model-indicator" style="
+                  text-align: center;
+                  font-size: 0.875rem;
+                  color: var(--text-gray);
+                  margin-bottom: 1rem;">
+                  Активна: <strong id="active-model-name">Gemini 2.5 Flash</strong>
+                </div>
+
+                <!-- Переключатель типа виджета -->
+                <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+                  <button
+                    class="btn btn-primary"
+                    id="test-type-standard"
+                    onclick="switchTestType('standard')"
+                    style="flex: 1; justify-content: center;">
+                    Стандартный
+                  </button>
+                  <button
+                    class="btn btn-outline"
+                    id="test-type-fullscreen"
+                    onclick="switchTestType('fullscreen')"
+                    style="flex: 1; justify-content: center;">
+                    🖼️ Fullscreen + Image
+                  </button>
+                </div>
+
+                <!-- Индикатор активного типа -->
+                <div style="text-align: center; font-size: 0.875rem; color: var(--text-gray); margin-bottom: 1rem;">
+                  Тип: <strong id="active-type-name">Стандартный</strong>
+                </div>
+
+                <div class="testing-instructions">
+                  <div class="testing-instruction-item">
+                    <div class="testing-instruction-icon">
+                      <i class="fas fa-microphone"></i>
+                    </div>
+                    <div class="testing-instruction-content">
+                      <h4>Говорите с ассистентом через микрофон</h4>
+                      <p>Нажмите на кнопку и начните разговор</p>
+                    </div>
+                  </div>
+                  
+                  <div class="testing-instruction-item">
+                    <div class="testing-instruction-icon">
+                      <i class="fas fa-volume-up"></i>
+                    </div>
+                    <div class="testing-instruction-content">
+                      <h4>Слушайте ответы в выбранном голосе</h4>
+                      <p>Голос: <span id="testing-voice-name">Puck</span></p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="testing-status">
+                  <div class="testing-status-indicator"></div>
+                  <span class="testing-status-text">Подключено</span>
+                </div>
+              </div>
+              
+              <div class="testing-widget-note">
+                <i class="fas fa-arrow-down"></i>
+                <p>Виджет доступен в правом нижнем углу экрана</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Таб встраивания -->
+        <div class="tab-content" id="embed-tab">
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Код для встраивания</h3>
+            <p>Скопируйте этот код и вставьте его на свой сайт, чтобы добавить голосового ассистента на базе Gemini.</p>
+            
+            <!-- Новый блок для отображения ID агента -->
+            <div class="agent-id-info">
+              <span class="agent-id-label">ID агента:</span>
+              <span class="agent-id-value" id="agent-id-display">-</span>
+              <button class="btn btn-outline copy-id-btn" id="copy-agent-id">
+                <i class="fas fa-copy"></i> Копировать ID
+              </button>
+            </div>
+            
+            <!-- Блок 1: Голосовой ассистент -->
+            <div class="widget-type-block voice-only">
+              <div class="widget-type-header">
+                <i class="fas fa-microphone"></i>
+                <h4>Голосовой ассистент</h4>
+              </div>
+              <p class="widget-type-description">
+                Стандартный виджет с голосовым общением. Пользователи могут общаться с ассистентом голосом.
+              </p>
+              <div class="embed-container">
+                <div class="embed-code" id="embed-code">
+                <!-- Код будет загружен динамически -->
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary" id="copy-embed-code">
+                    <i class="fas fa-copy"></i> Копировать код
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Блок 2: Голосовой ассистент + захват экрана -->
+            <div class="widget-type-block screen-capture">
+              <div class="widget-type-header">
+                <i class="fas fa-desktop"></i>
+                <h4>Голосовой ассистент + захват экрана</h4>
+                <span class="widget-badge beta">Beta</span>
+              </div>
+              <p class="widget-type-description">
+                Ассистент видит экран пользователя и может комментировать происходящее.
+                Требуется разрешение пользователя на захват экрана. Скриншоты делаются каждые 3 секунды.
+              </p>
+              <div class="embed-container">
+                <div class="embed-code" id="embed-code-screen">
+                <!-- Код будет загружен динамически -->
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary" id="copy-embed-code-screen">
+                    <i class="fas fa-copy"></i> Копировать код
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Блок 3: Gemini 3.1 Flash Live (Новый) -->
+            <div class="widget-type-block gemini31" style="border-left: 4px solid #7c3aed; background: linear-gradient(135deg, rgba(124,58,237,0.03), rgba(79,70,229,0.03));">
+              <div class="widget-type-header">
+                <i class="fas fa-bolt" style="color: #7c3aed;"></i>
+                <h4>Gemini 3.1 Flash Live</h4>
+                <span class="widget-badge beta" style="background-color: rgba(124,58,237,0.15); color: #7c3aed;">New</span>
+              </div>
+              <p class="widget-type-description">
+                Новая модель Gemini 3.1 Flash Live с улучшенным качеством речи и меньшей задержкой.
+                Thinking отключён (budget=0) для максимальной скорости голосового ответа.
+                Виджет визуально отличается фиолетовым цветом.
+              </p>
+              <div class="embed-container">
+                <div class="embed-code" id="embed-code-31">
+                  <!-- Код будет загружен динамически -->
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary" id="copy-embed-code-31" style="background-color: #7c3aed;">
+                    <i class="fas fa-copy"></i> Копировать код
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Блок 4: Fullscreen виджет — Gemini 2.5 -->
+            <div class="widget-type-block fullscreen-widget" style="border-left: 4px solid #059669; background: linear-gradient(135deg, rgba(5,150,105,0.03), rgba(16,185,129,0.03));">
+              <div class="widget-type-header">
+                <i class="fas fa-expand" style="color: #059669;"></i>
+                <h4>Fullscreen виджет — Gemini 2.5</h4>
+                <span class="widget-badge beta" style="background-color: rgba(5,150,105,0.15); color: #059669;">New</span>
+              </div>
+              <p class="widget-type-description">
+                Голосовой ассистент с поддержкой показа изображений на весь экран через функцию <code>show_image</code>.
+                При вызове функции изображение появляется поверх сайта. Пользователь может свернуть изображение и продолжить разговор.
+                Используется модель Gemini 2.5 Flash.
+              </p>
+              <div class="embed-container">
+                <div class="embed-code" id="embed-code-fullscreen-25">
+                  <!-- Код будет загружен динамически -->
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary" id="copy-embed-code-fullscreen-25" style="background-color: #059669;">
+                    <i class="fas fa-copy"></i> Копировать код
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Блок 5: Fullscreen виджет — Gemini 3.1 -->
+            <div class="widget-type-block fullscreen-widget" style="border-left: 4px solid #0d9488; background: linear-gradient(135deg, rgba(13,148,136,0.03), rgba(20,184,166,0.03));">
+              <div class="widget-type-header">
+                <i class="fas fa-expand" style="color: #0d9488;"></i>
+                <h4>Fullscreen виджет — Gemini 3.1</h4>
+                <span class="widget-badge beta" style="background-color: rgba(13,148,136,0.15); color: #0d9488;">New</span>
+              </div>
+              <p class="widget-type-description">
+                Голосовой ассистент с поддержкой показа изображений на весь экран через функцию <code>show_image</code>.
+                Использует новую модель Gemini 3.1 Flash Live с минимальной задержкой.
+                Виджет идентичен версии 2.5 — отличается только моделью.
+              </p>
+              <div class="embed-container">
+                <div class="embed-code" id="embed-code-fullscreen-31">
+                  <!-- Код будет загружен динамически -->
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary" id="copy-embed-code-fullscreen-31" style="background-color: #0d9488;">
+                    <i class="fas fa-copy"></i> Копировать код
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Предпросмотр</h3>
+            <p>Так будет выглядеть ваш ассистент на сайте:</p>
+            
+            <div style="margin-top: 1.5rem; text-align: center;">
+              <div style="display: inline-block; position: relative;">
+                <div style="width: 400px; height: 300px; background-color: #f3f4f6; border: 1px dashed #d1d5db; border-radius: 0.5rem; display: flex; justify-content: center; align-items: center;">
+                  <div style="position: absolute; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: var(--gemini-gradient); display: flex; justify-content: center; align-items: center; color: white; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);">
+                    <i class="fas fa-sparkles" style="font-size: 1.5rem;"></i>
+                  </div>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-gray);">Пример вашего сайта с виджетом Gemini ассистента</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Таб функций (ОБНОВЛЕНО - динамическая загрузка) -->
+        <div class="tab-content" id="functions-tab">
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Функции ассистента</h3>
+            <p>Включите необходимые функции для вашего ассистента:</p>
+            
+            <!-- Контейнер для динамически загруженных функций -->
+            <div id="functions-container">
+              <div class="functions-loading">
+                <i class="fas fa-spinner"></i>
+                <p>Загрузка доступных функций...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+
+    <!-- Индикатор загрузки -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+
+    <!-- МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ -->
+    <div class="feature-blocked-modal" id="feature-blocked-modal">
+      <div class="modal-overlay" id="feature-modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <i class="fas fa-lock"></i>
+          <h3>Функция недоступна</h3>
+        </div>
+        <div class="modal-body">
+          <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+          <div class="current-plan-info">
+            Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+          </div>
+          <p class="required-plans">
+            Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+          <button class="btn btn-primary" id="feature-modal-upgrade">
+            <i class="fas fa-arrow-up"></i> Выбрать тариф
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ЖИВОЙ ДЕМО ВИДЖЕТ (только если агент выбран) -->
+  <div id="demo-widget-container" style="display: none;">
+    <script id="demo-widget-script"></script>
+  </div>
+  
+  <!-- JavaScript -->
+  <script>
+    // ============================================================================
+    // КОНСТАНТЫ ПРИВИЛЕГИЙ
+    // ============================================================================
+    
+    // Привилегированные пользователи (неограниченный лимит ассистентов)
+    const PRIVILEGED_USERS = ['well96well@gmail.com', 'stas@gmail.com'];
+    
+    
+    // ============================================================================
+    // МАТРИЦА ДОСТУПА К ФУНКЦИЯМ ПО ТАРИФАМ
+    // ============================================================================
+
+    // Какие планы имеют доступ к каким функциям
+    // ВАЖНО: ai_voice НЕ включен → для него эти функции заблокированы
+    const FEATURE_ACCESS = {
+      crm: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+      telephony: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+      outbound_calls: ['free', 'referral_trial', 'start', 'profi', 'agent']
+    };
+
+    // Названия функций для модалки
+    const FEATURE_NAMES = {
+      crm: 'CRM',
+      telephony: 'Телефония',
+      outbound_calls: 'Исходящие звонки'
+    };
+
+    // Названия тарифов для отображения
+    const PLAN_NAMES = {
+      'free': 'Пробный период',
+      'referral_trial': 'Реферальный триал',
+      'ai_voice': 'AI Voice',
+      'start': 'Тариф Старт',
+      'profi': 'Profi', 'agent': 'VoiceSystem Agent'
+    };
+    
+    // ============================================================================
+    // КОНСТАНТЫ И ПЕРЕМЕННЫЕ
+    // ============================================================================
+    
+    const API_BASE_URL = '/api';
+    let currentAgentId = null;
+    let isLoading = false;
+    let currentUserApiKey = null;
+    let currentUser = null;
+    let availableFunctions = []; // Список доступных функций из API
+    
+    // Код текущего тарифа пользователя
+    let currentUserPlanCode = 'free';
+    
+    // Информация о лимитах ассистентов
+    let assistantsLimitInfo = {
+      totalCount: 0,
+      maxAllowed: 3,
+      canCreate: true,
+      unlimited: false,
+      subscriptionActive: true,
+      breakdown: {}
+    };
+    
+    // Все голоса Gemini (30 штук)
+    const GEMINI_VOICES = [
+      { name: 'Puck', gender: 'Male' },
+      { name: 'Charon', gender: 'Male' },
+      { name: 'Kore', gender: 'Female' },
+      { name: 'Fenrir', gender: 'Male' },
+      { name: 'Aoede', gender: 'Female' },
+      { name: 'Achernar', gender: 'Female' },
+      { name: 'Achird', gender: 'Male' },
+      { name: 'Algenib', gender: 'Male' },
+      { name: 'Algieba', gender: 'Male' },
+      { name: 'Alnilam', gender: 'Male' },
+      { name: 'Autonoe', gender: 'Female' },
+      { name: 'Callirrhoe', gender: 'Female' },
+      { name: 'Despina', gender: 'Female' },
+      { name: 'Enceladus', gender: 'Male' },
+      { name: 'Erinome', gender: 'Female' },
+      { name: 'Gacrux', gender: 'Female' },
+      { name: 'Iapetus', gender: 'Male' },
+      { name: 'Laomedeia', gender: 'Female' },
+      { name: 'Leda', gender: 'Female' },
+      { name: 'Orus', gender: 'Male' },
+      { name: 'Pulcherrima', gender: 'Female' },
+      { name: 'Rasalgethi', gender: 'Male' },
+      { name: 'Sadachbia', gender: 'Male' },
+      { name: 'Sadaltager', gender: 'Male' },
+      { name: 'Schedar', gender: 'Male' },
+      { name: 'Sulafat', gender: 'Female' },
+      { name: 'Umbriel', gender: 'Male' },
+      { name: 'Vindemiatrix', gender: 'Female' },
+      { name: 'Zephyr', gender: 'Female' },
+      { name: 'Zubenelgenubi', gender: 'Male' }
+    ];
+    
+    // ============================================================================
+    // API ФУНКЦИИ
+    // ============================================================================
+    
+    function getToken() {
+      return localStorage.getItem('auth_token');
+    }
+    
+    function checkAuth() {
+      if (!getToken()) {
+        window.location.href = '/static/login.html';
+        return false;
+      }
+      return true;
+    }
+    
+    async function apiRequest(endpoint, options = {}) {
+      const token = getToken();
+      
+      if (!options.headers) {
+        options.headers = {};
+      }
+      
+      options.headers['Authorization'] = `Bearer ${token}`;
+      
+      if (options.body && typeof options.body !== 'string' && !(options.body instanceof FormData)) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+      }
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+        
+        if (response.status === 401) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/static/login.html';
+          throw new Error('Требуется авторизация');
+        }
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.detail || 'Ошибка запроса');
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+      }
+    }
+    
+    // ============================================================================
+    // ПРОВЕРКА ЛИМИТА АССИСТЕНТОВ
+    // ============================================================================
+    
+    /**
+     * Проверить, является ли пользователь привилегированным
+     * @returns {boolean} true если пользователь имеет неограниченный доступ
+     */
+    function isPrivilegedUser() {
+      if (!currentUser) return false;
+      return currentUser.is_admin || PRIVILEGED_USERS.includes(currentUser.email);
+    }
+    
+    
+    /**
+     * Загрузить информацию о количестве ассистентов и лимитах
+     * @returns {Promise<object>} Объект с информацией о лимитах
+     */
+    async function loadAssistantsLimitInfo() {
+      try {
+        // Единый источник правды: сервер сам считает ассистентов по всем
+        // провайдерам (OpenAI, Gemini, Grok, Cascade, Cartesia, Yandex, Translate)
+        // и применяет те же правила, что и при создании.
+        const usage = await apiRequest('/subscriptions/assistants-usage');
+
+        if (usage.plan_code) {
+          currentUserPlanCode = usage.plan_code;
+        }
+
+        assistantsLimitInfo = {
+          totalCount: usage.used,
+          maxAllowed: usage.max,
+          canCreate: usage.can_create,
+          unlimited: !!usage.unlimited,
+          subscriptionActive: usage.subscription_active !== false,
+          breakdown: usage.breakdown || {}
+        };
+
+        console.log('[LIMITS] Информация о лимитах:', assistantsLimitInfo);
+        return assistantsLimitInfo;
+
+      } catch (error) {
+        console.error('[LIMITS] Ошибка загрузки информации о лимитах:', error);
+        // В случае ошибки разрешаем создание — лимит всё равно проверит бэкенд
+        assistantsLimitInfo = {
+          totalCount: 0,
+          maxAllowed: 3,
+          canCreate: true,
+          unlimited: false,
+          subscriptionActive: true,
+          breakdown: {}
+        };
+        return assistantsLimitInfo;
+      }
+    }
+    
+    /**
+     * Проверить, можно ли создать нового ассистента
+     * @returns {boolean} true если можно создать
+     */
+    function canCreateAssistant() {
+      // Привилегированные пользователи всегда могут создавать
+      if (isPrivilegedUser()) {
+        return true;
+      }
+      return assistantsLimitInfo.canCreate;
+    }
+    
+    /**
+     * Показать уведомление о достижении лимита
+     */
+    function showLimitReachedNotification() {
+      const { totalCount, maxAllowed } = assistantsLimitInfo;
+      showNotification(
+        `Достигнут лимит ассистентов (${totalCount}/${maxAllowed}). Улучшите тариф для создания новых.`,
+        'error'
+      );
+    }
+    
+    /**
+     * Обновить состояние кнопки создания агента
+     */
+    function updateCreateButtonState() {
+      const createBtn = document.getElementById('create-new-agent-btn');
+      if (!createBtn) return;
+      
+      if (!canCreateAssistant()) {
+        createBtn.disabled = true;
+        createBtn.title = `Достигнут лимит ассистентов (${assistantsLimitInfo.totalCount}/${assistantsLimitInfo.maxAllowed})`;
+        createBtn.style.opacity = '0.6';
+        createBtn.style.cursor = 'not-allowed';
+      } else {
+        createBtn.disabled = false;
+        createBtn.title = 'Создать нового агента';
+        createBtn.style.opacity = '1';
+        createBtn.style.cursor = 'pointer';
+      }
+    }
+    
+    // ============================================================================
+    // ПРОВЕРКА ДОСТУПА К ФУНКЦИЯМ ПО ТАРИФУ
+    // ============================================================================
+
+    /**
+     * Проверить, имеет ли пользователь доступ к функции
+     */
+    function canAccessFeature(feature, planCode) {
+      if (!planCode) return true;
+      
+      // Привилегированные пользователи имеют доступ ко всему
+      if (isPrivilegedUser()) return true;
+      
+      const allowedPlans = FEATURE_ACCESS[feature];
+      if (!allowedPlans) return true;
+      
+      return allowedPlans.includes(planCode);
+    }
+
+    /**
+     * Получить отображаемое имя тарифа
+     */
+    function getPlanDisplayName(planCode) {
+      return PLAN_NAMES[planCode] || planCode;
+    }
+
+    /**
+     * Применить матрицу доступа к элементам сайдбара
+     */
+    function applyFeatureAccessToSidebar() {
+      console.log('[ACCESS] Применяем матрицу доступа для плана:', currentUserPlanCode);
+
+      document.querySelectorAll('.plan-locked-feature').forEach(el => {
+        el.classList.remove('plan-locked-feature');
+      });
+
+      document.querySelectorAll('[data-feature]').forEach(element => {
+        const feature = element.getAttribute('data-feature');
+        const hasAccess = canAccessFeature(feature, currentUserPlanCode);
+        
+        if (!hasAccess) {
+          element.classList.add('plan-locked-feature');
+          console.log(`[ACCESS] Заблокирована функция: ${feature}`);
+        }
+      });
+    }
+
+    /**
+     * Показать модалку блокировки функции
+     */
+    function showFeatureBlockedModal(feature) {
+      const featureName = FEATURE_NAMES[feature] || feature;
+      const planName = getPlanDisplayName(currentUserPlanCode);
+
+      document.getElementById('feature-blocked-message').textContent = 
+        `Для доступа к разделу "${featureName}" необходим тариф Старт, Profi или Agent.`;
+      document.getElementById('current-plan-name-display').textContent = planName;
+      document.getElementById('required-plans-text').textContent = 'Старт, Profi или Agent';
+      document.getElementById('feature-blocked-modal').classList.add('show');
+    }
+
+    /**
+     * Скрыть модалку блокировки функции
+     */
+    function hideFeatureBlockedModal() {
+      document.getElementById('feature-blocked-modal').classList.remove('show');
+    }
+    
+    // ============================================================================
+    // ДИНАМИЧЕСКАЯ ЗАГРУЗКА ФУНКЦИЙ
+    // ============================================================================
+    
+    async function loadAvailableFunctions() {
+      try {
+        console.log('[FUNCTIONS] Загружаем список доступных функций...');
+        const functions = await apiRequest('/functions/');
+        availableFunctions = functions;
+        console.log('[FUNCTIONS] Загружено функций:', availableFunctions.length);
+        renderFunctions(functions);
+      } catch (error) {
+        console.error('[FUNCTIONS] Ошибка загрузки функций:', error);
+        const container = document.getElementById('functions-container');
+        container.innerHTML = `
+          <div style="text-align: center; padding: 2rem; color: #ef4444;">
+            <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+            <p>Ошибка загрузки функций: ${error.message}</p>
+            <button class="btn btn-outline" onclick="loadAvailableFunctions()" style="margin-top: 1rem;">
+              <i class="fas fa-sync-alt"></i> Попробовать снова
+            </button>
+          </div>
+        `;
+      }
+    }
+    
+    function renderFunctions(functions) {
+      const container = document.getElementById('functions-container');
+      
+      if (!functions || functions.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 2rem; color: var(--text-gray);">
+            <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+            <p>Нет доступных функций</p>
+          </div>
+        `;
+        return;
+      }
+      
+      container.innerHTML = '';
+      
+      functions.forEach(func => {
+        const functionId = `function-${func.name}`;
+        const infoId = `${func.name}-info`;
+        
+        // Создаем контейнер для функции
+        const funcGroup = document.createElement('div');
+        funcGroup.className = 'form-group';
+        
+        // Чекбокс с названием функции
+        const label = document.createElement('label');
+        label.className = 'function-option';
+        label.innerHTML = `
+          <input type="checkbox" id="${functionId}" name="${functionId}" data-function-name="${func.name}">
+          <span>${func.display_name || func.name}</span>
+        `;
+        
+        funcGroup.appendChild(label);
+        
+        // Блок с информацией о функции (скрыт по умолчанию)
+        const infoDiv = document.createElement('div');
+        infoDiv.id = infoId;
+        infoDiv.className = 'function-info';
+        infoDiv.style.display = 'none';
+        
+        // Схема функции
+        const schemaHtml = `
+          <h4>Информация о функции:</h4>
+          <pre class="function-schema">${JSON.stringify({
+            name: func.name,
+            description: func.description,
+            parameters: func.parameters
+          }, null, 2)}</pre>
+        `;
+        
+        // Пример промпта (если есть)
+        const exampleHtml = func.example_prompt ? `
+          <h4>Пример использования в промпте:</h4>
+          <div class="prompt-example">
+            ${func.example_prompt}
+          </div>
+        ` : '';
+        
+        infoDiv.innerHTML = schemaHtml + exampleHtml;
+        funcGroup.appendChild(infoDiv);
+        
+        container.appendChild(funcGroup);
+        
+        // Добавляем обработчик для показа/скрытия информации
+        const checkbox = document.getElementById(functionId);
+        checkbox.addEventListener('change', function() {
+          infoDiv.style.display = this.checked ? 'block' : 'none';
+        });
+      });
+      
+      console.log('[FUNCTIONS] Отрендерено функций:', functions.length);
+    }
+    
+    // ============================================================================
+    // ОБЪЕДИНЕННАЯ ЗАГРУЗКА ПОЛЬЗОВАТЕЛЯ И API КЛЮЧА (ОПТИМИЗАЦИЯ)
+    // ============================================================================
+    
+    async function loadUserData() {
+      try {
+        const userInfo = await apiRequest('/users/me');
+        currentUser = userInfo;
+        currentUserApiKey = userInfo.gemini_api_key;
+        
+        console.log(`[USER] Email: ${userInfo.email}, isAdmin: ${userInfo.is_admin || false}`);
+        
+        // Обновляем UI пользователя
+        updateUserUI(userInfo);
+        
+        // Обновляем UI API ключа
+        updateApiKeyUI(userInfo.gemini_api_key);
+        
+        return !!userInfo.gemini_api_key;
+      } catch (error) {
+        console.error('Ошибка загрузки данных пользователя:', error);
+        return false;
+      }
+    }
+    
+    function updateUserUI(userInfo) {
+      const firstName = userInfo.first_name || '';
+      const lastName = userInfo.last_name || '';
+      
+      if (firstName || lastName) {
+        document.getElementById('user-name').textContent = firstName + (lastName ? ` ${lastName}` : '');
+        let initials = '';
+        if (firstName) initials += firstName[0];
+        if (lastName) initials += lastName[0];
+        document.getElementById('user-avatar').textContent = initials.toUpperCase();
+      } else if (userInfo.company_name) {
+        document.getElementById('user-name').textContent = userInfo.company_name;
+        document.getElementById('user-avatar').textContent = userInfo.company_name.substring(0, 2).toUpperCase();
+      } else {
+        document.getElementById('user-name').textContent = userInfo.email;
+        document.getElementById('user-avatar').textContent = userInfo.email.substring(0, 2).toUpperCase();
+      }
+    }
+    
+    function updateApiKeyUI(apiKey) {
+      const apiKeyInput = document.getElementById('gemini-api-key-input');
+      const deleteBtn = document.getElementById('delete-api-key');
+      
+      if (apiKey) {
+        apiKeyInput.value = apiKey;
+        apiKeyInput.placeholder = '••••••••••••••••••••';
+        deleteBtn.style.display = 'block';
+      } else {
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = 'Введите Google AI API ключ';
+        deleteBtn.style.display = 'none';
+      }
+    }
+    
+    // ============================================================================
+    // API КЛЮЧ - УПРАВЛЕНИЕ (БЕЗ ПЕРЕЗАГРУЗКИ)
+    // ============================================================================
+    
+    async function saveApiKey() {
+      const apiKeyInput = document.getElementById('gemini-api-key-input');
+      const newKey = apiKeyInput.value.trim();
+      
+      if (!newKey) {
+        showNotification('Введите API ключ', 'error');
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        await apiRequest('/users/me', {
+          method: 'PUT',
+          body: { gemini_api_key: newKey }
+        });
+        
+        currentUserApiKey = newKey;
+        showNotification('API ключ успешно сохранен!', 'success');
+        document.getElementById('delete-api-key').style.display = 'block';
+        
+        // Загружаем лимиты после сохранения API ключа
+        await loadAssistantsLimitInfo();
+        
+        // Применяем матрицу доступа к сайдбару
+        applyFeatureAccessToSidebar();
+        
+        // БЕЗ перезагрузки - просто показываем контент
+        checkApiKeyAndShowContent(true);
+        await loadAgentsList();
+        
+        // Обновляем состояние кнопки
+        updateCreateButtonState();
+      } catch (error) {
+        showNotification(error.message || 'Ошибка сохранения API ключа', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    async function deleteApiKey() {
+      if (!confirm('Вы уверены, что хотите удалить API ключ? Все Gemini агенты станут недоступны.')) {
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        await apiRequest('/users/me', {
+          method: 'PUT',
+          body: { gemini_api_key: null }
+        });
+        
+        currentUserApiKey = null;
+        document.getElementById('gemini-api-key-input').value = '';
+        document.getElementById('delete-api-key').style.display = 'none';
+        
+        showNotification('API ключ успешно удален', 'success');
+        
+        // БЕЗ перезагрузки - просто скрываем контент
+        checkApiKeyAndShowContent(false);
+      } catch (error) {
+        showNotification(error.message || 'Ошибка удаления API ключа', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    function toggleApiKeyVisibility() {
+      const apiKeyInput = document.getElementById('gemini-api-key-input');
+      const toggleBtn = document.getElementById('api-key-toggle');
+      const icon = toggleBtn.querySelector('i');
+      
+      if (apiKeyInput.type === 'password') {
+        apiKeyInput.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+      } else {
+        apiKeyInput.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+      }
+    }
+    
+    function checkApiKeyAndShowContent(hasApiKey) {
+      const setupScreen = document.getElementById('api-key-setup-screen');
+      const agentsListContainer = document.getElementById('agents-list-container');
+      const createBtn = document.getElementById('create-new-agent-btn');
+      
+      if (hasApiKey) {
+        setupScreen.style.display = 'none';
+        agentsListContainer.style.display = 'block';
+        createBtn.style.display = 'inline-flex';
+        
+        // Обновляем состояние кнопки
+        updateCreateButtonState();
+      } else {
+        setupScreen.style.display = 'block';
+        agentsListContainer.style.display = 'none';
+        createBtn.style.display = 'none';
+      }
+    }
+    
+    // ============================================================================
+    // UI ФУНКЦИИ
+    // ============================================================================
+    
+    function showNotification(message, type = 'success') {
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      
+      notification.className = `notification notification-${type}`;
+      notificationMessage.textContent = message;
+      
+      notification.style.display = 'flex';
+      setTimeout(() => notification.classList.add('show'), 10);
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.style.display = 'none', 300);
+      }, 7000); // Увеличено время показа уведомления об ошибке
+    }
+    
+    function setLoading(loading) {
+      isLoading = loading;
+      document.getElementById('loading-overlay').style.display = loading ? 'flex' : 'none';
+      
+      const buttons = document.querySelectorAll('.btn');
+      buttons.forEach(button => button.disabled = loading);
+    }
+    
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId);
+      });
+      
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `${tabId}-tab`);
+      });
+      
+      // Обновить имя голоса в табе тестирования
+      if (tabId === 'testing') {
+        updateTestingVoiceName();
+      }
+      
+      // Загрузить функции при переходе на таб функций
+      if (tabId === 'functions' && availableFunctions.length === 0) {
+        loadAvailableFunctions();
+      }
+      
+      // Автозагрузка виджета на вкладке тестирования
+      if (tabId === 'testing' && currentAgentId) {
+        setTimeout(() => loadDemoWidget(currentAgentId, activeTestModel, activeTestType), 500);
+      } else {
+        loadDemoWidget(null);
+      }
+    }
+    
+    function updateTestingVoiceName() {
+      const selectedVoice = document.querySelector('input[name="voice"]:checked');
+      if (selectedVoice) {
+        document.getElementById('testing-voice-name').textContent = selectedVoice.value;
+      }
+    }
+    
+    // ============================================================================
+    // ГОЛОСА - ИНИЦИАЛИЗАЦИЯ
+    // ============================================================================
+    
+    function initVoiceOptions() {
+      const container = document.getElementById('voice-options');
+      container.innerHTML = '';
+      
+      GEMINI_VOICES.forEach((voice, index) => {
+        const label = document.createElement('label');
+        label.className = 'voice-option';
+        if (index === 0) label.classList.add('selected');
+        
+        label.innerHTML = `
+          <input type="radio" name="voice" value="${voice.name}" ${index === 0 ? 'checked' : ''}>
+          <span>${voice.name}</span>
+          <span class="voice-gender">${voice.gender}</span>
+        `;
+        
+        container.appendChild(label);
+      });
+    }
+    
+    // ============================================================================
+    // ФУНКЦИЯ ЗАГРУЗКИ ДЕМО ВИДЖЕТА
+    // ============================================================================
+    
+    // Текущая тестируемая модель ('2.5' или '3.1')
+    let activeTestModel = '2.5';
+    let activeTestType = 'standard'; // 'standard' | 'fullscreen'
+
+    function switchTestModel(version) {
+      activeTestModel = version;
+
+      const btn25 = document.getElementById('test-model-25');
+      const btn31 = document.getElementById('test-model-31');
+
+      if (version === '2.5') {
+        btn25.className = 'btn btn-primary';
+        btn25.style.flex = '1';
+        btn25.style.justifyContent = 'center';
+        btn31.className = 'btn btn-outline';
+        btn31.style.flex = '1';
+        btn31.style.justifyContent = 'center';
+        document.getElementById('active-model-name').textContent = 'Gemini 2.5 Flash';
+        document.getElementById('active-model-name').style.color = 'var(--primary-blue)';
+      } else {
+        btn31.className = 'btn btn-primary';
+        btn31.style.cssText = 'flex: 1; justify-content: center; background-color: #7c3aed;';
+        btn25.className = 'btn btn-outline';
+        btn25.style.flex = '1';
+        btn25.style.justifyContent = 'center';
+        document.getElementById('active-model-name').textContent = 'Gemini 3.1 Flash Live';
+        document.getElementById('active-model-name').style.color = '#7c3aed';
+      }
+
+      if (currentAgentId) {
+        loadDemoWidget(currentAgentId, version, activeTestType);
+      }
+    }
+
+    function switchTestType(type) {
+      activeTestType = type;
+
+      const btnStandard   = document.getElementById('test-type-standard');
+      const btnFullscreen = document.getElementById('test-type-fullscreen');
+      const typeNameEl    = document.getElementById('active-type-name');
+
+      if (type === 'standard') {
+        btnStandard.className   = 'btn btn-primary';
+        btnStandard.style.cssText = 'flex: 1; justify-content: center;';
+        btnFullscreen.className = 'btn btn-outline';
+        btnFullscreen.style.cssText = 'flex: 1; justify-content: center;';
+        typeNameEl.textContent  = 'Стандартный';
+        typeNameEl.style.color  = 'var(--primary-blue)';
+      } else {
+        btnFullscreen.className = 'btn btn-primary';
+        btnFullscreen.style.cssText = 'flex: 1; justify-content: center; background-color: #059669;';
+        btnStandard.className   = 'btn btn-outline';
+        btnStandard.style.cssText = 'flex: 1; justify-content: center;';
+        typeNameEl.textContent  = 'Fullscreen + Image';
+        typeNameEl.style.color  = '#059669';
+      }
+
+      if (currentAgentId) {
+        loadDemoWidget(currentAgentId, activeTestModel, activeTestType);
+      }
+    }
+
+    function loadDemoWidget(assistantId, version, type) {
+      if (version === undefined) version = activeTestModel;
+      if (type === undefined)    type    = activeTestType;
+
+      const container = document.getElementById('demo-widget-container');
+      const scriptEl = document.getElementById('demo-widget-script');
+
+      scriptEl.innerHTML = '';
+      container.style.display = 'none';
+
+      // ═══════════════════════════════════════════════════════════
+      // ПОЛНАЯ ОЧИСТКА ПРЕДЫДУЩЕГО ВИДЖЕТА
+      // Виджеты используют одинаковые ID: wellcomeai-widget-container,
+      // wellcomeai-widget-styles. Нужно удалить ВСЁ перед повторной загрузкой.
+      // ═══════════════════════════════════════════════════════════
+
+      // 1. Удаляем DOM-контейнер виджета (кнопка + развёрнутая панель)
+      const oldWidgetContainer = document.getElementById('wellcomeai-widget-container');
+      if (oldWidgetContainer) oldWidgetContainer.remove();
+
+      // 2. Удаляем стили виджета
+      const oldStyles = document.getElementById('wellcomeai-widget-styles');
+      if (oldStyles) oldStyles.remove();
+
+      // 3. Удаляем все скрипты виджетов из <head>
+      const oldScripts = document.querySelectorAll(
+        'script[src*="gemini-widget.js"], script[src*="gemini-31-widget.js"], script[src*="gemini-widget-fullscreen.js"]'
+      );
+      oldScripts.forEach(s => s.remove());
+
+      // 4. Удаляем скрипты по устаревшим ID (на случай если были)
+      ['gemini-voice-widget', 'gemini-31-voice-widget'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+      });
+
+      // 5. Удаляем элементы fullscreen виджета (fsw-*)
+      ['fsw-btn', 'fsw-panel', 'fsw-overlay', 'fsw-styles'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+      });
+
+      if (!assistantId) {
+        return;
+      }
+
+      container.style.display = 'block';
+
+      // Выбор скрипта по комбинации модель × тип
+      let scriptSrc;
+      if (type === 'fullscreen') {
+        scriptSrc = '/static/gemini-widget-fullscreen.js';
+      } else {
+        scriptSrc = version === '3.1'
+          ? '/static/gemini-31-widget.js'
+          : '/static/gemini-widget.js';
+      }
+
+      const script = document.createElement('script');
+      // Cache-bust: браузер не перевыполнит IIFE для того же URL
+      script.src = scriptSrc + '?t=' + Date.now();
+      // Используем setAttribute чтобы атрибут был именно data-assistantId (не data-assistant-id)
+      script.setAttribute('data-assistantId', assistantId);
+      script.setAttribute('data-server', window.location.origin);
+      script.setAttribute('data-position', 'bottom-right');
+      // Для fullscreen виджета — передаём модель
+      if (type === 'fullscreen') {
+        script.setAttribute('data-model', version);
+      }
+      script.async = true;
+      script.onload = () => {
+        console.log(`[DEMO-WIDGET] ${version} ${type} loaded successfully`);
+      };
+      script.onerror = () => {
+        console.error(`[DEMO-WIDGET] Failed to load ${version} ${type} widget`);
+        showNotification(`Ошибка загрузки виджета`, 'error');
+      };
+      document.head.appendChild(script);
+    }
+    
+    // ============================================================================
+    // ГЕНЕРАЦИЯ EMBED-КОДА ДЛЯ ВИДЖЕТА С ЗАХВАТОМ ЭКРАНА
+    // ============================================================================
+    
+    function generateGemini31EmbedCode(assistantId) {
+      const serverUrl = window.location.origin;
+      return `<!-- Gemini 3.1 Flash Live Widget -->
+<scr` + `ipt>
+    (function() {
+        var script = document.createElement('script');
+        script.src = '${serverUrl}/static/gemini-31-widget.js';
+        script.dataset.assistantId = '${assistantId}';
+        script.dataset.server = '${serverUrl}';
+        script.dataset.position = 'bottom-right';
+        script.async = true;
+        document.head.appendChild(script);
+    })();
+</scr` + `ipt>
+<!-- End Gemini 3.1 Flash Live Widget -->`;
+    }
+
+    function generateScreenCaptureEmbedCode(assistantId) {
+      const serverUrl = window.location.origin;
+      return `<!-- VoiceSystem Gemini Voice Assistant + Screen Capture -->
+<scr` + `ipt>
+    (function() {
+        var script = document.createElement('script');
+        script.src = '${serverUrl}/static/test-gemini-widget.js';
+        script.dataset.assistantId = '${assistantId}';
+        script.dataset.server = '${serverUrl}';
+        script.dataset.position = 'bottom-right';
+        script.async = true;
+        document.head.appendChild(script);
+    })();
+</scr` + `ipt>
+<!-- End VoiceSystem Gemini + Screen Capture -->`;
+    }
+
+    function generateFullscreenEmbedCode25(assistantId) {
+      const serverUrl = window.location.origin;
+      return `<!-- VoiceSystem Fullscreen Voice Widget (Gemini 2.5) -->
+<scr` + `ipt>
+    (function() {
+        var script = document.createElement('script');
+        script.src = '${serverUrl}/static/gemini-widget-fullscreen.js';
+        script.setAttribute('data-assistantId', '${assistantId}');
+        script.setAttribute('data-server', '${serverUrl}');
+        script.setAttribute('data-model', '2.5');
+        script.setAttribute('data-position', 'bottom-right');
+        script.async = true;
+        document.head.appendChild(script);
+    })();
+</scr` + `ipt>
+<!-- End VoiceSystem Fullscreen Widget -->`;
+    }
+
+    function generateFullscreenEmbedCode31(assistantId) {
+      const serverUrl = window.location.origin;
+      return `<!-- VoiceSystem Fullscreen Voice Widget (Gemini 3.1) -->
+<scr` + `ipt>
+    (function() {
+        var script = document.createElement('script');
+        script.src = '${serverUrl}/static/gemini-widget-fullscreen.js';
+        script.setAttribute('data-assistantId', '${assistantId}');
+        script.setAttribute('data-server', '${serverUrl}');
+        script.setAttribute('data-model', '3.1');
+        script.setAttribute('data-position', 'bottom-right');
+        script.async = true;
+        document.head.appendChild(script);
+    })();
+</scr` + `ipt>
+<!-- End VoiceSystem Fullscreen Widget -->`;
+    }
+
+    // ============================================================================
+    // РАБОТА С АГЕНТАМИ
+    // ============================================================================
+    
+    async function loadAgentsList() {
+      try {
+        setLoading(true);
+        const agents = await apiRequest('/gemini-assistants');
+        renderAgentsList(agents);
+      } catch (error) {
+        showNotification(error.message || 'Ошибка загрузки списка агентов', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    function renderAgentsList(agents) {
+      const container = document.getElementById('agents-list');
+      container.innerHTML = '';
+      
+      if (agents.length === 0) {
+        // Показываем информацию о лимитах в пустом состоянии
+        // Для привилегированных пользователей не показываем лимит
+        const limitText = isPrivilegedUser()
+          ? ''
+          : `<br><small style="color: var(--text-light);">(${assistantsLimitInfo.totalCount}/${assistantsLimitInfo.maxAllowed} использовано)</small>`;
+        const isDisabled = !canCreateAssistant();
+        
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">
+              <i class="fas fa-sparkles"></i>
+            </div>
+            <h3 class="empty-title">У вас еще нет Gemini агентов</h3>
+            <p class="empty-description">
+              Создайте вашего первого голосового ассистента на базе Google Gemini
+              ${limitText}
+            </p>
+            <button class="btn btn-primary" id="empty-create-agent-btn" ${isDisabled ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''}>
+              <i class="fas fa-plus"></i> Создать нового агента
+            </button>
+          </div>
+        `;
+        
+        // Добавляем обработчик для кнопки в empty state
+        const emptyBtn = document.getElementById('empty-create-agent-btn');
+        if (emptyBtn) {
+          emptyBtn.addEventListener('click', () => {
+            if (canCreateAssistant()) {
+              navigateToCreateAgent();
+            } else {
+              showLimitReachedNotification();
+            }
+          });
+        }
+        return;
+      }
+      
+      // Показываем информацию о лимитах в заголовке
+      // Для привилегированных пользователей не показываем лимит
+      const limitInfo = isPrivilegedUser()
+        ? ''
+        : `<small style="color: var(--text-light); font-weight: normal;">(всего ${assistantsLimitInfo.totalCount}/${assistantsLimitInfo.maxAllowed})</small>`;
+      
+      const headerEl = document.createElement('div');
+      headerEl.className = 'agent-list-header';
+      headerEl.innerHTML = `
+        <h4 class="agents-count">
+          Gemini агентов: ${agents.length}
+          ${limitInfo}
+        </h4>
+      `;
+      container.appendChild(headerEl);
+      
+      const listEl = document.createElement('div');
+      listEl.className = 'agent-items';
+      
+      agents.forEach(agent => {
+        const agentEl = document.createElement('div');
+        agentEl.className = 'agent-item';
+        agentEl.innerHTML = `
+          <div class="gemini-badge">Gemini</div>
+          <div class="agent-icon">
+            <i class="fas fa-sparkles"></i>
+          </div>
+          <div class="agent-info">
+            <h3 class="agent-name">${agent.name}</h3>
+            <p class="agent-description">${agent.description || 'Нет описания'}</p>
+            <div class="agent-meta">
+              <span class="agent-voice"><i class="fas fa-volume-up"></i> ${agent.voice}</span>
+              <span class="agent-date"><i class="fas fa-calendar"></i> Создан: ${new Date(agent.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          <div class="agent-actions">
+            <button class="btn btn-outline" onclick="getEmbedCode('${agent.id}')" title="Получить код для встраивания">
+              <i class="fas fa-code"></i>
+            </button>
+            <button class="btn btn-primary" onclick="editAgent('${agent.id}')">
+              <i class="fas fa-edit"></i> Редактировать
+            </button>
+          </div>
+        `;
+        listEl.appendChild(agentEl);
+      });
+      
+      container.appendChild(listEl);
+    }
+    
+    async function loadAgentData(id) {
+      try {
+        setLoading(true);
+        const agent = await apiRequest(`/gemini-assistants/${id}`);
+        fillAgentForm(agent);
+        
+        document.getElementById('agent-id-display').textContent = id;
+        
+        const embedData = await apiRequest(`/gemini-assistants/${id}/embed-code`);
+        document.getElementById('embed-code').textContent = embedData.embed_code;
+        
+        // Генерируем код для виджета с захватом экрана
+        const screenCaptureEmbedCode = generateScreenCaptureEmbedCode(id);
+        document.getElementById('embed-code-screen').textContent = screenCaptureEmbedCode;
+
+        // Генерируем код для Gemini 3.1 виджета
+        const gemini31EmbedCode = generateGemini31EmbedCode(id);
+        document.getElementById('embed-code-31').textContent = gemini31EmbedCode;
+
+        // Fullscreen embed коды
+        const fullscreen25Code = generateFullscreenEmbedCode25(id);
+        document.getElementById('embed-code-fullscreen-25').textContent = fullscreen25Code;
+
+        const fullscreen31Code = generateFullscreenEmbedCode31(id);
+        document.getElementById('embed-code-fullscreen-31').textContent = fullscreen31Code;
+
+        document.getElementById('view-embed-code').style.display = 'inline-flex';
+        document.getElementById('delete-agent').style.display = 'inline-flex';
+        document.getElementById('save-agent').style.display = 'inline-flex';
+        document.getElementById('create-new-agent-btn').style.display = 'none';
+      } catch (error) {
+        showNotification(error.message || 'Ошибка загрузки данных агента', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    function fillAgentForm(agent) {
+      document.getElementById('agent-name').value = agent.name || '';
+      document.getElementById('agent-description').value = agent.description || '';
+      document.getElementById('system-prompt').value = agent.system_prompt || '';
+      document.getElementById('greeting-message').value = agent.greeting_message || 'Здравствуйте! Чем я могу вам помочь?';
+      
+      const voiceInput = document.querySelector(`input[name="voice"][value="${agent.voice || 'Puck'}"]`);
+      if (voiceInput) {
+        document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+        voiceInput.closest('.voice-option').classList.add('selected');
+        voiceInput.checked = true;
+      }
+      
+      loadFunctions(agent.functions || []);
+    }
+    
+    function loadFunctions(functions) {
+      // Сначала снимаем все галочки
+      document.querySelectorAll('input[type="checkbox"][data-function-name]').forEach(checkbox => {
+        checkbox.checked = false;
+        const infoDiv = document.getElementById(`${checkbox.dataset.functionName}-info`);
+        if (infoDiv) infoDiv.style.display = 'none';
+      });
+      
+      // Затем ставим галочки на нужные функции
+      functions.forEach(func => {
+        const checkbox = document.querySelector(`input[data-function-name="${func.name}"]`);
+        if (checkbox) {
+          checkbox.checked = true;
+          const infoDiv = document.getElementById(`${func.name}-info`);
+          if (infoDiv) infoDiv.style.display = 'block';
+        }
+      });
+      
+      console.log('[FUNCTIONS] Загружено функций агента:', functions.length);
+    }
+    
+    function getFormData() {
+      const enabledFunctions = [];
+      
+      // Собираем включенные функции
+      document.querySelectorAll('input[type="checkbox"][data-function-name]:checked').forEach(checkbox => {
+        const functionName = checkbox.dataset.functionName;
+        const functionData = availableFunctions.find(f => f.name === functionName);
+        
+        if (functionData) {
+          enabledFunctions.push({
+            name: functionData.name,
+            description: functionData.description
+          });
+        }
+      });
+      
+      return {
+        name: document.getElementById('agent-name').value,
+        description: document.getElementById('agent-description').value,
+        system_prompt: document.getElementById('system-prompt').value,
+        voice: document.querySelector('input[name="voice"]:checked').value,
+        greeting_message: document.getElementById('greeting-message').value || 'Здравствуйте! Чем я могу вам помочь?',
+        functions: enabledFunctions
+      };
+    }
+    
+    async function saveAgent() {
+      try {
+        setLoading(true);
+        const formData = getFormData();
+        
+        if (currentAgentId) {
+          // Обновление существующего агента
+          await apiRequest(`/gemini-assistants/${currentAgentId}`, {
+            method: 'PUT',
+            body: formData
+          });
+          showNotification('Изменения успешно сохранены!', 'success');
+          await loadAgentData(currentAgentId);
+        } else {
+          // Проверяем лимит перед созданием
+          if (!canCreateAssistant()) {
+            showLimitReachedNotification();
+            setLoading(false);
+            return;
+          }
+          
+          // Создание нового агента
+          const newAgent = await apiRequest('/gemini-assistants', {
+            method: 'POST',
+            body: formData
+          });
+          showNotification('Агент успешно создан!', 'success');
+          
+          // Обновляем информацию о лимитах после создания
+          await loadAssistantsLimitInfo();
+          
+          setTimeout(() => {
+            window.location.href = `/static/gemini-agents.html?id=${newAgent.id}`;
+          }, 1000);
+        }
+      } catch (error) {
+        showNotification(error.message || 'Ошибка сохранения', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    async function deleteAgent() {
+      if (!currentAgentId) return;
+      
+      if (!confirm('Вы уверены, что хотите удалить этого агента? Это действие нельзя отменить.')) {
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        await apiRequest(`/gemini-assistants/${currentAgentId}`, { method: 'DELETE' });
+        showNotification('Агент успешно удален!', 'success');
+        
+        // Обновляем информацию о лимитах после удаления
+        await loadAssistantsLimitInfo();
+        
+        setTimeout(() => {
+          window.location.href = '/static/gemini-agents.html';
+        }, 1000);
+      } catch (error) {
+        showNotification(error.message || 'Ошибка удаления агента', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    // ============================================================================
+    // НАВИГАЦИЯ
+    // ============================================================================
+    
+    function navigateToCreateAgent() {
+      // Проверяем лимит перед переходом на страницу создания
+      if (!canCreateAssistant()) {
+        showLimitReachedNotification();
+        return;
+      }
+      window.location.href = '/static/gemini-agents.html?mode=create';
+    }
+    
+    function editAgent(id) {
+      window.location.href = `/static/gemini-agents.html?id=${id}`;
+    }
+    
+    async function getEmbedCode(id) {
+      try {
+        setLoading(true);
+        currentAgentId = id;
+        switchToEditMode();
+        await loadAgentData(id);
+        switchTab('embed');
+      } catch (error) {
+        showNotification(error.message || 'Ошибка получения кода встраивания', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    function switchToEditMode() {
+      document.getElementById('agents-list-container').style.display = 'none';
+      document.getElementById('edit-agent-container').style.display = 'block';
+      document.getElementById('api-key-setup-screen').style.display = 'none';
+      document.querySelector('.page-title').textContent = 'Управление Gemini агентом';
+    }
+    
+    function switchToListMode() {
+      document.getElementById('agents-list-container').style.display = 'block';
+      document.getElementById('edit-agent-container').style.display = 'none';
+      document.getElementById('api-key-setup-screen').style.display = 'none';
+      document.querySelector('.page-title').textContent = 'Gemini агенты';
+      
+      document.getElementById('view-embed-code').style.display = 'none';
+      document.getElementById('delete-agent').style.display = 'none';
+      document.getElementById('save-agent').style.display = 'none';
+      document.getElementById('create-new-agent-btn').style.display = 'inline-flex';
+      
+      // Обновляем состояние кнопки создания
+      updateCreateButtonState();
+      
+      currentAgentId = null;
+      
+      loadDemoWidget(null);
+    }
+    
+    function initCreateMode() {
+      document.getElementById('agent-name').value = '';
+      document.getElementById('agent-description').value = '';
+      document.getElementById('system-prompt').value = 'Ты умный голосовой помощник на базе Google Gemini. Отвечай на вопросы пользователя коротко, информативно и с небольшой ноткой юмора, когда это уместно. Стремись быть полезным и предоставлять точную информацию.';
+      document.getElementById('greeting-message').value = 'Здравствуйте! Чем я могу вам помочь?';
+      
+      const firstVoice = document.querySelector('input[name="voice"]');
+      if (firstVoice) {
+        document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+        firstVoice.closest('.voice-option').classList.add('selected');
+        firstVoice.checked = true;
+      }
+      
+      // Сбрасываем функции
+      document.querySelectorAll('input[type="checkbox"][data-function-name]').forEach(checkbox => {
+        checkbox.checked = false;
+        const infoDiv = document.getElementById(`${checkbox.dataset.functionName}-info`);
+        if (infoDiv) infoDiv.style.display = 'none';
+      });
+      
+      document.querySelector('.page-title').textContent = 'Создание нового Gemini агента';
+      document.getElementById('save-agent').innerHTML = '<i class="fas fa-plus"></i> Создать';
+      document.getElementById('delete-agent').style.display = 'none';
+      document.getElementById('view-embed-code').style.display = 'none';
+      document.getElementById('save-agent').style.display = 'inline-flex';
+      document.getElementById('create-new-agent-btn').style.display = 'none';
+      
+      document.getElementById('agent-id-display').textContent = '-';
+      document.getElementById('embed-code').textContent = '<!-- Код появится после сохранения агента -->';
+      document.getElementById('embed-code-screen').textContent = '<!-- Код появится после сохранения агента -->';
+      document.getElementById('embed-code-31').textContent = '<!-- Код появится после сохранения агента -->';
+
+      // Сброс типа виджета
+      activeTestType = 'standard';
+      switchTestType('standard');
+
+      // Пустые embed-коды для fullscreen
+      document.getElementById('embed-code-fullscreen-25').textContent = '<!-- Код появится после сохранения агента -->';
+      document.getElementById('embed-code-fullscreen-31').textContent = '<!-- Код появится после сохранения агента -->';
+    }
+    
+    // ============================================================================
+    // ИНИЦИАЛИЗАЦИЯ
+    // ============================================================================
+    
+    async function initPage() {
+      if (!checkAuth()) return;
+
+      initVoiceOptions();
+
+      const hasApiKey = await loadUserData();
+
+      // Загружаем лимиты и применяем матрицу доступа к сайдбару всегда,
+      // независимо от наличия API ключа
+      await loadAssistantsLimitInfo();
+      applyFeatureAccessToSidebar();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      const mode = urlParams.get('mode');
+
+      if (!hasApiKey) {
+        checkApiKeyAndShowContent(false);
+      } else {
+        if (id) {
+          currentAgentId = id;
+          switchToEditMode();
+          await loadAvailableFunctions(); // Загружаем функции
+          await loadAgentData(id);
+        } else if (mode === 'create') {
+          // Проверяем лимит при попытке создания через URL
+          if (!canCreateAssistant()) {
+            showLimitReachedNotification();
+            window.location.href = '/static/gemini-agents.html';
+            return;
+          }
+          
+          switchToEditMode();
+          await loadAvailableFunctions(); // Загружаем функции
+          initCreateMode();
+        } else {
+          checkApiKeyAndShowContent(true);
+          await loadAgentsList();
+        }
+      }
+    }
+    
+    // ============================================================================
+    // EVENT LISTENERS
+    // ============================================================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      initPage();
+      
+      document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
+      document.getElementById('save-api-key').addEventListener('click', saveApiKey);
+      document.getElementById('delete-api-key').addEventListener('click', deleteApiKey);
+      
+      document.getElementById('mobile-menu-toggle').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.toggle('mobile-open');
+        document.getElementById('sidebar-overlay').classList.toggle('show');
+      });
+      
+      document.getElementById('sidebar-overlay').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.remove('mobile-open');
+        this.classList.remove('show');
+      });
+      
+      document.getElementById('user-menu-button').addEventListener('click', function(e) {
+        e.stopPropagation();
+        document.getElementById('user-dropdown').classList.toggle('show');
+      });
+      
+      document.addEventListener('click', function(e) {
+        const dropdown = document.getElementById('user-dropdown');
+        const button = document.getElementById('user-menu-button');
+        if (dropdown.classList.contains('show') && !dropdown.contains(e.target) && !button.contains(e.target)) {
+          dropdown.classList.remove('show');
+        }
+      });
+      
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+          switchTab(this.getAttribute('data-tab'));
+        });
+      });
+      
+      document.addEventListener('click', function(e) {
+        const voiceOption = e.target.closest('.voice-option');
+        if (voiceOption) {
+          document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+          voiceOption.classList.add('selected');
+          voiceOption.querySelector('input').checked = true;
+        }
+      });
+      
+      document.getElementById('agent-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        saveAgent();
+      });
+      
+      document.getElementById('cancel-button').addEventListener('click', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const mode = urlParams.get('mode');
+        
+        if (mode === 'create') {
+          window.location.href = '/static/gemini-agents.html';
+        } else if (currentAgentId) {
+          loadAgentData(currentAgentId);
+        } else {
+          window.location.href = '/static/gemini-agents.html';
+        }
+      });
+      
+      document.getElementById('save-agent').addEventListener('click', saveAgent);
+      document.getElementById('delete-agent').addEventListener('click', deleteAgent);
+      document.getElementById('view-embed-code').addEventListener('click', () => switchTab('embed'));
+      
+      // Обработчик для кнопки создания в top-nav с проверкой лимита
+      document.getElementById('create-new-agent-btn').addEventListener('click', function() {
+        if (canCreateAssistant()) {
+          navigateToCreateAgent();
+        } else {
+          showLimitReachedNotification();
+        }
+      });
+      
+      document.getElementById('copy-embed-code').addEventListener('click', function() {
+        const embedCode = document.getElementById('embed-code').textContent;
+        navigator.clipboard.writeText(embedCode).then(() => {
+          showNotification('Код для встраивания скопирован!', 'success');
+        });
+      });
+      
+      document.getElementById('copy-embed-code-screen').addEventListener('click', function() {
+        const embedCode = document.getElementById('embed-code-screen').textContent;
+        navigator.clipboard.writeText(embedCode).then(() => {
+          showNotification('Код виджета с захватом экрана скопирован!', 'success');
+        });
+      });
+
+      document.getElementById('copy-embed-code-31').addEventListener('click', function() {
+        const embedCode = document.getElementById('embed-code-31').textContent;
+        navigator.clipboard.writeText(embedCode).then(() => {
+          showNotification('Код виджета Gemini 3.1 скопирован!', 'success');
+        });
+      });
+
+      document.getElementById('copy-embed-code-fullscreen-25').addEventListener('click', function() {
+        const code = document.getElementById('embed-code-fullscreen-25').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+          showNotification('Код Fullscreen виджета (2.5) скопирован!', 'success');
+        });
+      });
+
+      document.getElementById('copy-embed-code-fullscreen-31').addEventListener('click', function() {
+        const code = document.getElementById('embed-code-fullscreen-31').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+          showNotification('Код Fullscreen виджета (3.1) скопирован!', 'success');
+        });
+      });
+
+      document.getElementById('copy-agent-id').addEventListener('click', function() {
+        const agentId = document.getElementById('agent-id-display').textContent;
+        if (agentId && agentId !== '-') {
+          navigator.clipboard.writeText(agentId).then(() => {
+            showNotification('ID агента скопирован!', 'success');
+          });
+        }
+      });
+      
+      document.getElementById('notification-close').addEventListener('click', function() {
+        const notification = document.getElementById('notification');
+        notification.classList.remove('show');
+        setTimeout(() => notification.style.display = 'none', 300);
+      });
+      
+      // Обработчики модалки блокировки функции
+      document.getElementById('feature-modal-overlay').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-close').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-upgrade').addEventListener('click', function() {
+        hideFeatureBlockedModal();
+        window.location.href = '/static/dashboard.html';
+      });
+
+      // Блокировка переходов на заблокированные по тарифу страницы
+      document.querySelectorAll('[data-feature]').forEach(link => {
+        link.addEventListener('click', function(e) {
+          if (this.classList.contains('plan-locked-feature')) {
+            e.preventDefault();
+            showFeatureBlockedModal(this.getAttribute('data-feature'));
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

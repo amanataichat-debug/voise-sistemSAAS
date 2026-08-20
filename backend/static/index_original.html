@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<!-- ✅ PRODUCTION READY: Email Verification с UX улучшениями + Скрытые партнерские уведомления -->
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voicyfy - Говорит. Слушает. Понимает.</title>
+  
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --accent-blue: #4a86e8;
+      --gradient-blue: linear-gradient(135deg, #4a86e8, #2563eb);
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --radius-full: 9999px;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ✅ Inline Notification Styles */
+    .inline-notification {
+      padding: 1rem 1.5rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 500;
+      animation: slideInDown 0.3s ease-out;
+      box-shadow: var(--shadow-md);
+    }
+
+    .inline-notification.loading {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+    }
+
+    .inline-notification.success {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+    }
+
+    .inline-notification.error {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+    }
+
+    .inline-notification.warning {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+    }
+
+    .inline-notification i {
+      font-size: 1.25rem;
+    }
+
+    .inline-notification .spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes slideInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ✅ Email Verification Styles */
+    .verification-section {
+      margin-top: 1.5rem;
+      padding: 1.5rem;
+      background: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      border: 2px solid var(--primary-blue-light);
+      animation: slideIn 0.3s ease;
+    }
+
+    .verification-notice {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .verification-notice i {
+      margin-right: 0.5rem;
+    }
+
+    .verification-notice.warning {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+
+    .code-input-container {
+      position: relative;
+      margin: 1.5rem 0;
+    }
+
+    #verification-code {
+      font-size: 2rem !important;
+      text-align: center;
+      letter-spacing: 0.5rem;
+      font-weight: 700;
+      padding: 1.5rem 1rem !important;
+      font-family: 'Courier New', monospace;
+    }
+
+    .verification-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
+      background: var(--white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .attempts-left {
+      font-weight: 600;
+      color: var(--primary-blue);
+    }
+
+    .attempts-left.warning {
+      color: #f59e0b;
+    }
+
+    .attempts-left.danger {
+      color: #ef4444;
+    }
+
+    .resend-timer {
+      font-weight: 600;
+      color: var(--text-gray);
+    }
+
+    .btn-resend {
+      margin-top: 1rem;
+      background: transparent;
+      border: 2px solid var(--primary-blue);
+      color: var(--primary-blue);
+    }
+
+    .btn-resend:hover:not(:disabled) {
+      background: var(--bg-blue-light);
+    }
+
+    .btn-resend:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.95rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      border: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--primary-blue-dark);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-primary .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--primary-blue);
+      color: var(--primary-blue);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-blue-light);
+    }
+    
+    .btn-large {
+      padding: 1rem 2rem;
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    }
+    
+    .main-container {
+      display: flex;
+      min-height: 100vh;
+    }
+    
+    .presentation-section {
+      flex: 1;
+      background-color: var(--white);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .auth-section {
+      width: 500px;
+      background-color: var(--bg-light);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    
+    .navbar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .logo:hover {
+      transform: translateY(-1px);
+    }
+
+    .logo img {
+      height: 40px;
+      width: auto;
+      margin-right: 12px;
+    }
+
+    .logo-text {
+      font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #1d4ed8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.025em;
+      text-shadow: 0 2px 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .nav-icons {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .nav-icon-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      transition: all 0.3s ease;
+      position: relative;
+      text-decoration: none;
+    }
+
+    .nav-icon-link:hover {
+      background-color: var(--primary-blue);
+      color: var(--white);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .nav-icon-link i {
+      font-size: 1.1rem;
+    }
+
+    .nav-icon-telegram {
+      background-color: #f0f4ff;
+      color: #0088cc;
+    }
+
+    .nav-icon-telegram:hover {
+      background-color: #0088cc;
+      color: var(--white);
+    }
+
+    .nav-icon-support {
+      background-color: #f0f4ff;
+      color: var(--primary-blue);
+    }
+
+    .nav-icon-support:hover {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+
+    .nav-icon-link::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background-color: rgba(15, 23, 42, 0.95);
+      color: var(--white);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    .nav-icon-link:hover::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(4px);
+    }
+
+    .nav-icon-link::before {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%) translateY(3px);
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 6px 6px 6px;
+      border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+      z-index: 51;
+    }
+
+    .nav-icon-link:hover::before {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(-1px);
+    }
+    
+    .sphere-container {
+      width: 320px;
+      height: 320px;
+      position: relative;
+      margin-bottom: 3rem;
+    }
+    
+    .sphere {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--gradient-blue);
+      position: relative;
+      box-shadow: 0 10px 30px rgba(74, 134, 232, 0.4);
+      overflow: hidden;
+      animation: pulse 6s infinite alternate;
+    }
+    
+    .sphere::after {
+      content: '';
+      position: absolute;
+      top: -10%;
+      left: -10%;
+      width: 120%;
+      height: 120%;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 70%);
+    }
+    
+    .wave-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-style: preserve-3d;
+      perspective: 1000px;
+    }
+    
+    .wave {
+      position: absolute;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      transform: scale(0);
+      animation: wave-animation 4s infinite;
+    }
+    
+    .wave:nth-child(1) {
+      width: 100%;
+      height: 100%;
+      animation-delay: 0s;
+    }
+    
+    .wave:nth-child(2) {
+      width: 100%;
+      height: 100%;
+      animation-delay: 1s;
+    }
+    
+    .wave:nth-child(3) {
+      width: 100%;
+      height: 100%;
+      animation-delay: 2s;
+    }
+    
+    .wave:nth-child(4) {
+      width: 100%;
+      height: 100%;
+      animation-delay: 3s;
+    }
+    
+    @keyframes wave-animation {
+      0% {
+        transform: scale(0);
+        opacity: 0.8;
+      }
+      100% {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 10px 30px rgba(74, 134, 232, 0.4);
+      }
+      50% {
+        transform: scale(1.05);
+        box-shadow: 0 15px 40px rgba(74, 134, 232, 0.6);
+      }
+    }
+    
+    .presentation-content {
+      text-align: center;
+      max-width: 600px;
+      z-index: 1;
+    }
+    
+    .main-title {
+      font-size: 3rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, #4a86e8, #2563eb, #1d4ed8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+    
+    .subtitle {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      color: var(--text-gray);
+    }
+    
+    .description {
+      font-size: 1.125rem;
+      color: var(--text-gray);
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+    
+    .auth-tabs {
+      display: flex;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .auth-tab {
+      padding: 1rem 1.5rem;
+      font-weight: 600;
+      color: var(--text-gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    
+    .auth-tab.active {
+      color: var(--primary-blue);
+      border-bottom-color: var(--primary-blue);
+    }
+    
+    .auth-form {
+      display: none;
+    }
+    
+    .auth-form.active {
+      display: block;
+    }
+    
+    .auth-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+    }
+    
+    .auth-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      color: var(--text-gray);
+    }
+    
+    .auth-footer a {
+      color: var(--primary-blue);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .auth-footer a:hover {
+      text-decoration: underline;
+    }
+
+    .use-cases-section {
+      background-color: var(--white);
+      padding: 5rem 0;
+    }
+
+    .use-cases-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    .use-cases-header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .use-cases-title {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, #4a86e8, #2563eb, #1d4ed8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+
+    .use-cases-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .use-cases-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 3rem;
+      margin-bottom: 4rem;
+    }
+
+    .use-case-card {
+      background-color: var(--bg-light);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem;
+      transition: all 0.3s ease;
+      position: relative;
+      border: 1px solid var(--border-color);
+    }
+
+    .use-case-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+      border-color: var(--primary-blue-light);
+    }
+
+    .use-case-icon {
+      width: 60px;
+      height: 60px;
+      background: var(--gradient-blue);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .use-case-icon i {
+      font-size: 1.75rem;
+      color: var(--white);
+    }
+
+    .use-case-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+    }
+
+    .use-case-description {
+      font-size: 1rem;
+      color: var(--text-gray);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+
+    .use-case-features {
+      list-style: none;
+      padding: 0;
+    }
+
+    .use-case-features li {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      font-size: 0.95rem;
+      color: var(--text-gray);
+    }
+
+    .use-case-features i {
+      color: #10b981;
+      margin-right: 0.75rem;
+      font-size: 0.875rem;
+    }
+
+    .pricing-section {
+      background: linear-gradient(135deg, var(--bg-light) 0%, #e2e8f0 100%);
+      padding: 4rem 0;
+      margin-top: auto;
+    }
+
+    .pricing-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    .pricing-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .pricing-title {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, #4a86e8, #2563eb, #1d4ed8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+
+    .pricing-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .pricing-plans {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 3rem;
+      margin-bottom: 3rem;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .pricing-card {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem;
+      box-shadow: var(--shadow-lg);
+      transition: all 0.3s ease;
+      position: relative;
+      border: 2px solid transparent;
+    }
+
+    .pricing-card.featured {
+      border-color: var(--primary-blue);
+      transform: scale(1.02);
+      background: linear-gradient(135deg, var(--white) 0%, #f8fafc 100%);
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+
+    .pricing-card.featured:hover {
+      transform: scale(1.02) translateY(-8px);
+    }
+
+    .pricing-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.5rem 1.25rem;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      box-shadow: var(--shadow-md);
+    }
+
+    .pricing-badge.free {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+    }
+
+    .pricing-badge.popular {
+      background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+      color: white;
+    }
+
+    .pricing-card-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .pricing-card h3 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    .pricing-card-description {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+
+    .pricing-price {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .price-amount {
+      font-size: 3.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--primary-blue), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1;
+    }
+
+    .price-period {
+      font-size: 1rem;
+      color: var(--text-gray);
+      margin-left: 0.5rem;
+      font-weight: 500;
+    }
+
+    .price-note {
+      font-size: 0.875rem;
+      color: var(--text-light);
+      margin-top: 0.5rem;
+    }
+
+    .pricing-features {
+      margin-bottom: 2rem;
+    }
+
+    .pricing-features ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .pricing-features li {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+      color: var(--text-gray);
+      font-size: 0.95rem;
+    }
+
+    .pricing-features i {
+      color: #10b981;
+      margin-right: 1rem;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .pricing-features .highlight {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .footer {
+      background-color: var(--white);
+      border-top: 1px solid var(--border-color);
+      padding: 3rem 0 2rem 0;
+    }
+
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .footer-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 2rem;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+    }
+
+    .footer-logo img {
+      height: 32px;
+      width: auto;
+      margin-right: 10px;
+    }
+
+    .footer-logo-text {
+      font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.025em;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-link {
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    }
+
+    .footer-link:hover {
+      color: var(--primary-blue);
+    }
+
+    .footer-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 1rem 0;
+    }
+
+    .footer-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-copy {
+      color: var(--text-light);
+      font-size: 0.875rem;
+    }
+
+    .footer-contact {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+
+    .page-wrapper {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .content-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    @media (max-width: 1024px) {
+      .main-container {
+        flex-direction: column;
+      }
+      
+      .auth-section {
+        width: 100%;
+        padding: 2rem;
+      }
+      
+      .presentation-section {
+        padding: 4rem 2rem;
+      }
+      
+      .sphere-container {
+        width: 250px;
+        height: 250px;
+      }
+      
+      .main-title {
+        font-size: 2.5rem;
+      }
+      
+      .subtitle {
+        font-size: 1.5rem;
+      }
+
+      .pricing-card.featured {
+        transform: none;
+      }
+
+      .pricing-card.featured:hover {
+        transform: translateY(-8px);
+      }
+
+      .use-cases-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .presentation-section {
+        padding: 3rem 1.5rem;
+      }
+      
+      .sphere-container {
+        width: 200px;
+        height: 200px;
+        margin-bottom: 2rem;
+      }
+      
+      .main-title {
+        font-size: 2rem;
+      }
+      
+      .subtitle {
+        font-size: 1.25rem;
+      }
+      
+      .description {
+        font-size: 1rem;
+      }
+
+      .pricing-section {
+        padding: 3rem 0;
+      }
+
+      .pricing-container {
+        padding: 0 1rem;
+      }
+
+      .pricing-title {
+        font-size: 2rem;
+      }
+
+      .pricing-plans {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+      }
+
+      .price-amount {
+        font-size: 3rem;
+      }
+
+      .footer-main {
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .footer-bottom {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+      }
+
+      .footer-links {
+        justify-content: center;
+      }
+
+      .nav-icons {
+        gap: 0.5rem;
+      }
+
+      .nav-icon-link {
+        width: 36px;
+        height: 36px;
+      }
+
+      .nav-icon-link i {
+        font-size: 1rem;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .presentation-section {
+        padding: 2rem 1rem;
+      }
+      
+      .sphere-container {
+        width: 160px;
+        height: 160px;
+      }
+      
+      .main-title {
+        font-size: 1.75rem;
+      }
+      
+      .auth-tab {
+        padding: 0.75rem 1rem;
+      }
+      
+      .auth-section {
+        padding: 1.5rem;
+      }
+
+      .footer-content {
+        padding: 0 1rem;
+      }
+
+      .footer-links {
+        gap: 1rem;
+      }
+
+      .logo img, .footer-logo img {
+        height: 28px;
+      }
+
+      .logo-text {
+        font-size: 1.5rem;
+      }
+
+      .footer-logo-text {
+        font-size: 1.1rem;
+      }
+
+      .pricing-card {
+        padding: 2rem;
+      }
+
+      .price-amount {
+        font-size: 2.5rem;
+      }
+
+      .nav-icon-link::after {
+        font-size: 0.75rem;
+        padding: 0.375rem 0.75rem;
+      }
+
+      .navbar {
+        padding: 1rem;
+      }
+
+      .use-cases-grid {
+        gap: 1.5rem;
+      }
+
+      .use-case-card {
+        padding: 2rem;
+      }
+
+      #verification-code {
+        font-size: 1.5rem !important;
+        letter-spacing: 0.3rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="content-wrapper">
+      <div class="main-container">
+        <div class="presentation-section">
+          <div class="navbar">
+            <a href="/" class="logo">
+              <img src="/static/images/IMG_2820.PNG" alt="Voicyfy">
+              <span class="logo-text">Voicyfy</span>
+            </a>
+            <div class="nav-icons">
+              <a href="https://t.me/voicyfy" target="_blank" class="nav-icon-link nav-icon-telegram" data-tooltip="Новостной канал Voicyfy">
+                <i class="fab fa-telegram"></i>
+              </a>
+              <a href="https://t.me/voicyfy_support" class="nav-icon-link nav-icon-support" data-tooltip="Обратиться в Техническую поддержку">
+                <i class="fas fa-headset"></i>
+              </a>
+            </div>
+          </div>
+          
+          <div class="sphere-container">
+            <div class="sphere"></div>
+            <div class="wave-container">
+              <div class="wave"></div>
+              <div class="wave"></div>
+              <div class="wave"></div>
+              <div class="wave"></div>
+            </div>
+          </div>
+          
+          <div class="presentation-content">
+            <h1 class="main-title">Ваш голосовой ИИ.</h1>
+            <h2 class="subtitle">Говорит. Слушает. Понимает.</h2>
+            <p class="description">
+              Создавайте голосовых ассистентов на основе OpenAI за минуты. Загружайте базы знаний, интегрируйте на сайт или в приложение одним кликом.
+            </p>
+            <a href="#register" class="btn btn-primary btn-large" id="cta-button">
+              Создать первого бота
+            </a>
+          </div>
+        </div>
+        
+        <div class="auth-section">
+          <div class="auth-tabs">
+            <div class="auth-tab" data-tab="login">Вход</div>
+            <div class="auth-tab active" data-tab="register">Регистрация</div>
+          </div>
+          
+          <form id="login-form" class="auth-form">
+            <h2 class="auth-title">Вход в аккаунт</h2>
+            
+            <div id="login-notification-container"></div>
+            
+            <div class="form-group">
+              <label for="login-email">Email</label>
+              <input type="email" id="login-email" class="form-control" placeholder="your@email.com" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="login-password">Пароль</label>
+              <input type="password" id="login-password" class="form-control" placeholder="••••••••" required>
+            </div>
+            
+            <button type="submit" id="login-submit-button" class="btn btn-primary" style="width: 100%;">Войти</button>
+            
+            <div class="auth-footer">
+              <p>Еще нет аккаунта? <a href="#register" class="switch-auth" data-tab="register">Зарегистрироваться</a></p>
+            </div>
+          </form>
+          
+          <form id="register-form" class="auth-form active">
+            <h2 class="auth-title">Создайте аккаунт</h2>
+            
+            <!-- ❌ УБРАНО: referral-notification-container -->
+            <div id="register-notification-container"></div>
+            
+            <div class="form-group">
+              <label for="register-email">Email</label>
+              <input type="email" id="register-email" class="form-control" placeholder="your@email.com" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="register-password">Пароль</label>
+              <input type="password" id="register-password" class="form-control" placeholder="Минимум 8 символов" required minlength="8">
+            </div>
+            
+            <div class="form-group">
+              <label for="register-name">Имя</label>
+              <input type="text" id="register-name" class="form-control" placeholder="Введите ваше имя">
+            </div>
+            
+            <div class="form-group">
+              <label for="register-company">Компания (опционально)</label>
+              <input type="text" id="register-company" class="form-control" placeholder="Название вашей компании">
+            </div>
+            
+            <!-- ✅ EMAIL VERIFICATION SECTION -->
+            <div id="verification-section" class="verification-section" style="display: none;">
+              <div id="verification-notice" class="verification-notice">
+                <i class="fas fa-envelope"></i>
+                Код подтверждения отправлен на <strong id="verification-email"></strong>
+              </div>
+              
+              <div id="verification-notification-container"></div>
+              
+              <div class="code-input-container">
+                <label for="verification-code">Введите 6-значный код</label>
+                <input 
+                  type="text" 
+                  id="verification-code" 
+                  class="form-control" 
+                  placeholder="000000"
+                  maxlength="6"
+                  pattern="[0-9]{6}"
+                  inputmode="numeric"
+                >
+              </div>
+              
+              <div class="verification-info">
+                <span id="attempts-left" class="attempts-left">Осталось попыток: 3</span>
+                <span id="resend-timer" class="resend-timer" style="display: none;">
+                  Повторная отправка через <strong id="timer-seconds">60</strong>с
+                </span>
+              </div>
+              
+              <button type="button" id="verify-button" class="btn btn-primary" style="width: 100%;">
+                Подтвердить email
+              </button>
+              
+              <button type="button" id="resend-button" class="btn btn-resend" style="width: 100%; display: none;" disabled>
+                <i class="fas fa-redo"></i> Отправить код повторно
+              </button>
+            </div>
+            
+            <button type="submit" id="register-submit-button" class="btn btn-primary" style="width: 100%;">
+              Зарегистрироваться
+            </button>
+            
+            <div class="auth-footer">
+              <p>Уже есть аккаунт? <a href="#login" class="switch-auth" data-tab="login">Войти</a></p>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <section class="use-cases-section">
+        <div class="use-cases-container">
+          <div class="use-cases-header">
+            <h2 class="use-cases-title">Для чего использовать Voicyfy?</h2>
+            <p class="use-cases-subtitle">
+              Интегрируйте голосовых ИИ-ассистентов в любые каналы коммуникации для автоматизации общения с клиентами
+            </p>
+          </div>
+          
+          <div class="use-cases-grid">
+            <div class="use-case-card">
+              <div class="use-case-icon">
+                <i class="fas fa-globe"></i>
+              </div>
+              <h3 class="use-case-title">Встроить на сайт</h3>
+              <p class="use-case-description">
+                Добавьте голосового ассистента на ваш сайт одной строкой кода. Ассистент будет общаться с посетителями голосом в режиме реального времени.
+              </p>
+              <ul class="use-case-features">
+                <li><i class="fas fa-check"></i> Простая интеграция через HTML-код</li>
+                <li><i class="fas fa-check"></i> Настраиваемый внешний вид виджета</li>
+                <li><i class="fas fa-check"></i> Работа на любых платформах</li>
+                <li><i class="fas fa-check"></i> Мгновенные ответы на вопросы 24/7</li>
+              </ul>
+            </div>
+            
+            <div class="use-case-card">
+              <div class="use-case-icon">
+                <i class="fas fa-phone"></i>
+              </div>
+              <h3 class="use-case-title">Подключить к телефонии</h3>
+              <p class="use-case-description">
+                Интегрируйте ИИ-ассистента с вашей телефонной системой для автоматизации входящих и исходящих звонков.
+              </p>
+              <ul class="use-case-features">
+                <li><i class="fas fa-check"></i> Интеграция с SIP/VoIP системами</li>
+                <li><i class="fas fa-check"></i> Обработка входящих звонков</li>
+                <li><i class="fas fa-check"></i> Автоматические исходящие звонки</li>
+                <li><i class="fas fa-check"></i> Запись и аналитика разговоров</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pricing-section">
+        <div class="pricing-container">
+          <div class="pricing-header">
+            <h2 class="pricing-title">Тарифы и стоимость</h2>
+            <p class="pricing-subtitle">
+              Выберите подходящий план для создания голосовых ИИ-ассистентов
+            </p>
+          </div>
+          
+          <div class="pricing-plans">
+            <div class="pricing-card">
+              <div class="pricing-badge free">Бесплатно</div>
+              <div class="pricing-card-header">
+                <h3>Пробный период</h3>
+                <p class="pricing-card-description">Протестируйте возможности платформы</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">0 ₽</span>
+                <span class="price-period">3 дня</span>
+                <div class="price-note">Без обязательств</div>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">1 голосовой ИИ-агент</span></li>
+                  <li><i class="fas fa-check"></i> Базовые функции платформы</li>
+                  <li><i class="fas fa-check"></i> База знаний для ИИ-агента</li>
+                  <li><i class="fas fa-check"></i> Тестирование возможностей</li>
+                  <li><i class="fas fa-check"></i> Техническая поддержка</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="pricing-card featured">
+              <div class="pricing-badge popular">Популярный</div>
+              <div class="pricing-card-header">
+                <h3>Стандартный</h3>
+                <p class="pricing-card-description">Полный доступ ко всем функциям</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">1 490 ₽</span>
+                <span class="price-period">30 дней</span>
+                <div class="price-note">Разовая оплата</div>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">3 голосовых ИИ-агента</span></li>
+                  <li><i class="fas fa-check"></i> Базовые функции платформы</li>
+                  <li><i class="fas fa-check"></i> База знаний для ИИ-агента</li>
+                  <li><i class="fas fa-check"></i> Тестирование возможностей</li>
+                  <li><i class="fas fa-check"></i> Техническая поддержка</li>
+                  <li><i class="fas fa-check"></i> Аналитика и статистика</li>
+                  <li><i class="fas fa-check"></i> Приоритетная поддержка</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="footer">
+      <div class="footer-content">
+        <div class="footer-main">
+          <div class="footer-logo">
+            <img src="/static/images/IMG_2820.PNG" alt="Voicyfy">
+            <span class="footer-logo-text">Voicyfy</span>
+          </div>
+          <div class="footer-links">
+            <a href="/static/privacy-policy.html" class="footer-link">Политика конфиденциальности</a>
+            <a href="/static/terms-of-service.html" class="footer-link">Пользовательское соглашение</a>
+            <a href="/static/public-offer.html" class="footer-link">Публичная оферта</a>
+            <a href="/static/payment-terms.html" class="footer-link">Условия оплаты и использования</a>
+          </div>
+        </div>
+
+        <div class="footer-divider"></div>
+
+        <div class="footer-bottom">
+          <div class="footer-copy">© 2025 Voicyfy. Все права защищены.</div>
+          <div class="footer-contact">
+            ИП Шишкин Валерий Сергеевич | ИНН: 385101159652 | well96well@gmail.com
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+  
+  <!-- ❌ УБРАНО: partner-welcome-modal (модальное окно с 30% комиссией) -->
+  
+  <script>
+    // ========================================
+    // ✅ UTILITY FUNCTIONS - Inline Notifications
+    // ========================================
+    function showInlineNotification(containerId, type, message, iconClass = null) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      
+      let icon = '';
+      if (type === 'loading') {
+        icon = '<div class="spinner"></div>';
+      } else if (iconClass) {
+        icon = `<i class="${iconClass}"></i>`;
+      } else {
+        const defaultIcons = {
+          success: 'fas fa-check-circle',
+          error: 'fas fa-exclamation-circle',
+          warning: 'fas fa-exclamation-triangle',
+          info: 'fas fa-info-circle'
+        };
+        icon = `<i class="${defaultIcons[type] || defaultIcons.info}"></i>`;
+      }
+      
+      container.innerHTML = `
+        <div class="inline-notification ${type}">
+          ${icon}
+          <span>${message}</span>
+        </div>
+      `;
+    }
+    
+    function clearInlineNotification(containerId) {
+      const container = document.getElementById(containerId);
+      if (container) {
+        container.innerHTML = '';
+      }
+    }
+
+    // ========================================
+    // ✅ API CLIENT
+    // ========================================
+    const api = {
+      baseUrl: '/api',
+      
+      async fetch(endpoint, options = {}) {
+        const token = localStorage.getItem('auth_token');
+        
+        if (token) {
+          options.headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`
+          };
+        }
+        
+        if (options.body && typeof options.body !== 'string') {
+          options.headers = {
+            ...options.headers,
+            'Content-Type': 'application/json'
+          };
+          options.body = JSON.stringify(options.body);
+        }
+        
+        try {
+          const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.detail || data.message || 'API Error');
+          }
+          
+          return data;
+        } catch (error) {
+          console.error('API Error:', error);
+          throw error;
+        }
+      },
+      
+      register(userData) {
+        return this.fetch('/auth/register', {
+          method: 'POST',
+          body: userData
+        });
+      },
+      
+      login(credentials) {
+        return this.fetch('/auth/login', {
+          method: 'POST',
+          body: credentials
+        });
+      },
+      
+      verifyEmail(data) {
+        return this.fetch('/email-verification/verify', {
+          method: 'POST',
+          body: data
+        });
+      },
+      
+      resendVerificationCode(data) {
+        return this.fetch('/email-verification/resend', {
+          method: 'POST',
+          body: data
+        });
+      }
+    };
+
+    // ========================================
+    // ✅ EMAIL VERIFICATION CLASS
+    // ========================================
+    class EmailVerification {
+      constructor() {
+        this.attempts = 3;
+        this.resendCooldown = 60;
+        this.timerInterval = null;
+        this.userEmail = null;
+      }
+
+      showVerificationSection(email, message = null) {
+        this.userEmail = email;
+        
+        // Hide register button
+        document.getElementById('register-submit-button').style.display = 'none';
+        
+        // Show verification section
+        const section = document.getElementById('verification-section');
+        section.style.display = 'block';
+        
+        // Set email in notification
+        document.getElementById('verification-email').textContent = email;
+        
+        // Update notice message if provided (for "account exists" scenario)
+        if (message) {
+          const noticeElement = document.getElementById('verification-notice');
+          noticeElement.className = 'verification-notice warning';
+          noticeElement.innerHTML = `<i class="fas fa-info-circle"></i> ${message}`;
+        }
+        
+        // Start resend timer
+        this.startResendTimer();
+        
+        // Focus on code input
+        document.getElementById('verification-code').focus();
+      }
+
+      startResendTimer() {
+        let seconds = this.resendCooldown;
+        const timerElement = document.getElementById('timer-seconds');
+        const timerContainer = document.getElementById('resend-timer');
+        const resendButton = document.getElementById('resend-button');
+        
+        // Show timer, hide button
+        timerContainer.style.display = 'inline';
+        resendButton.style.display = 'none';
+        resendButton.disabled = true;
+        
+        // Clear previous timer
+        if (this.timerInterval) {
+          clearInterval(this.timerInterval);
+        }
+        
+        this.timerInterval = setInterval(() => {
+          seconds--;
+          timerElement.textContent = seconds;
+          
+          if (seconds <= 0) {
+            clearInterval(this.timerInterval);
+            timerContainer.style.display = 'none';
+            resendButton.style.display = 'block';
+            resendButton.disabled = false;
+          }
+        }, 1000);
+      }
+
+      updateAttemptsDisplay() {
+        const attemptsElement = document.getElementById('attempts-left');
+        attemptsElement.textContent = `Осталось попыток: ${this.attempts}`;
+        
+        // Change color based on attempts
+        attemptsElement.classList.remove('warning', 'danger');
+        if (this.attempts === 2) {
+          attemptsElement.classList.add('warning');
+        } else if (this.attempts === 1) {
+          attemptsElement.classList.add('danger');
+        }
+      }
+
+      async verifyCode() {
+        const code = document.getElementById('verification-code').value.trim();
+        
+        if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+          showInlineNotification('verification-notification-container', 'error', 'Введите 6-значный код');
+          return;
+        }
+        
+        // Show loading in button
+        const verifyButton = document.getElementById('verify-button');
+        const originalText = verifyButton.innerHTML;
+        verifyButton.disabled = true;
+        verifyButton.innerHTML = '<div class="spinner"></div> Проверяем...';
+        
+        try {
+          const response = await api.verifyEmail({
+            email: this.userEmail,
+            code: code
+          });
+          
+          console.log('✅ Email verified:', response);
+          
+          // Save token
+          localStorage.setItem('auth_token', response.data.token);
+          
+          // ✅ Show success notification WITHOUT alert
+          showInlineNotification('verification-notification-container', 'success', 'Email подтвержден! Переходим в dashboard...');
+          
+          // ✅ Redirect immediately without waiting
+          setTimeout(() => {
+            window.location.href = '/static/dashboard.html';
+          }, 500);
+          
+        } catch (error) {
+          console.error('❌ Verification error:', error);
+          
+          // Restore button
+          verifyButton.disabled = false;
+          verifyButton.innerHTML = originalText;
+          
+          // Decrease attempts
+          this.attempts--;
+          this.updateAttemptsDisplay();
+          
+          if (this.attempts === 0) {
+            showInlineNotification('verification-notification-container', 'error', 'Исчерпаны попытки ввода кода. Запросите новый код.');
+            document.getElementById('verification-code').disabled = true;
+            document.getElementById('verify-button').disabled = true;
+          } else {
+            showInlineNotification('verification-notification-container', 'error', `Неверный код. Осталось попыток: ${this.attempts}`);
+            document.getElementById('verification-code').value = '';
+            document.getElementById('verification-code').focus();
+          }
+        }
+      }
+
+      async resendCode() {
+        const resendButton = document.getElementById('resend-button');
+        const originalText = resendButton.innerHTML;
+        resendButton.disabled = true;
+        resendButton.innerHTML = '<div class="spinner"></div> Отправка...';
+        
+        try {
+          await api.resendVerificationCode({ email: this.userEmail });
+          
+          // Reset attempts
+          this.attempts = 3;
+          this.updateAttemptsDisplay();
+          
+          // Clear code field
+          document.getElementById('verification-code').value = '';
+          document.getElementById('verification-code').disabled = false;
+          document.getElementById('verify-button').disabled = false;
+          
+          // Start timer again
+          this.startResendTimer();
+          
+          showInlineNotification('verification-notification-container', 'success', 'Новый код отправлен на email!');
+          
+        } catch (error) {
+          console.error('❌ Resend error:', error);
+          
+          resendButton.disabled = false;
+          resendButton.innerHTML = originalText;
+          
+          if (error.message.includes('wait') || error.message.includes('подождите')) {
+            showInlineNotification('verification-notification-container', 'warning', 'Подождите перед повторной отправкой');
+          } else {
+            showInlineNotification('verification-notification-container', 'error', 'Ошибка отправки кода. Попробуйте позже.');
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ✅ REFERRAL TRACKER CLASS (Silent Mode)
+    // ========================================
+    class ReferralTracker {
+      static init() {
+        console.log('🔗 Initializing Referral Tracker...');
+        this.captureUTMData();
+        // ❌ УБРАНО: this.showReferralNotification();
+      }
+      
+      static captureUTMData() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        const utmData = {
+          utm_source: urlParams.get('utm_source'),
+          utm_medium: urlParams.get('utm_medium'),
+          utm_campaign: urlParams.get('utm_campaign'),
+          utm_content: urlParams.get('utm_content'),
+          utm_term: urlParams.get('utm_term')
+        };
+        
+        console.log('🔍 Checking UTM data:', utmData);
+        
+        if (utmData.utm_campaign && utmData.utm_source === 'partner') {
+          localStorage.setItem('referral_code', utmData.utm_campaign);
+          localStorage.setItem('utm_data', JSON.stringify(utmData));
+          console.log('✅ Referral data captured:', utmData);
+        }
+      }
+      
+      static isRegistrationPage() {
+        return document.querySelector('#register-form') !== null;
+      }
+      
+      static getReferralData() {
+        const referralCode = localStorage.getItem('referral_code');
+        const utmData = localStorage.getItem('utm_data');
+        
+        if (referralCode) {
+          return {
+            referral_code: referralCode,
+            utm_data: utmData ? JSON.parse(utmData) : null
+          };
+        }
+        
+        return null;
+      }
+      
+      static clearReferralData() {
+        localStorage.removeItem('referral_code');
+        localStorage.removeItem('utm_data');
+        console.log('🧹 Referral data cleared');
+      }
+    }
+
+    // ========================================
+    // ✅ MAIN APPLICATION LOGIC
+    // ========================================
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize global instances
+      const emailVerification = new EmailVerification();
+      ReferralTracker.init();
+      
+      // ========================================
+      // TAB SWITCHING
+      // ========================================
+      const tabs = document.querySelectorAll('.auth-tab');
+      const forms = document.querySelectorAll('.auth-form');
+      const switchLinks = document.querySelectorAll('.switch-auth');
+      const ctaButton = document.getElementById('cta-button');
+      
+      function switchTab(tabId) {
+        tabs.forEach(tab => {
+          tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId);
+        });
+        
+        forms.forEach(form => {
+          form.classList.toggle('active', form.id === `${tabId}-form`);
+        });
+        
+        // Clear notifications when switching tabs
+        clearInlineNotification('register-notification-container');
+        clearInlineNotification('login-notification-container');
+      }
+      
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const tabId = tab.getAttribute('data-tab');
+          switchTab(tabId);
+        });
+      });
+      
+      switchLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const tabId = link.getAttribute('data-tab');
+          switchTab(tabId);
+        });
+      });
+      
+      ctaButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchTab('register');
+        document.querySelector('.auth-section').scrollIntoView({ behavior: 'smooth' });
+      });
+      
+      // ========================================
+      // ✅ REGISTRATION HANDLER (with UX improvements)
+      // ========================================
+      const registerForm = document.getElementById('register-form');
+      const registerButton = document.getElementById('register-submit-button');
+      
+      registerForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('register-email').value;
+        const password = document.getElementById('register-password').value;
+        const firstName = document.getElementById('register-name').value;
+        const companyName = document.getElementById('register-company').value;
+        
+        // ✅ UX IMPROVEMENT: Show loading notification immediately
+        showInlineNotification('register-notification-container', 'loading', 'Отправляем код верификации на email...');
+        
+        // Disable button with spinner
+        const originalButtonText = registerButton.innerHTML;
+        registerButton.disabled = true;
+        registerButton.innerHTML = '<div class="spinner"></div> Отправка...';
+        
+        try {
+          const referralData = ReferralTracker.getReferralData();
+          
+          const userData = {
+            email: email,
+            password: password,
+            first_name: firstName || null,
+            last_name: null,
+            company_name: companyName || null,
+            referral_code: referralData?.referral_code || null,
+            utm_data: referralData?.utm_data || null
+          };
+          
+          console.log('📤 Registering user:', { ...userData, password: '[HIDDEN]' });
+          
+          const data = await api.register(userData);
+          
+          console.log('✅ Registration response:', data);
+          
+          // ✅ Update notification to success
+          showInlineNotification('register-notification-container', 'success', 'Код отправлен! Проверьте email.');
+          
+          // Check if this is "account exists but not verified" scenario
+          if (data.message && data.message.includes('exists but not verified')) {
+            console.log('🔄 Account exists but not verified - showing verification');
+            
+            // Show verification section with warning message
+            emailVerification.showVerificationSection(
+              email,
+              'Аккаунт уже существует. Новый код верификации отправлен на email!'
+            );
+            
+            return;
+          }
+          
+          // Normal new registration flow
+          if (data.verification_required && data.verification_sent) {
+            // Show verification section
+            emailVerification.showVerificationSection(email);
+            
+            // ❌ УБРАНО: Show partner welcome modal
+            // if (data.referral_info) {
+            //   ReferralTracker.showPartnerWelcome(data.referral_info);
+            // }
+            
+            // Clear referral data
+            ReferralTracker.clearReferralData();
+            
+          } else if (data.token) {
+            // Old flow (if verification disabled)
+            localStorage.setItem('auth_token', data.token);
+            window.location.href = '/static/dashboard.html';
+          }
+          
+        } catch (error) {
+          console.error('❌ Registration error:', error);
+          
+          // Restore button
+          registerButton.disabled = false;
+          registerButton.innerHTML = originalButtonText;
+          
+          // Handle "Email already registered" for verified users
+          if (error.message.includes('already registered')) {
+            showInlineNotification('register-notification-container', 'error', 'Email уже зарегистрирован и подтверждён. Войдите в аккаунт.');
+            setTimeout(() => switchTab('login'), 2000);
+          } else {
+            showInlineNotification('register-notification-container', 'error', error.message || 'Ошибка регистрации');
+          }
+        }
+      });
+      
+      // ========================================
+      // ✅ VERIFICATION HANDLERS
+      // ========================================
+      document.getElementById('verify-button').addEventListener('click', () => {
+        emailVerification.verifyCode();
+      });
+      
+      document.getElementById('resend-button').addEventListener('click', () => {
+        emailVerification.resendCode();
+      });
+      
+      // Enter key for verification
+      document.getElementById('verification-code').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          emailVerification.verifyCode();
+        }
+      });
+      
+      // ========================================
+      // ✅ LOGIN HANDLER (with UX improvements)
+      // ========================================
+      const loginForm = document.getElementById('login-form');
+      const loginButton = document.getElementById('login-submit-button');
+      
+      loginForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        
+        // Show loading
+        const originalButtonText = loginButton.innerHTML;
+        loginButton.disabled = true;
+        loginButton.innerHTML = '<div class="spinner"></div> Вход...';
+        showInlineNotification('login-notification-container', 'loading', 'Выполняется вход...');
+        
+        try {
+          const data = await api.login({ email, password });
+          
+          localStorage.setItem('auth_token', data.token);
+          
+          showInlineNotification('login-notification-container', 'success', 'Успешный вход! Переходим...');
+          
+          setTimeout(() => {
+            window.location.href = '/static/dashboard.html';
+          }, 500);
+          
+        } catch (error) {
+          console.error('❌ Login error:', error);
+          
+          // Restore button
+          loginButton.disabled = false;
+          loginButton.innerHTML = originalButtonText;
+          
+          // Check for unverified email
+          if (error.message.includes('not verified') || error.message.includes('не подтвержден')) {
+            showInlineNotification('login-notification-container', 'warning', 'Email не подтвержён! Проверьте почту для кода верификации.');
+          } else if (error.message.includes('Invalid') || error.message.includes('password')) {
+            showInlineNotification('login-notification-container', 'error', 'Неверный email или пароль');
+          } else {
+            showInlineNotification('login-notification-container', 'error', error.message || 'Ошибка входа');
+          }
+        }
+      });
+      
+      // ========================================
+      // CHECK IF ALREADY AUTHENTICATED
+      // ========================================
+      function checkAuth() {
+        const token = localStorage.getItem('auth_token');
+        
+        if (token) {
+          window.location.href = '/static/dashboard.html';
+        }
+      }
+      
+      checkAuth();
+    });
+  </script>
+</body>
+</html>

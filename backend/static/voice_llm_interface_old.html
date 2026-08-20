@@ -1,0 +1,3472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS AI | Voicyfy</title>
+
+    <!-- Favicon и PWA -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="JARVIS AI - Голосовой ассистент с интеграцией LLM">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --background: rgba(255, 255, 255, 0.95);
+            --text-color: #1a1a1a;
+            --border-color: rgba(255, 255, 255, 0.3);
+            --primary-blue: #2563eb;
+            --primary-blue-light: #3b82f6;
+            --text-dark: #0f172a;
+            --text-gray: #64748b;
+            --text-light: #94a3b8;
+            --bg-light: #f8fafc;
+            --bg-blue-light: #eff6ff;
+            --white: #ffffff;
+            --radius-md: 0.5rem;
+            --sidebar-width: 260px;
+            --gemini-color: #8b5cf6;
+            --gemini-gradient: linear-gradient(135deg, #8b5cf6, #6366f1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: url('https://i.ibb.co/N6BsLQr3/image.png') center/cover no-repeat fixed;
+            min-height: 100vh;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+        }
+
+        /* ============================================================ */
+        /* 🆕 START OVERLAY - Активация по клику */
+        /* ============================================================ */
+        .start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(99, 102, 241, 0.95));
+            backdrop-filter: blur(20px);
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+
+        /* 🆕 На платформе overlay не закрывает sidebar и config panel */
+        body:not(.embed-mode) .start-overlay {
+            top: 140px; /* Высота config panel */
+            left: var(--sidebar-width);
+            width: calc(100% - var(--sidebar-width));
+            height: calc(100% - 140px);
+            z-index: 80; /* Ниже config panel (90) и sidebar (100) */
+        }
+
+        @media (max-width: 768px) {
+            body:not(.embed-mode) .start-overlay {
+                top: 160px;
+                left: 0;
+                width: 100%;
+                height: calc(100% - 160px);
+            }
+        }
+
+        .start-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .start-overlay-content {
+            text-align: center;
+            color: white;
+            max-width: 400px;
+            padding: 40px;
+        }
+
+        .start-overlay-icon {
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            animation: pulse-overlay 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-overlay {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 20px rgba(255, 255, 255, 0);
+            }
+        }
+
+        .start-overlay-icon i {
+            font-size: 48px;
+            color: white;
+            filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5));
+        }
+
+        .start-overlay-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            text-shadow: 0 2px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .start-overlay-subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 40px;
+            line-height: 1.5;
+        }
+
+        .start-overlay-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 40px;
+            background: white;
+            color: var(--gemini-color);
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .start-overlay-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .start-overlay-button:active {
+            transform: translateY(-1px);
+        }
+
+        .start-overlay-button i {
+            font-size: 20px;
+        }
+
+        .start-overlay-hint {
+            margin-top: 30px;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .start-overlay-hint i {
+            margin-right: 8px;
+        }
+
+        /* Боковая панель навигации */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--white);
+            border-right: 1px solid var(--border-color);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: var(--radius-md);
+        }
+
+        .sidebar-nav {
+            padding: 1.5rem 0;
+            flex-grow: 1;
+        }
+
+        .sidebar-section {
+            padding: 0 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-light);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        .sidebar-nav-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            color: var(--text-gray);
+            text-decoration: none;
+            transition: background-color 0.2s, color 0.2s;
+            border-left: 3px solid transparent;
+            font-size: 0.9rem;
+        }
+
+        .sidebar-nav-item.active {
+            background-color: var(--bg-blue-light);
+            color: var(--primary-blue);
+            border-left-color: var(--primary-blue);
+        }
+
+        .sidebar-nav-item:hover {
+            background-color: var(--bg-blue-light);
+            color: var(--primary-blue);
+        }
+
+        .sidebar-nav-item i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 99;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay.show {
+                display: block;
+            }
+        }
+
+        /* Скрываем config panel в embed режиме */
+        body.embed-mode .config-panel {
+            display: none;
+        }
+
+        body.embed-mode .main-container {
+            padding-top: 0;
+        }
+
+        /* Скрываем sidebar в embed режиме */
+        body.embed-mode .sidebar {
+            display: none;
+        }
+
+        body.embed-mode .main-container {
+            margin-left: 0;
+            width: 100%;
+        }
+
+        /* Кнопка копирования в LLM панели */
+        .copy-button {
+            background: none;
+            border: none;
+            color: var(--text-gray);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .copy-button:hover {
+            background-color: var(--bg-light);
+            color: var(--primary-blue);
+        }
+
+        .copy-button:active {
+            transform: scale(0.95);
+        }
+
+        .copy-button.copied {
+            color: #22c55e;
+        }
+
+        /* Config Panel Styles */
+        .config-panel {
+            position: fixed;
+            top: 0;
+            left: var(--sidebar-width);
+            right: 0;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            border-bottom: 2px solid var(--gemini-color);
+            padding: 15px 25px;
+            z-index: 90;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .config-panel {
+                left: 0;
+                padding: 12px 20px;
+            }
+        }
+
+        .config-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .config-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .mobile-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            color: var(--text-gray);
+            cursor: pointer;
+            padding: 0.5rem;
+            margin-right: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-menu-toggle {
+                display: block;
+            }
+        }
+
+        .config-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--gemini-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: white;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+        }
+
+        .config-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            background: var(--gemini-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .config-subtitle {
+            color: #6a6a6a;
+            font-size: 12px;
+        }
+
+        .config-form {
+            display: flex;
+            align-items: end;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 6px;
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 13px;
+            border: 2px solid rgba(139, 92, 246, 0.2);
+            border-radius: 10px;
+            background: white;
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: var(--gemini-color);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-secondary {
+            background-color: var(--bg-light);
+            color: var(--text-gray);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--border-color);
+        }
+
+        .btn-primary {
+            background: var(--gemini-gradient);
+            color: white;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            box-shadow: 0 4px 16px rgba(34, 197, 94, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .success-message {
+            position: fixed;
+            top: 120px;
+            right: 30px;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(34, 197, 94, 0.3);
+            font-weight: 600;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            z-index: 1001;
+            animation: slideIn 0.3s ease;
+        }
+
+        .success-message.show {
+            display: flex;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Main container */
+        .main-container {
+            margin-left: var(--sidebar-width);
+            width: calc(100% - var(--sidebar-width));
+            padding-top: 140px;
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                margin-left: 0;
+                width: 100%;
+                padding-top: 160px;
+            }
+        }
+
+        /* Blur overlay */
+        .background-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.15);
+            z-index: 1;
+        }
+
+        /* Three.js Canvas */
+        #jarvis-three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            opacity: 0.3;
+        }
+
+        /* Main layout */
+        .main-container {
+            position: relative;
+            z-index: 2;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gemini-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: white;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+        }
+
+        .logo-text {
+            font-family: 'Orbitron', monospace;
+            font-size: 28px;
+            font-weight: 700;
+            background: var(--gemini-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        .header-subtitle {
+            font-size: 14px;
+            color: #5a5a5a;
+            margin-left: 10px;
+            font-weight: 500;
+        }
+
+        /* HUD Frames */
+        .hud-frame {
+            position: fixed;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .hud-frame.active {
+            opacity: 1;
+        }
+
+        .hud-frame::before,
+        .hud-frame::after {
+            content: '';
+            position: absolute;
+            background: var(--gemini-color);
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+            animation: line-glow 3s ease-in-out infinite;
+        }
+
+        @keyframes line-glow {
+            0%, 100% {
+                box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+                opacity: 0.6;
+            }
+            50% {
+                box-shadow: 0 0 15px rgba(139, 92, 246, 0.7);
+                opacity: 1;
+            }
+        }
+
+        .hud-tl { top: 20px; left: 20px; }
+        .hud-tl::before { width: 60px; height: 2px; top: 0; left: 0; }
+        .hud-tl::after { width: 2px; height: 60px; top: 0; left: 0; }
+
+        .hud-tr { top: 20px; right: 20px; }
+        .hud-tr::before { width: 60px; height: 2px; top: 0; right: 0; }
+        .hud-tr::after { width: 2px; height: 60px; top: 0; right: 0; }
+
+        .hud-bl { bottom: 20px; left: 20px; }
+        .hud-bl::before { width: 60px; height: 2px; bottom: 0; left: 0; }
+        .hud-bl::after { width: 2px; height: 60px; bottom: 0; left: 0; }
+
+        .hud-br { bottom: 20px; right: 20px; }
+        .hud-br::before { width: 60px; height: 2px; bottom: 0; right: 0; }
+        .hud-br::after { width: 2px; height: 60px; bottom: 0; right: 0; }
+
+        /* Content layout */
+        .content-container {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            min-height: 0;
+        }
+
+        /* Left panel - LLM Results */
+        .llm-panel {
+            flex: 1;
+            background: var(--background);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .llm-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+        }
+
+        .llm-header {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 24px 32px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .llm-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--gemini-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+        }
+
+        .llm-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+            flex: 1;
+        }
+
+        .llm-meta {
+            font-size: 12px;
+            color: #6a6a6a;
+            background: rgba(139, 92, 246, 0.1);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .llm-content {
+            flex: 1;
+            padding: 32px;
+            overflow-y: auto;
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-color);
+        }
+
+        .llm-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .llm-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 4px;
+        }
+
+        .llm-content::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.3);
+            border-radius: 4px;
+        }
+
+        .llm-content::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.5);
+        }
+
+        .llm-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: #6a6a6a;
+        }
+
+        .placeholder-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.6;
+        }
+
+        .placeholder-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #3a3a3a;
+        }
+
+        .placeholder-text {
+            font-size: 16px;
+            max-width: 500px;
+            line-height: 1.6;
+            color: #6a6a6a;
+        }
+
+        /* Streaming cursor */
+        .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: var(--gemini-color);
+            margin-left: 2px;
+            animation: blink 0.8s infinite;
+            vertical-align: text-bottom;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Streaming indicator */
+        .streaming-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(139, 92, 246, 0.1);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--gemini-color);
+            margin-bottom: 16px;
+        }
+
+        .streaming-indicator .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--gemini-color);
+            border-radius: 50%;
+            animation: pulse-dot 1s infinite;
+        }
+
+        /* Error message in LLM panel */
+        .llm-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .llm-error-icon {
+            font-size: 48px;
+            color: #ef4444;
+            margin-bottom: 16px;
+        }
+
+        .llm-error-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ef4444;
+            margin-bottom: 8px;
+        }
+
+        .llm-error-text {
+            font-size: 14px;
+            color: #6a6a6a;
+        }
+
+        /* Right panel - Voice Assistant */
+        .voice-panel {
+            flex: 0 0 480px;
+            background: var(--background);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .voice-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+        }
+
+        .voice-header {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 24px 32px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .voice-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--gemini-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+        }
+
+        .voice-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+            flex: 1;
+        }
+
+        .voice-status {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .voice-status.connected {
+            background: rgba(34, 197, 94, 0.15);
+            color: #16a34a;
+        }
+
+        .voice-status.processing {
+            background: rgba(139, 92, 246, 0.15);
+            color: #8b5cf6;
+        }
+
+        .voice-status.speaking {
+            background: rgba(59, 130, 246, 0.15);
+            color: #2563eb;
+        }
+
+        .voice-status.interrupted {
+            background: rgba(249, 115, 22, 0.15);
+            color: #ea580c;
+        }
+
+        .voice-status.connecting {
+            background: rgba(234, 179, 8, 0.15);
+            color: #ca8a04;
+        }
+
+        .voice-status.error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #dc2626;
+        }
+
+        .voice-status.streaming {
+            background: rgba(139, 92, 246, 0.15);
+            color: #8b5cf6;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+        }
+
+        .voice-content {
+            flex: 1;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* JARVIS Sphere */
+        .jarvis-container {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .jarvis-sphere {
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.15), transparent 70%),
+                        radial-gradient(circle at 70% 70%, rgba(99, 102, 241, 0.1), transparent 60%);
+            backdrop-filter: blur(10px);
+            border: 2px solid var(--gemini-color);
+            box-shadow: 
+                inset 0 0 40px rgba(139, 92, 246, 0.1),
+                0 0 40px rgba(139, 92, 246, 0.2),
+                0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.5s ease;
+            cursor: pointer;
+        }
+
+        .jarvis-sphere.listening {
+            background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.25), transparent 70%);
+            border-color: rgba(139, 92, 246, 0.6);
+            box-shadow: 
+                inset 0 0 40px rgba(139, 92, 246, 0.2),
+                0 0 60px rgba(139, 92, 246, 0.4);
+            animation: pulse-sphere 2s ease-in-out infinite;
+        }
+
+        .jarvis-sphere.speaking {
+            background: radial-gradient(circle at 30% 30%, rgba(34, 197, 94, 0.25), transparent 70%);
+            border-color: rgba(34, 197, 94, 0.6);
+            box-shadow: 
+                inset 0 0 40px rgba(34, 197, 94, 0.2),
+                0 0 60px rgba(34, 197, 94, 0.4);
+            animation: pulse-sphere-fast 1s ease-in-out infinite;
+        }
+
+        .jarvis-sphere.processing {
+            background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.25), transparent 70%);
+            border-color: rgba(139, 92, 246, 0.6);
+            box-shadow: 
+                inset 0 0 40px rgba(139, 92, 246, 0.2),
+                0 0 60px rgba(139, 92, 246, 0.4);
+            animation: pulse-sphere-slow 1.5s ease-in-out infinite;
+        }
+
+        .jarvis-sphere.streaming {
+            background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.3), transparent 70%);
+            border-color: rgba(139, 92, 246, 0.8);
+            box-shadow: 
+                inset 0 0 50px rgba(139, 92, 246, 0.3),
+                0 0 80px rgba(139, 92, 246, 0.5);
+            animation: pulse-streaming 1s ease-in-out infinite;
+        }
+
+        .jarvis-sphere.interrupted {
+            background: radial-gradient(circle at 30% 30%, rgba(249, 115, 22, 0.25), transparent 70%);
+            border-color: rgba(249, 115, 22, 0.6);
+            box-shadow: 
+                inset 0 0 40px rgba(249, 115, 22, 0.2),
+                0 0 60px rgba(249, 115, 22, 0.4);
+            animation: pulse-interrupted 0.5s ease-in-out 3;
+        }
+
+        @keyframes pulse-sphere {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 
+                    inset 0 0 40px rgba(139, 92, 246, 0.2),
+                    0 0 60px rgba(139, 92, 246, 0.4);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 
+                    inset 0 0 60px rgba(139, 92, 246, 0.3),
+                    0 0 80px rgba(139, 92, 246, 0.6);
+            }
+        }
+
+        @keyframes pulse-sphere-fast {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
+        @keyframes pulse-sphere-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        @keyframes pulse-streaming {
+            0%, 100% { 
+                transform: scale(1);
+                border-color: rgba(139, 92, 246, 0.6);
+            }
+            50% { 
+                transform: scale(1.02);
+                border-color: rgba(139, 92, 246, 1);
+            }
+        }
+
+        @keyframes pulse-interrupted {
+            0%, 100% {
+                box-shadow: 
+                    inset 0 0 40px rgba(249, 115, 22, 0.2),
+                    0 0 60px rgba(249, 115, 22, 0.4);
+            }
+            50% {
+                box-shadow: 
+                    inset 0 0 60px rgba(249, 115, 22, 0.4),
+                    0 0 100px rgba(249, 115, 22, 0.8);
+            }
+        }
+
+        .jarvis-icon {
+            font-size: 64px;
+            color: var(--gemini-color);
+            filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.6));
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .jarvis-sphere.listening .jarvis-icon {
+            animation: icon-pulse 2s ease-in-out infinite;
+        }
+
+        .jarvis-sphere.speaking .jarvis-icon {
+            color: #22c55e;
+        }
+
+        .jarvis-sphere.processing .jarvis-icon,
+        .jarvis-sphere.streaming .jarvis-icon {
+            color: #8b5cf6;
+            animation: icon-rotate 2s linear infinite;
+        }
+
+        .jarvis-sphere.interrupted .jarvis-icon {
+            color: #f97316;
+        }
+
+        @keyframes icon-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        @keyframes icon-rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Visualizer */
+        .circular-visualizer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .viz-bar {
+            position: absolute;
+            width: 3px;
+            background: linear-gradient(to top, transparent, var(--gemini-color), transparent);
+            border-radius: 2px;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom center;
+            transition: height 0.1s ease;
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
+        }
+
+        .jarvis-sphere.speaking .viz-bar {
+            background: linear-gradient(to top, transparent, #22c55e, transparent);
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+        }
+
+        .jarvis-sphere.processing .viz-bar,
+        .jarvis-sphere.streaming .viz-bar {
+            background: linear-gradient(to top, transparent, #8b5cf6, transparent);
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
+        }
+
+        /* Instructions */
+        .instructions {
+            margin-top: 32px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            max-width: 360px;
+        }
+
+        .instructions-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 8px;
+        }
+
+        .instructions-text {
+            font-size: 13px;
+            color: #5a5a5a;
+            line-height: 1.5;
+        }
+
+        /* Error message */
+        .error-container {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            z-index: 1000;
+        }
+
+        .error-container.active {
+            display: block;
+        }
+
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 20px;
+        }
+
+        .error-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+        }
+
+        .error-text {
+            font-size: 16px;
+            color: #6a6a6a;
+            line-height: 1.6;
+        }
+
+        /* Content formatting */
+        .llm-content h1, .llm-content h2, .llm-content h3 {
+            margin: 24px 0 12px 0;
+            color: var(--text-color);
+            font-weight: 600;
+        }
+
+        .llm-content h1 { font-size: 24px; }
+        .llm-content h2 { font-size: 20px; }
+        .llm-content h3 { font-size: 18px; }
+
+        .llm-content p {
+            margin: 16px 0;
+        }
+
+        .llm-content ul, .llm-content ol {
+            margin: 16px 0;
+            padding-left: 24px;
+        }
+
+        .llm-content li {
+            margin: 8px 0;
+        }
+
+        .llm-content code {
+            background: rgba(139, 92, 246, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            color: var(--gemini-color);
+        }
+
+        .llm-content pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 16px;
+            border-radius: 12px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .llm-content pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-color);
+        }
+
+        .llm-content strong {
+            color: var(--gemini-color);
+            font-weight: 600;
+        }
+
+        /* ============================================================ */
+        /* TEXT CHAT INPUT */
+        /* ============================================================ */
+        .chat-input-container {
+            padding: 16px 24px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid rgba(139, 92, 246, 0.2);
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            background: white;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .chat-input:focus {
+            border-color: var(--gemini-color);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        }
+
+        .chat-input:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        .chat-send-btn {
+            width: 44px;
+            height: 44px;
+            border: none;
+            border-radius: 12px;
+            background: var(--gemini-gradient);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+        }
+
+        .chat-send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-send-btn i {
+            font-size: 16px;
+        }
+
+        /* История сообщений */
+        .chat-message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            animation: fadeInMsg 0.3s ease;
+        }
+
+        @keyframes fadeInMsg {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-message.user {
+            background: rgba(139, 92, 246, 0.1);
+            border-left: 3px solid var(--gemini-color);
+        }
+
+        .chat-message.assistant {
+            background: rgba(34, 197, 94, 0.1);
+            border-left: 3px solid #22c55e;
+        }
+
+        .chat-message-role {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            opacity: 0.7;
+        }
+
+        .chat-message.user .chat-message-role {
+            color: var(--gemini-color);
+        }
+
+        .chat-message.assistant .chat-message-role {
+            color: #16a34a;
+        }
+
+        .chat-message-content {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .chat-context-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #888;
+            padding: 8px 0 0 0;
+        }
+
+        .clear-history-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .clear-history-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Streaming в чате */
+        .chat-message.streaming {
+            background: rgba(139, 92, 246, 0.05);
+            border-left: 3px solid var(--gemini-color);
+        }
+
+        .chat-message.streaming .chat-message-role {
+            color: var(--gemini-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .voice-panel {
+                flex: 0 0 400px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .content-container {
+                flex-direction: column;
+            }
+
+            .voice-panel {
+                flex: 0 0 320px;
+                order: -1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 16px 20px;
+            }
+
+            .content-container {
+                padding: 16px;
+            }
+
+            .logo-text {
+                font-size: 24px;
+            }
+
+            .header-subtitle {
+                display: none;
+            }
+
+            .config-panel {
+                padding: 15px 20px;
+            }
+
+            .config-form {
+                flex-direction: column;
+            }
+
+            .config-actions {
+                flex-direction: column;
+            }
+
+            .start-overlay-title {
+                font-size: 24px;
+            }
+
+            .start-overlay-subtitle {
+                font-size: 16px;
+            }
+
+            .start-overlay-button {
+                padding: 14px 30px;
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 🆕 Раннее определение режима для правильного позиционирования overlay -->
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('assistant')) {
+                document.body.classList.add('embed-mode');
+            }
+        })();
+    </script>
+
+    <!-- ============================================================ -->
+    <!-- 🆕 START OVERLAY - Обязательный клик для активации аудио -->
+    <!-- ============================================================ -->
+    <div class="start-overlay" id="startOverlay">
+        <div class="start-overlay-content">
+            <div class="start-overlay-icon">
+                <i class="fas fa-gem"></i>
+            </div>
+            <div class="start-overlay-title">JARVIS AI</div>
+            <div class="start-overlay-subtitle">
+                Голосовой ассистент на базе Google Gemini с поддержкой LLM
+            </div>
+            <button class="start-overlay-button" id="startButton">
+                <i class="fas fa-microphone"></i>
+                Нажмите чтобы начать
+            </button>
+            <div class="start-overlay-hint">
+                <i class="fas fa-info-circle"></i>
+                Требуется для активации микрофона и звука
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay для мобильного меню -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/" class="sidebar-logo">
+                <div class="logo-icon">
+                    <img src="/static/images/IMG_2820.PNG" alt="Voicyfy Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                </div>
+                <span>Voicyfy</span>
+            </a>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="sidebar-section">Основное</div>
+            <a href="/static/dashboard.html" class="sidebar-nav-item">
+                <i class="fas fa-home"></i> Дашборд
+            </a>
+            <a href="/static/agents.html" class="sidebar-nav-item">
+                <i class="fas fa-robot"></i> OpenAI агенты
+            </a>
+            <a href="/static/gemini-agents.html" class="sidebar-nav-item">
+                <i class="fas fa-gem"></i> Gemini агенты
+            </a>
+            <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+                <i class="fas fa-book"></i> База знаний
+            </a>
+            <a href="/static/telephony.html" class="sidebar-nav-item">
+                <i class="fas fa-phone"></i> Телефония
+            </a>
+            <a href="/static/conversations.html" class="sidebar-nav-item">
+                <i class="fas fa-comments"></i> Диалоги
+            </a>
+
+            <div class="sidebar-section">ИИ Интерфейс</div>
+            <a href="/static/voice_llm_interface.html" class="sidebar-nav-item active">
+                <i class="fas fa-gem"></i> JARVIS AI (Gemini)
+            </a>
+
+            <div class="sidebar-section">Аккаунт</div>
+            <a href="/static/settings.html" class="sidebar-nav-item">
+                <i class="fas fa-gear"></i> Настройки
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;">
+                <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+        </div>
+    </aside>
+
+    <!-- CONFIG PANEL -->
+    <div class="config-panel" id="configPanel">
+        <div class="config-container">
+            <div class="config-header">
+                <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="config-icon">💎</div>
+                <div>
+                    <div class="config-title">JARVIS AI + Gemini</div>
+                    <div class="config-subtitle">Голосовой ассистент на базе Google Gemini с LLM стримингом</div>
+                </div>
+            </div>
+            
+            <div class="config-form">
+                <div class="form-group">
+                    <label class="form-label">💎 Gemini Ассистент:</label>
+                    <select class="form-select" id="assistantSelect">
+                        <option value="">Загрузка списка...</option>
+                    </select>
+                </div>
+                
+                <div class="config-actions">
+                    <button class="btn btn-primary" id="saveBtn" onclick="saveConfig()">
+                        <i class="fas fa-save"></i> Сохранить
+                    </button>
+                    <button class="btn btn-success" id="testBtn" onclick="testAgent()" disabled>
+                        <i class="fas fa-play"></i> Тестировать
+                    </button>
+                    <button class="btn btn-success" id="copyBtn" onclick="copyHTMLCode()" disabled>
+                        <i class="fas fa-code"></i> Копировать код
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Message -->
+    <div class="success-message" id="successMessage">
+        <i class="fas fa-check-circle" style="font-size: 20px;"></i>
+        <span id="successText">Успешно!</span>
+    </div>
+
+    <!-- MAIN INTERFACE -->
+    <canvas id="jarvis-three-canvas"></canvas>
+    <div class="background-overlay"></div>
+    
+    <div class="main-container">
+        <!-- HUD Frames -->
+        <div class="hud-frame hud-tl" id="hudTL"></div>
+        <div class="hud-frame hud-tr" id="hudTR"></div>
+        <div class="hud-frame hud-bl" id="hudBL"></div>
+        <div class="hud-frame hud-br" id="hudBR"></div>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="logo-icon">💎</div>
+            <div class="logo-text" id="headerTitle">JARVIS AI</div>
+            <div class="header-subtitle" id="headerSubtitle">Gemini Voice + LLM Streaming</div>
+        </div>
+
+        <!-- Error Container -->
+        <div class="error-container" id="errorContainer">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title" id="errorTitle">Ошибка конфигурации</div>
+            <div class="error-text" id="errorText">Не удалось загрузить настройки ассистента</div>
+        </div>
+
+        <!-- Content Container -->
+        <div class="content-container">
+            <!-- Left Panel - LLM Results -->
+            <div class="llm-panel">
+                <div class="llm-header">
+                    <div class="llm-icon">🤖</div>
+                    <div class="llm-title">Результаты ИИ</div>
+                    <div class="llm-meta" id="llmMeta">Ожидание запроса</div>
+                    <button class="copy-button" id="copyLlmButton" onclick="copyLLMResponse()" style="display: none;">
+                        <i class="fas fa-copy"></i>
+                        <span id="copyButtonText">Копировать</span>
+                    </button>
+                </div>
+                <div class="llm-content" id="llmContent">
+                    <div class="llm-placeholder" id="llmPlaceholder">
+                        <span class="placeholder-icon">✨</span>
+                        <div class="placeholder-title">Задайте вопрос</div>
+                        <div class="placeholder-text">
+                            Используйте голос (нажмите на сферу) или введите текст ниже.
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 🆕 Текстовый ввод -->
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <input 
+                            type="text" 
+                            class="chat-input" 
+                            id="chatInput" 
+                            placeholder="Введите сообщение..." 
+                            autocomplete="off"
+                        >
+                        <button class="chat-send-btn" id="chatSendBtn" disabled>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="chat-context-info">
+                        <span id="chatContextInfo">Контекст: 0/5 сообщений</span>
+                        <button class="clear-history-btn" id="clearHistoryBtn" style="display: none;">
+                            <i class="fas fa-trash-alt"></i> Очистить
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Voice Assistant -->
+            <div class="voice-panel">
+                <div class="voice-header">
+                    <div class="voice-icon">💎</div>
+                    <div class="voice-title">Gemini Voice</div>
+                    <div class="voice-status connecting" id="voiceStatus">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Ожидание...</span>
+                    </div>
+                </div>
+                <div class="voice-content">
+                    <div class="jarvis-container">
+                        <div class="jarvis-sphere" id="jarvisSphere">
+                            <i class="fas fa-gem jarvis-icon"></i>
+                            <div class="circular-visualizer" id="circularViz"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="instructions">
+                        <div class="instructions-title">Как использовать</div>
+                        <div class="instructions-text">
+                            Нажмите на сферу и говорите естественно с Gemini. 
+                            Для развёрнутых ответов текст будет появляться на экране.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            'use strict';
+
+            // ============================================================================
+            // CONFIGURATION
+            // ============================================================================
+            
+            const DEBUG_MODE = true;
+            const MAX_RECONNECT_ATTEMPTS = 5;
+            const MOBILE_MAX_RECONNECT_ATTEMPTS = 10;
+            const PING_INTERVAL = 15000;
+            const MOBILE_PING_INTERVAL = 10000;
+            const STORAGE_KEY_ASSISTANT = 'lastGeminiAssistantId';
+            const SERVER_URL = `${window.location.protocol}//${window.location.host}`;
+            
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isAndroid = /Android/i.test(navigator.userAgent);
+
+            const urlParams = new URLSearchParams(window.location.search);
+            let ASSISTANT_ID = urlParams.get('assistant') || null;
+            let userActivated = false;
+
+            console.log('[JARVIS] JARVIS AI Interface v4.2 (User Activation Required)');
+            console.log('[JARVIS] Assistant ID from URL:', ASSISTANT_ID);
+
+            // ============================================================================
+            // UI ELEMENTS
+            // ============================================================================
+
+            const startOverlay = document.getElementById('startOverlay');
+            const startButton = document.getElementById('startButton');
+            const configPanel = document.getElementById('configPanel');
+            const assistantSelect = document.getElementById('assistantSelect');
+            const saveBtn = document.getElementById('saveBtn');
+            const testBtn = document.getElementById('testBtn');
+            const copyBtn = document.getElementById('copyBtn');
+            const successMessage = document.getElementById('successMessage');
+            const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebar-overlay');
+            const jarvisSphere = document.getElementById('jarvisSphere');
+            const circularViz = document.getElementById('circularViz');
+            const llmContent = document.getElementById('llmContent');
+            const llmMeta = document.getElementById('llmMeta');
+            const voiceStatus = document.getElementById('voiceStatus');
+            const statusText = document.getElementById('statusText');
+            const errorContainer = document.getElementById('errorContainer');
+            const hudFrames = [
+                document.getElementById('hudTL'),
+                document.getElementById('hudTR'),
+                document.getElementById('hudBL'),
+                document.getElementById('hudBR')
+            ];
+
+            // ============================================================================
+            // 🆕 v4.2: START OVERLAY HANDLER
+            // ============================================================================
+            
+            async function activateAudioAndStart() {
+                log('🎬 User activation triggered');
+                
+                try {
+                    const audioSuccess = await initializeAudio();
+                    if (!audioSuccess) {
+                        log('❌ Audio initialization failed', 'error');
+                    }
+                    
+                    initPlaybackAudioContext();
+                    userActivated = true;
+                    startOverlay.classList.add('hidden');
+                    log('✅ Overlay hidden, audio activated');
+                    
+                    if (ASSISTANT_ID) {
+                        log('🔌 Connecting WebSocket after user activation...');
+                        connectWebSocket();
+                    } else {
+                        updateStatus('connecting', 'Выберите Gemini ассистента', 'connecting');
+                    }
+                    
+                } catch (error) {
+                    log(`❌ Activation error: ${error}`, 'error');
+                    startOverlay.classList.add('hidden');
+                    userActivated = true;
+                }
+            }
+            
+            startButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                activateAudioAndStart();
+            });
+            
+            startOverlay.addEventListener('click', function(e) {
+                if (e.target === startOverlay) {
+                    activateAudioAndStart();
+                }
+            });
+
+            // ============================================================================
+            // LOAD GEMINI ASSISTANTS
+            // ============================================================================
+            
+            const isEmbedMode = urlParams.has('assistant');
+            
+            if (!isEmbedMode) {
+                loadGeminiAssistantsList();
+            }
+            
+            async function loadGeminiAssistantsList() {
+                try {
+                    console.log('[CONFIG] Loading Gemini assistants...');
+                    
+                    const response = await fetch(`${SERVER_URL}/api/gemini-assistants`, {
+                        headers: {
+                            'Authorization': `Bearer ${getAuthToken()}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to load Gemini assistants');
+                    }
+                    
+                    const assistants = await response.json();
+                    console.log('[CONFIG] Loaded Gemini assistants:', assistants.length);
+                    
+                    assistantSelect.innerHTML = '<option value="">-- Выберите Gemini ассистента --</option>';
+                    
+                    assistants.forEach(assistant => {
+                        const option = document.createElement('option');
+                        option.value = assistant.id;
+                        option.textContent = `💎 ${assistant.name || assistant.id}`;
+                        assistantSelect.appendChild(option);
+                    });
+                    
+                    if (ASSISTANT_ID && assistantSelect.querySelector(`option[value="${ASSISTANT_ID}"]`)) {
+                        assistantSelect.value = ASSISTANT_ID;
+                        testBtn.disabled = false;
+                        copyBtn.disabled = false;
+                        console.log('[CONFIG] Using assistant from URL:', ASSISTANT_ID);
+                    } else {
+                        const savedAssistantId = localStorage.getItem(STORAGE_KEY_ASSISTANT);
+                        if (savedAssistantId && assistantSelect.querySelector(`option[value="${savedAssistantId}"]`)) {
+                            assistantSelect.value = savedAssistantId;
+                            ASSISTANT_ID = savedAssistantId;
+                            testBtn.disabled = false;
+                            copyBtn.disabled = false;
+                            console.log('[CONFIG] ✅ Restored assistant from localStorage:', savedAssistantId);
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('[CONFIG] Error loading Gemini assistants:', error);
+                    assistantSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                }
+            }
+            
+            function getAuthToken() {
+                return localStorage.getItem('auth_token') ||
+                       document.cookie.split('; ').find(row => row.startsWith('auth_token='))?.split('=')[1] ||
+                       '';
+            }
+
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+                    testBtn.disabled = true;
+                    copyBtn.disabled = true;
+                } else {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fas fa-save"></i> Сохранить';
+                }
+            }
+
+            window.saveConfig = async function() {
+                const selectedAssistantId = assistantSelect.value;
+
+                if (!selectedAssistantId) {
+                    alert('❌ Пожалуйста, выберите Gemini ассистента!');
+                    return;
+                }
+
+                try {
+                    setLoading(true);
+                    ASSISTANT_ID = selectedAssistantId;
+                    localStorage.setItem(STORAGE_KEY_ASSISTANT, selectedAssistantId);
+                    console.log('[CONFIG] ✅ Assistant saved to localStorage:', selectedAssistantId);
+
+                    testBtn.disabled = false;
+                    copyBtn.disabled = false;
+                    showSuccess(`✅ Gemini ассистент сохранён!`);
+
+                    if (userActivated) {
+                        if (websocket) websocket.close();
+                        if (llmWebSocket) {
+                            llmWebSocket.close();
+                            llmWebSocket = null;
+                            isLLMConnected = false;
+                        }
+                        connectWebSocket();
+                    }
+
+                } catch (error) {
+                    console.error('[CONFIG] Save error:', error);
+                    alert('❌ Ошибка: ' + error.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            window.testAgent = function() {
+                if (!ASSISTANT_ID) {
+                    alert('❌ Сначала выберите ассистента!');
+                    return;
+                }
+
+                if (!userActivated) {
+                    startOverlay.classList.remove('hidden');
+                    return;
+                }
+
+                if (!isConnected) {
+                    showSuccess('🔄 Подключение к Gemini...');
+                    connectWebSocket();
+                } else {
+                    showSuccess('✅ Готов! Нажмите на сферу и говорите');
+                }
+            };
+            
+            window.copyHTMLCode = function() {
+                if (!ASSISTANT_ID) {
+                    alert('❌ Сначала выберите ассистента!');
+                    return;
+                }
+
+                const embedUrl = `${SERVER_URL}/static/voice_llm_interface.html?assistant=${ASSISTANT_ID}`;
+                const embedCode = `<!-- Voicyfy JARVIS AI (Gemini) Widget -->
+<iframe
+    src="${embedUrl}"
+    width="100%"
+    height="800px"
+    frameborder="0"
+    allow="microphone"
+    style="border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1);">
+</iframe>`;
+
+                navigator.clipboard.writeText(embedCode).then(() => {
+                    showSuccess('✅ Код скопирован в буфер обмена!');
+                }).catch(() => {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = embedCode;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showSuccess('✅ Код скопирован!');
+                });
+            };
+            
+            function showSuccess(message) {
+                const successText = document.getElementById('successText');
+                successText.textContent = message;
+                successMessage.classList.add('show');
+                setTimeout(() => successMessage.classList.remove('show'), 3000);
+            }
+
+            // ============================================================================
+            // GLOBALS
+            // ============================================================================
+
+            window.audioInitialized = false;
+            window.globalAudioContext = null;
+            window.globalMicStream = null;
+            window.silentAudioBuffer = null;
+
+            let websocket = null;
+            let llmWebSocket = null;
+            let isConnected = false;
+            let isLLMConnected = false;
+            let isListening = false;
+            let audioProcessor = null;
+            let isPlayingAudio = false;
+            let reconnectAttempts = 0;
+            let pingInterval = null;
+            let lastPongTime = Date.now();
+            let isReconnecting = false;
+
+            let hasAudioData = false;
+            let audioDataStartTime = 0;
+            const minimumAudioLength = 300;
+
+            let isStreamingLLM = false;
+            let streamingContent = "";
+            let currentRequestId = null;
+
+            // ============================================================================
+            // AUDIO PLAYBACK SYSTEM v4.0
+            // ============================================================================
+            
+            const AUDIO_PLAYBACK_SAMPLE_RATE = 24000;
+            let playbackAudioContext = null;
+            let audioBufferQueue = [];
+            let isSchedulingAudio = false;
+            let nextPlayTime = 0;
+            let scheduledSources = [];
+            let schedulerInterval = null;
+            
+            const MIN_BUFFER_SAMPLES = 12000;
+            const CHUNK_SIZE = 4800;
+            const SCHEDULE_AHEAD_TIME = 0.3;
+            const SCHEDULER_INTERVAL_MS = 50;
+            const CROSSFADE_SAMPLES = 64;
+            
+            function initPlaybackAudioContext() {
+                if (!playbackAudioContext) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    playbackAudioContext = new AudioContextClass({
+                        sampleRate: AUDIO_PLAYBACK_SAMPLE_RATE,
+                        latencyHint: 'playback'
+                    });
+                    log('🔊 Playback AudioContext created');
+                }
+                
+                if (playbackAudioContext.state === 'suspended') {
+                    playbackAudioContext.resume().then(() => {
+                        log('🔊 Playback AudioContext resumed');
+                    });
+                }
+                
+                return playbackAudioContext;
+            }
+            
+            function base64ToInt16Array(base64) {
+                try {
+                    const binaryString = atob(base64);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    return new Int16Array(bytes.buffer);
+                } catch (e) {
+                    return new Int16Array(0);
+                }
+            }
+            
+            function addAudioChunkToBuffer(base64Data) {
+                if (!base64Data || typeof base64Data !== 'string') return;
+                
+                const int16Samples = base64ToInt16Array(base64Data);
+                if (int16Samples.length === 0) return;
+                
+                for (let i = 0; i < int16Samples.length; i++) {
+                    audioBufferQueue.push(int16Samples[i]);
+                }
+                
+                if (!isSchedulingAudio && audioBufferQueue.length >= MIN_BUFFER_SAMPLES) {
+                    startAudioScheduler();
+                }
+            }
+            
+            function startAudioScheduler() {
+                if (isSchedulingAudio) return;
+                
+                isSchedulingAudio = true;
+                isPlayingAudio = true;
+                
+                const ctx = initPlaybackAudioContext();
+                if (ctx.state === 'suspended') ctx.resume();
+                
+                nextPlayTime = ctx.currentTime + 0.15;
+                
+                jarvisSphere.classList.add('speaking');
+                jarvisSphere.classList.remove('listening', 'processing', 'streaming');
+                updateStatus('speaking', 'Говорит...', 'speaking');
+                
+                interruptionState.is_assistant_speaking = true;
+                
+                schedulerInterval = setInterval(scheduleNextChunk, SCHEDULER_INTERVAL_MS);
+                scheduleNextChunk();
+            }
+            
+            function scheduleNextChunk() {
+                if (!isSchedulingAudio) {
+                    if (schedulerInterval) {
+                        clearInterval(schedulerInterval);
+                        schedulerInterval = null;
+                    }
+                    return;
+                }
+                
+                const ctx = playbackAudioContext;
+                if (!ctx) return;
+                
+                if (nextPlayTime < ctx.currentTime) {
+                    nextPlayTime = ctx.currentTime + 0.05;
+                }
+                
+                while (audioBufferQueue.length >= CHUNK_SIZE && nextPlayTime < ctx.currentTime + SCHEDULE_AHEAD_TIME) {
+                    const chunkSize = Math.min(CHUNK_SIZE, audioBufferQueue.length);
+                    const chunk = audioBufferQueue.splice(0, chunkSize);
+                    
+                    const audioBuffer = ctx.createBuffer(1, chunk.length, AUDIO_PLAYBACK_SAMPLE_RATE);
+                    const channelData = audioBuffer.getChannelData(0);
+                    
+                    for (let i = 0; i < chunk.length; i++) {
+                        let sample = chunk[i] / 32768.0;
+                        
+                        if (i < CROSSFADE_SAMPLES) {
+                            sample *= (i / CROSSFADE_SAMPLES);
+                        } else if (i >= chunk.length - CROSSFADE_SAMPLES) {
+                            const fadePos = chunk.length - i;
+                            sample *= (fadePos / CROSSFADE_SAMPLES);
+                        }
+                        
+                        channelData[i] = sample;
+                    }
+                    
+                    const source = ctx.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(ctx.destination);
+                    source.start(nextPlayTime);
+                    nextPlayTime += audioBuffer.duration;
+                    
+                    scheduledSources.push(source);
+                    
+                    source.onended = () => {
+                        const idx = scheduledSources.indexOf(source);
+                        if (idx > -1) scheduledSources.splice(idx, 1);
+                        
+                        if (scheduledSources.length === 0 && audioBufferQueue.length < CHUNK_SIZE && isSchedulingAudio) {
+                            setTimeout(() => {
+                                if (scheduledSources.length === 0 && audioBufferQueue.length < CHUNK_SIZE) {
+                                    finishAudioPlayback();
+                                }
+                            }, 200);
+                        }
+                    };
+                }
+            }
+            
+            function finishAudioPlayback() {
+                log('🔇 Audio playback finished');
+                
+                if (schedulerInterval) {
+                    clearInterval(schedulerInterval);
+                    schedulerInterval = null;
+                }
+                
+                isSchedulingAudio = false;
+                isPlayingAudio = false;
+                interruptionState.is_assistant_speaking = false;
+                audioBufferQueue = [];
+                
+                jarvisSphere.classList.remove('speaking');
+                
+                if (!isStreamingLLM) {
+                    updateStatus('connected', 'Готов', 'connected');
+                    setTimeout(() => {
+                        if (!isPlayingAudio && !isStreamingLLM && !isReconnecting) {
+                            startListening();
+                        }
+                    }, 400);
+                }
+            }
+            
+            function stopAllAudioPlayback() {
+                if (schedulerInterval) {
+                    clearInterval(schedulerInterval);
+                    schedulerInterval = null;
+                }
+                
+                isSchedulingAudio = false;
+                isPlayingAudio = false;
+                interruptionState.is_assistant_speaking = false;
+                
+                scheduledSources.forEach(source => {
+                    try { source.stop(); } catch (e) {}
+                });
+                scheduledSources = [];
+                audioBufferQueue = [];
+                
+                jarvisSphere.classList.remove('speaking');
+            }
+
+            const interruptionState = {
+                is_assistant_speaking: false,
+                is_user_speaking: false,
+                last_speech_start: 0,
+                last_speech_stop: 0,
+                interruption_count: 0,
+                last_interruption_time: 0
+            };
+
+            const AUDIO_CONFIG = {
+                silenceThreshold: 0.01,
+                silenceDuration: 300,
+                bufferCheckInterval: 50,
+                soundDetectionThreshold: 0.02,
+                amplificationFactor: isMobile ? 2.0 : 1.0
+            };
+
+            let threeScene, threeCamera, threeRenderer, threeParticles;
+            let threeInitialized = false;
+
+            // ============================================================================
+            // UTILITY FUNCTIONS
+            // ============================================================================
+            
+            function log(message, type = 'info') {
+                if (DEBUG_MODE || type === 'error') {
+                    const prefix = '[JARVIS]';
+                    if (type === 'error') console.error(`${prefix} ERROR:`, message);
+                    else if (type === 'warn') console.warn(`${prefix} WARNING:`, message);
+                    else console.log(`${prefix}`, message);
+                }
+            }
+
+            function showError(title, text) {
+                const errorTitle = document.getElementById('errorTitle');
+                const errorText = document.getElementById('errorText');
+                if (errorTitle) errorTitle.textContent = title;
+                if (errorText) errorText.textContent = text;
+                errorContainer.classList.add('active');
+            }
+
+            // ============================================================================
+            // 🆕 TEXT CHAT WITH HISTORY (sessionStorage)
+            // ============================================================================
+
+            const HISTORY_STORAGE_KEY = 'jarvis_chat_history';
+            const MAX_HISTORY_PAIRS = 5; // 5 пар = 10 сообщений
+
+            // Загрузка истории из sessionStorage
+            function loadChatHistory() {
+                try {
+                    const saved = sessionStorage.getItem(HISTORY_STORAGE_KEY);
+                    return saved ? JSON.parse(saved) : [];
+                } catch (e) {
+                    console.error('[CHAT] Error loading history:', e);
+                    return [];
+                }
+            }
+
+            // Сохранение истории в sessionStorage
+            function saveChatHistory(history) {
+                try {
+                    sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+                } catch (e) {
+                    console.error('[CHAT] Error saving history:', e);
+                }
+            }
+
+            // Добавление сообщения в историю
+            function addToHistory(role, content) {
+                const history = loadChatHistory();
+                history.push({ role, content, timestamp: Date.now() });
+                
+                // Оставляем только последние 5 пар (10 сообщений)
+                while (history.length > MAX_HISTORY_PAIRS * 2) {
+                    history.shift();
+                }
+                
+                saveChatHistory(history);
+                updateContextInfo();
+                return history;
+            }
+
+            // Очистка истории
+            function clearChatHistory() {
+                sessionStorage.removeItem(HISTORY_STORAGE_KEY);
+                updateContextInfo();
+                renderChatHistory();
+                showSuccess('🗑️ История очищена');
+            }
+
+            // Обновление информации о контексте
+            function updateContextInfo() {
+                const history = loadChatHistory();
+                const pairs = Math.floor(history.length / 2);
+                const contextInfo = document.getElementById('chatContextInfo');
+                const clearBtn = document.getElementById('clearHistoryBtn');
+                
+                if (contextInfo) {
+                    contextInfo.textContent = `Контекст: ${pairs}/${MAX_HISTORY_PAIRS} сообщений`;
+                }
+                if (clearBtn) {
+                    clearBtn.style.display = history.length > 0 ? 'block' : 'none';
+                }
+            }
+
+            // Отображение истории чата
+            function renderChatHistory() {
+                const history = loadChatHistory();
+                const llmContentEl = document.getElementById('llmContent');
+                const placeholder = document.getElementById('llmPlaceholder');
+                
+                if (history.length === 0) {
+                    if (placeholder) {
+                        llmContentEl.innerHTML = '';
+                        llmContentEl.appendChild(placeholder);
+                        placeholder.style.display = 'flex';
+                    }
+                    return;
+                }
+                
+                if (placeholder) placeholder.style.display = 'none';
+                
+                let html = '';
+                history.forEach(msg => {
+                    const roleLabel = msg.role === 'user' ? 'Вы' : 'ИИ';
+                    html += `
+                        <div class="chat-message ${msg.role}">
+                            <div class="chat-message-role">${roleLabel}</div>
+                            <div class="chat-message-content">${formatMarkdown(msg.content)}</div>
+                        </div>
+                    `;
+                });
+                
+                llmContentEl.innerHTML = html;
+                llmContentEl.scrollTop = llmContentEl.scrollHeight;
+            }
+
+            // Добавление streaming сообщения в чат
+            function appendStreamingMessage() {
+                const llmContentEl = document.getElementById('llmContent');
+                const placeholder = document.getElementById('llmPlaceholder');
+                
+                if (placeholder) placeholder.style.display = 'none';
+                
+                // Рендерим историю + streaming сообщение
+                const history = loadChatHistory();
+                let html = '';
+                
+                history.forEach(msg => {
+                    const roleLabel = msg.role === 'user' ? 'Вы' : 'ИИ';
+                    html += `
+                        <div class="chat-message ${msg.role}">
+                            <div class="chat-message-role">${roleLabel}</div>
+                            <div class="chat-message-content">${formatMarkdown(msg.content)}</div>
+                        </div>
+                    `;
+                });
+                
+                // Добавляем streaming контейнер
+                html += `
+                    <div class="chat-message assistant streaming" id="streamingMessage">
+                        <div class="chat-message-role">ИИ</div>
+                        <div class="chat-message-content" id="streamingText"></div>
+                        <span class="streaming-cursor"></span>
+                    </div>
+                `;
+                
+                llmContentEl.innerHTML = html;
+                llmContentEl.scrollTop = llmContentEl.scrollHeight;
+            }
+
+            // Отправка текстового сообщения
+            function sendTextMessage() {
+                const input = document.getElementById('chatInput');
+                const message = input.value.trim();
+                
+                if (!message) return;
+                if (!isLLMConnected) {
+                    showSuccess('❌ LLM не подключен');
+                    return;
+                }
+                if (isStreamingLLM) {
+                    showSuccess('⏳ Дождитесь завершения ответа');
+                    return;
+                }
+                
+                // Добавляем сообщение пользователя в историю
+                addToHistory('user', message);
+                
+                // Очищаем поле ввода
+                input.value = '';
+                input.disabled = true;
+                document.getElementById('chatSendBtn').disabled = true;
+                
+                // Запускаем UI стриминга
+                startStreamingUI(message);
+                
+                // Получаем историю для отправки (без текущего сообщения, т.к. оно в query)
+                const history = loadChatHistory();
+                const contextHistory = history.slice(0, -1);
+                
+                // Отправляем в WebSocket с историей
+                llmWebSocket.send(JSON.stringify({
+                    type: 'llm.query',
+                    query: message,
+                    history: contextHistory,
+                    request_id: `text_${Date.now()}`
+                }));
+                
+                log(`📝 Sent text message with ${contextHistory.length} history items`);
+            }
+
+            // Запуск UI стриминга с учётом истории
+            // ============================================================================
+            // LLM STREAMING FUNCTIONS
+            // ============================================================================
+            
+            function startStreamingUI(query) {
+                log(`📝 Starting LLM streaming for query: ${query}`);
+                
+                isStreamingLLM = true;
+                streamingContent = "";
+                
+                jarvisSphere.classList.remove('listening', 'speaking', 'processing');
+                jarvisSphere.classList.add('streaming');
+                updateStatus('streaming', 'Генерация ответа...', 'streaming');
+                
+                llmMeta.textContent = 'Streaming...';
+                
+                // Рендерим историю + streaming сообщение
+                appendStreamingMessage();
+                
+                const copyButton = document.getElementById('copyLlmButton');
+                if (copyButton) copyButton.style.display = 'none';
+            }
+            
+            function appendStreamingText(content) {
+                if (!isStreamingLLM) return;
+                streamingContent += content;
+                
+                const streamingText = document.getElementById('streamingText');
+                if (streamingText) {
+                    streamingText.innerHTML = formatMarkdown(streamingContent);
+                    llmContent.scrollTop = llmContent.scrollHeight;
+                }
+            }
+            
+            function finishStreamingUI(data) {
+                log(`✅ LLM streaming finished`);
+                
+                isStreamingLLM = false;
+                jarvisSphere.classList.remove('streaming');
+                updateStatus('connected', 'Готов', 'connected');
+                
+                const fullContent = data.full_content || streamingContent;
+                
+                // 🆕 Сохраняем ответ ИИ в историю
+                addToHistory('assistant', fullContent);
+                
+                // Отображаем полную историю
+                renderChatHistory();
+                
+                // Разблокируем поле ввода
+                const input = document.getElementById('chatInput');
+                const sendBtn = document.getElementById('chatSendBtn');
+                if (input) {
+                    input.disabled = false;
+                    input.focus();
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = !input || !input.value.trim();
+                }
+                
+                if (data.duration_ms) {
+                    const seconds = (data.duration_ms / 1000).toFixed(1);
+                    llmMeta.textContent = `${data.model || 'gpt-4o-mini'} • ${seconds}s`;
+                }
+                
+                // Показываем кнопку копирования
+                const copyButton = document.getElementById('copyLlmButton');
+                if (copyButton) copyButton.style.display = 'flex';
+                
+                // Сохраняем контент для копирования
+                currentLLMContent = formatMarkdown(fullContent);
+                
+                streamingContent = "";
+                currentRequestId = null;
+            }
+            
+            function showStreamingError(message) {
+                log(`❌ LLM streaming error: ${message}`, 'error');
+                
+                isStreamingLLM = false;
+                streamingContent = "";
+                jarvisSphere.classList.remove('streaming');
+                updateStatus('error', 'Ошибка', 'error');
+                
+                // 🆕 Показываем историю + ошибку
+                const history = loadChatHistory();
+                let html = '';
+                
+                history.forEach(msg => {
+                    const roleLabel = msg.role === 'user' ? 'Вы' : 'ИИ';
+                    html += `
+                        <div class="chat-message ${msg.role}">
+                            <div class="chat-message-role">${roleLabel}</div>
+                            <div class="chat-message-content">${formatMarkdown(msg.content)}</div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    <div class="llm-error">
+                        <div class="llm-error-icon">❌</div>
+                        <div class="llm-error-title">Ошибка генерации</div>
+                        <div class="llm-error-text">${message}</div>
+                    </div>
+                `;
+                
+                llmContent.innerHTML = html;
+                llmMeta.textContent = 'Ошибка';
+                
+                // 🆕 Разблокируем поле ввода
+                const input = document.getElementById('chatInput');
+                const sendBtn = document.getElementById('chatSendBtn');
+                if (input) {
+                    input.disabled = false;
+                    input.focus();
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = !input || !input.value.trim() || !isLLMConnected;
+                }
+                
+                setTimeout(() => updateStatus('connected', 'Готов', 'connected'), 3000);
+            }
+
+            function formatMarkdown(text) {
+                if (!text) return '<p>Нет контента</p>';
+                return text
+                    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+                    .replace(/^\* (.+)$/gim, '<li>$1</li>')
+                    .replace(/^- (.+)$/gim, '<li>$1</li>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>');
+            }
+
+            let currentLLMContent = '';
+
+            function copyLLMResponse() {
+                if (!currentLLMContent) {
+                    showSuccess('❌ Нет контента для копирования');
+                    return;
+                }
+
+                const copyButton = document.getElementById('copyLlmButton');
+                const copyButtonText = document.getElementById('copyButtonText');
+                const copyIcon = copyButton.querySelector('i');
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = currentLLMContent;
+                const plainText = tempDiv.textContent || tempDiv.innerText || '';
+
+                navigator.clipboard.writeText(plainText).then(() => {
+                    copyButton.classList.add('copied');
+                    copyIcon.className = 'fas fa-check';
+                    copyButtonText.textContent = 'Скопировано!';
+
+                    setTimeout(() => {
+                        copyButton.classList.remove('copied');
+                        copyIcon.className = 'fas fa-copy';
+                        copyButtonText.textContent = 'Копировать';
+                    }, 2000);
+                }).catch(() => showSuccess('❌ Ошибка копирования'));
+            }
+
+            function displayLLMContent(content, model = 'gpt-4o-mini') {
+                log('✅ Displaying LLM content');
+
+                const formattedContent = formatMarkdown(content);
+                llmContent.innerHTML = `<div class="fade-in">${formattedContent}</div>`;
+                llmMeta.textContent = model;
+                llmContent.scrollTop = 0;
+
+                currentLLMContent = formattedContent;
+                const copyButton = document.getElementById('copyLlmButton');
+                if (copyButton) copyButton.style.display = 'flex';
+            }
+
+            function updateStatus(status, text, className) {
+                statusText.textContent = text;
+                voiceStatus.className = `voice-status ${className}`;
+            }
+
+            // ============================================================================
+            // THREE.JS BACKGROUND
+            // ============================================================================
+            
+            function createCircleTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 64;
+                canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                
+                const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 64, 64);
+                
+                const texture = new THREE.Texture(canvas);
+                texture.needsUpdate = true;
+                return texture;
+            }
+
+            function initThreeJS() {
+                try {
+                    const canvas = document.getElementById('jarvis-three-canvas');
+                    if (!canvas) return;
+
+                    threeScene = new THREE.Scene();
+                    threeCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                    threeCamera.position.z = 500;
+
+                    threeRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: !isMobile });
+                    threeRenderer.setSize(window.innerWidth, window.innerHeight);
+                    threeRenderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
+
+                    const particleCount = isMobile ? 800 : 1500;
+                    const positions = new Float32Array(particleCount * 3);
+                    const colors = new Float32Array(particleCount * 3);
+
+                    const colorPalette = [
+                        new THREE.Color(0x8b5cf6),
+                        new THREE.Color(0x6366f1),
+                        new THREE.Color(0xa855f7)
+                    ];
+
+                    for (let i = 0; i < particleCount; i++) {
+                        const i3 = i * 3;
+                        positions[i3] = (Math.random() - 0.5) * 2000;
+                        positions[i3 + 1] = (Math.random() - 0.5) * 2000;
+                        positions[i3 + 2] = (Math.random() - 0.5) * 1500;
+
+                        const color = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                        colors[i3] = color.r;
+                        colors[i3 + 1] = color.g;
+                        colors[i3 + 2] = color.b;
+                    }
+
+                    const particleGeometry = new THREE.BufferGeometry();
+                    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                    const particleMaterial = new THREE.PointsMaterial({
+                        size: isMobile ? 2 : 3,
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: 0.6,
+                        sizeAttenuation: true,
+                        blending: THREE.AdditiveBlending,
+                        map: createCircleTexture()
+                    });
+
+                    threeParticles = new THREE.Points(particleGeometry, particleMaterial);
+                    threeScene.add(threeParticles);
+
+                    threeInitialized = true;
+                    animateThreeJS();
+
+                } catch (error) {
+                    log(`Ошибка Three.JS: ${error.message}`, 'error');
+                }
+            }
+
+            function animateThreeJS() {
+                if (!threeInitialized) return;
+                requestAnimationFrame(animateThreeJS);
+
+                if (threeParticles) {
+                    threeParticles.rotation.y += 0.0002;
+                    threeParticles.rotation.x += 0.0001;
+
+                    const positions = threeParticles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i + 1] += Math.sin(Date.now() * 0.0001 + i) * 0.05;
+                        if (positions[i + 1] > 1000) positions[i + 1] = -1000;
+                        if (positions[i + 1] < -1000) positions[i + 1] = 1000;
+                    }
+                    threeParticles.geometry.attributes.position.needsUpdate = true;
+                }
+
+                threeRenderer.render(threeScene, threeCamera);
+            }
+
+            window.addEventListener('resize', function() {
+                if (!threeInitialized) return;
+                threeCamera.aspect = window.innerWidth / window.innerHeight;
+                threeCamera.updateProjectionMatrix();
+                threeRenderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // ============================================================================
+            // VISUALIZER
+            // ============================================================================
+            
+            function createCircularVisualizer() {
+                const barCount = isMobile ? 40 : 60;
+                const angleStep = 360 / barCount;
+                
+                for (let i = 0; i < barCount; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'viz-bar';
+                    bar.style.transform = `rotate(${i * angleStep}deg) translateY(-140px)`;
+                    bar.style.height = '20px';
+                    circularViz.appendChild(bar);
+                }
+            }
+
+            function updateCircularVisualization(audioData) {
+                const bars = circularViz.querySelectorAll('.viz-bar');
+                const step = Math.floor(audioData.length / bars.length);
+                
+                for (let i = 0; i < bars.length; i++) {
+                    let sum = 0;
+                    for (let j = 0; j < step; j++) {
+                        const index = i * step + j;
+                        if (index < audioData.length) sum += Math.abs(audioData[index]);
+                    }
+                    const average = sum / step;
+                    const multiplier = isMobile ? 300 : 200;
+                    const height = 20 + Math.min(80, Math.floor(average * multiplier));
+                    bars[i].style.height = `${height}px`;
+                }
+            }
+
+            // ============================================================================
+            // AUDIO INPUT FUNCTIONS
+            // ============================================================================
+            
+            function arrayBufferToBase64(buffer) {
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return btoa(binary);
+            }
+
+            async function initializeAudio() {
+                log('Начало инициализации аудио');
+                
+                try {
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        throw new Error("Браузер не поддерживает доступ к микрофону");
+                    }
+
+                    if (!window.globalAudioContext) {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        window.globalAudioContext = new AudioContextClass({
+                            sampleRate: 24000,
+                            latencyHint: 'interactive'
+                        });
+                        log(`AudioContext создан с частотой ${window.globalAudioContext.sampleRate} Гц`);
+                    }
+
+                    if (window.globalAudioContext.state === 'suspended') {
+                        await window.globalAudioContext.resume();
+                        log('AudioContext активирован');
+                    }
+
+                    if (!window.globalMicStream) {
+                        window.globalMicStream = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true,
+                                sampleRate: 24000,
+                                channelCount: 1
+                            }
+                        });
+                        log('Микрофон активирован');
+                    }
+
+                    if (isIOS && !window.silentAudioBuffer) {
+                        try {
+                            window.silentAudioBuffer = window.globalAudioContext.createBuffer(1, 1, window.globalAudioContext.sampleRate);
+                            const silentSource = window.globalAudioContext.createBufferSource();
+                            silentSource.buffer = window.silentAudioBuffer;
+                            silentSource.connect(window.globalAudioContext.destination);
+                            silentSource.start(0);
+                            log('iOS: Буфер тишины воспроизведен');
+                        } catch (e) {}
+                    }
+
+                    window.audioInitialized = true;
+                    log('Инициализация аудио завершена успешно');
+                    return true;
+
+                } catch (error) {
+                    log(`Ошибка инициализации аудио: ${error.message}`, 'error');
+                    showError('Ошибка доступа к микрофону', 'Разрешите доступ к микрофону в настройках браузера.');
+                    return false;
+                }
+            }
+
+            async function startListening() {
+                if (!isConnected || isPlayingAudio || isReconnecting || isListening || isStreamingLLM) return;
+                
+                if (!window.audioInitialized) {
+                    const success = await initializeAudio();
+                    if (!success) return;
+                }
+                
+                isListening = true;
+                log('Начинаем прослушивание');
+                
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({
+                        type: "input_audio_buffer.clear",
+                        event_id: `clear_${Date.now()}`
+                    }));
+                }
+                
+                if (window.globalAudioContext.state === 'suspended') {
+                    await window.globalAudioContext.resume();
+                }
+                
+                if (!audioProcessor) {
+                    const bufferSize = 2048;
+                    audioProcessor = window.globalAudioContext.createScriptProcessor(bufferSize, 1, 1);
+                    
+                    let isSilent = true;
+                    let silenceStartTime = Date.now();
+                    let lastCommitTime = 0;
+                    let hasSentAudioInCurrentSegment = false;
+                    
+                    audioProcessor.onaudioprocess = function(e) {
+                        if (isListening && websocket && websocket.readyState === WebSocket.OPEN && !isReconnecting) {
+                            let inputData = e.inputBuffer.getChannelData(0);
+                            if (inputData.length === 0) return;
+                            
+                            let maxAmplitude = 0;
+                            for (let i = 0; i < inputData.length; i++) {
+                                maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
+                            }
+                            
+                            if (isMobile && AUDIO_CONFIG.amplificationFactor > 1.0) {
+                                const amplifiedData = new Float32Array(inputData.length);
+                                for (let i = 0; i < inputData.length; i++) {
+                                    amplifiedData[i] = Math.max(-1.0, Math.min(1.0, inputData[i] * AUDIO_CONFIG.amplificationFactor));
+                                }
+                                inputData = amplifiedData;
+                                maxAmplitude = 0;
+                                for (let i = 0; i < inputData.length; i++) {
+                                    maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
+                                }
+                            }
+                            
+                            const hasSound = maxAmplitude > AUDIO_CONFIG.soundDetectionThreshold;
+                            updateCircularVisualization(inputData);
+                            
+                            const pcm16Data = new Int16Array(inputData.length);
+                            for (let i = 0; i < inputData.length; i++) {
+                                pcm16Data[i] = Math.max(-32768, Math.min(32767, Math.floor(inputData[i] * 32767)));
+                            }
+                            
+                            try {
+                                websocket.send(JSON.stringify({
+                                    type: "input_audio_buffer.append",
+                                    event_id: `audio_${Date.now()}`,
+                                    audio: arrayBufferToBase64(pcm16Data.buffer)
+                                }));
+                                hasSentAudioInCurrentSegment = true;
+                                
+                                if (!hasAudioData && hasSound) {
+                                    hasAudioData = true;
+                                    audioDataStartTime = Date.now();
+                                }
+                            } catch (error) {
+                                log(`Ошибка отправки аудио: ${error.message}`, "error");
+                            }
+                            
+                            const now = Date.now();
+                            
+                            if (hasSound) {
+                                isSilent = false;
+                                silenceStartTime = now;
+                                
+                                if (!jarvisSphere.classList.contains('listening') && 
+                                    !jarvisSphere.classList.contains('speaking') &&
+                                    !jarvisSphere.classList.contains('processing') &&
+                                    !jarvisSphere.classList.contains('streaming')) {
+                                    jarvisSphere.classList.add('listening');
+                                }
+                            } else if (!isSilent) {
+                                const silenceDuration = now - silenceStartTime;
+                                
+                                if (silenceDuration > AUDIO_CONFIG.silenceDuration) {
+                                    isSilent = true;
+                                    
+                                    if (now - lastCommitTime > 1000 && hasSentAudioInCurrentSegment) {
+                                        setTimeout(() => {
+                                            if (isSilent && isListening && !isReconnecting) {
+                                                commitAudioBuffer();
+                                                lastCommitTime = Date.now();
+                                                hasSentAudioInCurrentSegment = false;
+                                            }
+                                        }, 100);
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    
+                    const streamSource = window.globalAudioContext.createMediaStreamSource(window.globalMicStream);
+                    streamSource.connect(audioProcessor);
+                    
+                    const gainNode = window.globalAudioContext.createGain();
+                    gainNode.gain.value = 0;
+                    audioProcessor.connect(gainNode);
+                    gainNode.connect(window.globalAudioContext.destination);
+                }
+                
+                hasAudioData = false;
+                audioDataStartTime = 0;
+                
+                if (!isPlayingAudio && !isStreamingLLM) {
+                    jarvisSphere.classList.add('listening');
+                    jarvisSphere.classList.remove('speaking', 'processing', 'streaming');
+                }
+                
+                log("Прослушивание начато успешно");
+            }
+
+            function commitAudioBuffer() {
+                if (!isListening || !websocket || websocket.readyState !== WebSocket.OPEN || isReconnecting) return;
+                if (!hasAudioData) return;
+                
+                const audioLength = Date.now() - audioDataStartTime;
+                if (audioLength < minimumAudioLength) {
+                    setTimeout(() => {
+                        if (isListening && hasAudioData && !isReconnecting) {
+                            sendCommitBuffer();
+                        }
+                    }, minimumAudioLength - audioLength + 50);
+                    return;
+                }
+                
+                sendCommitBuffer();
+            }
+            
+            function sendCommitBuffer() {
+                const audioLength = Date.now() - audioDataStartTime;
+                if (audioLength < 100) {
+                    hasAudioData = false;
+                    audioDataStartTime = 0;
+                    return;
+                }
+                
+                jarvisSphere.classList.remove('listening');
+                
+                websocket.send(JSON.stringify({
+                    type: "input_audio_buffer.commit",
+                    event_id: `commit_${Date.now()}`
+                }));
+                
+                hasAudioData = false;
+                audioDataStartTime = 0;
+            }
+
+            // ============================================================================
+            // WEBSOCKET CONNECTION
+            // ============================================================================
+            
+            async function connectWebSocket() {
+                if (!ASSISTANT_ID) {
+                    log('Waiting for Gemini assistant configuration');
+                    updateStatus('connecting', 'Выберите Gemini ассистента', 'connecting');
+                    return;
+                }
+                
+                if (!userActivated) {
+                    log('Waiting for user activation before connecting WebSocket');
+                    return;
+                }
+
+                try {
+                    const WS_URL = SERVER_URL.replace(/^http/, 'ws') + '/ws/gemini-browser/' + ASSISTANT_ID;
+                    
+                    log('Подключение к Gemini WebSocket...');
+                    log(`URL: ${WS_URL}`);
+                    
+                    isReconnecting = true;
+                    
+                    if (websocket) {
+                        try { websocket.close(); } catch (e) {}
+                    }
+                    
+                    if (pingInterval) {
+                        clearInterval(pingInterval);
+                        pingInterval = null;
+                    }
+                    
+                    websocket = new WebSocket(WS_URL);
+                    websocket.binaryType = 'arraybuffer';
+                    
+                    websocket.onopen = function() {
+                        log('✅ Gemini WebSocket подключен');
+                        isConnected = true;
+                        isReconnecting = false;
+                        reconnectAttempts = 0;
+                        
+                        hudFrames.forEach(frame => frame.classList.add('active'));
+                        updateStatus('connected', 'Готов', 'connected');
+                        
+                        connectLLMWebSocket();
+                        
+                        setTimeout(() => startListening(), 500);
+                        
+                        const pingIntervalTime = isMobile ? MOBILE_PING_INTERVAL : PING_INTERVAL;
+                        pingInterval = setInterval(() => {
+                            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                                websocket.send(JSON.stringify({ type: "ping" }));
+                            }
+                        }, pingIntervalTime);
+                    };
+                    
+                    websocket.onmessage = function(event) {
+                        try {
+                            if (event.data instanceof Blob || !event.data) return;
+
+                            try {
+                                const data = JSON.parse(event.data);
+                                lastPongTime = Date.now();
+                                
+                                if (data.type === 'llm.request') {
+                                    log(`📝 LLM request received: ${data.query}`);
+                                    startStreamingUI(data.query);
+                                    sendLLMQuery(data.query, data.request_id);
+                                    return;
+                                }
+                                
+                                if (data.type === 'llm.stream.start') {
+                                    currentRequestId = data.request_id;
+                                    startStreamingUI(data.query);
+                                    return;
+                                }
+                                
+                                if (data.type === 'llm.stream.delta') {
+                                    if (data.request_id === currentRequestId || !currentRequestId) {
+                                        appendStreamingText(data.content);
+                                    }
+                                    return;
+                                }
+                                
+                                if (data.type === 'llm.stream.done') {
+                                    finishStreamingUI(data);
+                                    return;
+                                }
+                                
+                                if (data.type === 'llm.stream.error') {
+                                    showStreamingError(data.message);
+                                    return;
+                                }
+                                
+                                if (data.type === 'connection_status') {
+                                    log(`Gemini connection: ${data.status}`);
+                                    if (data.status === 'connected') {
+                                        updateStatus('connected', 'Gemini готов', 'connected');
+                                    }
+                                    return;
+                                }
+                                
+                                if (data.type === 'gemini.setup.complete') {
+                                    log('Gemini setup complete');
+                                    return;
+                                }
+                                
+                                if (data.type === 'function_call.executing') {
+                                    log(`🔧 Function executing: ${data.function}`);
+                                    if (data.function === 'query_llm') {
+                                        updateStatus('processing', 'Запрос к ИИ...', 'processing');
+                                        jarvisSphere.classList.add('processing');
+                                    }
+                                    return;
+                                }
+                                
+                                if (data.type === 'function_call.completed') {
+                                    log(`✅ Function completed: ${data.function}`);
+                                    return;
+                                }
+                                
+                                if (data.type === 'response.audio.delta') {
+                                    if (data.delta) addAudioChunkToBuffer(data.delta);
+                                    return;
+                                }
+                                
+                                if (data.type === 'assistant.speech.started') {
+                                    log('🔊 Assistant started speaking');
+                                    return;
+                                }
+                                
+                                if (data.type === 'assistant.speech.ended') {
+                                    log('🔇 Assistant speech ended (server)');
+                                    return;
+                                }
+                                
+                                if (data.type === 'response.done') return;
+                                
+                                if (data.type === 'input.transcription') {
+                                    log(`👤 User: ${data.text}`);
+                                    return;
+                                }
+                                
+                                if (data.type === 'output.transcription') {
+                                    log(`🤖 Gemini: ${data.text}`);
+                                    return;
+                                }
+                                
+                                if (data.type === 'error') {
+                                    log(`Gemini API Error: ${JSON.stringify(data.error)}`, 'error');
+                                    
+                                    if (data.error && data.error.code === 'input_audio_buffer_commit_empty') {
+                                        if (!isPlayingAudio && !isReconnecting && !isStreamingLLM) {
+                                            setTimeout(() => startListening(), 500);
+                                        }
+                                        return;
+                                    }
+                                    
+                                    updateStatus('error', 'Ошибка', 'error');
+                                    return;
+                                }
+                                
+                            } catch (parseError) {
+                                if (event.data === 'pong') {
+                                    lastPongTime = Date.now();
+                                }
+                            }
+                        } catch (generalError) {
+                            log(`Ошибка обработки: ${generalError.message}`, "error");
+                        }
+                    };
+                    
+                    websocket.onclose = function(event) {
+                        log(`WebSocket закрыт: ${event.code}`);
+                        isConnected = false;
+                        isListening = false;
+                        
+                        if (pingInterval) {
+                            clearInterval(pingInterval);
+                            pingInterval = null;
+                        }
+                        
+                        if (event.code === 1000 || event.code === 1001) return;
+                        
+                        const maxAttempts = isMobile ? MOBILE_MAX_RECONNECT_ATTEMPTS : MAX_RECONNECT_ATTEMPTS;
+                        if (reconnectAttempts < maxAttempts && userActivated) {
+                            reconnectAttempts++;
+                            const delay = Math.min(30000, Math.pow(2, reconnectAttempts) * 1000);
+                            log(`Переподключение через ${delay}ms (попытка ${reconnectAttempts}/${maxAttempts})`);
+                            updateStatus('connecting', 'Переподключение...', 'connecting');
+                            setTimeout(() => connectWebSocket(), delay);
+                        } else {
+                            updateStatus('error', 'Ошибка подключения', 'error');
+                            showError('Ошибка подключения', 'Не удалось подключиться к серверу. Обновите страницу.');
+                        }
+                    };
+                    
+                    websocket.onerror = function(error) {
+                        log(`WebSocket ошибка: ${error}`, 'error');
+                    };
+                    
+                    return true;
+                    
+                } catch (error) {
+                    log(`Ошибка подключения: ${error}`, 'error');
+                    isReconnecting = false;
+                    return false;
+                }
+            }
+
+            // ============================================================================
+            // LLM WEBSOCKET CONNECTION
+            // ============================================================================
+            
+            function connectLLMWebSocket() {
+                if (llmWebSocket && llmWebSocket.readyState === WebSocket.OPEN) {
+                    log('📝 LLM WebSocket already connected');
+                    return;
+                }
+                
+                try {
+                    let LLM_WS_URL = SERVER_URL.replace(/^http/, 'ws') + '/llm-stream';
+                    if (ASSISTANT_ID) {
+                        LLM_WS_URL += '?assistant_id=' + encodeURIComponent(ASSISTANT_ID);
+                    }
+                    
+                    log(`📝 Connecting to LLM WebSocket: ${LLM_WS_URL}`);
+                    
+                    llmWebSocket = new WebSocket(LLM_WS_URL);
+                    
+                    llmWebSocket.onopen = function() {
+                        log('📝 ✅ LLM WebSocket connected (User API key mode)');
+                        isLLMConnected = true;
+                        
+                        // 🆕 Разблокируем поле ввода
+                        const chatInput = document.getElementById('chatInput');
+                        const chatSendBtn = document.getElementById('chatSendBtn');
+                        if (chatInput) {
+                            chatInput.disabled = false;
+                            chatInput.placeholder = 'Введите сообщение...';
+                        }
+                        if (chatSendBtn && chatInput && chatInput.value.trim()) {
+                            chatSendBtn.disabled = false;
+                        }
+                    };
+                    
+                    llmWebSocket.onmessage = function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            
+                            if (data.type === 'llm.stream.start') {
+                                currentRequestId = data.request_id;
+                                startStreamingUI(data.query);
+                                return;
+                            }
+                            
+                            if (data.type === 'llm.stream.delta') {
+                                if (data.request_id === currentRequestId || !currentRequestId) {
+                                    appendStreamingText(data.content);
+                                }
+                                return;
+                            }
+                            
+                            if (data.type === 'llm.stream.done') {
+                                finishStreamingUI(data);
+                                return;
+                            }
+                            
+                            if (data.type === 'llm.stream.error') {
+                                showStreamingError(data.message || data.error);
+                                return;
+                            }
+                            
+                            if (data.type === 'error') {
+                                showStreamingError(data.error);
+                                return;
+                            }
+                            
+                            if (data.type === 'connection_status') {
+                                log(`📝 LLM connection: ${data.status} (API key source: ${data.api_key_source || 'unknown'})`);
+                                return;
+                            }
+                            
+                        } catch (e) {
+                            log(`📝 LLM WS parse error: ${e}`, 'error');
+                        }
+                    };
+                    
+                    llmWebSocket.onclose = function() {
+                        log('📝 LLM WebSocket disconnected');
+                        isLLMConnected = false;
+                        
+                        // 🆕 Блокируем поле ввода
+                        const chatInput = document.getElementById('chatInput');
+                        const chatSendBtn = document.getElementById('chatSendBtn');
+                        if (chatInput) {
+                            chatInput.placeholder = 'Подключение...';
+                        }
+                        if (chatSendBtn) {
+                            chatSendBtn.disabled = true;
+                        }
+                        
+                        setTimeout(() => {
+                            if (isConnected && ASSISTANT_ID && userActivated) {
+                                connectLLMWebSocket();
+                            }
+                        }, 3000);
+                    };
+                    
+                    llmWebSocket.onerror = function(error) {
+                        log(`📝 LLM WebSocket error: ${error}`, 'error');
+                    };
+                    
+                } catch (error) {
+                    log(`📝 LLM WebSocket connection error: ${error}`, 'error');
+                }
+            }
+            
+            function sendLLMQuery(query, requestId) {
+                if (!llmWebSocket || llmWebSocket.readyState !== WebSocket.OPEN) {
+                    log('📝 LLM WebSocket not connected, connecting...', 'warn');
+                    connectLLMWebSocket();
+                    setTimeout(() => sendLLMQuery(query, requestId), 500);
+                    return;
+                }
+                
+                log(`📝 Sending query to LLM: ${query.substring(0, 50)}...`);
+                llmWebSocket.send(JSON.stringify({
+                    type: 'llm.query',
+                    query: query,
+                    request_id: requestId
+                }));
+            }
+
+            // ============================================================================
+            // CLICK HANDLER
+            // ============================================================================
+            
+            jarvisSphere.addEventListener('click', async function() {
+                if (!userActivated) {
+                    startOverlay.classList.remove('hidden');
+                    return;
+                }
+                
+                if (!window.audioInitialized) {
+                    const success = await initializeAudio();
+                    if (!success) return;
+                }
+                
+                initPlaybackAudioContext();
+                
+                if (!isListening && !isPlayingAudio && !isReconnecting && !isStreamingLLM) {
+                    if (isConnected) {
+                        startListening();
+                    } else {
+                        connectWebSocket();
+                    }
+                }
+            });
+
+            // ============================================================================
+            // MOBILE MENU HANDLERS
+            // ============================================================================
+
+            mobileMenuToggle.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-open');
+                sidebarOverlay.classList.toggle('show');
+            });
+
+            sidebarOverlay.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-open');
+                sidebarOverlay.classList.remove('show');
+            });
+
+            // ============================================================================
+            // INITIALIZATION
+            // ============================================================================
+
+            log('🚀 JARVIS AI Interface v4.3 Starting...');
+            log(`Mode: Gemini Voice (WS1) + LLM Text (WS2) - Dual WebSocket`);
+            log(`User Activation: Required before WebSocket connection`);
+            log(`Text Chat: With 5-pair history in sessionStorage`);
+            log(`Assistant ID: ${ASSISTANT_ID || 'Not configured yet'}`);
+            log(`Server URL: ${SERVER_URL}`);
+
+            createCircularVisualizer();
+            initThreeJS();
+
+            // 🆕 Инициализация текстового чата
+            const chatInput = document.getElementById('chatInput');
+            const chatSendBtn = document.getElementById('chatSendBtn');
+            const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+            if (chatInput && chatSendBtn) {
+                chatInput.addEventListener('input', function() {
+                    chatSendBtn.disabled = !this.value.trim() || !isLLMConnected || isStreamingLLM;
+                });
+
+                chatInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (!chatSendBtn.disabled) {
+                            sendTextMessage();
+                        }
+                    }
+                });
+
+                chatSendBtn.addEventListener('click', sendTextMessage);
+            }
+
+            if (clearHistoryBtn) {
+                clearHistoryBtn.addEventListener('click', clearChatHistory);
+            }
+
+            // Инициализация отображения истории
+            updateContextInfo();
+            renderChatHistory();
+
+            if (isEmbedMode && ASSISTANT_ID) {
+                // embed-mode класс уже добавлен ранним скриптом
+                log('📦 Running in EMBED mode');
+            } else if (ASSISTANT_ID) {
+                log('🖥️ Running in NORMAL mode with saved assistant');
+            } else {
+                log('🖥️ Running in NORMAL mode - waiting for assistant selection');
+            }
+            
+            updateStatus('connecting', 'Нажмите чтобы начать', 'connecting');
+        });
+    </script>
+</body>
+</html>

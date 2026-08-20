@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: wellcomeai
+    env: python
+    runtime: "python-3.10.11"  # Explicitly use Python 3.10.11 instead of 3.11
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 4 --timeout 120 --graceful-timeout 90 -b 0.0.0.0:$PORT main:application
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: HOST_URL
+        fromService:
+          type: web
+          name: wellcomeai
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wellcomeai-db
+          property: connectionString
+      - key: PRODUCTION
+        value: "true"
+      - key: REALTIME_WS_URL
+        value: "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: PYTHON_VERSION  # Add explicit Python version environment variable
+        value: "3.10.11"
+      - key: PYTHONUNBUFFERED  # print()-диагностика конфига сразу видна в логах Render
+        value: "1"
+
+databases:
+  - name: wellcomeai-db
+    region: frankfurt
+    plan: free

@@ -1,0 +1,106 @@
+/* ========================================
+   Use Cases Section
+   ======================================== */
+.use-cases-section {
+  background-color: var(--white);
+  padding: 5rem 0;
+}
+
+.use-cases-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.use-cases-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.use-cases-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  background: linear-gradient(90deg, #4a86e8, #2563eb, #1d4ed8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+
+.use-cases-subtitle {
+  font-size: 1.25rem;
+  color: var(--text-gray);
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.use-cases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 3rem;
+  margin-bottom: 4rem;
+}
+
+.use-case-card {
+  background-color: var(--bg-light);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem;
+  transition: all 0.3s ease;
+  position: relative;
+  border: 1px solid var(--border-color);
+}
+
+.use-case-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary-blue-light);
+}
+
+.use-case-icon {
+  width: 60px;
+  height: 60px;
+  background: var(--gradient-blue);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.use-case-icon i {
+  font-size: 1.75rem;
+  color: var(--white);
+}
+
+.use-case-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 1rem;
+}
+
+.use-case-description {
+  font-size: 1rem;
+  color: var(--text-gray);
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.use-case-features {
+  list-style: none;
+  padding: 0;
+}
+
+.use-case-features li {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text-gray);
+}
+
+.use-case-features i {
+  color: #10b981;
+  margin-right: 0.75rem;
+  font-size: 0.875rem;
+}

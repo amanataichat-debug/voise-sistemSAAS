@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "WellcomeAI Assistant",
+  "version": "1.0.0",
+  "description": "Голосовой AI-ассистент для браузера",
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "sidePanel"
+  ],
+  
+  "host_permissions": [
+    "https://realtime-saas.onrender.com/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  }
+}

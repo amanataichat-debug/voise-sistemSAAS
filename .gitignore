@@ -1,0 +1,8 @@
+voiceai-459203-ebd256a2b801.json
+__pycache__/
+*.pyc
+logs/
+*.log
+.env
+.env.*
+node_modules/

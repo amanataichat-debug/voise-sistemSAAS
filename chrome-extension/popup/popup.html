@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>WellcomeAI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Если не залогинен -->
+    <div id="loginForm">
+      <h2>WellcomeAI</h2>
+      <input type="email" id="email" placeholder="Email">
+      <input type="password" id="password" placeholder="Пароль">
+      <button id="loginBtn">Войти</button>
+      <div id="error" class="error"></div>
+    </div>
+    
+    <!-- Если залогинен -->
+    <div id="mainView" style="display:none;">
+      <h2>Выберите ассистента</h2>
+      <select id="assistantSelect">
+        <option value="">Загрузка...</option>
+      </select>
+      <button id="openSidePanel">Открыть чат</button>
+      <button id="logoutBtn">Выйти</button>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

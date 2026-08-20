@@ -1,0 +1,67 @@
+# Основные компоненты
+fastapi>=0.100.0,<0.105.0
+uvicorn[standard]>=0.23.0,<0.25.0
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# Для работы с базой данных
+sqlalchemy>=2.0.0,<2.1.0
+psycopg2-binary>=2.9.6,<3.0.0
+alembic>=1.10.0,<2.0.0
+
+# Для WebSocket и HTTP
+websockets>=11.0.0,<12.0.0
+httpx>=0.24.1,<0.26.0
+aiohttp>=3.8.5,<4.0.0
+requests>=2.28.2,<3.0.0
+
+# Безопасность и авторизация
+pyjwt>=2.8.0,<3.0.0
+python-multipart>=0.0.6,<1.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+python-jose[cryptography]>=3.3.0,<4.0.0
+
+# Дополнительные утилиты
+aiofiles>=23.1.0,<24.0.0
+email-validator>=2.0.0,<3.0.0
+cryptography>=38.0.0,<42.0.0
+
+# Для обработки данных
+numpy>=1.24.3,<2.0.0
+
+# Для продакшена
+gunicorn>=21.2.0,<22.0.0
+
+# Работа с часовыми поясами
+pytz>=2023.3
+
+# OpenAI и внешние API
+openai>=1.12.0,<2.0.0
+
+# Google API
+google-auth>=2.16.0,<3.0.0
+google-api-python-client>=2.80.0,<3.0.0
+google-auth-httplib2>=0.1.0,<1.0.0
+google-auth-oauthlib>=1.0.0,<2.0.0
+
+# Composio — внешние коннекторы (Google Calendar, Gmail и т.д.) для агента
+composio>=0.15.0,<1.0.0
+
+# Telethon — личный Telegram-аккаунт агента (MTProto, коннектор Telegram)
+telethon>=1.36.0,<2.0.0
+
+# Pinecone
+pinecone-client>=3.0.0,<4.0.0
+psutil>=5.9.0
+beautifulsoup4
+
+boto3>=1.28.0,<2.0.0
+
+# Импорт контактов агента (xlsx/csv + нормализация телефонов)
+openpyxl>=3.1.0,<4.0.0
+phonenumbers>=8.13.0,<9.0.0
+
+# Fish Audio — realtime TTS по WebSocket (протокол на MessagePack)
+msgpack>=1.0.5,<2.0.0
+audioop-lts>=0.2.1

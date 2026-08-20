@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voicyfy Agent</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Syne:wght@600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<link rel="stylesheet" href="/static/agent/agent.css">
+</head>
+<body>
+
+<div id="loading-screen"><div class="spinner"></div><p>Загрузка...</p></div>
+
+<!-- ONBOARDING (обязательная карусель-обучение перед мастером, 5 слайдов) -->
+<div class="ob-overlay hidden" id="onboarding-overlay">
+  <div class="ob-card">
+    <div class="ob-top">
+      <div class="ob-brand"><div class="nav-logo-icon"><i class="fas fa-microphone-lines"></i></div><span>Voicyfy</span></div>
+      <button class="ob-skip" onclick="obSkip()">Пропустить <i class="fas fa-xmark"></i></button>
+    </div>
+    <div id="ob-content"></div>
+    <div class="ob-dots" id="ob-dots"></div>
+    <div class="ob-actions" id="ob-actions"></div>
+  </div>
+</div>
+
+<!-- WIZARD -->
+<div class="wizard-overlay hidden" id="wizard-overlay">
+  <div class="wizard-card">
+    <div class="wizard-logo">
+      <div class="nav-logo-icon"><i class="fas fa-microphone-lines"></i></div>
+      <div class="wizard-logo-text">Voicyfy</div>
+    </div>
+    <div class="wizard-sub">Создание автономного агента для звонков</div>
+    <div class="wizard-progress" id="wizard-progress"></div>
+    <div id="wizard-content"></div>
+  </div>
+</div>
+
+<!-- TOP NAV -->
+<nav class="top-nav" id="top-nav" style="display:none">
+  <a href="/static/dashboard.html" class="nav-logo">
+    <img class="nav-logo-img" src="/static/images/IMG_2820.PNG" alt="Voicyfy">
+    <span class="nav-logo-text">Voicyfy</span>
+  </a>
+  <div class="nav-center">
+    <div class="agent-switch no-dropdown" id="agent-switch">
+      <button class="agent-trigger" id="agent-trigger" type="button">
+        <div class="agent-trigger-main">
+          <span class="nav-agent-name" id="nav-agent-name">Агент</span>
+          <i class="fas fa-chevron-down agent-trigger-chevron"></i>
+        </div>
+        <div class="nav-agent-status" id="nav-agent-status"><i class="fas fa-circle" style="font-size:7px"></i> <span>Агент активен</span></div>
+      </button>
+      <div class="agent-dropdown hidden" id="agent-dropdown">
+        <div class="agent-dropdown-head">
+          <span class="agent-dropdown-title">Ваши агенты</span>
+          <span class="agent-dropdown-pill" id="agent-dropdown-pill">0/3</span>
+        </div>
+        <div class="agent-dropdown-list" id="agent-dropdown-list"></div>
+        <div class="agent-dropdown-foot" id="agent-dropdown-foot"></div>
+      </div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <button class="icon-btn burger-btn" id="burger-btn" type="button" title="Меню"><i class="fas fa-bars"></i></button>
+    <!-- ✅ Бейдж статуса подписки + кредиты -->
+    <div class="sub-badge" id="sub-badge" style="display:none">
+      <span class="sub-status" id="sub-status">—</span>
+      <span class="sub-credits" id="sub-credits" title="Баланс кредитов"><i class="fas fa-coins" style="font-size:11px"></i> <span id="sub-credits-num">0</span></span>
+      <button class="sub-action" id="sub-action" style="display:none" onclick="onSubAction()">Пополнить</button>
+    </div>
+    <div class="toggle-wrap">
+      <span class="toggle-label" id="toggle-label">Неактивен</span>
+      <label class="switch"><input type="checkbox" id="active-toggle"><span class="slider"></span></label>
+    </div>
+    <a href="/static/agent-guide.html" class="icon-btn" id="guide-btn" title="Как это работает" target="_blank" rel="noopener"><i class="far fa-circle-question"></i></a>
+    <a class="icon-btn" id="delete-agent-btn" title="Удалить агента" onclick="deleteAgent()" style="cursor:pointer"><i class="far fa-trash-can"></i></a>
+    <a href="/static/profile.html" class="icon-btn" id="profile-btn" title="Профиль"><i class="far fa-user"></i></a>
+  </div>
+</nav>
+
+<!-- ✅ Баннер истёкшей подписки -->
+<div id="sub-expired-banner" style="display:none;background:#fdecea;border-bottom:1px solid #f5c2c0;color:#b71c1c;padding:11px 20px;font-size:13.5px;align-items:center;gap:12px;justify-content:center">
+  <span><i class="fas fa-triangle-exclamation"></i> Подписка истекла. Все звонки агента и работа оркестратора заблокированы.</span>
+  <button onclick="subscribeAgent()" style="background:#d32f2f;color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer">Продлить за 4 990 ₽/мес</button>
+</div>
+
+<!-- MAIN -->
+<div class="main-layout" id="main-layout" style="display:none">
+
+  <!-- LEFT -->
+  <div class="col-left">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon blue"><i class="fas fa-phone-volume"></i></div>
+        <div class="stat-num" id="stat-calls">—</div>
+        <div class="stat-label">Всего звонков</div>
+        <span class="stat-go" onclick="openCallsModal()">Перейти →</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green"><i class="fas fa-users"></i></div>
+        <div class="stat-num" id="stat-contacts">—</div>
+        <div class="stat-label">Контакты</div>
+        <div style="display:flex;gap:10px;margin-top:7px;flex-wrap:wrap">
+          <span class="stat-go" onclick="openPipelineModal()">Воронка →</span>
+          <span class="stat-go" onclick="openContactsListModal()">Все →</span>
+          <span class="stat-go" onclick="openAddContactModal()">Добавить →</span>
+          <span class="stat-go" onclick="openImportModal()">Импорт →</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-clock-rotate-left"></i> Последние звонки</div>
+        <span class="card-link" onclick="openCallsModal()">Все звонки →</span>
+      </div>
+      <div id="recent-calls"><div class="empty">Нет звонков</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-coins"></i> Кредиты оркестратора</div>
+        <span class="card-link" onclick="openBillingModal()">История →</span>
+      </div>
+      <div class="exp-row"><span class="lbl">Баланс</span><span class="val" id="exp-credits">—</span></div>
+      <div class="exp-row"><span class="lbl">Подписка</span><span class="val" id="exp-sub-status">—</span></div>
+      <div class="exp-row"><span class="lbl">Действует до</span><span class="val" id="exp-sub-until">—</span></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="sub-action" onclick="openCreditsModal()">Пополнить кредиты</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="far fa-folder-open"></i> Документы агента</div>
+        <span class="card-link" onclick="openEditModal('doc_who_am_i')">Все →</span>
+      </div>
+      <div class="docs-grid" id="docs-grid"></div>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="chat-col">
+    <div class="chat-header">
+      <div>
+        <div class="chat-header-title">Чат с ИИ-ассистентом</div>
+        <div class="chat-header-sub">Ваш помощник для работы с клиентами</div>
+      </div>
+      <button class="chat-new-btn" id="chat-new-btn" onclick="newChat()" title="Начать новый диалог (история очистится)">
+        <i class="fas fa-rotate-right"></i><span>Новый чат</span>
+      </button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+      <textarea class="chat-input" id="chat-input" placeholder="Напишите сообщение..." rows="1"></textarea>
+      <button class="chat-mic" id="chat-mic" title="Записать голосом" onclick="toggleRecording()"><i class="fas fa-microphone"></i></button>
+      <button class="chat-send" id="chat-send"><i class="fas fa-paper-plane"></i></button>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="col-right">
+
+    <!-- 1. Ближайшие задачи (limit 5) -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="far fa-calendar-check"></i> Ближайшие задачи</div>
+        <span class="card-link" onclick="openTasksCalendar()">Посмотреть задачи →</span>
+      </div>
+      <div id="tasks-list"><div class="empty">Нет задач</div></div>
+    </div>
+
+    <!-- 2. Telegram-бот -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fab fa-telegram"></i> Telegram-бот</div>
+        <span class="card-link" onclick="openTelegramModal()">Настроить</span>
+      </div>
+      <div id="telegram-status-block">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+
+    <!-- 3. Настройки агента -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-sliders"></i> Настройки агента</div>
+        <span class="card-link" onclick="openInstructionsModal()">Изменить</span>
+      </div>
+      <div class="agent-card-body">
+        <div class="agent-avatar-lg" id="agent-avatar">A</div>
+        <div style="flex:1;min-width:0">
+          <div class="agent-name-lg" id="agent-card-name">Агент</div>
+          <div class="agent-status-lg" id="agent-card-status"><i class="fas fa-circle" style="font-size:7px"></i> <span>Активен</span></div>
+          <div><span class="type-badge" id="agent-type-badge">—</span></div>
+          <div class="agent-id" id="agent-id">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. База данных (векторная база знаний) -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-database"></i> База данных</div>
+        <span class="card-link" onclick="openKnowledgeBaseModal()">Управлять →</span>
+      </div>
+      <div id="kb-status-block">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+
+    <!-- 4b. Коннекторы (Google Календарь, Gmail через Composio) -->
+    <div class="card" id="connectors-card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-plug"></i> Коннекторы</div>
+        <span class="card-link" onclick="openConnectorsModal()">Управлять →</span>
+      </div>
+      <div id="connectors-block">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+
+    <!-- 5. История работы агента (последние 100 фоновых задач: звонки + SMS) -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-title"><i class="fas fa-list-check"></i> История работы агента</div>
+        <span class="card-link" onclick="loadAgentHistory()" title="Обновить"><i class="fas fa-rotate"></i></span>
+      </div>
+      <div id="agent-history-list" class="agent-history-list">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MOBILE DRAWER -->
+<div class="drawer-overlay hidden" id="drawer-overlay">
+  <aside class="drawer">
+    <header class="drawer-header">
+      <span class="drawer-title">Меню</span>
+      <button class="drawer-close" id="drawer-close" type="button">&times;</button>
+    </header>
+    <div class="drawer-body" id="drawer-body">
+      <div class="drawer-top">
+        <div class="drawer-toggle-slot" id="drawer-toggle-slot"></div>
+        <div class="drawer-badge-slot" id="drawer-badge-slot"></div>
+        <div class="drawer-actions" id="drawer-actions"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="app-footer" id="app-footer" style="display:none"><i class="fas fa-shield-halved" style="color:var(--blue)"></i> Voicyfy © 2026</div>
+
+<!-- MODAL: Edit (docs + assistant + settings) -->
+<div class="modal-overlay hidden" id="edit-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title">Настройки агента</div>
+      <button class="modal-close" onclick="closeEditModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="doc-tabs">
+        <div class="doc-tab active" data-tab="doc_who_am_i">Кто мы</div>
+        <div class="doc-tab" data-tab="doc_who_we_call">Кому звоним</div>
+        <div class="doc-tab" data-tab="doc_how_we_talk">Как говорим</div>
+        <div class="doc-tab" data-tab="doc_what_we_offer">Что предлагаем</div>
+        <div class="doc-tab" data-tab="doc_rules_and_goals">Правила и цели</div>
+        <div class="doc-tab" data-tab="assistant">Ассистент</div>
+      </div>
+
+      <div class="doc-pane active" data-pane="doc_who_am_i"><div class="form-group"><label class="form-label">Кто мы — описание компании</label><textarea class="form-textarea" id="e-doc_who_am_i" rows="8"></textarea></div></div>
+      <div class="doc-pane" data-pane="doc_who_we_call"><div class="form-group"><label class="form-label">Кому звоним — портрет клиента</label><textarea class="form-textarea" id="e-doc_who_we_call" rows="8"></textarea></div></div>
+      <div class="doc-pane" data-pane="doc_how_we_talk"><div class="form-group"><label class="form-label">Как говорим — стиль общения</label><textarea class="form-textarea" id="e-doc_how_we_talk" rows="8"></textarea></div></div>
+      <div class="doc-pane" data-pane="doc_what_we_offer"><div class="form-group"><label class="form-label">Что предлагаем — продукты и цены</label><textarea class="form-textarea" id="e-doc_what_we_offer" rows="8"></textarea></div></div>
+      <div class="doc-pane" data-pane="doc_rules_and_goals"><div class="form-group"><label class="form-label">Правила и цели — KPI и политика</label><textarea class="form-textarea" id="e-doc_rules_and_goals" rows="8"></textarea></div></div>
+
+      <div class="doc-pane" data-pane="assistant">
+        <div class="form-group">
+          <label class="form-label">Тип голосового ассистента</label>
+          <select class="form-select" id="e-assistant_type">
+            <option value="gemini">Gemini Voice</option>
+            <option value="openai">OpenAI Realtime</option>
+            <option value="cartesia">Cartesia (каскад)</option>
+            <option value="yandex">Yandex SpeechKit</option>
+            <option value="cascade">Cascade (наш ключ, кредиты)</option>
+            <option value="fish">Fish Audio (каскад)</option>
+          </select>
+          <div class="form-hint">Смена типа создаст нового голосового ассистента. Нужны соответствующие API-ключи. Cascade работает на нашем ключе и списывает кредиты каскада.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeEditModal()">Отмена</button>
+      <button class="btn btn-primary" id="edit-save-btn" onclick="saveEdit()"><i class="fas fa-check"></i> Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Настройки агента -->
+<div class="modal-overlay hidden" id="instructions-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Настройки агента</div>
+      <button class="modal-close" onclick="closeInstructionsModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Имя агента</label>
+        <input type="text" class="form-input" id="i-name">
+      </div>
+
+      <!-- ─── СЕКЦИЯ 1: ОРКЕСТРАТОР (текстовый чат-агент) ─── -->
+      <div class="instr-section-head">
+        <i class="fas fa-brain"></i>
+        <div>
+          <div class="instr-section-title">Оркестратор · текстовый чат-агент</div>
+          <div class="instr-section-sub">Мозг-планировщик: ведёт CRM, планирует звонки, готовит стратегию каждого звонка и анализирует результат. В живом телефонном разговоре эти инструкции НЕ используются.</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Модель оркестратора</label>
+        <select class="form-select" id="i-orchestrator_model"></select>
+        <div class="form-hint" id="i-model-desc"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Инструкции для оркестратора</label>
+        <textarea class="form-textarea" id="i-additional_instructions" rows="5"
+                  placeholder="Например: «перед обзвоном новых контактов всегда проверяй дубли», «не планируй звонки в выходные»."></textarea>
+        <div class="form-hint">Правила планирования и работы с контактами, которые не вписываются в документы компании.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">URL вебхука</label>
+        <input type="url" class="form-input" id="i-webhook_url"
+               placeholder="https://n8n.example.com/webhook/abc123">
+        <div class="form-hint">Оркестратор сможет отправлять события (заявки, лиды, результаты звонков) в n8n / Make / Zapier или любой HTTP endpoint через функцию send_webhook. Оставьте пустым, чтобы отключить.</div>
+      </div>
+
+      <!-- ─── СЕКЦИЯ 2: ГОЛОСОВОЙ АГЕНТ (живой звонок) ─── -->
+      <div class="instr-section-head">
+        <i class="fas fa-microphone-lines"></i>
+        <div>
+          <div class="instr-section-title">Голосовой агент · живой звонок</div>
+          <div class="instr-section-sub">Как агент ведёт себя в телефонном разговоре с клиентом: голос, тон, что говорить и чего избегать.</div>
+        </div>
+      </div>
+      <div id="i-voice-group"></div>
+      <div class="form-group">
+        <label class="form-label">Номер для исходящих (Caller ID)</label>
+        <select class="form-select" id="i-caller-id"><option value="">Автоматически</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Первая фраза для входящих звонков</label>
+        <textarea class="form-textarea" id="i-inbound_first_phrase" rows="2"
+                  placeholder="Например: «Здравствуйте, {name}! Чем могу помочь?»"></textarea>
+        <div class="form-hint">С чего агент начинает разговор, когда звонят ему. Подставьте <code>{name}</code> — вместо неё подставится имя из карточки контакта, если звонящий есть в базе агента (для незнакомых номеров переменная просто убирается). Оставьте пустым — будет использовано приветствие по умолчанию.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Инструкции для голосового агента</label>
+        <textarea class="form-textarea" id="i-voice_additional_instructions" rows="5"
+                  placeholder="Например: «говори коротко, не дави», «если спросят про цену — назови диапазон», «не упоминай конкурентов»."></textarea>
+        <div class="form-hint">Правила поведения именно в живом разговоре. Добавляются к промпту голосового агента.</div>
+      </div>
+
+      <!-- ─── СЕКЦИЯ 3: ПУБЛИЧНЫЙ API (приём заявок извне) ─── -->
+      <div class="instr-section-head">
+        <i class="fas fa-plug"></i>
+        <div>
+          <div class="instr-section-title">Публичный API · приём заявок извне</div>
+          <div class="instr-section-sub">Шлите заявки с формы сайта или из вашей CRM по секретному ключу — агент сам решит, что с ними делать (создаст контакт, поставит звонок, ответит). Запросы — только со своего сервера (server-to-server).</div>
+        </div>
+      </div>
+      <div id="i-public-access"><div class="form-hint">Загрузка…</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeInstructionsModal()">Отмена</button>
+      <button class="btn btn-primary" id="instructions-save-btn" onclick="saveInstructions()"><i class="fas fa-check"></i> Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Telegram-бот -->
+<div class="modal-overlay hidden" id="telegram-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fab fa-telegram"></i> Telegram-бот агента</div>
+      <button class="modal-close" onclick="closeTelegramModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="telegram-modal-body">
+      <div class="empty">Загрузка...</div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Add contact -->
+<div class="modal-overlay hidden" id="contact-modal-overlay">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Добавить контакт</div><button class="modal-close" onclick="closeContactModal()"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Телефон *</label><input type="text" class="form-input" id="c-phone" placeholder="+79001234567"></div>
+      <div class="form-group"><label class="form-label">Имя</label><input type="text" class="form-input" id="c-name" placeholder="Иван Петров"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Компания</label><input type="text" class="form-input" id="c-company"></div>
+        <div class="form-group"><label class="form-label">Должность</label><input type="text" class="form-input" id="c-position"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Заметки</label><textarea class="form-textarea" id="c-notes" rows="3" style="min-height:80px"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeContactModal()">Отмена</button><button class="btn btn-primary" onclick="saveContact()"><i class="fas fa-plus"></i> Добавить</button></div>
+  </div>
+</div>
+
+<!-- MODAL: Calls -->
+<div class="modal-overlay hidden" id="calls-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header"><div class="modal-title">История звонков</div><button class="modal-close" onclick="closeCallsModal()"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body"><div class="empty">Загрузка...</div></div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeCallsModal()">Закрыть</button></div>
+  </div>
+</div>
+
+<!-- MODAL: Tasks calendar -->
+<div class="modal-overlay hidden" id="tasks-cal-modal-overlay">
+  <div class="modal modal-cal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="far fa-calendar-alt"></i> Календарь задач</div>
+      <button class="modal-close" onclick="closeTasksCalendar()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="tcal-wrap">
+        <!-- LEFT: список задач выбранного дня -->
+        <div class="tcal-side">
+          <div class="tcal-side-head" id="tcal-side-head">Выберите день</div>
+          <div class="tcal-side-sub" id="tcal-side-sub">Дни с задачами отмечены в календаре</div>
+          <div id="tcal-side-body">
+            <div class="tcal-empty">Нажмите на день с задачами, чтобы посмотреть список</div>
+          </div>
+        </div>
+        <!-- RIGHT: календарь -->
+        <div class="tcal-main">
+          <div class="tcal-head">
+            <div class="tcal-month" id="tcal-month">—</div>
+            <div class="tcal-nav">
+              <button type="button" onclick="tcalShiftMonth(-1)" title="Предыдущий месяц"><i class="fas fa-chevron-left"></i></button>
+              <button type="button" onclick="tcalShiftMonth(1)" title="Следующий месяц"><i class="fas fa-chevron-right"></i></button>
+            </div>
+          </div>
+          <div class="tcal-dow"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+          <div class="tcal-grid" id="tcal-grid"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" style="margin-right:auto" onclick="tcalDeleteAllTasks()"><i class="fas fa-trash-alt"></i> Удалить все задачи</button>
+      <button class="btn btn-secondary" onclick="closeTasksCalendar()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Contacts list -->
+<div class="modal-overlay hidden" id="contacts-list-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title">Контакты агента <span id="contacts-list-count" style="color:var(--hint);font-weight:400;font-size:13px"></span></div>
+      <button class="modal-close" onclick="closeContactsListModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <input type="text" class="form-input" id="contacts-search" placeholder="🔍 Поиск по имени, телефону или компании..." style="flex:1">
+        <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="fas fa-file-import"></i> Импорт</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddContactModal()"><i class="fas fa-plus"></i> Добавить</button>
+      </div>
+      <div id="contacts-list-body">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Contact details -->
+<div class="modal-overlay hidden" id="contact-details-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="contact-details-title">Контакт</div>
+      <button class="modal-close" onclick="closeContactDetailsModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="contact-details-body">
+      <div class="empty">Загрузка...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="contact-delete-btn"><i class="fas fa-trash"></i> Удалить контакт</button>
+      <button class="btn btn-secondary" onclick="closeContactDetailsModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Pipeline (kanban) -->
+<div class="modal-overlay hidden" id="pipeline-modal-overlay">
+  <div class="modal modal-pipeline">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-stream"></i> Воронка контактов <span style="color:var(--hint);font-weight:400;font-size:13px">· перетащите карточку, чтобы сменить стадию</span></div>
+      <button class="modal-close" onclick="closePipelineModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="loadPipeline()"><i class="fas fa-rotate"></i> Обновить</button>
+      <button class="btn btn-secondary" onclick="closePipelineModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import contacts (3 steps) -->
+<div class="modal-overlay hidden" id="import-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-file-import"></i> Импорт контактов</div>
+      <button class="modal-close" onclick="closeImportModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+
+      <!-- STEP 1: Upload -->
+      <div id="import-step-1">
+        <div style="background:var(--bg);border-radius:10px;padding:14px;margin-bottom:14px;font-size:12.5px;line-height:1.6">
+          <b>Формат файла (.xlsx или .csv):</b>
+          <div style="margin-top:6px;color:var(--muted)">
+            Колонки: <b>Имя</b>, <b>Телефон*</b>, <b>Компания</b>, <b>Должность</b>,
+            <b>Информация о клиенте</b>, <b>Задача</b>, <b>Описание задачи</b>, <b>Когда звонить</b>.
+            Обязателен только телефон. Если колонки «Когда звонить» нет — звонки распределятся
+            автоматически (старт через час, параллельно по 5).
+          </div>
+          <div style="margin-top:8px;color:var(--blue);font-weight:600">
+            <i class="far fa-clock"></i> Время указывается по МСК (Москва, UTC+3)
+          </div>
+          <div style="margin-top:8px;color:var(--muted)">
+            <i class="fas fa-list-ol"></i> Лимит: до <b>1000 контактов</b> за один импорт.
+          </div>
+          <div style="margin-top:6px;color:var(--muted)">
+            <i class="fas fa-coins"></i> Для импорта на балансе должны быть <b>кредиты оркестратора</b> —
+            ими оплачивается работа AI-оркестратора по каждому контакту: подготовка стратегии
+            перед звонком и анализ результата после (≈30 кредитов на контакт).
+            Точная стоимость будет показана на шаге предпросмотра.
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="downloadImportTemplate()" style="margin-bottom:14px">
+          <i class="fas fa-download"></i> Скачать шаблон
+        </button>
+        <label for="import-file-input" id="import-dropzone" style="display:block;border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;color:var(--muted)">
+          <i class="fas fa-cloud-arrow-up" style="font-size:28px;display:block;margin-bottom:8px;color:var(--blue)"></i>
+          <span id="import-file-label">Перетащите файл сюда или нажмите для выбора</span>
+        </label>
+        <input type="file" id="import-file-input" accept=".xlsx,.csv" style="display:none">
+      </div>
+
+      <!-- STEP 2: Preview -->
+      <div id="import-step-2" style="display:none">
+        <div id="import-preview-summary"></div>
+        <div id="import-tasks-toggle" style="display:none;margin-top:12px;padding:12px 14px;background:var(--bg);border-radius:10px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <span class="switch">
+              <input type="checkbox" id="import-tasks-checkbox" checked onchange="onImportTasksToggle()">
+              <span class="slider"></span>
+            </span>
+            <span style="font-size:13px;font-weight:600;color:var(--text)">Проставлять авто-задачи через оркестратора</span>
+          </label>
+          <div id="import-tasks-hint" style="font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.55"></div>
+        </div>
+        <div id="import-shift-confirm" style="display:none;margin-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
+            <input type="checkbox" id="import-shift-checkbox" onchange="updateImportProceedBtn()">
+            <span>Я согласен с переносом задач на ближайший рабочий день</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- STEP 3: Progress / Result -->
+      <div id="import-step-3" style="display:none;text-align:center;padding:20px">
+        <div id="import-progress-block">
+          <div class="spinner" style="margin:0 auto 14px"></div>
+          <div id="import-progress-text" style="font-size:13.5px;color:var(--muted)">Импортируем контакты…</div>
+        </div>
+        <div id="import-result-block" style="display:none">
+          <i class="fas fa-circle-check" style="font-size:40px;color:var(--green,#16a34a);margin-bottom:12px"></i>
+          <div id="import-result-text" style="font-size:14px;font-weight:600"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer" id="import-modal-footer">
+      <button class="btn btn-secondary" id="import-back-btn" onclick="importBack()" style="display:none">Назад</button>
+      <button class="btn btn-secondary" id="import-errors-btn" onclick="downloadImportErrors()" style="display:none"><i class="fas fa-download"></i> Скачать список ошибок</button>
+      <button class="btn btn-secondary" onclick="closeImportModal()" id="import-cancel-btn">Отмена</button>
+      <button class="btn btn-primary" id="import-proceed-btn" onclick="executeImport()" style="display:none"><i class="fas fa-play"></i> Начать импорт</button>
+      <button class="btn btn-primary" id="import-close-btn" onclick="finishImport()" style="display:none">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ МОДАЛКА: Пополнить кредиты -->
+<div class="modal-overlay hidden" id="credits-modal-overlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-coins"></i> Пополнить кредиты</div>
+      <button class="modal-close" onclick="document.getElementById('credits-modal-overlay').classList.add('hidden')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="credits-pkg-list" class="credits-pkg-grid"><div class="empty">Загрузка…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ МОДАЛКА: История кредитов -->
+<div class="modal-overlay hidden" id="billing-modal-overlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-receipt"></i> История кредитов</div>
+      <button class="modal-close" onclick="document.getElementById('billing-modal-overlay').classList.add('hidden')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="billing-summary" style="margin-bottom:14px;font-size:13.5px"></div>
+      <div id="billing-tx-list"><div class="empty">Загрузка…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ МОДАЛКА: База данных (векторная база знаний) -->
+<div class="modal-overlay hidden" id="kb-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-database"></i> База данных агента</div>
+      <button class="modal-close" onclick="closeKnowledgeBaseModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="kb-modal-meta" style="font-size:13px;color:#64748b;margin-bottom:12px"></div>
+      <div class="form-group">
+        <label class="form-label">Название базы (опционально)</label>
+        <input type="text" class="form-input" id="kb-name" maxlength="100" placeholder="Например: Описание продукта">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Содержимое базы знаний</label>
+        <textarea class="form-input" id="kb-content" rows="14" oninput="updateKbCharCounter()"
+          placeholder="Вставьте сюда текст: описание продукта, услуги, цены, частые вопросы и ответы, регламенты…&#10;&#10;Агент будет искать по этому тексту во время звонка и в чате с вами."
+          style="resize:vertical;min-height:220px;font-family:inherit"></textarea>
+        <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#94a3b8;margin-top:6px">
+          <span>
+            После сохранения текст преобразуется в векторную базу. Поиск по ней
+            подключается к голосовому агенту автоматически. Лимит — <b>200 000 символов</b>.
+          </span>
+          <span id="kb-char-counter" style="white-space:nowrap">0 / 200 000</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="kb-delete-btn" onclick="deleteKnowledgeBase()" style="display:none">
+        <i class="fas fa-trash"></i> Удалить базу
+      </button>
+      <button class="btn btn-secondary" onclick="closeKnowledgeBaseModal()">Отмена</button>
+      <button class="btn btn-primary" id="kb-save-btn" onclick="saveKnowledgeBase()">
+        <i class="fas fa-check"></i> Сохранить
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА: Коннекторы (Google Календарь, Gmail) -->
+<div class="modal-overlay hidden" id="connectors-modal-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-plug"></i> Коннекторы агента</div>
+      <button class="modal-close" onclick="closeConnectorsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="connectors-modal-meta" style="font-size:13px;color:#64748b;margin-bottom:14px">
+        Подключите внешние сервисы — агент сможет создавать события, отправлять
+        письма и писать клиентам в Telegram с вашего личного аккаунта.
+      </div>
+      <div id="connectors-list">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeConnectorsModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА: Личный Telegram-аккаунт агента (MTProto) -->
+<div class="modal-overlay hidden" id="tg-account-modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-paper-plane" style="color:#229ED9"></i> Личный Telegram</div>
+      <button class="modal-close" onclick="closeTgAccountModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="tg-account-modal-body">
+      <div class="empty">Загрузка...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeTgAccountModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- Voicyfy Agent — модульные скрипты. Классические (не ES-модули):
+     общее глобальное состояние и функции. Порядок: core → фичи → init.
+     Документация связок: /static/agent/CLAUDE.md -->
+<script src="/static/agent/core.js"></script>
+<script src="/static/agent/credits.js"></script>
+<script src="/static/agent/agent-switcher.js"></script>
+<script src="/static/agent/dashboard.js"></script>
+<script src="/static/agent/tasks-calendar.js"></script>
+<script src="/static/agent/chat.js"></script>
+<script src="/static/agent/instructions-voice.js"></script>
+<script src="/static/agent/telegram.js"></script>
+<script src="/static/agent/telegram-account.js"></script>
+<script src="/static/agent/contacts.js"></script>
+<script src="/static/agent/calls.js"></script>
+<script src="/static/agent/history.js"></script>
+<script src="/static/agent/import.js"></script>
+<script src="/static/agent/pipeline.js"></script>
+<script src="/static/agent/knowledge-base.js"></script>
+<script src="/static/agent/connectors.js"></script>
+<script src="/static/agent/onboarding.js"></script>
+<script src="/static/agent/wizard.js"></script>
+<script src="/static/agent/presence.js"></script>
+<script src="/static/agent/motion.js"></script>
+<script src="/static/agent/init.js"></script>
+</body>
+</html>

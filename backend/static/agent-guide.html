@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Автономный агент Voicyfy — как это работает</title>
+<meta name="description" content="Автономный голосовой AI-сотрудник: сам звонит, ведёт CRM по воронке, ставит задачи и шлёт уведомления в Telegram. Минимум настройки — максимум автономности.">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Syne:wght@600;700;800&display=swap">
+<style>
+:root{
+  --bg:#F5F6F8; --white:#fff; --ink:#12131A; --text:#1a1a2e; --muted:#5b6472; --hint:#9aa0aa;
+  --blue:#2563eb; --blue2:#3b82f6; --green:#1D9E75; --red:#E24B4A; --amber:#F59E0B; --violet:#7C3AED;
+  --border:#E6E8EC; --soft:#EEF1F6;
+  --radius:18px; --grad:linear-gradient(135deg,#2563eb,#3b82f6);
+  --shadow:0 1px 2px rgba(16,19,26,.04),0 8px 30px rgba(16,19,26,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;}
+h1,h2,h3,.syne{font-family:'Syne',sans-serif;letter-spacing:-.03em;line-height:1.08;}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px;}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--blue);background:#EAF1FE;border:1px solid #D9E5FD;padding:6px 13px;border-radius:999px;}
+.section{padding:64px 0;}
+.section-head{max-width:680px;margin-bottom:38px;}
+.section-head h2{font-size:clamp(26px,4vw,38px);font-weight:800;margin:14px 0 12px;color:var(--ink);}
+.section-head p{font-size:17px;color:var(--muted);}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:50;background:rgba(245,246,248,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);}
+.nav-in{max-width:1080px;margin:0 auto;padding:13px 22px;display:flex;align-items:center;gap:12px;}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
+.logo-ic{width:34px;height:34px;border-radius:10px;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 4px 14px rgba(37,99,235,.35);}
+.logo-tx{font-family:'Syne';font-weight:800;font-size:20px;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.nav-tag{margin-left:auto;font-size:13px;color:var(--muted);font-weight:500;}
+
+/* HERO */
+.hero{position:relative;overflow:hidden;padding:74px 0 60px;background:
+  radial-gradient(900px 380px at 78% -8%,rgba(59,130,246,.16),transparent 60%),
+  radial-gradient(700px 320px at 6% 12%,rgba(124,58,237,.10),transparent 55%);}
+.hero h1{font-size:clamp(34px,6.2vw,62px);font-weight:800;color:var(--ink);margin:20px 0 18px;max-width:880px;}
+.hero h1 .hl{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p.lead{font-size:clamp(17px,2.4vw,21px);color:var(--muted);max-width:660px;}
+.hero-pills{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px;}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:9px 15px;font-size:14px;font-weight:500;box-shadow:var(--shadow);}
+.pill i{color:var(--blue);}
+
+/* SETUP / 5 fields */
+.fields{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;}
+.field{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:20px 16px;text-align:center;box-shadow:var(--shadow);transition:transform .2s,box-shadow .2s;}
+.field:hover{transform:translateY(-3px);box-shadow:0 12px 34px rgba(16,19,26,.10);}
+.field .fic{width:46px;height:46px;border-radius:13px;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:19px;}
+.field h4{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:4px;}
+.field p{font-size:12.5px;color:var(--hint);}
+.setup-note{margin-top:22px;display:flex;align-items:center;gap:10px;font-size:15px;color:var(--muted);}
+.setup-note i{color:var(--green);}
+
+/* PHASES (core) */
+.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;gap:0;}
+.phase{background:var(--white);border:1px solid var(--border);border-radius:20px;padding:26px 22px;box-shadow:var(--shadow);position:relative;}
+.phase .badge{position:absolute;top:-13px;left:22px;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff;padding:5px 12px;border-radius:999px;}
+.phase .pic{width:54px;height:54px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:23px;color:#fff;margin:8px 0 14px;}
+.phase h3{font-size:20px;font-weight:800;color:var(--ink);margin-bottom:10px;}
+.phase ul{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.phase li{display:flex;gap:9px;font-size:14px;color:var(--muted);align-items:flex-start;}
+.phase li i{color:var(--blue);font-size:12px;margin-top:5px;flex-shrink:0;}
+.arrow{display:flex;align-items:center;justify-content:center;color:var(--blue2);font-size:22px;padding:0 6px;}
+.p-pre .pic{background:linear-gradient(135deg,#7C3AED,#9F67F0)} .p-pre .badge{background:#7C3AED}
+.p-talk .pic{background:linear-gradient(135deg,#2563eb,#3b82f6)} .p-talk .badge{background:#2563eb}
+.p-post .pic{background:linear-gradient(135deg,#1D9E75,#34C896)} .p-post .badge{background:#1D9E75}
+
+/* TELEGRAM rules */
+.tg{display:grid;grid-template-columns:1.05fr .95fr;gap:26px;align-items:center;background:var(--white);border:1px solid var(--border);border-radius:22px;padding:32px;box-shadow:var(--shadow);}
+.tg h3{font-size:23px;font-weight:800;color:var(--ink);margin-bottom:12px;}
+.tg p{color:var(--muted);font-size:15.5px;margin-bottom:16px;}
+.rule{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;color:var(--text);margin-bottom:10px;}
+.rule i{color:var(--violet);margin-top:4px;}
+.tg-phone{background:#0E1525;border-radius:20px;padding:18px;color:#e9eefb;box-shadow:0 18px 40px rgba(14,21,37,.3);}
+.tg-bar{display:flex;align-items:center;gap:9px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:12px;}
+.tg-bar .av{width:30px;height:30px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px;}
+.tg-bar b{font-size:14px;} .tg-bar span{font-size:11px;color:#8a93a8;}
+.tg-msg{background:#1b2942;border-radius:13px;border-bottom-left-radius:5px;padding:11px 13px;font-size:13.5px;margin-bottom:9px;}
+.tg-msg .lbl{color:#5fb0ff;font-weight:600;font-size:12px;display:block;margin-bottom:2px;}
+.tg-msg.green{border-left:3px solid #34C896}.tg-msg.amber{border-left:3px solid #F59E0B}
+
+/* KB */
+.kb{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.kb-step{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:var(--shadow);}
+.kb-step .n{font-family:'Syne';font-weight:800;font-size:15px;color:var(--blue);background:#EAF1FE;width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
+.kb-step h4{font-size:17px;font-weight:700;color:var(--ink);margin-bottom:6px;}
+.kb-step p{font-size:14px;color:var(--muted);}
+
+/* FEATURES grid */
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.fcard{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow);transition:transform .2s,box-shadow .2s;}
+.fcard:hover{transform:translateY(-3px);box-shadow:0 12px 34px rgba(16,19,26,.10);}
+.fcard .ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:13px;}
+.fcard h4{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:5px;}
+.fcard p{font-size:13.8px;color:var(--muted);}
+
+/* CHAT */
+.chat-wrap{display:grid;grid-template-columns:.92fr 1.08fr;gap:26px;align-items:start;}
+.chat-intro h2{font-size:clamp(24px,3.4vw,32px);font-weight:800;color:var(--ink);margin-bottom:14px;}
+.chat-intro p{color:var(--muted);font-size:16px;margin-bottom:16px;}
+.cmd-list{display:flex;flex-direction:column;gap:11px;}
+.cmd{display:flex;gap:11px;background:var(--white);border:1px solid var(--border);border-radius:13px;padding:13px 15px;font-size:14.5px;box-shadow:var(--shadow);}
+.cmd i{color:var(--blue);margin-top:3px;flex-shrink:0;}
+.cmd b{color:var(--ink);font-weight:600;}
+.chat-demo{background:var(--white);border:1px solid var(--border);border-radius:20px;padding:18px;box-shadow:var(--shadow);}
+.bubble{max-width:86%;padding:11px 14px;border-radius:15px;font-size:14px;margin-bottom:10px;}
+.bubble.user{margin-left:auto;background:var(--grad);color:#fff;border-bottom-right-radius:5px;}
+.bubble.bot{background:var(--soft);color:var(--text);border-bottom-left-radius:5px;}
+.trace{background:#0E1525;border-radius:12px;padding:13px 15px;margin-bottom:6px;}
+.trace .tr{display:flex;align-items:center;gap:9px;font-size:13px;color:#cdd6e8;padding:4px 0;}
+.trace .tr i.tick{color:#34C896;margin-left:auto;}
+.trace .tr .tic{width:22px;height:22px;border-radius:7px;background:#1b2942;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5fb0ff;}
+
+/* SCENARIOS */
+.scen{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+.scard{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow);display:flex;gap:15px;}
+.scard .ic{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:19px;color:#fff;}
+.scard h4{font-size:16.5px;font-weight:700;color:var(--ink);margin-bottom:4px;}
+.scard p{font-size:14px;color:var(--muted);}
+
+/* FINALE */
+.finale{margin:30px 0 70px;background:var(--ink);border-radius:26px;padding:56px 32px;text-align:center;color:#fff;position:relative;overflow:hidden;}
+.finale::before{content:"";position:absolute;inset:0;background:radial-gradient(600px 240px at 50% -10%,rgba(59,130,246,.35),transparent 60%);}
+.finale h2{position:relative;font-size:clamp(26px,4.4vw,40px);font-weight:800;margin-bottom:14px;}
+.finale p{position:relative;font-size:17px;color:#aeb6c6;max-width:620px;margin:0 auto;}
+.finale .hl{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+
+footer{padding:28px 0 50px;text-align:center;color:var(--hint);font-size:13px;}
+
+@media(max-width:900px){
+  .fields{grid-template-columns:repeat(2,1fr)}
+  .flow{grid-template-columns:1fr;gap:12px}
+  .arrow{transform:rotate(90deg);padding:2px 0}
+  .tg,.chat-wrap{grid-template-columns:1fr}
+  .kb,.feat,.scen{grid-template-columns:1fr}
+}
+@media(max-width:560px){.fields{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a class="logo" href="/static/agent.html">
+      <span class="logo-ic"><i class="fas fa-microphone-lines"></i></span>
+      <span class="logo-tx">Voicyfy</span>
+    </a>
+    <span class="nav-tag">Автономный голосовой агент</span>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><i class="fas fa-bolt"></i> Скоро релиз</span>
+    <h1>Автономный <span class="hl">AI-сотрудник</span>, который сам обзванивает клиентов</h1>
+    <p class="lead">Заполняете пять простых полей — и получаете агента, который сам проходит полный цикл каждого звонка: подготовка → живой голосовой диалог → разбор и действия. Всё из коробки.</p>
+    <div class="hero-pills">
+      <span class="pill"><i class="fas fa-headset"></i> Живой голос в реальном времени</span>
+      <span class="pill"><i class="fas fa-diagram-project"></i> Сам ведёт CRM-воронку</span>
+      <span class="pill"><i class="fas fa-paper-plane"></i> Уведомления в Telegram</span>
+      <span class="pill"><i class="fas fa-database"></i> База знаний из коробки</span>
+    </div>
+  </div>
+</header>
+
+<!-- SETUP -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow"><i class="fas fa-sliders"></i> Настройка из коробки</span>
+      <h2>Пять полей — и агент готов работать</h2>
+      <p>Никакого программирования и сложных сценариев. Описываете бизнес обычными словами — агент сам выстраивает разговор под каждого клиента.</p>
+    </div>
+    <div class="fields">
+      <div class="field"><div class="fic" style="background:#F3E8FF;color:#7C3AED"><i class="fas fa-building"></i></div><h4>Кто мы</h4><p>Компания и роль агента</p></div>
+      <div class="field"><div class="fic" style="background:#DBEAFE;color:#2563EB"><i class="fas fa-bullseye"></i></div><h4>Кому звоним</h4><p>Ваша аудитория</p></div>
+      <div class="field"><div class="fic" style="background:#D1FAE5;color:#059669"><i class="fas fa-comments"></i></div><h4>Как говорим</h4><p>Тон и манера</p></div>
+      <div class="field"><div class="fic" style="background:#FFEDD5;color:#EA580C"><i class="fas fa-box-open"></i></div><h4>Что предлагаем</h4><p>Продукт и оффер</p></div>
+      <div class="field"><div class="fic" style="background:#FEE2E2;color:#DC2626"><i class="fas fa-flag"></i></div><h4>Правила и цели</h4><p>Что считать успехом</p></div>
+    </div>
+    <div class="setup-note"><i class="fas fa-circle-check"></i> Минимум настройки — максимум автономности. Дальше агент работает сам.</div>
+  </div>
+</section>
+
+<!-- CORE: 3 PHASES -->
+<section class="section" style="background:linear-gradient(180deg,#EEF3FB,transparent 40%)">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow"><i class="fas fa-gears"></i> Как агент думает</span>
+      <h2>Полный цикл звонка — в три фазы</h2>
+      <p>Каждый звонок агент проходит сам от начала до конца. Вам остаётся только смотреть результат.</p>
+    </div>
+    <div class="flow">
+      <div class="phase p-pre">
+        <span class="badge">Фаза 1</span>
+        <div class="pic"><i class="fas fa-brain"></i></div>
+        <h3>Pre-call · Подготовка</h3>
+        <ul>
+          <li><i class="fas fa-circle"></i> Поднимает память о контакте и историю прошлых разговоров</li>
+          <li><i class="fas fa-circle"></i> Учитывает текущую задачу и сколько уже было попыток</li>
+          <li><i class="fas fa-circle"></i> Строит стратегию: первую фразу, тон, ключевые тезисы</li>
+          <li><i class="fas fa-circle"></i> Каждый звонок персональный, а не по одному шаблону</li>
+        </ul>
+      </div>
+      <div class="arrow"><i class="fas fa-arrow-right-long"></i></div>
+      <div class="phase p-talk">
+        <span class="badge">Фаза 2</span>
+        <div class="pic"><i class="fas fa-microphone-lines"></i></div>
+        <h3>Голосовой диалог</h3>
+        <ul>
+          <li><i class="fas fa-circle"></i> Живой разговор реалистичным голосом в реальном времени</li>
+          <li><i class="fas fa-circle"></i> Слушает, отвечает по сути, ведёт клиента к цели</li>
+          <li><i class="fas fa-circle"></i> Опирается на вашу базу знаний прямо во время звонка</li>
+          <li><i class="fas fa-circle"></i> Может тут же отправить SMS: адрес, ссылку, реквизиты</li>
+        </ul>
+      </div>
+      <div class="arrow"><i class="fas fa-arrow-right-long"></i></div>
+      <div class="phase p-post">
+        <span class="badge">Фаза 3</span>
+        <div class="pic"><i class="fas fa-clipboard-check"></i></div>
+        <h3>Post-call · Разбор</h3>
+        <ul>
+          <li><i class="fas fa-circle"></i> Читает транскрипт и определяет исход разговора</li>
+          <li><i class="fas fa-circle"></i> Сам двигает контакт по воронке</li>
+          <li><i class="fas fa-circle"></i> Ставит следующую задачу — перезвонить, дожать</li>
+          <li><i class="fas fa-circle"></i> Отправляет уведомление в ваш Telegram</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TELEGRAM RULES -->
+<section class="section">
+  <div class="wrap">
+    <div class="tg">
+      <div>
+        <span class="eyebrow"><i class="fab fa-telegram"></i> Уведомления</span>
+        <h3 style="margin-top:14px">Telegram — по вашим правилам</h3>
+        <p>Подключаете своего Telegram-бота, и после звонков агент пишет прямо вам. А вы задаёте инструкции, <b>когда именно</b> слать уведомления — агент сам решает по ним.</p>
+        <div class="rule"><i class="fas fa-quote-left"></i> «Пиши мне только когда клиент согласился»</div>
+        <div class="rule"><i class="fas fa-quote-left"></i> «Уведомляй о каждом недозвоне»</div>
+        <div class="rule"><i class="fas fa-quote-left"></i> «Шли только горячие лиды с суммой сделки»</div>
+      </div>
+      <div class="tg-phone">
+        <div class="tg-bar"><div class="av"><i class="fas fa-robot"></i></div><div><b>Агент Voicyfy</b><br><span>уведомления</span></div></div>
+        <div class="tg-msg green"><span class="lbl">✅ Успех · Иван Петров</span>Согласился на встречу в четверг 15:00. Поставил задачу-напоминание.</div>
+        <div class="tg-msg amber"><span class="lbl">↻ Перезвон · ООО «Ромашка»</span>Просили перезвонить после обеда. Задача создана на 14:30.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- KNOWLEDGE BASE -->
+<section class="section" style="background:linear-gradient(180deg,#F0FBF6,transparent 45%)">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow"><i class="fas fa-database"></i> База знаний из коробки</span>
+      <h2>Просто загрузите данные — агент будет ориентироваться</h2>
+      <p>Векторная база знаний работает прямо из коробки. Никаких интеграций и настроек: загрузили материалы — агент отвечает клиентам по ним во время разговора.</p>
+    </div>
+    <div class="kb">
+      <div class="kb-step"><div class="n">1</div><h4>Загрузите данные</h4><p>Прайсы, условия, ответы на частые вопросы, описания услуг — в любом виде.</p></div>
+      <div class="kb-step"><div class="n">2</div><h4>Агент всё индексирует</h4><p>Материалы превращаются в векторную базу автоматически. Делать ничего не нужно.</p></div>
+      <div class="kb-step"><div class="n">3</div><h4>Отвечает по сути</h4><p>В разговоре агент находит нужный факт и отвечает точно — без выдумок.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow"><i class="fas fa-layer-group"></i> Возможности</span>
+      <h2>Что агент умеет ещё</h2>
+    </div>
+    <div class="feat">
+      <div class="fcard"><div class="ic" style="background:#F3E8FF;color:#7C3AED"><i class="fas fa-brain"></i></div><h4>Память о каждом контакте</h4><p>Помнит детали и договорённости по каждому клиенту от звонка к звонку.</p></div>
+      <div class="fcard"><div class="ic" style="background:#DBEAFE;color:#2563EB"><i class="fas fa-diagram-project"></i></div><h4>CRM-воронка</h4><p>Новый → В работе → Успех / Отказ / Не звонить. Агент ведёт её сам.</p></div>
+      <div class="fcard"><div class="ic" style="background:#D1FAE5;color:#059669"><i class="fas fa-calendar-plus"></i></div><h4>Автозадачи</h4><p>Следующий шаг ставится всегда: перезвонить, дожать, напомнить.</p></div>
+      <div class="fcard"><div class="ic" style="background:#FFEDD5;color:#EA580C"><i class="fas fa-file-arrow-up"></i></div><h4>Автозагрузка контактов</h4><p>Заливаете базу xlsx/csv — агент сам разбирает и раскладывает.</p></div>
+      <div class="fcard"><div class="ic" style="background:#FEF3C7;color:#D97706"><i class="fas fa-comment-sms"></i></div><h4>SMS-рассылки</h4><p>Отправляет SMS клиентам — акции, ссылки, реквизиты, подтверждения.</p></div>
+      <div class="fcard"><div class="ic" style="background:#E0F2FE;color:#0284C7"><i class="fas fa-phone-volume"></i></div><h4>Входящие и исходящие</h4><p>И обзванивает сам, и принимает звонки от клиентов.</p></div>
+      <div class="fcard"><div class="ic" style="background:#FEE2E2;color:#DC2626"><i class="fas fa-chart-line"></i></div><h4>Отчёты и аналитика</h4><p>Статистика, транскрипты разговоров, список недозвонов.</p></div>
+      <div class="fcard"><div class="ic" style="background:#EDE9FE;color:#7C3AED"><i class="fas fa-users-gear"></i></div><h4>Несколько агентов</h4><p>Разные агенты под разные задачи и направления бизнеса.</p></div>
+      <div class="fcard"><div class="ic" style="background:#DBEAFE;color:#2563EB"><i class="fab fa-telegram"></i></div><h4>Управление из Telegram</h4><p>Пишете боту — и управляете агентом прямо с телефона.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CHAT -->
+<section class="section" style="background:linear-gradient(180deg,#EEF3FB,transparent 45%)">
+  <div class="wrap">
+    <div class="chat-wrap">
+      <div class="chat-intro">
+        <span class="eyebrow"><i class="fas fa-wand-magic-sparkles"></i> Пульт управления</span>
+        <h2>Командуете обычными словами</h2>
+        <p>Чат — это пульт. Пишете или надиктовываете голосом задачу человеческим языком, а агент показывает по шагам, что делает.</p>
+        <div class="cmd-list">
+          <div class="cmd"><i class="fas fa-angle-right"></i><span><b>«Поставь задачу позвонить всем клиентам из воронки "В работе" и предложить скидку 10%»</b></span></div>
+          <div class="cmd"><i class="fas fa-angle-right"></i><span><b>«Отправь смс всем клиентам, что у нас в магазине проходит акция 2+1»</b></span></div>
+          <div class="cmd"><i class="fas fa-angle-right"></i><span>«Покажи недозвоны за неделю и перезвони им завтра утром»</span></div>
+          <div class="cmd"><i class="fas fa-angle-right"></i><span>«Сделай отчёт по успешным звонкам за месяц»</span></div>
+        </div>
+      </div>
+      <div class="chat-demo">
+        <div class="bubble user">Поставь задачу позвонить всем клиентам из воронки «В работе» и предложить скидку 10%</div>
+        <div class="trace">
+          <div class="tr"><span class="tic"><i class="fas fa-filter"></i></span> Считаю воронку «В работе» <i class="fas fa-check tick"></i></div>
+          <div class="tr"><span class="tic"><i class="fas fa-users"></i></span> Загружаю контакты <i class="fas fa-check tick"></i></div>
+          <div class="tr"><span class="tic"><i class="fas fa-calendar-plus"></i></span> Планирую серию звонков <i class="fas fa-check tick"></i></div>
+        </div>
+        <div class="bubble bot">Готово. Поставил 24 звонка по контактам из стадии «В работе» с оффером скидки 10%. Стартуют завтра с 10:00.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCENARIOS -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow"><i class="fas fa-lightbulb"></i> Сценарии</span>
+      <h2>Где агент приносит результат</h2>
+    </div>
+    <div class="scen">
+      <div class="scard"><div class="ic" style="background:linear-gradient(135deg,#2563eb,#3b82f6)"><i class="fas fa-fire"></i></div><div><h4>Прозвон холодной базы</h4><p>Заливаете список — агент обзванивает, квалифицирует и сам отбирает горячих.</p></div></div>
+      <div class="scard"><div class="ic" style="background:linear-gradient(135deg,#7C3AED,#9F67F0)"><i class="fas fa-rotate-left"></i></div><div><h4>Реактивация клиентов</h4><p>Возвращает уснувшую базу — напоминает о себе и приводит обратно.</p></div></div>
+      <div class="scard"><div class="ic" style="background:linear-gradient(135deg,#1D9E75,#34C896)"><i class="fas fa-calendar-check"></i></div><div><h4>Подтверждение записи</h4><p>Подтверждает заказы и записи, переносит, тут же шлёт SMS с деталями.</p></div></div>
+      <div class="scard"><div class="ic" style="background:linear-gradient(135deg,#EA580C,#F59E0B)"><i class="fas fa-star-half-stroke"></i></div><div><h4>Опросы и NPS</h4><p>Собирает обратную связь и складывает результаты в карточки контактов.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FINALE -->
+<div class="wrap">
+  <div class="finale">
+    <h2>Минимум настройки — <span class="hl">максимум автономии</span></h2>
+    <p>Полный цикл звонка агент проходит сам: готовится, разговаривает живым голосом, разбирает результат и решает, что делать дальше. Автономный сотрудник — в вашем бизнесе.</p>
+  </div>
+</div>
+
+<footer>
+  Voicyfy · Автономный голосовой AI-агент
+</footer>
+
+</body>
+</html>

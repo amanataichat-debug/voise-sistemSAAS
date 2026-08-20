@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<!-- ✅ PRODUCTION READY: Email Verification с UX улучшениями + Скрытые партнерские уведомления -->
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voicyfy - Говорит. Слушает. Понимает.</title>
+  
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  
+  <!-- External CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Main Styles -->
+  <link rel="stylesheet" href="/static/index/css/styles.css">
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="content-wrapper">
+      <div class="main-container">
+        <!-- ========================================
+             PRESENTATION SECTION
+             ======================================== -->
+        <div class="presentation-section">
+          <div class="navbar">
+            <a href="/" class="logo">
+              <img src="/static/images/IMG_2820.PNG" alt="Voicyfy">
+              <span class="logo-text">Voicyfy</span>
+            </a>
+            <div class="nav-icons">
+              <a href="https://t.me/voicyfy" target="_blank" class="nav-icon-link nav-icon-telegram" data-tooltip="Новостной канал Voicyfy">
+                <i class="fab fa-telegram"></i>
+              </a>
+              <a href="https://t.me/voicyfy_support" class="nav-icon-link nav-icon-support" data-tooltip="Обратиться в Техническую поддержку">
+                <i class="fas fa-headset"></i>
+              </a>
+            </div>
+          </div>
+          
+          <div class="sphere-container">
+            <div class="sphere"></div>
+            <div class="wave-container">
+              <div class="wave"></div>
+              <div class="wave"></div>
+              <div class="wave"></div>
+              <div class="wave"></div>
+            </div>
+          </div>
+          
+          <div class="presentation-content">
+            <h1 class="main-title">Ваш голосовой ИИ.</h1>
+            <h2 class="subtitle">Говорит. Слушает. Понимает.</h2>
+            <p class="description">
+              Создавайте голосовых ассистентов на основе OpenAI за минуты. Загружайте базы знаний, интегрируйте на сайт или в приложение одним кликом.
+            </p>
+            <a href="#register" class="btn btn-primary btn-large" id="cta-button">
+              Создать первого бота
+            </a>
+          </div>
+        </div>
+        
+        <!-- ========================================
+             AUTH SECTION
+             ======================================== -->
+        <div class="auth-section">
+          <div class="auth-tabs">
+            <div class="auth-tab" data-tab="login">Вход</div>
+            <div class="auth-tab active" data-tab="register">Регистрация</div>
+          </div>
+          
+          <!-- LOGIN FORM -->
+          <form id="login-form" class="auth-form">
+            <h2 class="auth-title">Вход в аккаунт</h2>
+            
+            <div id="login-notification-container"></div>
+            
+            <div class="form-group">
+              <label for="login-email">Email</label>
+              <input type="email" id="login-email" class="form-control" placeholder="your@email.com" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="login-password">Пароль</label>
+              <input type="password" id="login-password" class="form-control" placeholder="••••••••" required>
+            </div>
+            
+            <button type="submit" id="login-submit-button" class="btn btn-primary" style="width: 100%;">Войти</button>
+            
+            <div class="auth-footer">
+              <p>Еще нет аккаунта? <a href="#register" class="switch-auth" data-tab="register">Зарегистрироваться</a></p>
+            </div>
+          </form>
+          
+          <!-- REGISTER FORM -->
+          <form id="register-form" class="auth-form active">
+            <h2 class="auth-title">Создайте аккаунт</h2>
+            
+            <div id="register-notification-container"></div>
+            
+            <div class="form-group">
+              <label for="register-email">Email</label>
+              <input type="email" id="register-email" class="form-control" placeholder="your@email.com" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="register-password">Пароль</label>
+              <input type="password" id="register-password" class="form-control" placeholder="Минимум 8 символов" required minlength="8">
+            </div>
+            
+            <div class="form-group">
+              <label for="register-name">Имя</label>
+              <input type="text" id="register-name" class="form-control" placeholder="Введите ваше имя">
+            </div>
+            
+            <div class="form-group">
+              <label for="register-company">Компания (опционально)</label>
+              <input type="text" id="register-company" class="form-control" placeholder="Название вашей компании">
+            </div>
+            
+            <!-- EMAIL VERIFICATION SECTION -->
+            <div id="verification-section" class="verification-section" style="display: none;">
+              <div id="verification-notice" class="verification-notice">
+                <i class="fas fa-envelope"></i>
+                Код подтверждения отправлен на <strong id="verification-email"></strong>
+              </div>
+              
+              <div id="verification-notification-container"></div>
+              
+              <div class="code-input-container">
+                <label for="verification-code">Введите 6-значный код</label>
+                <input 
+                  type="text" 
+                  id="verification-code" 
+                  class="form-control" 
+                  placeholder="000000"
+                  maxlength="6"
+                  pattern="[0-9]{6}"
+                  inputmode="numeric"
+                >
+              </div>
+              
+              <div class="verification-info">
+                <span id="attempts-left" class="attempts-left">Осталось попыток: 3</span>
+                <span id="resend-timer" class="resend-timer" style="display: none;">
+                  Повторная отправка через <strong id="timer-seconds">60</strong>с
+                </span>
+              </div>
+              
+              <button type="button" id="verify-button" class="btn btn-primary" style="width: 100%;">
+                Подтвердить email
+              </button>
+              
+              <button type="button" id="resend-button" class="btn btn-resend" style="width: 100%; display: none;" disabled>
+                <i class="fas fa-redo"></i> Отправить код повторно
+              </button>
+            </div>
+            
+            <button type="submit" id="register-submit-button" class="btn btn-primary" style="width: 100%;">
+              Зарегистрироваться
+            </button>
+            
+            <div class="auth-footer">
+              <p>Уже есть аккаунт? <a href="#login" class="switch-auth" data-tab="login">Войти</a></p>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ========================================
+           USE CASES SECTION
+           ======================================== -->
+      <section class="use-cases-section">
+        <div class="use-cases-container">
+          <div class="use-cases-header">
+            <h2 class="use-cases-title">Для чего использовать Voicyfy?</h2>
+            <p class="use-cases-subtitle">
+              Интегрируйте голосовых ИИ-ассистентов в любые каналы коммуникации для автоматизации общения с клиентами
+            </p>
+          </div>
+          
+          <div class="use-cases-grid">
+            <div class="use-case-card">
+              <div class="use-case-icon">
+                <i class="fas fa-globe"></i>
+              </div>
+              <h3 class="use-case-title">Встроить на сайт</h3>
+              <p class="use-case-description">
+                Добавьте голосового ассистента на ваш сайт одной строкой кода. Ассистент будет общаться с посетителями голосом в режиме реального времени.
+              </p>
+              <ul class="use-case-features">
+                <li><i class="fas fa-check"></i> Простая интеграция через HTML-код</li>
+                <li><i class="fas fa-check"></i> Настраиваемый внешний вид виджета</li>
+                <li><i class="fas fa-check"></i> Работа на любых платформах</li>
+                <li><i class="fas fa-check"></i> Мгновенные ответы на вопросы 24/7</li>
+              </ul>
+            </div>
+            
+            <div class="use-case-card">
+              <div class="use-case-icon">
+                <i class="fas fa-phone"></i>
+              </div>
+              <h3 class="use-case-title">Подключить к телефонии</h3>
+              <p class="use-case-description">
+                Интегрируйте ИИ-ассистента с вашей телефонной системой для автоматизации входящих и исходящих звонков.
+              </p>
+              <ul class="use-case-features">
+                <li><i class="fas fa-check"></i> Интеграция с SIP/VoIP системами</li>
+                <li><i class="fas fa-check"></i> Обработка входящих звонков</li>
+                <li><i class="fas fa-check"></i> Автоматические исходящие звонки</li>
+                <li><i class="fas fa-check"></i> Запись и аналитика разговоров</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================
+           PRICING SECTION
+           ======================================== -->
+      <section class="pricing-section">
+        <div class="pricing-container">
+          <div class="pricing-header">
+            <h2 class="pricing-title">Тарифы и стоимость</h2>
+            <p class="pricing-subtitle">
+              Выберите подходящий план для создания голосовых ИИ-ассистентов
+            </p>
+          </div>
+          
+          <div class="pricing-plans">
+            <!-- ====== FREE ====== -->
+            <div class="pricing-card">
+              <div class="pricing-badge free">Бесплатно</div>
+              <div class="pricing-card-header">
+                <h3>Пробный</h3>
+                <p class="pricing-card-description">Попробуйте все функции</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">0 ₽</span>
+                <span class="price-period">3 дня</span>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">1 ассистент</span></li>
+                  <li><i class="fas fa-check"></i> Виджет на сайт</li>
+                  <li><i class="fas fa-check"></i> CRM-система</li>
+                  <li><i class="fas fa-check"></i> Телефония</li>
+                  <li><i class="fas fa-check"></i> База знаний</li>
+                  <li><i class="fas fa-check"></i> Диалоги</li>
+                  <li><i class="fas fa-check"></i> AI Jarvis</li>
+                  <li><i class="fas fa-check"></i> Реферальная программа</li>
+                </ul>
+              </div>
+            </div>
+            
+            <!-- ====== AI VOICE ====== -->
+            <div class="pricing-card">
+              <div class="pricing-badge basic">Базовый</div>
+              <div class="pricing-card-header">
+                <h3>AI Voice</h3>
+                <p class="pricing-card-description">Голосовой бот для сайта</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">1 490 ₽</span>
+                <span class="price-period">/мес</span>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">до 3 ассистентов</span></li>
+                  <li><i class="fas fa-check"></i> Виджет на сайт</li>
+                  <li class="feature-disabled"><i class="fas fa-times"></i> CRM-система</li>
+                  <li class="feature-disabled"><i class="fas fa-times"></i> Телефония</li>
+                  <li><i class="fas fa-check"></i> База знаний</li>
+                  <li><i class="fas fa-check"></i> Диалоги</li>
+                  <li><i class="fas fa-check"></i> AI Jarvis</li>
+                  <li><i class="fas fa-check"></i> Реферальная программа</li>
+                </ul>
+              </div>
+            </div>
+            
+            <!-- ====== START (POPULAR) ====== -->
+            <div class="pricing-card featured">
+              <div class="pricing-badge popular">Популярный</div>
+              <div class="pricing-card-header">
+                <h3>Старт</h3>
+                <p class="pricing-card-description">Полный функционал</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">2 990 ₽</span>
+                <span class="price-period">/мес</span>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">до 5 ассистентов</span></li>
+                  <li><i class="fas fa-check"></i> Виджет на сайт</li>
+                  <li><i class="fas fa-check"></i> CRM-система</li>
+                  <li><i class="fas fa-check"></i> Телефония</li>
+                  <li><i class="fas fa-check"></i> База знаний</li>
+                  <li><i class="fas fa-check"></i> Диалоги</li>
+                  <li><i class="fas fa-check"></i> AI Jarvis</li>
+                  <li><i class="fas fa-check"></i> Реферальная программа</li>
+                  <li><i class="fas fa-check"></i> Приоритетная поддержка</li>
+                </ul>
+              </div>
+            </div>
+            
+            <!-- ====== PROFI ====== -->
+            <div class="pricing-card">
+              <div class="pricing-badge premium">Максимум</div>
+              <div class="pricing-card-header">
+                <h3>Profi</h3>
+                <p class="pricing-card-description">Для серьёзного бизнеса</p>
+              </div>
+              <div class="pricing-price">
+                <span class="price-amount">5 990 ₽</span>
+                <span class="price-period">/мес</span>
+              </div>
+              <div class="pricing-features">
+                <ul>
+                  <li><i class="fas fa-check"></i> <span class="highlight">до 10 ассистентов</span></li>
+                  <li><i class="fas fa-check"></i> Виджет на сайт</li>
+                  <li><i class="fas fa-check"></i> CRM-система</li>
+                  <li><i class="fas fa-check"></i> Телефония</li>
+                  <li><i class="fas fa-check"></i> База знаний</li>
+                  <li><i class="fas fa-check"></i> Диалоги</li>
+                  <li><i class="fas fa-check"></i> AI Jarvis</li>
+                  <li><i class="fas fa-check"></i> Реферальная программа</li>
+                  <li><i class="fas fa-check"></i> VIP поддержка</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================
+         FOOTER
+         ======================================== -->
+    <footer class="footer">
+      <div class="footer-content">
+        <div class="footer-main">
+          <div class="footer-logo">
+            <img src="/static/images/IMG_2820.PNG" alt="Voicyfy">
+            <span class="footer-logo-text">Voicyfy</span>
+          </div>
+          <div class="footer-links">
+            <a href="/static/privacy-policy.html" class="footer-link">Политика конфиденциальности</a>
+            <a href="/static/terms-of-service.html" class="footer-link">Пользовательское соглашение</a>
+            <a href="/static/public-offer.html" class="footer-link">Публичная оферта</a>
+            <a href="/static/payment-terms.html" class="footer-link">Условия оплаты и использования</a>
+            <a href="/static/api-docs.html" class="footer-link">API документация</a>
+          </div>
+        </div>
+
+        <div class="footer-divider"></div>
+
+        <div class="footer-bottom">
+          <div class="footer-copy">© 2025-2026 Voicyfy. Все права защищены.</div>
+          <div class="footer-contact">
+            ИП Шишкин Валерий Сергеевич | ИНН: 385101159652 | well96well@gmail.com
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+  
+  <!-- ========================================
+       JAVASCRIPT FILES
+       ======================================== -->
+  <script src="/static/index/js/utils.js"></script>
+  <script src="/static/index/js/api.js"></script>
+  <script src="/static/index/js/email-verification.js"></script>
+  <script src="/static/index/js/referral-tracker.js"></script>
+  <script src="/static/index/js/app.js"></script>
+</body>
+</html>

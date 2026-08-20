@@ -1,0 +1,204 @@
+/* ========================================
+   Responsive - Large Desktop
+   ======================================== */
+@media (max-width: 1200px) {
+  .pricing-plans {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+  }
+
+  .pricing-card.featured {
+    transform: none;
+  }
+
+  .pricing-card.featured:hover {
+    transform: translateY(-8px);
+  }
+}
+
+/* ========================================
+   Responsive - Tablet
+   ======================================== */
+@media (max-width: 1024px) {
+  .main-container {
+    flex-direction: column;
+  }
+
+  .auth-section {
+    width: 100%;
+    padding: 2rem;
+  }
+
+  .presentation-section {
+    padding: 4rem 2rem;
+  }
+
+  .sphere-container {
+    width: 250px;
+    height: 250px;
+  }
+
+  .main-title {
+    font-size: 2.5rem;
+  }
+
+  .subtitle {
+    font-size: 1.5rem;
+  }
+
+  .use-cases-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ========================================
+   Responsive - Mobile
+   ======================================== */
+@media (max-width: 768px) {
+  .presentation-section {
+    padding: 3rem 1.5rem;
+  }
+
+  .sphere-container {
+    width: 200px;
+    height: 200px;
+    margin-bottom: 2rem;
+  }
+
+  .main-title {
+    font-size: 2rem;
+  }
+
+  .subtitle {
+    font-size: 1.25rem;
+  }
+
+  .description {
+    font-size: 1rem;
+  }
+
+  .pricing-section {
+    padding: 3rem 0;
+  }
+
+  .pricing-container {
+    padding: 0 1rem;
+  }
+
+  .pricing-title {
+    font-size: 2rem;
+  }
+
+  .pricing-plans {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .price-amount {
+    font-size: 2.25rem;
+  }
+
+  .footer-main {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+
+  .footer-links {
+    justify-content: center;
+  }
+
+  .nav-icons {
+    gap: 0.5rem;
+  }
+
+  .nav-icon-link {
+    width: 36px;
+    height: 36px;
+  }
+
+  .nav-icon-link i {
+    font-size: 1rem;
+  }
+}
+
+/* ========================================
+   Responsive - Small Mobile
+   ======================================== */
+@media (max-width: 480px) {
+  .presentation-section {
+    padding: 2rem 1rem;
+  }
+
+  .sphere-container {
+    width: 160px;
+    height: 160px;
+  }
+
+  .main-title {
+    font-size: 1.75rem;
+  }
+
+  .auth-tab {
+    padding: 0.75rem 1rem;
+  }
+
+  .auth-section {
+    padding: 1.5rem;
+  }
+
+  .footer-content {
+    padding: 0 1rem;
+  }
+
+  .footer-links {
+    gap: 1rem;
+  }
+
+  .logo img, .footer-logo img {
+    height: 28px;
+  }
+
+  .logo-text {
+    font-size: 1.5rem;
+  }
+
+  .footer-logo-text {
+    font-size: 1.1rem;
+  }
+
+  .pricing-card {
+    padding: 1.5rem;
+  }
+
+  .price-amount {
+    font-size: 2rem;
+  }
+
+  .nav-icon-link::after {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.75rem;
+  }
+
+  .navbar {
+    padding: 1rem;
+  }
+
+  .use-cases-grid {
+    gap: 1.5rem;
+  }
+
+  .use-case-card {
+    padding: 2rem;
+  }
+
+  .verification-code-input {
+    font-size: 1.5rem !important;
+    letter-spacing: 0.3rem;
+  }
+}

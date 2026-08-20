@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>База знаний / Промпты — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --accent-blue: #4a86e8;
+      --gradient-blue: linear-gradient(135deg, #4a86e8, #2563eb);
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0,0,0,.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);
+      --radius-md: .5rem;
+      --radius-lg: 1rem;
+      --radius-full: 9999px;
+      --transition-sm: all .2s ease;
+      --transition-md: all .3s ease;
+      --green-500: #10b981;
+      --green-100: rgba(16,185,129,.1);
+      --orange-500: #f97316;
+      --orange-100: rgba(249,115,22,.1);
+      --red-500: #ef4444;
+      --red-100: rgba(239,68,68,.1);
+      --purple-500: #8b5cf6;
+      --purple-100: rgba(139,92,246,.1);
+      --code-bg: #1e293b;
+      --code-text: #e2e8f0;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+
+    body { background-color:var(--bg-light); color:var(--text-dark); min-height:100vh; display:flex; flex-direction:column; line-height:1.6; }
+
+    /* HEADER */
+    .header { background-color:var(--white); border-bottom:1px solid var(--border-color); padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:var(--shadow-sm); }
+    .header-left { display:flex; align-items:center; gap:1.5rem; }
+    .logo { display:flex; align-items:center; gap:.5rem; text-decoration:none; color:var(--text-dark); font-weight:700; font-size:1.25rem; }
+    .logo-icon { width:32px; height:32px; border-radius:var(--radius-md); overflow:hidden; }
+    .logo-icon img { width:100%; height:100%; object-fit:contain; }
+    .header-title { font-size:1rem; color:var(--text-gray); padding-left:1.5rem; border-left:1px solid var(--border-color); }
+    .header-right { display:flex; align-items:center; gap:1rem; }
+    .search-box { position:relative; }
+    .search-input { padding:.5rem 1rem .5rem 2.25rem; border:1px solid var(--border-color); border-radius:var(--radius-full); font-size:.875rem; width:220px; transition:var(--transition-sm); background:var(--bg-light); }
+    .search-input:focus { outline:none; border-color:var(--primary-blue-light); box-shadow:0 0 0 3px rgba(59,130,246,.15); width:280px; background:var(--white); }
+    .search-icon { position:absolute; left:.75rem; top:50%; transform:translateY(-50%); color:var(--text-light); font-size:.8125rem; }
+    .mobile-menu-btn { display:none; background:none; border:none; font-size:1.25rem; color:var(--text-gray); cursor:pointer; }
+
+    /* LAYOUT */
+    .main-container { display:flex; flex:1; }
+
+    /* SIDEBAR */
+    .sidebar { width:280px; background-color:var(--white); border-right:1px solid var(--border-color); padding:1.5rem 0; position:sticky; top:65px; height:calc(100vh - 65px); overflow-y:auto; flex-shrink:0; }
+    .sidebar-section { padding:0 1.5rem; margin-bottom:.5rem; margin-top:1.5rem; color:var(--text-light); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+    .sidebar-section:first-child { margin-top:0; }
+    .sidebar-item { display:flex; align-items:center; padding:.625rem 1.5rem; color:var(--text-gray); text-decoration:none; font-size:.875rem; transition:var(--transition-sm); border-left:3px solid transparent; }
+    .sidebar-item:hover { background-color:var(--bg-blue-light); color:var(--primary-blue); }
+    .sidebar-item.active { background-color:var(--bg-blue-light); color:var(--primary-blue); border-left-color:var(--primary-blue); font-weight:500; }
+    .sidebar-item i { margin-right:.75rem; width:18px; text-align:center; font-size:.875rem; }
+    .sidebar-item.hidden { display:none; }
+
+    /* CONTENT */
+    .content { flex:1; padding:2rem 3rem; max-width:920px; }
+
+    /* ARTICLE */
+    .article { margin-bottom:3rem; }
+    .article-header { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; flex-wrap:wrap; }
+    .article-icon { width:40px; height:40px; border-radius:var(--radius-md); background:var(--bg-blue-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .article-icon i { color:var(--primary-blue); font-size:1.125rem; }
+    .article-title { font-size:1.625rem; font-weight:700; color:var(--text-dark); }
+    .article-desc { color:var(--text-gray); font-size:1rem; margin-bottom:1.5rem; line-height:1.7; }
+
+    /* FUNCTION BADGE */
+    .fn-badge { display:inline-flex; align-items:center; gap:.375rem; font-size:.75rem; font-weight:600; padding:.25rem .75rem; border-radius:var(--radius-full); text-transform:uppercase; letter-spacing:.04em; }
+    .fn-badge.integration { background:var(--green-100); color:var(--green-500); }
+    .fn-badge.api { background:var(--bg-blue-light); color:var(--primary-blue); }
+    .fn-badge.crm { background:var(--purple-100); color:var(--purple-500); }
+    .fn-badge.calls { background:var(--orange-100); color:var(--orange-500); }
+    .fn-badge.ai { background:var(--bg-blue-light); color:var(--primary-blue-dark); }
+    .fn-badge.utils { background:var(--bg-light); color:var(--text-gray); border:1px solid var(--border-color); }
+
+    /* CARDS */
+    .content-section { background-color:var(--white); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); border:1px solid var(--border-color); margin-bottom:1.5rem; overflow:hidden; }
+    .section-header { padding:1rem 1.5rem; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; }
+    .section-title { font-size:1rem; font-weight:600; display:flex; align-items:center; gap:.5rem; }
+    .section-title i { color:var(--primary-blue); }
+    .section-body { padding:1.5rem; }
+
+    /* CODE BLOCKS */
+    .code-block { position:relative; background-color:var(--code-bg); border-radius:var(--radius-md); overflow:hidden; margin:.75rem 0; }
+    .code-header { display:flex; justify-content:space-between; align-items:center; padding:.75rem 1rem; background-color:rgba(0,0,0,.2); border-bottom:1px solid rgba(255,255,255,.1); }
+    .code-lang { font-size:.75rem; color:var(--text-light); text-transform:uppercase; font-weight:600; }
+    .copy-btn { background:none; border:none; color:var(--text-light); cursor:pointer; font-size:.875rem; padding:.25rem .5rem; border-radius:var(--radius-md); transition:var(--transition-sm); display:flex; align-items:center; gap:.375rem; }
+    .copy-btn:hover { background-color:rgba(255,255,255,.1); color:var(--white); }
+    .copy-btn.copied { color:var(--green-500); }
+    .code-content { padding:1rem 1.25rem; overflow-x:auto; }
+    .code-content pre { margin:0; font-family:'Monaco','Menlo','Ubuntu Mono',monospace; font-size:.8125rem; line-height:1.6; color:var(--code-text); white-space:pre-wrap; word-break:break-word; }
+    .code-string { color:#a5d6ff; }
+    .code-key { color:#7ee787; }
+    .code-number { color:#f9826c; }
+    .code-boolean { color:#ff7b72; }
+    .code-comment { color:#8b949e; }
+    .code-null { color:#ff7b72; }
+
+    /* PROMPT COMPARISON */
+    .prompt-compare { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:.75rem 0; }
+    .prompt-box { border-radius:var(--radius-md); overflow:hidden; }
+    .prompt-box-header { padding:.625rem 1rem; font-size:.8125rem; font-weight:600; display:flex; align-items:center; gap:.5rem; }
+    .prompt-box.bad .prompt-box-header { background:var(--red-100); color:var(--red-500); border:1px solid var(--red-500); border-bottom:none; }
+    .prompt-box.good .prompt-box-header { background:var(--green-100); color:var(--green-500); border:1px solid var(--green-500); border-bottom:none; }
+    .prompt-box.bad .code-block { border:1px solid var(--red-500); border-top:none; border-radius:0 0 var(--radius-md) var(--radius-md); margin:0; }
+    .prompt-box.good .code-block { border:1px solid var(--green-500); border-top:none; border-radius:0 0 var(--radius-md) var(--radius-md); margin:0; }
+
+    /* WARNING BLOCK */
+    .alert { border-radius:var(--radius-md); padding:1rem 1.25rem; margin:.75rem 0; display:flex; align-items:flex-start; gap:.75rem; }
+    .alert i { font-size:1.125rem; flex-shrink:0; margin-top:.125rem; }
+    .alert-text { font-size:.875rem; line-height:1.6; }
+    .alert-text strong { display:block; margin-bottom:.25rem; }
+    .alert.warning { background:var(--orange-100); border:1px solid var(--orange-500); }
+    .alert.warning i { color:var(--orange-500); }
+    .alert.info { background:var(--bg-blue-light); border:1px solid var(--primary-blue-light); }
+    .alert.info i { color:var(--primary-blue); }
+
+    /* TABLES */
+    .wiki-table { width:100%; border-collapse:collapse; margin:.75rem 0; font-size:.875rem; }
+    .wiki-table th, .wiki-table td { text-align:left; padding:.75rem 1rem; border-bottom:1px solid var(--border-color); }
+    .wiki-table th { background-color:var(--bg-light); font-weight:600; font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-gray); }
+    .wiki-table tr:last-child td { border-bottom:none; }
+    .wiki-table code { font-family:'Monaco','Menlo',monospace; font-size:.8125rem; background:var(--bg-light); padding:.125rem .375rem; border-radius:.25rem; }
+
+    /* ORDERED STEPS */
+    .steps { list-style:none; counter-reset:steps; margin:.75rem 0; }
+    .steps li { counter-increment:steps; display:flex; align-items:flex-start; gap:.75rem; padding:.625rem 0; border-bottom:1px solid var(--border-color); font-size:.9rem; }
+    .steps li:last-child { border-bottom:none; }
+    .steps li::before { content:counter(steps); width:24px; height:24px; border-radius:50%; background:var(--primary-blue); color:var(--white); display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:700; flex-shrink:0; margin-top:.1rem; }
+
+    /* CHECKLIST */
+    .checklist { list-style:none; margin:.75rem 0; }
+    .checklist li { display:flex; align-items:flex-start; gap:.625rem; padding:.375rem 0; font-size:.9rem; color:var(--text-dark); }
+    .checklist li .check-icon { font-size:1rem; flex-shrink:0; margin-top:.1rem; }
+    .checklist li.yes .check-icon { color:var(--green-500); }
+    .checklist li.no .check-icon { color:var(--red-500); }
+
+    /* FAQ ACCORDION */
+    .faq-item { border:1px solid var(--border-color); border-radius:var(--radius-md); margin-bottom:.75rem; overflow:hidden; }
+    .faq-question { width:100%; background:none; border:none; text-align:left; padding:1rem 1.25rem; cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-size:.9375rem; font-weight:500; color:var(--text-dark); transition:var(--transition-sm); }
+    .faq-question:hover { background:var(--bg-blue-light); color:var(--primary-blue); }
+    .faq-question.open { background:var(--bg-blue-light); color:var(--primary-blue); }
+    .faq-question i { transition:var(--transition-sm); color:var(--text-light); }
+    .faq-question.open i { transform:rotate(180deg); color:var(--primary-blue); }
+    .faq-answer { max-height:0; overflow:hidden; transition:max-height .35s ease; }
+    .faq-answer.open { max-height:600px; }
+    .faq-answer-inner { padding:1rem 1.25rem; border-top:1px solid var(--border-color); font-size:.9rem; color:var(--text-gray); line-height:1.7; }
+
+    /* VARIABLE PILLS */
+    .var-pill { display:inline-block; font-family:'Monaco','Menlo',monospace; font-size:.8125rem; background:var(--purple-100); color:var(--purple-500); padding:.125rem .5rem; border-radius:.25rem; font-weight:500; }
+
+    /* TIPS GRID */
+    .tips-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1rem; margin:.75rem 0; }
+    .tip-card { background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1rem 1.25rem; font-size:.875rem; color:var(--text-dark); line-height:1.5; }
+    .tip-card.green-border { border-left:4px solid var(--green-500); }
+    .tip-card.red-border { border-left:4px solid var(--red-500); }
+
+    /* ARTICLE DIVIDER */
+    .article-divider { border:none; border-top:2px solid var(--border-color); margin:3rem 0; }
+
+    /* SEARCH HIGHLIGHT */
+    .search-highlight { background:#fef08a; border-radius:2px; }
+
+    /* NO RESULTS */
+    .no-results { text-align:center; padding:3rem; color:var(--text-light); display:none; }
+    .no-results i { font-size:3rem; margin-bottom:1rem; display:block; }
+
+    /* RESPONSIVE */
+    @media (max-width:1024px) {
+      .content { padding:1.5rem 2rem; }
+      .sidebar { width:240px; }
+      .search-input { width:180px; }
+      .search-input:focus { width:220px; }
+    }
+    @media (max-width:768px) {
+      .header { padding:1rem; }
+      .header-title { display:none; }
+      .search-box { display:none; }
+      .mobile-menu-btn { display:block; }
+      .sidebar { position:fixed; left:-100%; top:0; height:100vh; z-index:200; transition:var(--transition-md); box-shadow:var(--shadow-lg); }
+      .sidebar.open { left:0; }
+      .sidebar-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background-color:rgba(0,0,0,.5); z-index:150; }
+      .sidebar-overlay.show { display:block; }
+      .content { padding:1.5rem 1rem; }
+      .prompt-compare { grid-template-columns:1fr; }
+      .tips-grid { grid-template-columns:1fr; }
+    }
+    @media (max-width:480px) {
+      .article-title { font-size:1.375rem; }
+      .section-body { padding:1rem; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem" onerror="this.parentElement.innerHTML='<i class=\'fas fa-robot\' style=\'color:var(--primary-blue);\'></i>'">
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+      <span class="header-title">База знаний / Промпты</span>
+    </div>
+    <div class="header-right">
+      <div class="search-box">
+        <i class="fas fa-search search-icon"></i>
+        <input type="text" class="search-input" id="search-input" placeholder="Поиск по статьям...">
+      </div>
+      <button class="mobile-menu-btn" id="mobile-menu-btn">
+        <i class="fas fa-bars"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <div class="main-container">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">Основы</div>
+      <a href="#intro" class="sidebar-item active">
+        <i class="fas fa-book-open"></i> Что такое промпт
+      </a>
+      <a href="#system-prompt-basics" class="sidebar-item">
+        <i class="fas fa-pencil-alt"></i> Как написать промпт
+      </a>
+      <a href="#best-practices" class="sidebar-item">
+        <i class="fas fa-star"></i> Лучшие практики
+      </a>
+
+      <div class="sidebar-section">Функции: Интеграции</div>
+      <a href="#fn-webhook" class="sidebar-item">
+        <i class="fas fa-bolt"></i> send_webhook
+      </a>
+      <a href="#fn-api-request" class="sidebar-item">
+        <i class="fas fa-exchange-alt"></i> api_request
+      </a>
+      <a href="#fn-google-sheet" class="sidebar-item">
+        <i class="fas fa-table"></i> add_google_sheet_row
+      </a>
+      <a href="#fn-google-doc" class="sidebar-item">
+        <i class="fas fa-file-alt"></i> read_google_doc
+      </a>
+      <a href="#fn-write-google-doc" class="sidebar-item">
+        <i class="fas fa-file-edit"></i> write_google_doc
+      </a>
+      <a href="#fn-telegram" class="sidebar-item">
+        <i class="fab fa-telegram"></i> send_telegram_notification
+      </a>
+
+      <div class="sidebar-section">Функции: CRM</div>
+      <a href="#fn-crm-task" class="sidebar-item">
+        <i class="fas fa-calendar-check"></i> create_crm_voicyfy_task
+      </a>
+      <a href="#fn-search-contact" class="sidebar-item">
+        <i class="fas fa-address-book"></i> search_contact_by_phone
+      </a>
+
+      <div class="sidebar-section">Функции: Звонки</div>
+      <a href="#fn-hangup" class="sidebar-item">
+        <i class="fas fa-phone-slash"></i> hangup_call
+      </a>
+      <a href="#fn-sms" class="sidebar-item">
+        <i class="fas fa-sms"></i> send_sms
+      </a>
+      <a href="#fn-show-image" class="sidebar-item">
+        <i class="fas fa-image"></i> show_image
+      </a>
+
+      <div class="sidebar-section">Функции: AI</div>
+      <a href="#fn-query-llm" class="sidebar-item">
+        <i class="fas fa-brain"></i> query_llm
+      </a>
+      <a href="#fn-pinecone" class="sidebar-item">
+        <i class="fas fa-database"></i> search_pinecone
+      </a>
+      <a href="#fn-browser-task" class="sidebar-item">
+        <i class="fas fa-globe"></i> start_browser_task
+      </a>
+      <a href="#fn-orchestrator" class="sidebar-item">
+        <i class="fas fa-project-diagram"></i> query_orchestrator
+      </a>
+
+      <div class="sidebar-section">Функции: Утилиты</div>
+      <a href="#fn-get-time" class="sidebar-item">
+        <i class="fas fa-clock"></i> get_current_time
+      </a>
+
+      <div class="sidebar-section">FAQ</div>
+      <a href="#faq" class="sidebar-item">
+        <i class="fas fa-question-circle"></i> Частые вопросы
+      </a>
+      <a href="#faq-prompt-length" class="sidebar-item">
+        <i class="fas fa-ruler"></i> Длина промпта
+      </a>
+    </aside>
+
+    <main class="content">
+
+      <!-- ===== INTRO ===== -->
+      <div class="article" id="intro">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-book-open"></i></div>
+          <h1 class="article-title">Системный промпт — инструкция для ассистента</h1>
+        </div>
+        <p class="article-desc">
+          Системный промпт — это текст, который формирует личность, задачи и правила поведения вашего AI-ассистента. Он задаётся один раз и остаётся невидимым для конечного пользователя. Ассистент не знает о вашей компании ничего, кроме того, что написано в промпте — поэтому чем подробнее, тем лучше.
+        </p>
+
+        <div class="content-section">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-layer-group"></i> Из чего состоит промпт</h2>
+          </div>
+          <div class="section-body">
+            <p style="color:var(--text-gray);margin-bottom:1rem;font-size:.9rem;">Промпт объединяет четыре ключевых блока: <strong>характер</strong>, <strong>задача</strong>, <strong>правила</strong> и <strong>данные</strong>. Используйте заглавные заголовки разделов — это помогает модели лучше структурировать понимание.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="code-lang">Базовая структура</span>
+                <button class="copy-btn" onclick="copyCode(this,'code-intro-structure')">
+                  <i class="fas fa-copy"></i> Копировать
+                </button>
+              </div>
+              <div class="code-content">
+                <pre id="code-intro-structure">Ты — [роль]. Работаешь в компании [название].
+
+ЗАДАЧА:
+[Что делает ассистент — одним абзацем]
+
+ПРАВИЛА:
+- [Правило 1]
+- [Правило 2]
+- [Правило 3]
+
+ДАННЫЕ:
+[Любые факты, цены, адреса, расписания, которые нужны ассистенту]</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== SYSTEM PROMPT BASICS ===== -->
+      <div class="article" id="system-prompt-basics">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-pencil-alt"></i></div>
+          <h1 class="article-title">Как написать хороший промпт</h1>
+        </div>
+        <p class="article-desc">
+          Главное правило: ассистент делает только то, что написано явно. Не полагайтесь на то, что он «догадается» о вашем контексте — опишите всё: роль, задачу, ограничения, сценарии.
+        </p>
+
+        <div class="content-section">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-balance-scale"></i> Плохой vs Хороший промпт</h2>
+          </div>
+          <div class="section-body">
+            <div class="prompt-compare">
+              <div class="prompt-box bad">
+                <div class="prompt-box-header"><i class="fas fa-times-circle"></i> Плохой пример</div>
+                <div class="code-block">
+                  <div class="code-content">
+                    <pre>Ты умный ассистент. Отвечай на вопросы пользователей.</pre>
+                  </div>
+                </div>
+              </div>
+              <div class="prompt-box good">
+                <div class="prompt-box-header"><i class="fas fa-check-circle"></i> Хороший пример</div>
+                <div class="code-block">
+                  <div class="code-content">
+                    <pre>Ты — Алиса, менеджер по записи клиентов
+салона красоты "Лотос".
+Твоя задача — записывать клиентов на
+процедуры, отвечать на вопросы об
+услугах и ценах, принимать контактные данные.
+
+УСЛУГИ И ЦЕНЫ:
+- Маникюр — 1500 руб, 60 мин
+- Педикюр — 2000 руб, 75 мин
+- Маникюр+педикюр — 3000 руб, 120 мин
+
+ПРАВИЛА:
+- Всегда уточняй имя клиента перед записью
+- Предлагай ближайшие свободные слоты:
+  понедельник 10:00, 14:00, среда 11:00
+- После записи подтверди детали голосом</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-lightbulb"></i> Ключевые принципы</h2>
+          </div>
+          <div class="section-body">
+            <ul class="checklist">
+              <li class="yes"><span class="check-icon">✅</span><span>Указывайте <strong>имя и роль</strong> — «Ты — Мария, оператор поддержки»</span></li>
+              <li class="yes"><span class="check-icon">✅</span><span>Описывайте <strong>сценарии явно</strong>: «когда клиент спрашивает о цене — назови X»</span></li>
+              <li class="yes"><span class="check-icon">✅</span><span>Добавляйте <strong>конкретные данные</strong>: цены, адреса, расписания прямо в промпт</span></li>
+              <li class="yes"><span class="check-icon">✅</span><span>Пишите <strong>что НЕ делать</strong>: «не обсуждай конкурентов», «не обещай скидки»</span></li>
+              <li class="no"><span class="check-icon">❌</span><span>Не пишите промпт в одну строку без структуры — разбивайте на разделы</span></li>
+              <li class="no"><span class="check-icon">❌</span><span>Не надейтесь что ассистент «догадается» — описывайте каждый случай явно</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== BEST PRACTICES ===== -->
+      <div class="article" id="best-practices">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-star"></i></div>
+          <h1 class="article-title">Лучшие практики</h1>
+        </div>
+        <p class="article-desc">10 советов для создания эффективных AI-ассистентов на VoiceSystem.</p>
+
+        <div class="tips-grid">
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Давайте имя ассистенту</span><br>Повышает вовлечённость и доверие клиентов. «Меня зовут Алиса» работает лучше чем «Я ассистент».</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Указывайте компанию и контекст</span><br>Ассистент не знает о вас ничего — напишите название, сферу, что вы продаёте.</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Явные сценарии</span><br>«Когда клиент говорит X — делай Y». Чем конкретнее, тем точнее поведение.</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Примеры диалогов</span><br>Для сложных случаев добавляйте примеры реальных разговоров прямо в промпт.</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Запреты и ограничения</span><br>Явно указывайте что нельзя: «не обсуждай конкурентов», «не называй внутренние цены».</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Обработка ошибок функций</span><br>Напишите что делать если функция вернула ошибку — иначе ассистент растеряется.</div>
+          <div class="tip-card green-border"><span style="color:var(--green-500);font-weight:600;">✅ Завершение разговора</span><br>Для звонков всегда описывайте когда и как завершать. Иначе ассистент может «зависнуть».</div>
+          <div class="tip-card red-border"><span style="color:var(--red-500);font-weight:600;">❌ Промпт в одну строку</span><br>Без структуры и заголовков разделов модель хуже понимает приоритеты.</div>
+          <div class="tip-card red-border"><span style="color:var(--red-500);font-weight:600;">❌ «Ассистент догадается»</span><br>Не рассчитывайте на подразумеваемые правила — пишите всё явно.</div>
+          <div class="tip-card red-border"><span style="color:var(--red-500);font-weight:600;">❌ Слишком сложные инструкции</span><br>Для простого FAQ-бота достаточно 200–400 слов. Лишние детали создают путаницу.</div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== WEBHOOK ===== -->
+      <div class="article" id="fn-webhook">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-bolt"></i></div>
+          <h1 class="article-title">Функция: send_webhook</h1>
+          <span class="fn-badge integration"><i class="fas fa-plug"></i> Интеграция</span>
+        </div>
+        <p class="article-desc">Отправляет данные в n8n, Make.com, Zapier или любой HTTP-endpoint. Используйте для передачи собранных данных во внешние системы.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Запись клиента</h2></div>
+          <div class="section-body">
+            <p style="color:var(--text-gray);font-size:.875rem;margin-bottom:.75rem;">Укажите URL вебхука прямо в промпте. Ассистент сам передаст его в функцию при вызове.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-webhook-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-webhook-prompt">Ты — администратор фитнес-центра "Энергия".
+Записываешь клиентов на тренировки и отправляешь заявки.
+
+Когда клиент называет имя, телефон и желаемое время —
+вызови send_webhook с event="booking" и данными клиента.
+
+URL вебхука: https://hook.eu1.make.com/abc123xyz
+
+После отправки подтверди: "Ваша заявка принята! Мы свяжемся с вами."
+
+ПРАВИЛА:
+- Не отправляй вебхук до получения имени и телефона
+- Если функция вернула ошибку — скажи: "Произошла техническая ошибка,
+  мы перезвоним вам в течение 15 минут"</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-code"></i> Что отправляется (payload)</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">JSON</span><button class="copy-btn" onclick="copyCode(this,'code-webhook-payload')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-webhook-payload">{
+  <span class="code-key">"event"</span>: <span class="code-string">"booking"</span>,
+  <span class="code-key">"data"</span>: {
+    <span class="code-key">"name"</span>: <span class="code-string">"Иван"</span>,
+    <span class="code-key">"phone"</span>: <span class="code-string">"+79991234567"</span>,
+    <span class="code-key">"time"</span>: <span class="code-string">"завтра в 10:00"</span>,
+    <span class="code-key">"service"</span>: <span class="code-string">"Силовая тренировка"</span>
+  },
+  <span class="code-key">"assistant_id"</span>: <span class="code-string">"550e8400..."</span>,
+  <span class="code-key">"assistant_name"</span>: <span class="code-string">"Администратор"</span>
+}</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-question-circle"></i> Вопросы по функции</h2></div>
+          <div class="section-body">
+            <table class="wiki-table">
+              <tbody>
+                <tr><td style="color:var(--text-gray);width:40%">Когда вызывать?</td><td>Как только собраны все нужные данные от клиента</td></tr>
+                <tr><td style="color:var(--text-gray)">Если webhook не отвечает?</td><td>Добавьте в промпт инструкцию: «сообщи пользователю об ошибке и предложи перезвонить»</td></tr>
+                <tr><td style="color:var(--text-gray)">Можно несколько webhook?</td><td>Да — вызывайте функцию несколько раз с разными URL и разными <code>event</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== API REQUEST ===== -->
+      <div class="article" id="fn-api-request">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-exchange-alt"></i></div>
+          <h1 class="article-title">Функция: api_request</h1>
+          <span class="fn-badge api"><i class="fas fa-code"></i> API</span>
+        </div>
+        <p class="article-desc">Выполняет GET/POST/PUT/DELETE запросы к любому REST API — CRM, склад, каталог товаров, базы данных. Позволяет ассистенту в реальном времени получать и отправлять данные.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-key"></i> Как указать авторизацию в промпте</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Пример настройки</span><button class="copy-btn" onclick="copyCode(this,'code-api-auth')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-api-auth">API URL: https://api.mycrm.com/v1
+API Key: sk-abc123xyz
+API Header: Authorization: Bearer eyJhbGc...</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Проверка наличия товара</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-api-shop')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-api-shop">Ты — консультант интернет-магазина электроники.
+Когда клиент спрашивает о наличии товара — проверяй через API.
+
+API URL: https://api.myshop.ru/v1
+API Header: X-API-Key: secret123
+
+Для проверки наличия вызови api_request:
+- method: GET
+- url: https://api.myshop.ru/v1/products?name=[название товара]
+
+Если товар есть — назови цену и сроки доставки.
+Если нет — предложи альтернативы или предложи уведомить о поступлении.</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Создание заявки в CRM</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-api-crm')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-api-crm">После разговора создавай контакт в CRM:
+Вызови api_request:
+- method: POST
+- url: https://api.mycrm.com/v1/leads
+- headers: { "Authorization": "Bearer sk-abc123" }
+- body: { "name": "[имя клиента]", "phone": "[номер]", "source": "voicyfy" }</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== GOOGLE SHEET ===== -->
+      <div class="article" id="fn-google-sheet">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-table"></i></div>
+          <h1 class="article-title">Функция: add_google_sheet_row</h1>
+          <span class="fn-badge integration"><i class="fas fa-plug"></i> Интеграция</span>
+        </div>
+        <p class="article-desc">Добавляет строку в Google Таблицу. Идеально для сбора лидов, заявок, обратной связи без внешних сервисов.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-cog"></i> Настройка таблицы</h2></div>
+          <div class="section-body">
+            <ol class="steps">
+              <li>Откройте Google Таблицу, в которую нужно записывать данные</li>
+              <li>Нажмите «Настроить доступ» → «Все, у кого есть ссылка» → выберите роль <strong>Редактор</strong></li>
+              <li>Скопируйте ссылку на таблицу и вставьте в промпт</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Сбор лидов</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-gsheet-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-gsheet-prompt">Ты — менеджер по продажам. Записывай всех заинтересованных клиентов в таблицу.
+
+Таблица: https://docs.google.com/spreadsheets/d/1ABC.../edit
+Лист: Лиды
+
+После сбора имени, телефона и вопроса клиента —
+вызови add_google_sheet_row:
+- url: https://docs.google.com/spreadsheets/d/1ABC.../edit
+- sheet_name: "Лиды"
+- row_to_append: "[Имя];;[Телефон];;[Вопрос];;[Дата]"</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-info-circle"></i> Формат данных</h2></div>
+          <div class="section-body">
+            <p style="color:var(--text-gray);font-size:.875rem;margin-bottom:.75rem;">Разделитель между ячейками — <code style="background:var(--bg-light);padding:.125rem .375rem;border-radius:.25rem;">;;</code> (двойная точка с запятой). Порядок данных должен совпадать с порядком колонок в таблице.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Пример строки</span><button class="copy-btn" onclick="copyCode(this,'code-gsheet-row')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-gsheet-row">"Иван Петров;;+79991234567;;Интересует тариф Про;;2024-05-10"</pre></div>
+            </div>
+            <div class="alert info" style="margin-top:.75rem">
+              <i class="fas fa-info-circle"></i>
+              <div class="alert-text">Создайте заголовки колонок в первой строке таблицы вручную — функция добавляет строки начиная со второй.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== GOOGLE DOC ===== -->
+      <div class="article" id="fn-google-doc">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-file-alt"></i></div>
+          <h1 class="article-title">Функция: read_google_doc</h1>
+          <span class="fn-badge integration"><i class="fas fa-plug"></i> Интеграция</span>
+        </div>
+        <p class="article-desc">Читает текст из публичного Google Документа. Полезно для создания ассистента с базой знаний без Pinecone — достаточно поддерживать один документ.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Ассистент с базой знаний</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-gdoc-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-gdoc-prompt">Ты — консультант по продуктам компании.
+Когда клиент задаёт вопрос о продуктах, ценах или условиях —
+сначала прочитай документацию через read_google_doc:
+
+url: https://docs.google.com/document/d/1XYZ.../edit
+
+Отвечай только на основе информации из документа.
+Если информации нет — честно скажи: "К сожалению, у меня нет
+данных по этому вопросу. Вы можете обратиться к менеджеру."</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div class="alert-text"><strong>Ограничение:</strong> Функция читает только публичные документы с доступом «Все, у кого есть ссылка → Просмотр». Приватные документы недоступны.</div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== WRITE GOOGLE DOC ===== -->
+      <div class="article" id="fn-write-google-doc">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-file-edit"></i></div>
+          <h1 class="article-title">Функция: write_google_doc</h1>
+          <span class="fn-badge integration"><i class="fas fa-plug"></i> Интеграция</span>
+        </div>
+        <p class="article-desc">Добавляет текст в конец Google Документа. Может добавить заголовок перед текстом. Использует тот же сервисный аккаунт что и Google Таблицы — отдельной настройки API не требуется.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-cog"></i> Настройка документа</h2></div>
+          <div class="section-body">
+            <ol class="steps">
+              <li>Откройте Google Документ, в который нужно записывать данные</li>
+              <li>Нажмите «Настроить доступ» → добавьте email сервисного аккаунта с правами <strong>Редактор</strong></li>
+              <li>Email сервисного аккаунта указан в разделе «Интеграции» в настройках VoiceSystem</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Итоги звонка</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-wdoc-prompt1')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-wdoc-prompt1">Ты — менеджер по продажам.
+После каждого разговора записывай итоги в рабочий документ.
+
+Документ итогов: https://docs.google.com/document/d/1ABC.../edit
+
+По завершении звонка вызови write_google_doc:
+- url: https://docs.google.com/document/d/1ABC.../edit
+- heading: "Звонок [дата] — [имя клиента]"
+- text: "Телефон: [номер]
+Интерес: [что обсуждали]
+Результат: [договорились о чём]
+Следующий шаг: [действие]"</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Лог заявок</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-wdoc-prompt2')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-wdoc-prompt2">Ты — оператор горячей линии. Фиксируй каждую заявку в документе.
+
+Документ: https://docs.google.com/document/d/1XYZ.../edit
+
+После получения заявки вызови write_google_doc:
+- url: https://docs.google.com/document/d/1XYZ.../edit
+- heading: "[Время] Заявка от [имя]"
+- text: "Контакт: [телефон]
+Запрос: [суть]
+Приоритет: [высокий/средний/низкий]"</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-eye"></i> Как выглядит результат в документе</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Google Документ</span><button class="copy-btn" onclick="copyCode(this,'code-wdoc-result')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-wdoc-result">## Звонок 10.05.2025 — Иван Петров
+Телефон: +79991234567
+Интерес: Тариф Про, 3 пользователя
+Результат: Отправить КП на почту
+Следующий шаг: Перезвонить в пятницу
+
+## Звонок 10.05.2025 — Мария Сидорова
+Телефон: +79161234567
+Интерес: Демо-доступ
+Результат: Создан тестовый аккаунт
+Следующий шаг: Созвон через неделю</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-question-circle"></i> Вопросы по функции</h2></div>
+          <div class="section-body">
+            <table class="wiki-table">
+              <tbody>
+                <tr><td style="color:var(--text-gray);width:40%">Куда добавляется текст?</td><td>Всегда в конец документа — существующий текст не затрагивается</td></tr>
+                <tr><td style="color:var(--text-gray)">Можно ли писать в середину?</td><td>Нет, только append в конец. Для большинства задач (лог, заметки) этого достаточно</td></tr>
+                <tr><td style="color:var(--text-gray)">Отличие от Google Sheets?</td><td>Docs — для свободного текста и заметок, Sheets — для структурированных данных с колонками</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== TELEGRAM ===== -->
+      <div class="article" id="fn-telegram">
+        <div class="article-header">
+          <div class="article-icon"><i class="fab fa-telegram"></i></div>
+          <h1 class="article-title">Функция: send_telegram_notification</h1>
+          <span class="fn-badge api"><i class="fas fa-code"></i> API</span>
+        </div>
+        <p class="article-desc">Отправляет сообщение в Telegram-чат, группу или канал. Удобно для мгновенных уведомлений менеджерам о новых заявках.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-key"></i> Как настроить бота</h2></div>
+          <div class="section-body">
+            <ol class="steps">
+              <li>Создайте бота через <strong>@BotFather</strong> в Telegram — он выдаст токен вида <code>123456789:AAH...</code></li>
+              <li>Узнайте <code>chat_id</code>: напишите боту <code>/start</code>, затем откройте <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code></li>
+              <li>Для групп — добавьте бота в группу, напишите любое сообщение и повторите getUpdates</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Уведомления менеджеру</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-tg-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-tg-prompt">Ты — секретарь, принимаешь заявки по телефону.
+
+Telegram Bot Token: 7123456789:AAHdq...
+Чат менеджера: 123456789
+
+После каждого успешного разговора отправляй уведомление.
+Вызови send_telegram_notification с:
+- chat_id: 123456789
+- message: "🔔 Новая заявка!
+Клиент: [имя]
+Телефон: [номер]
+Запрос: [суть вопроса]"</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-code"></i> HTML-форматирование в сообщениях</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">HTML</span><button class="copy-btn" onclick="copyCode(this,'code-tg-html')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-tg-html">&lt;b&gt;Жирный текст&lt;/b&gt;
+&lt;i&gt;Курсив&lt;/i&gt;
+&lt;code&gt;Моноширинный код&lt;/code&gt;
+&lt;a href="https://example.com"&gt;Ссылка&lt;/a&gt;</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== CRM TASK ===== -->
+      <div class="article" id="fn-crm-task">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-calendar-check"></i></div>
+          <h1 class="article-title">Функция: create_crm_voicyfy_task</h1>
+          <span class="fn-badge crm"><i class="fas fa-users"></i> CRM</span>
+        </div>
+        <p class="article-desc">Создаёт задачу на обратный звонок в CRM VoiceSystem. Автоматически находит или создаёт контакт по номеру телефона и планирует исходящий звонок.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Перезвонить клиенту</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-crm-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-crm-prompt">Ты — менеджер по продажам.
+Если клиент просит перезвонить — создавай задачу.
+
+ID ассистента для обратных звонков: 550e8400-e29b-41d4-a716-446655440000
+
+Когда клиент говорит "перезвоните" или называет время —
+вызови create_crm_voicyfy_task:
+- phone: [номер клиента из caller_number]
+- assistant_id: 550e8400-e29b-41d4-a716-446655440000
+- scheduled_time: [время по МСК]
+- title: "Обратный звонок по запросу клиента"
+- custom_greeting: "Добрый день! Вы просили нас перезвонить."</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-clock"></i> Форматы времени (всё МСК)</h2></div>
+          <div class="section-body" style="padding:0">
+            <table class="wiki-table">
+              <thead><tr><th>Формат</th><th>Пример</th></tr></thead>
+              <tbody>
+                <tr><td>Относительный</td><td><code>"через 2 часа"</code></td></tr>
+                <tr><td>Сегодня</td><td><code>"сегодня в 18:00"</code></td></tr>
+                <tr><td>Завтра</td><td><code>"завтра в 15:00"</code></td></tr>
+                <tr><td>Конкретная дата</td><td><code>"08.12.2025 09:40"</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== SEARCH CONTACT ===== -->
+      <div class="article" id="fn-search-contact">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-address-book"></i></div>
+          <h1 class="article-title">Функция: search_contact_by_phone</h1>
+          <span class="fn-badge crm"><i class="fas fa-users"></i> CRM</span>
+        </div>
+        <p class="article-desc">Ищет контакт в CRM VoiceSystem по номеру телефона. Позволяет ассистенту персонализировать разговор — обратиться по имени и использовать историю взаимодействий.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Персонализированный приём звонка</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-contact-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-contact-prompt">Ты — оператор службы поддержки.
+
+В начале каждого звонка:
+1. Вызови search_contact_by_phone с phone = caller_number
+2. Если контакт найден — обращайся по имени: "Добрый день, [имя]!"
+3. Если не найден — уточни имя: "Как вас зовут?"
+
+Используй данные из CRM для контекста разговора.</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert info">
+          <i class="fas fa-info-circle"></i>
+          <div class="alert-text">Переменная <span class="var-pill">caller_number</span> автоматически подставляется в промпт при входящем звонке через Voximplant и содержит номер звонящего.</div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== HANGUP ===== -->
+      <div class="article" id="fn-hangup">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-phone-slash"></i></div>
+          <h1 class="article-title">Функция: hangup_call</h1>
+          <span class="fn-badge calls"><i class="fas fa-phone"></i> Звонки</span>
+        </div>
+        <p class="article-desc">Завершает телефонный звонок программно. Позволяет ассистенту корректно завершить разговор после выполнения задачи.</p>
+
+        <div class="alert warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div class="alert-text"><strong>⚠️ Только Voximplant</strong> — Функция работает исключительно при звонках через телефонию Voximplant. При веб-сессиях не применима.</div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-hangup-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-hangup-prompt">Ты — оператор горячей линии.
+
+Завершай звонок когда:
+- Клиент попрощался ("спасибо", "до свидания", "всё", "пока")
+- Все вопросы решены и клиент подтвердил
+- Клиент прямо просит завершить
+
+Вызови hangup_call:
+- reason: "conversation_completed"
+- farewell_message: "Спасибо за обращение! Хорошего дня!"
+
+НЕ завершай звонок если клиент задаёт новые вопросы.</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-list"></i> Причины завершения</h2></div>
+          <div class="section-body" style="padding:0">
+            <table class="wiki-table">
+              <thead><tr><th>reason</th><th>Когда использовать</th></tr></thead>
+              <tbody>
+                <tr><td><code>conversation_completed</code></td><td>✅ Естественное завершение — всё обсудили</td></tr>
+                <tr><td><code>user_request</code></td><td>👋 Клиент сам попросил завершить</td></tr>
+                <tr><td><code>time_limit_reached</code></td><td>⏰ Превышен лимит времени разговора</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== SMS ===== -->
+      <div class="article" id="fn-sms">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-sms"></i></div>
+          <h1 class="article-title">Функция: send_sms</h1>
+          <span class="fn-badge calls"><i class="fas fa-phone"></i> Звонки</span>
+        </div>
+        <p class="article-desc">Отправляет SMS клиенту во время звонка с номера Voximplant. Удобно для передачи адреса, ссылки, кода подтверждения.</p>
+
+        <div class="alert warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div class="alert-text"><strong>⚠️ Только Voximplant</strong> — SMS отправляется через инфраструктуру Voximplant. Требует настроенного номера в аккаунте.</div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-variable"></i> Переменные звонка</h2></div>
+          <div class="section-body">
+            <p style="color:var(--text-gray);font-size:.875rem;margin-bottom:.75rem;">При звонке через Voximplant в промпт автоматически подставляются переменные:</p>
+            <table class="wiki-table">
+              <thead><tr><th>Переменная</th><th>Значение</th><th>Параметр SMS</th></tr></thead>
+              <tbody>
+                <tr><td><span class="var-pill">caller_number</span></td><td>Номер звонящего клиента</td><td>→ параметр <code>to</code></td></tr>
+                <tr><td><span class="var-pill">called_number</span></td><td>Номер Voximplant (ваш)</td><td>→ параметр <code>from_number</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-sms-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-sms-prompt">Ты — консультант офиса.
+Когда клиент просит отправить адрес или информацию по SMS:
+
+Вызови send_sms:
+- to: [caller_number]
+- from_number: [called_number]
+- text: "Наш адрес: ул. Ленина 5, офис 301. Время работы: 9:00-18:00"
+
+После отправки скажи: "Отправил вам SMS с адресом!"</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== SHOW IMAGE ===== -->
+      <div class="article" id="fn-show-image">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-image"></i></div>
+          <h1 class="article-title">Функция: show_image</h1>
+          <span class="fn-badge calls"><i class="fas fa-phone"></i> Звонки</span>
+        </div>
+        <p class="article-desc">Показывает изображение на экране устройства клиента во время звонка. Поддерживается в приложениях с интеграцией Voximplant Video SDK.</p>
+
+        <div class="alert warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div class="alert-text"><strong>⚠️ Только Voximplant</strong> — Функция работает только в звонках с видео-поддержкой через Voximplant SDK. При обычных голосовых звонках изображение не отображается.</div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-image-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-image-prompt">Ты — консультант по недвижимости.
+Когда клиент интересуется конкретным объектом —
+покажи фото через show_image:
+
+- url: https://cdn.example.com/property/apt-123.jpg
+- caption: "Квартира на ул. Садовой, 45м², 3 этаж"
+
+После показа прокомментируй: "Вы можете видеть планировку квартиры..."</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== QUERY LLM ===== -->
+      <div class="article" id="fn-query-llm">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-brain"></i></div>
+          <h1 class="article-title">Функция: query_llm</h1>
+          <span class="fn-badge ai"><i class="fas fa-robot"></i> AI</span>
+        </div>
+        <p class="article-desc">Отправляет запрос другой языковой модели и возвращает ответ. Позволяет использовать специализированную модель для отдельных задач: перевод, анализ тональности, классификация запросов.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Классификация запроса</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-llm-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-llm-prompt">Ты — оператор первой линии поддержки.
+
+Когда клиент описывает проблему:
+1. Вызови query_llm для классификации:
+   - prompt: "Классифицируй следующий запрос клиента в одну из категорий:
+     [техническая проблема / вопрос по оплате / вопрос по тарифу / другое].
+     Запрос: [текст клиента]"
+2. На основе ответа переадресуй: техника → отдел техподдержки, оплата → финансы
+
+Отвечай на языке клиента.</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== PINECONE ===== -->
+      <div class="article" id="fn-pinecone">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-database"></i></div>
+          <h1 class="article-title">Функция: search_pinecone</h1>
+          <span class="fn-badge ai"><i class="fas fa-robot"></i> AI</span>
+        </div>
+        <p class="article-desc">Семантический поиск по векторной базе данных Pinecone. Подходит для больших баз знаний (тысячи документов), где обычный поиск по ключевым словам неэффективен.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — RAG ассистент</h2></div>
+          <div class="section-body">
+            <p style="color:var(--text-gray);font-size:.875rem;margin-bottom:.75rem;">Укажите namespace — пространство имён вашей базы знаний в Pinecone.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-pinecone-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-pinecone-prompt">Ты — эксперт-консультант. Отвечай ТОЛЬКО на основе базы знаний.
+
+Pinecone namespace: company_docs
+
+При каждом вопросе клиента:
+1. Вызови search_pinecone с query = вопрос клиента
+2. Изучи результаты (поле metadata.text)
+3. Ответь на основе найденной информации
+4. Если ничего не найдено — скажи: "К сожалению, у меня нет
+   информации по этому вопросу"
+
+Никогда не придумывай факты самостоятельно.</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== BROWSER TASK ===== -->
+      <div class="article" id="fn-browser-task">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-globe"></i></div>
+          <h1 class="article-title">Функция: start_browser_task</h1>
+          <span class="fn-badge ai"><i class="fas fa-robot"></i> AI</span>
+        </div>
+        <p class="article-desc">Запускает автономный браузерный агент для выполнения действий на сайте: поиск, заполнение форм, навигация. Агент управляет браузером без участия пользователя.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример — Интернет-магазин</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-browser-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-browser-prompt">Ты — ассистент интернет-магазина. Можешь управлять браузером.
+
+Когда клиент говорит "найди", "покажи", "добавь в корзину":
+Вызови start_browser_task:
+- goal: [подробное описание действия]
+
+Примеры задач:
+- "найди iPhone 15 Pro 256GB чёрный на сайте shop.ru"
+- "добавь в корзину и перейди к оформлению"
+- "проверь статус заказа №12345"
+
+После выполнения сообщи клиенту результат.</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== ORCHESTRATOR ===== -->
+      <div class="article" id="fn-orchestrator">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-project-diagram"></i></div>
+          <h1 class="article-title">Функция: query_orchestrator</h1>
+          <span class="fn-badge ai"><i class="fas fa-robot"></i> AI</span>
+        </div>
+        <p class="article-desc">Запускает агентский режим для сложных многошаговых задач. Оркестратор разбивает цель на подзадачи и выполняет их последовательно, используя доступные инструменты.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-orch-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-orch-prompt">Ты — JARVIS, умный многофункциональный ассистент.
+
+Для сложных задач, требующих нескольких шагов, используй агентский режим.
+Когда задача требует: найти + проанализировать + записать:
+Вызови query_orchestrator с подробным описанием задачи.
+
+Примеры задач для оркестратора:
+- "Найди информацию о клиенте в CRM и создай отчёт"
+- "Проверь наличие товара через API и запиши заявку в таблицу"
+- "Собери данные из нескольких источников и отправь уведомление"</pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== GET TIME ===== -->
+      <div class="article" id="fn-get-time">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-clock"></i></div>
+          <h1 class="article-title">Функция: get_current_time</h1>
+          <span class="fn-badge utils">Утилиты</span>
+        </div>
+        <p class="article-desc">Возвращает текущее время в указанном часовом поясе. Используйте для подтверждения записей, расчёта «через N часов», проверки рабочих часов.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-terminal"></i> Промпт-пример</h2></div>
+          <div class="section-body">
+            <div class="code-block">
+              <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-time-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
+              <div class="code-content"><pre id="code-time-prompt">Ты — менеджер по записи. Работаешь в часовом поясе МСК.
+
+Когда нужно знать текущее время (для записи, планирования):
+Вызови get_current_time:
+- timezone: "Europe/Moscow"
+- format: "full"
+
+Используй время для:
+- Подтверждения записи с точной датой и временем
+- Расчёта "через X часов" от текущего момента
+- Проверки рабочих часов (9:00–18:00 МСК)</pre></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-globe"></i> Поддерживаемые часовые пояса</h2></div>
+          <div class="section-body" style="padding:0">
+            <table class="wiki-table">
+              <thead><tr><th>timezone</th><th>Город</th></tr></thead>
+              <tbody>
+                <tr><td><code>Europe/Moscow</code></td><td>Москва (МСК, UTC+3)</td></tr>
+                <tr><td><code>Europe/London</code></td><td>Лондон (GMT/BST)</td></tr>
+                <tr><td><code>America/New_York</code></td><td>Нью-Йорк (EST/EDT)</td></tr>
+                <tr><td><code>Asia/Tokyo</code></td><td>Токио (JST, UTC+9)</td></tr>
+                <tr><td><code>UTC</code></td><td>UTC (без смещения)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== FAQ ===== -->
+      <div class="article" id="faq">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-question-circle"></i></div>
+          <h1 class="article-title">Часто задаваемые вопросы</h1>
+        </div>
+        <p class="article-desc">Ответы на самые частые вопросы о промптах и функциях.</p>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Можно ли подключить несколько функций одновременно?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Да. Функции включаются независимо в настройках ассистента. Ассистент сам решает, какую вызвать, исходя из контекста разговора. Чётко опишите в промпте когда использовать каждую: «Вызови send_webhook когда клиент оставил заявку, вызови hangup_call когда клиент попрощался».
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Как передать данные из звонка (номер телефона) в функцию?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              При звонке через Voximplant в промпт автоматически подставляются переменные: <span class="var-pill">caller_number</span> (номер звонящего) и <span class="var-pill">called_number</span> (ваш номер Voximplant). Напишите в промпте: «используй caller_number как значение параметра phone».
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Почему ассистент не вызывает функцию?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Три основные причины: (1) не описан сценарий вызова в промпте — добавьте явную инструкцию «Вызови [функция] когда...»; (2) функция не включена в настройках ассистента — проверьте список активных функций; (3) отсутствует обязательный параметр — убедитесь что все required-поля заполняются данными из разговора.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Функция вызывается, но возвращает ошибку — что делать?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Добавьте в промпт инструкцию по обработке ошибок: «Если функция вернула error — сообщи пользователю [текст сообщения] и предложи [альтернативное действие]». Например: «скажи "Произошла техническая ошибка, мы перезвоним вам" и вызови hangup_call».
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Как ограничить ассистента одной темой?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Добавьте в промпт явный запрет: «Отвечай ТОЛЬКО на вопросы о [тема]. На все остальные вопросы отвечай: "Я специализируюсь только на [тема], по другим вопросам обратитесь к нужному специалисту."»
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Можно ли использовать Google Таблицы без открытого доступа?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Нет. Таблица должна быть доступна «Всем по ссылке → Редактор» для функции <code>add_google_sheet_row</code>, или «Просмотр» для <code>read_google_doc</code>. Приватные документы с ограниченным доступом не поддерживаются.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            Как ассистент узнаёт имя клиента?
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">
+              Два способа: (1) Использовать функцию <code>search_contact_by_phone</code> в начале звонка — если контакт есть в CRM, ассистент обратится по имени. (2) Спросить самому — напишите в промпте: «В начале разговора уточни имя клиента: "Как вас зовут?"».
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="article-divider">
+
+      <!-- ===== FAQ PROMPT LENGTH ===== -->
+      <div class="article" id="faq-prompt-length">
+        <div class="article-header">
+          <div class="article-icon"><i class="fas fa-ruler"></i></div>
+          <h1 class="article-title">Оптимальная длина промпта</h1>
+        </div>
+        <p class="article-desc">Длина промпта зависит от сложности ассистента. Слишком короткий промпт оставляет пробелы, слишком длинный — создаёт путаницу в приоритетах.</p>
+
+        <div class="content-section">
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-table"></i> Рекомендации по длине</h2></div>
+          <div class="section-body" style="padding:0">
+            <table class="wiki-table">
+              <thead><tr><th>Тип ассистента</th><th>Рекомендуемая длина</th><th>Что включать</th></tr></thead>
+              <tbody>
+                <tr><td>Простой FAQ-бот</td><td>200–400 слов</td><td>Роль + правила + данные</td></tr>
+                <tr><td>Запись / продажи</td><td>400–800 слов</td><td>+ сценарии + обработка возражений</td></tr>
+                <tr><td>Сложный агент</td><td>800–1500 слов</td><td>+ все сценарии + обработка ошибок + примеры диалогов</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="alert info">
+          <i class="fas fa-lightbulb"></i>
+          <div class="alert-text"><strong>Совет:</strong> Используйте заглавные заголовки разделов (<code>ЗАДАЧА:</code>, <code>ПРАВИЛА:</code>, <code>ДАННЫЕ:</code>) — это помогает модели структурировать понимание и быстрее находить нужный контекст.</div>
+        </div>
+      </div>
+
+      <!-- NO RESULTS -->
+      <div class="no-results" id="no-results">
+        <i class="fas fa-search"></i>
+        <p>Статьи не найдены. Попробуйте другой поисковый запрос.</p>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // MOBILE MENU
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+    mobileMenuBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      sidebarOverlay.classList.toggle('show');
+    });
+    sidebarOverlay.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      sidebarOverlay.classList.remove('show');
+    });
+
+    // SIDEBAR ACTIVE ON SCROLL
+    const observerOptions = { rootMargin: '-80px 0px -60% 0px' };
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.id;
+          document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
+          const activeLink = document.querySelector(`.sidebar-item[href="#${id}"]`);
+          if (activeLink) activeLink.classList.add('active');
+        }
+      });
+    }, observerOptions);
+
+    document.querySelectorAll('.article[id]').forEach(section => observer.observe(section));
+
+    // Close sidebar on link click (mobile)
+    document.querySelectorAll('.sidebar-item').forEach(link => {
+      link.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        sidebarOverlay.classList.remove('show');
+      });
+    });
+
+    // COPY CODE
+    function copyCode(button, codeId) {
+      const el = document.getElementById(codeId);
+      const text = el ? el.textContent : button.closest('.code-block').querySelector('pre').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i> Скопировано';
+        button.classList.add('copied');
+        setTimeout(() => { button.innerHTML = orig; button.classList.remove('copied'); }, 2000);
+      }).catch(() => {});
+    }
+
+    // FAQ ACCORDION
+    function toggleFaq(btn) {
+      const answer = btn.nextElementSibling;
+      const isOpen = btn.classList.contains('open');
+      btn.classList.toggle('open', !isOpen);
+      answer.classList.toggle('open', !isOpen);
+    }
+
+    // SEARCH
+    const searchInput = document.getElementById('search-input');
+    const articles = document.querySelectorAll('.article');
+    const noResults = document.getElementById('no-results');
+    const dividers = document.querySelectorAll('.article-divider');
+    const sidebarItems = document.querySelectorAll('.sidebar-item');
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.trim().toLowerCase();
+      if (!query) {
+        articles.forEach(a => { a.style.display = ''; });
+        dividers.forEach(d => { d.style.display = ''; });
+        sidebarItems.forEach(s => s.classList.remove('hidden'));
+        noResults.style.display = 'none';
+        return;
+      }
+
+      let visibleCount = 0;
+      articles.forEach(article => {
+        const text = article.textContent.toLowerCase();
+        const match = text.includes(query);
+        article.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+        const id = article.id;
+        const sidebarLink = document.querySelector(`.sidebar-item[href="#${id}"]`);
+        if (sidebarLink) sidebarLink.classList.toggle('hidden', !match);
+      });
+
+      dividers.forEach(d => { d.style.display = 'none'; });
+      noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+    });
+  </script>
+</body>
+</html>

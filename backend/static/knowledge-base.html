@@ -1,0 +1,1824 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>База знаний — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --transition-sm: all 0.2s ease;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo span {
+      font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #2563eb;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .badge-realtime {
+      margin-left: auto;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: var(--transition-sm);
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: var(--transition-sm);
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Хлебные крошки */
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+    
+    .breadcrumb-item {
+      display: flex;
+      align-items: center;
+    }
+    
+    .breadcrumb-item a {
+      color: var(--text-gray);
+      text-decoration: none;
+    }
+    
+    .breadcrumb-item a:hover {
+      color: var(--primary-blue);
+    }
+    
+    .breadcrumb-separator {
+      margin: 0 0.25rem;
+    }
+    
+    /* Карточки */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+      text-decoration: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-outline {
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    /* Стили для базы знаний */
+    .kb-container {
+      margin-top: 1rem;
+    }
+
+    .kb-textarea {
+      width: 100%;
+      min-height: 300px;
+      padding: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      resize: vertical;
+      font-family: inherit;
+      margin-bottom: 1rem;
+    }
+
+    .kb-actions {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .kb-stats {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .kb-status {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+
+    .kb-status.active {
+      color: #10b981;
+    }
+
+    .char-counter {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .char-counter.warning {
+      color: #f59e0b;
+    }
+
+    .char-counter.error {
+      color: #ef4444;
+    }
+
+    .kb-namespace-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: var(--bg-light);
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .kb-namespace-label {
+      font-weight: 600;
+      color: var(--text-gray);
+    }
+
+    .kb-namespace {
+      font-family: monospace;
+      color: var(--text-dark);
+      background-color: var(--white);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-small {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    /* Добавим стиль для опасных кнопок */
+    .btn.danger {
+      border-color: #ef4444;
+      color: #ef4444;
+    }
+
+    .btn.danger:hover {
+      background-color: #fef2f2;
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .notification-error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: #10b981;
+    }
+    
+    .notification-error .notification-icon {
+      color: #ef4444;
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+
+    /* New Styles for multiple KB support */
+    .add-kb-container {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1.5rem;
+    }
+
+    .kb-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .kb-card {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .kb-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .kb-card .card-header {
+      padding: 1.25rem;
+      margin-bottom: 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .kb-name {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .kb-content {
+      padding: 1.25rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .kb-details {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-gray);
+      font-size: 0.75rem;
+      border-radius: var(--radius-md);
+      padding: 0.5rem;
+      background-color: var(--bg-light);
+    }
+
+    .kb-preview {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      background-color: var(--bg-light);
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      height: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+
+    .kb-namespace-display {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .kb-namespace-value {
+      background-color: var(--bg-light);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.75rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      color: var(--text-gray);
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+
+    /* Modal styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.5);
+      transition: all 0.3s;
+      opacity: 0;
+    }
+
+    .modal.show {
+      display: block;
+      opacity: 1;
+    }
+
+    .modal-content {
+      background-color: var(--white);
+      margin: 5% auto;
+      padding: 0;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-gray);
+    }
+
+    .modal-body {
+      padding: 1.25rem;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .modal-footer {
+      padding: 1.25rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      transition: border 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary-blue);
+    }
+
+    /* Заблокированные фичи по тарифу */
+    .plan-locked-feature {
+      opacity: 0.6;
+      cursor: pointer !important;
+      position: relative;
+    }
+
+    .plan-locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    .plan-locked-feature:hover {
+      opacity: 0.8;
+      background-color: var(--bg-blue-light);
+    }
+
+    /* МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ */
+    .feature-blocked-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .feature-blocked-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .feature-blocked-modal .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .feature-blocked-modal .modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 450px;
+      width: 100%;
+      animation: modal-slide-up 0.3s ease-out;
+      overflow: hidden;
+    }
+
+    .feature-blocked-modal .modal-header {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-header i {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .feature-blocked-modal .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .feature-blocked-modal .modal-body {
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-body p {
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .feature-blocked-modal .current-plan-info {
+      background-color: var(--bg-light);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+    }
+
+    .feature-blocked-modal .current-plan-info span {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .feature-blocked-modal .required-plans {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .feature-blocked-modal .required-plans strong {
+      color: var(--primary-blue);
+    }
+
+    .feature-blocked-modal .modal-footer {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .feature-blocked-modal .modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    @keyframes modal-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes modal-slide-up {
+      from { 
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+      }
+      
+      .content-container {
+        padding: 1rem;
+      }
+      
+      .kb-list {
+        grid-template-columns: 1fr;
+      }
+      
+      .breadcrumbs {
+        display: none;
+      }
+      
+      .modal-content {
+        margin: 2% auto;
+        width: 95%;
+        max-height: 95vh;
+      }
+      
+      .user-dropdown {
+        right: auto;
+        left: 0;
+      }
+      
+      .add-kb-container {
+        justify-content: center;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .content-container {
+        padding: 0.5rem;
+      }
+      
+      .kb-card {
+        margin-bottom: 1rem;
+      }
+      
+      .notification {
+        right: 0.5rem;
+        left: 0.5rem;
+        max-width: none;
+      }
+      
+      .modal-content {
+        margin: 1% auto;
+      }
+      
+      .modal-header, .modal-body, .modal-footer {
+        padding: 1rem;
+      }
+    }
+
+    /* Кнопка мобильного меню */
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-toggle {
+        display: block;
+      }
+    }
+
+    /* Overlay для мобильного меню */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 49;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay.show {
+        display: block;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Overlay для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
+        <i class="fas fa-headset"></i> Агент обзвона
+        <span class="badge-realtime">new</span>
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-gem"></i> Gemini агенты
+      </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item active">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item">
+        <i class="fas fa-comments"></i> Диалоги
+      </a>
+      <a href="/static/crm.html" class="sidebar-nav-item" data-feature="crm">
+        <i class="fas fa-address-book"></i> CRM
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="page-title">База знаний</h1>
+      </div>
+      
+      <div class="user-menu">
+        <button class="user-button" id="user-menu-button">
+          <div class="user-avatar" id="user-avatar">АП</div>
+          <span class="user-name" id="user-name">Александр Петров</span>
+          <i class="fas fa-chevron-down"></i>
+        </button>
+        
+        <div class="user-dropdown" id="user-dropdown">
+          <a href="/static/settings.html" class="dropdown-item">
+            <i class="fas fa-user"></i> Профиль
+          </a>
+          <div class="dropdown-divider"></div>
+          <a href="/" class="dropdown-item" id="dropdown-logout">
+            <i class="fas fa-sign-out-alt"></i> Выйти
+          </a>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Хлебные крошки -->
+      <div class="breadcrumbs">
+        <div class="breadcrumb-item">
+          <a href="/static/dashboard.html">Дашборд</a>
+          <span class="breadcrumb-separator">
+            <i class="fas fa-chevron-right"></i>
+          </span>
+        </div>
+        <div class="breadcrumb-item">База знаний</div>
+      </div>
+      
+      <!-- Кнопка добавления новой базы знаний -->
+      <div class="add-kb-container">
+        <button id="add-kb-button" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Создать базу знаний
+        </button>
+      </div>
+      
+      <!-- Список баз знаний -->
+      <div class="kb-list" id="kb-list">
+        <!-- Базы знаний будут добавлены с помощью JavaScript -->
+      </div>
+    </div>
+    
+    <!-- Модальное окно редактора базы знаний -->
+    <div id="kb-editor-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="kb-editor-title">Редактировать базу знаний</h2>
+          <button class="modal-close" id="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="kb-name-input">Название:</label>
+            <input type="text" id="kb-name-input" class="form-input" placeholder="Название базы знаний">
+          </div>
+          <div class="form-group">
+            <label for="kb-editor-textarea">Содержимое:</label>
+            <textarea id="kb-editor-textarea" class="kb-textarea" placeholder="Введите текст для базы знаний (до 500,000 символов)"></textarea>
+            <div class="char-counter" id="kb-editor-char-counter">0/500000 символов</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="kb-editor-cancel" class="btn btn-outline">Отмена</button>
+          <button id="kb-editor-save" class="btn btn-primary">Сохранить</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+
+    <!-- МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ -->
+    <div class="feature-blocked-modal" id="feature-blocked-modal">
+      <div class="modal-overlay" id="feature-modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <i class="fas fa-lock"></i>
+          <h3>Функция недоступна</h3>
+        </div>
+        <div class="modal-body">
+          <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+          <div class="current-plan-info">
+            Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+          </div>
+          <p class="required-plans">
+            Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+          <button class="btn btn-primary" id="feature-modal-upgrade">
+            <i class="fas fa-arrow-up"></i> Выбрать тариф
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Получаем элементы
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const kbList = document.getElementById('kb-list');
+      const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+      const userMenuButton = document.getElementById('user-menu-button');
+      const userDropdown = document.getElementById('user-dropdown');
+      const userNameDisplay = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      const dropdownLogout = document.getElementById('dropdown-logout');
+      
+      // Элементы модального окна
+      const kbEditorModal = document.getElementById('kb-editor-modal');
+      const kbEditorTitle = document.getElementById('kb-editor-title');
+      const kbNameInput = document.getElementById('kb-name-input');
+      const kbEditorTextarea = document.getElementById('kb-editor-textarea');
+      const kbEditorCharCounter = document.getElementById('kb-editor-char-counter');
+      const kbEditorSave = document.getElementById('kb-editor-save');
+      const kbEditorCancel = document.getElementById('kb-editor-cancel');
+      const modalClose = document.getElementById('modal-close');
+      const addKbButton = document.getElementById('add-kb-button');
+
+      // Текущая база знаний для редактирования
+      let currentEditingKB = null;
+      // Список всех баз знаний
+      let knowledgeBases = [];
+      let currentUserEmail = null;
+      
+      // Код текущего тарифа пользователя
+      let currentUserPlanCode = 'free';
+
+      // Привилегированные пользователи
+      const PRIVILEGED_USERS = ['well96well@gmail.com', 'stas@gmail.com'];
+
+      // Матрица доступа к функциям по тарифам
+      // ВАЖНО: ai_voice НЕ включен → для него эти функции заблокированы
+      const FEATURE_ACCESS = {
+        crm: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        telephony: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        outbound_calls: ['free', 'referral_trial', 'start', 'profi', 'agent']
+      };
+
+      // Названия функций для модалки
+      const FEATURE_NAMES = {
+        crm: 'CRM',
+        telephony: 'Телефония',
+        outbound_calls: 'Исходящие звонки'
+      };
+
+      // Названия тарифов для отображения
+      const PLAN_NAMES = {
+        'free': 'Пробный период',
+        'referral_trial': 'Реферальный триал',
+        'ai_voice': 'AI Voice',
+        'start': 'Тариф Старт',
+        'profi': 'Profi', 'agent': 'VoiceSystem Agent'
+      };
+      
+      // Мобильное меню
+      mobileMenuToggle.addEventListener('click', function() {
+        sidebar.classList.toggle('mobile-open');
+        sidebarOverlay.classList.toggle('show');
+      });
+      
+      sidebarOverlay.addEventListener('click', function() {
+        sidebar.classList.remove('mobile-open');
+        sidebarOverlay.classList.remove('show');
+      });
+      
+      // Выпадающее меню пользователя
+      userMenuButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+      });
+      
+      // Закрытие выпадающего меню при клике в другом месте
+      document.addEventListener('click', function(e) {
+        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target) && !userMenuButton.contains(e.target)) {
+          userDropdown.classList.remove('show');
+        }
+      });
+      
+      // Выход из системы
+      if (dropdownLogout) {
+        dropdownLogout.addEventListener('click', function(e) {
+          e.preventDefault();
+          localStorage.removeItem('auth_token');
+          window.location.href = '/';
+        });
+      }
+      
+      // Основные функции для работы с API
+      const api = {
+        baseUrl: '/api',
+        
+        // Получение токена авторизации
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        // Проверка авторизации
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        // Базовая функция для запросов к API
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string' && !(options.body instanceof FormData)) {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          try {
+            const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+            
+            if (response.status === 401) {
+              localStorage.removeItem('auth_token');
+              window.location.href = '/static/login.html';
+              throw new Error('Требуется авторизация');
+            }
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
+            }
+            
+            return data;
+          } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+          }
+        },
+        
+        // Методы для различных типов запросов
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        }
+      };
+
+      // Функция для получения информации о пользователе
+      async function loadUserInfo() {
+        try {
+          const userInfo = await api.get('/users/me');
+          currentUserEmail = userInfo.email;
+          
+          // Обновляем имя пользователя и аватар
+          const firstName = userInfo.first_name || '';
+          const lastName = userInfo.last_name || '';
+          
+          if (firstName || lastName) {
+            userNameDisplay.textContent = firstName + (lastName ? ` ${lastName}` : '');
+            
+            // Инициалы для аватара
+            let initials = '';
+            if (firstName) initials += firstName[0];
+            if (lastName) initials += lastName[0];
+            userAvatar.textContent = initials.toUpperCase();
+          } else if (userInfo.company_name) {
+            userNameDisplay.textContent = userInfo.company_name;
+            userAvatar.textContent = userInfo.company_name.substring(0, 2).toUpperCase();
+          } else {
+            userNameDisplay.textContent = userInfo.email;
+            userAvatar.textContent = userInfo.email.substring(0, 2).toUpperCase();
+          }
+          
+          // Показываем админ ссылку только для well96well@gmail.com
+          if (userInfo.email === 'well96well@gmail.com') {
+            // Добавляем раздел администрирования
+            console.log('Проверка email для админ панели:', userInfo.email);
+            console.log('Email подтвержден, добавляем админ панель');
+            
+            // Проверяем, нет ли уже раздела администрирования
+            const adminSections = Array.from(document.querySelectorAll('.sidebar-section')).filter(
+              section => section.textContent.trim() === 'Администрирование'
+            );
+            console.log('Существующие админ разделы:', adminSections.length);
+            
+            if (adminSections.length === 0) {
+              console.log('Создаем новый раздел администрирования');
+              // Создаем новый раздел
+              const adminSection = document.createElement('div');
+              adminSection.className = 'sidebar-section';
+              adminSection.textContent = 'Администрирование';
+              
+              // Создаем пункт меню для админ-панели
+              const adminNavItem = document.createElement('a');
+              adminNavItem.href = '/static/admin.html';
+              adminNavItem.className = 'sidebar-nav-item';
+              adminNavItem.innerHTML = '<i class="fas fa-user-shield"></i> Управление';
+              
+              // Находим место для вставки (перед разделом "Аккаунт")
+              const sidebarNav = document.querySelector('.sidebar-nav');
+              const accountSection = Array.from(document.querySelectorAll('.sidebar-section')).find(
+                section => section.textContent.trim() === 'Аккаунт'
+              );
+              
+              if (accountSection && sidebarNav) {
+                console.log('Вставляем перед разделом Аккаунт');
+                sidebarNav.insertBefore(adminSection, accountSection);
+                sidebarNav.insertBefore(adminNavItem, accountSection);
+              } else {
+                console.log('Добавляем в конец навигации');
+                // Если структура не найдена, добавляем в конец навигации
+                sidebarNav.appendChild(adminSection);
+                sidebarNav.appendChild(adminNavItem);
+              }
+              console.log('Админ панель добавлена успешно');
+            } else {
+              console.log('Админ раздел уже существует');
+            }
+          }
+        } catch (error) {
+          console.error(`Ошибка загрузки информации о пользователе: ${error.message}`);
+          userNameDisplay.textContent = 'Неизвестный пользователь';
+        }
+      }
+      
+      // Вспомогательные функции для UI
+      const ui = {
+        // Показать уведомление
+        showNotification(message, type = 'success') {
+          const notification = document.getElementById('notification');
+          const notificationMessage = document.getElementById('notification-message');
+          const iconElement = notification.querySelector('.notification-icon i');
+          
+          // Удаляем все классы типов
+          notification.classList.remove('notification-success', 'notification-error', 'notification-info');
+          
+          // Изменяем иконку
+          iconElement.className = type === 'success' ? 'fas fa-check-circle' : 
+                                 type === 'error' ? 'fas fa-exclamation-circle' : 
+                                 'fas fa-info-circle';
+          
+          // Устанавливаем тип и сообщение
+          notification.classList.add(`notification-${type}`);
+          notificationMessage.textContent = message;
+          
+          // Показываем уведомление
+          notification.style.display = 'flex';
+          setTimeout(() => {
+            notification.classList.add('show');
+          }, 10);
+          
+          // Автоматически скрываем через 5 секунд
+          setTimeout(() => {
+            this.hideNotification();
+          }, 5000);
+        },
+        
+        // Скрыть уведомление
+        hideNotification() {
+          const notification = document.getElementById('notification');
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.style.display = 'none';
+          }, 300);
+        }
+      };
+
+      // ============================================================================
+      // ПРОВЕРКА ДОСТУПА К ФУНКЦИЯМ ПО ТАРИФУ
+      // ============================================================================
+
+      /**
+       * Проверить, является ли пользователь привилегированным
+       */
+      function isPrivilegedUser() {
+        return PRIVILEGED_USERS.includes(currentUserEmail);
+      }
+
+      /**
+       * Проверить, имеет ли пользователь доступ к функции
+       */
+      function canAccessFeature(feature, planCode) {
+        if (!planCode) return true;
+        
+        // Привилегированные пользователи имеют доступ ко всему
+        if (isPrivilegedUser()) return true;
+        
+        const allowedPlans = FEATURE_ACCESS[feature];
+        if (!allowedPlans) return true;
+        
+        return allowedPlans.includes(planCode);
+      }
+
+      /**
+       * Получить отображаемое имя тарифа
+       */
+      function getPlanDisplayName(planCode) {
+        return PLAN_NAMES[planCode] || planCode;
+      }
+
+      /**
+       * Применить матрицу доступа к элементам сайдбара
+       */
+      function applyFeatureAccessToSidebar() {
+        console.log('[ACCESS] Применяем матрицу доступа для плана:', currentUserPlanCode);
+
+        document.querySelectorAll('.plan-locked-feature').forEach(el => {
+          el.classList.remove('plan-locked-feature');
+        });
+
+        document.querySelectorAll('[data-feature]').forEach(element => {
+          const feature = element.getAttribute('data-feature');
+          const hasAccess = canAccessFeature(feature, currentUserPlanCode);
+          
+          if (!hasAccess) {
+            element.classList.add('plan-locked-feature');
+            console.log(`[ACCESS] Заблокирована функция: ${feature}`);
+          }
+        });
+      }
+
+      /**
+       * Показать модалку блокировки функции
+       */
+      function showFeatureBlockedModal(feature) {
+        const featureName = FEATURE_NAMES[feature] || feature;
+        const planName = getPlanDisplayName(currentUserPlanCode);
+
+        document.getElementById('feature-blocked-message').textContent = 
+          `Для доступа к разделу "${featureName}" необходим тариф Старт, Profi или Agent.`;
+        document.getElementById('current-plan-name-display').textContent = planName;
+        document.getElementById('required-plans-text').textContent = 'Старт, Profi или Agent';
+        document.getElementById('feature-blocked-modal').classList.add('show');
+      }
+
+      /**
+       * Скрыть модалку блокировки функции
+       */
+      function hideFeatureBlockedModal() {
+        document.getElementById('feature-blocked-modal').classList.remove('show');
+      }
+
+      /**
+       * Загрузить информацию о подписке пользователя
+       */
+      async function loadSubscriptionInfo() {
+        try {
+          const subscription = await api.get('/subscriptions/my-subscription');
+          if (subscription && subscription.subscription_plan && subscription.subscription_plan.code) {
+            currentUserPlanCode = subscription.subscription_plan.code;
+            console.log('[SUBSCRIPTION] Код тарифа пользователя:', currentUserPlanCode);
+          }
+        } catch (error) {
+          console.warn('[SUBSCRIPTION] Ошибка загрузки подписки:', error);
+        }
+      }
+      
+      // Загрузка всех баз знаний
+      async function loadAllKnowledgeBases() {
+        try {
+          const response = await api.get('/knowledge-base/all');
+          knowledgeBases = response;
+          renderKnowledgeBases();
+        } catch (error) {
+          ui.showNotification('Ошибка при загрузке баз знаний: ' + error.message, 'error');
+        }
+      }
+      
+      // Отображение всех баз знаний
+      function renderKnowledgeBases() {
+        kbList.innerHTML = '';
+        
+        if (knowledgeBases.length === 0) {
+          const emptyState = document.createElement('div');
+          emptyState.className = 'empty-state';
+          emptyState.innerHTML = `
+            <i class="fas fa-book-open empty-icon"></i>
+            <h3>Нет баз знаний</h3>
+            <p>Создайте свою первую базу знаний, чтобы помочь вашим ассистентам отвечать на вопросы с использованием пользовательских данных.</p>
+          `;
+          kbList.appendChild(emptyState);
+          return;
+        }
+        
+        knowledgeBases.forEach(kb => {
+          const kbCard = document.createElement('div');
+          kbCard.className = 'kb-card card';
+          kbCard.dataset.id = kb.id;
+          kbCard.dataset.namespace = kb.namespace;
+          
+          const updatedDate = new Date(kb.updated_at).toLocaleString();
+          const name = kb.name || `KB-${kb.namespace.slice(-6)}`;
+          
+          kbCard.innerHTML = `
+            <div class="card-header">
+              <h3 class="kb-name">${name}</h3>
+              <div class="kb-actions">
+                <button class="kb-edit-btn btn btn-outline btn-small">
+                  <i class="fas fa-pencil-alt"></i> Редактировать
+                </button>
+                <button class="kb-delete-btn btn btn-outline danger btn-small">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+            <div class="kb-content">
+              <div class="kb-details">
+                <span class="kb-chars"><i class="fas fa-font"></i> <span class="char-count">${kb.char_count.toLocaleString()}</span> символов</span>
+                <span class="kb-updated"><i class="fas fa-clock"></i> <span class="updated-date">${updatedDate}</span></span>
+              </div>
+              <div class="kb-preview">${kb.content_preview || 'Нет предпросмотра'}</div>
+              <div class="kb-namespace-display">
+                <span class="kb-namespace-label">Namespace:</span>
+                <code class="kb-namespace-value">${kb.namespace}</code>
+                <button class="kb-copy-namespace-btn btn btn-outline btn-small">
+                  <i class="fas fa-copy"></i>
+                </button>
+              </div>
+            </div>
+          `;
+          
+          // Обработчики событий
+          kbCard.querySelector('.kb-edit-btn').addEventListener('click', () => {
+            editKnowledgeBase(kb.id);
+          });
+          
+          kbCard.querySelector('.kb-delete-btn').addEventListener('click', () => {
+            deleteKnowledgeBase(kb.id);
+          });
+          
+          kbCard.querySelector('.kb-copy-namespace-btn').addEventListener('click', () => {
+            copyNamespace(kb.namespace);
+          });
+          
+          kbList.appendChild(kbCard);
+        });
+      }
+      
+      // Редактирование базы знаний
+      async function editKnowledgeBase(kbId) {
+        try {
+          // Устанавливаем режим редактирования
+          kbEditorTitle.textContent = 'Редактировать базу знаний';
+          
+          // Получаем полное содержимое базы знаний
+          const response = await api.get(`/knowledge-base/${kbId}/content`);
+          currentEditingKB = {
+            id: kbId,
+            full_content: response.full_content,
+            name: response.name,
+            namespace: response.namespace
+          };
+          
+          // Заполняем поля формы
+          kbNameInput.value = currentEditingKB.name || '';
+          kbEditorTextarea.value = currentEditingKB.full_content || '';
+          updateEditorCharCounter();
+          
+          // Открываем модальное окно
+          openModal();
+        } catch (error) {
+          ui.showNotification('Ошибка при загрузке базы знаний: ' + error.message, 'error');
+        }
+      }
+      
+      // Создание новой базы знаний
+      function createKnowledgeBase() {
+        // Устанавливаем режим создания
+        kbEditorTitle.textContent = 'Создать базу знаний';
+        currentEditingKB = null;
+        
+        // Очищаем поля формы
+        kbNameInput.value = '';
+        kbEditorTextarea.value = '';
+        updateEditorCharCounter();
+        
+        // Открываем модальное окно
+        openModal();
+      }
+      
+      // Удаление базы знаний
+      async function deleteKnowledgeBase(kbId) {
+        if (!confirm('Вы уверены, что хотите удалить эту базу знаний?')) {
+          return;
+        }
+        
+        try {
+          await api.delete(`/knowledge-base/${kbId}`);
+          ui.showNotification('База знаний успешно удалена', 'success');
+          loadAllKnowledgeBases();
+        } catch (error) {
+          ui.showNotification('Ошибка при удалении базы знаний: ' + error.message, 'error');
+        }
+      }
+      
+      // Сохранение базы знаний
+      async function saveKnowledgeBase() {
+        const content = kbEditorTextarea.value.trim();
+        const name = kbNameInput.value.trim() || 'База знаний';
+        
+        if (!content) {
+          ui.showNotification('Пожалуйста, введите текст для базы знаний', 'info');
+          return;
+        }
+        
+        if (content.length > 500000) {
+          ui.showNotification('Текст превышает максимальный размер 500,000 символов', 'error');
+          return;
+        }
+        
+        try {
+          // Изменяем состояние кнопки
+          kbEditorSave.disabled = true;
+          kbEditorSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+          
+          let result;
+          
+          if (currentEditingKB) {
+            // Обновляем существующую базу знаний
+            result = await api.put(`/knowledge-base/${currentEditingKB.id}`, {
+              content: content,
+              name: name
+            });
+          } else {
+            // Создаем НОВУЮ базу знаний - используем специальный эндпоинт "/new"
+            result = await api.post('/knowledge-base/new', {
+              content: content,
+              name: name
+            });
+          }
+          
+          // Закрываем модальное окно
+          closeModal();
+          
+          // Обновляем список баз знаний
+          loadAllKnowledgeBases();
+          
+          ui.showNotification('База знаний успешно сохранена', 'success');
+        } catch (error) {
+          ui.showNotification('Ошибка при сохранении базы знаний: ' + error.message, 'error');
+        } finally {
+          // Восстанавливаем состояние кнопки
+          kbEditorSave.disabled = false;
+          kbEditorSave.innerHTML = 'Сохранить';
+        }
+      }
+      
+      // Копирование namespace в буфер обмена
+      function copyNamespace(namespace) {
+        navigator.clipboard.writeText(namespace)
+          .then(() => {
+            ui.showNotification('Namespace скопирован в буфер обмена', 'success');
+          })
+          .catch(() => {
+            ui.showNotification('Не удалось скопировать namespace', 'error');
+          });
+      }
+      
+      // Обновление счетчика символов в редакторе
+      function updateEditorCharCounter() {
+        const count = kbEditorTextarea.value.length;
+        kbEditorCharCounter.textContent = `${count.toLocaleString()}/500000 символов`;
+        
+        if (count > 450000) {
+          kbEditorCharCounter.classList.add('warning');
+        } else {
+          kbEditorCharCounter.classList.remove('warning');
+        }
+        
+        if (count > 500000) {
+          kbEditorCharCounter.classList.add('error');
+          kbEditorSave.disabled = true;
+        } else {
+          kbEditorCharCounter.classList.remove('error');
+          kbEditorSave.disabled = false;
+        }
+      }
+      
+      // Открытие модального окна
+      function openModal() {
+        kbEditorModal.style.display = 'block';
+        setTimeout(() => {
+          kbEditorModal.classList.add('show');
+        }, 10);
+      }
+      
+      // Закрытие модального окна
+      function closeModal() {
+        kbEditorModal.classList.remove('show');
+        setTimeout(() => {
+          kbEditorModal.style.display = 'none';
+        }, 300);
+      }
+      
+      // Проверка авторизации
+      if (!api.isAuthenticated()) {
+        window.location.href = '/static/login.html';
+        return;
+      }
+      
+      // Установка обработчиков событий
+      kbEditorTextarea.addEventListener('input', updateEditorCharCounter);
+      kbEditorSave.addEventListener('click', saveKnowledgeBase);
+      kbEditorCancel.addEventListener('click', closeModal);
+      modalClose.addEventListener('click', closeModal);
+      addKbButton.addEventListener('click', createKnowledgeBase);
+      
+      // Закрытие уведомления
+      notificationClose.addEventListener('click', ui.hideNotification);
+      
+      // Загрузка информации о пользователе, подписке и баз знаний при загрузке страницы
+      loadUserInfo();
+      loadSubscriptionInfo().then(() => {
+        applyFeatureAccessToSidebar();
+      });
+      loadAllKnowledgeBases();
+
+      // Обработчики модалки блокировки функции
+      document.getElementById('feature-modal-overlay').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-close').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-upgrade').addEventListener('click', function() {
+        hideFeatureBlockedModal();
+        window.location.href = '/static/dashboard.html';
+      });
+
+      // Блокировка переходов на заблокированные по тарифу страницы
+      document.querySelectorAll('[data-feature]').forEach(link => {
+        link.addEventListener('click', function(e) {
+          if (this.classList.contains('plan-locked-feature')) {
+            e.preventDefault();
+            showFeatureBlockedModal(this.getAttribute('data-feature'));
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

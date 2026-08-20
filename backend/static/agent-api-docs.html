@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<!-- /static/agent-api-docs.html -->
+<!-- ✅ ВЕРСИЯ 2.0: Документация Voicyfy Agent API — эндпоинты + полный справочник возможностей агента (инструменты оркестратора, функции голосового агента, каналы, тарифы) -->
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent API Документация | Voicyfy</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --gradient-blue: linear-gradient(135deg, #4a86e8, #2563eb);
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --green-500: #10b981;
+      --green-100: rgba(16, 185, 129, 0.1);
+      --orange-500: #f97316;
+      --orange-100: rgba(249, 115, 22, 0.1);
+      --red-500: #ef4444;
+      --red-100: rgba(239, 68, 68, 0.1);
+      --purple-500: #8b5cf6;
+      --purple-100: rgba(139, 92, 246, 0.1);
+      --code-bg: #1e293b;
+      --code-text: #e2e8f0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    body { background-color: var(--bg-light); color: var(--text-dark); line-height: 1.6; }
+
+    .header {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex; align-items: center; gap: 1rem;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .logo { display: flex; align-items: center; gap: 0.5rem; text-decoration: none;
+            color: var(--text-dark); font-weight: 700; font-size: 1.25rem; }
+    .logo i { color: var(--primary-blue); font-size: 1.5rem; }
+    .header-title { color: var(--text-gray); font-size: 0.95rem; border-left: 1px solid var(--border-color); padding-left: 1rem; }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+    h1.page-title { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .page-subtitle { color: var(--text-gray); margin-bottom: 2rem; }
+
+    .content-section {
+      background: var(--white); border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg); margin-bottom: 1.5rem; overflow: hidden;
+    }
+    .section-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); background: var(--bg-blue-light); }
+    .section-title { font-size: 1.05rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .section-title i { color: var(--primary-blue); }
+    .section-body { padding: 1.25rem 1.5rem; }
+    .section-body p { margin-bottom: 0.75rem; }
+    .section-body ul, .section-body ol { margin: 0.5rem 0 0.75rem 1.5rem; }
+    .section-body li { margin-bottom: 0.35rem; }
+
+    .method-tag {
+      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 9999px;
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.03em; margin-right: 0.5rem;
+    }
+    .method-tag.get { background: var(--green-100); color: var(--green-500); }
+    .method-tag.post { background: var(--purple-100); color: var(--purple-500); }
+    .method-tag.put { background: var(--orange-100); color: var(--orange-500); }
+
+    code {
+      background: var(--bg-blue-light); color: var(--primary-blue);
+      padding: 0.1rem 0.35rem; border-radius: 0.25rem; font-size: 0.85em;
+      font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    }
+
+    .code-block {
+      background: var(--code-bg); border-radius: var(--radius-md);
+      margin: 0.75rem 0; overflow-x: auto;
+    }
+    .code-block pre {
+      padding: 1rem 1.25rem; color: var(--code-text);
+      font-size: 0.8rem; line-height: 1.55;
+      font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+      white-space: pre;
+    }
+
+    table.params-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    table.params-table th {
+      text-align: left; padding: 0.6rem 1rem; background: var(--bg-light);
+      color: var(--text-gray); font-weight: 600; border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    table.params-table td { padding: 0.6rem 1rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+    table.params-table tr:last-child td { border-bottom: none; }
+    .param-name { font-family: monospace; font-weight: 600; color: var(--text-dark); white-space: nowrap; }
+    .param-type { color: var(--purple-500); font-size: 0.8rem; white-space: nowrap; }
+    .req { color: var(--red-500); font-weight: 600; }
+    .opt { color: var(--text-gray); }
+    .table-scroll { overflow-x: auto; }
+
+    .info-box {
+      display: flex; gap: 0.75rem; background: var(--bg-blue-light);
+      border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md);
+      padding: 0.9rem 1rem; margin: 0.75rem 0;
+    }
+    .info-box.warn { background: var(--orange-100); border-color: rgba(249, 115, 22, 0.3); }
+    .info-box i { color: var(--primary-blue); margin-top: 0.15rem; }
+    .info-box.warn i { color: var(--orange-500); }
+    .info-box .title { font-weight: 600; margin-bottom: 0.15rem; }
+    .info-box .desc { color: var(--text-gray); font-size: 0.875rem; }
+
+    .endpoint-anchor { scroll-margin-top: 5rem; }
+
+    a { color: var(--primary-blue); }
+
+    @media (max-width: 640px) {
+      .container { padding: 1.25rem 0.75rem 3rem; }
+      .section-body { padding: 1rem; }
+      .header { padding: 0.75rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="logo"><i class="fas fa-robot"></i><span>Voicyfy</span></a>
+    <span class="header-title">Agent API — автономные агенты</span>
+  </header>
+
+  <div class="container">
+    <h1 class="page-title">Voicyfy Agent API</h1>
+    <p class="page-subtitle">
+      Создание и настройка автономных агентов обзвона по персональному API-ключу —
+      для интеграций вроде Claude Code.
+      Markdown-версия для AI-инструментов: <a href="/static/agent-api.md">/static/agent-api.md</a>
+    </p>
+
+    <!-- Аутентификация -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-key"></i> Аутентификация</h2>
+      </div>
+      <div class="section-body">
+        <p>Все запросы передают персональный API-ключ в заголовке <code>X-Api-Key</code>:</p>
+        <div class="code-block"><pre>X-Api-Key: vfy_...</pre></div>
+        <p>
+          Ключ генерируется в кабинете: <a href="/static/settings.html" target="_blank">Настройки → API-ключ для интеграций</a>.
+          Полный ключ показывается один раз при генерации. При перевыпуске старый ключ мгновенно перестаёт работать.
+        </p>
+        <p>Неверный ключ → <code>401 {"detail": "invalid_api_key"}</code>.</p>
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <div>
+            <div class="title">Область действия ключа</div>
+            <div class="desc">По ключу доступны только эндпоинты этой страницы: чтение, создание и редактирование агентов + справочник моделей. Остальное API Voicyfy по ключу недоступно.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Устройство агента -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-diagram-project"></i> Как устроен агент (важно перед настройкой)</h2>
+      </div>
+      <div class="section-body">
+        <p>У агента два независимых AI-компонента, у каждого — свой скрытый базовый системный промпт (через API не редактируется):</p>
+        <ol>
+          <li><b>Оркестратор</b> — текстовый «мозг»: ведёт CRM, планирует звонки, готовит стратегию каждого звонка, анализирует результаты. Его промпт = базовый шаблон + 5 документов <code>doc_*</code> + <code>additional_instructions</code>.</li>
+          <li><b>Голосовой агент</b> — говорит в живом телефонном разговоре. Его промпт = базовый шаблон + <code>voice_additional_instructions</code>. Документы <code>doc_*</code> в живом разговоре не используются.</li>
+        </ol>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Поле</th><th>Куда попадает</th><th>Что писать</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">doc_who_am_i</span></td><td>оркестратор</td><td>Кто компания: название, город, чем занимается</td></tr>
+              <tr><td><span class="param-name">doc_who_we_call</span></td><td>оркестратор</td><td>Целевая аудитория: кому звоним и зачем</td></tr>
+              <tr><td><span class="param-name">doc_how_we_talk</span></td><td>оркестратор</td><td>Стиль общения бренда</td></tr>
+              <tr><td><span class="param-name">doc_what_we_offer</span></td><td>оркестратор</td><td>Продукты/услуги, цены, условия</td></tr>
+              <tr><td><span class="param-name">doc_rules_and_goals</span></td><td>оркестратор</td><td>Цели, KPI, ограничения</td></tr>
+              <tr><td><span class="param-name">additional_instructions</span></td><td>оркестратор</td><td>Правила планирования и работы с контактами</td></tr>
+              <tr><td><span class="param-name">voice_additional_instructions</span></td><td>голосовой</td><td>Поведение в живом разговоре: имя ассистента, манера речи, возражения</td></tr>
+              <tr><td><span class="param-name">inbound_first_phrase</span></td><td>голосовой</td><td>Приветствие только для входящих звонков (≤500 символов)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="info-box warn">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <div class="title">Первая фраза исходящих звонков</div>
+            <div class="desc">Её генерирует оркестратор индивидуально под каждый звонок (стратегия PreCall) — статически она не настраивается. Влияйте на неё через <code>doc_*</code> и <code>additional_instructions</code>. Статическое поле <code>inbound_first_phrase</code> действует только на входящие.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Жизненный цикл звонка -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-arrows-spin"></i> Жизненный цикл звонка (PreCall → звонок → PostCall)</h2>
+      </div>
+      <div class="section-body">
+        <p>Каждый исходящий звонок проходит три фазы — понимание цикла — ключ к правильным промптам:</p>
+        <ol>
+          <li><b>PreCall (оркестратор, без инструментов).</b> Перед набором номера оркестратор получает задачу, карточку контакта, память о нём, полный транскрипт последнего звонка и хронологию всего общения (звонки + SMS + Telegram). На выходе — стратегия: первая фраза, тактика, тон, ключевые факты. Она передаётся голосовому агенту.</li>
+          <li><b>Живой разговор (голосовой агент).</b> Говорит по стратегии PreCall. Документов <code>doc_*</code> и CRM-доступа у него нет — фактура приходит только через стратегию и базу знаний.</li>
+          <li><b>PostCall (оркестратор, с инструментами).</b> Получает транскрипт и выполняет действия: <b>всегда</b> обновляет память о контакте; меняет стадию воронки только при реальном основании; для исходящих <b>всегда планирует следующее касание</b>, кроме случая достигнутой цели (недозвон → перезвон через 24 ч; ответил, но цель не достигнута → 1–3 дня, либо отложенное сообщение в Telegram); при важных событиях шлёт уведомление владельцу.</li>
+        </ol>
+        <p>Итог звонка: <code>SUCCESS</code> / <code>NO_ANSWER</code> / <code>FOLLOWUP</code>; стадия контакта проставляется автоматически.</p>
+        <p><b>Стадии воронки:</b> <code>new</code> → <code>active</code> → <code>success</code> / <code>rejected</code> / <code>do_not_call</code>.</p>
+        <p><b>Память о контакте:</b> сводка, ключевые факты, лучшее время звонка, история тона — накапливается и автоматически попадает в контекст каждого следующего PreCall, PostCall и чата.</p>
+      </div>
+    </div>
+
+    <!-- Инструменты оркестратора -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-toolbox"></i> Инструменты оркестратора (чат с владельцем)</h2>
+      </div>
+      <div class="section-body">
+        <p>Владелец общается с оркестратором в чате на странице агента и (если подключён бот) в Telegram. Пустое условие = инструмент доступен всегда.</p>
+        <p><b>CRM: контакты</b></p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Инструмент</th><th>Что делает</th><th>Условие</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">create_agent_contact</span></td><td>Создать контакт (телефон обязателен)</td><td></td></tr>
+              <tr><td><span class="param-name">bulk_create_contacts</span></td><td>Создать несколько контактов разом, дубли по номеру пропускаются</td><td></td></tr>
+              <tr><td><span class="param-name">search_contacts</span></td><td>Поиск по имени/телефону/компании и/или стадии</td><td></td></tr>
+              <tr><td><span class="param-name">get_agent_contacts</span></td><td>Общий список контактов</td><td></td></tr>
+              <tr><td><span class="param-name">get_contact_details</span></td><td>Полная карточка: поля, стадия, заметки, память, попытки</td><td></td></tr>
+              <tr><td><span class="param-name">get_contacts_by_stage</span></td><td>Разбивка контактов по стадиям воронки</td><td></td></tr>
+              <tr><td><span class="param-name">update_contact_info</span></td><td>Перезаписать имя/компанию/должность/заметки</td><td></td></tr>
+              <tr><td><span class="param-name">append_contact_note</span></td><td>Дописать заметку с датой, не стирая старые</td><td></td></tr>
+              <tr><td><span class="param-name">move_contact_stage</span></td><td>Перевести контакт на стадию воронки</td><td></td></tr>
+              <tr><td><span class="param-name">snooze_contact</span></td><td>Пауза до даты: отменяет запланированные звонки</td><td></td></tr>
+              <tr><td><span class="param-name">delete_agent_contact</span></td><td>Удалить контакт (необратимо, по явной просьбе)</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-top:0.75rem;"><b>Планирование звонков</b></p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Инструмент</th><th>Что делает</th><th>Условие</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">create_agent_task</span></td><td>Запланировать звонок; сдвигается в рабочие часы</td><td></td></tr>
+              <tr><td><span class="param-name">update_agent_task</span></td><td>Перенести/переименовать запланированный звонок</td><td></td></tr>
+              <tr><td><span class="param-name">delete_agent_task</span></td><td>Отменить запланированный звонок (необратимо)</td><td></td></tr>
+              <tr><td><span class="param-name">bulk_schedule_calls</span></td><td>Обзвон группы (по списку или стадии) с интервалом</td><td></td></tr>
+              <tr><td><span class="param-name">trigger_immediate_call</span></td><td>Позвонить прямо сейчас, без сдвига в рабочие часы</td><td></td></tr>
+              <tr><td><span class="param-name">get_agent_tasks</span></td><td>Список задач с фильтрами, проверка дублей</td><td></td></tr>
+              <tr><td><span class="param-name">get_upcoming_schedule</span></td><td>Календарь ближайших звонков по всем контактам</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-top:0.75rem;"><b>Аналитика и история</b></p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Инструмент</th><th>Что делает</th><th>Условие</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">get_agent_stats</span></td><td>Сводная статистика: контакты, звонки, задачи</td><td></td></tr>
+              <tr><td><span class="param-name">get_period_report</span></td><td>Отчёт за период: дозвоны, успехи, конверсия</td><td></td></tr>
+              <tr><td><span class="param-name">get_failed_calls</span></td><td>Очередь недозвонов на перезвон</td><td></td></tr>
+              <tr><td><span class="param-name">get_contact_call_history</span></td><td>История звонков контакта (кратко)</td><td></td></tr>
+              <tr><td><span class="param-name">get_contact_timeline</span></td><td>Единая хронология: звонки + SMS + Telegram</td><td></td></tr>
+              <tr><td><span class="param-name">get_call_transcript</span></td><td>Полный транскрипт конкретного звонка</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-top:0.75rem;"><b>Каналы и внешние системы</b></p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Инструмент</th><th>Что делает</th><th>Условие</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">send_sms</span></td><td>SMS клиенту с номера агента (до 500 символов)</td><td></td></tr>
+              <tr><td><span class="param-name">send_telegram_notification</span></td><td>Уведомление ВЛАДЕЛЬЦУ в Telegram-бот агента</td><td>подключён бот</td></tr>
+              <tr><td><span class="param-name">send_webhook</span></td><td>Событие (event + payload) на вебхук владельца</td><td>задан webhook_url</td></tr>
+              <tr><td><span class="param-name">search_knowledge_base</span></td><td>Векторный поиск по базе знаний компании</td><td>создана база</td></tr>
+              <tr><td><span class="param-name">telegram_send_message</span></td><td>Сообщение КЛИЕНТУ с личного Telegram владельца</td><td>личный аккаунт</td></tr>
+              <tr><td><span class="param-name">telegram_get_thread</span></td><td>Прочитать переписку с клиентом в Telegram</td><td>личный аккаунт</td></tr>
+              <tr><td><span class="param-name">schedule_telegram_message</span></td><td>Отложенное сообщение клиенту (передаётся инструкция, текст составится при отправке)</td><td>личный аккаунт</td></tr>
+              <tr><td><span class="param-name">Google Calendar</span></td><td>Создать/найти/изменить/удалить событие, свободные слоты</td><td>коннектор</td></tr>
+              <tr><td><span class="param-name">Gmail</span></td><td>Отправить/прочитать/ответить/переслать письмо</td><td>коннектор</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <div>
+            <div class="title">Инструменты PostCall-анализа</div>
+            <div class="desc">После звонка оркестратору доступен сокращённый набор: <code>update_contact_memory</code> (всегда вызывается), <code>create_agent_task</code>, <code>move_contact_stage</code>, <code>update_contact_info</code>, <code>send_telegram_notification</code>, <code>search_knowledge_base</code>, <code>send_sms</code>, <code>send_webhook</code> + условные инструменты Telegram и коннекторов.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Функции голосового агента -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-phone-volume"></i> Функции голосового агента (в живом звонке)</h2>
+      </div>
+      <div class="section-body">
+        <p>Набор голосового агента намеренно маленький — он говорит, а не ведёт CRM:</p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Функция</th><th>Что делает</th><th>Условие</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">hangup_call</span></td><td>Завершить звонок с прощальной фразой</td><td></td></tr>
+              <tr><td><span class="param-name">send_sms</span></td><td>SMS клиенту прямо во время звонка (адрес, ссылка, код)</td><td></td></tr>
+              <tr><td><span class="param-name">search_pinecone</span></td><td>Поиск по базе знаний во время разговора</td><td>создана база</td></tr>
+              <tr><td><span class="param-name">google_calendar_create_event / find_events</span></td><td>Записать на встречу / посмотреть календарь</td><td>коннектор</td></tr>
+              <tr><td><span class="param-name">gmail_send_email / fetch_emails</span></td><td>Отправить/прочитать письмо с Gmail владельца</td><td>коннектор</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="info-box warn">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <div class="title">Чего у голосового агента НЕТ (важно для промптов)</div>
+            <div class="desc">Нет CRM-инструментов, планирования задач, личного Telegram, вебхуков и документов <code>doc_*</code>. Если клиент просит перезвонить — агент уточняет время, а задачу ставит PostCall. Поэтому в <code>voice_additional_instructions</code> не нужно писать «запиши в CRM» или «поставь задачу» — это произойдёт автоматически. Пишите только про поведение в разговоре.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Каналы и автоматика -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-tower-broadcast"></i> Каналы и автоматика вне звонков</h2>
+      </div>
+      <div class="section-body">
+        <ul>
+          <li><b>Входящие звонки:</b> голосовой агент отвечает (<code>inbound_first_phrase</code>), после разговора — тот же PostCall-анализ (перезвон планируется только при необходимости).</li>
+          <li><b>Входящие SMS:</b> обрабатывает оркестратор — может ответить SMS, запланировать звонок, обновить память/стадию, уведомить владельца.</li>
+          <li><b>Входящие Telegram</b> (личный аккаунт + автоответ): оркестратор отвечает клиенту как живой человек; охват — только контакты из базы или все входящие.</li>
+          <li><b>Отложенные Telegram-сообщения:</b> живут в общем списке задач; перед отправкой оркестратор сверяется с контекстом — если договорённость уже закрыта, сообщение не отправляется.</li>
+          <li><b>Рабочие часы</b> (МСК): запланированные звонки сдвигаются в рабочее окно; НЕ сдвигаются <code>trigger_immediate_call</code> и Telegram-сообщения.</li>
+          <li><b>Вебхук:</b> события (заявка, лид, результат звонка) POST-запросом на URL владельца — для n8n / Make / Zapier / CRM.</li>
+          <li><b>Планировщик</b> проверяет задачи каждые ~30 секунд — «позвони сейчас» стартует в пределах полуминуты.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Гайд по промптам -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-pen-ruler"></i> Гайд: как писать промпты</h2>
+      </div>
+      <div class="section-body">
+        <p><b><code>additional_instructions</code> (оркестратор)</b> — правила планирования и работы с базой в терминах реальных инструментов и стадий:</p>
+        <ul>
+          <li>«Не звонить одному контакту чаще 1 раза в 3 дня»</li>
+          <li>«После двух недозвонов подряд отправляй SMS с предложением перезвонить»</li>
+          <li>«Отказников (rejected) не трогать 3 месяца»</li>
+          <li>«Горячих клиентов (просят счёт) — сразу уведомление владельцу»</li>
+        </ul>
+        <p><b><code>voice_additional_instructions</code> (голосовой агент)</b> — только поведение в живом разговоре:</p>
+        <ul>
+          <li>«Твоё имя — Алёна. Говори коротко, тепло, без канцелярита»</li>
+          <li>«Не называй цены на монтаж — предлагай замер»</li>
+          <li>«На возражение „дорого" — расскажи про рассрочку»</li>
+          <li>«Если просят человека — скажи, что менеджер перезвонит, и завершай звонок»</li>
+        </ul>
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <div>
+            <div class="title">Не дублируйте базовый промпт</div>
+            <div class="desc">Уже встроено: русский язык, проверка дублей задач, время по МСК, «сначала читай данные — потом действуй», запрет выдумывать данные, автозавершение звонка (hangup_call), обновление CRM после звонка. Объёмную фактуру (каталог, прайс) кладите в базу знаний — её ищут и оркестратор, и голосовой агент.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Тарифы и кредиты -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-coins"></i> Тарифы, кредиты и подключения</h2>
+      </div>
+      <div class="section-body">
+        <p>Через API не настраивается — всё делается в кабинете, но полезно для ответов пользователям:</p>
+        <ul>
+          <li><b>Доступ к агенту:</b> тестовый период 3 дня (единожды, +1500 кредитов) или тариф profi (+10 000 кредитов). Без доступа — <code>402 subscription_required</code>.</li>
+          <li><b>Кредиты</b> — валюта работы оркестратора: списываются за токены каждого вызова (PreCall, PostCall, чат, входящие) по ставкам выбранной модели. Баланс ниже 100 — оркестратор не запускается (<code>402 insufficient_credits</code>). Пакеты пополнения — на странице агента.</li>
+          <li><b>Голосовая часть оплачивается отдельно:</b> собственные API-ключи провайдеров (OpenAI / Gemini / Cartesia / Yandex) + телефония Voximplant (номера, минуты, SMS).</li>
+          <li><b>Telegram-бот агента:</b> уведомления владельцу + чат с оркестратором в Telegram.</li>
+          <li><b>Личный Telegram-аккаунт:</b> агент пишет клиентам от имени владельца и отвечает на входящие; встроены анти-бан лимиты.</li>
+          <li><b>Коннекторы</b> (Google Calendar, Gmail): OAuth-подключение на странице агента.</li>
+          <li><b>База знаний:</b> создаётся на странице агента; наличие видно по <code>has_knowledge_base</code>.</li>
+          <li><b>Лимит:</b> до 3 агентов; у каждого свои контакты, задачи, память и подключения.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- GET /list -->
+    <div class="content-section endpoint-anchor" id="list">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag get">GET</span> /api/agent/list</h2>
+      </div>
+      <div class="section-body">
+        <p>Список агентов пользователя. Отсюда берётся <code>agent_id</code> (поле <code>id</code>) для остальных запросов.</p>
+        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/list</pre></div>
+        <div class="code-block"><pre>{
+  "total": 1,
+  "max_agents": 3,
+  "can_create_more": true,
+  "has_agent_access": true,
+  "agents": [ { "id": "…", "name": "…", ... } ]
+}</pre></div>
+      </div>
+    </div>
+
+    <!-- GET / -->
+    <div class="content-section endpoint-anchor" id="get">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag get">GET</span> /api/agent/?agent_id={id}</h2>
+      </div>
+      <div class="section-body">
+        <p>Один агент со всеми настройками. Без <code>agent_id</code> возвращается первый (самый старый) агент. Перед редактированием всегда читайте текущее состояние этим запросом.</p>
+        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." "https://voicyfy.ru/api/agent/?agent_id=&lt;uuid&gt;"</pre></div>
+      </div>
+    </div>
+
+    <!-- GET /orchestrator-models -->
+    <div class="content-section endpoint-anchor" id="models">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag get">GET</span> /api/agent/orchestrator-models</h2>
+      </div>
+      <div class="section-body">
+        <p>Справочник моделей оркестратора. В поле <code>orchestrator_model</code> передавайте только <code>slug</code> из этого списка; если не передавать — применится модель по умолчанию.</p>
+        <div class="code-block"><pre>{"models": [{"slug": "…", "name": "…", "description": "…"}], "default": "…"}</pre></div>
+      </div>
+    </div>
+
+    <!-- POST /create -->
+    <div class="content-section endpoint-anchor" id="create">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag post">POST</span> /api/agent/create</h2>
+      </div>
+      <div class="section-body">
+        <p>Создание агента. Все 5 документов обязательны.</p>
+        <div class="code-block"><pre>curl -X POST https://voicyfy.ru/api/agent/create \
+  -H "X-Api-Key: vfy_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Алёна",
+    "assistant_type": "openai",
+    "doc_who_am_i": "Компания «АкваЛето», Иркутск...",
+    "doc_who_we_call": "Частные домовладельцы, дачники...",
+    "doc_how_we_talk": "Дружелюбно, на «вы»...",
+    "doc_what_we_offer": "Бассейны Intex и Bestway от 15 000 ₽...",
+    "doc_rules_and_goals": "Цель — записать на замер...",
+    "voice_additional_instructions": "Твоё имя — Алёна.",
+    "inbound_first_phrase": "Здравствуйте! Компания АкваЛето, меня зовут Алёна.",
+    "working_hours_start": 9,
+    "working_hours_end": 21,
+    "voice": "marin"
+  }'</pre></div>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Поле</th><th>Тип</th><th>Обяз.</th><th>Описание</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">name</span></td><td><span class="param-type">string</span></td><td class="req">Да</td><td>Имя агента (1–255)</td></tr>
+              <tr><td><span class="param-name">assistant_type</span></td><td><span class="param-type">string</span></td><td class="req">Да</td><td><code>gemini</code> | <code>openai</code> | <code>cartesia</code> | <code>yandex</code></td></tr>
+              <tr><td><span class="param-name">doc_who_am_i … doc_rules_and_goals</span></td><td><span class="param-type">string</span></td><td class="req">Да (все 5)</td><td>Документы компании для оркестратора</td></tr>
+              <tr><td><span class="param-name">additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции оркестратора</td></tr>
+              <tr><td><span class="param-name">voice_additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции голосового агента</td></tr>
+              <tr><td><span class="param-name">inbound_first_phrase</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Приветствие входящих (≤500)</td></tr>
+              <tr><td><span class="param-name">working_hours_start / _end</span></td><td><span class="param-type">int 0–23</span></td><td class="opt">Нет</td><td>Рабочие часы (МСК), по умолчанию 9–21</td></tr>
+              <tr><td><span class="param-name">orchestrator_model</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Slug из /orchestrator-models</td></tr>
+              <tr><td><span class="param-name">voice</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Голос для gemini/openai/yandex (см. списки ниже)</td></tr>
+              <tr><td><span class="param-name">cartesia_voice_id</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>ID голоса Cartesia (только cartesia)</td></tr>
+              <tr><td><span class="param-name">voice_speed</span></td><td><span class="param-type">float 0.5–1.5</span></td><td class="opt">Нет</td><td>Скорость речи (только cartesia)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <div>
+            <div class="title">Предусловия (выполняются пользователем в кабинете)</div>
+            <div class="desc">Верифицированная телефония Voximplant; API-ключ выбранного голосового провайдера в настройках; активный тариф или доступный триал; меньше 3 агентов. Иначе — ошибки 400/402 (см. ниже).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PUT / -->
+    <div class="content-section endpoint-anchor" id="update">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag put">PUT</span> /api/agent/?agent_id={id}</h2>
+      </div>
+      <div class="section-body">
+        <p>Редактирование агента. Передавайте <b>только изменяемые поля</b> — остальные не трогаются. Доступны все поля из create, а также:</p>
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Поле</th><th>Тип</th><th>Описание</th></tr></thead>
+            <tbody>
+              <tr><td><span class="param-name">is_active</span></td><td><span class="param-type">bool</span></td><td>Включить/выключить агента</td></tr>
+              <tr><td><span class="param-name">default_caller_id</span></td><td><span class="param-type">string</span></td><td>Номер, с которого звонит агент</td></tr>
+              <tr><td><span class="param-name">webhook_url</span></td><td><span class="param-type">string ≤500</span></td><td>URL вебхука для событий во внешнюю систему</td></tr>
+              <tr><td><span class="param-name">assistant_type</span></td><td><span class="param-type">string</span></td><td>Смена голосового провайдера (нужен ключ нового провайдера)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block"><pre>curl -X PUT "https://voicyfy.ru/api/agent/?agent_id=&lt;uuid&gt;" \
+  -H "X-Api-Key: vfy_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voice_additional_instructions": "Твоё имя — Алёна. Отвечай короче.",
+    "inbound_first_phrase": "Добрый день! АкваЛето, Алёна слушает."
+  }'</pre></div>
+        <p>При изменении <code>voice_additional_instructions</code> промпт голосового агента пересобирается автоматически; изменения <code>doc_*</code> оркестратор подхватывает на лету.</p>
+      </div>
+    </div>
+
+    <!-- Голоса -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-microphone"></i> Голоса по провайдерам</h2>
+      </div>
+      <div class="section-body">
+        <ul>
+          <li><b>openai:</b> <code>alloy</code>, <code>echo</code>, <code>marin</code>, <code>cedar</code>, <code>shimmer</code>, <code>ash</code>, <code>ballad</code>, <code>coral</code>, <code>sage</code>, <code>verse</code></li>
+          <li><b>gemini:</b> <code>Zephyr</code>, <code>Puck</code>, <code>Charon</code>, <code>Kore</code>, <code>Fenrir</code>, <code>Leda</code>, <code>Orus</code>, <code>Aoede</code>, <code>Callirrhoe</code>, <code>Autonoe</code>, <code>Enceladus</code>, <code>Iapetus</code>, <code>Umbriel</code>, <code>Algieba</code>, <code>Despina</code>, <code>Erinome</code>, <code>Algenib</code>, <code>Rasalgethi</code>, <code>Laomedeia</code>, <code>Achernar</code>, <code>Alnilam</code>, <code>Schedar</code>, <code>Gacrux</code>, <code>Pulcherrima</code>, <code>Achird</code>, <code>Zubenelgenubi</code>, <code>Vindemiatrix</code>, <code>Sadachbia</code>, <code>Sadaltager</code>, <code>Sulafat</code></li>
+          <li><b>yandex:</b> <code>marina</code>, <code>dasha</code>, <code>alexander</code>, <code>julia</code>, <code>lera</code>, <code>masha</code>, <code>anton</code>, <code>kirill</code>, <code>filipp</code>, <code>ermil</code>, <code>jane</code>, <code>omazh</code>, <code>zahar</code>, <code>madi_ru</code>, <code>saule_ru</code></li>
+          <li><b>cartesia:</b> голос задаётся через <code>cartesia_voice_id</code> + опционально <code>voice_speed</code></li>
+        </ul>
+        <p>Дефолты: openai — <code>alloy</code>, gemini — <code>Kore</code>, yandex — <code>marina</code>. Невалидное имя голоса в update → <code>400 invalid_voice</code>.</p>
+      </div>
+    </div>
+
+    <!-- Ошибки -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-triangle-exclamation"></i> Ошибки</h2>
+      </div>
+      <div class="section-body" style="padding: 0;">
+        <div class="table-scroll">
+          <table class="params-table">
+            <thead><tr><th>Код</th><th>detail</th><th>Причина</th></tr></thead>
+            <tbody>
+              <tr><td>401</td><td><code>invalid_api_key</code></td><td>Неверный или отозванный API-ключ</td></tr>
+              <tr><td>400</td><td><code>telephony_not_verified</code></td><td>Телефония Voximplant не верифицирована</td></tr>
+              <tr><td>400</td><td><code>api_key_required_gemini/openai/cartesia/yandex</code></td><td>Не задан ключ голосового провайдера в кабинете</td></tr>
+              <tr><td>400</td><td><code>agent_limit_reached</code></td><td>Уже 3 агента</td></tr>
+              <tr><td>400</td><td><code>invalid_assistant_type / invalid_orchestrator_model / invalid_voice</code></td><td>Невалидное значение поля</td></tr>
+              <tr><td>402</td><td><code>subscription_required</code></td><td>Триал использован, нужен тариф</td></tr>
+              <tr><td>404</td><td><code>not_found</code></td><td>Агент не найден (чужой или несуществующий agent_id)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Флоу -->
+    <div class="content-section">
+      <div class="section-header">
+        <h2 class="section-title"><i class="fas fa-route"></i> Рекомендуемый флоу</h2>
+      </div>
+      <div class="section-body">
+        <p><b>Редактирование:</b></p>
+        <ol>
+          <li><code>GET /api/agent/list</code> → найти агента, взять <code>id</code></li>
+          <li><code>GET /api/agent/?agent_id=&lt;id&gt;</code> → прочитать текущие настройки</li>
+          <li><code>PUT /api/agent/?agent_id=&lt;id&gt;</code> → отправить только изменённые поля</li>
+          <li>Перечитать агента и показать, что изменилось</li>
+        </ol>
+        <p><b>Создание:</b></p>
+        <ol>
+          <li><code>GET /api/agent/list</code> → проверить <code>can_create_more</code></li>
+          <li><code>GET /api/agent/orchestrator-models</code> → выбрать модель (или пропустить)</li>
+          <li>Составить 5 документов <code>doc_*</code> и инструкции (см. «Гайд: как писать промпты»)</li>
+          <li><code>POST /api/agent/create</code>, обработать возможные 400/402</li>
+        </ol>
+        <p>При настройке промптов сверяйтесь с разделами «Жизненный цикл звонка», «Инструменты оркестратора» и «Функции голосового агента»: инструкции в терминах реальных инструментов и стадий работают заметно лучше абстрактных пожеланий.</p>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

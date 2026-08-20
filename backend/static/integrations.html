@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Интеграции — VoiceSystem</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* Стили аналогичны другим страницам проекта */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель и основные стили как в других файлах */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-outline {
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .btn-danger {
+      background-color: #ef4444;
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+
+    /* Карточки */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    /* Табы */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+    }
+    
+    .tab {
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    
+    .tab.active {
+      color: var(--primary-blue);
+      border-bottom-color: var(--primary-blue);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Формы */
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    /* Список интеграций */
+    .integrations-list {
+      margin-top: 1rem;
+    }
+    
+    .integration-item {
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      padding: 1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .integration-info {
+      flex: 1;
+    }
+    
+    .integration-name {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+    
+    .integration-url {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      word-break: break-all;
+    }
+    
+    .integration-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .integration-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 20px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 20px;
+    }
+    
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .toggle-slider {
+      background-color: var(--primary-blue);
+    }
+    
+    input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .notification-error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: #10b981;
+    }
+    
+    .notification-error .notification-icon {
+      color: #ef4444;
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Модальное окно */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      visibility: hidden;
+      opacity: 0;
+      transition: visibility 0s linear 0.25s, opacity 0.25s;
+    }
+    
+    .modal-overlay.visible {
+      visibility: visible;
+      opacity: 1;
+      transition: visibility 0s linear, opacity 0.25s;
+    }
+    
+    .modal {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 500px;
+      box-shadow: var(--shadow-lg);
+    }
+    
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    
+    .modal-body {
+      padding: 1.5rem;
+    }
+    
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+    }
+
+    /* Пустое состояние */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    
+    .empty-icon {
+      font-size: 3rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+    
+    .empty-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    
+    .empty-description {
+      color: var(--text-gray);
+      max-width: 500px;
+      margin: 0 auto 2rem;
+    }
+
+    /* Выпадающий список ботов */
+    .bot-selector {
+      width: 100%;
+      max-width: 300px;
+      padding: 0.6rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 1rem center;
+      background-size: 1rem;
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Боковая панель -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">VoiceSystem</a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> Мои агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      
+      <div class="sidebar-section">Расширения</div>
+      <a href="/static/integrations.html" class="sidebar-nav-item active">
+        <i class="fas fa-plug"></i> Интеграции
+      </a>
+      <a href="#" class="sidebar-nav-item locked-feature">
+        <i class="fas fa-wand-magic-sparkles"></i> Навыки
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+      <a href="#" class="sidebar-nav-item" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </nav>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <h1 class="page-title">Интеграции</h1>
+      
+      <div class="page-actions">
+        <button class="btn btn-primary" id="add-integration-btn">
+          <i class="fas fa-plus"></i> Добавить интеграцию
+        </button>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Карточка выбора бота -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Выберите голосового ассистента</h2>
+        </div>
+        
+        <select id="bot-selector" class="bot-selector">
+          <option value="" disabled selected>Выберите ассистента</option>
+          <!-- Здесь будут опции ботов -->
+        </select>
+      </div>
+      
+      <!-- Список интеграций -->
+      <div class="card" id="integrations-container" style="display: none;">
+        <div class="card-header">
+          <h2 class="card-title">Интеграции для ассистента</h2>
+        </div>
+        
+        <div class="integrations-list" id="integrations-list">
+          <!-- Здесь будет список интеграций -->
+        </div>
+      </div>
+      
+      <!-- Пустое состояние -->
+      <div class="card empty-state" id="empty-state">
+        <div class="empty-icon">
+          <i class="fas fa-plug"></i>
+        </div>
+        <h3 class="empty-title">Нет активных интеграций</h3>
+        <p class="empty-description">
+          Выберите ассистента и добавьте интеграции для расширения его возможностей
+        </p>
+      </div>
+    </div>
+  </main>
+  
+  <!-- Модальное окно добавления интеграции -->
+  <div class="modal-overlay" id="integration-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-title">Добавить интеграцию</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="integration-form">
+          <div class="form-group">
+            <label for="integration-name">Название интеграции</label>
+            <input type="text" id="integration-name" class="form-control" placeholder="Введите название" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="integration-type">Тип интеграции</label>
+            <select id="integration-type" class="form-control" required>
+              <option value="n8n">n8n Webhook</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="webhook-url">URL вебхука</label>
+            <input type="url" id="webhook-url" class="form-control" placeholder="https://..." required>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="modal-cancel">Отмена</button>
+        <button class="btn btn-primary" id="modal-save">Сохранить</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Уведомление -->
+  <div class="notification notification-success" id="notification" style="display: none;">
+    <div class="notification-icon">
+      <i class="fas fa-check-circle"></i>
+    </div>
+    <div class="notification-content">
+      <div id="notification-message">Операция успешно выполнена!</div>
+    </div>
+    <button class="notification-close" id="notification-close">&times;</button>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Определение переменных
+      let selectedBotId = null;
+      let editingIntegrationId = null;
+      
+      // Получаем элементы
+      const botSelector = document.getElementById('bot-selector');
+      const integrationsContainer = document.getElementById('integrations-container');
+      const integrationsList = document.getElementById('integrations-list');
+      const emptyState = document.getElementById('empty-state');
+      const addIntegrationBtn = document.getElementById('add-integration-btn');
+      const integrationModal = document.getElementById('integration-modal');
+      const modalTitle = document.getElementById('modal-title');
+      const modalClose = document.getElementById('modal-close');
+      const modalCancel = document.getElementById('modal-cancel');
+      const modalSave = document.getElementById('modal-save');
+      const integrationForm = document.getElementById('integration-form');
+      const integrationName = document.getElementById('integration-name');
+      const integrationType = document.getElementById('integration-type');
+      const webhookUrl = document.getElementById('webhook-url');
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const logoutButton = document.getElementById('logout-button');
+      
+      // API клиент
+      const api = {
+        baseUrl: '/api',
+        
+        // Получение токена авторизации
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        // Проверка авторизации
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        // Базовая функция для запросов к API
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string' && !(options.body instanceof FormData)) {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          try {
+            const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+            
+            if (response.status === 401) {
+              localStorage.removeItem('auth_token');
+              window.location.href = '/static/login.html';
+              throw new Error('Требуется авторизация');
+            }
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
+            }
+            
+            return data;
+          } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+          }
+        },
+        
+        // Методы для различных типов запросов
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+        
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        },
+        
+        // Получение списка ботов
+        getAssistants() {
+          return this.get('/assistants');
+        },
+        
+        // Получение интеграций для ассистента
+        getIntegrations(assistantId) {
+          return this.get(`/assistants/${assistantId}/integrations`);
+        },
+        
+        // Создание интеграции
+        createIntegration(assistantId, data) {
+          return this.post(`/assistants/${assistantId}/integrations`, data);
+        },
+        
+        // Обновление интеграции
+        updateIntegration(assistantId, integrationId, data) {
+          return this.put(`/assistants/${assistantId}/integrations/${integrationId}`, data);
+        },
+        
+        // Удаление интеграции
+        deleteIntegration(assistantId, integrationId) {
+          return this.delete(`/assistants/${assistantId}/integrations/${integrationId}`);
+        }
+      };
+      
+      // Вспомогательные функции для UI
+      const ui = {
+        // Показать уведомление
+        showNotification(message, type = 'success') {
+          notification.classList.remove('notification-success', 'notification-error', 'notification-info');
+          notification.classList.add(`notification-${type}`);
+          
+          // Изменяем иконку
+          const iconElement = notification.querySelector('.notification-icon i');
+          iconElement.className = type === 'success' ? 'fas fa-check-circle' : 
+                               type === 'error' ? 'fas fa-exclamation-circle' : 
+                               'fas fa-info-circle';
+          
+          // Устанавливаем сообщение
+          notificationMessage.textContent = message;
+          
+          // Показываем уведомление
+          notification.style.display = 'flex';
+          setTimeout(() => {
+            notification.classList.add('show');
+          }, 10);
+          
+          // Автоматически скрываем через 5 секунд
+          setTimeout(() => {
+            this.hideNotification();
+          }, 5000);
+        },
+        
+        // Скрыть уведомление
+        hideNotification() {
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.style.display = 'none';
+          }, 300);
+        },
+        
+        // Показать модальное окно
+        showModal(isEditing = false, integrationData = null) {
+          modalTitle.textContent = isEditing ? 'Редактировать интеграцию' : 'Добавить интеграцию';
+          
+          if (isEditing && integrationData) {
+            integrationName.value = integrationData.name;
+            integrationType.value = integrationData.type;
+            webhookUrl.value = integrationData.webhook_url;
+            editingIntegrationId = integrationData.id;
+          } else {
+            integrationForm.reset();
+            editingIntegrationId = null;
+          }
+          
+          integrationModal.classList.add('visible');
+        },
+        
+        // Скрыть модальное окно
+        hideModal() {
+          integrationModal.classList.remove('visible');
+          integrationForm.reset();
+          editingIntegrationId = null;
+        },
+        
+        // Отображение списка интеграций
+        renderIntegrationsList(integrations) {
+          integrationsList.innerHTML = '';
+          
+          if (!integrations || integrations.length === 0) {
+            integrationsContainer.style.display = 'none';
+            emptyState.style.display = 'block';
+            return;
+          }
+          
+          integrationsContainer.style.display = 'block';
+          emptyState.style.display = 'none';
+          
+          integrations.forEach(integration => {
+            const integrationEl = document.createElement('div');
+            integrationEl.className = 'integration-item';
+            integrationEl.innerHTML = `
+              <div class="integration-info">
+                <div class="integration-toggle">
+                  <label class="toggle-switch">
+                    <input type="checkbox" ${integration.is_active ? 'checked' : ''} data-id="${integration.id}">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span>${integration.is_active ? 'Активна' : 'Неактивна'}</span>
+                </div>
+                <div class="integration-name">${integration.name}</div>
+                <div class="integration-url">${integration.webhook_url}</div>
+              </div>
+              <div class="integration-actions">
+                <button class="btn btn-outline edit-integration" data-id="${integration.id}">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger delete-integration" data-id="${integration.id}">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            `;
+            
+            integrationsList.appendChild(integrationEl);
+          });
+          
+          // Добавляем обработчики для кнопок
+          document.querySelectorAll('.edit-integration').forEach(button => {
+            button.addEventListener('click', function() {
+              const integrationId = this.getAttribute('data-id');
+              const integration = integrations.find(i => i.id === integrationId);
+              if (integration) {
+                ui.showModal(true, integration);
+              }
+            });
+          });
+          
+          document.querySelectorAll('.delete-integration').forEach(button => {
+            button.addEventListener('click', async function() {
+              const integrationId = this.getAttribute('data-id');
+              if (confirm('Вы уверены, что хотите удалить эту интеграцию?')) {
+                try {
+                  await api.deleteIntegration(selectedBotId, integrationId);
+                  ui.showNotification('Интеграция успешно удалена');
+                  loadIntegrations();
+                } catch (error) {
+                  ui.showNotification(error.message || 'Ошибка при удалении интеграции', 'error');
+                }
+              }
+            });
+          });
+          
+          // Обработчики для переключателей активности
+          document.querySelectorAll('.integration-toggle input').forEach(toggle => {
+            toggle.addEventListener('change', async function() {
+              const integrationId = this.getAttribute('data-id');
+              const isActive = this.checked;
+              
+              try {
+                await api.updateIntegration(selectedBotId, integrationId, {
+                  is_active: isActive
+                });
+                
+                // Обновляем текст
+                const statusText = this.parentElement.nextElementSibling;
+                statusText.textContent = isActive ? 'Активна' : 'Неактивна';
+                
+                ui.showNotification(`Интеграция ${isActive ? 'активирована' : 'деактивирована'}`);
+              } catch (error) {
+                // Возвращаем прежнее состояние
+                this.checked = !isActive;
+                ui.showNotification(error.message || 'Ошибка при изменении статуса интеграции', 'error');
+              }
+            });
+          });
+        }
+      };
+      
+      // Проверка авторизации
+      if (!api.isAuthenticated()) {
+        window.location.href = '/static/login.html';
+        return;
+      }
+      
+      // Загрузка списка ботов
+      async function loadBots() {
+        try {
+          const bots = await api.getAssistants();
+          
+          // Очищаем текущие опции
+          botSelector.innerHTML = '<option value="" disabled selected>Выберите ассистента</option>';
+          
+          // Добавляем опции для каждого бота
+          bots.forEach(bot => {
+            const option = document.createElement('option');
+            option.value = bot.id;
+            option.textContent = bot.name;
+            botSelector.appendChild(option);
+          });
+          
+          // Если нет ботов, отображаем сообщение
+          if (bots.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'У вас нет ассистентов';
+            option.disabled = true;
+            botSelector.appendChild(option);
+          }
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке списка ассистентов', 'error');
+        }
+      }
+      
+      // Загрузка интеграций для выбранного бота
+      async function loadIntegrations() {
+        if (!selectedBotId) {
+          integrationsContainer.style.display = 'none';
+          emptyState.style.display = 'block';
+          return;
+        }
+        
+        try {
+          const integrations = await api.getIntegrations(selectedBotId);
+          ui.renderIntegrationsList(integrations);
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке интеграций', 'error');
+        }
+      }
+      
+      // Обработчики событий
+      
+      // Выбор бота
+      botSelector.addEventListener('change', function() {
+        selectedBotId = this.value;
+        
+        if (selectedBotId) {
+          loadIntegrations();
+        } else {
+          integrationsContainer.style.display = 'none';
+          emptyState.style.display = 'block';
+        }
+      });
+      
+      // Открытие модального окна добавления интеграции
+      addIntegrationBtn.addEventListener('click', function() {
+        if (!selectedBotId) {
+          ui.showNotification('Пожалуйста, выберите ассистента', 'info');
+          return;
+        }
+        
+        ui.showModal(false);
+      });
+      
+      // Закрытие модального окна
+      modalClose.addEventListener('click', ui.hideModal);
+      modalCancel.addEventListener('click', ui.hideModal);
+      
+      // Сохранение интеграции
+      modalSave.addEventListener('click', async function() {
+        // Валидация формы
+        if (!integrationForm.checkValidity()) {
+          integrationForm.reportValidity();
+          return;
+        }
+        
+        const integrationData = {
+          name: integrationName.value,
+          type: integrationType.value,
+          webhook_url: webhookUrl.value
+        };
+        
+        try {
+          if (editingIntegrationId) {
+            // Обновление существующей интеграции
+            await api.updateIntegration(selectedBotId, editingIntegrationId, integrationData);
+            ui.showNotification('Интеграция успешно обновлена');
+          } else {
+            // Создание новой интеграции
+            await api.createIntegration(selectedBotId, integrationData);
+            ui.showNotification('Интеграция успешно создана');
+          }
+          
+          ui.hideModal();
+          loadIntegrations();
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при сохранении интеграции', 'error');
+        }
+      });
+      
+      // Закрытие уведомления
+      notificationClose.addEventListener('click', ui.hideNotification);
+      
+      // Выход из системы
+      logoutButton.addEventListener('click', function() {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/static/login.html';
+      });
+      
+      // Инициализация страницы
+      loadBots();
+    });
+  </script>
+</body>
+</html>

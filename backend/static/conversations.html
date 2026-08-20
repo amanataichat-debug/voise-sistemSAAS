@@ -1,0 +1,3754 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Диалоги — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --success-green: #10b981;
+      --error-red: #ef4444;
+      --gemini-purple: #8b5cf6;
+      --cartesia-teal: #06b6d4;
+      --cost-orange: #f59e0b;
+      --telegram-blue: #0088cc;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo span {
+      font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #2563eb;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .badge-realtime {
+      margin-left: auto;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+      height: 42px;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    /* Telegram кнопка */
+    .btn-telegram {
+      background-color: var(--telegram-blue);
+      color: var(--white);
+      border: none;
+      position: relative;
+    }
+    
+    .btn-telegram:hover {
+      background-color: #006699;
+    }
+    
+    .btn-telegram .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-left: 0.25rem;
+    }
+    
+    .btn-telegram .status-dot.configured {
+      background-color: #10b981;
+      box-shadow: 0 0 4px #10b981;
+    }
+    
+    .btn-telegram .status-dot.not-configured {
+      background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Webhook кнопка */
+    .btn-webhook {
+      background-color: #6366f1;
+      color: var(--white);
+      border: none;
+      position: relative;
+    }
+
+    .btn-webhook:hover {
+      background-color: #4f46e5;
+    }
+
+    .btn-webhook .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-left: 0.25rem;
+    }
+
+    .btn-webhook .status-dot.configured {
+      background-color: #10b981;
+      box-shadow: 0 0 4px #10b981;
+    }
+
+    .btn-webhook .status-dot.not-configured {
+      background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Webhook модалка использует telegram-* классы для единообразия,
+       но с собственным акцентным цветом заголовка */
+    .webhook-modal .modal-header {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+    }
+
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Фильтры */
+    .filters-bar {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    
+    .filter-group {
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    .filter-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .filter-select {
+      width: 100%;
+      padding: 0.6rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      background-color: var(--white);
+      cursor: pointer;
+      height: 42px;
+    }
+    
+    .filter-select:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    .filter-actions {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    
+    /* Grid карточек */
+    .conversations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .conversation-card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+    
+    .conversation-card:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--primary-blue-light);
+      transform: translateY(-2px);
+    }
+    
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    
+    .assistant-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-blue-light), var(--primary-blue));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white);
+      font-size: 1.25rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    
+    .assistant-avatar.gemini {
+      background: linear-gradient(135deg, var(--gemini-purple), #7c3aed);
+    }
+
+    .assistant-avatar.cartesia {
+      background: linear-gradient(135deg, #06b6d4, #0891b2);
+    }
+
+    .assistant-avatar.yandex {
+      background: linear-gradient(135deg, #fc3f1d, #c93413);
+    }
+
+    .assistant-avatar.cascade {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    }
+
+    .assistant-avatar.fish {
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    }
+
+    .card-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .assistant-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .assistant-type-badge {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    
+    .assistant-type-badge.openai {
+      background-color: rgba(37, 99, 235, 0.1);
+      color: var(--primary-blue);
+    }
+    
+    .assistant-type-badge.gemini {
+      background-color: rgba(139, 92, 246, 0.1);
+      color: var(--gemini-purple);
+    }
+
+    .assistant-type-badge.cartesia {
+      background-color: rgba(6, 182, 212, 0.1);
+      color: var(--cartesia-teal);
+    }
+
+    .assistant-type-badge.yandex {
+      background-color: rgba(252, 63, 29, 0.1);
+      color: #fc3f1d;
+    }
+
+    .assistant-type-badge.cascade {
+      background-color: rgba(37, 99, 235, 0.1);
+      color: #2563eb;
+    }
+
+    .assistant-type-badge.fish {
+      background-color: rgba(14, 165, 233, 0.1);
+      color: #0ea5e9;
+    }
+
+    .conversation-date {
+      font-size: 0.8rem;
+      color: var(--text-light);
+    }
+    
+    /* Кнопка удаления */
+    .btn-delete {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: none;
+      border: none;
+      color: var(--text-light);
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      z-index: 10;
+    }
+    
+    .btn-delete:hover {
+      background-color: var(--error-red);
+      color: var(--white);
+      transform: scale(1.1);
+    }
+    
+    .btn-delete:active {
+      transform: scale(0.95);
+    }
+    
+    .caller-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    
+    .caller-info i {
+      color: var(--primary-blue);
+    }
+    
+    .caller-number {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .conversation-preview {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      line-height: 1.5;
+      margin-bottom: 1rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      color: var(--text-light);
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    
+    .card-meta {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    
+    /* Стоимость звонка */
+    .meta-item.cost {
+      color: var(--cost-orange);
+      font-weight: 600;
+    }
+    
+    .meta-item.cost i {
+      color: var(--cost-orange);
+    }
+    
+    /* Иконка записи */
+    .meta-item.recording {
+      color: var(--success-green);
+    }
+
+    .meta-item.recording i {
+      color: var(--success-green);
+    }
+
+    /* Ссылки на запись и лог звонка в карточке (телефония) */
+    .card-links {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .card-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .card-link:hover {
+      border-color: var(--primary-blue);
+      color: var(--primary-blue);
+    }
+    
+    /* Пустое состояние */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      border: 2px dashed var(--border-color);
+    }
+    
+    .empty-state i {
+      font-size: 4rem;
+      color: var(--text-light);
+      margin-bottom: 1.5rem;
+    }
+    
+    .empty-state h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .empty-state p {
+      color: var(--text-gray);
+      margin-bottom: 1.5rem;
+    }
+    
+    /* Пагинация */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 2rem;
+    }
+    
+    .pagination-btn {
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    
+    .pagination-btn:hover:not(:disabled) {
+      background-color: var(--bg-blue-light);
+      border-color: var(--primary-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .pagination-btn.active {
+      background-color: var(--primary-blue);
+      color: var(--white);
+      border-color: var(--primary-blue);
+    }
+    
+    .pagination-info {
+      padding: 0 1rem;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+    
+    /* Модальное окно */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      animation: fade-in 0.2s ease;
+    }
+    
+    .modal-overlay.show {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 2rem;
+    }
+    
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .modal {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+      animation: slide-up 0.3s ease;
+    }
+    
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+    
+    .modal-header-content {
+      flex: 1;
+    }
+    
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .modal-subtitle {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    
+    .modal-close:hover {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+    }
+    
+    /* Telegram-style chat */
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      background-color: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .message {
+      display: flex;
+      gap: 0.75rem;
+      max-width: 70%;
+      animation: message-appear 0.2s ease;
+    }
+    
+    @keyframes message-appear {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .message.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    .message.assistant {
+      align-self: flex-start;
+    }
+    
+    .message-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    
+    .message.user .message-avatar {
+      background: linear-gradient(135deg, var(--primary-blue-light), var(--primary-blue));
+      color: var(--white);
+    }
+    
+    .message.assistant .message-avatar {
+      background-color: #95a5a6;
+      color: var(--white);
+    }
+    
+    .message.assistant.gemini .message-avatar {
+      background: linear-gradient(135deg, var(--gemini-purple), #7c3aed);
+    }
+
+    .message.assistant.cartesia .message-avatar {
+      background: linear-gradient(135deg, #06b6d4, #0891b2);
+    }
+
+    .message.assistant.yandex .message-avatar {
+      background: linear-gradient(135deg, #fc3f1d, #c93413);
+    }
+
+    .message.assistant.cascade .message-avatar {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    }
+
+    .message.assistant.fish .message-avatar {
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    }
+
+    .message-bubble {
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      word-wrap: break-word;
+      line-height: 1.5;
+      font-size: 0.9rem;
+    }
+    
+    .message.user .message-bubble {
+      background-color: var(--primary-blue);
+      color: var(--white);
+      border-bottom-right-radius: 0.25rem;
+    }
+    
+    .message.assistant .message-bubble {
+      background-color: var(--white);
+      color: var(--text-dark);
+      border-bottom-left-radius: 0.25rem;
+      border: 1px solid var(--border-color);
+    }
+    
+    .message-time {
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+      text-align: right;
+    }
+    
+    .message.user .message-time {
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .message.assistant .message-time {
+      color: var(--text-light);
+    }
+    
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      background-color: var(--bg-light);
+      flex-shrink: 0;
+    }
+    
+    .footer-info {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+    
+    .footer-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .footer-item i {
+      color: var(--primary-blue);
+    }
+    
+    /* Стиль для стоимости в модалке */
+    .footer-item.cost {
+      color: var(--cost-orange);
+      font-weight: 600;
+    }
+    
+    .footer-item.cost i {
+      color: var(--cost-orange);
+    }
+
+    /* Разбивка стоимости звонка по позициям Voximplant */
+    .cost-breakdown {
+      margin-top: 0.75rem;
+      padding: 0.75rem 0.9rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .cost-breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.2rem 0;
+    }
+
+    .cost-breakdown-row.total {
+      margin-top: 0.35rem;
+      padding-top: 0.45rem;
+      border-top: 1px solid var(--border-color);
+      font-weight: 600;
+      color: var(--cost-orange);
+    }
+
+    .cost-breakdown-note {
+      margin-top: 0.5rem;
+      color: var(--text-gray);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    /* Аудиоплеер в модалке */
+    .audio-player-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .audio-player-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .audio-player-title i {
+      color: var(--success-green);
+    }
+    
+    .audio-player {
+      width: 100%;
+      height: 40px;
+      border-radius: var(--radius-md);
+    }
+    
+    .audio-player::-webkit-media-controls-panel {
+      background-color: var(--white);
+    }
+    
+    .functions-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .functions-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 0.5rem;
+    }
+    
+    .function-item {
+      font-size: 0.85rem;
+      padding: 0.5rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      color: var(--primary-blue);
+      font-weight: 500;
+    }
+    
+    /* Бейдж стоимости */
+    .stat-badge.cost {
+      background-color: rgba(245, 158, 11, 0.1);
+      color: var(--cost-orange);
+    }
+    
+    /* ============================================================================
+       TELEGRAM SETTINGS MODAL
+       ============================================================================ */
+    
+    .telegram-modal {
+      max-width: 520px;
+    }
+    
+    .telegram-modal .modal-header {
+      background: linear-gradient(135deg, var(--telegram-blue), #006699);
+      color: white;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+    
+    .telegram-modal .modal-title {
+      color: white;
+    }
+    
+    .telegram-modal .modal-title i {
+      font-size: 1.5rem;
+    }
+    
+    .telegram-modal .modal-close {
+      color: rgba(255, 255, 255, 0.8);
+    }
+    
+    .telegram-modal .modal-close:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+    
+    .telegram-modal-body {
+      padding: 1.5rem;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    
+    .telegram-instruction {
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+    
+    .telegram-instruction h4 {
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+      color: var(--primary-blue);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .telegram-instruction ol {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: var(--text-gray);
+    }
+    
+    .telegram-instruction li {
+      margin-bottom: 0.5rem;
+    }
+    
+    .telegram-instruction code {
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 0.8rem;
+    }
+    
+    .telegram-instruction a {
+      color: var(--telegram-blue);
+      text-decoration: none;
+    }
+    
+    .telegram-instruction a:hover {
+      text-decoration: underline;
+    }
+    
+    .telegram-form-group {
+      margin-bottom: 1.25rem;
+    }
+    
+    .telegram-form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .telegram-form-group .input-hint {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-top: 0.35rem;
+    }
+    
+    .telegram-input-wrapper {
+      position: relative;
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .telegram-input {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    
+    .telegram-input:focus {
+      outline: none;
+      border-color: var(--telegram-blue);
+      box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.15);
+    }
+    
+    .telegram-input.error {
+      border-color: var(--error-red);
+    }
+    
+    .btn-toggle-visibility {
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background: var(--white);
+      cursor: pointer;
+      color: var(--text-gray);
+      transition: all 0.2s;
+    }
+    
+    .btn-toggle-visibility:hover {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+    }
+    
+    .telegram-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+    
+    .telegram-status.configured {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success-green);
+    }
+    
+    .telegram-status.not-configured {
+      background-color: rgba(148, 163, 184, 0.1);
+      color: var(--text-gray);
+    }
+    
+    .telegram-modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    
+    .telegram-modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+      min-width: 120px;
+    }
+    
+    .btn-test {
+      background-color: var(--success-green);
+      color: white;
+    }
+    
+    .btn-test:hover {
+      background-color: #0d9668;
+    }
+    
+    .btn-danger {
+      background-color: var(--error-red);
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid var(--success-green);
+    }
+    
+    .notification-error {
+      border-left: 4px solid var(--error-red);
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: var(--success-green);
+    }
+    
+    .notification-error .notification-icon {
+      color: var(--error-red);
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Состояние загрузки */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Заблокированные фичи по тарифу */
+    .plan-locked-feature {
+      opacity: 0.6;
+      cursor: pointer !important;
+      position: relative;
+    }
+
+    .plan-locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    .plan-locked-feature:hover {
+      opacity: 0.8;
+      background-color: var(--bg-blue-light);
+    }
+
+    /* МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ */
+    .feature-blocked-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .feature-blocked-modal.show {
+      display: flex;
+      animation: feature-modal-fade-in 0.3s ease-in-out;
+    }
+
+    .feature-blocked-modal .feature-modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .feature-blocked-modal .feature-modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 450px;
+      width: 100%;
+      animation: feature-modal-slide-up 0.3s ease-out;
+      overflow: hidden;
+    }
+
+    .feature-blocked-modal .feature-modal-header {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .feature-modal-header i {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .feature-blocked-modal .feature-modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .feature-blocked-modal .feature-modal-body {
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .feature-modal-body p {
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .feature-blocked-modal .current-plan-info {
+      background-color: var(--bg-light);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+    }
+
+    .feature-blocked-modal .current-plan-info span {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .feature-blocked-modal .required-plans {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .feature-blocked-modal .required-plans strong {
+      color: var(--primary-blue);
+    }
+
+    .feature-blocked-modal .feature-modal-footer {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .feature-blocked-modal .feature-modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    @keyframes feature-modal-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes feature-modal-slide-up {
+      from { 
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    /* ============================================================================
+       FUNCTION CALLS ПОД СООБЩЕНИЯМИ В МОДАЛКЕ
+       ============================================================================ */
+    
+    .message-functions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-top: 0.5rem;
+      margin-left: 0;
+    }
+    
+    .message.user .message-functions {
+      align-items: flex-end;
+    }
+    
+    .message.assistant .message-functions {
+      align-items: flex-start;
+    }
+    
+    .message-function {
+      background-color: rgba(37, 99, 235, 0.08);
+      border: 1px solid rgba(37, 99, 235, 0.15);
+      border-radius: 0.5rem;
+      padding: 0.4rem 0.65rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      max-width: 280px;
+      border-left: 3px solid var(--success-green);
+    }
+    
+    .message-function:hover {
+      background-color: rgba(37, 99, 235, 0.12);
+      border-color: rgba(37, 99, 235, 0.25);
+    }
+    
+    .message-function.error {
+      background-color: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.15);
+      border-left-color: var(--error-red);
+    }
+    
+    .message-function.error:hover {
+      background-color: rgba(239, 68, 68, 0.12);
+    }
+    
+    .mfn-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    
+    .mfn-name {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-weight: 600;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+    }
+    
+    .mfn-name i {
+      color: var(--primary-blue);
+      font-size: 0.65rem;
+    }
+    
+    .mfn-status {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--success-green);
+      white-space: nowrap;
+    }
+    
+    .message-function.error .mfn-status {
+      color: var(--error-red);
+    }
+    
+    .mfn-details {
+      display: none;
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    
+    .mfn-details.expanded {
+      display: block;
+    }
+    
+    .mfn-section {
+      margin-bottom: 0.5rem;
+    }
+    
+    .mfn-section:last-child {
+      margin-bottom: 0;
+    }
+    
+    .mfn-section-title {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-light);
+      margin-bottom: 0.25rem;
+    }
+    
+    .mfn-code {
+      background-color: var(--white);
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      padding: 0.4rem 0.5rem;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 0.65rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 120px;
+      overflow-y: auto;
+      color: var(--text-dark);
+    }
+    
+    .mfn-code.error-text {
+      color: var(--error-red);
+      background-color: rgba(239, 68, 68, 0.05);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+    
+    .mfn-expand-hint {
+      font-size: 0.6rem;
+      color: var(--text-light);
+      margin-top: 0.25rem;
+      text-align: center;
+    }
+    
+    /* Анимация раскрытия */
+    .message-function .mfn-details {
+      animation: mfn-expand 0.2s ease-out;
+    }
+    
+    @keyframes mfn-expand {
+      from {
+        opacity: 0;
+        max-height: 0;
+      }
+      to {
+        opacity: 1;
+        max-height: 500px;
+      }
+    }
+    
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+      }
+      
+      .content-container {
+        padding: 1rem;
+      }
+      
+      .conversations-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .filters-bar {
+        flex-direction: column;
+      }
+      
+      .filter-group {
+        width: 100%;
+      }
+      
+      .filter-actions {
+        width: 100%;
+        justify-content: stretch;
+      }
+      
+      .filter-actions .btn {
+        flex: 1;
+      }
+      
+      .modal {
+        margin: 1rem;
+        max-height: calc(100vh - 2rem);
+      }
+      
+      .message {
+        max-width: 85%;
+      }
+      
+      .modal-subtitle {
+        font-size: 0.75rem;
+      }
+      
+      .footer-info {
+        font-size: 0.75rem;
+      }
+      
+      .telegram-modal-footer {
+        flex-direction: column;
+      }
+      
+      .telegram-modal-footer .btn {
+        width: 100%;
+      }
+    }
+
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-toggle {
+        display: block;
+      }
+    }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 49;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay.show {
+        display: block;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Overlay для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
+        <i class="fas fa-headset"></i> Агент обзвона
+        <span class="badge-realtime">new</span>
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-gem"></i> Gemini агенты
+      </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item active">
+        <i class="fas fa-comments"></i> Диалоги
+      </a>
+      <a href="/static/crm.html" class="sidebar-nav-item" data-feature="crm">
+        <i class="fas fa-address-book"></i> CRM
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="page-title">Диалоги</h1>
+      </div>
+      
+      <div class="page-actions">
+        <div class="user-menu">
+          <button class="user-button" id="user-menu-button">
+            <div class="user-avatar" id="user-avatar">АП</div>
+            <span class="user-name" id="user-name">Пользователь</span>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="/static/settings.html" class="dropdown-item">
+              <i class="fas fa-user"></i> Профиль
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/" class="dropdown-item">
+              <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Фильтры -->
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label for="assistant-filter">Ассистент</label>
+          <select id="assistant-filter" class="filter-select">
+            <option value="">Все ассистенты</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="sort-filter">Сортировка</label>
+          <select id="sort-filter" class="filter-select">
+            <option value="desc">Новые первые</option>
+            <option value="asc">Старые первые</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="date-filter">Дата</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="date" id="date-filter" class="filter-select" style="flex: 1;">
+            <button class="btn btn-secondary" id="date-clear-btn" title="Сбросить дату" style="display: none; padding: 0.5rem 0.75rem;">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-actions">
+          <button class="btn btn-primary" id="refresh-btn">
+            <i class="fas fa-sync-alt"></i> Обновить
+          </button>
+          <button class="btn btn-telegram" id="telegram-settings-btn">
+            <i class="fab fa-telegram"></i> Telegram
+            <span class="status-dot not-configured" id="telegram-status-dot"></span>
+          </button>
+          <button class="btn btn-webhook" id="webhook-settings-btn">
+            <i class="fas fa-link"></i> Webhook
+            <span class="status-dot not-configured" id="webhook-status-dot"></span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Grid карточек -->
+      <div id="conversations-container">
+        <div class="conversations-grid" id="conversations-grid">
+          <!-- Карточки загрузятся динамически -->
+        </div>
+        
+        <!-- Пагинация -->
+        <div class="pagination" id="pagination" style="display: none;">
+          <button class="pagination-btn" id="prev-btn">
+            <i class="fas fa-chevron-left"></i> Назад
+          </button>
+          <span class="pagination-info" id="pagination-info">Страница 1</span>
+          <button class="pagination-btn" id="next-btn">
+            Вперед <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+  
+  <!-- Модальное окно диалога -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-header-content">
+          <h2 class="modal-title" id="modal-title">Диалог</h2>
+          <div class="modal-subtitle" id="modal-subtitle">
+            <!-- Метаданные загрузятся динамически -->
+          </div>
+        </div>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      
+      <div class="chat-container" id="chat-container">
+        <!-- Сообщения загрузятся динамически -->
+      </div>
+      
+      <div class="modal-footer" id="modal-footer">
+        <!-- Футер загрузится динамически -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Модальное окно Telegram настроек -->
+  <div class="modal-overlay" id="telegram-modal-overlay">
+    <div class="modal telegram-modal">
+      <div class="modal-header">
+        <div class="modal-header-content">
+          <h2 class="modal-title">
+            <i class="fab fa-telegram"></i> Telegram уведомления
+          </h2>
+        </div>
+        <button class="modal-close" id="telegram-modal-close">&times;</button>
+      </div>
+      
+      <div class="telegram-modal-body">
+        <!-- Статус -->
+        <div class="telegram-status not-configured" id="telegram-status">
+          <i class="fas fa-circle"></i>
+          <span id="telegram-status-text">Не настроено</span>
+        </div>
+        
+        <!-- Инструкция -->
+        <div class="telegram-instruction">
+          <h4><i class="fas fa-info-circle"></i> Как это работает?</h4>
+          <p style="margin-bottom: 0.75rem; color: var(--text-dark);">
+            После завершения каждого звонка вы получите уведомление в Telegram с:
+          </p>
+          <ul style="margin-left: 1rem; margin-bottom: 1rem; color: var(--text-gray);">
+            <li>📞 Номером звонящего и направлением звонка</li>
+            <li>⏱️ Длительностью и стоимостью</li>
+            <li>💬 Полным диалогом (текст разговора)</li>
+            <li>🎧 Ссылкой на аудиозапись</li>
+          </ul>
+          
+          <h4><i class="fas fa-cog"></i> Настройка за 2 минуты:</h4>
+          <ol>
+            <li>Откройте <a href="https://t.me/BotFather" target="_blank">@BotFather</a> в Telegram</li>
+            <li>Отправьте команду <code>/newbot</code> и следуйте инструкциям</li>
+            <li>Скопируйте полученный <strong>токен бота</strong></li>
+            <li>Напишите вашему боту любое сообщение (чтобы активировать чат)</li>
+            <li>Откройте <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a> и скопируйте ваш <strong>Chat ID</strong></li>
+          </ol>
+        </div>
+        
+        <!-- Форма -->
+        <div class="telegram-form-group">
+          <label for="telegram-bot-token">Bot Token</label>
+          <div class="telegram-input-wrapper">
+            <input type="password" id="telegram-bot-token" class="telegram-input" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+            <button type="button" class="btn-toggle-visibility" id="toggle-token-visibility">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+          <div class="input-hint">Токен от @BotFather (формат: 123456789:ABC...)</div>
+        </div>
+        
+        <div class="telegram-form-group">
+          <label for="telegram-chat-id">Chat ID</label>
+          <input type="text" id="telegram-chat-id" class="telegram-input" placeholder="123456789">
+          <div class="input-hint">Ваш числовой ID из @userinfobot (или ID группы/канала)</div>
+        </div>
+      </div>
+      
+      <div class="telegram-modal-footer">
+        <button class="btn btn-danger" id="telegram-delete-btn" style="display: none;">
+          <i class="fas fa-trash"></i> Удалить
+        </button>
+        <button class="btn btn-test" id="telegram-test-btn" disabled>
+          <i class="fas fa-paper-plane"></i> Тест
+        </button>
+        <button class="btn btn-primary" id="telegram-save-btn">
+          <i class="fas fa-save"></i> Сохранить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно Webhook настроек -->
+  <div class="modal-overlay" id="webhook-modal-overlay">
+    <div class="modal telegram-modal webhook-modal">
+      <div class="modal-header">
+        <div class="modal-header-content">
+          <h2 class="modal-title">
+            <i class="fas fa-link"></i> Webhook уведомления
+          </h2>
+        </div>
+        <button class="modal-close" id="webhook-modal-close">&times;</button>
+      </div>
+
+      <div class="telegram-modal-body">
+        <!-- Статус -->
+        <div class="telegram-status not-configured" id="webhook-status">
+          <i class="fas fa-circle"></i>
+          <span id="webhook-status-text">Не настроено</span>
+        </div>
+
+        <!-- Инструкция -->
+        <div class="telegram-instruction">
+          <h4><i class="fas fa-info-circle"></i> Как это работает?</h4>
+          <p style="margin-bottom: 0.75rem; color: var(--text-dark);">
+            После завершения каждого диалога (веб-чат и телефония) на указанный URL
+            отправляется POST-запрос с событием <code>conversation.completed</code>:
+          </p>
+          <ul style="margin-left: 1rem; margin-bottom: 1rem; color: var(--text-gray);">
+            <li>💬 Полный диалог (массив реплик с ролью и текстом)</li>
+            <li>🤖 Имя, ID и тип ассистента</li>
+            <li>📞 Для телефонии — номер, направление, длительность, стоимость, запись</li>
+            <li>🔖 Поле <code>source</code> = <code>web_chat</code> или <code>telephony</code></li>
+          </ul>
+
+          <h4><i class="fas fa-cog"></i> Как проверить:</h4>
+          <ol>
+            <li>Создайте временный URL на <a href="https://webhook.site" target="_blank">webhook.site</a></li>
+            <li>Вставьте его в поле ниже и включите отправку</li>
+            <li>Сделайте тестовый звонок или веб-чат — событие появится на webhook.site</li>
+          </ol>
+        </div>
+
+        <!-- Форма -->
+        <div class="telegram-form-group">
+          <label for="webhook-url">Webhook URL</label>
+          <input type="text" id="webhook-url" class="telegram-input" placeholder="https://your-server.com/voicyfy-webhook">
+          <div class="input-hint">URL вашего сервера для приёма POST-запросов (http:// или https://)</div>
+        </div>
+
+        <div class="telegram-form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="webhook-enabled" style="width: auto; cursor: pointer;">
+            Включить отправку вебхуков
+          </label>
+          <div class="input-hint">Если выключено — уведомления отправляться не будут</div>
+        </div>
+      </div>
+
+      <div class="telegram-modal-footer">
+        <button class="btn btn-danger" id="webhook-delete-btn" style="display: none;">
+          <i class="fas fa-trash"></i> Удалить
+        </button>
+        <button class="btn btn-primary" id="webhook-save-btn">
+          <i class="fas fa-save"></i> Сохранить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Уведомление -->
+  <div class="notification notification-success" id="notification" style="display: none;">
+    <div class="notification-icon">
+      <i class="fas fa-check-circle"></i>
+    </div>
+    <div class="notification-content">
+      <div id="notification-message">Операция успешно выполнена!</div>
+    </div>
+    <button class="notification-close" id="notification-close">&times;</button>
+  </div>
+
+  <!-- Индикатор загрузки -->
+  <div class="loading-overlay" id="loading-overlay" style="display: none;">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ -->
+  <div class="feature-blocked-modal" id="feature-blocked-modal">
+    <div class="feature-modal-overlay" id="feature-modal-overlay"></div>
+    <div class="feature-modal-content">
+      <div class="feature-modal-header">
+        <i class="fas fa-lock"></i>
+        <h3>Функция недоступна</h3>
+      </div>
+      <div class="feature-modal-body">
+        <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+        <div class="current-plan-info">
+          Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+        </div>
+        <p class="required-plans">
+          Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+        </p>
+      </div>
+      <div class="feature-modal-footer">
+        <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+        <button class="btn btn-primary" id="feature-modal-upgrade">
+          <i class="fas fa-arrow-up"></i> Выбрать тариф
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    /**
+     * Conversations Page для Voicyfy
+     * Version: 3.7 - Yandex + фильтр по дате + ссылки на запись/лог в карточках
+     * ✅ Поддержка обоих типов ассистентов (OpenAI + Gemini)
+     * ✅ Отображение стоимости звонка (call_cost)
+     * ✅ Отображение записи звонка (record_url) с HTML5 аудиоплеером
+     * ✅ Настройка Telegram уведомлений о звонках
+     * ✅ Function calls отображаются под сообщениями ассистента
+     * ✅ v3.5: Исправлено отображение "[no user input]" и "Нет сообщений"
+     * ✅ v3.5: "unknown" caller_number = Web чат
+     * ✅ v3.6: Fallback preview "🎤 Голосовой диалог" когда данных нет
+     */
+    document.addEventListener('DOMContentLoaded', function() {
+      // Элементы
+      const conversationsGrid = document.getElementById('conversations-grid');
+      const assistantFilter = document.getElementById('assistant-filter');
+      const sortFilter = document.getElementById('sort-filter');
+      const dateFilter = document.getElementById('date-filter');
+      const dateClearBtn = document.getElementById('date-clear-btn');
+      const refreshBtn = document.getElementById('refresh-btn');
+      const prevBtn = document.getElementById('prev-btn');
+      const nextBtn = document.getElementById('next-btn');
+      const paginationInfo = document.getElementById('pagination-info');
+      const pagination = document.getElementById('pagination');
+      const modalOverlay = document.getElementById('modal-overlay');
+      const modalTitle = document.getElementById('modal-title');
+      const modalSubtitle = document.getElementById('modal-subtitle');
+      const chatContainer = document.getElementById('chat-container');
+      const modalFooter = document.getElementById('modal-footer');
+      const modalClose = document.getElementById('modal-close');
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+      const userMenuButton = document.getElementById('user-menu-button');
+      const userDropdown = document.getElementById('user-dropdown');
+      const userEmailDisplay = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      
+      // Telegram элементы
+      const telegramSettingsBtn = document.getElementById('telegram-settings-btn');
+      const telegramStatusDot = document.getElementById('telegram-status-dot');
+      const telegramModalOverlay = document.getElementById('telegram-modal-overlay');
+      const telegramModalClose = document.getElementById('telegram-modal-close');
+      const telegramStatus = document.getElementById('telegram-status');
+      const telegramStatusText = document.getElementById('telegram-status-text');
+      const telegramBotToken = document.getElementById('telegram-bot-token');
+      const telegramChatId = document.getElementById('telegram-chat-id');
+      const toggleTokenVisibility = document.getElementById('toggle-token-visibility');
+      const telegramSaveBtn = document.getElementById('telegram-save-btn');
+      const telegramTestBtn = document.getElementById('telegram-test-btn');
+      const telegramDeleteBtn = document.getElementById('telegram-delete-btn');
+
+      // Webhook элементы
+      const webhookSettingsBtn = document.getElementById('webhook-settings-btn');
+      const webhookStatusDot = document.getElementById('webhook-status-dot');
+      const webhookModalOverlay = document.getElementById('webhook-modal-overlay');
+      const webhookModalClose = document.getElementById('webhook-modal-close');
+      const webhookStatus = document.getElementById('webhook-status');
+      const webhookStatusText = document.getElementById('webhook-status-text');
+      const webhookUrlInput = document.getElementById('webhook-url');
+      const webhookEnabledInput = document.getElementById('webhook-enabled');
+      const webhookSaveBtn = document.getElementById('webhook-save-btn');
+      const webhookDeleteBtn = document.getElementById('webhook-delete-btn');
+
+      // Состояние
+      let currentPage = 0;
+      let totalPages = 1;
+      let totalConversations = 0;
+      let assistants = [];
+      const perPage = 20;
+      
+      // Telegram состояние
+      let telegramConfigured = false;
+
+      // Webhook состояние
+      let webhookConfigured = false;
+      
+      // Код текущего тарифа пользователя
+      let currentUserPlanCode = 'free';
+      let currentUserEmail = null;
+
+      // Привилегированные пользователи
+      const PRIVILEGED_USERS = ['well96well@gmail.com', 'stas@gmail.com'];
+
+      // Матрица доступа к функциям по тарифам
+      const FEATURE_ACCESS = {
+        crm: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        telephony: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        outbound_calls: ['free', 'referral_trial', 'start', 'profi', 'agent']
+      };
+
+      // Названия функций для модалки
+      const FEATURE_NAMES = {
+        crm: 'CRM',
+        telephony: 'Телефония',
+        outbound_calls: 'Исходящие звонки'
+      };
+
+      // Названия тарифов для отображения
+      const PLAN_NAMES = {
+        'free': 'Пробный период',
+        'referral_trial': 'Реферальный триал',
+        'ai_voice': 'AI Voice',
+        'start': 'Тариф Старт',
+        'profi': 'Profi', 'agent': 'VoiceSystem Agent'
+      };
+      
+      // ==========================================================================
+      // 🆕 v3.6: КОНСТАНТЫ И ХЕЛПЕРЫ ДЛЯ ФИЛЬТРАЦИИ
+      // ==========================================================================
+      
+      // Системные сообщения которые нужно скрывать
+      const SYSTEM_MESSAGES = [
+        '[no user input]', 
+        '[no_user_input]', 
+        '[system]', 
+        '[silence]', 
+        '[timeout]'
+      ];
+      
+      // Значения caller_number которые означают "нет номера"
+      const EMPTY_CALLER_VALUES = ['', 'null', 'none', 'undefined', 'unknown'];
+      
+      /**
+       * 🆕 v3.6: Проверяет, является ли текст системным сообщением
+       */
+      function isSystemMessage(text) {
+        if (!text) return true;
+        const trimmed = text.trim().toLowerCase();
+        if (!trimmed) return true;
+        return SYSTEM_MESSAGES.some(sm => trimmed === sm.toLowerCase());
+      }
+      
+      /**
+       * 🆕 v3.6: Проверяет, есть ли реальный caller_number (не пустой, не unknown)
+       */
+      function hasRealCallerNumber(callerNumber) {
+        if (!callerNumber) return false;
+        const trimmed = callerNumber.trim().toLowerCase();
+        return !EMPTY_CALLER_VALUES.includes(trimmed);
+      }
+      
+      /**
+       * 🆕 v3.6: Получает чистый текст для превью с fallback
+       * Возвращает первое непустое НЕсистемное сообщение или дефолтный текст
+       */
+      function getCleanPreviewText(conversation) {
+        // Пробуем user_message
+        let text = (conversation.user_message || '').trim();
+        if (text && !isSystemMessage(text)) {
+          return text;
+        }
+        
+        // Пробуем assistant_message
+        text = (conversation.assistant_message || '').trim();
+        if (text && !isSystemMessage(text)) {
+          return text;
+        }
+        
+        // 🆕 v3.6: Если есть function_calls - показываем это
+        if (conversation.function_calls && conversation.function_calls.length > 0) {
+          const funcCount = conversation.function_calls.length;
+          return `🔧 ${funcCount} ${funcCount === 1 ? 'функция вызвана' : 'функций вызвано'}`;
+        }
+        
+        // 🆕 v3.6: Если есть длительность - это голосовой диалог
+        if (conversation.duration_seconds && conversation.duration_seconds > 0) {
+          return '🎤 Голосовой диалог';
+        }
+        
+        // 🆕 v3.6: Дефолтный текст вместо "Нет сообщений"
+        return '💬 Диалог';
+      }
+      
+      // API функции
+      const api = {
+        baseUrl: '/api',
+        
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string') {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+          
+          if (response.status === 401) {
+            localStorage.removeItem('auth_token');
+            window.location.href = '/static/login.html';
+            throw new Error('Требуется авторизация');
+          }
+          
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.detail || 'Произошла ошибка');
+          }
+          
+          return data;
+        },
+        
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+        
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        }
+      };
+      
+      // UI функции
+      function setLoading(loading) {
+        loadingOverlay.style.display = loading ? 'flex' : 'none';
+      }
+      
+      function showNotification(message, type = 'success') {
+        notification.classList.remove('notification-success', 'notification-error', 'notification-info');
+        notification.classList.add(`notification-${type}`);
+        
+        const iconElement = notification.querySelector('.notification-icon i');
+        iconElement.className = type === 'success' ? 'fas fa-check-circle' : 
+                             type === 'error' ? 'fas fa-exclamation-circle' : 
+                             'fas fa-info-circle';
+        
+        notificationMessage.textContent = message;
+        notification.style.display = 'flex';
+        
+        setTimeout(() => {
+          notification.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+          hideNotification();
+        }, 5000);
+      }
+      
+      function hideNotification() {
+        notification.classList.remove('show');
+        setTimeout(() => {
+          notification.style.display = 'none';
+        }, 300);
+      }
+
+      // ============================================================================
+      // ПРОВЕРКА ДОСТУПА К ФУНКЦИЯМ ПО ТАРИФУ
+      // ============================================================================
+
+      function isPrivilegedUser() {
+        return PRIVILEGED_USERS.includes(currentUserEmail);
+      }
+
+      function canAccessFeature(feature, planCode) {
+        if (!planCode) return true;
+        if (isPrivilegedUser()) return true;
+        const allowedPlans = FEATURE_ACCESS[feature];
+        if (!allowedPlans) return true;
+        return allowedPlans.includes(planCode);
+      }
+
+      function getPlanDisplayName(planCode) {
+        return PLAN_NAMES[planCode] || planCode;
+      }
+
+      function applyFeatureAccessToSidebar() {
+        console.log('[ACCESS] Применяем матрицу доступа для плана:', currentUserPlanCode);
+        document.querySelectorAll('.plan-locked-feature').forEach(el => {
+          el.classList.remove('plan-locked-feature');
+        });
+        document.querySelectorAll('[data-feature]').forEach(element => {
+          const feature = element.getAttribute('data-feature');
+          const hasAccess = canAccessFeature(feature, currentUserPlanCode);
+          if (!hasAccess) {
+            element.classList.add('plan-locked-feature');
+            console.log(`[ACCESS] Заблокирована функция: ${feature}`);
+          }
+        });
+      }
+
+      function showFeatureBlockedModal(feature) {
+        const featureName = FEATURE_NAMES[feature] || feature;
+        const planName = getPlanDisplayName(currentUserPlanCode);
+        document.getElementById('feature-blocked-message').textContent = 
+          `Для доступа к разделу "${featureName}" необходим тариф Старт, Profi или Agent.`;
+        document.getElementById('current-plan-name-display').textContent = planName;
+        document.getElementById('required-plans-text').textContent = 'Старт, Profi или Agent';
+        document.getElementById('feature-blocked-modal').classList.add('show');
+      }
+
+      function hideFeatureBlockedModal() {
+        document.getElementById('feature-blocked-modal').classList.remove('show');
+      }
+
+      async function loadSubscriptionInfo() {
+        try {
+          const subscription = await api.get('/subscriptions/my-subscription');
+          if (subscription && subscription.subscription_plan && subscription.subscription_plan.code) {
+            currentUserPlanCode = subscription.subscription_plan.code;
+            console.log('[SUBSCRIPTION] Код тарифа пользователя:', currentUserPlanCode);
+          }
+        } catch (error) {
+          console.warn('[SUBSCRIPTION] Ошибка загрузки подписки:', error);
+        }
+      }
+      
+      // ============================================================================
+      // ФОРМАТИРОВАНИЕ
+      // ============================================================================
+      
+      function formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diff = now - date;
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        
+        if (days === 0) {
+          return 'Сегодня ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        } else if (days === 1) {
+          return 'Вчера ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        } else if (days < 7) {
+          return days + ' дн. назад';
+        } else {
+          return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+      }
+      
+      function formatTime(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      }
+      
+      function formatDuration(seconds) {
+        if (!seconds) return '0 сек';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return mins > 0 ? `${mins} мин ${secs} сек` : `${secs} сек`;
+      }
+      
+      function formatCost(cost) {
+        if (cost === null || cost === undefined || cost === 0) return null;
+        return cost.toFixed(2) + ' ₽';
+      }
+
+      /**
+       * Разбивка стоимости звонка из Voximplant GetCallHistory.
+       *
+       * Три строки счёта: телефония (calls), запись (records) и «прочие
+       * ресурсы» (other_resource_usage). В other входят ASR, TTS,
+       * WebSocket-потоки VAD/turn-detector и детекция конца фразы — из них в
+       * логе сессии виден только ASR, поэтому сумма из лога всегда меньше
+       * той, что показана в карточке. Показываем это явно, чтобы цифру можно
+       * было сверить, а не пересчитывать вручную по логу.
+       */
+      function renderCostBreakdown(breakdown, totalCost) {
+        if (!breakdown) return '';
+        const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+        const calls = num(breakdown.calls_cost);
+        const records = num(breakdown.records_cost);
+        const other = num(breakdown.other_cost);
+        if (calls === null && records === null && other === null) return '';
+
+        const scriptParts = breakdown.script_parts || null;
+        const asr = scriptParts ? num(scriptParts.asr) : null;
+        // Остаток other после ASR — это TTS + WebSocket + turn detection.
+        const otherRest = (other !== null && asr !== null) ? other - asr : null;
+
+        const row = (label, value) => value === null ? '' : `
+          <div class="cost-breakdown-row">
+            <span>${label}</span>
+            <span>${value.toFixed(2)} ₽</span>
+          </div>
+        `;
+
+        return `
+          <div class="cost-breakdown">
+            ${row('Телефония', calls)}
+            ${row('Запись разговора', records)}
+            ${asr !== null ? row('Распознавание речи (ASR)', asr) : ''}
+            ${otherRest !== null
+              ? row('Синтез речи, WebSocket, turn detection', otherRest)
+              : row('Прочие ресурсы (ASR, TTS, WebSocket)', other)}
+            ${row('Итого', typeof totalCost === 'number' ? totalCost : null)
+              .replace('cost-breakdown-row', 'cost-breakdown-row total')}
+            <div class="cost-breakdown-note">
+              Данные из биллинга Voximplant (GetCallHistory). В логе сессии
+              видны только телефония, ASR и запись — синтез речи и
+              WebSocket-потоки счёт не логируют, поэтому сумма по логу
+              всегда меньше итоговой.
+              ${breakdown.settled === false ? `
+                <br><br>⏳ Voximplant ещё не дотарифицировал прочие ресурсы —
+                сумма может вырасти после пересчёта.
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }
+      
+      function getAssistantById(id) {
+        return assistants.find(a => a.id === id);
+      }
+      
+      function getAssistantType(conversation) {
+        if (conversation.client_info && conversation.client_info.assistant_type) {
+          return conversation.client_info.assistant_type;
+        }
+        const assistant = getAssistantById(conversation.assistant_id);
+        if (assistant) {
+          return assistant.type;
+        }
+        return 'openai';
+      }
+      
+      // ============================================================================
+      // FUNCTION CALLS В МОДАЛКЕ
+      // ============================================================================
+      
+      // Toggle function details в модальном окне
+      function toggleMessageFunction(element) {
+        const details = element.querySelector('.mfn-details');
+        if (details) {
+          details.classList.toggle('expanded');
+        }
+      }
+      
+      // Expose globally
+      window.toggleMessageFunction = toggleMessageFunction;
+      
+      // Escape HTML для безопасного отображения JSON
+      function escapeHtmlForModal(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+      
+      // ============================================================================
+      // TELEGRAM НАСТРОЙКИ
+      // ============================================================================
+      
+      function updateTelegramUI(configured) {
+        telegramConfigured = configured;
+        
+        // Обновляем точку на кнопке
+        if (configured) {
+          telegramStatusDot.classList.remove('not-configured');
+          telegramStatusDot.classList.add('configured');
+        } else {
+          telegramStatusDot.classList.remove('configured');
+          telegramStatusDot.classList.add('not-configured');
+        }
+        
+        // Обновляем статус в модалке
+        if (configured) {
+          telegramStatus.classList.remove('not-configured');
+          telegramStatus.classList.add('configured');
+          telegramStatusText.textContent = '✓ Настроено и активно';
+          telegramDeleteBtn.style.display = 'flex';
+          telegramTestBtn.disabled = false;
+        } else {
+          telegramStatus.classList.remove('configured');
+          telegramStatus.classList.add('not-configured');
+          telegramStatusText.textContent = 'Не настроено';
+          telegramDeleteBtn.style.display = 'none';
+          telegramTestBtn.disabled = true;
+        }
+      }
+      
+      async function loadTelegramSettings() {
+        try {
+          const settings = await api.get('/users/telegram-settings');
+          
+          if (settings.is_configured) {
+            telegramBotToken.value = settings.bot_token || '';
+            telegramChatId.value = settings.chat_id || '';
+            updateTelegramUI(true);
+          } else {
+            telegramBotToken.value = '';
+            telegramChatId.value = '';
+            updateTelegramUI(false);
+          }
+        } catch (error) {
+          console.error('[TELEGRAM] Error loading settings:', error);
+          updateTelegramUI(false);
+        }
+      }
+      
+      async function saveTelegramSettings() {
+        const botToken = telegramBotToken.value.trim();
+        const chatId = telegramChatId.value.trim();
+        
+        if (!botToken || !chatId) {
+          showNotification('Заполните оба поля', 'error');
+          return;
+        }
+        
+        // Валидация формата токена (базовая)
+        if (!botToken.includes(':') && !botToken.includes('*')) {
+          showNotification('Неверный формат токена бота', 'error');
+          telegramBotToken.classList.add('error');
+          return;
+        }
+        
+        telegramBotToken.classList.remove('error');
+        
+        try {
+          setLoading(true);
+          
+          await api.put('/users/telegram-settings', {
+            bot_token: botToken,
+            chat_id: chatId
+          });
+          
+          showNotification('Настройки Telegram сохранены', 'success');
+          updateTelegramUI(true);
+          
+          // Перезагружаем настройки чтобы получить маскированный токен
+          await loadTelegramSettings();
+          
+        } catch (error) {
+          console.error('[TELEGRAM] Save error:', error);
+          showNotification(error.message || 'Ошибка сохранения настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      async function testTelegramSettings() {
+        try {
+          setLoading(true);
+          
+          const result = await api.post('/users/telegram-settings/test', {});
+          
+          if (result.success) {
+            showNotification('Тестовое сообщение отправлено! Проверьте Telegram', 'success');
+          } else {
+            showNotification(result.message || 'Ошибка отправки', 'error');
+          }
+          
+        } catch (error) {
+          console.error('[TELEGRAM] Test error:', error);
+          showNotification(error.message || 'Ошибка отправки тестового сообщения', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      async function deleteTelegramSettings() {
+        if (!confirm('Вы уверены, что хотите удалить настройки Telegram? Уведомления о звонках перестанут приходить.')) {
+          return;
+        }
+        
+        try {
+          setLoading(true);
+          
+          await api.delete('/users/telegram-settings');
+          
+          telegramBotToken.value = '';
+          telegramChatId.value = '';
+          updateTelegramUI(false);
+          
+          showNotification('Настройки Telegram удалены', 'success');
+          
+        } catch (error) {
+          console.error('[TELEGRAM] Delete error:', error);
+          showNotification(error.message || 'Ошибка удаления настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      function openTelegramModal() {
+        loadTelegramSettings();
+        telegramModalOverlay.classList.add('show');
+      }
+      
+      function closeTelegramModal() {
+        telegramModalOverlay.classList.remove('show');
+      }
+      
+      // Обработчики Telegram
+      telegramSettingsBtn.addEventListener('click', openTelegramModal);
+      telegramModalClose.addEventListener('click', closeTelegramModal);
+      telegramModalOverlay.addEventListener('click', (e) => {
+        if (e.target === telegramModalOverlay) {
+          closeTelegramModal();
+        }
+      });
+      
+      telegramSaveBtn.addEventListener('click', saveTelegramSettings);
+      telegramTestBtn.addEventListener('click', testTelegramSettings);
+      telegramDeleteBtn.addEventListener('click', deleteTelegramSettings);
+      
+      // Toggle видимости токена
+      toggleTokenVisibility.addEventListener('click', () => {
+        const isPassword = telegramBotToken.type === 'password';
+        telegramBotToken.type = isPassword ? 'text' : 'password';
+        toggleTokenVisibility.innerHTML = isPassword ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+      });
+      
+      // Активация кнопки "Тест" при вводе
+      function checkTelegramInputs() {
+        const hasToken = telegramBotToken.value.trim().length > 0;
+        const hasChatId = telegramChatId.value.trim().length > 0;
+        telegramTestBtn.disabled = !(hasToken && hasChatId);
+      }
+      
+      telegramBotToken.addEventListener('input', checkTelegramInputs);
+      telegramChatId.addEventListener('input', checkTelegramInputs);
+
+      // ============================================================================
+      // WEBHOOK НАСТРОЙКИ
+      // ============================================================================
+
+      function updateWebhookUI(configured) {
+        webhookConfigured = configured;
+
+        // Обновляем точку на кнопке
+        if (configured) {
+          webhookStatusDot.classList.remove('not-configured');
+          webhookStatusDot.classList.add('configured');
+        } else {
+          webhookStatusDot.classList.remove('configured');
+          webhookStatusDot.classList.add('not-configured');
+        }
+
+        // Обновляем статус в модалке
+        if (configured) {
+          webhookStatus.classList.remove('not-configured');
+          webhookStatus.classList.add('configured');
+          webhookStatusText.textContent = '✓ Настроено и активно';
+          webhookDeleteBtn.style.display = 'flex';
+        } else {
+          webhookStatus.classList.remove('configured');
+          webhookStatus.classList.add('not-configured');
+          webhookStatusText.textContent = 'Не настроено';
+          webhookDeleteBtn.style.display = 'none';
+        }
+      }
+
+      async function loadWebhookSettings() {
+        try {
+          const settings = await api.get('/users/webhook-settings');
+
+          webhookUrlInput.value = settings.webhook_url || '';
+          webhookEnabledInput.checked = !!settings.webhook_enabled;
+          updateWebhookUI(!!settings.is_configured);
+        } catch (error) {
+          console.error('[WEBHOOK] Error loading settings:', error);
+          updateWebhookUI(false);
+        }
+      }
+
+      async function saveWebhookSettings() {
+        const url = webhookUrlInput.value.trim();
+        const enabled = webhookEnabledInput.checked;
+
+        // Если включаем отправку — URL обязателен
+        if (enabled && !url) {
+          showNotification('Укажите URL для отправки вебхуков', 'error');
+          webhookUrlInput.classList.add('error');
+          return;
+        }
+
+        if (url && !(url.startsWith('http://') || url.startsWith('https://'))) {
+          showNotification('URL должен начинаться с http:// или https://', 'error');
+          webhookUrlInput.classList.add('error');
+          return;
+        }
+
+        webhookUrlInput.classList.remove('error');
+
+        try {
+          setLoading(true);
+
+          await api.put('/users/webhook-settings', {
+            webhook_url: url || null,
+            webhook_enabled: enabled
+          });
+
+          showNotification('Настройки webhook сохранены', 'success');
+          await loadWebhookSettings();
+
+        } catch (error) {
+          console.error('[WEBHOOK] Save error:', error);
+          showNotification(error.message || 'Ошибка сохранения настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      async function deleteWebhookSettings() {
+        if (!confirm('Вы уверены, что хотите удалить настройки webhook? Уведомления о диалогах перестанут приходить.')) {
+          return;
+        }
+
+        try {
+          setLoading(true);
+
+          await api.delete('/users/webhook-settings');
+
+          webhookUrlInput.value = '';
+          webhookEnabledInput.checked = false;
+          updateWebhookUI(false);
+
+          showNotification('Настройки webhook удалены', 'success');
+
+        } catch (error) {
+          console.error('[WEBHOOK] Delete error:', error);
+          showNotification(error.message || 'Ошибка удаления настроек', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function openWebhookModal() {
+        loadWebhookSettings();
+        webhookModalOverlay.classList.add('show');
+      }
+
+      function closeWebhookModal() {
+        webhookModalOverlay.classList.remove('show');
+      }
+
+      // Обработчики Webhook
+      webhookSettingsBtn.addEventListener('click', openWebhookModal);
+      webhookModalClose.addEventListener('click', closeWebhookModal);
+      webhookModalOverlay.addEventListener('click', (e) => {
+        if (e.target === webhookModalOverlay) {
+          closeWebhookModal();
+        }
+      });
+
+      webhookSaveBtn.addEventListener('click', saveWebhookSettings);
+      webhookDeleteBtn.addEventListener('click', deleteWebhookSettings);
+
+      // ============================================================================
+      // УДАЛЕНИЕ ДИАЛОГА
+      // ============================================================================
+      
+      async function deleteConversation(event, conversationId) {
+        event.stopPropagation();
+        
+        if (!confirm('Вы уверены, что хотите удалить этот диалог? Это действие необратимо.')) {
+          return;
+        }
+        
+        try {
+          setLoading(true);
+          await api.delete(`/conversations/${conversationId}`);
+          showNotification('Диалог успешно удален', 'success');
+          loadConversations();
+        } catch (error) {
+          console.error('Error deleting conversation:', error);
+          showNotification(error.message || 'Ошибка при удалении диалога', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      window.deleteConversation = deleteConversation;
+      
+      // ============================================================================
+      // СОЗДАНИЕ КАРТОЧКИ ДИАЛОГА (🆕 v3.6: улучшенный preview)
+      // ============================================================================
+      
+      function createConversationCard(conversation) {
+        const assistant = getAssistantById(conversation.assistant_id);
+        // Имя приходит из бэкенда (assistant_name); клиентский поиск — фолбэк.
+        const assistantName = conversation.assistant_name
+          || (assistant ? assistant.name : 'Неизвестный ассистент');
+        const assistantInitial = assistantName.charAt(0).toUpperCase();
+        const assistantType = getAssistantType(conversation);
+        
+        const card = document.createElement('div');
+        card.className = 'conversation-card';
+        card.onclick = () => openConversationDetail(conversation.id, assistantType);
+        
+        // 🆕 v3.6: Используем улучшенную проверку caller_number
+        const callerDisplay = hasRealCallerNumber(conversation.caller_number)
+          ? `<div class="caller-info">
+              <i class="fas fa-phone"></i>
+              <span class="caller-number">${conversation.caller_number}</span>
+            </div>`
+          : `<div class="caller-info">
+              <i class="fas fa-globe"></i>
+              <span>Web чат</span>
+            </div>`;
+        
+        // 🆕 v3.6: Используем улучшенный preview с fallback
+        const previewText = getCleanPreviewText(conversation);
+        const preview = previewText.length > 100 ? previewText.substring(0, 100) + '...' : previewText;
+        
+        const avatarClass = assistantType === 'gemini' ? 'assistant-avatar gemini'
+          : assistantType === 'cartesia' ? 'assistant-avatar cartesia'
+          : assistantType === 'yandex' ? 'assistant-avatar yandex'
+          : assistantType === 'cascade' ? 'assistant-avatar cascade'
+          : assistantType === 'fish' ? 'assistant-avatar fish' : 'assistant-avatar';
+        const typeBadge = assistantType === 'gemini'
+          ? '<span class="assistant-type-badge gemini">Gemini</span>'
+          : assistantType === 'cartesia'
+          ? '<span class="assistant-type-badge cartesia">Cartesia</span>'
+          : assistantType === 'yandex'
+          ? '<span class="assistant-type-badge yandex">Яндекс</span>'
+          : assistantType === 'cascade'
+          ? '<span class="assistant-type-badge cascade">Cascade</span>'
+          : assistantType === 'fish'
+          ? '<span class="assistant-type-badge fish">Fish</span>'
+          : '<span class="assistant-type-badge openai">OpenAI</span>';
+        
+        let metaItems = '';
+        
+        if (conversation.duration_seconds) {
+          metaItems += `
+            <div class="meta-item">
+              <i class="fas fa-clock"></i>
+              ${formatDuration(conversation.duration_seconds)}
+            </div>
+          `;
+        }
+        
+        metaItems += `
+          <div class="meta-item">
+            <i class="fas fa-brain"></i>
+            ${conversation.tokens_used || 0} токенов
+          </div>
+        `;
+        
+        const costFormatted = formatCost(conversation.call_cost);
+        if (costFormatted) {
+          metaItems += `
+            <div class="meta-item cost">
+              <i class="fas fa-ruble-sign"></i>
+              ${costFormatted}
+            </div>
+          `;
+        }
+
+        // Ссылки на запись и лог звонка (только у телефонии)
+        let cardLinks = '';
+        if (conversation.record_url) {
+          cardLinks += `
+            <a href="${conversation.record_url}" target="_blank" rel="noopener" class="card-link" onclick="event.stopPropagation()" title="Запись звонка">
+              <i class="fas fa-headphones"></i> Запись
+            </a>
+          `;
+        }
+        if (conversation.log_url) {
+          cardLinks += `
+            <a href="${conversation.log_url}" target="_blank" rel="noopener" class="card-link" onclick="event.stopPropagation()" title="Лог звонка">
+              <i class="fas fa-file-alt"></i> Лог звонка
+            </a>
+          `;
+        }
+
+        card.innerHTML = `
+          <div class="card-header">
+            <div class="${avatarClass}">${assistantInitial}</div>
+            <div class="card-info">
+              <div class="assistant-name">
+                ${assistantName}
+                ${typeBadge}
+              </div>
+              <div class="conversation-date">${formatDate(conversation.created_at)}</div>
+            </div>
+            <button class="btn-delete" onclick="deleteConversation(event, '${conversation.id}')" title="Удалить диалог">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+          
+          ${callerDisplay}
+          
+          <div class="conversation-preview">${preview}</div>
+          
+          <div class="card-footer">
+            <div class="card-meta">
+              ${metaItems}
+            </div>
+            ${cardLinks ? `<div class="card-links">${cardLinks}</div>` : ''}
+          </div>
+        `;
+        
+        return card;
+      }
+      
+      function showEmptyState() {
+        conversationsGrid.innerHTML = `
+          <div class="empty-state" style="grid-column: 1/-1;">
+            <i class="fas fa-comments"></i>
+            <h3>Нет диалогов</h3>
+            <p>Пока что не было разговоров с вашими ассистентами</p>
+          </div>
+        `;
+        pagination.style.display = 'none';
+      }
+      
+      // ============================================================================
+      // ЗАГРУЗКА АССИСТЕНТОВ
+      // ============================================================================
+      
+      async function loadAssistants() {
+        try {
+          assistants = [];
+          console.log('[ASSISTANTS] Loading assistants for filter...');
+          
+          try {
+            const openaiData = await api.get('/assistants');
+            const openaiList = Array.isArray(openaiData) ? openaiData : [];
+            openaiList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'openai' });
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${openaiList.length} OpenAI assistants`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading OpenAI assistants:', e.message);
+          }
+          
+          try {
+            const geminiData = await api.get('/gemini-assistants');
+            const geminiList = Array.isArray(geminiData) ? geminiData : [];
+            geminiList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'gemini' });
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${geminiList.length} Gemini assistants`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading Gemini assistants:', e.message);
+          }
+
+          try {
+            const cartesiaData = await api.get('/cartesia-assistants');
+            const cartesiaList = Array.isArray(cartesiaData)
+              ? cartesiaData
+              : (cartesiaData.assistants || []);
+            cartesiaList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'cartesia' });
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${cartesiaList.length} Cartesia assistants`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading Cartesia assistants:', e.message);
+          }
+
+          try {
+            const yandexData = await api.get('/yandex-assistants');
+            const yandexList = Array.isArray(yandexData)
+              ? yandexData
+              : (yandexData.assistants || []);
+            yandexList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'yandex' });
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${yandexList.length} Yandex assistants`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading Yandex assistants:', e.message);
+          }
+
+          try {
+            const fishData = await api.get('/fish-assistants');
+            const fishList = Array.isArray(fishData)
+              ? fishData
+              : (fishData.assistants || []);
+            fishList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'fish' });
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${fishList.length} Fish assistants`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading Fish assistants:', e.message);
+          }
+
+          try {
+            // Голоса агентов обзвона: диалоги пишутся под id голосового
+            // ассистента, а в списках провайдеров этот ассистент скрыт —
+            // поэтому в фильтр кладём именно его id под именем агента.
+            const agentData = await api.get('/agent/list');
+            const agentList = Array.isArray(agentData?.agents) ? agentData.agents : [];
+            let cascadeCount = 0;
+            let fishAgentCount = 0;
+            agentList.forEach(a => {
+              if (a.assistant_type === 'cascade' && a.cascade_assistant_id) {
+                assistants.push({ id: a.cascade_assistant_id, name: a.name, type: 'cascade' });
+                cascadeCount++;
+              }
+              if (a.assistant_type === 'fish' && a.fish_assistant_id) {
+                assistants.push({ id: a.fish_assistant_id, name: a.name, type: 'fish' });
+                fishAgentCount++;
+              }
+            });
+            console.log(`[ASSISTANTS] ✅ Loaded ${cascadeCount} Cascade and ${fishAgentCount} Fish agent voices`);
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading agent voices:', e.message);
+          }
+
+          console.log(`[ASSISTANTS] 🎯 Total: ${assistants.length} assistants`);
+          renderAssistantFilter();
+          
+        } catch (error) {
+          console.error('[ASSISTANTS] ❌ Fatal error loading assistants:', error);
+          assistants = [];
+          renderAssistantFilter();
+        }
+      }
+      
+      function renderAssistantFilter() {
+        assistantFilter.innerHTML = '<option value="">Все ассистенты</option>';
+        
+        if (assistants.length === 0) {
+          console.log('[ASSISTANTS] No assistants to render in filter');
+          return;
+        }
+        
+        const openaiAssistants = assistants.filter(a => a.type === 'openai');
+        const geminiAssistants = assistants.filter(a => a.type === 'gemini');
+        const cartesiaAssistants = assistants.filter(a => a.type === 'cartesia');
+        const yandexAssistants = assistants.filter(a => a.type === 'yandex');
+        const cascadeAssistants = assistants.filter(a => a.type === 'cascade');
+        const fishAssistants = assistants.filter(a => a.type === 'fish');
+
+        if (openaiAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '🤖 OpenAI';
+          openaiAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        if (geminiAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '✨ Gemini';
+          geminiAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        if (cartesiaAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '🎙️ Cartesia';
+          cartesiaAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        if (yandexAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '🔴 Яндекс';
+          yandexAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        if (cascadeAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '🌊 Cascade';
+          cascadeAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        if (fishAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = '🐟 Fish';
+          fishAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
+
+        console.log('[ASSISTANTS] ✅ Filter rendered with', openaiAssistants.length, 'OpenAI,', geminiAssistants.length, 'Gemini,', cartesiaAssistants.length, 'Cartesia,', yandexAssistants.length, 'Yandex,', cascadeAssistants.length, 'Cascade, and', fishAssistants.length, 'Fish');
+      }
+      
+      // ============================================================================
+      // ЗАГРУЗКА ДИАЛОГОВ
+      // ============================================================================
+      
+      async function loadConversations() {
+        try {
+          setLoading(true);
+          
+          const assistantId = assistantFilter.value;
+          const offset = currentPage * perPage;
+
+          let url = `/conversations/sessions?limit=${perPage}&offset=${offset}`;
+          if (assistantId) {
+            url += `&assistant_id=${assistantId}`;
+          }
+
+          // Фильтр по дате: выбранный день целиком (в локальном часовом поясе пользователя)
+          const dateValue = dateFilter.value;
+          if (dateValue) {
+            const dayStart = new Date(dateValue + 'T00:00:00');
+            const dayEnd = new Date(dateValue + 'T23:59:59.999');
+            url += `&date_from=${encodeURIComponent(dayStart.toISOString())}`;
+            url += `&date_to=${encodeURIComponent(dayEnd.toISOString())}`;
+          }
+          
+          const response = await api.get(url);
+          
+          totalConversations = response.total;
+          totalPages = Math.ceil(totalConversations / perPage);
+          
+          conversationsGrid.innerHTML = '';
+          
+          if (response.conversations.length === 0) {
+            showEmptyState();
+            return;
+          }
+          
+          const sortOrder = sortFilter.value;
+          const sorted = [...response.conversations].sort((a, b) => {
+            const dateA = new Date(a.created_at);
+            const dateB = new Date(b.created_at);
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+          });
+          
+          sorted.forEach(conversation => {
+            const card = createConversationCard(conversation);
+            conversationsGrid.appendChild(card);
+          });
+          
+          updatePagination();
+          
+        } catch (error) {
+          showNotification(error.message || 'Ошибка при загрузке диалогов', 'error');
+          showEmptyState();
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      function updatePagination() {
+        if (totalPages <= 1) {
+          pagination.style.display = 'none';
+          return;
+        }
+        
+        pagination.style.display = 'flex';
+        paginationInfo.textContent = `Страница ${currentPage + 1} из ${totalPages}`;
+        
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = currentPage >= totalPages - 1;
+      }
+      
+      // ============================================================================
+      // ДЕТАЛЬНЫЙ ПРОСМОТР (🆕 v3.6: улучшенная фильтрация)
+      // ============================================================================
+      
+      async function openConversationDetail(conversationId, assistantType = 'openai') {
+        try {
+          setLoading(true);
+          
+          const dialog = await api.get(`/conversations/${conversationId}?include_functions=true`);
+          
+          const type = dialog.client_info?.assistant_type || assistantType || 'openai';
+          const typeBadge = type === 'gemini'
+            ? '<span class="assistant-type-badge gemini" style="margin-left: 0.5rem;">Gemini</span>'
+            : type === 'cartesia'
+            ? '<span class="assistant-type-badge cartesia" style="margin-left: 0.5rem;">Cartesia</span>'
+            : type === 'yandex'
+            ? '<span class="assistant-type-badge yandex" style="margin-left: 0.5rem;">Яндекс</span>'
+            : type === 'cascade'
+            ? '<span class="assistant-type-badge cascade" style="margin-left: 0.5rem;">Cascade</span>'
+            : type === 'fish'
+            ? '<span class="assistant-type-badge fish" style="margin-left: 0.5rem;">Fish</span>'
+            : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">OpenAI</span>';
+          
+          modalTitle.innerHTML = `${dialog.assistant_name} ${typeBadge}`;
+          
+          // 🆕 v3.6: Используем улучшенную проверку caller_number
+          const callerBadge = hasRealCallerNumber(dialog.caller_number)
+            ? `<span class="stat-badge"><i class="fas fa-phone"></i> ${dialog.caller_number}</span>`
+            : `<span class="stat-badge"><i class="fas fa-globe"></i> Web чат</span>`;
+          
+          const costFormatted = formatCost(dialog.call_cost);
+          const costBadge = costFormatted 
+            ? `<span class="stat-badge cost"><i class="fas fa-ruble-sign"></i> ${costFormatted}</span>`
+            : '';
+          
+          modalSubtitle.innerHTML = `
+            ${callerBadge}
+            <span class="stat-badge">
+              <i class="fas fa-calendar"></i> ${formatDate(dialog.created_at)}
+            </span>
+            ${dialog.total_duration ? `
+              <span class="stat-badge">
+                <i class="fas fa-clock"></i> ${formatDuration(dialog.total_duration)}
+              </span>
+            ` : ''}
+            <span class="stat-badge">
+              <i class="fas fa-comments"></i> ${dialog.total_messages} сообщений
+            </span>
+            ${costBadge}
+          `;
+          
+          chatContainer.innerHTML = '';
+          
+          if (dialog.messages && dialog.messages.length > 0) {
+            // 🆕 v3.6: Фильтруем системные сообщения используя isSystemMessage
+            const filteredMessages = dialog.messages.filter(msg => {
+              const text = (msg.text || '').trim();
+              return text && !isSystemMessage(text);
+            });
+            
+            filteredMessages.forEach(msg => {
+              const messageDiv = document.createElement('div');
+              const assistantClass = type === 'gemini' ? 'message assistant gemini'
+                : type === 'cartesia' ? 'message assistant cartesia'
+                : type === 'yandex' ? 'message assistant yandex'
+                : type === 'cascade' ? 'message assistant cascade'
+                : type === 'fish' ? 'message assistant fish' : 'message assistant';
+              messageDiv.className = msg.type === 'user' ? 'message user' : assistantClass;
+
+              const avatarIcon = msg.type === 'user' ? '👤' : (type === 'gemini' ? '✨' : type === 'yandex' ? '🔴' : type === 'cascade' ? '🌊' : type === 'fish' ? '🐟' : '🤖');
+              
+              // Function calls под сообщениями
+              let functionCallsHtml = '';
+              if (msg.function_calls && msg.function_calls.length > 0) {
+                const functionsItems = msg.function_calls.map(fc => {
+                  const isError = fc.status === 'error';
+                  const statusIcon = isError ? '✗' : '✓';
+                  const execTime = fc.execution_time_ms ? `${Math.round(fc.execution_time_ms)}ms` : '';
+                  
+                  const argsJson = fc.arguments ? JSON.stringify(fc.arguments, null, 2) : '—';
+                  const resultJson = fc.result ? JSON.stringify(fc.result, null, 2) : '—';
+                  const errorMsg = fc.error_message || '';
+                  
+                  return `
+                    <div class="message-function ${isError ? 'error' : ''}" onclick="toggleMessageFunction(this)">
+                      <div class="mfn-header">
+                        <span class="mfn-name">
+                          <i class="fas fa-code"></i>
+                          ${fc.function_name}
+                        </span>
+                        <span class="mfn-status">${statusIcon} ${execTime}</span>
+                      </div>
+                      <div class="mfn-details">
+                        <div class="mfn-section">
+                          <div class="mfn-section-title">Аргументы</div>
+                          <pre class="mfn-code">${escapeHtmlForModal(argsJson)}</pre>
+                        </div>
+                        <div class="mfn-section">
+                          <div class="mfn-section-title">Результат</div>
+                          <pre class="mfn-code ${isError ? 'error-text' : ''}">${escapeHtmlForModal(resultJson)}</pre>
+                        </div>
+                        ${errorMsg ? `
+                          <div class="mfn-section">
+                            <div class="mfn-section-title">Ошибка</div>
+                            <pre class="mfn-code error-text">${escapeHtmlForModal(errorMsg)}</pre>
+                          </div>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+                
+                functionCallsHtml = `
+                  <div class="message-functions">
+                    ${functionsItems}
+                  </div>
+                `;
+              }
+              
+              messageDiv.innerHTML = `
+                <div class="message-avatar">${avatarIcon}</div>
+                <div>
+                  <div class="message-bubble">
+                    ${msg.text}
+                  </div>
+                  ${functionCallsHtml}
+                  <div class="message-time">${msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
+                </div>
+              `;
+              
+              chatContainer.appendChild(messageDiv);
+            });
+            
+            // Показываем сообщение если все отфильтровано
+            if (filteredMessages.length === 0) {
+              chatContainer.innerHTML = '<div style="text-align: center; color: var(--text-gray); padding: 2rem;">🎤 Голосовой диалог без текстовых сообщений</div>';
+            }
+            
+            setTimeout(() => {
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            }, 100);
+          } else {
+            chatContainer.innerHTML = '<div style="text-align: center; color: var(--text-gray); padding: 2rem;">🎤 Голосовой диалог без текстовых сообщений</div>';
+          }
+          
+          let footerHtml = `
+            <div class="footer-info">
+              <div class="footer-item">
+                <i class="fas fa-brain"></i>
+                <span>${dialog.total_tokens || 0} токенов использовано</span>
+              </div>
+              <div class="footer-item">
+                <i class="${type === 'gemini' ? 'fas fa-gem' : type === 'cartesia' ? 'fas fa-microphone-alt' : type === 'yandex' ? 'fas fa-microphone' : 'fas fa-robot'}"></i>
+                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : 'OpenAI'}</span>
+              </div>
+              ${costFormatted ? `
+                <div class="footer-item cost">
+                  <i class="fas fa-ruble-sign"></i>
+                  <span>${costFormatted}</span>
+                </div>
+              ` : ''}
+              ${dialog.log_url ? `
+                <div class="footer-item">
+                  <a href="${dialog.log_url}" target="_blank" rel="noopener" class="card-link" title="Лог звонка">
+                    <i class="fas fa-file-alt"></i> Лог звонка
+                  </a>
+                </div>
+              ` : ''}
+            </div>
+            ${renderCostBreakdown(dialog.cost_breakdown, dialog.call_cost)}
+          `;
+
+          if (dialog.record_url) {
+            footerHtml += `
+              <div class="audio-player-section">
+                <div class="audio-player-title">
+                  <i class="fas fa-headphones"></i>
+                  Запись звонка
+                </div>
+                <audio class="audio-player" controls preload="metadata">
+                  <source src="${dialog.record_url}" type="audio/mpeg">
+                  <source src="${dialog.record_url}" type="audio/wav">
+                  Ваш браузер не поддерживает воспроизведение аудио.
+                </audio>
+              </div>
+            `;
+          }
+          
+          // Упрощённый футер - только счётчик функций
+          if (dialog.function_calls && dialog.function_calls.length > 0) {
+            const successCount = dialog.function_calls.filter(f => f.status === 'success').length;
+            const errorCount = dialog.function_calls.length - successCount;
+            
+            footerHtml += `
+              <div class="functions-section">
+                <div class="functions-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span>Вызовы функций (${dialog.function_calls.length})</span>
+                  <span style="font-weight: normal; font-size: 0.7rem;">
+                    <span style="color: var(--success-green)">${successCount} ✓</span>
+                    ${errorCount > 0 ? `<span style="color: var(--error-red); margin-left: 0.25rem;">${errorCount} ✗</span>` : ''}
+                  </span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-gray);">
+                  Детали отображаются под сообщениями ассистента
+                </div>
+              </div>
+            `;
+          }
+          
+          modalFooter.innerHTML = footerHtml;
+          
+          modalOverlay.classList.add('show');
+          
+        } catch (error) {
+          showNotification(error.message || 'Ошибка при загрузке диалога', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+      
+      function closeModal() {
+        const audioPlayer = modalFooter.querySelector('audio');
+        if (audioPlayer) {
+          audioPlayer.pause();
+          audioPlayer.currentTime = 0;
+        }
+        modalOverlay.classList.remove('show');
+      }
+      
+      // ============================================================================
+      // ЗАГРУЗКА ИНФОРМАЦИИ О ПОЛЬЗОВАТЕЛЕ
+      // ============================================================================
+      
+      async function loadUserInfo() {
+        try {
+          const userInfo = await api.get('/users/me');
+          
+          currentUserEmail = userInfo.email;
+          
+          const firstName = userInfo.first_name || '';
+          const lastName = userInfo.last_name || '';
+          
+          if (firstName || lastName) {
+            userEmailDisplay.textContent = firstName + (lastName ? ` ${lastName}` : '');
+            let initials = '';
+            if (firstName) initials += firstName[0];
+            if (lastName) initials += lastName[0];
+            userAvatar.textContent = initials.toUpperCase();
+          } else if (userInfo.company_name) {
+            userEmailDisplay.textContent = userInfo.company_name;
+            userAvatar.textContent = userInfo.company_name.substring(0, 2).toUpperCase();
+          } else {
+            userEmailDisplay.textContent = userInfo.email;
+            userAvatar.textContent = userInfo.email.substring(0, 2).toUpperCase();
+          }
+        } catch (error) {
+          console.error('Ошибка загрузки информации о пользователе:', error);
+        }
+      }
+      
+      // ============================================================================
+      // ОБРАБОТЧИКИ СОБЫТИЙ
+      // ============================================================================
+      
+      assistantFilter.addEventListener('change', () => {
+        currentPage = 0;
+        loadConversations();
+      });
+      
+      sortFilter.addEventListener('change', () => {
+        loadConversations();
+      });
+
+      dateFilter.addEventListener('change', () => {
+        dateClearBtn.style.display = dateFilter.value ? 'flex' : 'none';
+        currentPage = 0;
+        loadConversations();
+      });
+
+      dateClearBtn.addEventListener('click', () => {
+        dateFilter.value = '';
+        dateClearBtn.style.display = 'none';
+        currentPage = 0;
+        loadConversations();
+      });
+      
+      refreshBtn.addEventListener('click', () => {
+        loadConversations();
+        showNotification('Данные обновлены', 'info');
+      });
+      
+      prevBtn.addEventListener('click', () => {
+        if (currentPage > 0) {
+          currentPage--;
+          loadConversations();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+      
+      nextBtn.addEventListener('click', () => {
+        if (currentPage < totalPages - 1) {
+          currentPage++;
+          loadConversations();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+      
+      modalClose.addEventListener('click', closeModal);
+      modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+          closeModal();
+        }
+      });
+      
+      // Мобильное меню
+      mobileMenuToggle.addEventListener('click', function() {
+        sidebar.classList.toggle('mobile-open');
+        sidebarOverlay.classList.toggle('show');
+      });
+      
+      sidebarOverlay.addEventListener('click', function() {
+        sidebar.classList.remove('mobile-open');
+        sidebarOverlay.classList.remove('show');
+      });
+      
+      // Выпадающее меню пользователя
+      userMenuButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target) && !userMenuButton.contains(e.target)) {
+          userDropdown.classList.remove('show');
+        }
+      });
+      
+      notificationClose.addEventListener('click', hideNotification);
+      
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          if (telegramModalOverlay.classList.contains('show')) {
+            closeTelegramModal();
+          } else if (webhookModalOverlay.classList.contains('show')) {
+            closeWebhookModal();
+          } else if (modalOverlay.classList.contains('show')) {
+            closeModal();
+          }
+        }
+      });
+      
+      // Проверка авторизации
+      if (!api.isAuthenticated()) {
+        window.location.href = '/static/login.html';
+        return;
+      }
+      
+      // ============================================================================
+      // ИНИЦИАЛИЗАЦИЯ
+      // ============================================================================
+      
+      loadUserInfo();
+      loadSubscriptionInfo().then(() => {
+        applyFeatureAccessToSidebar();
+      });
+      loadAssistants().then(() => {
+        loadConversations();
+      });
+      
+      // Загружаем статус Telegram при старте
+      loadTelegramSettings();
+
+      // Загружаем статус Webhook при старте
+      loadWebhookSettings();
+
+      // Обработчики модалки блокировки функции
+      document.getElementById('feature-modal-overlay').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-close').addEventListener('click', hideFeatureBlockedModal);
+      document.getElementById('feature-modal-upgrade').addEventListener('click', function() {
+        hideFeatureBlockedModal();
+        window.location.href = '/static/dashboard.html';
+      });
+
+      // Блокировка переходов на заблокированные по тарифу страницы
+      document.querySelectorAll('[data-feature]').forEach(link => {
+        link.addEventListener('click', function(e) {
+          if (this.classList.contains('plan-locked-feature')) {
+            e.preventDefault();
+            showFeatureBlockedModal(this.getAttribute('data-feature'));
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

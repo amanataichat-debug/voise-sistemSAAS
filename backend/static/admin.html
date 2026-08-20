@@ -1,0 +1,3311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Администрирование — VoiceSystem</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --transition-sm: all 0.2s ease;
+      
+      /* Дополнительные цвета для статусов */
+      --green-light: #dcfce7;
+      --green: #22c55e;
+      --green-dark: #16a34a;
+      --red-light: #fee2e2;
+      --red: #ef4444;
+      --red-dark: #dc2626;
+      --orange-light: #ffedd5;
+      --orange: #f97316;
+      --orange-dark: #ea580c;
+      --purple-light: #f3e8ff;
+      --purple: #a855f7;
+      --purple-dark: #9333ea;
+      --cyan-light: #cffafe;
+      --cyan: #06b6d4;
+      --cyan-dark: #0891b2;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: var(--transition-sm);
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: var(--transition-sm);
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Табы */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+    }
+    
+    .tab {
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    
+    .tab.active {
+      color: var(--primary-blue);
+      border-bottom-color: var(--primary-blue);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* Карточки */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    /* Кнопки */
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+      text-decoration: none;
+    }
+    
+    .btn-sm {
+      padding: 0.35rem 0.7rem;
+      font-size: 0.75rem;
+    }
+
+    .btn-sm.active {
+      border-color: var(--primary-blue);
+      color: var(--primary-blue);
+    }
+
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-outline {
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn-success {
+      background-color: var(--green);
+      color: var(--white);
+    }
+    
+    .btn-success:hover {
+      background-color: var(--green-dark);
+    }
+    
+    .btn-danger {
+      background-color: var(--red);
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: var(--red-dark);
+    }
+    
+    .btn-warning {
+      background-color: var(--orange);
+      color: var(--white);
+    }
+    
+    .btn-warning:hover {
+      background-color: var(--orange-dark);
+    }
+    
+    /* Статусы */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    
+    .status-active {
+      background-color: var(--green-light);
+      color: var(--green-dark);
+    }
+    
+    .status-expired {
+      background-color: var(--red-light);
+      color: var(--red-dark);
+    }
+    
+    .status-trial {
+      background-color: var(--orange-light);
+      color: var(--orange-dark);
+    }
+    
+    /* Бейджи для типов ассистентов */
+    .assistant-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-right: 0.25rem;
+    }
+    
+    .badge-openai {
+      background-color: var(--green-light);
+      color: var(--green-dark);
+    }
+    
+    .badge-gemini {
+      background-color: var(--purple-light);
+      color: var(--purple-dark);
+    }
+    
+    .badge-grok {
+      background-color: var(--cyan-light);
+      color: var(--cyan-dark);
+    }
+    
+    /* Таблица пользователей */
+    .table-container {
+      overflow-x: auto;
+    }
+    
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .table th,
+    .table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .table th {
+      background-color: var(--bg-light);
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .table tr:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .table-action {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0.25rem;
+      transition: color 0.2s;
+    }
+    
+    .table-action:hover {
+      color: var(--primary-blue);
+    }
+    
+    /* Поиск и фильтрация */
+    .filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .search-box {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    .search-input {
+      width: 100%;
+      padding: 0.6rem 1rem 0.6rem 2.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .search-icon {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-gray);
+    }
+    
+    .filter-select {
+      padding: 0.6rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background-color: var(--white);
+      font-size: 0.875rem;
+      min-width: 180px;
+    }
+    
+    /* Пагинация */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+    
+    .pagination-item {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .pagination-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .pagination-item.active {
+      background-color: var(--primary-blue);
+      color: var(--white);
+      border-color: var(--primary-blue);
+    }
+    
+    /* Детали пользователя */
+    .user-profile {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .profile-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+    }
+    
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .section-item {
+      margin-bottom: 1rem;
+    }
+    
+    .item-label {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      margin-bottom: 0.25rem;
+    }
+    
+    .item-value {
+      font-weight: 500;
+    }
+    
+    /* Статистика */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      padding: 1.5rem;
+      border: 1px solid var(--border-color);
+    }
+    
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      background-color: var(--bg-blue-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-blue);
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    
+    .stat-icon.green {
+      background-color: var(--green-light);
+      color: var(--green-dark);
+    }
+    
+    .stat-icon.purple {
+      background-color: var(--purple-light);
+      color: var(--purple-dark);
+    }
+    
+    .stat-icon.orange {
+      background-color: var(--orange-light);
+      color: var(--orange-dark);
+    }
+    
+    .stat-icon.cyan {
+      background-color: var(--cyan-light);
+      color: var(--cyan-dark);
+    }
+    
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+    
+    .stat-subtext {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-top: 0.25rem;
+    }
+    
+    /* Секции статистики */
+    .stats-section {
+      margin-bottom: 2rem;
+    }
+    
+    .stats-section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    /* Модальное окно */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      visibility: hidden;
+      opacity: 0;
+      transition: visibility 0s linear 0.25s, opacity 0.25s;
+    }
+    
+    .modal-overlay.visible {
+      visibility: visible;
+      opacity: 1;
+      transition: visibility 0s linear, opacity 0.25s;
+    }
+    
+    .modal {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 500px;
+      box-shadow: var(--shadow-lg);
+    }
+    
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    
+    .modal-body {
+      padding: 1.5rem;
+    }
+    
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+    }
+    
+    /* Формы */
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+    
+    .form-checkbox input {
+      width: 18px;
+      height: 18px;
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid var(--green);
+    }
+    
+    .notification-error {
+      border-left: 4px solid var(--red);
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: var(--green);
+    }
+    
+    .notification-error .notification-icon {
+      color: var(--red);
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Состояние загрузки */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* ===== Аналитика оркестратора (Voicyfy Agent) ===== */
+    .credits-value {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .credits-zero {
+      color: var(--text-gray, #9ca3af);
+      font-weight: 400;
+    }
+
+    .status-none {
+      background-color: #e5e7eb;
+      color: #6b7280;
+    }
+
+    .status-blocked {
+      background-color: var(--red-light);
+      color: var(--red-dark);
+    }
+
+    .agent-usage-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 140px;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 0.5rem;
+    }
+
+    .agent-usage-chart .chart-bar {
+      flex: 1;
+      min-width: 6px;
+      background-color: var(--primary-blue, #3b82f6);
+      border-radius: 3px 3px 0 0;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+      position: relative;
+    }
+
+    .agent-usage-chart .chart-bar:hover {
+      opacity: 1;
+    }
+
+    .agent-usage-chart .chart-bar.empty {
+      background-color: #e5e7eb;
+    }
+
+    .chart-axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: #9ca3af;
+      margin-bottom: 1rem;
+    }
+
+    .usage-summary-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .usage-chip {
+      background-color: var(--bg-blue-light, #eff6ff);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      min-width: 120px;
+    }
+
+    .usage-chip .chip-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .usage-chip .chip-label {
+      font-size: 0.72rem;
+      color: #6b7280;
+      margin-top: 0.15rem;
+    }
+
+    .usage-tables-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 900px) {
+      .usage-tables-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Адаптивность */
+    @media (max-width: 768px) {
+      .main-content {
+        margin-left: 0;
+      }
+
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s;
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .user-profile {
+        grid-template-columns: 1fr;
+      }
+
+      .filters {
+        flex-direction: column;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Боковая панель -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> Мои агенты
+      </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      
+      <div class="sidebar-section">Администрирование</div>
+      <a href="/static/admin.html" class="sidebar-nav-item active">
+        <i class="fas fa-user-shield"></i> Управление
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <h1 class="page-title">Панель администратора</h1>
+      
+      <div class="page-actions">
+        <button class="btn btn-success" id="check-subscriptions-btn">
+          <i class="fas fa-sync"></i> Проверить подписки
+        </button>
+        
+        <div class="user-menu">
+          <button class="user-button" id="user-menu-button">
+            <div class="user-avatar" id="user-avatar">АП</div>
+            <span class="user-name" id="user-name">Александр Петров</span>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="/static/settings.html" class="dropdown-item">
+              <i class="fas fa-user"></i> Профиль
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/" class="dropdown-item" id="dropdown-logout">
+              <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Табы -->
+      <div class="tabs">
+        <div class="tab active" data-tab="users">Пользователи</div>
+        <div class="tab" data-tab="agents">Агенты</div>
+        <div class="tab" data-tab="stats">Статистика</div>
+        <div class="tab" data-tab="user-details" style="display: none;">Детали пользователя</div>
+      </div>
+      
+      <!-- Таб со списком пользователей -->
+      <div class="tab-content active" id="users-tab">
+        <div class="filters">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="search-users" class="search-input" placeholder="Поиск по имени, email, компании...">
+          </div>
+          
+          <select id="subscription-filter" class="filter-select">
+            <option value="">Все подписки</option>
+            <option value="active">Активные</option>
+            <option value="expired">Истекшие</option>
+            <option value="trial">Пробные</option>
+          </select>
+        </div>
+        
+        <div class="card">
+          <div class="table-container">
+            <table class="table" id="users-table">
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Email</th>
+                  <th>Подписка</th>
+                  <th>Дней осталось</th>
+                  <th>Ассистенты</th>
+                  <th>Дата регистрации</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="users-list">
+                <!-- Данные будут загружены динамически -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div class="pagination" id="pagination">
+          <!-- Пагинация будет добавлена динамически -->
+        </div>
+      </div>
+
+      <!-- Таб с использованием агентов (Voicyfy Agent) -->
+      <div class="tab-content" id="agents-tab">
+        <!-- Сводка по платформе -->
+        <div class="stats-section">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-coins"></i>
+              </div>
+              <div class="stat-value" id="au-spend-today">0</div>
+              <div class="stat-label">Кредитов сегодня (МСК)</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-coins"></i>
+              </div>
+              <div class="stat-value" id="au-spend-7d">0</div>
+              <div class="stat-label">Кредитов за 7 дней</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-coins"></i>
+              </div>
+              <div class="stat-value" id="au-spend-30d">0</div>
+              <div class="stat-label">Кредитов за 30 дней</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="fas fa-user-clock"></i>
+              </div>
+              <div class="stat-value" id="au-active-7d">0</div>
+              <div class="stat-label">Активных за 7 дней</div>
+              <div class="stat-subtext" id="au-active-30d">За 30 дней: 0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="filters">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="au-search" class="search-input" placeholder="Поиск по имени, email, компании...">
+          </div>
+
+          <select id="au-filter" class="filter-select">
+            <option value="">Все пользователи</option>
+            <option value="active_7d">Активные за 7 дней</option>
+            <option value="inactive_7d">Без активности 7 дней</option>
+            <option value="trial">На триале</option>
+            <option value="low_balance">Баланс &lt; 100</option>
+          </select>
+
+          <select id="au-sort" class="filter-select">
+            <option value="spend_7d">Сортировка: расход за 7 дней</option>
+            <option value="spend_today">Сортировка: расход сегодня</option>
+            <option value="spend_30d">Сортировка: расход за 30 дней</option>
+            <option value="spend_total">Сортировка: расход за всё время</option>
+            <option value="last_activity">Сортировка: последняя активность</option>
+            <option value="balance">Сортировка: баланс</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <div class="table-container">
+            <table class="table" id="agent-usage-table">
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Баланс</th>
+                  <th>Сегодня</th>
+                  <th>7 дней</th>
+                  <th>30 дней</th>
+                  <th>Агенты</th>
+                  <th>Контакты</th>
+                  <th>Звонки 30д</th>
+                  <th>Активность</th>
+                  <th>Статус</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="agent-usage-list">
+                <!-- Данные будут загружены динамически -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Таб со статистикой -->
+      <div class="tab-content" id="stats-tab">
+        <!-- Пользователи -->
+        <div class="stats-section">
+          <h3 class="stats-section-title"><i class="fas fa-users"></i> Пользователи</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-users"></i>
+              </div>
+              <div class="stat-value" id="total-users">0</div>
+              <div class="stat-label">Всего пользователей</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-user-check"></i>
+              </div>
+              <div class="stat-value" id="active-users">0</div>
+              <div class="stat-label">Активных пользователей</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-crown"></i>
+              </div>
+              <div class="stat-value" id="paid-subscriptions">0</div>
+              <div class="stat-label">Оплаченных подписок</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="fas fa-hourglass-half"></i>
+              </div>
+              <div class="stat-value" id="trial-users">0</div>
+              <div class="stat-label">Пробный период</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Ассистенты -->
+        <div class="stats-section">
+          <h3 class="stats-section-title"><i class="fas fa-robot"></i> Ассистенты</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-robot"></i>
+              </div>
+              <div class="stat-value" id="total-assistants">0</div>
+              <div class="stat-label">Всего ассистентов</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-brain"></i>
+              </div>
+              <div class="stat-value" id="openai-assistants">0</div>
+              <div class="stat-label">OpenAI</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-gem"></i>
+              </div>
+              <div class="stat-value" id="gemini-assistants">0</div>
+              <div class="stat-label">Gemini</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon cyan">
+                <i class="fas fa-bolt"></i>
+              </div>
+              <div class="stat-value" id="grok-assistants">0</div>
+              <div class="stat-label">Grok</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Доходы -->
+        <div class="stats-section">
+          <h3 class="stats-section-title"><i class="fas fa-ruble-sign"></i> Доходы</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-ruble-sign"></i>
+              </div>
+              <div class="stat-value" id="revenue-current-month">0 ₽</div>
+              <div class="stat-label">За текущий месяц</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-calendar-alt"></i>
+              </div>
+              <div class="stat-value" id="revenue-prev-month">0 ₽</div>
+              <div class="stat-label">За прошлый месяц</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-coins"></i>
+              </div>
+              <div class="stat-value" id="revenue-total">0 ₽</div>
+              <div class="stat-label">Всего за всё время</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="fas fa-receipt"></i>
+              </div>
+              <div class="stat-value" id="total-payments">0</div>
+              <div class="stat-label">Успешных платежей</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Звонки -->
+        <div class="stats-section">
+          <h3 class="stats-section-title"><i class="fas fa-phone"></i> Звонки</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-phone"></i>
+              </div>
+              <div class="stat-value" id="total-calls">0</div>
+              <div class="stat-label">Всего звонков</div>
+              <div class="stat-subtext" id="calls-this-month">За месяц: 0</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-phone-volume"></i>
+              </div>
+              <div class="stat-value" id="inbound-calls">0</div>
+              <div class="stat-label">Входящих</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-phone-arrow-up-right"></i>
+              </div>
+              <div class="stat-value" id="outbound-calls">0</div>
+              <div class="stat-label">Исходящих</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="fas fa-clock"></i>
+              </div>
+              <div class="stat-value" id="total-call-duration">0 мин</div>
+              <div class="stat-label">Общая длительность</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon cyan">
+                <i class="fas fa-ruble-sign"></i>
+              </div>
+              <div class="stat-value" id="total-call-cost">0 ₽</div>
+              <div class="stat-label">Стоимость звонков</div>
+              <div class="stat-subtext" id="call-cost-this-month">За месяц: 0 ₽</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Оркестратор (Voicyfy Agent) -->
+        <div class="stats-section" id="orchestrator-section" style="display: none;">
+          <h3 class="stats-section-title"><i class="fas fa-microchip"></i> Оркестратор (VoiceSystem Agent)</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">
+                <i class="fas fa-coins"></i>
+              </div>
+              <div class="stat-value" id="orch-spend-today">0</div>
+              <div class="stat-label">Кредитов сегодня</div>
+              <div class="stat-subtext" id="orch-spend-7d">За 7 дней: 0</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-fire"></i>
+              </div>
+              <div class="stat-value" id="orch-spend-30d">0</div>
+              <div class="stat-label">Кредитов за 30 дней</div>
+              <div class="stat-subtext" id="orch-spend-all">Всего: 0</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="fas fa-user-clock"></i>
+              </div>
+              <div class="stat-value" id="orch-dau">0</div>
+              <div class="stat-label">Активных сегодня (DAU)</div>
+              <div class="stat-subtext" id="orch-wau-mau">7д: 0 · 30д: 0</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="fas fa-robot"></i>
+              </div>
+              <div class="stat-value" id="orch-agents">0</div>
+              <div class="stat-label">Агентов создано</div>
+              <div class="stat-subtext" id="orch-agents-active">Активных: 0</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon cyan">
+                <i class="fas fa-phone"></i>
+              </div>
+              <div class="stat-value" id="orch-calls-30d">0</div>
+              <div class="stat-label">Событий агентов за 30 дней</div>
+              <div class="stat-subtext" id="orch-avg-call">Ср. кредитов/событие: 0</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="fas fa-funnel-dollar"></i>
+              </div>
+              <div class="stat-value" id="orch-paying">0</div>
+              <div class="stat-label">Платящих (кредиты)</div>
+              <div class="stat-subtext" id="orch-funnel">Триал: 0 → Тратили: 0</div>
+            </div>
+          </div>
+
+          <div class="usage-tables-grid">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Расход по типам операций (30 дней)</h2>
+              </div>
+              <div class="table-container">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Тип</th>
+                      <th>Кредиты</th>
+                      <th>Операций</th>
+                    </tr>
+                  </thead>
+                  <tbody id="orch-ref-types"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Расход по моделям (30 дней)</h2>
+              </div>
+              <div class="table-container">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Модель</th>
+                      <th>Кредиты</th>
+                      <th>Вызовов</th>
+                    </tr>
+                  </thead>
+                  <tbody id="orch-models"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-header">
+              <h2 class="card-title">Топ-10 пользователей по расходу (30 дней)</h2>
+            </div>
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Email</th>
+                    <th>Кредиты</th>
+                  </tr>
+                </thead>
+                <tbody id="orch-top-users"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Недавние пользователи -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Недавно зарегистрированные пользователи</h2>
+          </div>
+          
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Email</th>
+                  <th>Дата регистрации</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="recent-users">
+                <!-- Данные будут загружены динамически -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Таб с деталями пользователя -->
+      <div class="tab-content" id="user-details-tab">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Информация о пользователе</h2>
+            <button class="btn btn-outline" id="back-to-users">
+              <i class="fas fa-arrow-left"></i> Назад к списку
+            </button>
+          </div>
+          
+          <div class="user-profile" id="user-profile">
+            <!-- Данные будут загружены динамически -->
+          </div>
+          
+          <div class="card-header" style="margin-top: 2rem;">
+            <h2 class="card-title">Управление аккаунтом</h2>
+            <div style="display: flex; gap: 0.75rem;">
+              <button class="btn btn-warning" id="reset-password-btn">
+                <i class="fas fa-key"></i> Сбросить пароль
+              </button>
+              <button class="btn btn-primary" id="edit-subscription-btn">
+                <i class="fas fa-edit"></i> Изменить подписку
+              </button>
+            </div>
+          </div>
+          
+          <div class="section-item subscription-info" id="subscription-info">
+            <!-- Информация о подписке будет загружена динамически -->
+          </div>
+          
+          <div class="card-header" style="margin-top: 2rem;">
+            <h2 class="card-title">Ассистенты пользователя</h2>
+          </div>
+          
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Тип</th>
+                  <th>Голос</th>
+                  <th>Дата создания</th>
+                  <th>Кол-во диалогов</th>
+                </tr>
+              </thead>
+              <tbody id="user-assistants">
+                <!-- Данные будут загружены динамически -->
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="card-header" style="margin-top: 2rem;">
+            <h2 class="card-title">История подписок</h2>
+          </div>
+          
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Действие</th>
+                  <th>Тариф</th>
+                  <th>Детали</th>
+                </tr>
+              </thead>
+              <tbody id="subscription-logs">
+                <!-- Данные будут загружены динамически -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Voicyfy Agent: использование кредитов -->
+          <div id="user-agent-usage" style="display: none;">
+            <div class="card-header" style="margin-top: 2rem;">
+              <h2 class="card-title"><i class="fas fa-microchip"></i> VoiceSystem Agent — использование</h2>
+            </div>
+
+            <div class="usage-summary-chips" id="uau-chips"></div>
+
+            <h3 class="section-title" style="margin-top: 1rem;"><i class="fas fa-chart-column"></i> Расход кредитов по дням (30 дней, МСК)</h3>
+            <div class="agent-usage-chart" id="uau-chart"></div>
+            <div class="chart-axis" id="uau-chart-axis"></div>
+
+            <div class="usage-tables-grid">
+              <div>
+                <h3 class="section-title"><i class="fas fa-list"></i> По типам операций (30 дней)</h3>
+                <div class="table-container">
+                  <table class="table">
+                    <thead>
+                      <tr><th>Тип</th><th>Кредиты</th><th>Операций</th></tr>
+                    </thead>
+                    <tbody id="uau-ref-types"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h3 class="section-title"><i class="fas fa-brain"></i> По моделям (30 дней)</h3>
+                <div class="table-container">
+                  <table class="table">
+                    <thead>
+                      <tr><th>Модель</th><th>Кредиты</th><th>Вызовов</th></tr>
+                    </thead>
+                    <tbody id="uau-models"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <h3 class="section-title" style="margin-top: 1.5rem;"><i class="fas fa-robot"></i> Агенты пользователя</h3>
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Название</th>
+                    <th>Модель</th>
+                    <th>Статус</th>
+                    <th>Контакты</th>
+                    <th>Звонки</th>
+                    <th>Успешных</th>
+                    <th>Минуты</th>
+                    <th>Последний звонок</th>
+                  </tr>
+                </thead>
+                <tbody id="uau-agents"></tbody>
+              </table>
+            </div>
+
+            <div class="usage-tables-grid">
+              <div>
+                <h3 class="section-title" style="margin-top: 1.5rem;"><i class="fas fa-filter"></i> Воронка контактов</h3>
+                <div class="table-container">
+                  <table class="table">
+                    <thead>
+                      <tr><th>Стадия</th><th>Контактов</th></tr>
+                    </thead>
+                    <tbody id="uau-funnel"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h3 class="section-title" style="margin-top: 1.5rem;"><i class="fas fa-receipt"></i> Последние транзакции кредитов</h3>
+                <div class="table-container">
+                  <table class="table">
+                    <thead>
+                      <tr><th>Дата</th><th>Тип</th><th>Кредиты</th><th>Баланс после</th></tr>
+                    </thead>
+                    <tbody id="uau-transactions"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Модальное окно изменения подписки -->
+    <div class="modal-overlay" id="subscription-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Изменить подписку</h3>
+          <button class="modal-close" id="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="subscription-form">
+            <div class="form-group">
+              <div id="current-plan-line" style="font-size: 0.8125rem; color: var(--text-gray); margin-bottom: 0.75rem;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="plan-code">Тариф</label>
+              <select id="plan-code" class="form-control" required>
+                <option value="">Загрузка тарифов…</option>
+              </select>
+              <div id="plan-details" style="margin-top: 0.5rem; font-size: 0.8125rem; color: var(--text-gray);"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="duration-days">Длительность (дней)</label>
+              <input type="number" id="duration-days" class="form-control" value="30" min="1" max="3650" required>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-outline btn-sm duration-preset" data-days="30">30 дней</button>
+                <button type="button" class="btn btn-outline btn-sm duration-preset" data-days="90">3 мес</button>
+                <button type="button" class="btn btn-outline btn-sm duration-preset" data-days="180">6 мес</button>
+                <button type="button" class="btn btn-outline btn-sm duration-preset" data-days="365">1 год</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="subscription-mode">Отсчёт срока</label>
+              <select id="subscription-mode" class="form-control">
+                <option value="extend">Продлить от текущей даты окончания</option>
+                <option value="reset">Начать с сегодня</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-checkbox">
+                <input type="checkbox" id="is-trial">
+                <span>Пробный период</span>
+              </label>
+            </div>
+
+            <div id="subscription-preview" style="font-size: 0.8125rem; color: var(--text-gray); border-top: 1px solid var(--border-color, #e5e7eb); padding-top: 0.75rem;"></div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="modal-cancel">Отмена</button>
+          <button class="btn btn-primary" id="modal-save">Сохранить</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Модальное окно сброса пароля -->
+    <div class="modal-overlay" id="password-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">🔑 Сброс пароля</h3>
+          <button class="modal-close" id="password-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 1rem; color: var(--text-gray); font-size: 0.875rem;">
+            Пользователь: <strong id="password-reset-user-email">—</strong>
+          </p>
+          <div class="form-group">
+            <label class="form-label" for="new-password">Новый пароль</label>
+            <input
+              type="text"
+              id="new-password"
+              class="form-control"
+              placeholder="Минимум 6 символов"
+              autocomplete="off"
+            >
+          </div>
+          <p style="font-size: 0.75rem; color: var(--text-light);">
+            ⚠️ Пароль будет виден при вводе. Передайте его пользователю напрямую.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="password-modal-cancel">Отмена</button>
+          <button class="btn btn-warning" id="password-modal-save">
+            <i class="fas fa-key"></i> Сбросить пароль
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+    
+    <!-- Состояние загрузки -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+  </main>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Переменные состояния
+      let currentPage = 1;
+      let totalPages = 1;
+      let selectedUserId = null;
+      let currentUser = null;
+      let isAdmin = false;
+      
+      // Получаем элементы DOM
+      const tabs = document.querySelectorAll('.tab');
+      const tabContents = document.querySelectorAll('.tab-content');
+      const usersList = document.getElementById('users-list');
+      const pagination = document.getElementById('pagination');
+      const searchInput = document.getElementById('search-users');
+      const subscriptionFilter = document.getElementById('subscription-filter');
+      const backToUsersBtn = document.getElementById('back-to-users');
+      const editSubscriptionBtn = document.getElementById('edit-subscription-btn');
+      const subscriptionModal = document.getElementById('subscription-modal');
+      const modalClose = document.getElementById('modal-close');
+      const modalCancel = document.getElementById('modal-cancel');
+      const modalSave = document.getElementById('modal-save');
+      const subscriptionForm = document.getElementById('subscription-form');
+      const planCodeSelect = document.getElementById('plan-code');
+      const durationDaysInput = document.getElementById('duration-days');
+      const subscriptionModeSelect = document.getElementById('subscription-mode');
+      const isTrialCheckbox = document.getElementById('is-trial');
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const logoutButton = document.getElementById('logout-button');
+      const checkSubscriptionsBtn = document.getElementById('check-subscriptions-btn');
+      const userMenuButton = document.getElementById('user-menu-button');
+      const userDropdown = document.getElementById('user-dropdown');
+      const userNameDisplay = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      const dropdownLogout = document.getElementById('dropdown-logout');
+
+      // Переменные для сброса пароля
+      const passwordModal = document.getElementById('password-modal');
+      const passwordModalClose = document.getElementById('password-modal-close');
+      const passwordModalCancel = document.getElementById('password-modal-cancel');
+      const passwordModalSave = document.getElementById('password-modal-save');
+      const newPasswordInput = document.getElementById('new-password');
+      const passwordResetUserEmail = document.getElementById('password-reset-user-email');
+      let passwordResetUserId = null;
+      let passwordResetUserEmailValue = null;
+
+      // Элементы статистики - Пользователи
+      const totalUsersElement = document.getElementById('total-users');
+      const activeUsersElement = document.getElementById('active-users');
+      const paidSubscriptionsElement = document.getElementById('paid-subscriptions');
+      const trialUsersElement = document.getElementById('trial-users');
+      const recentUsersElement = document.getElementById('recent-users');
+      
+      // Элементы статистики - Ассистенты
+      const totalAssistantsElement = document.getElementById('total-assistants');
+      const openaiAssistantsElement = document.getElementById('openai-assistants');
+      const geminiAssistantsElement = document.getElementById('gemini-assistants');
+      const grokAssistantsElement = document.getElementById('grok-assistants');
+      
+      // Элементы статистики - Доходы
+      const revenueCurrentMonthElement = document.getElementById('revenue-current-month');
+      const revenuePrevMonthElement = document.getElementById('revenue-prev-month');
+      const revenueTotalElement = document.getElementById('revenue-total');
+      const totalPaymentsElement = document.getElementById('total-payments');
+      
+      // Элементы статистики - Звонки
+      const totalCallsElement = document.getElementById('total-calls');
+      const callsThisMonthElement = document.getElementById('calls-this-month');
+      const inboundCallsElement = document.getElementById('inbound-calls');
+      const outboundCallsElement = document.getElementById('outbound-calls');
+      const totalCallDurationElement = document.getElementById('total-call-duration');
+      const totalCallCostElement = document.getElementById('total-call-cost');
+      const callCostThisMonthElement = document.getElementById('call-cost-this-month');
+      
+      // Выпадающее меню пользователя
+      userMenuButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+      });
+      
+      // Закрытие выпадающего меню при клике в другом месте
+      document.addEventListener('click', function(e) {
+        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target) && !userMenuButton.contains(e.target)) {
+          userDropdown.classList.remove('show');
+        }
+      });
+      
+      // Выход из системы
+      if (dropdownLogout) {
+        dropdownLogout.addEventListener('click', function(e) {
+          e.preventDefault();
+          localStorage.removeItem('auth_token');
+          window.location.href = '/';
+        });
+      }
+      
+      // API клиент
+      const api = {
+        baseUrl: '/api',
+        
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string' && !(options.body instanceof FormData)) {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          try {
+            const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+            
+            if (response.status === 401) {
+              localStorage.removeItem('auth_token');
+              window.location.href = '/static/login.html';
+              throw new Error('Требуется авторизация');
+            }
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              // Глобальный обработчик в app.py отдаёт {"message": ...},
+              // FastAPI по умолчанию — {"detail": ...}. Читаем оба.
+              throw new Error(data.message || data.detail || 'Произошла ошибка при выполнении запроса');
+            }
+            
+            return data;
+          } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+          }
+        },
+        
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+        
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        },
+        
+        getCurrentUser() {
+          return this.get('/users/me');
+        },
+        
+        getAllUsers(skip = 0, limit = 10, search = '', subscription_status = '') {
+          let endpoint = `/admin/users?skip=${skip}&limit=${limit}`;
+          
+          if (search) {
+            endpoint += `&search=${encodeURIComponent(search)}`;
+          }
+          
+          if (subscription_status) {
+            endpoint += `&subscription_status=${subscription_status}`;
+          }
+          
+          return this.get(endpoint);
+        },
+        
+        getUserDetails(userId) {
+          return this.get(`/admin/users/${userId}`);
+        },
+        
+        // ✅ v2.2: Исправлено - теперь отправляем JSON body
+        updateUserSubscription(userId, data) {
+          return this.post(`/admin/users/${userId}/subscription`, data);
+        },
+
+        // Тарифная сетка: коды, цены, лимиты, доступ к агенту
+        getPlans() {
+          return this.get('/admin/plans');
+        },
+
+        resetUserPassword(userId, newPassword) {
+          return this.post(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
+        },
+        
+        getAdminStatistics() {
+          return this.get('/admin/stats');
+        },
+
+        getAgentUsage({ search = '', filter = '', sort = 'spend_7d', skip = 0, limit = 100 } = {}) {
+          let endpoint = `/admin/agent-usage?skip=${skip}&limit=${limit}&sort=${sort}`;
+          if (search) endpoint += `&search=${encodeURIComponent(search)}`;
+          if (filter) endpoint += `&activity_filter=${filter}`;
+          return this.get(endpoint);
+        },
+
+        getUserAgentUsage(userId) {
+          return this.get(`/admin/users/${userId}/agent-usage`);
+        },
+
+        checkExpiredSubscriptions() {
+          return this.post('/subscriptions/check-expired');
+        }
+      };
+      
+      // Управление UI
+      const ui = {
+        showNotification(message, type = 'success') {
+          notification.classList.remove('notification-success', 'notification-error', 'notification-info');
+          notification.classList.add(`notification-${type}`);
+          
+          const iconElement = notification.querySelector('.notification-icon i');
+          iconElement.className = type === 'success' ? 'fas fa-check-circle' : 
+                               type === 'error' ? 'fas fa-exclamation-circle' : 
+                               'fas fa-info-circle';
+          
+          notificationMessage.textContent = message;
+          
+          notification.style.display = 'flex';
+          setTimeout(() => {
+            notification.classList.add('show');
+          }, 10);
+          
+          setTimeout(() => {
+            this.hideNotification();
+          }, 5000);
+        },
+        
+        hideNotification() {
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.style.display = 'none';
+          }, 300);
+        },
+        
+        switchTab(tabId) {
+          tabs.forEach(tab => {
+            if (tab.getAttribute('data-tab') === tabId) {
+              tab.classList.add('active');
+              tab.style.display = '';
+            } else {
+              tab.classList.remove('active');
+            }
+          });
+          
+          tabContents.forEach(content => {
+            if (content.id === `${tabId}-tab`) {
+              content.classList.add('active');
+            } else {
+              content.classList.remove('active');
+            }
+          });
+        },
+        
+        setLoading(loading) {
+          if (loading) {
+            loadingOverlay.style.display = 'flex';
+          } else {
+            loadingOverlay.style.display = 'none';
+          }
+        },
+        
+        showModal() {
+          subscriptionModal.classList.add('visible');
+        },
+        
+        hideModal() {
+          subscriptionModal.classList.remove('visible');
+        },
+        
+        formatDate(dateString) {
+          if (!dateString) return 'Не указано';
+          const date = new Date(dateString);
+          return date.toLocaleDateString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+          });
+        },
+        
+        formatMoney(amount) {
+          return new Intl.NumberFormat('ru-RU').format(Math.round(amount)) + ' ₽';
+        },
+        
+        formatDuration(minutes) {
+          if (minutes < 60) {
+            return Math.round(minutes) + ' мин';
+          } else {
+            const hours = Math.floor(minutes / 60);
+            const mins = Math.round(minutes % 60);
+            return hours + ' ч ' + mins + ' мин';
+          }
+        },
+        
+        // ✅ v2.0: Отрисовка с типами ассистентов
+        renderUsersList(users) {
+          usersList.innerHTML = '';
+          
+          if (!users || users.length === 0) {
+            usersList.innerHTML = `
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 2rem;">
+                  Пользователи не найдены
+                </td>
+              </tr>
+            `;
+            return;
+          }
+          
+          users.forEach(user => {
+            let statusClass = 'status-expired';
+            let statusText = 'Истекла';
+            
+            if (user.subscription_active) {
+              statusClass = user.is_trial ? 'status-trial' : 'status-active';
+              statusText = user.is_trial ? 'Пробный период' : 'Активна';
+            }
+            
+            let displayName = 'Пользователь';
+            if (user.first_name || user.last_name) {
+              displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+            } else if (user.company_name) {
+              displayName = user.company_name;
+            }
+            
+            // ✅ v2.0: Формируем бейджи по типам ассистентов
+            let assistantsBadges = '';
+            if (user.openai_assistants > 0) {
+              assistantsBadges += `<span class="assistant-badge badge-openai">O:${user.openai_assistants}</span>`;
+            }
+            if (user.gemini_assistants > 0) {
+              assistantsBadges += `<span class="assistant-badge badge-gemini">G:${user.gemini_assistants}</span>`;
+            }
+            if (user.grok_assistants > 0) {
+              assistantsBadges += `<span class="assistant-badge badge-grok">X:${user.grok_assistants}</span>`;
+            }
+            if (!assistantsBadges) {
+              assistantsBadges = '0';
+            }
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${displayName}</td>
+              <td>${user.email}</td>
+              <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+              <td>${user.days_left || 0}</td>
+              <td>${assistantsBadges}</td>
+              <td>${this.formatDate(user.created_at)}</td>
+              <td>
+                <button class="table-action view-user" data-id="${user.id}" title="Просмотр">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button class="table-action edit-subscription" data-id="${user.id}" title="Изменить подписку">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button class="table-action reset-password" data-id="${user.id}" data-email="${user.email}" title="Сбросить пароль">
+                  <i class="fas fa-key"></i>
+                </button>
+              </td>
+            `;
+            
+            usersList.appendChild(row);
+          });
+          
+          document.querySelectorAll('.view-user').forEach(button => {
+            button.addEventListener('click', function() {
+              const userId = this.getAttribute('data-id');
+              viewUserDetails(userId);
+            });
+          });
+          
+          document.querySelectorAll('.edit-subscription').forEach(button => {
+            button.addEventListener('click', function() {
+              const userId = this.getAttribute('data-id');
+              openSubscriptionModal(userId);
+            });
+          });
+
+          document.querySelectorAll('.reset-password').forEach(button => {
+            button.addEventListener('click', function() {
+              const userId = this.getAttribute('data-id');
+              const userEmail = this.getAttribute('data-email');
+              openPasswordModal(userId, userEmail);
+            });
+          });
+        },
+        
+        renderPagination(currentPage, totalPages) {
+          pagination.innerHTML = '';
+          
+          if (totalPages <= 1) {
+            return;
+          }
+          
+          const prevButton = document.createElement('button');
+          prevButton.className = `pagination-item ${currentPage === 1 ? 'disabled' : ''}`;
+          prevButton.innerHTML = '<i class="fas fa-chevron-left"></i>';
+          prevButton.disabled = currentPage === 1;
+          prevButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+              loadUsers(currentPage - 1);
+            }
+          });
+          pagination.appendChild(prevButton);
+          
+          const startPage = Math.max(1, currentPage - 2);
+          const endPage = Math.min(totalPages, startPage + 4);
+          
+          for (let i = startPage; i <= endPage; i++) {
+            const pageButton = document.createElement('button');
+            pageButton.className = `pagination-item ${i === currentPage ? 'active' : ''}`;
+            pageButton.textContent = i;
+            pageButton.addEventListener('click', () => {
+              loadUsers(i);
+            });
+            pagination.appendChild(pageButton);
+          }
+          
+          const nextButton = document.createElement('button');
+          nextButton.className = `pagination-item ${currentPage === totalPages ? 'disabled' : ''}`;
+          nextButton.innerHTML = '<i class="fas fa-chevron-right"></i>';
+          nextButton.disabled = currentPage === totalPages;
+          nextButton.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+              loadUsers(currentPage + 1);
+            }
+          });
+          pagination.appendChild(nextButton);
+        },
+        
+        // ✅ v2.0: Обновлённый рендеринг деталей с типами ассистентов
+        renderUserDetails(userData) {
+          const userProfile = document.getElementById('user-profile');
+          const user = userData.user;
+          const subscription = userData.subscription;
+          const assistants = userData.assistants;
+          
+          userProfile.innerHTML = `
+            <div class="profile-section">
+              <h3 class="section-title"><i class="fas fa-user"></i> Основная информация</h3>
+              
+              <div class="section-item">
+                <div class="item-label">Email</div>
+                <div class="item-value">${user.email}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Имя</div>
+                <div class="item-value">${user.first_name || 'Не указано'}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Фамилия</div>
+                <div class="item-value">${user.last_name || 'Не указана'}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Компания</div>
+                <div class="item-value">${user.company_name || 'Не указана'}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Дата регистрации</div>
+                <div class="item-value">${this.formatDate(user.created_at)}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Последний вход</div>
+                <div class="item-value">${user.last_login ? this.formatDate(user.last_login) : 'Не входил'}</div>
+              </div>
+            </div>
+            
+            <div class="profile-section">
+              <h3 class="section-title"><i class="fas fa-crown"></i> Информация о подписке</h3>
+              
+              <div class="section-item">
+                <div class="item-label">Текущий тариф</div>
+                <div class="item-value">${subscription.plan || user.subscription_plan || 'Не указан'}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Тип</div>
+                <div class="item-value">${user.is_trial ? 'Пробный период' : 'Стандартная'}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Дата начала</div>
+                <div class="item-value">${this.formatDate(subscription.start_date)}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Дата окончания</div>
+                <div class="item-value">${this.formatDate(subscription.end_date)}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Статус</div>
+                <div class="item-value">
+                  <span class="status-badge ${subscription.is_active ? (user.is_trial ? 'status-trial' : 'status-active') : 'status-expired'}">
+                    ${subscription.is_active ? (user.is_trial ? 'Пробный период' : 'Активна') : 'Истекла'}
+                  </span>
+                </div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Осталось дней</div>
+                <div class="item-value">${subscription.days_left || 0}</div>
+              </div>
+            </div>
+            
+            <div class="profile-section">
+              <h3 class="section-title"><i class="fas fa-robot"></i> Ассистенты</h3>
+              
+              <div class="section-item">
+                <div class="item-label">Всего ассистентов</div>
+                <div class="item-value">${assistants.count || 0}</div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">OpenAI</div>
+                <div class="item-value">
+                  <span class="assistant-badge badge-openai">${assistants.openai_count || 0}</span>
+                </div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Gemini</div>
+                <div class="item-value">
+                  <span class="assistant-badge badge-gemini">${assistants.gemini_count || 0}</span>
+                </div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Grok</div>
+                <div class="item-value">
+                  <span class="assistant-badge badge-grok">${assistants.grok_count || 0}</span>
+                </div>
+              </div>
+              
+              <div class="section-item">
+                <div class="item-label">Лимит ассистентов</div>
+                <div class="item-value">${subscription.max_assistants || 1}</div>
+              </div>
+            </div>
+          `;
+          
+          const subscriptionInfo = document.getElementById('subscription-info');
+          subscriptionInfo.innerHTML = `
+            <div class="section-item">
+              <div class="item-label">Текущий тариф:</div>
+              <div class="item-value">${subscription.plan || user.subscription_plan || 'Бесплатный'}</div>
+            </div>
+            <div class="section-item">
+              <div class="item-label">Дата окончания:</div>
+              <div class="item-value">${this.formatDate(subscription.end_date)}</div>
+            </div>
+            <div class="section-item">
+              <div class="item-label">Статус:</div>
+              <div class="item-value">
+                <span class="status-badge ${subscription.is_active ? (user.is_trial ? 'status-trial' : 'status-active') : 'status-expired'}">
+                  ${subscription.is_active ? (user.is_trial ? 'Пробный период' : 'Активна') : 'Истекла'}
+                </span>
+              </div>
+            </div>
+          `;
+          
+          // ✅ v2.0: Ассистенты с типами
+          const userAssistants = document.getElementById('user-assistants');
+          userAssistants.innerHTML = '';
+          
+          if (assistants.list && assistants.list.length > 0) {
+            assistants.list.forEach(assistant => {
+              let typeBadge = '';
+              switch (assistant.type) {
+                case 'openai':
+                  typeBadge = '<span class="assistant-badge badge-openai">OpenAI</span>';
+                  break;
+                case 'gemini':
+                  typeBadge = '<span class="assistant-badge badge-gemini">Gemini</span>';
+                  break;
+                case 'grok':
+                  typeBadge = '<span class="assistant-badge badge-grok">Grok</span>';
+                  break;
+                default:
+                  typeBadge = assistant.type || 'Unknown';
+              }
+              
+              const row = document.createElement('tr');
+              row.innerHTML = `
+                <td>${assistant.name}</td>
+                <td>${typeBadge}</td>
+                <td>${assistant.voice || '-'}</td>
+                <td>${this.formatDate(assistant.created_at)}</td>
+                <td>${assistant.total_conversations || 0}</td>
+              `;
+              userAssistants.appendChild(row);
+            });
+          } else {
+            userAssistants.innerHTML = `
+              <tr>
+                <td colspan="5" style="text-align: center; padding: 1rem;">
+                  У пользователя нет ассистентов
+                </td>
+              </tr>
+            `;
+          }
+          
+          const subscriptionLogs = document.getElementById('subscription-logs');
+          subscriptionLogs.innerHTML = '';
+          
+          if (userData.subscription_logs && userData.subscription_logs.length > 0) {
+            userData.subscription_logs.forEach(log => {
+              const row = document.createElement('tr');
+              row.innerHTML = `
+                <td>${this.formatDate(log.created_at)}</td>
+                <td>${this.translateAction(log.action)}</td>
+                <td>${log.plan_code || 'Не указан'}</td>
+                <td>${log.details || '-'}</td>
+              `;
+              subscriptionLogs.appendChild(row);
+            });
+          } else {
+            subscriptionLogs.innerHTML = `
+              <tr>
+                <td colspan="4" style="text-align: center; padding: 1rem;">
+                  История изменений подписки пуста
+                </td>
+              </tr>
+            `;
+          }
+          
+          selectedUserId = user.id;
+        },
+        
+        translateAction(action) {
+          const translations = {
+            'subscribe': 'Подписка активирована',
+            'cancel': 'Подписка отменена',
+            'expire': 'Подписка истекла',
+            'renew': 'Подписка продлена',
+            'trial_activate': 'Пробный период активирован',
+            'trial_expired': 'Пробный период истек',
+            'admin_update': 'Обновлена администратором',
+            'payment_success': 'Оплата успешна'
+          };
+          
+          return translations[action] || action;
+        },
+        
+        // ✅ v2.1: Расширенная статистика
+        renderStats(stats) {
+          // Пользователи
+          totalUsersElement.textContent = stats.users.total;
+          activeUsersElement.textContent = stats.users.active;
+          paidSubscriptionsElement.textContent = stats.users.with_subscription - stats.users.trial;
+          trialUsersElement.textContent = stats.users.trial;
+          
+          // Ассистенты (все типы)
+          totalAssistantsElement.textContent = stats.assistants.total;
+          openaiAssistantsElement.textContent = stats.assistants.openai || 0;
+          geminiAssistantsElement.textContent = stats.assistants.gemini || 0;
+          grokAssistantsElement.textContent = stats.assistants.grok || 0;
+          
+          // Доходы
+          if (stats.revenue) {
+            revenueCurrentMonthElement.textContent = this.formatMoney(stats.revenue.current_month);
+            revenuePrevMonthElement.textContent = this.formatMoney(stats.revenue.previous_month);
+            revenueTotalElement.textContent = this.formatMoney(stats.revenue.total);
+            totalPaymentsElement.textContent = stats.revenue.total_payments;
+          }
+          
+          // Звонки
+          if (stats.calls) {
+            totalCallsElement.textContent = stats.calls.total;
+            callsThisMonthElement.textContent = `За месяц: ${stats.calls.this_month}`;
+            inboundCallsElement.textContent = stats.calls.inbound;
+            outboundCallsElement.textContent = stats.calls.outbound;
+            totalCallDurationElement.textContent = this.formatDuration(stats.calls.total_duration_minutes);
+            totalCallCostElement.textContent = this.formatMoney(stats.calls.total_cost);
+            callCostThisMonthElement.textContent = `За месяц: ${this.formatMoney(stats.calls.cost_this_month)}`;
+          }
+          
+          // Недавние пользователи
+          recentUsersElement.innerHTML = '';
+          
+          if (stats.users.recent && stats.users.recent.length > 0) {
+            stats.users.recent.forEach(user => {
+              const row = document.createElement('tr');
+              row.innerHTML = `
+                <td>${user.first_name || ''} ${user.last_name || ''}</td>
+                <td>${user.email}</td>
+                <td>${this.formatDate(user.created_at)}</td>
+                <td>
+                  <span class="status-badge ${user.is_trial ? 'status-trial' : 'status-active'}">
+                    ${user.is_trial ? 'Пробный период' : 'Активен'}
+                  </span>
+                </td>
+              `;
+              recentUsersElement.appendChild(row);
+            });
+          } else {
+            recentUsersElement.innerHTML = `
+              <tr>
+                <td colspan="4" style="text-align: center; padding: 1rem;">
+                  Нет данных о недавних пользователях
+                </td>
+              </tr>
+            `;
+          }
+
+          // Оркестратор (Voicyfy Agent)
+          if (stats.orchestrator) {
+            this.renderOrchestratorStats(stats.orchestrator);
+          }
+        },
+
+        // ===== Аналитика оркестратора (Voicyfy Agent) =====
+
+        esc(value) {
+          return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        },
+
+        formatCredits(value) {
+          return new Intl.NumberFormat('ru-RU').format(Math.round(value || 0));
+        },
+
+        creditsCell(value) {
+          const v = Math.round(value || 0);
+          if (!v) return '<span class="credits-value credits-zero">0</span>';
+          return `<span class="credits-value">${this.formatCredits(v)}</span>`;
+        },
+
+        formatDateTime(dateString) {
+          if (!dateString) return '—';
+          const date = new Date(dateString);
+          return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+            + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        },
+
+        refTypeLabel(refType) {
+          const labels = {
+            'precall': 'Звонки — подготовка (PreCall)',
+            'postcall': 'Звонки — анализ (PostCall)',
+            'chat': 'Чат с оркестратором',
+            'chat_public': 'Публичный чат (виджет)',
+            'telegram_chat': 'Telegram',
+            'agent_deleted': 'Удаление агента',
+            'grant': 'Начисление',
+            'purchase': 'Покупка пакета',
+            'other': 'Прочее'
+          };
+          return labels[refType] || refType || 'Прочее';
+        },
+
+        txTypeLabel(type) {
+          const labels = {
+            'spend': 'Списание',
+            'refund': 'Возврат',
+            'trial_grant': 'Триал-бонус',
+            'subscription_grant': 'Кредиты тарифа',
+            'purchase': 'Покупка пакета',
+            'manual_adjust': 'Ручная корректировка'
+          };
+          return labels[type] || type;
+        },
+
+        agentStatusBadge(status) {
+          const map = {
+            'active': ['status-active', 'Активен'],
+            'trial': ['status-trial', 'Триал'],
+            'expired': ['status-expired', 'Истёк'],
+            'none': ['status-none', 'Нет доступа']
+          };
+          const [cls, text] = map[status] || ['status-none', status || '—'];
+          return `<span class="status-badge ${cls}">${text}</span>`;
+        },
+
+        modelShortName(slug) {
+          if (!slug) return '—';
+          const parts = String(slug).split('/');
+          return parts[parts.length - 1];
+        },
+
+        renderAgentUsage(data) {
+          // Сводка
+          document.getElementById('au-spend-today').textContent = this.formatCredits(data.summary.spend_today);
+          document.getElementById('au-spend-7d').textContent = this.formatCredits(data.summary.spend_7d);
+          document.getElementById('au-spend-30d').textContent = this.formatCredits(data.summary.spend_30d);
+          document.getElementById('au-active-7d').textContent = data.summary.active_7d;
+          document.getElementById('au-active-30d').textContent = `За 30 дней: ${data.summary.active_30d}`;
+
+          const tbody = document.getElementById('agent-usage-list');
+          tbody.innerHTML = '';
+
+          if (!data.users || data.users.length === 0) {
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="11" style="text-align: center; padding: 2rem;">
+                  Нет пользователей с агентами или транзакциями кредитов
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          data.users.forEach(u => {
+            const balanceStyle = u.credits_balance < 100 ? 'color: var(--red-dark, #b91c1c);' : '';
+            const successPart = u.calls_30d > 0 ? ` <span style="color:#6b7280;">(✓${u.success_calls_30d})</span>` : '';
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>
+                <div>${this.esc(u.name) || '—'}</div>
+                <div style="font-size: 0.75rem; color: #6b7280;">${this.esc(u.email)}</div>
+              </td>
+              <td><span class="credits-value" style="${balanceStyle}">${this.formatCredits(u.credits_balance)}</span></td>
+              <td>${this.creditsCell(u.spend_today)}</td>
+              <td>${this.creditsCell(u.spend_7d)}</td>
+              <td>${this.creditsCell(u.spend_30d)}</td>
+              <td>${u.agents_count}${u.agents_active ? ` <span style="color:#16a34a;">(${u.agents_active} акт.)</span>` : ''}</td>
+              <td>${u.contacts_count}</td>
+              <td>${u.calls_30d}${successPart}</td>
+              <td style="white-space: nowrap;">${this.formatDateTime(u.last_activity)}</td>
+              <td>${this.agentStatusBadge(u.agent_status)}</td>
+              <td>
+                <button class="table-action au-view-user" data-id="${u.user_id}" title="Детали">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </td>
+            `;
+            tbody.appendChild(row);
+          });
+
+          tbody.querySelectorAll('.au-view-user').forEach(button => {
+            button.addEventListener('click', function() {
+              viewUserDetails(this.getAttribute('data-id'));
+            });
+          });
+        },
+
+        renderOrchestratorStats(orch) {
+          document.getElementById('orchestrator-section').style.display = '';
+          document.getElementById('orch-spend-today').textContent = this.formatCredits(orch.spend.today);
+          document.getElementById('orch-spend-7d').textContent = `За 7 дней: ${this.formatCredits(orch.spend.d7)}`;
+          document.getElementById('orch-spend-30d').textContent = this.formatCredits(orch.spend.d30);
+          document.getElementById('orch-spend-all').textContent = `Всего: ${this.formatCredits(orch.spend.all_time)}`;
+          document.getElementById('orch-dau').textContent = orch.active_users.today;
+          document.getElementById('orch-wau-mau').textContent = `7д: ${orch.active_users.d7} · 30д: ${orch.active_users.d30}`;
+          document.getElementById('orch-agents').textContent = orch.agents.total;
+          document.getElementById('orch-agents-active').textContent = `Активных: ${orch.agents.active}`;
+          document.getElementById('orch-calls-30d').textContent = orch.agent_calls.d30;
+          document.getElementById('orch-avg-call').textContent = `Ср. кредитов/событие: ${orch.agent_calls.avg_credits_per_call_30d}`;
+          document.getElementById('orch-paying').textContent = orch.trial_funnel.paying_users;
+          document.getElementById('orch-funnel').textContent =
+            `Триал: ${orch.trial_funnel.trial_users} → Тратили: ${orch.trial_funnel.spent_users}`;
+
+          const refTypes = document.getElementById('orch-ref-types');
+          refTypes.innerHTML = (orch.by_ref_type_30d || []).map(r => `
+            <tr>
+              <td>${this.refTypeLabel(r.ref_type)}</td>
+              <td>${this.creditsCell(r.credits)}</td>
+              <td>${r.count}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3" style="text-align:center; padding:1rem;">Нет расхода за 30 дней</td></tr>';
+
+          const models = document.getElementById('orch-models');
+          models.innerHTML = (orch.by_model_30d || []).map(r => `
+            <tr>
+              <td title="${this.esc(r.model_slug)}">${this.esc(this.modelShortName(r.model_slug))}</td>
+              <td>${this.creditsCell(r.credits)}</td>
+              <td>${r.count}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3" style="text-align:center; padding:1rem;">Нет расхода за 30 дней</td></tr>';
+
+          const topUsers = document.getElementById('orch-top-users');
+          topUsers.innerHTML = (orch.top_users_30d || []).map((r, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${this.esc(r.email)}</td>
+              <td>${this.creditsCell(r.credits)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3" style="text-align:center; padding:1rem;">Нет данных</td></tr>';
+        },
+
+        renderUserAgentUsage(data) {
+          const section = document.getElementById('user-agent-usage');
+          section.style.display = '';
+
+          // Сводные плашки
+          const s = data.summary;
+          document.getElementById('uau-chips').innerHTML = `
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(data.user.credits_balance)}</div>
+              <div class="chip-label">Баланс кредитов</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(s.spend_today)}</div>
+              <div class="chip-label">Сегодня (МСК)</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(s.spend_7d)}</div>
+              <div class="chip-label">За 7 дней</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(s.spend_30d)}</div>
+              <div class="chip-label">За 30 дней</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(s.spend_total)}</div>
+              <div class="chip-label">Всего потрачено</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.formatCredits(s.granted_total)} / ${this.formatCredits(s.purchased_total)}</div>
+              <div class="chip-label">Начислено / куплено</div>
+            </div>
+            <div class="usage-chip">
+              <div class="chip-value">${this.agentStatusBadge(data.user.agent_status)}</div>
+              <div class="chip-label">Доступ к агенту</div>
+            </div>
+          `;
+
+          // График по дням
+          const daily = data.daily || [];
+          const maxCredits = Math.max(1, ...daily.map(d => d.credits));
+          const chart = document.getElementById('uau-chart');
+          chart.innerHTML = daily.map(d => {
+            const heightPct = Math.round((d.credits / maxCredits) * 100);
+            const dateLabel = new Date(d.date + 'T00:00:00').toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+            const title = `${dateLabel}: ${this.formatCredits(d.credits)} кр., событий: ${d.calls}`;
+            return `<div class="chart-bar ${d.credits ? '' : 'empty'}" style="height: ${Math.max(heightPct, 2)}%;" title="${title}"></div>`;
+          }).join('');
+
+          const axis = document.getElementById('uau-chart-axis');
+          if (daily.length) {
+            const first = new Date(daily[0].date + 'T00:00:00').toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+            const last = new Date(daily[daily.length - 1].date + 'T00:00:00').toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+            axis.innerHTML = `<span>${first}</span><span>макс: ${this.formatCredits(maxCredits)} кр./день</span><span>${last}</span>`;
+          } else {
+            axis.innerHTML = '';
+          }
+
+          // По типам операций
+          document.getElementById('uau-ref-types').innerHTML = (data.by_ref_type || []).map(r => `
+            <tr>
+              <td>${this.refTypeLabel(r.ref_type)}</td>
+              <td>${this.creditsCell(r.credits)}</td>
+              <td>${r.count}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3" style="text-align:center; padding:1rem;">Нет расхода за 30 дней</td></tr>';
+
+          // По моделям
+          document.getElementById('uau-models').innerHTML = (data.by_model || []).map(r => `
+            <tr>
+              <td title="${this.esc(r.model_slug)}">${this.esc(this.modelShortName(r.model_slug))}</td>
+              <td>${this.creditsCell(r.credits)}</td>
+              <td>${r.count}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="3" style="text-align:center; padding:1rem;">Нет расхода за 30 дней</td></tr>';
+
+          // Агенты пользователя
+          document.getElementById('uau-agents').innerHTML = (data.agents || []).map(a => `
+            <tr>
+              <td>${this.esc(a.name)}</td>
+              <td title="${this.esc(a.orchestrator_model)}">${this.esc(this.modelShortName(a.orchestrator_model))}</td>
+              <td>
+                <span class="status-badge ${a.is_active ? 'status-active' : 'status-none'}">
+                  ${a.is_active ? 'Активен' : 'Выключен'}
+                </span>
+                ${a.telegram_enabled ? ' <i class="fab fa-telegram" style="color:#229ED9;" title="Telegram подключён"></i>' : ''}
+              </td>
+              <td>${a.contacts_count}</td>
+              <td>${a.calls_total}</td>
+              <td>${a.success_calls}</td>
+              <td>${Math.round((a.duration_seconds || 0) / 60)}</td>
+              <td style="white-space: nowrap;">${this.formatDateTime(a.last_call_at)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="8" style="text-align:center; padding:1rem;">У пользователя нет агентов</td></tr>';
+
+          // Воронка контактов
+          document.getElementById('uau-funnel').innerHTML = (data.funnel || []).map(f => `
+            <tr>
+              <td>${this.esc(f.status)}</td>
+              <td>${f.count}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="2" style="text-align:center; padding:1rem;">Контактов нет</td></tr>';
+
+          // Последние транзакции
+          document.getElementById('uau-transactions').innerHTML = (data.transactions || []).map(tx => {
+            const amount = tx.amount || 0;
+            const color = amount > 0 ? '#16a34a' : (amount < 0 ? '#b91c1c' : '#6b7280');
+            const sign = amount > 0 ? '+' : '';
+            return `
+              <tr>
+                <td style="white-space: nowrap;">${this.formatDateTime(tx.created_at)}</td>
+                <td title="${this.esc(tx.notes || '')}">${this.txTypeLabel(tx.type)}${tx.ref_type && tx.type === 'spend' ? ` <span style="color:#6b7280; font-size:0.75rem;">(${this.refTypeLabel(tx.ref_type)})</span>` : ''}</td>
+                <td><span class="credits-value" style="color:${color};">${sign}${this.formatCredits(amount)}</span></td>
+                <td>${this.formatCredits(tx.balance_after)}</td>
+              </tr>
+            `;
+          }).join('') || '<tr><td colspan="4" style="text-align:center; padding:1rem;">Транзакций нет</td></tr>';
+        },
+
+        hideUserAgentUsage() {
+          document.getElementById('user-agent-usage').style.display = 'none';
+        }
+      };
+      
+      // Проверка авторизации и прав администратора
+      async function checkAuth() {
+        if (!api.isAuthenticated()) {
+          window.location.href = '/static/login.html';
+          return false;
+        }
+        
+        try {
+          ui.setLoading(true);
+          currentUser = await api.getCurrentUser();
+          
+          const firstName = currentUser.first_name || '';
+          const lastName = currentUser.last_name || '';
+          
+          if (firstName || lastName) {
+            userNameDisplay.textContent = firstName + (lastName ? ` ${lastName}` : '');
+            
+            let initials = '';
+            if (firstName) initials += firstName[0];
+            if (lastName) initials += lastName[0];
+            userAvatar.textContent = initials.toUpperCase();
+          } else if (currentUser.company_name) {
+            userNameDisplay.textContent = currentUser.company_name;
+            userAvatar.textContent = currentUser.company_name.substring(0, 2).toUpperCase();
+          } else {
+            userNameDisplay.textContent = currentUser.email;
+            userAvatar.textContent = currentUser.email.substring(0, 2).toUpperCase();
+          }
+          
+          isAdmin = currentUser.is_admin || currentUser.email === 'well96well@gmail.com';
+          
+          if (!isAdmin) {
+            window.location.href = '/static/dashboard.html';
+            ui.showNotification('У вас нет прав для доступа к панели администратора', 'error');
+            return false;
+          }
+          
+          return true;
+        } catch (error) {
+          console.error('Ошибка при проверке авторизации:', error);
+          window.location.href = '/static/login.html';
+          return false;
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      async function loadUsers(page = 1, limit = 10) {
+        try {
+          ui.setLoading(true);
+          
+          const skip = (page - 1) * limit;
+          const search = searchInput.value;
+          const subscriptionStatus = subscriptionFilter.value;
+          
+          const usersData = await api.getAllUsers(skip, limit, search, subscriptionStatus);
+          
+          ui.renderUsersList(usersData);
+          
+          totalPages = Math.ceil(100 / limit);
+          currentPage = page;
+          
+          ui.renderPagination(currentPage, totalPages);
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке пользователей', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      async function viewUserDetails(userId) {
+        try {
+          ui.setLoading(true);
+
+          const userData = await api.getUserDetails(userId);
+
+          document.querySelector('.tab[data-tab="user-details"]').style.display = '';
+          ui.switchTab('user-details');
+
+          ui.renderUserDetails(userData);
+
+          // Аналитика Voicyfy Agent (не ломаем страницу, если эндпоинт недоступен)
+          ui.hideUserAgentUsage();
+          try {
+            const usageData = await api.getUserAgentUsage(userId);
+            ui.renderUserAgentUsage(usageData);
+          } catch (usageError) {
+            console.error('Ошибка загрузки аналитики агента:', usageError);
+          }
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке данных пользователя', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+
+      async function loadAgentUsage() {
+        try {
+          ui.setLoading(true);
+
+          const data = await api.getAgentUsage({
+            search: document.getElementById('au-search').value,
+            filter: document.getElementById('au-filter').value,
+            sort: document.getElementById('au-sort').value
+          });
+
+          ui.renderAgentUsage(data);
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке статистики агентов', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      async function loadStats() {
+        try {
+          ui.setLoading(true);
+          
+          const stats = await api.getAdminStatistics();
+          ui.renderStats(stats);
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при загрузке статистики', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      // ==================== Тарифы ====================
+
+      // Тарифная сетка с бэкенда: единый источник цен, лимитов и того, какой
+      // тариф даёт доступ к агенту-оркестратору. Хардкодить список тарифов
+      // здесь нельзя — он разъезжается с прайсом (так в админке и появился
+      // несуществующий код `pro`).
+      let plansGrid = [];
+      let currentSubscriptionEnd = null;   // дата окончания текущей подписки
+
+      async function loadPlans() {
+        if (plansGrid.length) return plansGrid;
+        plansGrid = await api.getPlans();
+        planCodeSelect.innerHTML = '';
+        plansGrid.forEach(plan => {
+          const option = document.createElement('option');
+          option.value = plan.code;
+          const price = plan.price ? `${plan.price.toLocaleString('ru-RU')} ₽/мес` : 'бесплатно';
+          option.textContent = `${plan.name} — ${price}`;
+          planCodeSelect.appendChild(option);
+        });
+        return plansGrid;
+      }
+
+      function getSelectedPlan() {
+        return plansGrid.find(p => p.code === planCodeSelect.value) || null;
+      }
+
+      function renderPlanDetails() {
+        const plan = getSelectedPlan();
+        const details = document.getElementById('plan-details');
+        if (!plan) {
+          details.innerHTML = '';
+          return;
+        }
+        const bits = [`Ассистентов: <strong>${plan.max_assistants}</strong>`];
+        bits.push(plan.grants_agent_access
+          ? 'Агент-оркестратор: <strong style="color: var(--success, #16a34a)">да</strong>'
+          : 'Агент-оркестратор: <strong>нет</strong>');
+        if (plan.deprecated) {
+          bits.push('<strong style="color: var(--danger, #dc2626)">устаревший тариф</strong>');
+        } else if (plan.in_db_mismatch) {
+          bits.push('<span title="Строка в subscription_plans разойдётся с сеткой — будет исправлена при сохранении">запись в БД будет обновлена</span>');
+        }
+        details.innerHTML = `${plan.description}<br>${bits.join(' · ')}`;
+      }
+
+      function renderSubscriptionPreview() {
+        const preview = document.getElementById('subscription-preview');
+        const days = parseInt(durationDaysInput.value, 10);
+        if (!days || days < 1) {
+          preview.textContent = '';
+          return;
+        }
+        const mode = subscriptionModeSelect.value;
+        let start = new Date();
+        if (mode === 'extend' && currentSubscriptionEnd && currentSubscriptionEnd > start) {
+          start = new Date(currentSubscriptionEnd);
+        }
+        const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+        const fmt = d => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        preview.innerHTML = `Действует с <strong>${fmt(start)}</strong> по <strong>${fmt(end)}</strong>`;
+      }
+
+      async function openSubscriptionModal(userId) {
+        try {
+          ui.setLoading(true);
+
+          if (!userId && selectedUserId) {
+            userId = selectedUserId;
+          }
+
+          if (!userId) {
+            throw new Error('ID пользователя не указан');
+          }
+
+          await loadPlans();
+
+          // Данные тянем всегда: тариф мог измениться с прошлого открытия,
+          // а раньше при повторном открытии для того же юзера форма оставалась
+          // со старыми значениями.
+          const userData = await api.getUserDetails(userId);
+          selectedUserId = userId;
+
+          const subscription = userData.subscription || {};
+          const currentCode = userData.user.subscription_plan || 'free';
+
+          currentSubscriptionEnd = subscription.end_date ? new Date(subscription.end_date) : null;
+
+          const known = plansGrid.some(p => p.code === currentCode);
+          planCodeSelect.value = known ? currentCode : 'free';
+          isTrialCheckbox.checked = userData.user.is_trial || false;
+          durationDaysInput.value = 30;
+          subscriptionModeSelect.value = 'extend';
+
+          const endLabel = currentSubscriptionEnd
+            ? ui.formatDate(subscription.end_date)
+            : 'нет даты окончания';
+          document.getElementById('current-plan-line').innerHTML =
+            `Пользователь: <strong>${userData.user.email}</strong><br>` +
+            `Текущий тариф: <strong>${currentCode}</strong>${known ? '' : ' (нет в сетке)'} · до ${endLabel} · ` +
+            `${subscription.is_active ? 'активна' : 'истекла'}`;
+
+          renderPlanDetails();
+          renderSubscriptionPreview();
+
+          ui.showModal();
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при открытии формы изменения подписки', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      function openPasswordModal(userId, userEmail) {
+        passwordResetUserId = userId;
+        passwordResetUserEmailValue = userEmail;
+        passwordResetUserEmail.textContent = userEmail || userId;
+        newPasswordInput.value = '';
+        passwordModal.classList.add('visible');
+      }
+
+      async function checkExpiredSubscriptions() {
+        try {
+          ui.setLoading(true);
+          
+          const result = await api.checkExpiredSubscriptions();
+          
+          if (result.success) {
+            ui.showNotification(`Проверка завершена успешно. Обновлено подписок: ${result.updated_count}`, 'success');
+            
+            await loadUsers(currentPage);
+            if (selectedUserId) {
+              await viewUserDetails(selectedUserId);
+            }
+          } else {
+            ui.showNotification('Ошибка при проверке подписок', 'error');
+          }
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при проверке подписок', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      }
+      
+      // Обработчики событий
+      
+      tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+          if (this.getAttribute('data-tab') === 'user-details') {
+            return;
+          }
+          
+          ui.switchTab(this.getAttribute('data-tab'));
+          
+          if (this.getAttribute('data-tab') !== 'user-details') {
+            document.querySelector('.tab[data-tab="user-details"]').style.display = 'none';
+          }
+          
+          if (this.getAttribute('data-tab') === 'users') {
+            loadUsers();
+          } else if (this.getAttribute('data-tab') === 'stats') {
+            loadStats();
+          } else if (this.getAttribute('data-tab') === 'agents') {
+            loadAgentUsage();
+          }
+        });
+      });
+
+      searchInput.addEventListener('input', function() {
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => {
+          loadUsers(1);
+        }, 300);
+      });
+
+      subscriptionFilter.addEventListener('change', function() {
+        loadUsers(1);
+      });
+
+      // Фильтры таба «Агенты»
+      document.getElementById('au-search').addEventListener('input', function() {
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => {
+          loadAgentUsage();
+        }, 300);
+      });
+
+      document.getElementById('au-filter').addEventListener('change', loadAgentUsage);
+      document.getElementById('au-sort').addEventListener('change', loadAgentUsage);
+      
+      backToUsersBtn.addEventListener('click', function() {
+        document.querySelector('.tab[data-tab="user-details"]').style.display = 'none';
+        ui.switchTab('users');
+      });
+      
+      editSubscriptionBtn.addEventListener('click', function() {
+        openSubscriptionModal(selectedUserId);
+      });
+      
+      checkSubscriptionsBtn.addEventListener('click', checkExpiredSubscriptions);
+      
+      modalClose.addEventListener('click', ui.hideModal);
+      modalCancel.addEventListener('click', ui.hideModal);
+
+      // Тарифная модалка: пересчёт подсказок при любом изменении формы
+      planCodeSelect.addEventListener('change', function() {
+        renderPlanDetails();
+        const plan = getSelectedPlan();
+        if (plan) isTrialCheckbox.checked = plan.is_trial_default;
+        renderSubscriptionPreview();
+      });
+      durationDaysInput.addEventListener('input', renderSubscriptionPreview);
+      subscriptionModeSelect.addEventListener('change', renderSubscriptionPreview);
+
+      document.querySelectorAll('.duration-preset').forEach(button => {
+        button.addEventListener('click', function() {
+          durationDaysInput.value = this.getAttribute('data-days');
+          document.querySelectorAll('.duration-preset').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          renderSubscriptionPreview();
+        });
+      });
+
+      // Сброс пароля — закрытие модала
+      passwordModalClose.addEventListener('click', () => {
+        passwordModal.classList.remove('visible');
+      });
+      passwordModalCancel.addEventListener('click', () => {
+        passwordModal.classList.remove('visible');
+      });
+
+      // Сброс пароля — сохранение
+      passwordModalSave.addEventListener('click', async function() {
+        const newPassword = newPasswordInput.value.trim();
+
+        if (!passwordResetUserId) {
+          ui.showNotification('ID пользователя не указан', 'error');
+          return;
+        }
+
+        if (newPassword.length < 6) {
+          ui.showNotification('Пароль должен быть не менее 6 символов', 'error');
+          return;
+        }
+
+        try {
+          ui.setLoading(true);
+          await api.resetUserPassword(passwordResetUserId, newPassword);
+          passwordModal.classList.remove('visible');
+          ui.showNotification(`✅ Пароль успешно изменён для ${passwordResetUserEmailValue}`, 'success');
+        } catch (error) {
+          ui.showNotification(error.message || 'Ошибка при сбросе пароля', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      });
+
+      // Кнопка сброса пароля в деталях пользователя
+      document.getElementById('reset-password-btn').addEventListener('click', function() {
+        if (!selectedUserId) return;
+        const emailEl = document.querySelector('#user-profile .item-value');
+        openPasswordModal(selectedUserId, emailEl ? emailEl.textContent : selectedUserId);
+      });
+      
+      // ✅ v2.2: Исправленное сохранение подписки
+      modalSave.addEventListener('click', async function() {
+        if (!selectedUserId) {
+          ui.showNotification('ID пользователя не указан', 'error');
+          return;
+        }
+        
+        const durationDays = parseInt(durationDaysInput.value, 10);
+        if (!durationDays || durationDays < 1 || durationDays > 3650) {
+          ui.showNotification('Длительность должна быть от 1 до 3650 дней', 'error');
+          return;
+        }
+
+        const selectedPlan = getSelectedPlan();
+        if (!selectedPlan) {
+          ui.showNotification('Выберите тариф', 'error');
+          return;
+        }
+        if (selectedPlan.deprecated) {
+          ui.showNotification('Это устаревший тариф, выберите действующий', 'error');
+          return;
+        }
+
+        try {
+          ui.setLoading(true);
+
+          // ✅ Отправляем как JSON body (не query params)
+          const subscriptionData = {
+            plan_code: planCodeSelect.value,
+            duration_days: durationDays,
+            is_trial: isTrialCheckbox.checked,
+            mode: subscriptionModeSelect.value
+          };
+
+          const result = await api.updateUserSubscription(selectedUserId, subscriptionData);
+          const sub = (result && result.subscription) || {};
+
+          let message = result.message || 'Тариф изменён';
+          // Тариф даёт доступ к агенту, но ручная блокировка его перекрывает —
+          // предупреждаем, иначе выглядит как будто смена тарифа не сработала.
+          if (sub.grants_agent_access && sub.agent_subscription_blocked) {
+            message += '. Внимание: у пользователя стоит ручная блокировка агента — доступ не выдан';
+          }
+          ui.showNotification(message, 'success');
+          ui.hideModal();
+          
+          if (document.querySelector('.tab[data-tab="user-details"]').style.display !== 'none') {
+            viewUserDetails(selectedUserId);
+          }
+          
+          loadUsers(currentPage);
+        } catch (error) {
+          console.error('Ошибка при сохранении:', error);
+          ui.showNotification(error.message || 'Ошибка при изменении подписки', 'error');
+        } finally {
+          ui.setLoading(false);
+        }
+      });
+      
+      notificationClose.addEventListener('click', ui.hideNotification);
+      
+      logoutButton.addEventListener('click', function() {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/';
+      });
+      
+      // Инициализация страницы
+      async function init() {
+        if (await checkAuth()) {
+          loadUsers();
+          loadStats();
+        }
+      }
+      
+      init();
+    });
+  </script>
+</body>
+</html>

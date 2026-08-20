@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Контакт — VoiceSystem CRM</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* Переменные */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --success-green: #10b981;
+      --error-red: #ef4444;
+      --warning-yellow: #f59e0b;
+      --status-new: #8b5cf6;
+      --status-active: #3b82f6;
+      --status-client: #10b981;
+      --status-archived: #6b7280;
+      --task-scheduled: #3b82f6;
+      --task-completed: #10b981;
+      --task-failed: #ef4444;
+      --task-cancelled: #6b7280;
+      --cost-orange: #f59e0b;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+    }
+    
+    /* Header */
+    .header {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .back-btn {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.25rem;
+      padding: 0.5rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    
+    .back-btn:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .header-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    
+    /* Main Layout */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 0;
+      height: calc(100vh - 73px);
+    }
+    
+    /* Left Panel */
+    .left-panel {
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      padding: 2rem;
+      overflow-y: auto;
+    }
+    
+    /* ✅ v4.0: Компактный аватар с инициалами */
+    .contact-avatar-large {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-blue-light), var(--primary-blue));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white);
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0 auto 1rem;
+    }
+    
+    .contact-phone {
+      text-align: center;
+      font-size: 0.9375rem;
+      color: var(--text-gray);
+      font-family: 'Consolas', 'Monaco', monospace;
+      margin-bottom: 1.5rem;
+    }
+    
+    .info-section {
+      margin-bottom: 2rem;
+    }
+    
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .status-dropdown {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      background-color: var(--white);
+      transition: all 0.2s;
+    }
+    
+    .status-dropdown:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    /* Notes Feed */
+    .notes-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 400px;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+    }
+    
+    .notes-feed::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .notes-feed::-webkit-scrollbar-track {
+      background: var(--bg-light);
+      border-radius: 3px;
+    }
+    
+    .notes-feed::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+    
+    .notes-feed::-webkit-scrollbar-thumb:hover {
+      background: var(--text-light);
+    }
+    
+    .note-card {
+      background-color: var(--bg-light);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.75rem;
+      position: relative;
+      transition: all 0.2s;
+    }
+    
+    .note-card:hover {
+      box-shadow: var(--shadow-sm);
+      border-color: var(--primary-blue-light);
+    }
+    
+    .note-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .note-date {
+      font-size: 0.75rem;
+      color: var(--text-light);
+    }
+    
+    .note-delete-btn {
+      background: none;
+      border: none;
+      color: var(--text-light);
+      cursor: pointer;
+      padding: 0.25rem;
+      border-radius: 0.25rem;
+      transition: all 0.2s;
+      font-size: 0.875rem;
+    }
+    
+    .note-delete-btn:hover {
+      color: var(--error-red);
+      background-color: rgba(239, 68, 68, 0.1);
+    }
+    
+    .note-text {
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: var(--text-dark);
+      word-wrap: break-word;
+    }
+    
+    .note-input-container {
+      margin-top: 0.75rem;
+    }
+    
+    .note-input {
+      width: 100%;
+      min-height: 80px;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-family: inherit;
+      resize: vertical;
+      transition: all 0.2s;
+    }
+    
+    .note-input:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    .note-input::placeholder {
+      color: var(--text-light);
+    }
+    
+    .add-note-btn {
+      width: 100%;
+      margin-top: 0.5rem;
+      padding: 0.6rem 1rem;
+      background-color: var(--primary-blue);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    
+    .add-note-btn:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .add-note-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .notes-empty {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--text-light);
+      font-size: 0.875rem;
+    }
+    
+    .notes-empty i {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      border: none;
+      width: 100%;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn-danger {
+      background-color: var(--error-red);
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    .btn-danger-outline {
+      background-color: transparent;
+      color: var(--error-red);
+      border: 1px solid var(--error-red);
+    }
+    
+    .btn-danger-outline:hover {
+      background-color: var(--error-red);
+      color: var(--white);
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    /* Right Panel - Timeline */
+    .right-panel {
+      background-color: var(--bg-light);
+      padding: 2rem;
+      overflow-y: auto;
+    }
+    
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      background-color: var(--white);
+      padding: 1.5rem;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+    }
+    
+    .timeline-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    /* Unified Timeline */
+    .timeline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    /* Timeline Item (Task or Conversation) */
+    .timeline-item {
+      background-color: var(--white);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    
+    .timeline-item:hover {
+      box-shadow: var(--shadow-sm);
+      border-color: var(--primary-blue-light);
+    }
+    
+    .timeline-item-header {
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--bg-light);
+      transition: all 0.2s;
+    }
+    
+    .timeline-item:hover .timeline-item-header {
+      background-color: var(--bg-blue-light);
+    }
+    
+    .timeline-item-info {
+      flex: 1;
+    }
+    
+    .timeline-item-type {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .timeline-item-meta {
+      font-size: 0.75rem;
+      color: var(--text-gray);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    /* 🆕 v5.0: Стоимость в мета-информации */
+    .timeline-item-meta .meta-cost {
+      color: var(--cost-orange);
+      font-weight: 600;
+    }
+    
+    .timeline-item-toggle {
+      color: var(--text-gray);
+      font-size: 1.25rem;
+      transition: transform 0.2s;
+    }
+    
+    .timeline-item.expanded .timeline-item-toggle {
+      transform: rotate(180deg);
+    }
+    
+    /* Task Item Specific */
+    .timeline-item.task-item .timeline-item-header {
+      background-color: rgba(59, 130, 246, 0.05);
+    }
+    
+    .timeline-item.task-item:hover .timeline-item-header {
+      background-color: rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Conversation Item Specific */
+    .timeline-item.conversation-item .timeline-item-header {
+      background-color: var(--bg-light);
+    }
+    
+    .timeline-item-body {
+      padding: 0;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    
+    .timeline-item.expanded .timeline-item-body {
+      max-height: 2000px;
+      transition: max-height 0.5s ease-in;
+    }
+    
+    .timeline-item-content {
+      padding: 1rem;
+      background-color: var(--white);
+    }
+    
+    /* Conversation Messages */
+    .message {
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      max-width: 85%;
+    }
+    
+    .message-user {
+      background-color: var(--bg-blue-light);
+      margin-left: auto;
+      text-align: right;
+    }
+    
+    .message-assistant {
+      background-color: var(--bg-light);
+      margin-right: auto;
+    }
+    
+    .message-role {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-gray);
+      margin-bottom: 0.25rem;
+    }
+    
+    .message-text {
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: var(--text-dark);
+    }
+    
+    /* 🆕 v5.0: Секция информации о звонке (стоимость + запись) */
+    .conversation-call-info {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .call-info-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+    }
+    
+    .call-info-row i {
+      width: 20px;
+      text-align: center;
+    }
+    
+    .call-info-row.cost {
+      color: var(--cost-orange);
+      font-weight: 600;
+    }
+    
+    .call-info-row.cost i {
+      color: var(--cost-orange);
+    }
+    
+    /* 🆕 v5.0: Аудиоплеер */
+    .audio-player-section {
+      margin-top: 0.5rem;
+    }
+    
+    .audio-player-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .audio-player-title i {
+      color: var(--success-green);
+    }
+    
+    .audio-player {
+      width: 100%;
+      height: 40px;
+      border-radius: var(--radius-md);
+    }
+    
+    .audio-player::-webkit-media-controls-panel {
+      background-color: var(--bg-light);
+    }
+    
+    /* Task Status Badge */
+    .task-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    
+    .task-status-badge.status-scheduled {
+      background-color: rgba(59, 130, 246, 0.1);
+      color: var(--task-scheduled);
+    }
+    
+    .task-status-badge.status-pending {
+      background-color: rgba(245, 158, 11, 0.1);
+      color: var(--warning-yellow);
+    }
+    
+    .task-status-badge.status-completed {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--task-completed);
+    }
+    
+    .task-status-badge.status-failed {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--task-failed);
+    }
+    
+    .task-status-badge.status-cancelled {
+      background-color: rgba(107, 114, 128, 0.1);
+      color: var(--task-cancelled);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-gray);
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+    }
+    
+    .empty-state i {
+      font-size: 3rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+    
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      animation: fade-in 0.2s ease;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-overlay.show {
+      display: flex;
+    }
+    
+    .modal {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      max-width: 600px;
+      width: 90%;
+      padding: 2rem;
+      box-shadow: var(--shadow-lg);
+      animation: slide-up 0.3s ease;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .modal-icon {
+      font-size: 3rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    
+    .modal-icon.warning {
+      color: var(--warning-yellow);
+    }
+    
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .modal-text {
+      text-align: center;
+      color: var(--text-gray);
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    
+    .modal-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    
+    .modal-actions .btn {
+      width: auto;
+      flex: 1;
+    }
+    
+    /* ✅ v4.0: Task modal footer with delete button */
+    .modal-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .modal-footer-left {
+      flex-shrink: 0;
+    }
+    
+    .modal-footer-right {
+      display: flex;
+      gap: 0.75rem;
+      flex: 1;
+      justify-content: flex-end;
+    }
+    
+    .modal-footer .btn {
+      width: auto;
+    }
+    
+    /* Task Detail View in Modal */
+    .task-detail-section {
+      margin-bottom: 1.5rem;
+    }
+    
+    .task-detail-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 0.5rem;
+    }
+    
+    .task-detail-value {
+      font-size: 0.9375rem;
+      color: var(--text-dark);
+      line-height: 1.5;
+    }
+    
+    .task-detail-value.large {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    /* Form */
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+    
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    .form-textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    
+    .form-helper {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-top: 0.25rem;
+      line-height: 1.4;
+    }
+    
+    /* Timezone indicator */
+    .timezone-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--primary-blue);
+      background-color: var(--bg-blue-light);
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      margin-left: 0.5rem;
+    }
+    
+    /* Read-only styling */
+    .form-input:read-only, .form-textarea:read-only {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      cursor: not-allowed;
+    }
+    
+    /* Notification */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      display: flex;
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid var(--success-green);
+    }
+    
+    .notification-error {
+      border-left: 4px solid var(--error-red);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: var(--success-green);
+    }
+    
+    .notification-error .notification-icon {
+      color: var(--error-red);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Loading */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .loading-overlay.show {
+      display: flex;
+    }
+    
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Mobile */
+    @media (max-width: 768px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      
+      .left-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+      
+      .header {
+        padding: 1rem;
+      }
+      
+      .right-panel {
+        padding: 1rem;
+      }
+      
+      .modal-footer {
+        flex-direction: column;
+      }
+      
+      .modal-footer-left,
+      .modal-footer-right {
+        width: 100%;
+      }
+      
+      .modal-footer-right {
+        justify-content: stretch;
+      }
+      
+      .modal-footer .btn {
+        flex: 1;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <button class="back-btn" onclick="window.location.href='/static/crm.html'">
+        <i class="fas fa-arrow-left"></i>
+      </button>
+      <h1 class="header-title">Детали контакта</h1>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-danger" id="delete-contact-btn" style="width: auto;">
+        <i class="fas fa-trash"></i> Удалить
+      </button>
+    </div>
+  </div>
+  
+  <!-- Main Layout -->
+  <div class="main-layout">
+    <!-- Left Panel -->
+    <div class="left-panel">
+      <div class="contact-avatar-large" id="contact-avatar"><i class="fas fa-user"></i></div>
+      <div class="contact-phone" id="contact-phone">+7 ...</div>
+      
+      <!-- Name Edit -->
+      <div class="info-section">
+        <div class="section-label">Имя</div>
+        <input 
+          type="text" 
+          class="status-dropdown" 
+          id="name-input" 
+          placeholder="Введите имя контакта..."
+          style="cursor: text;"
+        >
+        <button class="btn btn-primary" id="save-name-btn" style="margin-top: 0.75rem;">
+          <i class="fas fa-save"></i> Сохранить имя
+        </button>
+      </div>
+      
+      <!-- Status -->
+      <div class="info-section">
+        <div class="section-label">Статус</div>
+        <select class="status-dropdown" id="status-dropdown">
+          <option value="new">🆕 Новый</option>
+          <option value="active">⚡ Активный</option>
+          <option value="client">✅ Клиент</option>
+          <option value="archived">📦 Архив</option>
+        </select>
+      </div>
+      
+      <!-- Notes Feed -->
+      <div class="info-section">
+        <div class="section-label">
+          <span>Заметки (<span id="notes-count">0</span>)</span>
+        </div>
+        
+        <!-- Notes List -->
+        <div class="notes-feed" id="notes-feed">
+          <!-- Notes will be loaded here -->
+        </div>
+        
+        <!-- Add Note Form -->
+        <div class="note-input-container">
+          <textarea 
+            class="note-input" 
+            id="note-input" 
+            placeholder="Добавьте новую заметку..."
+            rows="3"
+          ></textarea>
+          <button class="add-note-btn" id="add-note-btn">
+            <i class="fas fa-plus"></i> Добавить заметку
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Right Panel - Unified Timeline -->
+    <div class="right-panel">
+      <!-- Timeline Header -->
+      <div class="timeline-header">
+        <div class="timeline-title">
+          <i class="fas fa-history"></i>
+          История взаимодействий
+        </div>
+        <button class="btn btn-primary" id="create-task-btn" style="width: auto;">
+          <i class="fas fa-plus"></i> Создать задачу
+        </button>
+      </div>
+      
+      <!-- Timeline Container -->
+      <div class="timeline-container" id="timeline-container">
+        <!-- Timeline items will be loaded here -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Delete Contact Modal -->
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+      <div class="modal-icon warning">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <h2 class="modal-title">Удалить контакт?</h2>
+      <p class="modal-text">
+        Это также удалит все связанные диалоги (<span id="delete-conversations-count">0</span> шт.)
+        и задачи.
+        <br><br>
+        <strong>Это действие нельзя отменить.</strong>
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="cancel-delete-btn">Отмена</button>
+        <button class="btn btn-danger" id="confirm-delete-btn">Удалить</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Create Task Modal -->
+  <div class="modal-overlay" id="task-create-modal">
+    <div class="modal">
+      <h2 class="modal-title">
+        <i class="fas fa-calendar-plus"></i> Новая задача
+      </h2>
+      <form id="task-create-form">
+        <div class="form-group">
+          <label class="form-label">Ассистент для звонка</label>
+          <select class="form-select" id="task-create-assistant" required>
+            <option value="">Выберите ассистента...</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">
+            Дата и время звонка
+            <span class="timezone-badge">🕐 МСК (UTC+3)</span>
+          </label>
+          <input 
+            type="datetime-local" 
+            class="form-input" 
+            id="task-create-datetime" 
+            required
+          >
+          <p class="form-helper">Время указывается по Москве. Звонок будет совершён в указанное время МСК.</p>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Название задачи</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            id="task-create-title" 
+            placeholder="Например: Напомнить о встрече"
+            required
+            maxlength="255"
+          >
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Описание (опционально)</label>
+          <textarea 
+            class="form-textarea" 
+            id="task-create-description" 
+            placeholder="Дополнительные детали..."
+            rows="3"
+          ></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">💬 Персонализированное приветствие (опционально)</label>
+          <textarea
+            class="form-textarea"
+            id="task-create-greeting"
+            placeholder="Например: Добрый день! Звоню по поводу нашей встречи 26 ноября. Удобно сейчас говорить?"
+            rows="3"
+          ></textarea>
+          <p class="form-helper">
+            Если указано - будет использовано вместо стандартного приветствия ассистента
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <i class="fas fa-phone-alt"></i> Звонить с номера
+          </label>
+          <select class="form-select" id="task-create-caller-id">
+            <option value="">📞 Автоматически (первый активный)</option>
+          </select>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="task-create-cancel-btn">Отмена</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-check"></i> Создать
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- View/Edit Task Modal -->
+  <div class="modal-overlay" id="task-view-modal">
+    <div class="modal">
+      <h2 class="modal-title" id="task-modal-title">
+        <i class="fas fa-calendar-alt"></i> Детали задачи
+      </h2>
+      
+      <!-- View Mode -->
+      <div id="task-view-mode">
+        <div class="task-detail-section">
+          <div class="task-detail-label">Статус</div>
+          <div class="task-detail-value" id="task-view-status"></div>
+        </div>
+        
+        <div class="task-detail-section">
+          <div class="task-detail-label">Название</div>
+          <div class="task-detail-value large" id="task-view-title"></div>
+        </div>
+        
+        <div class="task-detail-section">
+          <div class="task-detail-label">Дата и время <span class="timezone-badge">🕐 МСК</span></div>
+          <div class="task-detail-value" id="task-view-datetime"></div>
+        </div>
+        
+        <div class="task-detail-section">
+          <div class="task-detail-label">Ассистент</div>
+          <div class="task-detail-value" id="task-view-assistant"></div>
+        </div>
+        
+        <div class="task-detail-section" id="task-view-description-section">
+          <div class="task-detail-label">Описание</div>
+          <div class="task-detail-value" id="task-view-description"></div>
+        </div>
+        
+        <div class="task-detail-section" id="task-view-greeting-section">
+          <div class="task-detail-label">💬 Персонализированное приветствие</div>
+          <div class="task-detail-value" id="task-view-greeting"></div>
+        </div>
+
+        <div class="task-detail-section" id="task-view-caller-id-section" style="display: none;">
+          <div class="task-detail-label">📞 Звонить с номера</div>
+          <div class="task-detail-value" id="task-view-caller-id"></div>
+        </div>
+
+        <!-- ✅ v4.0: Updated footer with delete button -->
+        <div class="modal-footer">
+          <div class="modal-footer-left">
+            <button type="button" class="btn btn-danger-outline" id="task-view-delete-btn">
+              <i class="fas fa-trash"></i> Удалить
+            </button>
+          </div>
+          <div class="modal-footer-right">
+            <button type="button" class="btn btn-secondary" id="task-view-close-btn">Закрыть</button>
+            <button type="button" class="btn btn-primary" id="task-view-edit-btn" style="display: none;">
+              <i class="fas fa-edit"></i> Редактировать
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Edit Mode -->
+      <form id="task-edit-form" style="display: none;">
+        <div class="form-group">
+          <label class="form-label">Ассистент для звонка</label>
+          <select class="form-select" id="task-edit-assistant" required>
+            <option value="">Выберите ассистента...</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">
+            Дата и время звонка
+            <span class="timezone-badge">🕐 МСК (UTC+3)</span>
+          </label>
+          <input 
+            type="datetime-local" 
+            class="form-input" 
+            id="task-edit-datetime" 
+            required
+          >
+          <p class="form-helper">Время указывается по Москве. Звонок будет совершён в указанное время МСК.</p>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Название задачи</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            id="task-edit-title" 
+            required
+            maxlength="255"
+          >
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Описание (опционально)</label>
+          <textarea 
+            class="form-textarea" 
+            id="task-edit-description" 
+            rows="3"
+          ></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">💬 Персонализированное приветствие (опционально)</label>
+          <textarea
+            class="form-textarea"
+            id="task-edit-greeting"
+            rows="3"
+          ></textarea>
+          <p class="form-helper">
+            Если указано - будет использовано вместо стандартного приветствия ассистента
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <i class="fas fa-phone-alt"></i> Звонить с номера
+          </label>
+          <select class="form-select" id="task-edit-caller-id">
+            <option value="">📞 Автоматически (первый активный)</option>
+          </select>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="task-edit-cancel-btn">Отмена</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> Сохранить
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Delete Task Confirmation Modal -->
+  <div class="modal-overlay" id="delete-task-modal">
+    <div class="modal">
+      <div class="modal-icon warning">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <h2 class="modal-title">Удалить задачу?</h2>
+      <p class="modal-text" id="delete-task-text">
+        Вы уверены, что хотите удалить эту задачу?
+        <br><br>
+        <strong>Это действие нельзя отменить.</strong>
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="cancel-delete-task-btn">Отмена</button>
+        <button class="btn btn-danger" id="confirm-delete-task-btn">Удалить</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Notification -->
+  <div class="notification notification-success" id="notification">
+    <div class="notification-icon">
+      <i class="fas fa-check-circle"></i>
+    </div>
+    <div class="notification-content">
+      <div id="notification-message">Успешно!</div>
+    </div>
+    <button class="notification-close" id="notification-close">&times;</button>
+  </div>
+  
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-spinner"></div>
+  </div>
+  
+  <script src="/static/js/crm-contact.js"></script>
+</body>
+</html>

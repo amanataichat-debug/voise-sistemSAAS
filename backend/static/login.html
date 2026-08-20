@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Вход — VoiceSystem</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --accent-blue: #4a86e8;
+      --gradient-blue: linear-gradient(135deg, #4a86e8, #2563eb);
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --radius-full: 9999px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(74, 134, 232, 0.18), transparent 60%),
+        radial-gradient(900px 500px at 110% 110%, rgba(37, 99, 235, 0.14), transparent 55%),
+        var(--bg-light);
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--white);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 2.5rem 2rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      margin-bottom: 1.75rem;
+      text-decoration: none;
+    }
+
+    .brand img { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; }
+
+    .brand span {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .login-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 0.4rem;
+    }
+
+    .login-subtitle {
+      text-align: center;
+      color: var(--text-gray);
+      font-size: 0.95rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .alert {
+      display: none;
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.4;
+    }
+    .alert.show { display: block; }
+    .alert-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .alert-warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .alert-info { background: var(--bg-blue-light); color: var(--primary-blue-dark); border: 1px solid #bfdbfe; }
+    .alert a { color: inherit; font-weight: 600; }
+
+    .form-group { margin-bottom: 1.25rem; }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      font-size: 0.95rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    }
+
+    .password-wrap { position: relative; }
+    .password-toggle {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 0.25rem;
+    }
+    .password-toggle:hover { color: var(--primary-blue); }
+
+    .btn-submit {
+      width: 100%;
+      padding: 0.95rem 1rem;
+      border: none;
+      border-radius: var(--radius-md);
+      background: var(--gradient-blue);
+      color: var(--white);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.05s;
+    }
+    .btn-submit:hover { opacity: 0.95; }
+    .btn-submit:active { transform: translateY(1px); }
+    .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .login-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      color: var(--text-gray);
+      font-size: 0.95rem;
+    }
+    .login-footer a {
+      color: var(--primary-blue);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .login-footer a:hover { text-decoration: underline; }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+</head>
+<body>
+  <main class="login-card">
+    <a class="brand" href="/" aria-label="VoiceSystem">
+      <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem" />
+      <span>VoiceSystem</span>
+    </a>
+
+    <h1 class="login-title">Вход в кабинет</h1>
+    <p class="login-subtitle">Войдите, чтобы управлять голосовыми ассистентами</p>
+
+    <div id="alert" class="alert" role="alert"></div>
+
+    <form id="login-form" novalidate>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" class="form-control" placeholder="your@email.com" autocomplete="email" required />
+      </div>
+
+      <div class="form-group">
+        <label for="password">Пароль</label>
+        <div class="password-wrap">
+          <input type="password" id="password" class="form-control" placeholder="••••••••" autocomplete="current-password" required />
+          <button type="button" class="password-toggle" id="toggle-password" aria-label="Показать пароль">Показать</button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="submit-btn">Войти</button>
+    </form>
+
+    <p class="login-footer">
+      Нет аккаунта? <a href="/?register=1">Зарегистрироваться</a>
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      var DASHBOARD_URL = '/static/dashboard.html';
+
+      // Если уже авторизованы — сразу в кабинет.
+      if (localStorage.getItem('auth_token')) {
+        window.location.replace(DASHBOARD_URL);
+        return;
+      }
+
+      var form = document.getElementById('login-form');
+      var emailInput = document.getElementById('email');
+      var passwordInput = document.getElementById('password');
+      var submitBtn = document.getElementById('submit-btn');
+      var alertBox = document.getElementById('alert');
+      var toggleBtn = document.getElementById('toggle-password');
+
+      // Показать причину выхода, если редирект пришёл с ?reason=...
+      var params = new URLSearchParams(window.location.search);
+      var reason = params.get('reason');
+      if (reason === 'expired' || reason === 'session_expired') {
+        showAlert('info', 'Сессия истекла из-за неактивности. Войдите снова, чтобы продолжить.');
+      } else if (reason === 'logout') {
+        showAlert('info', 'Вы вышли из аккаунта.');
+      }
+
+      // Предзаполним email, если был сохранён ранее.
+      var lastEmail = localStorage.getItem('last_login_email');
+      if (lastEmail) { emailInput.value = lastEmail; }
+
+      (lastEmail ? passwordInput : emailInput).focus();
+
+      toggleBtn.addEventListener('click', function () {
+        var isHidden = passwordInput.type === 'password';
+        passwordInput.type = isHidden ? 'text' : 'password';
+        toggleBtn.textContent = isHidden ? 'Скрыть' : 'Показать';
+      });
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        hideAlert();
+
+        var email = emailInput.value.trim();
+        var password = passwordInput.value;
+
+        if (!email || !password) {
+          showAlert('error', 'Введите email и пароль.');
+          return;
+        }
+
+        setLoading(true);
+
+        fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, password: password })
+        })
+          .then(function (response) {
+            return response.json()
+              .catch(function () { return {}; })
+              .then(function (data) { return { status: response.status, ok: response.ok, data: data }; });
+          })
+          .then(function (res) {
+            if (res.ok && res.data && res.data.token) {
+              localStorage.setItem('auth_token', res.data.token);
+              localStorage.setItem('last_login_email', email);
+              showAlert('info', 'Успешный вход! Переходим в кабинет…');
+              window.location.replace(DASHBOARD_URL);
+              return;
+            }
+
+            setLoading(false);
+            handleError(res);
+          })
+          .catch(function () {
+            setLoading(false);
+            showAlert('error', 'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.');
+          });
+      });
+
+      function handleError(res) {
+        var detail = (res.data && (res.data.detail || res.data.message)) || '';
+        var text = String(detail).toLowerCase();
+
+        if (res.status === 403 || text.indexOf('not verified') !== -1 || text.indexOf('не подтвержд') !== -1) {
+          showAlert(
+            'warning',
+            'Email не подтверждён. Проверьте почту и подтвердите адрес, ' +
+            'либо <a href="/?verify=' + encodeURIComponent(emailInput.value.trim()) + '">завершите регистрацию</a>.'
+          );
+          return;
+        }
+
+        if (res.status === 401 || text.indexOf('invalid') !== -1 || text.indexOf('password') !== -1 || text.indexOf('пароль') !== -1) {
+          showAlert('error', 'Неверный email или пароль.');
+          return;
+        }
+
+        showAlert('error', detail || 'Не удалось войти. Попробуйте ещё раз.');
+      }
+
+      function setLoading(loading) {
+        submitBtn.disabled = loading;
+        submitBtn.textContent = loading ? 'Входим…' : 'Войти';
+      }
+
+      function showAlert(type, html) {
+        alertBox.className = 'alert show alert-' + type;
+        alertBox.innerHTML = html;
+      }
+
+      function hideAlert() {
+        alertBox.className = 'alert';
+        alertBox.innerHTML = '';
+      }
+    })();
+  </script>
+</body>
+</html>

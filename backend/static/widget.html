@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WellcomeAI Widget</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Стили встроены прямо в файл для независимого функционирования -->
+  <style>
+    /* Базовые стили и сброс */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', 'Roboto', sans-serif;
+    }
+    
+    body {
+      background-color: transparent !important;
+      overflow: hidden !important;
+    }
+    
+    /* Контейнер виджета */
+    .widget-container {
+      position: fixed !important;
+      bottom: 20px !important;
+      right: 20px !important;
+      z-index: 2147483647 !important;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    }
+    
+    /* Кнопка виджета */
+    .widget-button {
+      width: 60px !important;
+      height: 60px !important;
+      border-radius: 50% !important;
+      background: linear-gradient(135deg, #4a86e8, #2b59c3) !important;
+      box-shadow: 0 4px 15px rgba(74, 134, 232, 0.4) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      cursor: pointer !important;
+      transition: all 0.3s ease !important;
+      position: relative !important;
+      overflow: hidden !important;
+      z-index: 2147483647 !important;
+      border: none !important;
+      outline: none !important;
+    }
+    
+    /* Разверутый виджет */
+    .widget-expanded {
+      position: absolute !important;
+      bottom: 0 !important;
+      right: 0 !important;
+      width: 320px !important;
+      height: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      background: white !important;
+      border-radius: 20px !important;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+      overflow: hidden !important;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+      display: flex !important;
+      flex-direction: column !important;
+      z-index: 2147483647 !important;
+    }
+    
+    /* Активный виджет */
+    .widget-container.active .widget-expanded {
+      height: 400px !important;
+      opacity: 1 !important;
+      pointer-events: all !important;
+    }
+    
+    /* Основной круг для визуализации */
+    .main-circle {
+      width: 180px !important;
+      height: 180px !important;
+      border-radius: 50% !important;
+      background: linear-gradient(135deg, #ffffff, #e1f5fe, #4a86e8) !important;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1) !important;
+      position: relative !important;
+      overflow: hidden !important;
+      transition: all 0.3s ease !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    
+    /* Состояние прослушивания */
+    .main-circle.listening {
+      background: linear-gradient(135deg, #ffffff, #e3f2fd, #2196f3) !important;
+      box-shadow: 0 0 30px rgba(33, 150, 243, 0.6) !important;
+    }
+    
+    /* Остальные стили виджета (анимации, состояния и т.д.) */
+    /* ... */
+  </style>
+</head>
+<body>
+  <!-- Модальное окно загрузки -->
+  <div id="loader-modal" class="loader-modal active">
+    <div class="loader"></div>
+  </div>
+  
+  <!-- Виджет-кнопка -->
+  <div class="widget-container" id="widget-container">
+    <!-- Кнопка (минимизированное состояние) -->
+    <div class="widget-button" id="widget-button">
+      <i class="fas fa-robot widget-icon"></i>
+    </div>
+    
+    <!-- Развернутый виджет -->
+    <div class="widget-expanded" id="widget-expanded">
+      <div class="widget-header">
+        <div class="widget-title">WellcomeAI</div>
+        <button class="widget-close" id="widget-close">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="widget-content">
+        <!-- Основной элемент - круг с иконкой микрофона -->
+        <div class="main-circle" id="main-circle">
+          <i class="fas fa-microphone mic-icon"></i>
+          
+          <!-- Аудио визуализация -->
+          <div class="audio-visualization" id="audio-visualization">
+            <div class="audio-bars" id="audio-bars"></div>
+          </div>
+        </div>
+        
+        <!-- Сообщение -->
+        <div class="message-display" id="message-display"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Здесь будет JavaScript для работы виджета
+    // Обратите внимание, что этот скрипт уже есть в имеющемся файле widget.html из документации
+  </script>
+</body>
+</html>

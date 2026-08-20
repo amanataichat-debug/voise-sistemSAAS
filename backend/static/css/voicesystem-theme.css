@@ -1,0 +1,348 @@
+/* ============================================================
+   VoiceSystem — общая тема ЛК «White Depth Grid / Black Accent»
+   Подключается ПОСЛЕДНИМ <link> на каждой странице ЛК и
+   перекрывает встроенные стили страниц. Инлайн-стили страниц
+   не трогаем — только оверрайд теми же селекторами.
+   ============================================================ */
+
+:root {
+  /* Токены VoiceSystem */
+  --vs-bg: #FAFBFD;
+  --vs-surface: #FFFFFF;
+  --vs-surface-raised: #FFFFFF;
+  --vs-ink: #0E1526;
+  --vs-ink-soft: #4A5568;
+  --vs-ink-faint: #8A94A6;
+
+  --vs-accent: #0A0C10;
+  --vs-accent-hover: #1C2028;
+  --vs-accent-soft: #F1F3F6;
+  --vs-on-accent: #FFFFFF;
+  --vs-warm: #F59E0B;
+
+  --vs-success: #16A34A;
+  --vs-error: #DC2626;
+
+  --vs-line: #E6E8EC;
+  --vs-grid-line: rgba(10, 12, 16, 0.05);
+
+  --vs-shadow-1: 0 1px 2px rgba(10,12,16,.05), 0 1px 3px rgba(10,12,16,.06);
+  --vs-shadow-2: 0 4px 12px rgba(10,12,16,.07), 0 1px 3px rgba(10,12,16,.05);
+  --vs-shadow-3: 0 12px 32px rgba(10,12,16,.12), 0 2px 8px rgba(10,12,16,.06);
+  --vs-shadow-4: 0 24px 64px rgba(10,12,16,.18), 0 4px 16px rgba(10,12,16,.08);
+
+  --vs-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --vs-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Перекрытие легаси-токенов страниц: синий акцент → глубокий чёрный.
+     Страницы стилизованы через var(--primary-blue) и т.п., поэтому
+     смена значений токенов перекрашивает кнопки, ссылки, активные
+     состояния и спиннеры без правки встроенных стилей. */
+  --primary-blue: #0A0C10;
+  --primary-blue-light: #1C2028;
+  --primary-blue-dark: #000000;
+  --accent-blue: #1C2028;
+  --gradient-blue: linear-gradient(135deg, #1C2028, #0A0C10);
+  --text-dark: #0E1526;
+  --text-gray: #4A5568;
+  --text-light: #8A94A6;
+  --bg-light: #FAFBFD;
+  --bg-blue-light: #F1F3F6;
+  --white: #FFFFFF;
+  --border-color: #E6E8EC;
+  --shadow-sm: 0 1px 2px rgba(10,12,16,.05), 0 1px 3px rgba(10,12,16,.06);
+  --shadow-md: 0 4px 12px rgba(10,12,16,.07), 0 1px 3px rgba(10,12,16,.05);
+  --shadow-lg: 0 12px 32px rgba(10,12,16,.12), 0 2px 8px rgba(10,12,16,.06);
+}
+
+/* ── Фон страницы: белый + едва заметная инженерная сетка ── */
+body {
+  background-color: var(--vs-bg);
+  background-image:
+    linear-gradient(var(--vs-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vs-grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-attachment: fixed;
+  color: var(--vs-ink);
+}
+
+/* Утилиты сетки (для использования в разметке при необходимости) */
+.vs-grid-bg {
+  background-image:
+    linear-gradient(var(--vs-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vs-grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.vs-grid-fade {
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
+}
+
+/* ── САЙДБАР ── */
+.sidebar {
+  background-color: var(--vs-surface);
+  border-right: 1px solid var(--vs-line);
+  background-image:
+    linear-gradient(rgba(10,12,16,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10,12,16,0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.sidebar-header {
+  border-bottom: 1px solid var(--vs-line);
+}
+
+/* Название в шапке сайдбара — чёрный, без градиента */
+.sidebar-logo span {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: var(--vs-ink);
+  color: var(--vs-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-nav-item {
+  color: var(--vs-ink-soft);
+  border-left: 3px solid transparent;
+  transition: background-color .15s ease, color .15s ease;
+  position: relative;
+}
+.sidebar-nav-item i {
+  transition: transform .15s var(--vs-ease-out);
+}
+.sidebar-nav-item:hover {
+  background-color: var(--vs-accent-soft);
+  color: var(--vs-ink);
+}
+.sidebar-nav-item:hover i {
+  transform: translateX(2px);
+}
+.sidebar-nav-item.active {
+  background-color: var(--vs-accent-soft);
+  color: var(--vs-ink);
+  font-weight: 600;
+  border-left-color: transparent;
+}
+/* Активный пункт: вертикальная скруглённая полоска 3px слева */
+.sidebar-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--vs-accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-nav-item.active::before {
+    animation: vsBarIn .2s var(--vs-ease-out);
+    transform-origin: center;
+  }
+}
+@keyframes vsBarIn {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+.sidebar-section {
+  color: var(--vs-ink-faint);
+}
+.sidebar-footer {
+  border-top: 1px solid var(--vs-line);
+}
+
+/* ── ВЕРХНЯЯ ПАНЕЛЬ ── */
+.top-nav {
+  background-color: var(--vs-surface);
+  border-bottom: 1px solid var(--vs-line);
+  box-shadow: var(--vs-shadow-1);
+}
+.page-title {
+  color: var(--vs-ink);
+  letter-spacing: -0.02em;
+}
+
+/* ── КНОПКИ ── */
+.btn,
+button.btn {
+  border-radius: 10px;
+  transition: background-color .2s ease, color .2s ease,
+              transform .2s var(--vs-ease-spring), box-shadow .2s ease;
+}
+.btn-primary,
+button.btn-primary {
+  background-color: var(--vs-accent);
+  color: var(--vs-on-accent);
+  box-shadow: var(--vs-shadow-1);
+}
+.btn-primary:hover,
+button.btn-primary:hover {
+  background-color: var(--vs-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--vs-shadow-2);
+}
+.btn-primary:active,
+button.btn-primary:active {
+  transform: scale(.98);
+}
+.btn-secondary,
+button.btn-secondary {
+  background-color: var(--vs-surface);
+  color: var(--vs-ink);
+  border: 1px solid var(--vs-line);
+}
+.btn-secondary:hover,
+button.btn-secondary:hover {
+  background-color: var(--vs-accent-soft);
+  border-color: var(--vs-ink-faint);
+  color: var(--vs-ink);
+}
+
+/* ── ИНПУТЫ ── */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input[type="search"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+  border-radius: 10px;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+input[type="search"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--vs-accent) !important;
+  box-shadow: 0 0 0 4px var(--vs-accent-soft) !important;
+  outline: none;
+}
+
+/* ── ТАБЛИЦЫ: hover строк — мягкая заливка ── */
+table tbody tr {
+  transition: background-color .12s ease;
+}
+table tbody tr:hover {
+  background-color: rgba(241, 243, 246, 0.5);
+}
+
+/* ── МОДАЛКИ / ДРОПДАУНЫ / ТОСТЫ ── */
+@media (prefers-reduced-motion: no-preference) {
+  .modal-content,
+  .modal-box,
+  .modal-dialog {
+    animation: vsModalIn .25s var(--vs-ease-out);
+  }
+  .dropdown-menu,
+  .dropdown-content {
+    animation: vsDropIn .18s var(--vs-ease-out);
+  }
+  .toast,
+  .notification {
+    animation: vsToastIn .25s var(--vs-ease-out);
+  }
+}
+@keyframes vsModalIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes vsDropIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes vsToastIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── КАРТОЧКИ: reveal-каскад первого экрана + hover-подъём ── */
+.stat-card {
+  border: 1px solid var(--vs-line);
+  box-shadow: var(--vs-shadow-1);
+  transition: transform .2s var(--vs-ease-spring), box-shadow .25s ease;
+}
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--vs-shadow-3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stat-card {
+    animation: vsCardIn .5s var(--vs-ease-out) backwards;
+  }
+  .stat-card:nth-child(1) { animation-delay: 0ms; }
+  .stat-card:nth-child(2) { animation-delay: 60ms; }
+  .stat-card:nth-child(3) { animation-delay: 120ms; }
+  .stat-card:nth-child(4) { animation-delay: 180ms; }
+  .stat-card:nth-child(5) { animation-delay: 240ms; }
+  .stat-card:nth-child(6) { animation-delay: 300ms; }
+}
+@keyframes vsCardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── SCROLL-REVEAL (voicesystem-motion.js вешает .is-visible) ── */
+@media (prefers-reduced-motion: no-preference) {
+  .vs-reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity .5s var(--vs-ease-out), transform .5s var(--vs-ease-out);
+  }
+  .vs-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── SKELETON-SHIMMER (только CSS, JS-логика загрузки не меняется) ── */
+.vs-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--vs-accent-soft);
+  border-radius: 10px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vs-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent);
+    animation: vsShimmer 1.6s ease-in-out infinite;
+  }
+}
+@keyframes vsShimmer {
+  to { transform: translateX(100%); }
+}
+
+/* ── ПРОЧЕЕ ── */
+a { color: inherit; }
+
+::selection {
+  background: var(--vs-accent);
+  color: var(--vs-on-accent);
+}
+
+/* Скроллбар в цветах темы (WebKit) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--vs-line);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--vs-ink-faint); }

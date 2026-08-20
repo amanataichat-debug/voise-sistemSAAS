@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Исходящие звонки | Voicyfy</title>
+    
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-blue: #2563eb;
+            --primary-blue-light: #3b82f6;
+            --primary-blue-dark: #1d4ed8;
+            --text-dark: #0f172a;
+            --text-gray: #64748b;
+            --text-light: #94a3b8;
+            --bg-light: #f8fafc;
+            --bg-blue-light: #eff6ff;
+            --white: #ffffff;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --radius-md: 0.5rem;
+            --radius-lg: 1rem;
+            --success-green: #10b981;
+            --error-red: #ef4444;
+            --warning-orange: #f59e0b;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        body {
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .top-header {
+            background-color: var(--white);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-gray);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            transition: all 0.2s;
+        }
+        
+        .back-link:hover {
+            background-color: var(--bg-light);
+            color: var(--primary-blue);
+        }
+        
+        .page-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .page-title i {
+            color: var(--primary-blue);
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .logo-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            color: var(--text-dark);
+            font-weight: 700;
+        }
+        
+        .logo-link img {
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-md);
+        }
+        
+        /* Main Content */
+        .main-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        /* Cards */
+        .card {
+            background-color: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-dark);
+        }
+        
+        .card-title i {
+            color: var(--primary-blue);
+            font-size: 1.1rem;
+        }
+        
+        /* Two Column Layout */
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+            
+            .main-container {
+                padding: 1rem;
+            }
+            
+            .top-header {
+                padding: 1rem;
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+        }
+        
+        /* Form Elements */
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--text-dark);
+        }
+        
+        .form-control, .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            color: var(--text-dark);
+            background-color: var(--white);
+            transition: all 0.2s;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary-blue-light);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        
+        .form-control::placeholder {
+            color: var(--text-light);
+        }
+        
+        textarea.form-control {
+            min-height: 200px;
+            resize: vertical;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .form-helper {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-gray);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .form-helper i {
+            font-size: 0.7rem;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-md);
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border: none;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-blue);
+            color: var(--white);
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--primary-blue-dark);
+        }
+        
+        .btn-primary:disabled {
+            background-color: var(--border-color);
+            color: var(--text-light);
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background-color: var(--bg-light);
+            color: var(--text-gray);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--border-color);
+            color: var(--text-dark);
+        }
+        
+        .btn-success {
+            background-color: var(--success-green);
+            color: var(--white);
+        }
+        
+        .btn-sm {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+        }
+        
+        .btn-lg {
+            padding: 1rem 2rem;
+            font-size: 1rem;
+        }
+        
+        /* Assistant Type Tabs */
+        .assistant-type-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .assistant-type-tab {
+            flex: 1;
+            padding: 0.875rem 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--white);
+            color: var(--text-gray);
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .assistant-type-tab:hover {
+            border-color: var(--primary-blue-light);
+            color: var(--primary-blue);
+        }
+        
+        .assistant-type-tab.active {
+            border-color: var(--primary-blue);
+            background: var(--bg-blue-light);
+            color: var(--primary-blue);
+        }
+        
+        .assistant-type-tab i {
+            font-size: 1.25rem;
+            margin-bottom: 0.25rem;
+            display: block;
+        }
+        
+        .assistant-type-tab.active.openai i { color: var(--success-green); }
+        .assistant-type-tab.active.gemini i { color: var(--primary-blue); }
+        .assistant-type-tab.active.cartesia i { color: #8b5cf6; }
+        .assistant-type-tab.active.yandex i { color: #fc3f1d; }
+        .assistant-type-tab.active.cascade i { color: #f59e0b; }
+        .assistant-type-tab.active.fish i { color: #0ea5e9; }
+        
+        /* Phones Counter */
+        .phones-counter {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.875rem;
+            color: var(--text-gray);
+        }
+        
+        .phones-counter .count {
+            font-weight: 600;
+        }
+        
+        .phones-counter .count.ok { color: var(--success-green); }
+        .phones-counter .count.warning { color: var(--warning-orange); }
+        .phones-counter .count.error { color: var(--error-red); }
+        
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .status-badge.ready {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        
+        .status-badge.not-ready {
+            background-color: #f1f5f9;
+            color: var(--text-gray);
+        }
+        
+        .status-badge.loading {
+            background-color: var(--bg-blue-light);
+            color: var(--primary-blue);
+        }
+        
+        /* Launch Card */
+        .launch-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        /* Progress Section */
+        .progress-section {
+            display: none;
+        }
+        
+        .progress-section.active {
+            display: block;
+        }
+        
+        .progress-bar-container {
+            height: 8px;
+            background: var(--bg-light);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: var(--primary-blue);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-stats {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-stat {
+            text-align: center;
+        }
+        
+        .progress-stat .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        
+        .progress-stat .label {
+            font-size: 0.75rem;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .progress-stat.started .value { color: var(--success-green); }
+        .progress-stat.failed .value { color: var(--error-red); }
+        .progress-stat.pending .value { color: var(--warning-orange); }
+        
+        /* Results Log */
+        .results-log {
+            background: var(--bg-light);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 1rem;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.8rem;
+        }
+        
+        .log-entry {
+            padding: 0.375rem 0;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        .log-entry .time {
+            color: var(--text-light);
+            flex-shrink: 0;
+        }
+        
+        .log-entry.success .status { color: var(--success-green); }
+        .log-entry.error .status { color: var(--error-red); }
+        .log-entry.info .status { color: var(--primary-blue); }
+        
+        /* Alerts */
+        .alert {
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.875rem;
+        }
+        
+        .alert.d-none {
+            display: none;
+        }
+        
+        .alert-success {
+            background-color: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .alert-warning {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+        
+        .alert-danger {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        
+        .alert-info {
+            background-color: var(--bg-blue-light);
+            color: var(--primary-blue-dark);
+            border: 1px solid #bfdbfe;
+        }
+        
+        /* Loading States */
+        .loading-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1.5rem;
+            color: var(--text-gray);
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--primary-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-gray);
+        }
+        
+        .empty-state i {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+            opacity: 0.3;
+        }
+        
+        .empty-state p {
+            margin-bottom: 1rem;
+        }
+        
+        .empty-state a {
+            color: var(--primary-blue);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .empty-state a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Utility */
+        .d-none {
+            display: none !important;
+        }
+        
+        .form-group {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="top-header">
+        <div class="header-left">
+            <a href="/static/telephony.html" class="back-link">
+                <i class="fas fa-arrow-left"></i>
+                Назад к телефонии
+            </a>
+            <h1 class="page-title">
+                <i class="fas fa-phone-alt"></i>
+                Исходящие звонки
+            </h1>
+        </div>
+        <div class="header-right">
+            <a href="/static/dashboard.html" class="logo-link">
+                <img src="/static/images/IMG_2820.PNG" alt="Voicyfy" onerror="this.style.display='none'">
+                <span>Voicyfy</span>
+            </a>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Status Alert -->
+        <div id="statusAlert" class="alert d-none"></div>
+        
+        <!-- Two Column Layout -->
+        <div class="two-column">
+            <!-- Left Column: Settings -->
+            <div>
+                <!-- Caller ID Selection -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-phone"></i>
+                        Номер для звонков (Caller ID)
+                    </div>
+                    
+                    <div id="callerIdLoading" class="loading-state">
+                        <div class="spinner"></div>
+                        <span>Загрузка номеров...</span>
+                    </div>
+                    
+                    <div id="callerIdContent" class="d-none">
+                        <select class="form-select" id="callerIdSelect">
+                            <option value="">Выберите номер...</option>
+                        </select>
+                        <div class="form-helper">
+                            <i class="fas fa-info-circle"></i>
+                            Этот номер будет отображаться у клиента
+                        </div>
+                    </div>
+                    
+                    <div id="noNumbers" class="d-none">
+                        <div class="empty-state">
+                            <i class="fas fa-phone-slash"></i>
+                            <p>У вас нет купленных номеров</p>
+                            <a href="/static/telephony.html">Купить номер →</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Assistant Selection -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-robot"></i>
+                        Выбор ассистента
+                    </div>
+                    
+                    <!-- Assistant Type Tabs -->
+                    <div class="assistant-type-tabs">
+                        <div class="assistant-type-tab openai active" data-type="openai">
+                            <i class="fas fa-bolt"></i>
+                            OpenAI
+                        </div>
+                        <div class="assistant-type-tab gemini" data-type="gemini">
+                            <i class="fas fa-gem"></i>
+                            Gemini
+                        </div>
+                        <div class="assistant-type-tab cartesia" data-type="cartesia">
+                            <i class="fas fa-headset"></i>
+                            Cartesia
+                        </div>
+                        <div class="assistant-type-tab yandex" data-type="yandex">
+                            <i class="fab fa-yandex"></i>
+                            Яндекс
+                        </div>
+                        <div class="assistant-type-tab cascade" data-type="cascade">
+                            <i class="fas fa-layer-group"></i>
+                            Cascade
+                        </div>
+                        <div class="assistant-type-tab fish" data-type="fish">
+                            <i class="fas fa-fish"></i>
+                            Fish
+                        </div>
+                    </div>
+                    
+                    <div id="assistantLoading" class="loading-state">
+                        <div class="spinner"></div>
+                        <span>Загрузка ассистентов...</span>
+                    </div>
+                    
+                    <div id="assistantContent" class="d-none">
+                        <select class="form-select" id="assistantSelect">
+                            <option value="">Выберите ассистента...</option>
+                        </select>
+                    </div>
+                    
+                    <div id="noAssistants" class="d-none">
+                        <div class="empty-state">
+                            <i class="fas fa-robot"></i>
+                            <p>Нет доступных ассистентов</p>
+                            <a href="/static/agents.html" id="createAssistantLink">Создать ассистента →</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Settings -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-cog"></i>
+                        Настройки
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Время мьюта (мс)</label>
+                        <input type="number" class="form-control" id="muteDuration" 
+                               value="3000" min="0" max="10000" step="500">
+                        <div class="form-helper">
+                            <i class="fas fa-info-circle"></i>
+                            Пауза перед началом разговора, чтобы клиент успел сказать "Алло"
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column: Phones & Results -->
+            <div>
+                <!-- Target Phones -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-list-ol"></i>
+                        Номера для обзвона
+                    </div>
+                    
+                    <textarea class="form-control" id="targetPhones" 
+                              placeholder="Введите номера телефонов (каждый с новой строки)
+
+Примеры:
++79161234567
+89162345678
+79163456789"></textarea>
+                    
+                    <div class="phones-counter">
+                        <span>Введено номеров: <span id="phonesCount" class="count ok">0</span> / 50</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="clearPhones">
+                            <i class="fas fa-trash"></i>
+                            Очистить
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Launch Button -->
+                <div class="card">
+                    <div class="launch-card">
+                        <div id="readyStatus" class="status-badge not-ready">
+                            <i class="fas fa-clock"></i>
+                            Заполните все поля
+                        </div>
+                        <button type="button" class="btn btn-primary btn-lg" id="startButton" disabled>
+                            <i class="fas fa-play"></i>
+                            Запустить обзвон
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Progress Section -->
+                <div class="card progress-section" id="progressSection">
+                    <div class="card-title">
+                        <i class="fas fa-chart-line"></i>
+                        Прогресс выполнения
+                    </div>
+                    
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                    </div>
+                    
+                    <div class="progress-stats">
+                        <div class="progress-stat started">
+                            <div class="value" id="startedCount">0</div>
+                            <div class="label">Запущено</div>
+                        </div>
+                        <div class="progress-stat failed">
+                            <div class="value" id="failedCount">0</div>
+                            <div class="label">Ошибок</div>
+                        </div>
+                        <div class="progress-stat pending">
+                            <div class="value" id="pendingCount">0</div>
+                            <div class="label">В очереди</div>
+                        </div>
+                    </div>
+                    
+                    <div class="results-log" id="resultsLog">
+                        <!-- Log entries will be added here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // =============================================================================
+        // STATE
+        // =============================================================================
+        
+        const state = {
+            callerId: null,
+            assistantType: 'openai',
+            assistantId: null,
+            assistants: {
+                openai: [],
+                gemini: [],
+                cartesia: [],
+                yandex: [],
+                cascade: [],
+                fish: []
+            },
+            numbers: [],
+            isLoading: false,
+            isRunning: false
+        };
+        
+        // =============================================================================
+        // DOM ELEMENTS
+        // =============================================================================
+        
+        const elements = {
+            // Alerts
+            statusAlert: document.getElementById('statusAlert'),
+            
+            // Caller ID
+            callerIdLoading: document.getElementById('callerIdLoading'),
+            callerIdContent: document.getElementById('callerIdContent'),
+            callerIdSelect: document.getElementById('callerIdSelect'),
+            noNumbers: document.getElementById('noNumbers'),
+            
+            // Assistant
+            assistantTypeTabs: document.querySelectorAll('.assistant-type-tab'),
+            assistantLoading: document.getElementById('assistantLoading'),
+            assistantContent: document.getElementById('assistantContent'),
+            assistantSelect: document.getElementById('assistantSelect'),
+            noAssistants: document.getElementById('noAssistants'),
+            
+            // Settings
+            muteDuration: document.getElementById('muteDuration'),
+            
+            // Phones
+            targetPhones: document.getElementById('targetPhones'),
+            phonesCount: document.getElementById('phonesCount'),
+            clearPhones: document.getElementById('clearPhones'),
+            
+            // Actions
+            readyStatus: document.getElementById('readyStatus'),
+            startButton: document.getElementById('startButton'),
+            
+            // Progress
+            progressSection: document.getElementById('progressSection'),
+            progressBar: document.getElementById('progressBar'),
+            startedCount: document.getElementById('startedCount'),
+            failedCount: document.getElementById('failedCount'),
+            pendingCount: document.getElementById('pendingCount'),
+            resultsLog: document.getElementById('resultsLog')
+        };
+        
+        // =============================================================================
+        // API FUNCTIONS
+        // =============================================================================
+        
+        function getToken() {
+            return localStorage.getItem('auth_token');
+        }
+        
+        function isAuthenticated() {
+            return getToken() !== null;
+        }
+        
+        async function fetchWithAuth(url, options = {}) {
+            const token = getToken();
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            
+            const response = await fetch(url, {
+                ...options,
+                headers
+            });
+            
+            if (response.status === 401) {
+                localStorage.removeItem('auth_token');
+                window.location.href = '/static/login.html';
+                throw new Error('Unauthorized');
+            }
+            
+            return response;
+        }
+        
+        async function loadMyNumbers() {
+            try {
+                const response = await fetchWithAuth('/api/telephony/my-numbers');
+                const data = await response.json();
+                
+                if (data.numbers && data.numbers.length > 0) {
+                    state.numbers = data.numbers;
+                    renderNumbers();
+                } else {
+                    showNoNumbers();
+                }
+            } catch (error) {
+                console.error('Failed to load numbers:', error);
+                showAlert('Ошибка загрузки номеров: ' + error.message, 'danger');
+                showNoNumbers();
+            }
+        }
+        
+        async function loadAssistants(type) {
+            try {
+                elements.assistantLoading.classList.remove('d-none');
+                elements.assistantContent.classList.add('d-none');
+                elements.noAssistants.classList.add('d-none');
+                
+                let endpoint;
+                if (type === 'openai') {
+                    endpoint = '/api/assistants/';
+                } else if (type === 'gemini') {
+                    endpoint = '/api/gemini-assistants/';
+                } else if (type === 'cartesia') {
+                    endpoint = '/api/cartesia-assistants/';
+                } else if (type === 'yandex') {
+                    endpoint = '/api/yandex-assistants';
+                } else if (type === 'cascade') {
+                    endpoint = '/api/grok-assistants/cascade';
+                } else if (type === 'fish') {
+                    endpoint = '/api/fish-assistants';
+                }
+                
+                const response = await fetchWithAuth(endpoint);
+                const data = await response.json();
+                
+                let assistants = [];
+                if (Array.isArray(data)) {
+                    assistants = data;
+                } else if (data.assistants) {
+                    assistants = data.assistants;
+                } else if (data.items) {
+                    assistants = data.items;
+                }
+                
+                state.assistants[type] = assistants;
+                
+                if (assistants.length > 0) {
+                    renderAssistants(assistants);
+                } else {
+                    showNoAssistants();
+                }
+                
+            } catch (error) {
+                console.error('Failed to load assistants:', error);
+                showNoAssistants();
+            }
+        }
+        
+        async function startOutboundCalls() {
+            const phones = parsePhoneNumbers();
+            
+            if (phones.length === 0) {
+                showAlert('Введите хотя бы один номер телефона', 'warning');
+                return;
+            }
+            
+            if (phones.length > 50) {
+                showAlert('Максимум 50 номеров за один запуск', 'warning');
+                return;
+            }
+            
+            if (!state.callerId) {
+                showAlert('Выберите номер для звонков', 'warning');
+                return;
+            }
+            
+            if (!state.assistantId) {
+                showAlert('Выберите ассистента', 'warning');
+                return;
+            }
+            
+            state.isRunning = true;
+            updateUI();
+            showProgress(phones.length);
+            
+            const payload = {
+                phone_number_id: state.callerId,
+                target_phones: phones,
+                assistant_id: state.assistantId,
+                assistant_type: state.assistantType,
+                mute_duration_ms: parseInt(elements.muteDuration.value) || 3000
+            };
+            
+            logMessage('info', `Запуск обзвона ${phones.length} номеров...`);
+            
+            try {
+                const response = await fetchWithAuth('/api/telephony/start-outbound-call', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    handleCallResults(data);
+                } else {
+                    logMessage('error', `Ошибка: ${data.detail || 'Неизвестная ошибка'}`);
+                    showAlert(data.detail || 'Ошибка запуска звонков', 'danger');
+                }
+                
+            } catch (error) {
+                console.error('Failed to start calls:', error);
+                logMessage('error', `Ошибка: ${error.message}`);
+                showAlert('Ошибка соединения: ' + error.message, 'danger');
+            }
+            
+            state.isRunning = false;
+            updateUI();
+        }
+        
+        // =============================================================================
+        // UI FUNCTIONS
+        // =============================================================================
+        
+        function renderNumbers() {
+            elements.callerIdLoading.classList.add('d-none');
+            elements.callerIdContent.classList.remove('d-none');
+            elements.noNumbers.classList.add('d-none');
+            
+            elements.callerIdSelect.innerHTML = '<option value="">Выберите номер...</option>';
+            
+            state.numbers.forEach(num => {
+                const option = document.createElement('option');
+                option.value = num.id;
+                option.textContent = formatPhoneNumber(num.phone_number);
+                elements.callerIdSelect.appendChild(option);
+            });
+        }
+        
+        function showNoNumbers() {
+            elements.callerIdLoading.classList.add('d-none');
+            elements.callerIdContent.classList.add('d-none');
+            elements.noNumbers.classList.remove('d-none');
+        }
+        
+        function renderAssistants(assistants) {
+            elements.assistantLoading.classList.add('d-none');
+            elements.assistantContent.classList.remove('d-none');
+            elements.noAssistants.classList.add('d-none');
+            
+            elements.assistantSelect.innerHTML = '<option value="">Выберите ассистента...</option>';
+            
+            assistants.forEach(assistant => {
+                const option = document.createElement('option');
+                option.value = assistant.id;
+                option.textContent = assistant.name || 'Без названия';
+                elements.assistantSelect.appendChild(option);
+            });
+        }
+        
+        function showNoAssistants() {
+            elements.assistantLoading.classList.add('d-none');
+            elements.assistantContent.classList.add('d-none');
+            elements.noAssistants.classList.remove('d-none');
+
+            const createLinks = {
+                openai: '/static/agents.html',
+                gemini: '/static/gemini-agents.html',
+                cartesia: '/static/cartesia-agents.html',
+                yandex: '/static/yandex-agents.html',
+                cascade: '/static/cascade.html',
+                fish: '/static/fish-agents.html'
+            };
+            const link = document.getElementById('createAssistantLink');
+            if (link) {
+                link.href = createLinks[state.assistantType] || '/static/agents.html';
+            }
+        }
+        
+        function updateUI() {
+            const phones = parsePhoneNumbers();
+            const isReady = state.callerId && state.assistantId && phones.length > 0 && phones.length <= 50;
+            
+            // Update ready status
+            if (isReady) {
+                elements.readyStatus.className = 'status-badge ready';
+                elements.readyStatus.innerHTML = '<i class="fas fa-check-circle"></i> Готово к запуску';
+            } else {
+                elements.readyStatus.className = 'status-badge not-ready';
+                elements.readyStatus.innerHTML = '<i class="fas fa-clock"></i> Заполните все поля';
+            }
+            
+            // Update button
+            elements.startButton.disabled = !isReady || state.isRunning;
+            
+            if (state.isRunning) {
+                elements.startButton.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;"></div> Выполняется...';
+            } else {
+                elements.startButton.innerHTML = '<i class="fas fa-play"></i> Запустить обзвон';
+            }
+            
+            // Update phones counter
+            elements.phonesCount.textContent = phones.length;
+            
+            if (phones.length > 50) {
+                elements.phonesCount.className = 'count error';
+            } else if (phones.length > 40) {
+                elements.phonesCount.className = 'count warning';
+            } else {
+                elements.phonesCount.className = 'count ok';
+            }
+        }
+        
+        function showProgress(totalPhones) {
+            elements.progressSection.classList.add('active');
+            elements.progressBar.style.width = '0%';
+            elements.startedCount.textContent = '0';
+            elements.failedCount.textContent = '0';
+            elements.pendingCount.textContent = totalPhones;
+            elements.resultsLog.innerHTML = '';
+        }
+        
+        function handleCallResults(data) {
+            const { total_requested, started, failed, results } = data;
+            
+            // Update counters
+            elements.startedCount.textContent = started;
+            elements.failedCount.textContent = failed;
+            elements.pendingCount.textContent = '0';
+            elements.progressBar.style.width = '100%';
+            
+            // Log results
+            if (data.success) {
+                logMessage('success', `✅ ${data.message}`);
+            } else {
+                logMessage('error', `⚠️ ${data.message}`);
+            }
+            
+            // Log individual results
+            results.forEach(result => {
+                if (result.status === 'started') {
+                    logMessage('success', `${result.phone}: Звонок запущен (session: ${result.session_id || 'N/A'})`);
+                } else {
+                    logMessage('error', `${result.phone}: ${result.error || 'Ошибка'}`);
+                }
+            });
+            
+            // Show summary alert
+            if (failed === 0) {
+                showAlert(`Успешно запущено ${started} звонков!`, 'success');
+            } else if (started > 0) {
+                showAlert(`Запущено ${started} звонков, ${failed} ошибок`, 'warning');
+            } else {
+                showAlert(`Не удалось запустить звонки: ${failed} ошибок`, 'danger');
+            }
+        }
+        
+        function logMessage(type, message) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const time = new Date().toLocaleTimeString('ru-RU');
+            entry.innerHTML = `<span class="time">[${time}]</span> <span class="status">${message}</span>`;
+            
+            elements.resultsLog.appendChild(entry);
+            elements.resultsLog.scrollTop = elements.resultsLog.scrollHeight;
+        }
+        
+        function showAlert(message, type) {
+            elements.statusAlert.className = `alert alert-${type}`;
+            elements.statusAlert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'exclamation-circle'}"></i> ${message}`;
+            elements.statusAlert.classList.remove('d-none');
+            
+            setTimeout(() => {
+                elements.statusAlert.classList.add('d-none');
+            }, 5000);
+        }
+        
+        // =============================================================================
+        // UTILITY FUNCTIONS
+        // =============================================================================
+        
+        function parsePhoneNumbers() {
+            const text = elements.targetPhones.value.trim();
+            if (!text) return [];
+            
+            const lines = text.split('\n');
+            const phones = [];
+            
+            for (const line of lines) {
+                const cleaned = line.trim().replace(/[\s\-\(\)]/g, '');
+                if (cleaned.length >= 10) {
+                    let phone = cleaned;
+                    if (phone.startsWith('8') && phone.length === 11) {
+                        phone = '+7' + phone.slice(1);
+                    } else if (!phone.startsWith('+')) {
+                        phone = '+' + phone;
+                    }
+                    phones.push(phone);
+                }
+            }
+            
+            return phones;
+        }
+        
+        function formatPhoneNumber(phone) {
+            const cleaned = phone.replace(/\D/g, '');
+            if (cleaned.length === 11 && cleaned.startsWith('7')) {
+                return `+7 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7, 9)}-${cleaned.slice(9)}`;
+            }
+            return phone;
+        }
+        
+        // =============================================================================
+        // EVENT HANDLERS
+        // =============================================================================
+        
+        // Caller ID change
+        elements.callerIdSelect.addEventListener('change', (e) => {
+            state.callerId = e.target.value || null;
+            updateUI();
+        });
+        
+        // Assistant type tabs
+        elements.assistantTypeTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                elements.assistantTypeTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                state.assistantType = tab.dataset.type;
+                state.assistantId = null;
+                loadAssistants(state.assistantType);
+                updateUI();
+            });
+        });
+        
+        // Assistant change
+        elements.assistantSelect.addEventListener('change', (e) => {
+            state.assistantId = e.target.value || null;
+            updateUI();
+        });
+        
+        // Phones textarea
+        elements.targetPhones.addEventListener('input', () => {
+            updateUI();
+        });
+        
+        // Clear phones button
+        elements.clearPhones.addEventListener('click', () => {
+            elements.targetPhones.value = '';
+            updateUI();
+        });
+        
+        // Start button
+        elements.startButton.addEventListener('click', () => {
+            if (!state.isRunning) {
+                startOutboundCalls();
+            }
+        });
+        
+        // =============================================================================
+        // INITIALIZATION
+        // =============================================================================
+        
+        async function init() {
+            console.log('Initializing outbound calls page...');
+            
+            if (!isAuthenticated()) {
+                console.log('Not authenticated, redirecting to login...');
+                window.location.href = '/static/login.html';
+                return;
+            }
+            
+            console.log('User is authenticated, loading data...');
+            
+            await Promise.all([
+                loadMyNumbers(),
+                loadAssistants('openai')
+            ]);
+            
+            updateUI();
+            
+            console.log('Initialization complete');
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

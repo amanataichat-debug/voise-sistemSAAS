@@ -1,0 +1,2015 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои агенты — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <style>
+    /* Основные стили */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --orange-500: #f97316;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+    }
+    
+    /* Боковая панель */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .sidebar-logo span {
+      font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #2563eb;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .sidebar-logo img {
+      width: 32px;
+      height: 32px;
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    .badge-realtime {
+      margin-left: auto;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+      border-left: 3px solid transparent;
+      position: relative;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    /* Заблокированные фичи по API ключу */
+    .locked-feature {
+      opacity: 0.6;
+      cursor: not-allowed;
+      position: relative;
+    }
+    
+    .locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    /* ✅ НОВОЕ: Заблокированные фичи по тарифу */
+    .plan-locked-feature {
+      opacity: 0.6;
+      cursor: pointer !important;
+      position: relative;
+    }
+    
+    .plan-locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    .plan-locked-feature:hover {
+      opacity: 0.8;
+      background-color: var(--bg-blue-light);
+    }
+    
+    /* Основной контент */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .page-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    /* API ключ в top-nav */
+    .api-key-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: var(--bg-light);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .api-key-label {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .api-key-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .api-key-input {
+      padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      width: 250px;
+      font-family: monospace;
+    }
+
+    .api-key-input:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+
+    .api-key-toggle {
+      position: absolute;
+      right: 0.5rem;
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.25rem;
+      display: flex;
+      align-items: center;
+    }
+
+    .api-key-toggle:hover {
+      color: var(--primary-blue);
+    }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    /* Выпадающее меню пользователя */
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: var(--transition-sm);
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: var(--transition-sm);
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-outline {
+      border: 1px solid var(--border-color);
+      background-color: var(--white);
+      color: var(--text-gray);
+    }
+    
+    .btn-outline:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+    
+    .btn-danger {
+      background-color: #ef4444;
+      color: var(--white);
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Табы */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+    }
+    
+    .tab {
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    
+    .tab.active {
+      color: var(--primary-blue);
+      border-bottom-color: var(--primary-blue);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* Форма */
+    .form-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary-blue-light);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    
+    textarea.form-control {
+      min-height: 150px;
+      resize: vertical;
+    }
+    
+    .form-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    
+    /* Селект для голоса */
+    .voice-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+    
+    .voice-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .voice-option:hover {
+      background-color: var(--bg-blue-light);
+    }
+    
+    .voice-option.selected {
+      border-color: var(--primary-blue);
+      background-color: var(--bg-blue-light);
+    }
+    
+    .voice-option input {
+      margin: 0;
+    }
+    
+    /* Уведомление */
+    .notification {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-md);
+      max-width: 350px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: transform 0.3s, opacity 0.3s;
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .notification-error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: #10b981;
+    }
+    
+    .notification-error .notification-icon {
+      color: #ef4444;
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      cursor: pointer;
+      font-size: 1.125rem;
+    }
+    
+    /* Встраивание */
+    .embed-container {
+      background-color: var(--bg-light);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .embed-code {
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-top: 0.5rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      user-select: all;
+      overflow-x: auto;
+    }
+    
+    .embed-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+    
+    /* Стили для блока ID агента */
+    .agent-id-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--primary-blue-light);
+      margin-bottom: 1rem;
+    }
+    
+    .agent-id-label {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .agent-id-value {
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: var(--primary-blue);
+      background-color: var(--white);
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      user-select: all;
+    }
+    
+    .copy-id-btn {
+      margin-left: auto;
+    }
+    
+    /* Статистика */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .stat-title {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    
+    .stat-change {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    
+    .stat-change.positive {
+      color: #10b981;
+    }
+    
+    .stat-change.negative {
+      color: #ef4444;
+    }
+
+    /* Состояние загрузки */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid var(--bg-blue-light);
+      border-radius: 50%;
+      border-top-color: var(--primary-blue);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .debug-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      max-width: 400px;
+      max-height: 200px;
+      overflow: auto;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 9999;
+      display: none;
+    }
+    
+    /* Стили для списка агентов */
+    .card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    
+    .agents-list-container {
+      margin-top: 2rem;
+    }
+    
+    .agent-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .agents-count {
+      color: var(--text-gray);
+      font-weight: 500;
+      margin: 0;
+    }
+    
+    .agent-items {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .agent-item {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+      display: flex;
+      gap: 1.25rem;
+      transition: all 0.2s;
+    }
+    
+    .agent-item:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    
+    .agent-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4a86e8, #2b59c3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    
+    .agent-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .agent-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .agent-description {
+      color: var(--text-gray);
+      margin-bottom: 0.75rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 0.95rem;
+    }
+    
+    .agent-meta {
+      display: flex;
+      gap: 1rem;
+      color: var(--text-light);
+      font-size: 0.875rem;
+    }
+    
+    .agent-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+    
+    .empty-icon {
+      font-size: 3rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+    
+    .empty-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    
+    .empty-description {
+      color: var(--text-gray);
+      max-width: 500px;
+      margin: 0 auto 2rem;
+    }
+    
+    /* Стили для раздела тестирования */
+    .testing-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 2rem;
+    }
+    
+    .testing-container {
+      padding: 1.5rem;
+    }
+    
+    .testing-description {
+      margin-bottom: 2rem;
+      color: var(--text-gray);
+      line-height: 1.6;
+    }
+    
+    .testing-features {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+    
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+    
+    .feature-item i {
+      font-size: 1.25rem;
+      color: var(--primary-blue);
+    }
+    
+    .testing-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+      padding: 1rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+    
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-gray);
+    }
+    
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    
+    .status-indicator.connected {
+      background-color: #10b981;
+    }
+    
+    .status-indicator.connecting {
+      background-color: #f59e0b;
+      animation: pulse 1.5s infinite;
+    }
+    
+    .status-indicator.disconnected {
+      background-color: #ef4444;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+    
+    #testing-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    
+    .testing-tip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-light);
+      margin-top: 0.5rem;
+    }
+    
+    /* Анимация пульсирующей кнопки для привлечения внимания */
+    .pulse-animation {
+      animation: pulse-animation 2s infinite;
+    }
+    
+    @keyframes pulse-animation {
+      0% {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+      }
+      70% {
+        box-shadow: 0 0 0 10px rgba(37, 99, 235, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+      }
+    }
+
+    /* Стили для минималистичного тестирования */
+    .widget-indicator {
+      position: fixed;
+      bottom: 100px;
+      right: 30px;
+      padding: 8px 12px;
+      background: rgba(37, 99, 235, 0.1);
+      border: 1px dashed var(--primary-blue);
+      border-radius: 5px;
+      color: var(--primary-blue);
+      font-size: 0.875rem;
+      pointer-events: none;
+      animation: fade-out 5s forwards;
+      z-index: 90;
+    }
+    
+    @keyframes fade-out {
+      0% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    
+    /* Стили для функций (ОБНОВЛЕНО) */
+    .function-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .function-option:hover {
+      background-color: var(--bg-blue-light);
+    }
+
+    .function-option input {
+      margin: 0;
+    }
+
+    .function-info {
+      margin-top: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .function-schema {
+      background-color: var(--white);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+      white-space: pre-wrap;
+    }
+
+    .prompt-example {
+      background-color: var(--white);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      margin-top: 1rem;
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .prompt-example pre {
+      background-color: var(--bg-light);
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+    }
+    
+    /* Стили для загрузки функций (ДОБАВЛЕНО) */
+    .functions-loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-gray);
+    }
+
+    .functions-loading i {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      animation: spin 1s linear infinite;
+    }
+    
+    /* Стили для блока Google Sheets */
+    .connection-status {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      display: none;
+    }
+    
+    .sheet-container {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    .sheet-input {
+      flex: 1;
+    }
+    
+    .sheet-info {
+      margin-top: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      line-height: 1.5;
+    }
+    
+    .sheet-tips {
+      margin-top: 1rem;
+      padding: 1rem;
+      background-color: var(--bg-light);
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--border-color);
+    }
+    
+    .sheet-tips h4 {
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .sheet-tips ul {
+      padding-left: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      line-height: 1.5;
+    }
+    
+    .sheet-tips li {
+      margin-bottom: 0.5rem;
+    }
+
+    /* Стили для карточки JARVIS - ПРОСТАЯ ВЕРСИЯ */
+    .jarvis-card {
+      margin-bottom: 1rem;
+    }
+
+    .jarvis-description {
+      color: var(--text-gray);
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .jarvis-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1.5rem;
+    }
+
+    .jarvis-image-container {
+      width: 100%;
+      overflow: hidden;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+    }
+
+    .jarvis-image-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* ✅ МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ */
+    .feature-blocked-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .feature-blocked-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .feature-blocked-modal .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .feature-blocked-modal .modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 450px;
+      width: 100%;
+      animation: modal-slide-up 0.3s ease-out;
+      overflow: hidden;
+    }
+
+    .feature-blocked-modal .modal-header {
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-header i {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .feature-blocked-modal .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .feature-blocked-modal .modal-body {
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-body p {
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .feature-blocked-modal .current-plan-info {
+      background-color: var(--bg-light);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+    }
+
+    .feature-blocked-modal .current-plan-info span {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .feature-blocked-modal .required-plans {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .feature-blocked-modal .required-plans strong {
+      color: var(--primary-blue);
+    }
+
+    .feature-blocked-modal .modal-footer {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .feature-blocked-modal .modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    @keyframes modal-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes modal-slide-up {
+      from { 
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* Экран-инструкция API-ключа */
+    .api-key-setup {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      padding: 2rem;
+    }
+
+    .api-key-setup-title {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .api-key-setup-description {
+      color: var(--text-gray);
+      max-width: 600px;
+      text-align: center;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .api-key-setup-steps {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: var(--shadow-md);
+      margin-bottom: 2rem;
+    }
+
+    .api-key-setup-steps h3 {
+      margin-bottom: 1rem;
+    }
+
+    .api-key-setup-steps ol {
+      padding-left: 1.5rem;
+      line-height: 1.8;
+    }
+
+    .api-key-setup-steps li {
+      margin-bottom: 0.5rem;
+    }
+
+    .api-key-setup-steps a {
+      color: var(--primary-blue);
+      text-decoration: none;
+    }
+
+    .api-key-setup-steps a:hover {
+      text-decoration: underline;
+    }
+
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+
+      .sidebar.mobile-open {
+        transform: translateX(0);
+      }
+      
+      .sidebar-footer {
+        padding: 0.75rem 0;
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+      }
+      
+      .content-container {
+        padding: 1rem;
+      }
+      
+      .page-actions {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: stretch;
+      }
+
+      .api-key-container {
+        width: 100%;
+        flex-wrap: wrap;
+      }
+
+      .api-key-input {
+        width: 100%;
+      }
+
+      .agent-items {
+        grid-template-columns: 1fr;
+      }
+      
+      .agent-item {
+        flex-direction: column;
+        text-align: center;
+      }
+      
+      .agent-actions {
+        flex-direction: row;
+        justify-content: center;
+      }
+      
+      .voice-options {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      }
+      
+      .testing-features {
+        grid-template-columns: 1fr;
+      }
+      
+      .form-footer {
+        flex-direction: column;
+      }
+      
+      .tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+      }
+      
+      .tab {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      
+      .user-dropdown {
+        right: auto;
+        left: 0;
+      }
+      
+      .agent-id-info {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .copy-id-btn {
+        margin-left: 0;
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .content-container {
+        padding: 0.5rem;
+      }
+      
+      .form-section {
+        padding: 1rem;
+      }
+      
+      .agent-item {
+        padding: 1rem;
+      }
+      
+      .notification {
+        right: 0.5rem;
+        left: 0.5rem;
+        max-width: none;
+      }
+    }
+
+    /* Кнопка мобильного меню */
+    .mobile-menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: var(--text-gray);
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-toggle {
+        display: block;
+      }
+    }
+
+    /* Overlay для мобильного меню */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 49;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay.show {
+        display: block;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Overlay для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
+        <i class="fas fa-headset"></i> Агент обзвона
+        <span class="badge-realtime">new</span>
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item active">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item" id="gemini-agents-nav-item">
+        <i class="fas fa-gem"></i> Gemini агенты
+      </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item">
+        <i class="fas fa-comments"></i> Диалоги
+       </a>
+      <a href="/static/crm.html" class="sidebar-nav-item" data-feature="crm">
+        <i class="fas fa-address-book"></i> CRM
+       </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <!-- Кнопка выхода внизу -->
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="page-title">OpenAI агенты</h1>
+      </div>
+      
+      <div class="page-actions">
+        <!-- API ключ OpenAI — всегда виден в top-nav -->
+        <div class="api-key-container" id="openai-api-key-container">
+          <span class="api-key-label">OpenAI API:</span>
+
+          <!-- Режим просмотра (ключ есть) -->
+          <div id="openai-key-view-mode" style="display: none; align-items: center; gap: 0.5rem;">
+            <span
+              id="openai-key-masked-display"
+              style="font-family: monospace; font-size: 0.875rem; color: var(--text-dark);"
+              data-full-key=""
+              data-masked="true"
+            >sk-...****</span>
+            <button class="btn-icon" id="openai-toggle-key-visibility" title="Показать/скрыть ключ">
+              <i class="fas fa-eye"></i>
+            </button>
+            <button class="btn-icon" id="openai-edit-key-btn" title="Изменить ключ">
+              <i class="fas fa-edit"></i>
+            </button>
+          </div>
+
+          <!-- Режим ввода (ключа нет или редактирование) -->
+          <div id="openai-key-edit-mode" style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="api-key-input-wrapper">
+              <input
+                type="password"
+                id="openai-api-key-input"
+                class="api-key-input"
+                placeholder="sk-..."
+              >
+              <button class="api-key-toggle" id="openai-toggle-input-visibility" title="Показать/скрыть">
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
+            <button class="btn-icon" id="openai-save-key-btn" title="Сохранить ключ">
+              <i class="fas fa-save"></i>
+            </button>
+            <button class="btn-icon" id="openai-cancel-key-btn" title="Отмена" style="display: none;">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <button class="btn btn-outline" id="view-embed-code" style="display: none;">
+          <i class="fas fa-code"></i> Код для встраивания
+        </button>
+        <button class="btn btn-danger" id="delete-agent" style="display: none;">
+          <i class="fas fa-trash"></i> Удалить
+        </button>
+        <button class="btn btn-primary" id="save-agent" style="display: none;">
+          <i class="fas fa-save"></i> Сохранить
+        </button>
+        <button class="btn btn-primary" id="create-new-agent-btn">
+          <i class="fas fa-plus"></i> Создать агента
+        </button>
+        
+        <div class="user-menu">
+          <button class="user-button" id="user-menu-button">
+            <div class="user-avatar" id="user-avatar">АП</div>
+            <span class="user-name" id="user-name">Александр Петров</span>
+            <i class="fas fa-chevron-down"></i>
+          </button>
+          
+          <div class="user-dropdown" id="user-dropdown">
+            <a href="/static/settings.html" class="dropdown-item">
+              <i class="fas fa-user"></i> Профиль
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/" class="dropdown-item" id="dropdown-logout">
+              <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Экран-инструкция (показывается когда ключа нет) -->
+      <div id="api-key-setup-screen" style="display: none;">
+        <div class="api-key-setup">
+          <div class="api-key-setup-icon" style="font-size: 4rem; color: var(--primary-blue); margin-bottom: 1.5rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+          <h2 class="api-key-setup-title">Настройка OpenAI API</h2>
+          <p class="api-key-setup-description">
+            Для работы с OpenAI агентами необходимо добавить API ключ.
+            Вставьте его в поле вверху страницы и нажмите <i class="fas fa-save"></i>.
+          </p>
+
+          <div class="api-key-setup-steps">
+            <h3>Как получить API ключ:</h3>
+            <ol>
+              <li>Перейдите на <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></li>
+              <li>Войдите в свою учётную запись OpenAI</li>
+              <li>Нажмите <strong>"Create new secret key"</strong></li>
+              <li>Скопируйте ключ — он начинается с <code>sk-</code></li>
+              <li>Вставьте в поле <strong>OpenAI API</strong> вверху страницы и нажмите <i class="fas fa-save"></i></li>
+            </ol>
+          </div>
+
+          <p style="color: var(--text-light); font-size: 0.875rem; text-align: center;">
+            После добавления ключа вы сможете создавать и управлять OpenAI агентами
+          </p>
+        </div>
+      </div>
+
+      <!-- Контейнер для списка агентов (показывается в режиме списка) -->
+      <div id="agents-list-container" class="agents-list-container">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Ваши голосовые ассистенты</h2>
+          </div>
+          <div id="agents-list" class="agents-list">
+            <!-- Содержимое будет заполнено динамически -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Контейнер для редактирования агента (показывается в режиме редактирования) -->
+      <div id="edit-agent-container" style="display: none;">
+        <!-- Табы -->
+        <div class="tabs">
+          <div class="tab active" data-tab="settings">Настройки</div>
+          <div class="tab" data-tab="testing">Тестирование</div>
+          <div class="tab" data-tab="embed">Встраивание</div>
+          <div class="tab" data-tab="functions">Функции</div>
+        </div>
+        
+        <!-- Таб настроек -->
+        <div class="tab-content active" id="settings-tab">
+          <form id="agent-form">
+            <div class="form-section">
+              <div class="form-group">
+                <label for="agent-name">Название агента</label>
+                <input type="text" id="agent-name" class="form-control" placeholder="Введите название" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="agent-description">Описание (опционально)</label>
+                <textarea id="agent-description" class="form-control" placeholder="Описание вашего голосового ассистента"></textarea>
+              </div>
+              
+              <div class="form-group">
+                <label for="greeting-message">Приветственное сообщение</label>
+                <input 
+                  type="text" 
+                  id="greeting-message" 
+                  class="form-control" 
+                  placeholder="Здравствуйте! Чем я могу вам помочь?" 
+                  maxlength="200"
+                >
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Эта фраза будет первым, что скажет ассистент при звонке. Максимум 200 символов.
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-weight: 500;">
+                  <input
+                    type="checkbox"
+                    id="enable-vision"
+                    style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary-blue);"
+                  >
+                  <span>Vision AI — анализ экрана</span>
+                </label>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem; margin-left: 2rem;">
+                  Каждые 3 секунды ИИ получает скриншот страницы пользователя, чтобы понимать контекст.
+                  <strong style="color: #f59e0b;">Увеличивает расход токенов.</strong>
+                </p>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <div class="form-group">
+                <label for="system-prompt">Системный промпт</label>
+                <textarea id="system-prompt" class="form-control" placeholder="Инструкции для ассистента" required></textarea>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Задайте инструкции для вашего ассистента. Это определит его знания, стиль общения и поведение.
+                </p>
+              </div>
+            </div>
+            
+            <div class="form-section">
+              <div class="form-group">
+                <label>Голос ассистента</label>
+                <div class="voice-options">
+                  <label class="voice-option selected">
+                    <input type="radio" name="voice" value="alloy" checked>
+                    <span>Alloy</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="echo">
+                    <span>Echo</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="marin">
+                    <span>Marin</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="cedar">
+                    <span>Cedar</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="shimmer">
+                    <span>Shimmer</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="ash">
+                    <span>Ash</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="ballad">
+                    <span>Ballad</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="coral">
+                    <span>Coral</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="sage">
+                    <span>Sage</span>
+                  </label>
+                  <label class="voice-option">
+                    <input type="radio" name="voice" value="verse">
+                    <span>Verse</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-footer">
+              <button type="button" class="btn btn-outline" id="cancel-button">Отмена</button>
+              <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+          </form>
+        </div>
+        
+        <!-- Таб тестирования -->
+        <div class="tab-content" id="testing-tab">
+          <div class="card testing-section">
+            <div class="card-header">
+              <h3 style="margin-bottom: 1rem;">Тестирование вашего голосового ассистента</h3>
+            </div>
+            
+            <div class="testing-container">
+              <div class="testing-description">
+                <p>Голосовой ассистент готов к использованию. Для взаимодействия нажмите на кнопку в правом нижнем углу экрана.</p>
+                <div class="testing-features">
+                  <div class="feature-item">
+                    <i class="fas fa-microphone"></i>
+                    <span>Говорите с ассистентом через микрофон</span>
+                  </div>
+                  <div class="feature-item">
+                    <i class="fas fa-volume-up"></i>
+                    <span>Слушайте ответы в выбранном голосе</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="testing-status">
+                <div class="status-item" id="testing-connection-status">
+                  <div class="status-indicator connecting"></div>
+                  <span>Подключение...</span>
+                </div>
+                <div class="status-item" id="testing-voice-status">
+                  <i class="fas fa-volume-up"></i>
+                  <span>Голос: <span id="voice-name">загрузка...</span></span>
+                </div>
+              </div>
+              
+              <div class="testing-tip" style="text-align: center; margin-top: 2rem;">
+                <i class="fas fa-arrow-right"></i>
+                <span>Виджет доступен в правом нижнем углу экрана</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Таб встраивания -->
+        <div class="tab-content" id="embed-tab">
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Код для встраивания</h3>
+            <p>Скопируйте этот код и вставьте его на свой сайт, чтобы добавить голосового ассистента.</p>
+            
+            <!-- Новый блок для отображения ID агента -->
+            <div class="agent-id-info">
+              <span class="agent-id-label">ID агента:</span>
+              <span class="agent-id-value" id="agent-id-display">-</span>
+              <button class="btn btn-outline copy-id-btn" id="copy-agent-id">
+                <i class="fas fa-copy"></i> Копировать ID
+              </button>
+            </div>
+            
+            <div class="embed-container">
+              <div class="embed-code" id="embed-code">
+              <!-- Код будет загружен динамически -->
+              </div>
+              <div class="embed-actions">
+                <button class="btn btn-primary" id="copy-embed-code">
+                  <i class="fas fa-copy"></i> Копировать код
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Карточка JARVIS - ПРОСТАЯ ВЕРСИЯ -->
+          <div class="form-section jarvis-card">
+            <h3 style="margin-bottom: 1rem;">Код для JARVIS</h3>
+            <p class="jarvis-description">
+              Если нужна полная HTML страница, модифицируйте следующий код
+            </p>
+            
+            <div class="jarvis-actions">
+              <a href="https://foryouchatsgpt.notion.site/HTML-JARVIS-286c677cc66880089028e61fc1821d4f" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                <i class="fas fa-external-link-alt"></i> Копировать код
+              </a>
+            </div>
+            
+            <div class="jarvis-image-container">
+              <img 
+                src="https://i.ibb.co/d4G1t4X5/image.png" 
+                alt="JARVIS Assistant" 
+                loading="lazy"
+              >
+            </div>
+          </div>
+          
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Предпросмотр</h3>
+            <p>Так будет выглядеть ваш ассистент на сайте:</p>
+            
+            <div style="margin-top: 1.5rem; text-align: center;">
+              <div style="display: inline-block; position: relative;">
+                <div style="width: 400px; height: 300px; background-color: #f3f4f6; border: 1px dashed #d1d5db; border-radius: 0.5rem; display: flex; justify-content: center; align-items: center;">
+                  <div style="position: absolute; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #4a86e8, #2563eb); display: flex; justify-content: center; align-items: center; color: white; box-shadow: 0 4px 15px rgba(74, 134, 232, 0.4);">
+                    <i class="fas fa-robot" style="font-size: 1.5rem;"></i>
+                  </div>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-gray);">Пример вашего сайта с виджетом голосового ассистента</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Таб функций (ОБНОВЛЕНО - динамическая загрузка) -->
+        <div class="tab-content" id="functions-tab">
+          <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Функции ассистента</h3>
+            <p>Включите необходимые функции для вашего ассистента:</p>
+            
+            <!-- Контейнер для динамически загруженных функций -->
+            <div id="functions-container">
+              <div class="functions-loading">
+                <i class="fas fa-spinner"></i>
+                <p>Загрузка доступных функций...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+
+    <!-- Индикатор загрузки -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Панель отладки -->
+    <div class="debug-panel" id="debug-panel"></div>
+    
+    <!-- Индикатор для виджета -->
+    <div id="widget-indicator" class="widget-indicator" style="display: none;">
+      Виджет голосового ассистента доступен здесь
+    </div>
+  </main>
+
+  <!-- ✅ МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ -->
+  <div class="feature-blocked-modal" id="feature-blocked-modal">
+    <div class="modal-overlay" id="feature-modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <i class="fas fa-lock"></i>
+        <h3>Функция недоступна</h3>
+      </div>
+      <div class="modal-body">
+        <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+        <div class="current-plan-info">
+          Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+        </div>
+        <p class="required-plans">
+          Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+        <button class="btn btn-primary" id="feature-modal-upgrade">
+          <i class="fas fa-arrow-up"></i> Выбрать тариф
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Подключаем модульный JS -->
+  <script type="module" src="/static/agents/index.js"></script>
+</body>
+</html>

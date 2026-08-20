@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои агенты 11Labs — VoiceSystem</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/elevenlabs-agents.css">
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Боковая панель -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item">
+        <i class="fas fa-robot"></i> Мои агенты
+      </a>
+      <a href="/static/elevenlabs-agents.html" class="sidebar-nav-item active">
+        <i class="fas fa-microphone"></i> Мои агенты 11Labs
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <h1 class="page-title">Мои агенты 11Labs</h1>
+      </div>
+      
+      <div class="page-actions">
+        <button class="btn btn-outline" id="view-embed-code" style="display: none;">
+          <i class="fas fa-code"></i> Код для встраивания
+        </button>
+        <button class="btn btn-danger" id="delete-agent" style="display: none;">
+          <i class="fas fa-trash"></i> Удалить
+        </button>
+        <button class="btn btn-primary" id="save-agent" style="display: none;">
+          <i class="fas fa-save"></i> Сохранить
+        </button>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container">
+      <!-- Форма API ключа (показывается если ключ не установлен) -->
+      <div id="api-key-container" class="card" style="display: none;">
+        <div class="card-header">
+          <h2 class="card-title">Настройка ElevenLabs API</h2>
+        </div>
+        <div class="api-key-form">
+          <div class="api-key-description">
+            <p>Для работы с голосовыми агентами ElevenLabs необходимо указать ваш API ключ.</p>
+            <p>Получить ключ можно в <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank">личном кабинете ElevenLabs</a></p>
+          </div>
+          <form id="api-key-form">
+            <div class="form-group">
+              <label for="api-key">ElevenLabs API Key</label>
+              <input type="password" id="api-key" class="form-control" placeholder="sk_..." required>
+            </div>
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-key"></i> Сохранить API ключ
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Список агентов (показывается после установки API ключа) -->
+      <div id="agents-list-container" style="display: none;">
+        <!-- API Key управление -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">ElevenLabs API Key</h3>
+          </div>
+          
+          <div class="api-key-section">
+            <div class="api-key-display">
+              <i class="fas fa-key" style="color: var(--primary-blue);"></i>
+              <span class="api-key-text" id="api-key-display">sk_...****</span>
+              <div class="api-key-actions">
+                <button class="btn btn-small btn-outline" id="change-api-key-btn">
+                  <i class="fas fa-edit"></i> Изменить
+                </button>
+                <button class="btn btn-small btn-danger" id="remove-api-key-btn">
+                  <i class="fas fa-trash"></i> Удалить
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Форма смены API ключа (скрыта по умолчанию) -->
+          <div id="change-api-key-form" style="display: none;">
+            <form id="update-api-key-form">
+              <div class="form-group">
+                <label for="new-api-key">Новый API ключ</label>
+                <input type="password" id="new-api-key" class="form-control" placeholder="sk_..." required>
+              </div>
+              <div style="display: flex; gap: 1rem;">
+                <button type="submit" class="btn btn-primary">
+                  <i class="fas fa-save"></i> Сохранить
+                </button>
+                <button type="button" class="btn btn-outline" id="cancel-api-key-change">
+                  Отмена
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Ваши голосовые агенты ElevenLabs</h2>
+            <button class="btn btn-primary" id="add-agent-btn">
+              <i class="fas fa-plus"></i> Создать агента
+            </button>
+          </div>
+          <div id="agents-list" class="agents-list">
+            <!-- Содержимое будет заполнено динамически -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Форма редактирования агента -->
+      <div id="edit-agent-container" style="display: none;">
+        <!-- Табы -->
+        <div class="tabs">
+          <div class="tab active" data-tab="settings">
+            <i class="fas fa-cog"></i> Настройки
+          </div>
+          <div class="tab" data-tab="knowledge">
+            <i class="fas fa-book"></i> База знаний
+          </div>
+          <div class="tab" data-tab="personalization">
+            <i class="fas fa-user-edit"></i> Персонализация
+          </div>
+          <div class="tab" data-tab="tools">
+            <i class="fas fa-tools"></i> Инструменты
+          </div>
+          <div class="tab" data-tab="system-tools">
+            <i class="fas fa-cogs"></i> Системные
+          </div>
+          <div class="tab" data-tab="testing">
+            <i class="fas fa-flask"></i> Тестирование
+          </div>
+          <div class="tab" data-tab="embed">
+            <i class="fas fa-code"></i> Встраивание
+          </div>
+        </div>
+        
+        <!-- Таб основных настроек -->
+        <div class="tab-content active" id="settings-tab">
+          <form id="agent-form">
+            <div class="card">
+              <!-- Базовые настройки агента -->
+              <h3 style="margin-bottom: 1.5rem; color: var(--text-dark);">Основные настройки</h3>
+              
+              <div class="form-group">
+                <label for="agent-name">Название агента</label>
+                <input type="text" id="agent-name" class="form-control" placeholder="Введите название" required>
+              </div>
+              
+              <div class="form-group">
+                <label for="agent-language">Язык агента</label>
+                <select id="agent-language" class="form-control" required>
+                  <option value="en">🇺🇸 English</option>
+                  <option value="ru">🇷🇺 Русский</option>
+                  <option value="es">🇪🇸 Español</option>
+                  <option value="fr">🇫🇷 Français</option>
+                  <option value="de">🇩🇪 Deutsch</option>
+                  <option value="it">🇮🇹 Italiano</option>
+                  <option value="pt">🇵🇹 Português</option>
+                  <option value="ja">🇯🇵 日本語</option>
+                  <option value="ko">🇰🇷 한국어</option>
+                  <option value="zh">🇨🇳 中文</option>
+                </select>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Основной язык общения агента. Влияет на понимание и генерацию ответов.
+                </p>
+              </div>
+              
+              <div class="form-group">
+                <label for="first-message">Первое сообщение агента</label>
+                <input type="text" id="first-message" class="form-control" placeholder="Привет! Как дела? Чем могу помочь?" maxlength="200">
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Сообщение, которое агент произнесет при начале разговора.
+                </p>
+              </div>
+              
+              <div class="form-group">
+                <label for="system-prompt">Системный промпт</label>
+                <textarea id="system-prompt" class="form-control" placeholder="Инструкции для ассистента" required></textarea>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Задайте инструкции для вашего голосового ассистента. Можно использовать динамические переменные: {{user_name}}, {{company_name}} и др.
+                </p>
+              </div>
+              
+              <div class="form-group">
+                <label>Голос ассистента</label>
+                <div id="voice-options" class="voice-options">
+                  <!-- Голоса будут загружены динамически -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- LLM настройки -->
+            <div class="card">
+              <h3 style="margin-bottom: 1.5rem; color: var(--text-dark);">Настройки AI модели</h3>
+              
+              <div class="form-group">
+                <label for="llm-model">LLM модель</label>
+                <select id="llm-model" class="form-control">
+                  <option value="gpt-4">GPT-4 (рекомендуется)</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (быстрее)</option>
+                  <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                  <option value="claude-3-haiku">Claude 3 Haiku</option>
+                  <option value="gemini-pro">Gemini Pro</option>
+                </select>
+                <p style="margin-top: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Выберите языковую модель для генерации ответов агента.
+                </p>
+              </div>
+              
+              <div class="slider-group">
+                <div class="slider-label">
+                  <label for="llm-temperature">Креативность</label>
+                  <span class="slider-value" id="temperature-value">0.7</span>
+                </div>
+                <input type="range" id="llm-temperature" class="slider" min="0" max="1" step="0.1" value="0.7">
+                <div class="slider-hints">
+                  <span>Точные ответы (0.0)</span>
+                  <span>Креативные ответы (1.0)</span>
+                </div>
+              </div>
+              
+              <div class="slider-group">
+                <div class="slider-label">
+                  <label for="llm-max-tokens">Длина ответа</label>
+                  <span class="slider-value" id="max-tokens-value">150</span>
+                </div>
+                <input type="range" id="llm-max-tokens" class="slider" min="50" max="500" step="25" value="150">
+                <div class="slider-hints">
+                  <span>Короткие ответы (50)</span>
+                  <span>Подробные ответы (500)</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- TTS настройки -->
+            <div class="card">
+              <h3 style="margin-bottom: 1.5rem; color: var(--text-dark);">Настройки голоса</h3>
+              
+              <div class="slider-group">
+                <div class="slider-label">
+                  <label for="tts-stability">Стабильность голоса</label>
+                  <span class="slider-value" id="stability-value">0.5</span>
+                </div>
+                <input type="range" id="tts-stability" class="slider" min="0" max="1" step="0.1" value="0.5">
+                <div class="slider-hints">
+                  <span>Вариативный (0.0)</span>
+                  <span>Стабильный (1.0)</span>
+                </div>
+              </div>
+              
+              <div class="slider-group">
+                <div class="slider-label">
+                  <label for="tts-similarity">Похожесть на оригинал</label>
+                  <span class="slider-value" id="similarity-value">0.5</span>
+                </div>
+                <input type="range" id="tts-similarity" class="slider" min="0" max="1" step="0.1" value="0.5">
+                <div class="slider-hints">
+                  <span>Свободная интерпретация (0.0)</span>
+                  <span>Точная копия (1.0)</span>
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500;">
+                  <input type="checkbox" id="tts-speaker-boost" checked>
+                  Усиление диктора
+                </label>
+                <p style="margin-top: 0.25rem; color: var(--text-gray); font-size: 0.875rem;">
+                  Улучшает качество голоса, особенно для клонированных голосов
+                </p>
+              </div>
+            </div>
+              
+            <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem;">
+              <button type="button" class="btn btn-outline" id="cancel-button">Отмена</button>
+              <button type="submit" class="btn btn-primary">Сохранить</button>
+            </div>
+          </form>
+        </div>
+        
+        <!-- Остальные табы будут загружены из отдельных файлов -->
+        <div class="tab-content" id="knowledge-tab"></div>
+        <div class="tab-content" id="personalization-tab"></div>
+        <div class="tab-content" id="tools-tab"></div>
+        <div class="tab-content" id="system-tools-tab"></div>
+        <div class="tab-content" id="testing-tab"></div>
+        <div class="tab-content" id="embed-tab"></div>
+      </div>
+    </div>
+    
+    <!-- Уведомление -->
+    <div class="notification notification-success" id="notification" style="display: none;">
+      <div class="notification-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="notification-content">
+        <div id="notification-message">Операция успешно выполнена!</div>
+      </div>
+      <button class="notification-close" id="notification-close">&times;</button>
+    </div>
+
+    <!-- Индикатор загрузки -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+    </div>
+  </main>
+  
+  <!-- Подключение скриптов -->
+  <script src="/static/js/elevenlabs-conversation-manager.js"></script>
+  <script src="/static/js/elevenlabs-agents-core.js"></script>
+  <script src="/static/js/elevenlabs-agents-tabs.js"></script>
+  <script src="/static/js/elevenlabs-event-handlers.js"></script>
+</body>
+</html>

@@ -1,0 +1,3243 @@
+<!DOCTYPE html>
+<!-- /static/dashboard.html -->
+<!-- ✅ ВЕРСИЯ 3.1: Исправлен подсчёт ассистентов (OpenAI + Gemini) -->
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Панель управления — VoiceSystem</title>
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <style>
+    /* ========================================
+       ОСНОВНЫЕ СТИЛИ
+       ======================================== */
+    :root {
+      --primary-blue: #2563eb;
+      --primary-blue-light: #3b82f6;
+      --primary-blue-dark: #1d4ed8;
+      --accent-blue: #4a86e8;
+      --gradient-blue: linear-gradient(135deg, #4a86e8, #2563eb);
+      --text-dark: #0f172a;
+      --text-gray: #64748b;
+      --text-light: #94a3b8;
+      --bg-light: #f8fafc;
+      --bg-blue-light: #eff6ff;
+      --white: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --radius-md: 0.5rem;
+      --radius-lg: 1rem;
+      --radius-full: 9999px;
+      --transition-sm: all 0.2s ease;
+      --transition-md: all 0.3s ease;
+      --green-500: #10b981;
+      --green-100: rgba(16, 185, 129, 0.1);
+      --orange-500: #f97316;
+      --orange-100: rgba(249, 115, 22, 0.1);
+      --red-500: #ef4444;
+      --red-100: rgba(239, 68, 68, 0.1);
+      --purple-500: #8b5cf6;
+      --purple-100: rgba(139, 92, 246, 0.1);
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      line-height: 1.5;
+    }
+
+    /* Блокировка контента при истекшей подписке */
+    body.subscription-expired {
+      overflow: hidden;
+    }
+
+    .content-blocked {
+      pointer-events: none;
+      opacity: 0.5;
+      filter: blur(2px);
+    }
+    
+    /* ========================================
+       БОКОВАЯ ПАНЕЛЬ
+       ======================================== */
+    .sidebar {
+      width: 260px;
+      background-color: var(--white);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      transition: var(--transition-md);
+    }
+    
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .sidebar-logo span {
+      font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #2563eb;
+    }
+
+    .sidebar-logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .logo-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+    
+    .mobile-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      font-size: 1.25rem;
+      cursor: pointer;
+    }
+    
+    .sidebar-nav {
+      padding: 1.5rem 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      transition: var(--transition-sm);
+      border-left: 3px solid transparent;
+      position: relative;
+    }
+    
+    .sidebar-nav-item.active {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+      border-left-color: var(--primary-blue);
+      font-weight: 500;
+    }
+    
+    .sidebar-nav-item:hover {
+      background-color: var(--bg-blue-light);
+      color: var(--primary-blue);
+    }
+    
+    .sidebar-nav-item i {
+      margin-right: 0.75rem;
+      width: 20px;
+      text-align: center;
+    }
+
+    /* 🆕 v1.0: Бейдж realtime для пункта «Переводчик» */
+    .badge-realtime {
+      margin-left: auto;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-section {
+      padding: 0 1.5rem;
+      margin-bottom: 0.75rem;
+      margin-top: 1.5rem;
+      color: var(--text-light);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    
+    .sidebar-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+    
+    /* Заблокированные фичи по тарифу */
+    .plan-locked-feature {
+      opacity: 0.6;
+      cursor: pointer !important;
+      position: relative;
+    }
+    
+    .plan-locked-feature::after {
+      content: "🔒";
+      font-size: 0.875rem;
+      position: absolute;
+      right: 1.5rem;
+    }
+
+    .plan-locked-feature:hover {
+      opacity: 0.8;
+      background-color: var(--bg-blue-light);
+    }
+    
+    /* ========================================
+       ОСНОВНОЙ КОНТЕНТ
+       ======================================== */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      transition: var(--transition-md);
+    }
+    
+    /* Верхняя панель навигации */
+    .top-nav {
+      background-color: var(--white);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .user-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      transition: var(--transition-sm);
+    }
+    
+    .user-button:hover {
+      background-color: var(--bg-light);
+    }
+    
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-weight: 600;
+    }
+    
+    .user-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      min-width: 180px;
+      z-index: 100;
+      overflow: hidden;
+      display: none;
+    }
+    
+    .user-dropdown.show {
+      display: block;
+      animation: dropdown-fade 0.2s ease-in-out forwards;
+    }
+    
+    @keyframes dropdown-fade {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-gray);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: var(--transition-sm);
+    }
+    
+    .dropdown-item:hover {
+      background-color: var(--bg-light);
+      color: var(--primary-blue);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 0.25rem 0;
+    }
+    
+    /* Контейнер для содержимого */
+    .content-container {
+      padding: 2rem;
+      flex-grow: 1;
+    }
+    
+    /* Секция приветствия */
+    .welcome-section {
+      margin-bottom: 2rem;
+    }
+    
+    .welcome-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .welcome-subtitle {
+      color: var(--text-gray);
+    }
+    
+    /* Статусные карточки */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    
+    .stat-card {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 1.5rem;
+      border: 1px solid var(--border-color);
+      transition: var(--transition-sm);
+    }
+    
+    .stat-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    
+    .stat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+    
+    .stat-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-full);
+      background-color: var(--bg-blue-light);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-blue);
+      font-size: 1.25rem;
+    }
+    
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .stat-title {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+
+    .stat-breakdown {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-light);
+    }
+    
+    /* ========================================
+       КНОПКИ
+       ======================================== */
+    .btn {
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      border: none;
+      gap: 0.5rem;
+      text-decoration: none;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-blue);
+      color: var(--white);
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-blue-dark);
+    }
+    
+    .btn-secondary {
+      background-color: var(--bg-light);
+      color: var(--text-gray);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: var(--border-color);
+    }
+
+    .btn-success {
+      background-color: var(--green-500);
+      color: var(--white);
+    }
+
+    .btn-success:hover {
+      background-color: #059669;
+    }
+    
+    /* ========================================
+       СЕКЦИЯ ПОДПИСКИ
+       ======================================== */
+    .subscription-section {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .subscription-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 0;
+    }
+
+    .subscription-loader {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(74, 134, 232, 0.3);
+      border-top-color: var(--primary-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .subscription-info {
+      padding: 1rem 0;
+    }
+
+    .subscription-plan {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .subscription-plan h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .subscription-status {
+      display: inline-block;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .subscription-status.active {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+    }
+
+    .subscription-status.trial {
+      background-color: rgba(249, 115, 22, 0.1);
+      color: #f97316;
+    }
+
+    .subscription-details-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .subscription-detail {
+      background-color: var(--bg-light);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+    }
+
+    .detail-label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-gray);
+      margin-bottom: 0.5rem;
+    }
+
+    .detail-value {
+      font-weight: 600;
+      font-size: 1.125rem;
+    }
+
+    .subscription-empty {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-gray);
+    }
+
+    .subscription-upgrade {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    
+    .subscription-progress {
+      margin: 1rem 0;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background-color: var(--border-color);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #3b82f6);
+      border-radius: var(--radius-full);
+    }
+
+    .progress-text {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      text-align: right;
+    }
+
+    .subscription-warning {
+      background-color: rgba(249, 115, 22, 0.1);
+      color: #f97316;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 500;
+    }
+
+    .subscription-warning.expired {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+    }
+
+    .subscription-warning i {
+      font-size: 1.25rem;
+    }
+
+    .subscription-error {
+      padding: 1rem;
+      color: var(--text-gray);
+      text-align: center;
+    }
+
+    /* ========================================
+       УВЕДОМЛЕНИЯ
+       ======================================== */
+    .info-notice {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 2rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 2.5rem;
+    }
+    
+    .notice-icon {
+      font-size: 3rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .notice-icon.success {
+      color: #10b981;
+    }
+    
+    .notice-icon.info {
+      color: var(--primary-blue);
+    }
+    
+    .notice-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    
+    .notice-description {
+      color: var(--text-gray);
+      max-width: 600px;
+      margin: 0 auto 2rem;
+      line-height: 1.6;
+    }
+    
+    /* Уведомление Toast */
+    .notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      max-width: 350px;
+      z-index: 1000;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification-success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .notification-error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .notification-info {
+      border-left: 4px solid var(--primary-blue);
+    }
+    
+    .notification-icon {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    
+    .notification-success .notification-icon {
+      color: #10b981;
+    }
+    
+    .notification-error .notification-icon {
+      color: #ef4444;
+    }
+    
+    .notification-info .notification-icon {
+      color: var(--primary-blue);
+    }
+    
+    .notification-content {
+      flex: 1;
+    }
+    
+    .notification-close {
+      color: var(--text-gray);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.125rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ========================================
+       МОДАЛЬНОЕ ОКНО ОПЛАТЫ С ТАБАМИ
+       ======================================== */
+    .payment-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .payment-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .payment-modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .payment-modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 650px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: modal-slide-up 0.3s ease-out;
+    }
+
+    .payment-modal-header {
+      padding: 1.5rem 2rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .payment-modal-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .payment-modal-title i {
+      color: var(--primary-blue);
+    }
+
+    .payment-modal-close {
+      background: none;
+      border: none;
+      color: var(--text-gray);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: var(--radius-md);
+      transition: var(--transition-sm);
+    }
+
+    .payment-modal-close:hover {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+    }
+
+    .payment-modal-body {
+      padding: 1.5rem 2rem;
+    }
+
+    /* ✅ ТАБЫ ВЫБОРА ТАРИФА */
+    .plan-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      background-color: var(--bg-light);
+      padding: 0.375rem;
+      border-radius: var(--radius-md);
+    }
+
+    .plan-tab {
+      flex: 1;
+      padding: 0.75rem 0.5rem;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.8rem;
+      color: var(--text-gray);
+      transition: var(--transition-sm);
+      position: relative;
+      text-align: center;
+    }
+
+    .plan-tab:hover {
+      color: var(--text-dark);
+    }
+
+    .plan-tab.active {
+      background-color: var(--white);
+      color: var(--primary-blue);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .plan-tab .tab-name {
+      display: block;
+      font-weight: 600;
+    }
+
+    .plan-tab .tab-price {
+      display: block;
+      font-size: 0.75rem;
+      margin-top: 0.125rem;
+      opacity: 0.8;
+    }
+
+    .plan-tab .recommended-badge {
+      position: absolute;
+      top: -8px;
+      right: -4px;
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      font-size: 0.55rem;
+      padding: 0.1rem 0.3rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+    }
+
+    /* ТАБЫ ВЫБОРА ПЕРИОДА */
+    .period-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      background-color: var(--bg-light);
+      padding: 0.375rem;
+      border-radius: var(--radius-md);
+    }
+
+    .period-tab {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.875rem;
+      color: var(--text-gray);
+      transition: var(--transition-sm);
+      position: relative;
+      text-align: center;
+    }
+
+    .period-tab:hover {
+      color: var(--text-dark);
+    }
+
+    .period-tab.active {
+      background-color: var(--white);
+      color: var(--primary-blue);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .period-tab .tab-label {
+      display: block;
+    }
+
+    .period-tab .tab-discount {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--green-500);
+      font-weight: 600;
+      margin-top: 0.125rem;
+    }
+
+    .period-tab.active .tab-discount {
+      color: var(--green-500);
+    }
+
+    /* Бейдж "Выгодно" */
+    .period-tab .best-value-badge {
+      position: absolute;
+      top: -8px;
+      right: -4px;
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      font-size: 0.625rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.025em;
+    }
+
+    /* Информация о выбранном периоде */
+    .payment-plan-info {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .payment-plan-name {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    .payment-plan-assistants {
+      color: var(--text-gray);
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .payment-plan-price {
+      margin-bottom: 0.75rem;
+    }
+
+    .price-amount {
+      font-size: 2.75rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+
+    .price-currency {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-gray);
+      margin-left: 0.25rem;
+    }
+
+    .price-period {
+      color: var(--text-gray);
+      font-size: 1rem;
+    }
+
+    .payment-plan-duration {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      color: var(--text-gray);
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .payment-plan-duration i {
+      color: var(--primary-blue);
+    }
+
+    /* Плашка экономии */
+    .savings-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      background-color: var(--green-100);
+      color: var(--green-500);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    .savings-badge i {
+      font-size: 1rem;
+    }
+
+    .savings-badge.hidden {
+      display: none;
+    }
+
+    /* Цена за месяц */
+    .monthly-price-info {
+      color: var(--text-gray);
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    .monthly-price-info .old-price {
+      text-decoration: line-through;
+      color: var(--text-light);
+      margin-right: 0.5rem;
+    }
+
+    .monthly-price-info .new-price {
+      color: var(--green-500);
+      font-weight: 600;
+    }
+
+    /* Фичи плана */
+    .payment-plan-features {
+      margin-bottom: 1.5rem;
+    }
+
+    .payment-plan-features h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-dark);
+    }
+
+    .features-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .features-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .features-list li:last-child {
+      border-bottom: none;
+    }
+
+    .features-list li i {
+      color: var(--primary-blue);
+      width: 20px;
+      text-align: center;
+    }
+
+    .features-list li i.fa-times {
+      color: var(--red-500);
+    }
+
+    .features-list li span {
+      color: var(--text-dark);
+      font-size: 0.9rem;
+    }
+
+    .features-list li.restricted span {
+      color: var(--text-light);
+      text-decoration: line-through;
+    }
+
+    /* Footer модалки */
+    .payment-modal-footer {
+      padding: 1.25rem 2rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+    }
+
+    .payment-cancel-btn {
+      flex: 0 0 auto;
+    }
+
+    .payment-pay-btn {
+      flex: 1;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.875rem 1.5rem;
+    }
+
+    .payment-loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-lg);
+    }
+
+    .payment-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(74, 134, 232, 0.3);
+      border-top-color: var(--primary-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    .payment-loading p {
+      color: var(--text-gray);
+      font-size: 0.95rem;
+    }
+
+    /* ========================================
+       ✅ МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ (НОВОЕ)
+       ======================================== */
+    .feature-blocked-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .feature-blocked-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .feature-blocked-modal .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+    }
+
+    .feature-blocked-modal .modal-content {
+      position: relative;
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 450px;
+      width: 100%;
+      animation: modal-slide-up 0.3s ease-out;
+      overflow: hidden;
+    }
+
+    .feature-blocked-modal .modal-header {
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-header i {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-blocked-modal .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .feature-blocked-modal .modal-body {
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .feature-blocked-modal .modal-body p {
+      color: var(--text-gray);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .feature-blocked-modal .current-plan-info {
+      background-color: var(--bg-light);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      margin-bottom: 1rem;
+    }
+
+    .feature-blocked-modal .current-plan-info span {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    .feature-blocked-modal .required-plans {
+      font-size: 0.875rem;
+      color: var(--text-gray);
+    }
+
+    .feature-blocked-modal .required-plans strong {
+      color: var(--primary-blue);
+    }
+
+    .feature-blocked-modal .modal-footer {
+      padding: 1rem 1.5rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .feature-blocked-modal .modal-footer .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    /* ========================================
+       МОДАЛЬНОЕ ОКНО ИСТЕКШЕЙ ПОДПИСКИ
+       ======================================== */
+    .subscription-expired-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .subscription-expired-modal.show {
+      display: flex;
+      animation: modal-fade-in 0.3s ease-in-out;
+    }
+
+    .subscription-expired-content {
+      background-color: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      max-width: 650px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: modal-slide-up 0.3s ease-out;
+      position: relative;
+    }
+
+    .subscription-expired-header {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+      padding: 1.5rem 2rem;
+      text-align: center;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
+    .subscription-expired-icon {
+      font-size: 3rem;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    .subscription-expired-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.375rem;
+    }
+
+    .subscription-expired-subtitle {
+      font-size: 1rem;
+      opacity: 0.9;
+    }
+
+    .subscription-expired-body {
+      padding: 1.5rem 2rem;
+    }
+
+    .expired-notice {
+      background-color: rgba(239, 68, 68, 0.1);
+      border-left: 4px solid #ef4444;
+      padding: 1rem 1.25rem;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      margin-bottom: 1.5rem;
+    }
+
+    .expired-notice-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #ef4444;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .expired-notice-text {
+      color: var(--text-dark);
+      line-height: 1.5;
+      font-size: 0.9rem;
+    }
+
+    /* Табы в модалке истекшей подписки */
+    .expired-plan-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      background-color: var(--bg-light);
+      padding: 0.375rem;
+      border-radius: var(--radius-md);
+    }
+
+    .expired-plan-tab {
+      flex: 1;
+      padding: 0.6rem 0.4rem;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.75rem;
+      color: var(--text-gray);
+      transition: var(--transition-sm);
+      position: relative;
+      text-align: center;
+    }
+
+    .expired-plan-tab:hover {
+      color: var(--text-dark);
+    }
+
+    .expired-plan-tab.active {
+      background-color: var(--white);
+      color: var(--primary-blue);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .expired-plan-tab .tab-name {
+      display: block;
+      font-weight: 600;
+    }
+
+    .expired-plan-tab .tab-price {
+      display: block;
+      font-size: 0.7rem;
+      margin-top: 0.125rem;
+    }
+
+    .expired-plan-tab .recommended-badge {
+      position: absolute;
+      top: -6px;
+      right: 2px;
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      font-size: 0.5rem;
+      padding: 0.1rem 0.25rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+    }
+
+    .expired-period-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      background-color: var(--bg-light);
+      padding: 0.375rem;
+      border-radius: var(--radius-md);
+    }
+
+    .expired-period-tab {
+      flex: 1;
+      padding: 0.75rem 0.5rem;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.8rem;
+      color: var(--text-gray);
+      transition: var(--transition-sm);
+      position: relative;
+      text-align: center;
+    }
+
+    .expired-period-tab:hover {
+      color: var(--text-dark);
+    }
+
+    .expired-period-tab.active {
+      background-color: var(--white);
+      color: var(--primary-blue);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .expired-period-tab .tab-label {
+      display: block;
+    }
+
+    .expired-period-tab .tab-discount {
+      display: block;
+      font-size: 0.65rem;
+      color: var(--green-500);
+      font-weight: 600;
+      margin-top: 0.125rem;
+    }
+
+    .expired-period-tab .best-value-badge {
+      position: absolute;
+      top: -6px;
+      right: 2px;
+      background: linear-gradient(135deg, var(--orange-500), #ea580c);
+      color: white;
+      font-size: 0.55rem;
+      padding: 0.1rem 0.3rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+    }
+
+    /* Выбранный план в expired modal */
+    .expired-selected-plan {
+      background-color: var(--bg-blue-light);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+
+    .expired-plan-name {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.25rem;
+    }
+
+    .expired-plan-assistants {
+      font-size: 0.85rem;
+      color: var(--text-gray);
+      margin-bottom: 0.5rem;
+    }
+
+    .expired-plan-price {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary-blue);
+    }
+
+    .expired-plan-period {
+      color: var(--text-gray);
+      font-size: 0.9rem;
+      margin-top: 0.25rem;
+    }
+
+    .expired-savings-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      background-color: var(--green-100);
+      color: var(--green-500);
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+      font-size: 0.8rem;
+      margin-top: 0.75rem;
+    }
+
+    .expired-savings-badge.hidden {
+      display: none;
+    }
+
+    .subscription-expired-footer {
+      padding: 1.25rem 2rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .renew-subscription-btn {
+      background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+      color: white;
+      padding: 1rem 2rem;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      transition: var(--transition-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .renew-subscription-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .contact-support {
+      text-align: center;
+      color: var(--text-gray);
+      font-size: 0.875rem;
+    }
+
+    .contact-support a {
+      color: var(--primary-blue);
+      text-decoration: none;
+    }
+
+    .contact-support a:hover {
+      text-decoration: underline;
+    }
+
+    /* Анимации */
+    @keyframes modal-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes modal-slide-up {
+      from { 
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* ========================================
+       АДАПТИВНЫЙ ДИЗАЙН
+       ======================================== */
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      }
+      
+      .subscription-details-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      }
+
+      .plan-tabs, .expired-plan-tabs {
+        flex-wrap: wrap;
+      }
+
+      .plan-tab, .expired-plan-tab {
+        flex: 1 1 calc(33.333% - 0.5rem);
+        min-width: 80px;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        box-shadow: var(--shadow-lg);
+      }
+      
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .mobile-toggle {
+        display: block;
+      }
+      
+      .top-nav {
+        padding: 1rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+      
+      .page-title {
+        font-size: 1.125rem;
+        order: 2;
+        width: 100%;
+      }
+      
+      .user-menu {
+        order: 1;
+      }
+      
+      .content-container {
+        padding: 1.5rem 1rem;
+      }
+      
+      .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+      
+      .api-key-form {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      
+      .api-key-input-wrapper {
+        width: 100%;
+      }
+      
+      .period-tabs, .plan-tabs {
+        flex-direction: column;
+        gap: 0.375rem;
+      }
+
+      .period-tab, .plan-tab {
+        padding: 0.625rem 1rem;
+      }
+
+      .period-tab .best-value-badge,
+      .plan-tab .recommended-badge {
+        top: 50%;
+        transform: translateY(-50%);
+        right: 8px;
+      }
+
+      .expired-period-tabs, .expired-plan-tabs {
+        flex-direction: column;
+        gap: 0.375rem;
+      }
+
+      .expired-period-tab .best-value-badge,
+      .expired-plan-tab .recommended-badge {
+        top: 50%;
+        transform: translateY(-50%);
+        right: 8px;
+      }
+      
+      .subscription-expired-content {
+        margin: 10px;
+        max-height: calc(100vh - 20px);
+      }
+
+      .payment-modal-content {
+        margin: 10px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .content-container {
+        padding: 1rem 0.75rem;
+      }
+      
+      .subscription-expired-header {
+        padding: 1.25rem 1rem;
+      }
+      
+      .subscription-expired-body,
+      .subscription-expired-footer {
+        padding: 1rem;
+      }
+
+      .payment-modal-header,
+      .payment-modal-body,
+      .payment-modal-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+
+      .price-amount {
+        font-size: 2.25rem;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
+  <script src="/static/js/voicesystem-motion.js" defer></script>
+</head>
+<body>
+  <!-- Боковая панель -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a href="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+            <i class="fas fa-robot"></i>
+          </div>
+        </div>
+        <span>VoiceSystem</span>
+      </a>
+      <button class="mobile-toggle" id="sidebar-close">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Основное</div>
+      <a href="/static/dashboard.html" class="sidebar-nav-item active">
+        <i class="fas fa-home"></i> Дашборд
+      </a>
+      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
+        <i class="fas fa-headset"></i> Агент обзвона
+        <span class="badge-realtime">new</span>
+      </a>
+      <a href="/static/agents.html" class="sidebar-nav-item" id="agents-nav-item">
+        <i class="fas fa-robot"></i> OpenAI агенты
+      </a>
+      <a href="/static/gemini-agents.html" class="sidebar-nav-item" id="gemini-agents-nav-item">
+        <i class="fas fa-gem"></i> Gemini агенты
+       </a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
+        <i class="fas fa-wave-square"></i> Cartesia агенты
+      </a>
+      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
+        <i class="fab fa-yandex"></i> Яндекс агенты
+      </a>
+      <a href="/static/cascade.html" class="sidebar-nav-item">
+        <i class="fas fa-water"></i> Cascade агенты
+      </a>
+      <a href="/static/translate.html" class="sidebar-nav-item" id="translate-nav-item">
+        <i class="fas fa-language"></i> Переводчик
+        <span class="badge-realtime">realtime</span>
+      </a>
+      <a href="/static/knowledge-base.html" class="sidebar-nav-item" id="knowledge-nav-item">
+        <i class="fas fa-book"></i> База знаний
+      </a>
+      <a href="/static/telephony.html" class="sidebar-nav-item" id="telephony-nav-item" data-feature="telephony">
+        <i class="fas fa-phone"></i> Телефония
+      </a>
+      <a href="/static/conversations.html" class="sidebar-nav-item" id="conversations-nav-item">
+        <i class="fas fa-comments"></i> Диалоги
+      </a>
+      <a href="/static/crm.html" class="sidebar-nav-item" id="crm-nav-item" data-feature="crm">
+        <i class="fas fa-address-book"></i> CRM
+      </a>
+
+      <div class="sidebar-section">ИИ Интерфейс</div>
+      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
+        <i class="fas fa-microphone"></i> JARVIS AI
+      </a>
+
+      <div class="sidebar-section">Аккаунт</div>
+      <a href="/static/settings.html" class="sidebar-nav-item">
+        <i class="fas fa-gear"></i> Настройки
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;" id="logout-button">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </div>
+  </aside>
+  
+  <!-- Основной контент -->
+  <main class="main-content" id="main-content">
+    <!-- Верхняя панель навигации -->
+    <div class="top-nav">
+      <button class="mobile-toggle" id="sidebar-toggle">
+        <i class="fas fa-bars"></i>
+      </button>
+      
+      <h1 class="page-title">Панель управления</h1>
+      
+      <div class="user-menu">
+        <button class="user-button" id="user-menu-button">
+          <div class="user-avatar" id="user-avatar">АП</div>
+          <span class="user-name" id="user-name">Александр Петров</span>
+          <i class="fas fa-chevron-down"></i>
+        </button>
+        
+        <div class="user-dropdown" id="user-dropdown">
+          <a href="/static/settings.html" class="dropdown-item">
+            <i class="fas fa-user"></i> Профиль
+          </a>
+          <div class="dropdown-divider"></div>
+          <a href="/" class="dropdown-item" id="dropdown-logout">
+            <i class="fas fa-sign-out-alt"></i> Выйти
+          </a>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Контейнер для содержимого -->
+    <div class="content-container" id="content-container">
+      <!-- Секция приветствия -->
+      <div class="welcome-section">
+        <h2 class="welcome-title" id="welcome-message">Добро пожаловать, Александр!</h2>
+        <p class="welcome-subtitle">Управляйте своими голосовыми ассистентами и создавайте новых.</p>
+      </div>
+      
+      <!-- Статистика -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-icon">
+              <i class="fas fa-robot"></i>
+            </div>
+          </div>
+          <div class="stat-value" id="bots-count">0</div>
+          <div class="stat-title">Активных ассистентов</div>
+          <div class="stat-breakdown" id="bots-breakdown"></div>
+        </div>
+      </div>
+      
+      <!-- Секция для информации о подписке -->
+      <div class="subscription-section">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="fas fa-crown"></i> Ваша подписка
+          </h2>
+        </div>
+        
+        <div class="subscription-details" id="subscription-details">
+          <div class="subscription-loading">
+            <div class="subscription-loader"></div>
+            <p>Загрузка информации о подписке...</p>
+          </div>
+        </div>
+        
+        <div class="subscription-upgrade" id="subscription-upgrade">
+          <button class="btn btn-primary" id="upgrade-subscription-btn">
+            <i class="fas fa-arrow-up"></i> Улучшить тариф
+          </button>
+        </div>
+      </div>
+      
+    </div>
+  </main>
+  
+  <!-- Уведомление -->
+  <div class="notification" id="notification">
+    <div class="notification-icon">
+      <i class="fas fa-check-circle"></i>
+    </div>
+    <div class="notification-content">
+      <div id="notification-message"></div>
+    </div>
+    <button class="notification-close" id="notification-close">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+
+  <!-- ✅ МОДАЛЬНОЕ ОКНО ОПЛАТЫ С ВЫБОРОМ ТАРИФА И ПЕРИОДА -->
+  <div class="payment-modal" id="payment-modal">
+    <div class="payment-modal-overlay" id="payment-modal-overlay"></div>
+    <div class="payment-modal-content">
+      <div class="payment-modal-header">
+        <h2 class="payment-modal-title">
+          <i class="fas fa-crown"></i> Выбор тарифа
+        </h2>
+        <button class="payment-modal-close" id="payment-modal-close">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <div class="payment-modal-body">
+        <!-- ✅ ТАБЫ ВЫБОРА ТАРИФА -->
+        <div class="plan-tabs" id="plan-tabs">
+          <button class="plan-tab active" data-plan="ai_voice">
+            <span class="tab-name">AI Voice</span>
+            <span class="tab-price">1 490 ₽/мес</span>
+          </button>
+          <button class="plan-tab" data-plan="start">
+            <span class="tab-name">Старт</span>
+            <span class="tab-price">2 990 ₽/мес</span>
+            <span class="recommended-badge">Хит</span>
+          </button>
+          <button class="plan-tab" data-plan="profi">
+            <span class="tab-name">Profi</span>
+            <span class="tab-price">5 990 ₽/мес</span>
+          </button>
+          <button class="plan-tab" data-plan="agent">
+            <span class="tab-name">Agent</span>
+            <span class="tab-price">5 490 ₽/мес</span>
+          </button>
+        </div>
+
+        <!-- ✅ ТАБЫ ВЫБОРА ПЕРИОДА -->
+        <div class="period-tabs" id="period-tabs">
+          <button class="period-tab active" data-months="1">
+            <span class="tab-label">1 месяц</span>
+          </button>
+          <button class="period-tab" data-months="6">
+            <span class="tab-label">6 месяцев</span>
+            <span class="tab-discount">-20%</span>
+          </button>
+          <button class="period-tab" data-months="12">
+            <span class="tab-label">1 год</span>
+            <span class="tab-discount">-30%</span>
+            <span class="best-value-badge">Выгодно</span>
+          </button>
+        </div>
+
+        <div class="payment-plan-info">
+          <div class="payment-plan-name" id="modal-plan-name">AI Voice</div>
+          <div class="payment-plan-assistants" id="modal-plan-assistants">До 3 ассистентов</div>
+          
+          <div class="payment-plan-price">
+            <span class="price-amount" id="modal-price">1 490</span>
+            <span class="price-currency">₽</span>
+          </div>
+          
+          <div class="payment-plan-duration">
+            <i class="fas fa-calendar-alt"></i>
+            <span id="modal-duration">30 дней</span>
+          </div>
+
+          <!-- Экономия -->
+          <div class="savings-badge hidden" id="modal-savings">
+            <i class="fas fa-piggy-bank"></i>
+            <span>Вы экономите <span id="modal-savings-amount">0</span> ₽</span>
+          </div>
+
+          <!-- Цена за месяц -->
+          <div class="monthly-price-info" id="modal-monthly-price" style="display: none;">
+            <span class="old-price" id="modal-old-price">1 490 ₽/мес</span>
+            <span class="new-price" id="modal-monthly-value">1 192 ₽/мес</span>
+          </div>
+        </div>
+        
+        <div class="payment-plan-features">
+          <h3>Что входит в тариф:</h3>
+          <ul class="features-list" id="modal-features-list">
+            <li>
+              <i class="fas fa-robot"></i>
+              <span>До 3 голосовых ассистентов</span>
+            </li>
+            <li>
+              <i class="fas fa-infinity"></i>
+              <span>Безлимитные диалоги</span>
+            </li>
+            <li>
+              <i class="fas fa-book"></i>
+              <span>База знаний без ограничений</span>
+            </li>
+            <li>
+              <i class="fas fa-plug"></i>
+              <span>Все интеграции и навыки</span>
+            </li>
+            <li>
+              <i class="fas fa-headset"></i>
+              <span>Приоритетная поддержка</span>
+            </li>
+            <li>
+              <i class="fas fa-code"></i>
+              <span>API доступ для разработчиков</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="payment-modal-footer">
+        <button class="btn btn-secondary payment-cancel-btn" id="payment-cancel-btn">
+          Отмена
+        </button>
+        <button class="btn btn-primary payment-pay-btn" id="payment-pay-btn">
+          <i class="fas fa-credit-card"></i>
+          <span id="pay-btn-text">Оплатить 1 490 ₽</span>
+        </button>
+      </div>
+      
+      <div class="payment-loading" id="payment-loading" style="display: none;">
+        <div class="payment-spinner"></div>
+        <p>Создание платежа...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ (НОВОЕ) -->
+  <div class="feature-blocked-modal" id="feature-blocked-modal">
+    <div class="modal-overlay" id="feature-modal-overlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <i class="fas fa-lock"></i>
+        <h3>Функция недоступна</h3>
+      </div>
+      <div class="modal-body">
+        <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+        <div class="current-plan-info">
+          Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+        </div>
+        <p class="required-plans">
+          Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+        <button class="btn btn-primary" id="feature-modal-upgrade">
+          <i class="fas fa-arrow-up"></i> Выбрать тариф
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ МОДАЛЬНОЕ ОКНО ИСТЕКШЕЙ ПОДПИСКИ С ВЫБОРОМ ТАРИФА И ПЕРИОДА -->
+  <div class="subscription-expired-modal" id="subscription-expired-modal">
+    <div class="subscription-expired-content">
+      <div class="subscription-expired-header">
+        <span class="subscription-expired-icon">⏰</span>
+        <h2 class="subscription-expired-title">Подписка истекла</h2>
+        <p class="subscription-expired-subtitle">Продлите подписку, чтобы продолжить использовать платформу</p>
+      </div>
+      
+      <div class="subscription-expired-body">
+        <div class="expired-notice">
+          <div class="expired-notice-title">
+            <i class="fas fa-exclamation-triangle"></i>
+            Ваша подписка завершилась
+          </div>
+          <div class="expired-notice-text">
+            К сожалению, <span id="subscription-type-text">тестовый период</span> завершился и ваши голосовые ассистенты временно отключены. Для восстановления доступа ко всем функциям платформы необходимо оформить подписку.
+          </div>
+        </div>
+        
+        <!-- ✅ ТАБЫ ВЫБОРА ТАРИФА В EXPIRED MODAL -->
+        <div class="expired-plan-tabs" id="expired-plan-tabs">
+          <button class="expired-plan-tab active" data-plan="ai_voice">
+            <span class="tab-name">AI Voice</span>
+            <span class="tab-price">1 490 ₽</span>
+          </button>
+          <button class="expired-plan-tab" data-plan="start">
+            <span class="tab-name">Старт</span>
+            <span class="tab-price">2 990 ₽</span>
+            <span class="recommended-badge">Хит</span>
+          </button>
+          <button class="expired-plan-tab" data-plan="profi">
+            <span class="tab-name">Profi</span>
+            <span class="tab-price">5 990 ₽</span>
+          </button>
+          <button class="expired-plan-tab" data-plan="agent">
+            <span class="tab-name">Agent</span>
+            <span class="tab-price">5 490 ₽</span>
+          </button>
+        </div>
+
+        <!-- ✅ ТАБЫ ВЫБОРА ПЕРИОДА В EXPIRED MODAL -->
+        <div class="expired-period-tabs" id="expired-period-tabs">
+          <button class="expired-period-tab active" data-months="1">
+            <span class="tab-label">1 месяц</span>
+          </button>
+          <button class="expired-period-tab" data-months="6">
+            <span class="tab-label">6 месяцев</span>
+            <span class="tab-discount">-20%</span>
+          </button>
+          <button class="expired-period-tab" data-months="12">
+            <span class="tab-label">1 год</span>
+            <span class="tab-discount">-30%</span>
+            <span class="best-value-badge">Выгодно</span>
+          </button>
+        </div>
+
+        <div class="expired-selected-plan">
+          <div class="expired-plan-name" id="expired-plan-name">AI Voice</div>
+          <div class="expired-plan-assistants" id="expired-plan-assistants">До 3 ассистентов</div>
+          <div class="expired-plan-price" id="expired-price">1 490 ₽</div>
+          <div class="expired-plan-period" id="expired-period">30 дней доступа</div>
+          <div class="expired-savings-badge hidden" id="expired-savings">
+            <i class="fas fa-piggy-bank"></i>
+            <span>Экономия <span id="expired-savings-amount">0</span> ₽</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="subscription-expired-footer">
+        <button class="renew-subscription-btn" id="renew-subscription-btn">
+          <i class="fas fa-credit-card"></i>
+          <span id="renew-btn-text">Продлить подписку за 1 490 ₽</span>
+        </button>
+        
+        <button class="btn btn-secondary" id="expired-logout-btn" style="width: 100%; justify-content: center;">
+          <i class="fas fa-sign-out-alt"></i> Выйти
+        </button>
+        
+        <div class="contact-support">
+          Нужна помощь? <a href="mailto:support@voicyfy.ru">Свяжитесь с поддержкой</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // ========================================
+      // ✅ КОНФИГУРАЦИЯ ТАРИФОВ v3.0
+      // ========================================
+      const SUBSCRIPTION_PLANS = {
+        ai_voice: {
+          code: 'ai_voice',
+          name: 'AI Voice',
+          basePrice: 1490,
+          maxAssistants: 3,
+          description: 'Базовый тариф для голосовых ассистентов',
+          restrictedFeatures: ['crm', 'telephony', 'outbound_calls'],
+          features: [
+            { icon: 'fa-robot', text: 'До 3 голосовых ассистентов', available: true },
+            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
+            { icon: 'fa-book', text: 'База знаний', available: true },
+            { icon: 'fa-code', text: 'API доступ', available: true },
+            { icon: 'fa-headset', text: 'Поддержка', available: true },
+            { icon: 'fa-phone', text: 'Телефония', available: false },
+            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: false },
+            { icon: 'fa-address-book', text: 'CRM система', available: false }
+          ]
+        },
+        start: {
+          code: 'start',
+          name: 'Тариф Старт',
+          basePrice: 2990,
+          maxAssistants: 5,
+          description: 'Оптимальный тариф для бизнеса',
+          restrictedFeatures: [],
+          features: [
+            { icon: 'fa-robot', text: 'До 5 голосовых ассистентов', available: true },
+            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
+            { icon: 'fa-book', text: 'База знаний', available: true },
+            { icon: 'fa-code', text: 'API доступ', available: true },
+            { icon: 'fa-headset', text: 'Приоритетная поддержка', available: true },
+            { icon: 'fa-phone', text: 'Телефония', available: true },
+            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: true },
+            { icon: 'fa-address-book', text: 'CRM система', available: true }
+          ]
+        },
+        profi: {
+          code: 'profi',
+          name: 'Profi',
+          basePrice: 5990,
+          maxAssistants: 10,
+          description: 'Максимальные возможности',
+          restrictedFeatures: [],
+          features: [
+            { icon: 'fa-robot', text: 'До 10 голосовых ассистентов', available: true },
+            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
+            { icon: 'fa-book', text: 'База знаний без ограничений', available: true },
+            { icon: 'fa-code', text: 'Полный API доступ', available: true },
+            { icon: 'fa-headset', text: 'VIP поддержка', available: true },
+            { icon: 'fa-phone', text: 'Телефония', available: true },
+            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: true },
+            { icon: 'fa-address-book', text: 'CRM система', available: true }
+          ]
+        },
+        agent: {
+          code: 'agent',
+          name: 'VoiceSystem Agent',
+          basePrice: 5490,
+          maxAssistants: 3,
+          description: 'AI-оркестратор автономных звонков',
+          restrictedFeatures: [],
+          singlePeriod: true, // продаётся только на 30 дней, без скидок за период
+          assistantsLabel: 'До 3 автономных агентов',
+          features: [
+            { icon: 'fa-brain', text: 'AI-оркестратор автономных звонков', available: true },
+            { icon: 'fa-user-astronaut', text: 'До 3 автономных агентов', available: true },
+            { icon: 'fa-coins', text: '20 000 кредитов каждый месяц', available: true },
+            { icon: 'fa-phone', text: 'Телефония и исходящие звонки', available: true },
+            { icon: 'fa-address-book', text: 'CRM и воронка продаж', available: true },
+            { icon: 'fa-book', text: 'База знаний', available: true },
+            { icon: 'fa-headset', text: 'Приоритетная поддержка', available: true }
+          ]
+        }
+      };
+
+      // ✅ МАТРИЦА ДОСТУПА К ФУНКЦИЯМ
+      const FEATURE_ACCESS = {
+        crm: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        telephony: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        outbound_calls: ['free', 'referral_trial', 'start', 'profi', 'agent']
+        // ai_voice НЕ включен → для него эти функции заблокированы
+      };
+
+      // Названия функций для модалки
+      const FEATURE_NAMES = {
+        crm: 'CRM',
+        telephony: 'Телефония',
+        outbound_calls: 'Исходящие звонки'
+      };
+
+      // Скидки по периодам
+      const PERIOD_DISCOUNTS = {
+        1: 0,
+        6: 20,
+        12: 30
+      };
+
+      const PERIOD_LABELS = {
+        1: '1 месяц',
+        6: '6 месяцев',
+        12: '1 год'
+      };
+
+      const PERIOD_DAYS = {
+        1: 30,
+        6: 180,
+        12: 365
+      };
+
+      // Текущий выбранный тариф и период
+      let selectedPlan = 'ai_voice';
+      let selectedPeriod = 1;
+      let expiredSelectedPlan = 'ai_voice';
+      let expiredSelectedPeriod = 1;
+
+      // Получаем элементы DOM
+      const sidebar = document.getElementById('sidebar');
+      const mainContent = document.getElementById('main-content');
+      const sidebarToggle = document.getElementById('sidebar-toggle');
+      const sidebarClose = document.getElementById('sidebar-close');
+      const userMenuButton = document.getElementById('user-menu-button');
+      const userDropdown = document.getElementById('user-dropdown');
+      const logoutButton = document.getElementById('logout-button');
+      const dropdownLogout = document.getElementById('dropdown-logout');
+      const notification = document.getElementById('notification');
+      const notificationMessage = document.getElementById('notification-message');
+      const notificationClose = document.getElementById('notification-close');
+      const welcomeMessage = document.getElementById('welcome-message');
+      const userName = document.getElementById('user-name');
+      const userAvatar = document.getElementById('user-avatar');
+      const botsCount = document.getElementById('bots-count');
+      const botsBreakdown = document.getElementById('bots-breakdown');
+      const telephonyNavItem = document.getElementById('telephony-nav-item');
+      const crmNavItem = document.getElementById('crm-nav-item');
+      const upgradeSubscriptionBtn = document.getElementById('upgrade-subscription-btn');
+      const contentContainer = document.getElementById('content-container');
+      
+      // Элементы модального окна оплаты
+      const paymentModal = document.getElementById('payment-modal');
+      const paymentModalOverlay = document.getElementById('payment-modal-overlay');
+      const paymentModalClose = document.getElementById('payment-modal-close');
+      const paymentCancelBtn = document.getElementById('payment-cancel-btn');
+      const paymentPayBtn = document.getElementById('payment-pay-btn');
+      const paymentLoading = document.getElementById('payment-loading');
+      const planTabs = document.getElementById('plan-tabs');
+      const periodTabs = document.getElementById('period-tabs');
+
+      // Элементы модалки блокировки функции
+      const featureBlockedModal = document.getElementById('feature-blocked-modal');
+      const featureModalOverlay = document.getElementById('feature-modal-overlay');
+      const featureModalClose = document.getElementById('feature-modal-close');
+      const featureModalUpgrade = document.getElementById('feature-modal-upgrade');
+      const featureBlockedMessage = document.getElementById('feature-blocked-message');
+      const currentPlanNameDisplay = document.getElementById('current-plan-name-display');
+      const requiredPlansText = document.getElementById('required-plans-text');
+
+      // Элементы для модального окна истекшей подписки
+      const subscriptionExpiredModal = document.getElementById('subscription-expired-modal');
+      const renewSubscriptionBtn = document.getElementById('renew-subscription-btn');
+      const expiredLogoutBtn = document.getElementById('expired-logout-btn');
+      const subscriptionTypeText = document.getElementById('subscription-type-text');
+      const expiredPlanTabs = document.getElementById('expired-plan-tabs');
+      const expiredPeriodTabs = document.getElementById('expired-period-tabs');
+      
+      // Состояние приложения
+      let currentUser = null;
+      let subscriptionStatus = null;
+      let currentUserPlanCode = 'free';
+
+      // ========================================
+      // УТИЛИТЫ
+      // ========================================
+
+      function formatPrice(price) {
+        return Math.round(price).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+      }
+
+      function calculatePrice(basePrice, months) {
+        const discount = PERIOD_DISCOUNTS[months] || 0;
+        const fullPrice = basePrice * months;
+        const discountedPrice = fullPrice * (1 - discount / 100);
+        return Math.round(discountedPrice / 10) * 10; // Округление до 10 рублей
+      }
+
+      function calculateSavings(basePrice, months) {
+        const fullPrice = basePrice * months;
+        const actualPrice = calculatePrice(basePrice, months);
+        return fullPrice - actualPrice;
+      }
+
+      function getPlanDisplayName(planCode) {
+        const plan = SUBSCRIPTION_PLANS[planCode];
+        if (plan) return plan.name;
+        
+        const names = {
+          'free': 'Пробный период',
+          'referral_trial': 'Реферальный триал'
+        };
+        return names[planCode] || planCode;
+      }
+
+      // ========================================
+      // ✅ ПРОВЕРКА ДОСТУПА К ФУНКЦИЯМ
+      // ========================================
+
+      function canAccessFeature(feature, planCode) {
+        if (!planCode) return true;
+        const allowedPlans = FEATURE_ACCESS[feature];
+        if (!allowedPlans) return true; // Если функция не в матрице, она доступна всем
+        return allowedPlans.includes(planCode);
+      }
+
+      function applyFeatureAccessToSidebar() {
+        console.log('Применяем матрицу доступа для плана:', currentUserPlanCode);
+
+        // Сначала убираем все блокировки по тарифу
+        document.querySelectorAll('.plan-locked-feature').forEach(el => {
+          el.classList.remove('plan-locked-feature');
+        });
+
+        // Проверяем каждый элемент с data-feature
+        document.querySelectorAll('[data-feature]').forEach(element => {
+          const feature = element.getAttribute('data-feature');
+          const hasAccess = canAccessFeature(feature, currentUserPlanCode);
+          
+          if (!hasAccess) {
+            element.classList.add('plan-locked-feature');
+            console.log(`Заблокирована функция: ${feature}`);
+          }
+        });
+      }
+
+      function showFeatureBlockedModal(feature) {
+        const featureName = FEATURE_NAMES[feature] || feature;
+        const planName = getPlanDisplayName(currentUserPlanCode);
+
+        featureBlockedMessage.textContent = `Для доступа к разделу "${featureName}" необходим тариф Старт, Profi или Agent.`;
+        currentPlanNameDisplay.textContent = planName;
+        requiredPlansText.textContent = 'Старт, Profi или Agent';
+
+        featureBlockedModal.classList.add('show');
+      }
+
+      function hideFeatureBlockedModal() {
+        featureBlockedModal.classList.remove('show');
+      }
+
+      // ========================================
+      // ✅ ФУНКЦИИ ОБНОВЛЕНИЯ UI МОДАЛЬНЫХ ОКОН
+      // ========================================
+
+      function updatePaymentModalUI() {
+        const plan = SUBSCRIPTION_PLANS[selectedPlan];
+        if (!plan) return;
+
+        // Тариф agent продаётся только на 30 дней — скидки за период недоступны
+        if (plan.singlePeriod) {
+          selectedPeriod = 1;
+        }
+        document.getElementById('period-tabs').style.display = plan.singlePeriod ? 'none' : '';
+
+        const basePrice = plan.basePrice;
+        const finalPrice = calculatePrice(basePrice, selectedPeriod);
+        const savings = calculateSavings(basePrice, selectedPeriod);
+        const days = PERIOD_DAYS[selectedPeriod];
+
+        // Обновляем активные табы тарифов
+        document.querySelectorAll('#plan-tabs .plan-tab').forEach(tab => {
+          tab.classList.toggle('active', tab.dataset.plan === selectedPlan);
+        });
+
+        // Обновляем активные табы периодов
+        document.querySelectorAll('#period-tabs .period-tab').forEach(tab => {
+          tab.classList.toggle('active', parseInt(tab.dataset.months) === selectedPeriod);
+        });
+
+        // Обновляем информацию о плане
+        document.getElementById('modal-plan-name').textContent = plan.name;
+        document.getElementById('modal-plan-assistants').textContent = plan.assistantsLabel || `До ${plan.maxAssistants} ассистентов`;
+        document.getElementById('modal-price').textContent = formatPrice(finalPrice);
+        document.getElementById('modal-duration').textContent = `${days} дней`;
+        
+        // Обновляем экономию
+        const savingsBadge = document.getElementById('modal-savings');
+        const savingsAmount = document.getElementById('modal-savings-amount');
+        if (savings > 0) {
+          savingsBadge.classList.remove('hidden');
+          savingsAmount.textContent = formatPrice(savings);
+        } else {
+          savingsBadge.classList.add('hidden');
+        }
+
+        // Обновляем цену за месяц
+        const monthlyPriceInfo = document.getElementById('modal-monthly-price');
+        const monthlyValue = document.getElementById('modal-monthly-value');
+        const oldPrice = document.getElementById('modal-old-price');
+        if (selectedPeriod > 1) {
+          const monthlyPrice = Math.round(finalPrice / selectedPeriod);
+          oldPrice.textContent = formatPrice(basePrice) + ' ₽/мес';
+          monthlyValue.textContent = formatPrice(monthlyPrice) + ' ₽/мес';
+          monthlyPriceInfo.style.display = 'block';
+        } else {
+          monthlyPriceInfo.style.display = 'none';
+        }
+
+        // Обновляем список фич
+        const featuresList = document.getElementById('modal-features-list');
+        featuresList.innerHTML = plan.features.map(feature => `
+          <li class="${!feature.available ? 'restricted' : ''}">
+            <i class="fas ${feature.available ? feature.icon : 'fa-times'}"></i>
+            <span>${feature.text}</span>
+          </li>
+        `).join('');
+
+        // Обновляем кнопку оплаты
+        document.getElementById('pay-btn-text').textContent = `Оплатить ${formatPrice(finalPrice)} ₽`;
+      }
+
+      function updateExpiredModalUI() {
+        const plan = SUBSCRIPTION_PLANS[expiredSelectedPlan];
+        if (!plan) return;
+
+        // Тариф agent продаётся только на 30 дней — скидки за период недоступны
+        if (plan.singlePeriod) {
+          expiredSelectedPeriod = 1;
+        }
+        document.getElementById('expired-period-tabs').style.display = plan.singlePeriod ? 'none' : '';
+
+        const basePrice = plan.basePrice;
+        const finalPrice = calculatePrice(basePrice, expiredSelectedPeriod);
+        const savings = calculateSavings(basePrice, expiredSelectedPeriod);
+        const days = PERIOD_DAYS[expiredSelectedPeriod];
+
+        // Обновляем активные табы тарифов
+        document.querySelectorAll('#expired-plan-tabs .expired-plan-tab').forEach(tab => {
+          tab.classList.toggle('active', tab.dataset.plan === expiredSelectedPlan);
+        });
+
+        // Обновляем активные табы периодов
+        document.querySelectorAll('#expired-period-tabs .expired-period-tab').forEach(tab => {
+          tab.classList.toggle('active', parseInt(tab.dataset.months) === expiredSelectedPeriod);
+        });
+
+        // Обновляем информацию о плане
+        document.getElementById('expired-plan-name').textContent = plan.name;
+        document.getElementById('expired-plan-assistants').textContent = plan.assistantsLabel || `До ${plan.maxAssistants} ассистентов`;
+        document.getElementById('expired-price').textContent = formatPrice(finalPrice) + ' ₽';
+        document.getElementById('expired-period').textContent = `${days} дней доступа`;
+        
+        // Обновляем экономию
+        const savingsBadge = document.getElementById('expired-savings');
+        const savingsAmount = document.getElementById('expired-savings-amount');
+        if (savings > 0) {
+          savingsBadge.classList.remove('hidden');
+          savingsAmount.textContent = formatPrice(savings);
+        } else {
+          savingsBadge.classList.add('hidden');
+        }
+
+        // Обновляем кнопку
+        document.getElementById('renew-btn-text').textContent = `Продлить подписку за ${formatPrice(finalPrice)} ₽`;
+      }
+
+      // ========================================
+      // ОБРАБОТЧИКИ ТАБОВ
+      // ========================================
+
+      // Табы тарифов в основном модальном окне
+      planTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.plan-tab');
+        if (!tab) return;
+
+        const planCode = tab.dataset.plan;
+        if (planCode && SUBSCRIPTION_PLANS[planCode]) {
+          selectedPlan = planCode;
+          updatePaymentModalUI();
+        }
+      });
+
+      // Табы периодов в основном модальном окне
+      periodTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.period-tab');
+        if (!tab) return;
+
+        const months = parseInt(tab.dataset.months);
+        if (months && PERIOD_DAYS[months]) {
+          selectedPeriod = months;
+          updatePaymentModalUI();
+        }
+      });
+
+      // Табы тарифов в модальном окне истекшей подписки
+      expiredPlanTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.expired-plan-tab');
+        if (!tab) return;
+
+        const planCode = tab.dataset.plan;
+        if (planCode && SUBSCRIPTION_PLANS[planCode]) {
+          expiredSelectedPlan = planCode;
+          updateExpiredModalUI();
+        }
+      });
+
+      // Табы периодов в модальном окне истекшей подписки
+      expiredPeriodTabs.addEventListener('click', function(e) {
+        const tab = e.target.closest('.expired-period-tab');
+        if (!tab) return;
+
+        const months = parseInt(tab.dataset.months);
+        if (months && PERIOD_DAYS[months]) {
+          expiredSelectedPeriod = months;
+          updateExpiredModalUI();
+        }
+      });
+      
+      // ========================================
+      // API КЛИЕНТ
+      // ========================================
+      const api = {
+        baseUrl: '/api',
+        
+        getToken() {
+          return localStorage.getItem('auth_token');
+        },
+        
+        isAuthenticated() {
+          return this.getToken() !== null;
+        },
+        
+        async fetch(endpoint, options = {}) {
+          if (this.isAuthenticated()) {
+            options.headers = {
+              ...options.headers,
+              'Authorization': `Bearer ${this.getToken()}`
+            };
+          }
+          
+          if (options.body && typeof options.body !== 'string') {
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            };
+            options.body = JSON.stringify(options.body);
+          }
+          
+          try {
+            const response = await fetch(`${this.baseUrl}${endpoint}`, options);
+            
+            if (response.status === 401) {
+              localStorage.removeItem('auth_token');
+              window.location.href = '/';
+              throw new Error('Требуется авторизация');
+            }
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
+            }
+            
+            return data;
+          } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+          }
+        },
+        
+        get(endpoint) {
+          return this.fetch(endpoint, { method: 'GET' });
+        },
+        
+        post(endpoint, data) {
+          return this.fetch(endpoint, { method: 'POST', body: data });
+        },
+        
+        put(endpoint, data) {
+          return this.fetch(endpoint, { method: 'PUT', body: data });
+        },
+        
+        delete(endpoint) {
+          return this.fetch(endpoint, { method: 'DELETE' });
+        },
+        
+        getCurrentUser() {
+          return this.get('/users/me');
+        },
+        
+        saveApiKey(apiKey) {
+          return this.put('/users/me', { openai_api_key: apiKey });
+        },
+        
+        getAssistants() {
+          return this.get('/assistants');
+        },
+
+        getGeminiAssistants() {
+          return this.get('/gemini-assistants');
+        },
+
+        // Ассистенты всех провайдеров + лимит тарифа одним запросом
+        getAssistantsUsage() {
+          return this.get('/subscriptions/assistants-usage');
+        }
+      };
+      
+      // ========================================
+      // УПРАВЛЕНИЕ UI
+      // ========================================
+      const ui = {
+        showNotification(message, type = 'success') {
+          notificationMessage.textContent = message;
+          
+          notification.classList.remove('notification-success', 'notification-error', 'notification-info');
+          notification.classList.add(`notification-${type}`);
+          
+          const icon = notification.querySelector('.notification-icon i');
+          if (type === 'success') {
+            icon.className = 'fas fa-check-circle';
+          } else if (type === 'error') {
+            icon.className = 'fas fa-exclamation-circle';
+          } else {
+            icon.className = 'fas fa-info-circle';
+          }
+          
+          notification.classList.add('show');
+          
+          setTimeout(() => {
+            this.hideNotification();
+          }, 5000);
+        },
+        
+        hideNotification() {
+          notification.classList.remove('show');
+        },
+
+        showSubscriptionExpiredModal(isTrialExpired = true) {
+          console.log('Показываем модальное окно истекшей подписки:', isTrialExpired);
+          
+          if (isTrialExpired) {
+            subscriptionTypeText.textContent = 'тестовый период';
+          } else {
+            subscriptionTypeText.textContent = 'ваша подписка';
+          }
+          
+          // По умолчанию — текущий тариф пользователя (agent продлевается как agent),
+          // для остальных сбрасываем на ai_voice и 1 месяц
+          expiredSelectedPlan = (currentUserPlanCode === 'agent') ? 'agent' : 'ai_voice';
+          expiredSelectedPeriod = 1;
+          updateExpiredModalUI();
+          
+          document.body.classList.add('subscription-expired');
+          contentContainer.classList.add('content-blocked');
+          
+          subscriptionExpiredModal.classList.add('show');
+        },
+
+        hideSubscriptionExpiredModal() {
+          console.log('Скрываем модальное окно истекшей подписки');
+          
+          document.body.classList.remove('subscription-expired');
+          contentContainer.classList.remove('content-blocked');
+          
+          subscriptionExpiredModal.classList.remove('show');
+        }
+      };
+
+      // ========================================
+      // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+      // ========================================
+
+      // Функция проверки, является ли пользователь админом
+      function isAdmin(userEmail) {
+        return userEmail === 'well96well@gmail.com';
+      }
+
+      // Функция проверки статуса подписки
+      function checkSubscriptionStatus(userData, subscriptionData) {
+        console.log('Проверяем статус подписки:', { userData, subscriptionData });
+
+        if (isAdmin(userData.email)) {
+          console.log('Пользователь является админом, пропускаем проверку подписки');
+          return { isValid: true, reason: 'admin' };
+        }
+
+        if (subscriptionData && subscriptionData.subscription_plan) {
+          const planCode = subscriptionData.subscription_plan.code;
+          const daysLeft = subscriptionData.days_left || 0;
+
+          // Тариф free — бессрочный, модалка никогда не показывается
+          if (planCode === 'free') {
+            return { isValid: true, reason: 'free_plan' };
+          }
+
+          // Для всех платных тарифов (ai_voice, start, profi, referral_trial):
+          // если days_left <= 0 — показываем модалку "Подписка истекла"
+          if (daysLeft <= 0) {
+            const isTrialPlan = subscriptionData.is_trial === true;
+            return {
+              isValid: false,
+              reason: isTrialPlan ? 'trial_expired' : 'subscription_expired',
+              data: subscriptionData
+            };
+          }
+
+          console.log('Подписка активна, дней осталось:', daysLeft);
+          return { isValid: true, reason: 'active_subscription', data: subscriptionData };
+        }
+
+        // Нет подписки вообще — не блокируем, трактуем как free
+        console.log('Подписка не найдена, трактуем как free');
+        return { isValid: true, reason: 'no_subscription' };
+      }
+
+      // Проверка результата оплаты
+      async function checkPaymentResult() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentResult = urlParams.get('payment_result');
+        const paymentStatus = urlParams.get('payment_status');
+        
+        if (paymentResult && paymentStatus === 'success') {
+          console.log('Обнаружен успешный результат оплаты, проверяем доступ...');
+          
+          setTimeout(async () => {
+            try {
+              const userData = await api.getCurrentUser();
+              currentUser = userData;
+              
+              await loadSubscriptionInfo();
+              
+              ui.hideSubscriptionExpiredModal();
+              
+              ui.showNotification('Оплата прошла успешно! Доступ к платформе восстановлен.', 'success');
+              
+              window.history.replaceState({}, document.title, window.location.pathname);
+              
+            } catch (error) {
+              console.error('Ошибка при проверке результата оплаты:', error);
+              ui.showNotification('Ошибка при проверке статуса оплаты', 'error');
+            }
+          }, 2000);
+        }
+      }
+      
+      // Проверка авторизации
+      function checkAuth() {
+        if (!api.isAuthenticated()) {
+          window.location.href = '/';
+          return false;
+        }
+        return true;
+      }
+      
+      // ========================================
+      // ЗАГРУЗКА ДАННЫХ
+      // ========================================
+      
+      // Загрузка данных пользователя
+      async function loadUserData() {
+        try {
+          const userData = await api.getCurrentUser();
+          currentUser = userData;
+          
+          const firstName = userData.first_name || '';
+          const lastName = userData.last_name || '';
+          
+          if (firstName || lastName) {
+            welcomeMessage.textContent = `Добро пожаловать, ${firstName}!`;
+            userName.textContent = firstName + (lastName ? ` ${lastName}` : '');
+            
+            let initials = '';
+            if (firstName) initials += firstName[0];
+            if (lastName) initials += lastName[0];
+            userAvatar.textContent = initials.toUpperCase();
+          } else if (userData.company_name) {
+            welcomeMessage.textContent = `Добро пожаловать, ${userData.company_name}!`;
+            userName.textContent = userData.company_name;
+            userAvatar.textContent = userData.company_name.substring(0, 2).toUpperCase();
+          } else {
+            welcomeMessage.textContent = 'Добро пожаловать!';
+            userName.textContent = userData.email;
+            userAvatar.textContent = userData.email.substring(0, 2).toUpperCase();
+          }
+          
+          loadStats();
+
+          // Добавляем админ панель для админа
+          if (userData.email === "well96well@gmail.com") {
+            const adminSections = Array.from(document.querySelectorAll('.sidebar-section')).filter(
+              section => section.textContent.trim() === 'Администрирование'
+            );
+            
+            if (adminSections.length === 0) {
+              const adminSection = document.createElement('div');
+              adminSection.className = 'sidebar-section';
+              adminSection.textContent = 'Администрирование';
+              
+              const adminNavItem = document.createElement('a');
+              adminNavItem.href = '/static/admin.html';
+              adminNavItem.className = 'sidebar-nav-item';
+              adminNavItem.innerHTML = '<i class="fas fa-user-shield"></i> Управление';
+              
+              const sidebarNav = document.querySelector('.sidebar-nav');
+              const accountSection = Array.from(document.querySelectorAll('.sidebar-section')).find(
+                section => section.textContent.trim() === 'Аккаунт'
+              );
+              
+              if (accountSection && sidebarNav) {
+                sidebarNav.insertBefore(adminSection, accountSection);
+                sidebarNav.insertBefore(adminNavItem, accountSection);
+              } else {
+                sidebarNav.appendChild(adminSection);
+                sidebarNav.appendChild(adminNavItem);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Ошибка при загрузке данных пользователя:', error);
+          ui.showNotification('Не удалось загрузить данные пользователя', 'error');
+        }
+      }
+      
+      // Загрузка статистики: ассистенты всех провайдеров одним запросом
+      const ASSISTANT_TYPE_LABELS = {
+        openai: 'OpenAI',
+        gemini: 'Gemini',
+        grok: 'Grok',
+        cascade: 'Cascade',
+        cartesia: 'Cartesia',
+        yandex: 'Яндекс',
+        translate: 'Переводчики'
+      };
+
+      async function loadStats() {
+        try {
+          const usage = await api.getAssistantsUsage();
+          const breakdown = usage.breakdown || {};
+          const totalCount = usage.used || 0;
+
+          // Обновляем общее количество
+          botsCount.textContent = totalCount;
+
+          // Показываем разбивку по типам, если есть хотя бы один ассистент
+          const parts = Object.keys(ASSISTANT_TYPE_LABELS)
+            .filter(key => breakdown[key] > 0)
+            .map(key => `${ASSISTANT_TYPE_LABELS[key]}: ${breakdown[key]}`);
+          botsBreakdown.textContent = parts.join(', ');
+
+          console.log('[STATS] Ассистентов:', totalCount, breakdown);
+        } catch (error) {
+          console.error('Ошибка при загрузке статистики:', error);
+        }
+      }
+      
+      // Рендер деталей подписки в DOM
+      function renderSubscriptionDetails(subscriptionInfo) {
+        const subscriptionDetails = document.getElementById('subscription-details');
+
+        if (subscriptionInfo.subscription_plan) {
+          let endDateDisplay = 'Не указана';
+          if (subscriptionInfo.subscription_end_date) {
+            try {
+              const endDate = new Date(subscriptionInfo.subscription_end_date);
+              if (!isNaN(endDate.getTime())) {
+                endDateDisplay = endDate.toLocaleDateString('ru-RU');
+              }
+            } catch (e) {
+              console.error('Ошибка форматирования даты:', e);
+            }
+          }
+
+          let statusClass = 'active';
+          let statusText = 'Активна';
+
+          if (subscriptionInfo.is_trial) {
+            statusClass = 'trial';
+            statusText = 'Пробный период';
+          }
+
+          // Получаем информацию об ограничениях плана
+          const planConfig = SUBSCRIPTION_PLANS[currentUserPlanCode];
+          let restrictionsHtml = '';
+          if (planConfig && planConfig.restrictedFeatures && planConfig.restrictedFeatures.length > 0) {
+            const restrictedNames = planConfig.restrictedFeatures.map(f => FEATURE_NAMES[f] || f).join(', ');
+            restrictionsHtml = `
+              <div class="subscription-warning">
+                <i class="fas fa-info-circle"></i>
+                Недоступно на вашем тарифе: ${restrictedNames}
+              </div>
+            `;
+          }
+
+          subscriptionDetails.innerHTML = `
+            <div class="subscription-info">
+              <div class="subscription-plan">
+                <h3>${subscriptionInfo.subscription_plan.name}</h3>
+                <span class="subscription-status ${statusClass}">${statusText}</span>
+              </div>
+
+              ${restrictionsHtml}
+
+              <div class="subscription-details-grid">
+                <div class="subscription-detail">
+                  <span class="detail-label">Дата окончания:</span>
+                  <span class="detail-value">${endDateDisplay}</span>
+                </div>
+
+                <div class="subscription-detail">
+                  <span class="detail-label">Осталось дней:</span>
+                  <span class="detail-value">${subscriptionInfo.days_left || 0}</span>
+                </div>
+
+                <div class="subscription-detail">
+                  <span class="detail-label">Макс. ассистентов:</span>
+                  <span class="detail-value">${subscriptionInfo.subscription_plan.max_assistants}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          subscriptionDetails.innerHTML = `
+            <div class="subscription-empty">
+              <p>В настоящий момент у вас активирован базовый план.
+                 Приобретите тариф для доступа ко всем функциям.</p>
+            </div>
+          `;
+        }
+      }
+
+      // Загрузка информации о подписке
+      async function loadSubscriptionInfo() {
+        try {
+          const subscriptionInfo = await api.get('/subscriptions/my-subscription');
+          subscriptionStatus = subscriptionInfo;
+          
+          // Сохраняем код текущего плана
+          if (subscriptionInfo && subscriptionInfo.subscription_plan) {
+            currentUserPlanCode = subscriptionInfo.subscription_plan.code || 'free';
+          } else {
+            currentUserPlanCode = 'free';
+          }
+          
+          console.log('Текущий тарифный план пользователя:', currentUserPlanCode);
+          
+          // Применяем матрицу доступа к сайдбару
+          applyFeatureAccessToSidebar();
+          
+          // Показываем кнопку улучшения тарифа для ВСЕХ пользователей
+          const upgradeSection = document.getElementById('subscription-upgrade');
+          upgradeSection.style.display = 'flex';
+
+          // Проверка подписки без зависимости от currentUser
+          const userEmail = (currentUser && currentUser.email) ? currentUser.email : null;
+          const isAdminUser = userEmail ? isAdmin(userEmail) : false;
+
+          if (!isAdminUser) {
+            const planCode = subscriptionInfo?.subscription_plan?.code || null;
+            // days_left должен быть числом; null/undefined трактуем как "данных нет" → не блокируем
+            const daysLeft = (subscriptionInfo?.days_left !== null && subscriptionInfo?.days_left !== undefined)
+              ? Number(subscriptionInfo.days_left)
+              : null;
+
+            const isTrialPlan = subscriptionInfo.is_trial === true;
+
+            // Блокируем всех у кого истёк срок (days_left <= 0)
+            // Единственное исключение: days_left = null — нет данных, не блокируем
+            if (daysLeft !== null && daysLeft <= 0) {
+              ui.showSubscriptionExpiredModal(isTrialPlan);
+              renderSubscriptionDetails(subscriptionInfo);
+              return;
+            }
+          }
+
+          renderSubscriptionDetails(subscriptionInfo);
+          
+          const loadingIndicator = document.querySelector('.subscription-loading');
+          if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+          }
+        } catch (error) {
+          console.error('Ошибка при загрузке информации о подписке:', error);
+          
+          document.getElementById('subscription-details').innerHTML = `
+            <div class="subscription-error">
+              <p>Не удалось загрузить информацию о подписке.</p>
+              <button class="btn btn-secondary retry-button" onclick="loadSubscriptionInfo()">
+                <i class="fas fa-sync-alt"></i> Повторить
+              </button>
+            </div>
+          `;
+        }
+      }
+      
+      // ========================================
+      // ОБРАБОТЧИКИ СОБЫТИЙ
+      // ========================================
+      
+      // Мобильное меню
+      sidebarToggle.addEventListener('click', function() {
+        sidebar.classList.add('open');
+      });
+      
+      sidebarClose.addEventListener('click', function() {
+        sidebar.classList.remove('open');
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (sidebar.classList.contains('open') && 
+            !sidebar.contains(e.target) && 
+            !sidebarToggle.contains(e.target)) {
+          sidebar.classList.remove('open');
+        }
+      });
+      
+      // Выпадающее меню пользователя
+      userMenuButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        userDropdown.classList.toggle('show');
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target) && !userMenuButton.contains(e.target)) {
+          userDropdown.classList.remove('show');
+        }
+      });
+      
+      // Выход из системы
+      logoutButton.addEventListener('click', function(e) {
+        e.preventDefault();
+        localStorage.removeItem('auth_token');
+        window.location.href = '/';
+      });
+
+      dropdownLogout.addEventListener('click', function(e) {
+        e.preventDefault();
+        localStorage.removeItem('auth_token');
+        window.location.href = '/';
+      });
+
+      notificationClose.addEventListener('click', ui.hideNotification);
+
+      // Блокировка переходов на заблокированные по тарифу страницы
+      document.querySelectorAll('[data-feature]').forEach(link => {
+        link.addEventListener('click', function(e) {
+          if (this.classList.contains('plan-locked-feature')) {
+            e.preventDefault();
+            const feature = this.getAttribute('data-feature');
+            showFeatureBlockedModal(feature);
+          }
+        });
+      });
+
+      // Обработчики модалки блокировки функции
+      featureModalOverlay.addEventListener('click', hideFeatureBlockedModal);
+      featureModalClose.addEventListener('click', hideFeatureBlockedModal);
+      featureModalUpgrade.addEventListener('click', function() {
+        hideFeatureBlockedModal();
+        showPaymentModal();
+      });
+      
+      // ========================================
+      // МОДАЛЬНОЕ ОКНО ОПЛАТЫ
+      // ========================================
+      
+      function showPaymentModal() {
+        // Устанавливаем начальные значения
+        selectedPlan = 'ai_voice';
+        selectedPeriod = 1;
+        updatePaymentModalUI();
+        
+        paymentModal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+      }
+      
+      function hidePaymentModal() {
+        paymentModal.classList.remove('show');
+        document.body.style.overflow = '';
+        paymentLoading.style.display = 'none';
+      }
+      
+      function showPaymentLoading() {
+        paymentLoading.style.display = 'flex';
+      }
+      
+      if (upgradeSubscriptionBtn) {
+        upgradeSubscriptionBtn.addEventListener('click', showPaymentModal);
+      }
+      
+      paymentModalClose.addEventListener('click', hidePaymentModal);
+      paymentCancelBtn.addEventListener('click', hidePaymentModal);
+      paymentModalOverlay.addEventListener('click', hidePaymentModal);
+      
+      // ========================================
+      // ✅ ОБРАБОТЧИК ОПЛАТЫ
+      // ========================================
+      async function handlePayment(planCode, durationMonths) {
+        try {
+          showPaymentLoading();
+          
+          const plan = SUBSCRIPTION_PLANS[planCode];
+          const finalPrice = calculatePrice(plan.basePrice, durationMonths);
+
+          console.log(`🚀 Создаем платеж: ${plan.name}, ${durationMonths} мес, ${finalPrice} ₽`);
+
+          // Тариф agent оформляется через кредитный API (30 дней + 20 000 кредитов),
+          // остальные тарифы — через стандартный платёжный эндпоинт
+          const response = planCode === 'agent'
+            ? await api.post('/credits/subscribe', {})
+            : await api.post('/payments/create-payment', {
+                plan_code: planCode,
+                duration_months: durationMonths
+              });
+
+          console.log('📦 Ответ API:', response);
+
+          if (response.trial_activated) {
+            hidePaymentModal();
+            ui.hideSubscriptionExpiredModal();
+            ui.showNotification('Тестовый период VoiceSystem Agent активирован! Вам доступно 1 500 кредитов на 3 дня.', 'success');
+            await loadSubscriptionInfo();
+            return;
+          }
+
+          if (response.payment_url && response.form_params) {
+            console.log('✅ Данные платежа получены, создаем форму...');
+            
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = response.payment_url;
+            form.style.display = 'none';
+            
+            Object.keys(response.form_params).forEach(key => {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = key;
+              input.value = response.form_params[key];
+              form.appendChild(input);
+              
+              console.log(`📝 Добавлен параметр: ${key} = ${response.form_params[key]}`);
+            });
+            
+            document.body.appendChild(form);
+            
+            console.log('🌐 Перенаправляем на Robokassa:', response.payment_url);
+            
+            ui.showNotification('Перенаправляем на страницу оплаты...', 'info');
+            
+            setTimeout(() => {
+              form.submit();
+            }, 1000);
+            
+            hidePaymentModal();
+            
+          } else {
+            console.error('❌ Некорректный ответ сервера:', response);
+            throw new Error('Некорректный ответ сервера - отсутствуют данные для оплаты');
+          }
+          
+        } catch (error) {
+          console.error('❌ Ошибка создания платежа:', error);
+          
+          let errorMessage = 'Ошибка при создании платежа. Попробуйте позже.';
+          
+          if (error.message) {
+            errorMessage = error.message;
+          }
+          
+          ui.showNotification(errorMessage, 'error');
+          hidePaymentModal();
+        }
+      }
+
+      // Кнопка оплаты в основном модальном окне
+      paymentPayBtn.addEventListener('click', function() {
+        handlePayment(selectedPlan, selectedPeriod);
+      });
+
+      // Кнопка продления в модальном окне истекшей подписки
+      renewSubscriptionBtn.addEventListener('click', async function() {
+        ui.hideSubscriptionExpiredModal();
+        await handlePayment(expiredSelectedPlan, expiredSelectedPeriod);
+      });
+
+      // Кнопка выхода в модалке истекшей подписки
+      expiredLogoutBtn.addEventListener('click', function() {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/';
+      });
+      
+      // Закрытие по клавише Escape
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          if (paymentModal.classList.contains('show')) {
+            hidePaymentModal();
+          }
+          if (featureBlockedModal.classList.contains('show')) {
+            hideFeatureBlockedModal();
+          }
+          if (sidebar.classList.contains('open')) {
+            sidebar.classList.remove('open');
+          }
+          if (userDropdown.classList.contains('show')) {
+            userDropdown.classList.remove('show');
+          }
+          // НЕ закрываем модалку истекшей подписки по Escape
+        }
+      });
+      
+      // ========================================
+      // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ
+      // ========================================
+      async function initializePage() {
+        if (!checkAuth()) return;
+        
+        // Инициализируем UI модальных окон
+        updatePaymentModalUI();
+        updateExpiredModalUI();
+        
+        // 1. Загружаем данные пользователя (ошибка не блокирует дальнейшую инициализацию)
+        await loadUserData();
+
+        // 2. Загружаем информацию о подписке (всегда выполняется независимо от loadUserData)
+        await loadSubscriptionInfo();
+
+        // 3. Проверяем результат оплаты — последней
+        await checkPaymentResult();
+      }
+      
+      // Запускаем инициализацию
+      initializePage();
+    });
+  </script>
+</body>
+</html>

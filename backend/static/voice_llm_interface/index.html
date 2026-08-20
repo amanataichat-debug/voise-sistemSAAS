@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voicyfy AI</title>
+
+    <!-- Favicon и PWA -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="Voicyfy AI - Голосовой ассистент с интеграцией LLM">
+
+    <!-- External CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- App CSS -->
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+      /* Заблокированные фичи по тарифу */
+      .plan-locked-feature {
+        opacity: 0.6;
+        cursor: pointer !important;
+        position: relative;
+      }
+
+      .plan-locked-feature::after {
+        content: "🔒";
+        font-size: 0.875rem;
+        position: absolute;
+        right: 1.5rem;
+      }
+
+      .plan-locked-feature:hover {
+        opacity: 0.8;
+      }
+
+      /* МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ */
+      .feature-blocked-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 9999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .feature-blocked-modal.show {
+        display: flex;
+      }
+
+      .feature-blocked-modal .modal-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+      }
+
+      .feature-blocked-modal .modal-content {
+        position: relative;
+        background-color: #fff;
+        border-radius: 1rem;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        max-width: 450px;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      .feature-blocked-modal .modal-header {
+        background: linear-gradient(135deg, #f97316, #ea580c);
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+      }
+
+      .feature-blocked-modal .modal-header i {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        display: block;
+      }
+
+      .feature-blocked-modal .modal-header h3 {
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+
+      .feature-blocked-modal .modal-body {
+        padding: 1.5rem;
+        text-align: center;
+      }
+
+      .feature-blocked-modal .modal-body p {
+        color: #6b7280;
+        margin-bottom: 1rem;
+        line-height: 1.6;
+      }
+
+      .feature-blocked-modal .current-plan-info {
+        background-color: #f3f4f6;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .feature-blocked-modal .current-plan-info span {
+        font-weight: 600;
+        color: #111827;
+      }
+
+      .feature-blocked-modal .required-plans {
+        font-size: 0.875rem;
+        color: #6b7280;
+      }
+
+      .feature-blocked-modal .required-plans strong {
+        color: #2563eb;
+      }
+
+      .feature-blocked-modal .modal-footer {
+        padding: 1rem 1.5rem 1.5rem;
+        display: flex;
+        gap: 1rem;
+      }
+
+      .feature-blocked-modal .modal-footer .btn {
+        flex: 1;
+        justify-content: center;
+      }
+    </style>
+</head>
+<body>
+    <!-- Раннее определение режима для правильного позиционирования overlay -->
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('assistant')) {
+                document.body.classList.add('embed-mode');
+            }
+        })();
+    </script>
+
+    <!-- START OVERLAY - Обязательный клик для активации аудио -->
+    <div class="start-overlay" id="startOverlay">
+        <div class="start-overlay-content">
+            <div class="start-overlay-icon">
+                <i class="fas fa-gem"></i>
+            </div>
+            <div class="start-overlay-title">Voicyfy AI</div>
+            <div class="start-overlay-subtitle">
+                Голосовой ассистент на базе Google Gemini с поддержкой LLM
+            </div>
+            <button class="start-overlay-button" id="startButton">
+                <i class="fas fa-microphone"></i>
+                Нажмите чтобы начать
+            </button>
+            <div class="start-overlay-hint">
+                <i class="fas fa-info-circle"></i>
+                Требуется для активации микрофона и звука
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay для мобильного меню -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/" class="sidebar-logo">
+                <div class="logo-icon">
+                    <img src="/static/images/IMG_2820.PNG" alt="Voicyfy Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                </div>
+                <span>Voicyfy</span>
+            </a>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="sidebar-section">Основное</div>
+            <a href="/static/dashboard.html" class="sidebar-nav-item">
+                <i class="fas fa-home"></i> Дашборд
+            </a>
+            <a href="/static/agents.html" class="sidebar-nav-item">
+                <i class="fas fa-robot"></i> OpenAI агенты
+            </a>
+            <a href="/static/gemini-agents.html" class="sidebar-nav-item">
+                <i class="fas fa-gem"></i> Gemini агенты
+            </a>
+            <a href="/static/knowledge-base.html" class="sidebar-nav-item">
+                <i class="fas fa-book"></i> База знаний
+            </a>
+            <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony">
+                <i class="fas fa-phone"></i> Телефония
+            </a>
+            <a href="/static/conversations.html" class="sidebar-nav-item">
+                <i class="fas fa-comments"></i> Диалоги
+            </a>
+
+            <div class="sidebar-section">ИИ Интерфейс</div>
+            <a href="/static/voice_llm_interface/" class="sidebar-nav-item active">
+                <i class="fas fa-gem"></i> Voicyfy AI (Gemini)
+            </a>
+
+            <div class="sidebar-section">Аккаунт</div>
+            <a href="/static/settings.html" class="sidebar-nav-item">
+                <i class="fas fa-gear"></i> Настройки
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <a href="/" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;">
+                <i class="fas fa-sign-out-alt"></i> Выйти
+            </a>
+        </div>
+    </aside>
+
+    <!-- CONFIG PANEL -->
+    <div class="config-panel" id="configPanel">
+        <div class="config-container">
+            <div class="config-header">
+                <button class="mobile-menu-toggle" id="mobile-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="config-icon">💎</div>
+                <div>
+                    <div class="config-title">Voicyfy AI + Gemini</div>
+                    <div class="config-subtitle">Голосовой ассистент на базе Google Gemini с LLM стримингом</div>
+                </div>
+            </div>
+            
+            <div class="config-form">
+                <div class="form-group">
+                    <label class="form-label">💎 Gemini Ассистент:</label>
+                    <select class="form-select" id="assistantSelect">
+                        <option value="">Загрузка списка...</option>
+                    </select>
+                </div>
+                
+                <div class="config-actions">
+                    <button class="btn btn-primary" id="saveBtn">
+                        <i class="fas fa-save"></i> Сохранить
+                    </button>
+                    <button class="btn btn-success" id="testBtn" disabled>
+                        <i class="fas fa-play"></i> Тестировать
+                    </button>
+                    <button class="btn btn-success" id="copyBtn" disabled>
+                        <i class="fas fa-code"></i> Копировать код
+                    </button>
+                    <div class="agent-mode-toggle" id="agentModeToggle">
+                        <label class="agent-toggle-label">
+                            <input type="checkbox" id="agentModeCheckbox">
+                            <span class="agent-toggle-text">Агент</span>
+                        </label>
+                        <button class="agent-settings-btn" id="agentSettingsBtn"
+                                title="Настройки агента" style="display:none;">
+                            <i class="fas fa-sliders-h"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Message -->
+    <div class="success-message" id="successMessage">
+        <i class="fas fa-check-circle" style="font-size: 20px;"></i>
+        <span id="successText">Успешно!</span>
+    </div>
+
+    <!-- MAIN INTERFACE -->
+    <canvas id="voicyfy-three-canvas"></canvas>
+    <div class="background-overlay"></div>
+    
+    <div class="main-container">
+        <!-- HUD Frames -->
+        <div class="hud-frame hud-tl" id="hudTL"></div>
+        <div class="hud-frame hud-tr" id="hudTR"></div>
+        <div class="hud-frame hud-bl" id="hudBL"></div>
+        <div class="hud-frame hud-br" id="hudBR"></div>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="logo-icon">💎</div>
+            <div class="logo-text" id="headerTitle">Voicyfy AI</div>
+            <div class="header-subtitle" id="headerSubtitle">Gemini Voice + LLM Streaming</div>
+        </div>
+
+        <!-- Error Container -->
+        <div class="error-container" id="errorContainer">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title" id="errorTitle">Ошибка конфигурации</div>
+            <div class="error-text" id="errorText">Не удалось загрузить настройки ассистента</div>
+        </div>
+
+        <!-- Content Container -->
+        <div class="content-container">
+            <!-- Left Panel - LLM Results -->
+            <div class="llm-panel">
+                <div class="llm-header">
+                    <div class="llm-icon">🤖</div>
+                    <div class="llm-title">Результаты ИИ</div>
+                    <div class="llm-meta" id="llmMeta">Ожидание запроса</div>
+                    <button class="copy-button" id="copyLlmButton" style="display: none;">
+                        <i class="fas fa-copy"></i>
+                        <span id="copyButtonText">Копировать</span>
+                    </button>
+                </div>
+                <!-- Agent Steps Container -->
+                <div class="agent-steps-container" id="agentStepsContainer" style="display:none;">
+                    <div class="agent-steps-header" id="agentStepsHeader">
+                        <span class="agent-steps-icon">📋</span>
+                        <span class="agent-steps-title">План выполнения</span>
+                        <span class="agent-steps-meta" id="agentStepsMeta">Ожидание</span>
+                        <button class="agent-steps-collapse" id="agentStepsCollapse">▼</button>
+                    </div>
+                    <div class="agent-steps-body" id="agentStepsPanel"></div>
+                </div>
+                <div class="llm-content" id="llmContent">
+                    <div class="llm-placeholder" id="llmPlaceholder">
+                        <span class="placeholder-icon">✨</span>
+                        <div class="placeholder-title">Задайте вопрос</div>
+                        <div class="placeholder-text">
+                            Используйте голос (нажмите на сферу) или введите текст ниже.
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Текстовый ввод -->
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <input 
+                            type="text" 
+                            class="chat-input" 
+                            id="chatInput" 
+                            placeholder="Введите сообщение..." 
+                            autocomplete="off"
+                        >
+                        <button class="chat-send-btn" id="chatSendBtn" disabled>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="chat-context-info">
+                        <span id="chatContextInfo">Контекст: 0/5 сообщений</span>
+                        <button class="clear-history-btn" id="clearHistoryBtn" style="display: none;">
+                            <i class="fas fa-trash-alt"></i> Очистить
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Voice Assistant -->
+            <div class="voice-panel">
+                <div class="voice-header">
+                    <div class="voice-icon">💎</div>
+                    <div class="voice-title">Gemini Voice</div>
+                    <div class="voice-status connecting" id="voiceStatus">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Ожидание...</span>
+                    </div>
+                </div>
+                <div class="voice-content">
+                    <div class="voicyfy-container">
+                        <div class="voicyfy-sphere" id="voicyfySphere">
+                            <i class="fas fa-gem voicyfy-icon"></i>
+                            <div class="circular-visualizer" id="circularViz"></div>
+                        </div>
+                        
+                        <!-- MUTE BUTTON -->
+                        <button class="mute-button" id="muteButton" title="Отключить микрофон">
+                            <i class="fas fa-microphone" id="muteIcon"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Mute Status Indicator -->
+                    <div class="mute-status" id="muteStatus">
+                        <i class="fas fa-microphone-slash"></i>
+                        <span>Микрофон отключён</span>
+                    </div>
+                    
+                    <div class="instructions">
+                        <div class="instructions-title">Как использовать</div>
+                        <div class="instructions-text">
+                            Нажмите на сферу и говорите естественно с Gemini. 
+                            Для развёрнутых ответов текст будет появляться на экране.
+                            <br><br>
+                            <strong>🎤 Mute:</strong> Нажмите кнопку микрофона чтобы временно отключить его.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Settings Modal -->
+    <div class="modal-overlay" id="agentSettingsModal" style="display:none;">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h2>Настройки режима агента</h2>
+          <button class="modal-close" id="agentModalClose">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Название</label>
+            <input type="text" id="agentConfigName" class="form-input" value="Мой агент">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Модель оркестратора</label>
+            <select id="agentOrchestratorModel" class="form-select">
+              <option value="gpt-4o">GPT-4o (рекомендуется)</option>
+              <option value="gpt-4o-mini">GPT-4o Mini (быстрее)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Модель агентов</label>
+            <select id="agentAgentModel" class="form-select">
+              <option value="gpt-4o-mini">GPT-4o Mini (рекомендуется)</option>
+              <option value="gpt-4o">GPT-4o (мощнее)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Промпт оркестратора</label>
+            <textarea id="agentOrchestratorPrompt" class="form-textarea" rows="5"
+              placeholder="Ты — планировщик задач. Если не заполнено — используется дефолтный."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Доступные функции</label>
+            <div id="agentFunctionsList" class="agent-functions-grid"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Макс. шагов</label>
+              <input type="number" id="agentMaxSteps" class="form-input" value="10" min="1" max="20">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Таймаут шага (сек)</label>
+              <input type="number" id="agentStepTimeout" class="form-input" value="60" min="10" max="300">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="agentModalCancel">Отмена</button>
+          <button class="btn btn-primary" id="agentModalSave">
+            <i class="fas fa-save"></i> Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- МОДАЛКА БЛОКИРОВКИ ФУНКЦИИ -->
+    <div class="feature-blocked-modal" id="feature-blocked-modal">
+      <div class="modal-overlay" id="feature-modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <i class="fas fa-lock"></i>
+          <h3>Функция недоступна</h3>
+        </div>
+        <div class="modal-body">
+          <p id="feature-blocked-message">Для доступа к этому разделу необходим тариф Старт, Profi или Agent.</p>
+          <div class="current-plan-info">
+            Ваш текущий тариф: <span id="current-plan-name-display">AI Voice</span>
+          </div>
+          <p class="required-plans">
+            Необходим тариф: <strong id="required-plans-text">Старт, Profi или Agent</strong>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="feature-modal-close">Закрыть</button>
+          <button class="btn btn-primary" id="feature-modal-upgrade">
+            <i class="fas fa-arrow-up"></i> Выбрать тариф
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature access control -->
+    <script>
+    (function() {
+      const FEATURE_ACCESS = {
+        crm: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        telephony: ['free', 'referral_trial', 'start', 'profi', 'agent'],
+        outbound_calls: ['free', 'referral_trial', 'start', 'profi', 'agent']
+      };
+
+      const FEATURE_NAMES = {
+        crm: 'CRM',
+        telephony: 'Телефония',
+        outbound_calls: 'Исходящие звонки'
+      };
+
+      const PLAN_NAMES = {
+        'free': 'Пробный период',
+        'referral_trial': 'Реферальный триал',
+        'ai_voice': 'AI Voice',
+        'start': 'Тариф Старт',
+        'profi': 'Profi', 'agent': 'Voicyfy Agent'
+      };
+
+      let currentUserPlanCode = 'free';
+
+      function canAccessFeature(feature, planCode) {
+        if (!planCode) return true;
+        const allowedPlans = FEATURE_ACCESS[feature];
+        if (!allowedPlans) return true;
+        return allowedPlans.includes(planCode);
+      }
+
+      function applyFeatureAccessToSidebar() {
+        document.querySelectorAll('.plan-locked-feature').forEach(el => {
+          el.classList.remove('plan-locked-feature');
+        });
+
+        document.querySelectorAll('[data-feature]').forEach(element => {
+          const feature = element.getAttribute('data-feature');
+          if (!canAccessFeature(feature, currentUserPlanCode)) {
+            element.classList.add('plan-locked-feature');
+          }
+        });
+      }
+
+      function showFeatureBlockedModal(feature) {
+        const featureName = FEATURE_NAMES[feature] || feature;
+        const planName = PLAN_NAMES[currentUserPlanCode] || currentUserPlanCode;
+
+        document.getElementById('feature-blocked-message').textContent =
+          `Для доступа к разделу "${featureName}" необходим тариф Старт, Profi или Agent.`;
+        document.getElementById('current-plan-name-display').textContent = planName;
+        document.getElementById('required-plans-text').textContent = 'Старт, Profi или Agent';
+        document.getElementById('feature-blocked-modal').classList.add('show');
+      }
+
+      function hideFeatureBlockedModal() {
+        document.getElementById('feature-blocked-modal').classList.remove('show');
+      }
+
+      async function loadSubscriptionForAccess() {
+        try {
+          const token = localStorage.getItem('auth_token');
+          if (!token) return;
+
+          const response = await fetch('/api/subscriptions/my-subscription', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+
+          if (response.ok) {
+            const subscription = await response.json();
+            if (subscription && subscription.subscription_plan && subscription.subscription_plan.code) {
+              currentUserPlanCode = subscription.subscription_plan.code;
+            }
+          }
+
+          applyFeatureAccessToSidebar();
+        } catch (error) {
+          console.error('Ошибка загрузки подписки:', error);
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        // Блокировка переходов на заблокированные страницы
+        document.querySelectorAll('[data-feature]').forEach(link => {
+          link.addEventListener('click', function(e) {
+            if (this.classList.contains('plan-locked-feature')) {
+              e.preventDefault();
+              showFeatureBlockedModal(this.getAttribute('data-feature'));
+            }
+          });
+        });
+
+        // Обработчики модалки
+        document.getElementById('feature-modal-overlay').addEventListener('click', hideFeatureBlockedModal);
+        document.getElementById('feature-modal-close').addEventListener('click', hideFeatureBlockedModal);
+        document.getElementById('feature-modal-upgrade').addEventListener('click', function() {
+          hideFeatureBlockedModal();
+          window.location.href = '/static/dashboard.html';
+        });
+
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            const fbm = document.getElementById('feature-blocked-modal');
+            if (fbm && fbm.classList.contains('show')) {
+              fbm.classList.remove('show');
+            }
+          }
+        });
+
+        // Загружаем подписку и применяем доступ
+        loadSubscriptionForAccess();
+      });
+    })();
+    </script>
+
+    <!-- External JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- App JS (load in order) -->
+    <script src="config.js"></script>
+    <script src="audio.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
