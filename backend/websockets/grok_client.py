@@ -17,7 +17,7 @@ CHANGELOG v1.1:
 - Fixed: VAD config is simple {"type": "server_vad"} (no threshold/silence params)
 - Fixed: Correct audio format nesting
 
-Based on OpenAI Realtime client architecture for Voicyfy platform.
+Based on OpenAI Realtime client architecture for Voksy AI platform.
 """
 
 import asyncio
@@ -227,7 +227,7 @@ class GrokVoiceClient:
         headers = [
             ("Authorization", f"Bearer {self.api_key}"),
             ("Content-Type", "application/json"),
-            ("User-Agent", "Voicyfy-Production/1.1")
+            ("User-Agent", "Voksy AI-Production/1.1")
         ]
         
         try:

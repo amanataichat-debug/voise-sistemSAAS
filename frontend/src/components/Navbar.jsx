@@ -17,8 +17,8 @@ function Navbar({ onOpenModal }) {
   return (
     <nav className={`nav${scrolled ? ' nav-scrolled' : ''}`}>
       <a href="#" className="nav-logo">
-        <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem" className="nav-logo-img" />
-        <span className="nav-logo-text">VoiceSystem</span>
+        <img src="/static/images/IMG_2820.PNG" alt="Voksy AI" className="nav-logo-img" />
+        <span className="nav-logo-text">Voksy AI</span>
       </a>
 
       <div className="nav-center">

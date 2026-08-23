@@ -1,6 +1,6 @@
 # backend/models/__init__.py
 """
-Database models module for Voicyfy application.
+Database models module for Voksy AI application.
 This module contains SQLAlchemy ORM models that represent database tables.
 ✅ ОБНОВЛЕНО: Добавлена модель EmailVerification для верификации email
 ✅ ОБНОВЛЕНО: Добавлены модели Gemini Assistant и Gemini Conversation
@@ -83,7 +83,7 @@ from .voximplant_child import (
 # ✅ НОВОЕ v3.6: SMS модель для входящих SMS через Voximplant
 from .sms_message import SmsMessage
 
-# ✅ НОВОЕ: Система кредитов оркестратора Voicyfy Agent
+# ✅ НОВОЕ: Система кредитов оркестратора Voksy AI Agent
 from .credit_transaction import CreditTransaction, CreditTransactionType
 from .credit_package import CreditPackage
 

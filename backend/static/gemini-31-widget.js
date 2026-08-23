@@ -329,7 +329,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
     }
 
     // ============================================================================
-    // UI CREATION - VOICYFY DESIGN (Exact replica of widget.js)
+    // UI CREATION - VOKSY AI DESIGN (Exact replica of widget.js)
     // ============================================================================
 
     function getWidgetPositionStyles() {
@@ -882,7 +882,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
     }
 
     // ============================================================================
-    // UI STATE UPDATES (Mapping Gemini Logic to OpenAI/Voicyfy UI)
+    // UI STATE UPDATES (Mapping Gemini Logic to OpenAI/Voksy AI UI)
     // ============================================================================
 
     function updateUIState(state, message = '') {
@@ -955,7 +955,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
                 }
             }
             const average = sum / step;
-            // Voicyfy UI specific scaling
+            // Voksy AI UI specific scaling
             const height = 2 + Math.min(28, Math.floor(average * 150));
             bars[i].style.height = `${height}px`;
         }

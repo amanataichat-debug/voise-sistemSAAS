@@ -756,7 +756,7 @@ async def get_admin_statistics(
             Conversation.call_cost.isnot(None)
         ).scalar() or 0
 
-        # ========== ОРКЕСТРАТОР (Voicyfy Agent) ==========
+        # ========== ОРКЕСТРАТОР (Voksy AI Agent) ==========
         orchestrator_stats = _build_orchestrator_stats(db, now)
 
         return {
@@ -794,7 +794,7 @@ async def get_admin_statistics(
                 "total_cost": float(total_call_cost),
                 "cost_this_month": float(call_cost_this_month)
             },
-            # ✅ v2.3: Статистика оркестратора (Voicyfy Agent)
+            # ✅ v2.3: Статистика оркестратора (Voksy AI Agent)
             "orchestrator": orchestrator_stats,
             "timestamp": now
         }
@@ -807,7 +807,7 @@ async def get_admin_statistics(
 
 
 # ============================================================================
-# АНАЛИТИКА ОРКЕСТРАТОРА (Voicyfy Agent) — кредиты, агенты, активность
+# АНАЛИТИКА ОРКЕСТРАТОРА (Voksy AI Agent) — кредиты, агенты, активность
 # ============================================================================
 
 SPEND_TYPES = (CreditTransactionType.SPEND.value, CreditTransactionType.REFUND.value)

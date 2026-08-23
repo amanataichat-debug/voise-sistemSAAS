@@ -1,6 +1,6 @@
 # claude-index — оглавление документации для AI-агентов
 
-Это корневой индекс документации проекта **Voicyfy (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI Realtime, Google Gemini Live, xAI Grok, Cartesia, ElevenLabs; телефония Voximplant; биллинг Finik (KGS)).
+Это корневой индекс документации проекта **Voksy AI (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI Realtime, Google Gemini Live, xAI Grok, Cartesia, ElevenLabs; телефония Voximplant; биллинг Finik (KGS)).
 
 Документация лежит рядом с кодом: в каждой значимой папке — файл `claude-*.md`, объясняющий её назначение, состав, точки входа, связи и подводные камни. Начинайте с этого индекса, спускайтесь к нужному слою.
 
@@ -18,7 +18,7 @@
 - [`backend/websockets/claude-websockets.md`](backend/websockets/claude-websockets.md) — реал-тайм голосовые хендлеры и WS-клиенты провайдеров + мост телефонии Voximplant.
 
 ### Бизнес-логика
-- [`backend/services/claude-services.md`](backend/services/claude-services.md) — сервисный слой: оркестратор Voicyfy Agent, кредиты/биллинг, интеграции внешних API.
+- [`backend/services/claude-services.md`](backend/services/claude-services.md) — сервисный слой: оркестратор Voksy AI Agent, кредиты/биллинг, интеграции внешних API.
 - [`backend/services/llm_streaming/claude-llm-streaming.md`](backend/services/llm_streaming/claude-llm-streaming.md) — low-latency стриминг текстовой LLM (для функции `query_llm`).
 - [`backend/functions/claude-functions.md`](backend/functions/claude-functions.md) — модульная система AI-функций (function calling, авто-дискавери реестром).
 
@@ -36,7 +36,7 @@
 
 ## Миграции БД
 - [`alembic/claude-alembic.md`](alembic/claude-alembic.md) — основная система миграций (Alembic, авто-`upgrade head` на старте).
-- [`backend/migrations/claude-migrations.md`](backend/migrations/claude-migrations.md) — легаси raw-SQL миграция Voicyfy Agent v2 (вне цепочки Alembic).
+- [`backend/migrations/claude-migrations.md`](backend/migrations/claude-migrations.md) — легаси raw-SQL миграция Voksy AI Agent v2 (вне цепочки Alembic).
 - Примечание: третий механизм изменения схемы — авто-добавление колонок в startup-событии `app.py`.
 
 ## Лендинг (React)
@@ -55,8 +55,8 @@
 
 ## Сквозные замечания (важно для всего проекта)
 - **Мульти-провайдер с дублированием.** Виды голосовых ассистентов (OpenAI/Gemini/Grok/Cascade/Cartesia/Yandex/Translate) + ElevenLabs дублируются на каждом слое (model → api → handler → widget). Общая правка = правка во всех ветках. Каскад — особый случай: живёт в таблице Grok (`assistant_type='cascade'`) и обслуживается тем же роутером `/api/grok-assistants`.
-- **Лимит ассистентов — один на всех провайдеров.** Считается в `services/assistant_limit_service.py` (единственный источник правды для `check_assistant_limit` и `GET /api/subscriptions/assistants-usage`). Голосовые ассистенты мастера Voicyfy Agent из подсчёта исключены.
-- **Voicyfy Agent v5.0** — автономный обзвон: оркестратор (`services/agent_orchestrator`) + планировщик звонков (`core/task_scheduler`) + кредиты (`services/credit_service`). Это самостоятельная подсистема со своим биллингом (кредиты, не подписочные минуты).
+- **Лимит ассистентов — один на всех провайдеров.** Считается в `services/assistant_limit_service.py` (единственный источник правды для `check_assistant_limit` и `GET /api/subscriptions/assistants-usage`). Голосовые ассистенты мастера Voksy AI Agent из подсчёта исключены.
+- **Voksy AI Agent v5.0** — автономный обзвон: оркестратор (`services/agent_orchestrator`) + планировщик звонков (`core/task_scheduler`) + кредиты (`services/credit_service`). Это самостоятельная подсистема со своим биллингом (кредиты, не подписочные минуты).
 - **Версионные дубликаты** в `websockets/` — ориентируйтесь на то, что реально импортирует роутер, а не на имя/комментарий файла.
 - **Платежи — Finik (finik.kg, KGS)**. **Пароли хешируются SHA-256 без соли**; API-ключи и Voximplant-креды в БД без шифрования.
 - **Import-redirect** в `main.py` делает эквивалентными `from backend.x...` и `from x...`.

@@ -1,8 +1,8 @@
 /**
- * 🚀 Grok Voice Widget v1.1 - PRODUCTION (xAI Grok + VOICYFY UI)
- * xAI Grok Voice Agent API Integration with Voicyfy Branding
+ * 🚀 Grok Voice Widget v1.1 - PRODUCTION (xAI Grok + VOKSY AI UI)
+ * xAI Grok Voice Agent API Integration with Voksy AI Branding
  * 
- * ✅ UI: 100% Match with OpenAI/Gemini Widget (Blue/Clean/Voicyfy)
+ * ✅ UI: 100% Match with OpenAI/Gemini Widget (Blue/Clean/Voksy AI)
  * ✅ Logic: Pure Grok VAD (Server-side decision making)
  * ✅ Continuous audio streaming via AudioWorklet
  * ✅ Instant interruptions & Zero-latency playback
@@ -14,7 +14,7 @@
  * 🔧 FIXED: Added pendingAudioQueue for buffering early chunks
  * 
  * @version 1.1
- * @author Voicyfy Team
+ * @author Voksy AI Team
  * @license MIT
  */
 
@@ -201,7 +201,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
     // ============================================================================
 
     function init() {
-        console.log('[GROK-WIDGET] 🚀 Initializing v1.1 (Voicyfy UI + Audio Fix)...');
+        console.log('[GROK-WIDGET] 🚀 Initializing v1.1 (Voksy AI UI + Audio Fix)...');
         
         const getScriptTag = () => {
             const scripts = document.querySelectorAll('script');
@@ -325,7 +325,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
     }
 
     // ============================================================================
-    // UI CREATION - VOICYFY DESIGN
+    // UI CREATION - VOKSY AI DESIGN
     // ============================================================================
 
     function getWidgetPositionStyles() {
@@ -846,10 +846,10 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
                         <span id="grok-status-text">Подключение...</span>
                     </div>
                     
-                    <!-- Voicyfy Branding -->
+                    <!-- Voksy AI Branding -->
                     <div class="grok-voicyfy-container">
                         <a href="https://voicyfy.ru/" target="_blank" rel="noopener noreferrer" class="grok-voicyfy-link">
-                            <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Voicyfy - powered by AI">
+                            <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Voksy AI - powered by AI">
                         </a>
                     </div>
                 </div>

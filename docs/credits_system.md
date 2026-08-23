@@ -1,4 +1,4 @@
-# Система кредитов оркестратора Voicyfy Agent
+# Система кредитов оркестратора Voksy AI Agent
 
 Реализация ТЗ v1.1. Тариф `agent` живёт параллельно с существующими тарифами
 (`ai_voice`, `start`, `profi`) и не затрагивает их.
@@ -107,7 +107,7 @@ WHERE product = 'orchestrator' AND type = 'spend'
 
 ### Списание кредитов
 
-Списывается только v3-флоу на ключах Voicyfy (OpenRouter): precall, postcall,
+Списывается только v3-флоу на ключах Voksy AI (OpenRouter): precall, postcall,
 веб-чат, Telegram-чат. НЕ списываются: v2 legacy-флоу (ключи юзера) и сами
 голосовые звонки (Realtime/Live — ключи юзера). Токены накапливаются по всем
 итерациям tool calls и списываются одним `charge` в конце.

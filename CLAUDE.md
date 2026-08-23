@@ -1,8 +1,8 @@
-# Voicyfy (WellcomeAI) — SaaS Voice AI Platform
+# Voksy AI (WellcomeAI) — SaaS Voice AI Platform
 
 ## Overview
 
-Voicyfy is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI Realtime API, Google Gemini Live, xAI Grok Voice, and ElevenLabs — then connect them to telephony (Voximplant) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
+Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI Realtime API, Google Gemini Live, xAI Grok Voice, and ElevenLabs — then connect them to telephony (Voximplant) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
 
 **Production URL:** https://voicyfy.ru
 **Version:** 3.0.0

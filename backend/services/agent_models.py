@@ -1,5 +1,5 @@
 """
-Список топовых моделей для оркестратора Voicyfy Agent.
+Список топовых моделей для оркестратора Voksy AI Agent.
 Все модели должны поддерживать function calling (tool calling).
 Слаги — формат OpenRouter (provider/model-name).
 

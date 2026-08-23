@@ -1,6 +1,6 @@
 # backend/models/yandex_assistant.py
 """
-Yandex Assistant models for Voicyfy application.
+Yandex Assistant models for Voksy AI application.
 Yandex SpeechKit Realtime API integration.
 
 Вся логика звонка живёт в сценариях Voximplant (inbound_yandex / outbound_yandex)

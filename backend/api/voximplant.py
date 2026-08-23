@@ -1229,7 +1229,7 @@ async def log_conversation_data(
                 }
             
             # 🆕 Списание кредитов каскада по фактическим токенам LLM.
-            # Каскад крутит gpt-realtime-2.1-mini на серверном ключе Voicyfy,
+            # Каскад крутит gpt-realtime-2.1-mini на серверном ключе Voksy AI,
             # поэтому расход LLM оплачивается кредитами каскада
             # (cascade_credits_balance). prompt_tokens — НЕкэшированный input,
             # cached_prompt_tokens — кэш (история диалога живёт на стороне

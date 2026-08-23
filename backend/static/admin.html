@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Администрирование — VoiceSystem</title>
+  <title>Администрирование — Voksy AI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
@@ -884,7 +884,7 @@
       to { transform: rotate(360deg); }
     }
     
-    /* ===== Аналитика оркестратора (Voicyfy Agent) ===== */
+    /* ===== Аналитика оркестратора (Voksy AI Agent) ===== */
     .credits-value {
       font-variant-numeric: tabular-nums;
       font-weight: 600;
@@ -1017,12 +1017,12 @@
     <div class="sidebar-header">
       <a href="/" class="sidebar-logo">
         <div class="logo-icon">
-          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <img src="/static/images/IMG_2820.PNG" alt="Voksy AI Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
           <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
             <i class="fas fa-robot"></i>
           </div>
         </div>
-        <span>VoiceSystem</span>
+        <span>Voksy AI</span>
       </a>
     </div>
     
@@ -1153,7 +1153,7 @@
         </div>
       </div>
 
-      <!-- Таб с использованием агентов (Voicyfy Agent) -->
+      <!-- Таб с использованием агентов (Voksy AI Agent) -->
       <div class="tab-content" id="agents-tab">
         <!-- Сводка по платформе -->
         <div class="stats-section">
@@ -1407,9 +1407,9 @@
           </div>
         </div>
 
-        <!-- Оркестратор (Voicyfy Agent) -->
+        <!-- Оркестратор (Voksy AI Agent) -->
         <div class="stats-section" id="orchestrator-section" style="display: none;">
-          <h3 class="stats-section-title"><i class="fas fa-microchip"></i> Оркестратор (VoiceSystem Agent)</h3>
+          <h3 class="stats-section-title"><i class="fas fa-microchip"></i> Оркестратор (Voksy AI Agent)</h3>
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-icon">
@@ -1618,10 +1618,10 @@
             </table>
           </div>
 
-          <!-- Voicyfy Agent: использование кредитов -->
+          <!-- Voksy AI Agent: использование кредитов -->
           <div id="user-agent-usage" style="display: none;">
             <div class="card-header" style="margin-top: 2rem;">
-              <h2 class="card-title"><i class="fas fa-microchip"></i> VoiceSystem Agent — использование</h2>
+              <h2 class="card-title"><i class="fas fa-microchip"></i> Voksy AI Agent — использование</h2>
             </div>
 
             <div class="usage-summary-chips" id="uau-chips"></div>
@@ -2547,13 +2547,13 @@
             `;
           }
 
-          // Оркестратор (Voicyfy Agent)
+          // Оркестратор (Voksy AI Agent)
           if (stats.orchestrator) {
             this.renderOrchestratorStats(stats.orchestrator);
           }
         },
 
-        // ===== Аналитика оркестратора (Voicyfy Agent) =====
+        // ===== Аналитика оркестратора (Voksy AI Agent) =====
 
         esc(value) {
           return String(value == null ? '' : value)
@@ -2926,7 +2926,7 @@
 
           ui.renderUserDetails(userData);
 
-          // Аналитика Voicyfy Agent (не ломаем страницу, если эндпоинт недоступен)
+          // Аналитика Voksy AI Agent (не ломаем страницу, если эндпоинт недоступен)
           ui.hideUserAgentUsage();
           try {
             const usageData = await api.getUserAgentUsage(userId);

@@ -1,7 +1,7 @@
 /* ============================================================================
  * agent/connectors.js — Внешние коннекторы агента (Google Календарь, Gmail)
  *                       через Composio → /api/agent/connectors
- * Часть страницы /static/agent.html (Voicyfy Agent).
+ * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): функции и состояние — глобальные,
  * доступны между всеми файлами agent/*.js и из inline-onclick в разметке.
  * Документация: backend/static/agent/CLAUDE.md

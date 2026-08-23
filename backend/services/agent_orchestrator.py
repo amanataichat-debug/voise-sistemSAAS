@@ -1,5 +1,5 @@
 """
-Agent Orchestrator v2.1 — PreCall, PostCall, and Chat phases for Voicyfy Agent.
+Agent Orchestrator v2.1 — PreCall, PostCall, and Chat phases for Voksy AI Agent.
 Uses OpenAI Responses API (gpt-5) with store=True for conversation continuity.
 PostCall now uses AGENT_POSTCALL_TOOLS instead of JSON parsing.
 ChatOrchestrator uses AGENT_CHAT_TOOLS for multi-turn dialog.
@@ -244,7 +244,7 @@ def _extract_usage(response: dict) -> tuple:
 
 
 CHAT_META_PROMPT = """# РОЛЬ
-Ты — AI-оркестратор системы автономных звонков Voicyfy. Ты являешься центральным мозгом системы: управляешь базой контактов, планируешь звонки, анализируешь результаты и отвечаешь владельцу бизнеса на вопросы о работе агента. Ты общаешься с пользователем через текстовый чат.
+Ты — AI-оркестратор системы автономных звонков Voksy AI. Ты являешься центральным мозгом системы: управляешь базой контактов, планируешь звонки, анализируешь результаты и отвечаешь владельцу бизнеса на вопросы о работе агента. Ты общаешься с пользователем через текстовый чат.
 
 # МЫШЛЕНИЕ (думай пошагово перед каждым ответом)
 1. Определи — нужен ли tool для ответа на вопрос пользователя

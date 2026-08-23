@@ -5,15 +5,15 @@ from email.mime.multipart import MIMEMultipart
 # Твои данные
 EMAIL_USERNAME = "voicyfy@mail.ru"  # 👈 Твой Mail.ru
 EMAIL_PASSWORD = "n7zy3sgtN4i1xfWkERPD"  # 👈 Пароль для внешнего приложения
-TO_EMAIL = "well96well@gmail.com"  # 👈 Твоя личная почта для теста
+TO_EMAIL = "voksyai@gmail.com"  # 👈 Твоя личная почта для теста
 
 def test_mailru_smtp():
     try:
         # Создаем сообщение
         msg = MIMEMultipart()
-        msg['From'] = f"Voicyfy <{EMAIL_USERNAME}>"
+        msg['From'] = f"Voksy AI <{EMAIL_USERNAME}>"
         msg['To'] = TO_EMAIL
-        msg['Subject'] = "🎉 Тест SMTP Mail.ru - Voicyfy"
+        msg['Subject'] = "🎉 Тест SMTP Mail.ru - Voksy AI"
         
         body = """
         <html>
@@ -22,7 +22,7 @@ def test_mailru_smtp():
                 <h2 style="color: #2563eb;">Привет! 👋</h2>
                 <p style="font-size: 16px;">Если ты видишь это письмо - <strong>Mail.ru SMTP работает отлично!</strong> ✅</p>
                 <div style="background: #f0f4ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <p style="color: #64748b; margin: 0;">Это тестовое письмо от системы Voicyfy</p>
+                    <p style="color: #64748b; margin: 0;">Это тестовое письмо от системы Voksy AI</p>
                 </div>
                 <p style="font-size: 14px; color: #94a3b8;">
                     Можно начинать разработку верификации email! 🚀

@@ -591,9 +591,9 @@ async def process_telegram_message(
             CreditService.precheck(db, user)
         except (SubscriptionExpiredError, SubscriptionRequiredError, InsufficientCreditsError) as gate_err:
             if isinstance(gate_err, InsufficientCreditsError):
-                notice = "На балансе закончились кредиты. Пополните в личном кабинете Voicyfy."
+                notice = "На балансе закончились кредиты. Пополните в личном кабинете Voksy AI."
             else:
-                notice = "Подписка истекла, продлите в личном кабинете Voicyfy."
+                notice = "Подписка истекла, продлите в личном кабинете Voksy AI."
 
             if _should_send_sub_notice(history_row):
                 await AgentTelegramService.send_message(

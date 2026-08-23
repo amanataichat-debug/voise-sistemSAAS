@@ -1,4 +1,4 @@
-# Voicyfy Agent — фронтенд страницы `/static/agent.html`
+# Voksy AI Agent — фронтенд страницы `/static/agent.html`
 
 Дашборд **автономного агента для обзвонов** (не путать с `agents.html` — страницей
 управления OpenAI-ассистентами, у которой своя папка `agents/`).

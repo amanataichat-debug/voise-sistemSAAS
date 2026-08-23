@@ -1,6 +1,6 @@
 /* ============================================================================
  * agent/chat.js — Чат с оркестратором (стриминг ответов и tool-status) → /api/agent/chat[/stream]
- * Часть страницы /static/agent.html (Voicyfy Agent).
+ * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): функции и состояние — глобальные,
  * доступны между всеми файлами agent/*.js и из inline-onclick в разметке.
  * Подключается из agent.html. Документация: backend/static/agent/CLAUDE.md
@@ -58,8 +58,8 @@ function renderWelcome(){
   wrap.className = 'chat-welcome';
   wrap.id = 'chat-welcome';
   wrap.innerHTML =
-    `<img class="chat-welcome-img" src="/static/images/IMG_2820.PNG" alt="Voicyfy">
-     <div class="chat-welcome-title">Привет!<br>Я ваш агент Voicyfy</div>
+    `<img class="chat-welcome-img" src="/static/images/IMG_2820.PNG" alt="Voksy AI">
+     <div class="chat-welcome-title">Привет!<br>Я ваш агент Voksy AI</div>
      <div class="chat-welcome-sub">Помогаю управлять обзвоном: контакты, задачи, звонки и аналитика.<br>Выберите подсказку или напишите запрос сами.</div>
      <div class="chat-tiles">${tiles}</div>`;
   msgs.appendChild(wrap);
@@ -213,7 +213,7 @@ function createStreamingBubble(){
   const msgs = document.getElementById('chat-messages');
   const div = document.createElement('div'); div.className='msg assistant';
   div.innerHTML =
-    `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voicyfy"></div>`+
+    `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voksy AI"></div>`+
     `<div class="msg-body">`+
       `<div class="activity" data-activity>`+
         `<div class="activity-working" data-working><span class="aw-dot"></span><span class="aw-text">Думаю…</span></div>`+
@@ -360,7 +360,7 @@ function addBubble(text, role){
     div.innerHTML = `<div class="msg-body"><div class="msg-bubble user-chip">${esc(text).replace(/\n/g,'<br>')}</div></div>`;
   } else {
     const now = new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
-    div.innerHTML = `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voicyfy"></div><div class="msg-body"><div class="msg-bubble md answer">${renderMarkdown(text)}</div><div class="msg-time">${now}</div></div>`;
+    div.innerHTML = `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voksy AI"></div><div class="msg-body"><div class="msg-bubble md answer">${renderMarkdown(text)}</div><div class="msg-time">${now}</div></div>`;
   }
   msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
@@ -382,11 +382,11 @@ function addAgentBubble(text, debugLog, elapsed){
   const div = document.createElement('div'); div.className='msg assistant';
   const steps = _stepsFromDebug(debugLog);
   const trace = steps.length ? `<div class="activity done">${buildActivityCollapsed(steps, elapsed)}</div>` : '';
-  div.innerHTML = `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voicyfy"></div><div class="msg-body">${trace}<div class="msg-bubble md answer">${renderMarkdown(text)}</div><div class="msg-time">${now}</div></div>`;
+  div.innerHTML = `<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voksy AI"></div><div class="msg-body">${trace}<div class="msg-bubble md answer">${renderMarkdown(text)}</div><div class="msg-time">${now}</div></div>`;
   msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
 }
 
-function showTyping(){ const msgs=document.getElementById('chat-messages'); const id='typ-'+Date.now(); const div=document.createElement('div'); div.className='msg assistant'; div.id=id; div.innerHTML=`<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voicyfy"></div><div class="msg-body"><div class="activity-working"><span class="aw-dot"></span><span class="aw-text">Думаю…</span></div></div>`; msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return id; }
+function showTyping(){ const msgs=document.getElementById('chat-messages'); const id='typ-'+Date.now(); const div=document.createElement('div'); div.className='msg assistant'; div.id=id; div.innerHTML=`<div class="msg-avatar"><img src="/static/images/IMG_2820.PNG" alt="Voksy AI"></div><div class="msg-body"><div class="activity-working"><span class="aw-dot"></span><span class="aw-text">Думаю…</span></div></div>`; msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return id; }
 function removeTyping(id){ document.getElementById(id)?.remove(); }
 
 

@@ -12,11 +12,11 @@
 ### Функции (каждый файл — один класс `FunctionBase`)
 - `add_google_sheet_row.py` — добавляет строку в Google Таблицу (сервисный аккаунт).
 - `api_request.py` — произвольный HTTP-запрос (GET/POST/PUT/DELETE/PATCH) к внешнему API.
-- `create_crm_voicyfy_task.py` — создаёт задачу на обратный звонок в CRM Voicyfy; находит/создаёт контакт по телефону.
+- `create_crm_voicyfy_task.py` — создаёт задачу на обратный звонок в CRM Voksy AI; находит/создаёт контакт по телефону.
 - `get_current_time.py` — текущие дата/время в заданном часовом поясе.
 - `hangup_call.py` — завершает звонок (только в контексте Voximplant-телефонии).
 - `query_llm.py` — запрос к текстовой LLM (ChatGPT) для развёрнутых ответов; использует `services/llm_streaming` для стриминга в WebSocket.
-- `query_orchestrator.py` — обращение к оркестратору Voicyfy Agent (`services/agent_orchestrator`); мост между голосовым агентом и «мозгом».
+- `query_orchestrator.py` — обращение к оркестратору Voksy AI Agent (`services/agent_orchestrator`); мост между голосовым агентом и «мозгом».
 - `read_google_doc.py` — читает текст из публичного Google Документа по ссылке.
 - `search_contact_by_phone.py` — поиск контакта в CRM по номеру телефона.
 - `search_pinecone.py` — векторный поиск по базе знаний (`services/pinecone_service`).

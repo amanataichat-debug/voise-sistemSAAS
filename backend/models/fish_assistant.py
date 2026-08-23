@@ -1,6 +1,6 @@
 # backend/models/fish_assistant.py
 """
-Fish Assistant model for Voicyfy application.
+Fish Assistant model for Voksy AI application.
 Fish Audio TTS provider integration — config only, call logic lives in Voximplant.
 
 Тракт звонка (сценарии inbound_fish / outbound_fish на родительском аккаунте):

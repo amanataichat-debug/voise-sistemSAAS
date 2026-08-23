@@ -1,5 +1,5 @@
 """
-OpenRouter API client for Voicyfy Agent orchestrator.
+OpenRouter API client for Voksy AI Agent orchestrator.
 Uses system API key from settings.OPENROUTER_API_KEY.
 """
 import json
@@ -103,7 +103,7 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://voicyfy.ru",
-            "X-Title": "Voicyfy Agent",
+            "X-Title": "Voksy AI Agent",
         }
 
         if _is_anthropic_model(model):
@@ -159,7 +159,7 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://voicyfy.ru",
-            "X-Title": "Voicyfy Agent",
+            "X-Title": "Voksy AI Agent",
         }
 
         if _is_anthropic_model(model):

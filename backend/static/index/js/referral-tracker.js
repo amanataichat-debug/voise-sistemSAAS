@@ -1,5 +1,5 @@
 /**
- * Voicyfy - Referral Tracker
+ * Voksy AI - Referral Tracker
  * Handles UTM data capture and referral tracking (Silent Mode)
  */
 

@@ -1,6 +1,6 @@
 # backend/functions/create_crm_voicyfy_task.py
 """
-Функция для создания задач в CRM системе Voicyfy.
+Функция для создания задач в CRM системе Voksy AI.
 Позволяет AI ассистенту автоматически ставить задачи на обратный звонок.
 """
 from typing import Dict, Any
@@ -121,7 +121,7 @@ def parse_time_string(time_str: str) -> datetime:
 
 @register_function
 class CreateCrmVoicyfyTaskFunction(FunctionBase):
-    """Создать задачу в CRM системе Voicyfy для обратного звонка"""
+    """Создать задачу в CRM системе Voksy AI для обратного звонка"""
     
     @classmethod
     def get_name(cls) -> str:
@@ -133,7 +133,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
     
     @classmethod
     def get_description(cls) -> str:
-        return "Создает задачу на обратный звонок клиенту в CRM системе Voicyfy. Автоматически находит или создает контакт по номеру телефона."
+        return "Создает задачу на обратный звонок клиенту в CRM системе Voksy AI. Автоматически находит или создает контакт по номеру телефона."
     
     @classmethod
     def get_parameters(cls) -> Dict[str, Any]:
@@ -301,7 +301,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
     @staticmethod
     async def execute(arguments: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Создает задачу в CRM системе Voicyfy.
+        Создает задачу в CRM системе Voksy AI.
         
         Логика:
         1. Получает user_id из ассистента

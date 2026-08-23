@@ -91,7 +91,7 @@ async def create_finik_payment_transaction(
             amount=amount,
             payment_id=payment_id,
             description=description,
-            name_en="Voicyfy",
+            name_en="Voksy AI",
             lang="ru",
         )
     except FinikError as e:
@@ -257,7 +257,7 @@ async def subscribe_agent(
         db=db,
         user=user,
         amount=amount,
-        description=f"Подписка Voicyfy Agent на 30 дней за {int(amount)} сом",
+        description=f"Подписка Voksy AI Agent на 30 дней за {int(amount)} сом",
         details={"type": "agent_subscription"},
         plan_id=plan.id,
     )

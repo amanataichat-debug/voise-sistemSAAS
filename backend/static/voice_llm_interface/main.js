@@ -1,6 +1,6 @@
 /* ============================================================ */
-/* Voicyfy AI - Main Application                                */
-/* Voice LLM Interface - Voicyfy                                */
+/* Voksy AI AI - Main Application                                */
+/* Voice LLM Interface - Voksy AI                                */
 /* Version: 4.3.2 - IIFE wrapped                                */
 /* ============================================================ */
 
@@ -58,7 +58,7 @@ let threeInitialized = false;
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', function() {
-    Config.log('🚀 Voicyfy AI Interface v4.3.2 Starting...');
+    Config.log('🚀 Voksy AI AI Interface v4.3.2 Starting...');
     Config.log(`   Mode: Gemini Voice (WS1) + LLM Text (WS2) + Agent Mode`);
     Config.log(`   Mute: Enabled`);
     Config.log(`   Assistant ID: ${ASSISTANT_ID || 'Not configured'}`);
@@ -434,7 +434,7 @@ function copyHTMLCode() {
     }
 
     const embedUrl = `${Config.SERVER_URL}/static/voice_llm_interface/?assistant=${ASSISTANT_ID}`;
-    const embedCode = `<!-- Voicyfy AI (Gemini) Widget -->
+    const embedCode = `<!-- Voksy AI AI (Gemini) Widget -->
 <iframe
     src="${embedUrl}"
     width="100%"

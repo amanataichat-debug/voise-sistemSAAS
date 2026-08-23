@@ -45,7 +45,7 @@ logger = get_logger(__name__)
 # =============================================================================
 
 WEBHOOK_TIMEOUT_SECONDS = 10
-WEBHOOK_USER_AGENT = "Voicyfy-Webhook/1.0"
+WEBHOOK_USER_AGENT = "Voksy AI-Webhook/1.0"
 
 # Системные плейсхолдеры, которые не должны попадать в диалог
 _EMPTY_USER_MESSAGES = {"[no user input]"}

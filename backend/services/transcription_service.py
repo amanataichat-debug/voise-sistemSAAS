@@ -91,7 +91,7 @@ class TranscriptionService:
                     audio_bytes, filename, content_type, lang,
                     extra_headers={
                         "HTTP-Referer": settings.HOST_URL or "",
-                        "X-Title": "Voicyfy",
+                        "X-Title": "Voksy AI",
                     },
                 )
             except Exception as e:

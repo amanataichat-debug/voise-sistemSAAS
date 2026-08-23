@@ -1,6 +1,6 @@
 /* ============================================================================
  * agent/wizard.js — Мастер создания агента (9 шагов) → /api/agent/create
- * Часть страницы /static/agent.html (Voicyfy Agent).
+ * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): функции и состояние — глобальные,
  * доступны между всеми файлами agent/*.js и из inline-onclick в разметке.
  * Подключается из agent.html. Документация: backend/static/agent/CLAUDE.md
@@ -180,7 +180,7 @@ function wizardNextInstr(){ const ta=document.getElementById('w-instr'); wizardD
 async function renderModelStep(c){
   if(!orchestratorModels.length){ const r=await apiFetch(API+'/orchestrator-models'); if(r&&r.status===200){ const d=await r.json(); orchestratorModels=d.models||[]; if(!wizardData.orchestrator_model) wizardData.orchestrator_model=d.default; } }
   if(!wizardData.orchestrator_model && orchestratorModels.length){ const def=orchestratorModels.find(m=>m.is_default); wizardData.orchestrator_model = def?def.slug:orchestratorModels[0].slug; }
-  c.innerHTML = `<h2>Модель и голос</h2><p class="hint">Модель оркестратора управляет агентом: планирует звонки, анализирует результаты, отвечает в чате. Голос — то, чем агент говорит в звонке. Биллинг включён в подписку Voicyfy.</p>
+  c.innerHTML = `<h2>Модель и голос</h2><p class="hint">Модель оркестратора управляет агентом: планирует звонки, анализирует результаты, отвечает в чате. Голос — то, чем агент говорит в звонке. Биллинг включён в подписку Voksy AI.</p>
     <div class="form-group"><label class="form-label">Модель</label><select class="form-select" id="w-model">${modelOptionsHtml(orchestratorModels, wizardData.orchestrator_model)}</select><div class="form-hint" id="w-model-desc"></div></div>
     ${voiceControlHtml(wizardData.assistant_type || 'gemini', { voice: wizardData.voice, cartesia_voice_id: wizardData.cartesia_voice_id, voice_speed: wizardData.voice_speed, fish_voice_id: wizardData.fish_voice_id, fish_latency: wizardData.fish_latency }, W_VOICE_IDS)}
     <div class="form-group"><label class="form-label">Инструкции для голосового агента</label><textarea class="form-textarea" id="w-voice-instr" rows="4" placeholder="Например: «говори коротко, не дави», «если спросят про цену — назови диапазон».">${esc(wizardData.voice_additional_instructions||'')}</textarea><div class="form-hint">Правила поведения именно в живом разговоре по телефону. Опционально.</div></div>

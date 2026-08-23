@@ -1,5 +1,5 @@
 """
-Agent Config model for Voicyfy Agent — autonomous calling AI agent.
+Agent Config model for Voksy AI Agent — autonomous calling AI agent.
 Stores orchestrator config, onboarding documents, and chat history per user.
 
 ✅ v3.0: multi-provider voice assistant (gemini / openai / cartesia / yandex /

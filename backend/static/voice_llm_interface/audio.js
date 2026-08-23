@@ -1,6 +1,6 @@
 /* ============================================================ */
-/* Voicyfy AI - Audio System                                    */
-/* Voice LLM Interface - Voicyfy                                */
+/* Voksy AI AI - Audio System                                    */
+/* Voice LLM Interface - Voksy AI                                */
 /* Version: 4.3.2 - IIFE wrapped                                */
 /* ============================================================ */
 

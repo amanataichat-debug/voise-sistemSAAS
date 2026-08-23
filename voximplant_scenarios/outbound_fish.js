@@ -6,7 +6,7 @@ require(Modules.OpenAI);
  * Архитектура — та же, что в inbound_fish:
  *   - OpenAI Realtime API (output_modalities: text) ведёт диалог и сам
  *     транскрибирует речь абонента (отдельный ASR не нужен).
- *   - Озвучка — Fish Audio через прокси Voicyfy:
+ *   - Озвучка — Fish Audio через прокси Voksy AI:
  *
  *         сценарий --{event:"text"}--> /ws/fish/tts/{id} --> Fish Audio
  *         звонок   <--- media-фреймы PCM16 --- прокси <--- PCM ---┘

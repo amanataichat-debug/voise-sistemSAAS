@@ -1,6 +1,6 @@
 /* ============================================================================
  * agent/pipeline.js — Воронка-канбан с drag&drop → /api/agent/pipeline, PATCH /contacts/{id}/status
- * Часть страницы /static/agent.html (Voicyfy Agent).
+ * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): функции и состояние — глобальные,
  * доступны между всеми файлами agent/*.js и из inline-onclick в разметке.
  * Подключается из agent.html. Документация: backend/static/agent/CLAUDE.md

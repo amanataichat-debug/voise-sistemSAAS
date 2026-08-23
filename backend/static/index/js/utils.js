@@ -1,5 +1,5 @@
 /**
- * Voicyfy - Utility Functions
+ * Voksy AI - Utility Functions
  * Inline notifications and helper functions
  */
 

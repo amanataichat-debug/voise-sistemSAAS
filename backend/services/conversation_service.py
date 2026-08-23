@@ -93,10 +93,10 @@ class ConversationService:
         Нормализует номер телефона, убирая префиксы OUTBOUND/INBOUND.
         
         Examples:
-            "OUTBOUND: INBOUND: 79500968479" -> "79500968479"
+            "OUTBOUND: INBOUND: 79991234567" -> "79991234567"
             "INBOUND: 79601663217" -> "79601663217"
             "OUTBOUND: +79934409005" -> "79934409005"
-            "+7 (950) 096-84-79" -> "79500968479"
+            "+7 (999) 123-45-67" -> "79991234567"
         
         Returns:
             Normalized phone number or "unknown"

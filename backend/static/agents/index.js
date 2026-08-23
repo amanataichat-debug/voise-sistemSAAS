@@ -35,7 +35,7 @@ const PLAN_NAMES = {
   'referral_trial': 'Реферальный триал',
   'ai_voice': 'AI Voice',
   'start': 'Тариф Старт',
-  'profi': 'Profi', 'agent': 'Voicyfy Agent'
+  'profi': 'Profi', 'agent': 'Voksy AI Agent'
 };
 
 // ============================================================================

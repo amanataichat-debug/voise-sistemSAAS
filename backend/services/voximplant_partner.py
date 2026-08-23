@@ -1533,7 +1533,7 @@ class VoximplantPartnerService:
         child_account_id: str,
         child_api_key: str,
         key_name: str = "voicyfy_service_account",
-        description: str = "Service account for Voicyfy platform",
+        description: str = "Service account for Voksy AI platform",
         roles: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """

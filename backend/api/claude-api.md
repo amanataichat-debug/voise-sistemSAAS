@@ -23,7 +23,7 @@
 - `grok_ws.py` — `/ws/grok/{id}`, `/ws/grok/voximplant/{id}`, `/ws/grok/custom/{id}` — Grok Voice.
 - `translate_ws.py` — `/ws/translate/{id}` — перевод. Регистрируется ДО websocket.py.
 
-### Voicyfy Agent v5.0 (автономный обзвон)
+### Voksy AI Agent v5.0 (автономный обзвон)
 - `agent.py` — `/api/agent` — CRUD конфига агента, `/chat` (диалог владельца с оркестратором), `/stats`, `/orchestrator-models`, `/tasks`, `/contacts` (CRUD), `/calls`, `/phone-numbers`.
 - `agent_telegram.py` — `/api/agent/telegram` — интеграция Telegram-бота агента (webhook, настройки).
 - `credits.py` — `/api/credits` (префикс встроен) — `/balance`, `/packages`, `/transactions`, `/purchase`, `/subscribe`. Кредиты оркестратора.

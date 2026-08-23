@@ -1,4 +1,4 @@
-"""Add personal Voicyfy API key columns to users
+"""Add personal Voksy AI API key columns to users
 
 Ключ формата vfy_... не хранится в открытом виде: в БД лежит только
 SHA-256-хэш (api_key_hash) и префикс для отображения в настройках.

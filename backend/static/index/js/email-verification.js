@@ -1,5 +1,5 @@
 /**
- * Voicyfy - Email Verification
+ * Voksy AI - Email Verification
  * Handles email verification flow
  */
 

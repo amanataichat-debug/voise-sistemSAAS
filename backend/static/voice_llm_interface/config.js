@@ -1,6 +1,6 @@
 /* ============================================================ */
-/* Voicyfy AI - Configuration                                   */
-/* Voice LLM Interface - Voicyfy                                */
+/* Voksy AI AI - Configuration                                   */
+/* Voice LLM Interface - Voksy AI                                */
 /* Version: 4.3.2 - IIFE wrapped                                */
 /* ============================================================ */
 
@@ -76,7 +76,7 @@
     
     function log(message, type = 'info') {
         if (DEBUG_MODE || type === 'error') {
-            const prefix = '[Voicyfy]';
+            const prefix = '[Voksy AI]';
             const timestamp = new Date().toLocaleTimeString();
             
             if (type === 'error') {

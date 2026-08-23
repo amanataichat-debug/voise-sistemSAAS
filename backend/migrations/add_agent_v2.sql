@@ -1,4 +1,4 @@
--- Voicyfy Agent v2 migration
+-- Voksy AI Agent v2 migration
 -- Adds onboarding documents, working hours, chat history to agent_configs
 -- Adds agent_memory to contacts
 -- Adds pre_call_response_id, post_call_decision, retry_count to tasks

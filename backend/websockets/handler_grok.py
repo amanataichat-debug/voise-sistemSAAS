@@ -13,7 +13,7 @@ WebSocket endpoint: wss://api.x.ai/v1/realtime
 ✅ Database conversation logging
 ✅ Telephony support (Voximplant)
 
-Based on OpenAI Realtime handler architecture for Voicyfy platform.
+Based on OpenAI Realtime handler architecture for Voksy AI platform.
 
 CHANGELOG v1.1:
 - Fixed: AssistantConfig -> GrokAssistantConfig (correct table lookup)

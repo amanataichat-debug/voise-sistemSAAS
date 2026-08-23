@@ -1,7 +1,7 @@
 # backend — основной пакет приложения (FastAPI SaaS Voice AI)
 
 ## Назначение
-Корневой Python-пакет всего серверного приложения Voicyfy. Содержит все слои: транспортный (API-роутеры, WebSocket-хендлеры), бизнес-логику (services), доступ к данным (models, db, schemas), инфраструктуру (core), модульные AI-функции и весь фронтенд, отдаваемый сервером (static). Сам по себе пакет не запускается — точки входа лежат в корне репозитория (`main.py` → `app.py`), которые импортируют отсюда роутеры, модели и сервисы.
+Корневой Python-пакет всего серверного приложения Voksy AI. Содержит все слои: транспортный (API-роутеры, WebSocket-хендлеры), бизнес-логику (services), доступ к данным (models, db, schemas), инфраструктуру (core), модульные AI-функции и весь фронтенд, отдаваемый сервером (static). Сам по себе пакет не запускается — точки входа лежат в корне репозитория (`main.py` → `app.py`), которые импортируют отсюда роутеры, модели и сервисы.
 
 ## Состав
 - `api/` — FastAPI-роутеры: все HTTP- и WebSocket-эндпоинты (~36 файлов). См. `api/claude-api.md`.
@@ -20,7 +20,7 @@
 - **Точки входа вне пакета:** `../main.py` (запуск Uvicorn/Gunicorn, авто-миграции Alembic, кастомный import-redirect) и `../app.py` (создание FastAPI, регистрация роутеров, middleware, startup-события). Сюда стоит идти первым делом.
 - **Поток запроса (HTTP):** `api/` (роутер) → зависимости из `core/dependencies.py` → `services/` (логика) → `models/`/`db/` (данные) → `schemas/` (ответ).
 - **Поток голоса (WS):** `api/*_ws.py` (приём соединения) → `websockets/handler_*` (проксирование к провайдеру) → `functions/` (исполнение AI-функций) → `services/` (запись диалога, кредиты, уведомления).
-- **Voicyfy Agent v5.0** — автономный обзвон: `models/agent_*` + `services/agent_orchestrator` (мозг) + `core/task_scheduler` (запуск звонков) + `services/credit_service` (биллинг по кредитам) + `api/agent.py`/`api/credits.py`.
+- **Voksy AI Agent v5.0** — автономный обзвон: `models/agent_*` + `services/agent_orchestrator` (мозг) + `core/task_scheduler` (запуск звонков) + `services/credit_service` (биллинг по кредитам) + `api/agent.py`/`api/credits.py`.
 - **Фоновые процессы:** `core/scheduler.py` (истёкшие подписки), `core/task_scheduler.py` (запланированные звонки), `services/subscription_blocker.py` (блокировка agent-подписок) — стартуют из `app.py`.
 
 ## Связи с другими частями проекта

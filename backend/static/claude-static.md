@@ -10,7 +10,7 @@
 - `crm.html`, `crm-contact.html` — CRM (список и карточка контакта).
 - `conversations.html` — история диалогов.
 - `telephony.html`, `outbound-calls.html`, `test_outbound-calls.html` — телефония и обзвон.
-- `agent.html` — страница Voicyfy Agent (оркестратор/обзвон).
+- `agent.html` — страница Voksy AI Agent (оркестратор/обзвон).
 - `knowledge-base.html`, `integrations.html`, `settings.html`, `admin.html` — база знаний, интеграции, настройки, админка.
 - `index.html`, `index_original.html` — входные/легаси страницы; `widget.html` — демо виджета.
 - Юридические/контентные: `privacy-policy.html`, `public-offer.html`, `terms-of-service.html`, `payment-terms.html`, `prompts-wiki.html`, `api-docs.html`, и др.

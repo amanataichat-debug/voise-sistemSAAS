@@ -40,7 +40,7 @@ class EmailService:
     SMTP_USE_SSL = settings.EMAIL_USE_SSL
     SMTP_USE_TLS = settings.EMAIL_USE_TLS
     FROM_EMAIL = settings.EMAIL_FROM
-    FROM_NAME = "Voicyfy"
+    FROM_NAME = "Voksy AI"
     
     # Verification settings from config
     CODE_LENGTH = settings.VERIFICATION_CODE_LENGTH
@@ -98,13 +98,13 @@ class EmailService:
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Подтверждение Email - Voicyfy</title>
+            <title>Подтверждение Email - Voksy AI</title>
         </head>
         <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f8fafc;">
             <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
                 <!-- Header -->
                 <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #2563eb; font-size: 28px; margin: 0;">Voicyfy</h1>
+                    <h1 style="color: #2563eb; font-size: 28px; margin: 0;">Voksy AI</h1>
                     <p style="color: #64748b; font-size: 16px; margin: 10px 0 0 0;">
                         Ваш голосовой ИИ. Говорит. Слушает. Понимает.
                     </p>
@@ -117,7 +117,7 @@ class EmailService:
                     </h2>
                     
                     <p style="color: #64748b; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
-                        Здравствуйте! Вы регистрируетесь на платформе Voicyfy. 
+                        Здравствуйте! Вы регистрируетесь на платформе Voksy AI. 
                         Для завершения регистрации введите код подтверждения:
                     </p>
                     
@@ -137,21 +137,21 @@ class EmailService:
                     </div>
                     
                     <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
-                        Если вы не регистрировались на Voicyfy, просто проигнорируйте это письмо.
+                        Если вы не регистрировались на Voksy AI, просто проигнорируйте это письмо.
                     </p>
                 </div>
                 
                 <!-- Footer -->
                 <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
                     <p style="color: #94a3b8; font-size: 14px; margin: 0 0 10px 0;">
-                        С уважением, команда Voicyfy
+                        С уважением, команда Voksy AI
                     </p>
                     <p style="color: #cbd5e1; font-size: 12px; margin: 0;">
-                        ИП Шишкин Валерий Сергеевич | ИНН: 385101159652
+                        ИП Торобеков Нагызбек Чыныбекович
                     </p>
                     <p style="color: #cbd5e1; font-size: 12px; margin: 5px 0 0 0;">
                         <a href="https://t.me/voicyfy" style="color: #2563eb; text-decoration: none;">Telegram</a> | 
-                        <a href="mailto:well96well@gmail.com" style="color: #2563eb; text-decoration: none;">Поддержка</a>
+                        <a href="mailto:voksyai@gmail.com" style="color: #2563eb; text-decoration: none;">Поддержка</a>
                     </p>
                 </div>
             </div>
@@ -385,7 +385,7 @@ class EmailService:
             
             # Create and send email
             html_content = cls._create_verification_email_html(code, user_email)
-            subject = f"Код подтверждения Voicyfy: {code}"
+            subject = f"Код подтверждения Voksy AI: {code}"
 
             # ✅ FIXED: smtplib синхронный — уводим в отдельный поток, чтобы не блокировать
             # event loop воркера (блокировка > gunicorn timeout убивала воркер без ответа клиенту)

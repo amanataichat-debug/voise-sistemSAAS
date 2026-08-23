@@ -95,7 +95,7 @@ class WriteGoogleDocFunction(FunctionBase):
 <ol>
     <li>Откройте Google Документ</li>
     <li>Нажмите «Настроить доступ» → добавьте email сервисного аккаунта с правами «Редактор»</li>
-    <li>Email сервисного аккаунта указан в настройках интеграций Voicyfy</li>
+    <li>Email сервисного аккаунта указан в настройках интеграций Voksy AI</li>
 </ol>
 
 <p><strong>Обработка ошибок:</strong></p>

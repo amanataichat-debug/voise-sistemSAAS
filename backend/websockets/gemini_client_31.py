@@ -194,7 +194,7 @@ class GeminiLiveClient31:
                     ping_timeout=120,
                     close_timeout=15,
                     extra_headers={
-                        'User-Agent': 'Voicyfy/3.1'
+                        'User-Agent': 'Voksy AI/3.1'
                     }
                 ),
                 timeout=30

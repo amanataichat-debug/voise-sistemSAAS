@@ -7,7 +7,7 @@ require(Modules.OpenAI);
  *   - OpenAI Realtime API (output_modalities: text) — STT + turn detection
  *     + reasoning. Серверный VAD сам определяет конец реплики и перебивание.
  *     Отдельный ASR не нужен: модель транскрибирует речь сама.
- *   - Fish Audio TTS через прокси Voicyfy. У Voximplant нет встроенного
+ *   - Fish Audio TTS через прокси Voksy AI. У Voximplant нет встроенного
  *     модуля Fish (в отличие от Modules.Cartesia), а медиа-канал VoxEngine
  *     принимает только собственный JSON-протокол, тогда как Fish говорит на
  *     MessagePack. Поэтому озвучка идёт так:

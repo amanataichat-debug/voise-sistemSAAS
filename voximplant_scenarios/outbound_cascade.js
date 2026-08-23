@@ -1,5 +1,5 @@
 /**
- * outbound_cascade — ИСХОДЯЩИЙ full-cascade Voice AI сценарий Voicyfy.
+ * outbound_cascade — ИСХОДЯЩИЙ full-cascade Voice AI сценарий Voksy AI.
  *
  *   STT:  встроенный ASR (Yandex v2, streaming + interim), язык из конфига
  *   LLM:  OpenAI gpt-realtime-2.1-mini — Realtime API (WebSocket), режим ТОЛЬКО ТЕКСТ

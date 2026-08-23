@@ -1,6 +1,6 @@
 {
-  "name": "Voicyfy",
-  "short_name": "Voicyfy",
+  "name": "Voksy AI",
+  "short_name": "Voksy AI",
   "description": "Создавайте голосовых ассистентов на основе OpenAI за минуты",
   "start_url": "/",
   "display": "standalone",

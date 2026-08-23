@@ -1,6 +1,6 @@
 # backend/functions/search_contact_by_phone.py
 """
-Функция для поиска контакта в CRM Voicyfy по номеру телефона.
+Функция для поиска контакта в CRM Voksy AI по номеру телефона.
 ИИ вызывает её во время звонка, чтобы получить историю клиента.
 """
 from typing import Dict, Any
@@ -37,7 +37,7 @@ class SearchContactByPhoneFunction(FunctionBase):
     @classmethod
     def get_description(cls) -> str:
         return (
-            "Ищет контакт в CRM системе Voicyfy по номеру телефона. "
+            "Ищет контакт в CRM системе Voksy AI по номеру телефона. "
             "Возвращает имя, статус, заметки и историю диалогов клиента. "
             "Используй эту функцию в начале звонка, чтобы узнать кто звонит "
             "и что обсуждалось раньше."

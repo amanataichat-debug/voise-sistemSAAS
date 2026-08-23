@@ -1,5 +1,5 @@
 /**
- * Voicyfy - API Client
+ * Voksy AI - API Client
  * Handles all API requests to the backend
  */
 

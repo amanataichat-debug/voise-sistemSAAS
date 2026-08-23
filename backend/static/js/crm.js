@@ -1,6 +1,6 @@
 // backend/static/js/crm.js
 /**
- * CRM Interface для Voicyfy
+ * CRM Interface для Voksy AI
  * Управление контактами (клиентами)
  * Version: 2.0 - Added Kanban view with drag & drop
  */

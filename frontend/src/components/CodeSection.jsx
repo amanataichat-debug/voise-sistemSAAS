@@ -49,7 +49,7 @@ function CodeSection() {
               <div className="cdot g"></div>
               <span className="ctitle">index.html</span>
             </div>
-            <pre dangerouslySetInnerHTML={{ __html: `<span class="cc">&lt;!-- VoiceSystem Voice Assistant --&gt;</span>
+            <pre dangerouslySetInnerHTML={{ __html: `<span class="cc">&lt;!-- Voksy AI Voice Assistant --&gt;</span>
 <span class="ct">&lt;script&gt;</span>
   (<span class="ck">function</span>() {
     <span class="ck">var</span> script = document.<span class="cf">createElement</span>(<span class="cs">'script'</span>);
@@ -60,7 +60,7 @@ function CodeSection() {
     document.head.<span class="cf">appendChild</span>(script);
   })();
 <span class="ct">&lt;/script&gt;</span>
-<span class="cc">&lt;!-- End VoiceSystem Widget --&gt;</span>` }} />
+<span class="cc">&lt;!-- End Voksy AI Widget --&gt;</span>` }} />
           </div>
 
           <div className="code-text rev d1">

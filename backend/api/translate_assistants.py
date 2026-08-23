@@ -299,11 +299,11 @@ async def get_translate_embed_code(
 
         host_url = settings.HOST_URL
         embed_code = (
-            f'<!-- Voicyfy Translate Widget -->\n'
+            f'<!-- Voksy AI Translate Widget -->\n'
             f'<script src="{host_url}/static/widget-translate.js"\n'
             f'        data-assistant-id="{assistant_id}"\n'
             f'        data-server="{host_url}"></script>\n'
-            f'<!-- End Voicyfy Translate -->'
+            f'<!-- End Voksy AI Translate -->'
         )
 
         logger.info(f"[TRANSLATE-API] ✅ Embed code generated for assistant {assistant_id}")

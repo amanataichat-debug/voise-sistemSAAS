@@ -46,7 +46,7 @@ from backend.api import (
     voximplant_settings,
     telephony,
     llm_streaming,  # ✅ LLM Streaming + Agent Config API
-    agent,  # ✅ v5.0: Voicyfy Agent API
+    agent,  # ✅ v5.0: Voksy AI Agent API
     agent_telegram,  # ✅ v2.2: Agent Telegram bot integration
     agent_telegram_account,  # ✅ Личный Telegram-аккаунт агента (MTProto)
     credits,  # ✅ Система кредитов оркестратора
@@ -232,7 +232,7 @@ app.include_router(functions.router, prefix="/api/functions", tags=["Functions"]
 app.include_router(voximplant_settings.router, prefix="/api/users", tags=["Voximplant Settings"])
 app.include_router(telephony.router, prefix="/api/telephony", tags=["Telephony"])
 app.include_router(llm_streaming.router, tags=["LLM Streaming"])  # endpoints have /api/llm/ prefix built-in
-app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])  # ✅ v5.0: Voicyfy Agent
+app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])  # ✅ v5.0: Voksy AI Agent
 app.include_router(agent_telegram.router, prefix="/api/agent/telegram", tags=["Agent Telegram"])  # ✅ v2.2
 app.include_router(agent_telegram_account.router, prefix="/api/agent/telegram-account", tags=["Agent Telegram Account"])  # ✅ Личный TG-аккаунт агента
 app.include_router(credits.router, tags=["Credits"])  # ✅ Кредиты оркестратора (prefix /api/credits встроен)
@@ -827,7 +827,7 @@ def check_and_fix_all_missing_columns():
                 'yandex_folder_id': 'VARCHAR(100) NULL',  # 🆕 Yandex Cloud folder ID
                 'fish_api_key': 'VARCHAR NULL',  # 🆕 Fish Audio TTS API key
                 'email_verified': 'BOOLEAN DEFAULT FALSE NOT NULL',
-                # 🆕 Система кредитов оркестратора Voicyfy Agent
+                # 🆕 Система кредитов оркестратора Voksy AI Agent
                 'credits_balance': 'INTEGER DEFAULT 0 NOT NULL',
                 'agent_trial_used': 'BOOLEAN DEFAULT FALSE NOT NULL',
                 'agent_trial_started_at': 'TIMESTAMP WITH TIME ZONE NULL',
@@ -835,7 +835,7 @@ def check_and_fix_all_missing_columns():
                 # 🆕 Кредиты каскад-ассистентов (LLM gpt-realtime-2.1-mini на серверном ключе)
                 'cascade_credits_balance': 'INTEGER DEFAULT 0 NOT NULL',
                 'cascade_trial_granted': 'BOOLEAN DEFAULT FALSE NOT NULL',
-                # 🆕 Персональный API-ключ Voicyfy (внешние интеграции, Claude Code)
+                # 🆕 Персональный API-ключ Voksy AI (внешние интеграции, Claude Code)
                 'api_key_hash': 'VARCHAR(64) NULL',
                 'api_key_prefix': 'VARCHAR(20) NULL',
                 'api_key_created_at': 'TIMESTAMP WITH TIME ZONE NULL',
@@ -1070,7 +1070,7 @@ def seed_credits_data():
                 if inspector.has_table('subscription_plans'):
                     conn.execute(text("""
                         INSERT INTO subscription_plans (code, name, price, max_assistants, description, is_active)
-                        VALUES ('agent', 'Voicyfy Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
+                        VALUES ('agent', 'Voksy AI Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
                         ON CONFLICT (code) DO UPDATE SET
                             max_assistants = EXCLUDED.max_assistants
                     """))

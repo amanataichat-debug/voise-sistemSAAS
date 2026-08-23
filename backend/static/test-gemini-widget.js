@@ -2,7 +2,7 @@
  * 🚀 Gemini Voice Widget v2.9.0-TEST - WITH SCREEN CAPTURE
  * Google Gemini Live API Integration with Automatic Screenshots
  * 
- * ✅ UI: 100% Match with OpenAI Widget (Blue/Clean/Voicyfy)
+ * ✅ UI: 100% Match with OpenAI Widget (Blue/Clean/Voksy AI)
  * ✅ Logic: Pure Gemini VAD (Server-side decision making)
  * ✅ Continuous audio streaming via AudioWorklet
  * ✅ Instant interruptions & Zero-latency playback
@@ -305,7 +305,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
     }
 
     // ============================================================================
-    // UI CREATION - VOICYFY DESIGN + SCREEN CAPTURE BUTTON
+    // UI CREATION - VOKSY AI DESIGN + SCREEN CAPTURE BUTTON
     // ============================================================================
 
     function getWidgetPositionStyles() {
@@ -931,10 +931,10 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
                         <span id="wellcomeai-status-text">Подключение...</span>
                     </div>
                     
-                    <!-- Voicyfy Branding -->
+                    <!-- Voksy AI Branding -->
                     <div class="wellcomeai-voicyfy-container">
                         <a href="https://voicyfy.ru/" target="_blank" rel="noopener noreferrer" class="wellcomeai-voicyfy-link">
-                            <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Voicyfy - powered by AI">
+                            <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Voksy AI - powered by AI">
                         </a>
                     </div>
                 </div>

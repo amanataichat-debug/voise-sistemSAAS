@@ -1,6 +1,6 @@
 // backend/static/js/crm-contact.js
 /**
- * Contact Detail Page для Voicyfy CRM
+ * Contact Detail Page для Voksy AI CRM
  * Детальный просмотр контакта с историей диалогов, заметками и задачами
  * Version: 5.0 - CALL COST & RECORDING SUPPORT
  * ✅ v4.0: Исправлено раскрытие диалогов (session_id вместо id)

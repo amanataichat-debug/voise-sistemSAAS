@@ -11,7 +11,7 @@ REAL_DATA = {
     "api_key": "c87130a0-5f46-44f8-9401-154947094986",
     "rule_id": "7957687",
     "script_custom_data": json.dumps({
-        "phone_number": "+79500968479",
+        "phone_number": "+79991234567",
         "assistant_id": "test-assistant-id",  # Замени на реальный если нужно
         "caller_id": "74951087163"
     })
@@ -80,7 +80,7 @@ async def test_real_call():
                             print("   2. Проверьте активность правила")
                         elif "phone" in response_json.get('message', '').lower():
                             print("\n🔍 ДИАГНОСТИКА ОШИБКИ НОМЕРА:")
-                            print("   1. Проверьте формат номера: +79500968479")
+                            print("   1. Проверьте формат номера: +79991234567")
                             print("   2. Проверьте Caller ID: 74951087163")
                 else:
                     print(f"\n❌ HTTP ОШИБКА: {response.status_code}")

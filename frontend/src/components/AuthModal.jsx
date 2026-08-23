@@ -30,8 +30,8 @@ function AuthModal({ isOpen, onClose, activeTab, setActiveTab }) {
           </svg>
         </button>
         <div className="modal-logo">
-          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem" />
-          <span>VoiceSystem</span>
+          <img src="/static/images/IMG_2820.PNG" alt="Voksy AI" />
+          <span>Voksy AI</span>
         </div>
         <div className="modal-title">
           {activeTab === 'login' ? t('auth.welcome') : t('auth.startFree')}

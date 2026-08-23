@@ -1,6 +1,6 @@
 # backend/models/cartesia_assistant.py
 """
-Cartesia Assistant model for Voicyfy application.
+Cartesia Assistant model for Voksy AI application.
 Cartesia TTS provider integration — config only, call logic lives in Voximplant.
 """
 

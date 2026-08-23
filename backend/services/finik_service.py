@@ -1,7 +1,7 @@
 # backend/services/finik_service.py
 
 """
-Finik (finik.kg) QR-acquiring integration for Voicyfy.
+Finik (finik.kg) QR-acquiring integration for Voksy AI.
 
 Валюта — только KGS (кыргызский сом).
 
@@ -178,7 +178,7 @@ class FinikService:
         amount: float,
         payment_id: str,
         description: str,
-        name_en: str = "Voicyfy",
+        name_en: str = "Voksy AI",
         lang: str = "ru",
     ) -> str:
         """

@@ -326,7 +326,7 @@ async def test_telegram(
     if not agent.get_telegram_chat_ids_list():
         raise HTTPException(status_code=400, detail="no_chat_ids_configured")
 
-    text = "🧪 Тестовое сообщение от Voicyfy Agent. Если ты это видишь — связь работает."
+    text = "🧪 Тестовое сообщение от Voksy AI Agent. Если ты это видишь — связь работает."
 
     # send_to_all_chats требует telegram_enabled — для теста шлём напрямую,
     # чтобы можно было проверить связь до включения рубильника.

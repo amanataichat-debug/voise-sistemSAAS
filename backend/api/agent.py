@@ -1,5 +1,5 @@
 """
-Voicyfy Agent API v2.0 — CRUD, chat (with tools), contacts, calls, stats.
+Voksy AI Agent API v2.0 — CRUD, chat (with tools), contacts, calls, stats.
 """
 
 import json
@@ -833,7 +833,7 @@ async def create_agent(
     current_user: User = Depends(get_current_user_flexible),
     db: Session = Depends(get_db)
 ):
-    """Create a new Voicyfy Agent v3.0 (one per user). No gpt-4o-mini generation."""
+    """Create a new Voksy AI Agent v3.0 (one per user). No gpt-4o-mini generation."""
     # 1. Validate assistant_type
     if body.assistant_type not in VALID_ASSISTANT_TYPES:
         raise HTTPException(status_code=400, detail="invalid_assistant_type")
@@ -3026,7 +3026,7 @@ async def _run_contacts_import(
             try:
                 from backend.services.telegram_notification import TelegramNotificationService
                 text = (
-                    f"🤖 <b>Voicyfy Agent</b>\n\n"
+                    f"🤖 <b>Voksy AI Agent</b>\n\n"
                     f"Импорт контактов завершён.\n"
                     f"Создано контактов: <b>{created_contacts}</b>\n"
                     f"Запланировано звонков: <b>{created_tasks}</b>"

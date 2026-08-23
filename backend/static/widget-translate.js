@@ -1,5 +1,5 @@
 /**
- * widget-translate.js — Виджет встраивания переводчика Voicyfy
+ * widget-translate.js — Виджет встраивания переводчика Voksy AI
  * OpenAI Realtime Translation API (gpt-realtime-translate)
  *
  * ✅ v1.0: Initial Translate widget

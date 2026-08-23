@@ -1,4 +1,4 @@
-// VoiceSystem — i18n-контекст лендинга (KY/RU, без обращений к серверу)
+// Voksy AI — i18n-контекст лендинга (KY/RU, без обращений к серверу)
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import ky from './ky';
 import ru from './ru';

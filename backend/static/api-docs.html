@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <!-- /static/api-docs.html -->
-<!-- ✅ ВЕРСИЯ 1.2: API Документация Voicyfy — добавлен GET /call/{session_history_id} -->
+<!-- ✅ ВЕРСИЯ 1.2: API Документация Voksy AI — добавлен GET /call/{session_history_id} -->
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>API Документация — VoiceSystem</title>
+  <title>API Документация — Voksy AI</title>
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -855,9 +855,9 @@
     <div class="header-left">
       <a href="/" class="logo">
         <div class="logo-icon">
-          <img src="/static/images/IMG_2820.PNG" alt="VoiceSystem" onerror="this.parentElement.innerHTML='<i class=\'fas fa-robot\' style=\'color: var(--primary-blue);\'></i>'">
+          <img src="/static/images/IMG_2820.PNG" alt="Voksy AI" onerror="this.parentElement.innerHTML='<i class=\'fas fa-robot\' style=\'color: var(--primary-blue);\'></i>'">
         </div>
-        <span>VoiceSystem</span>
+        <span>Voksy AI</span>
       </a>
       <span class="header-title">API Документация</span>
     </div>
@@ -1471,7 +1471,7 @@
   <span class="code-key">"assistant_id"</span>: <span class="code-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
   <span class="code-key">"assistant_name"</span>: <span class="code-string">"Секретарь по звонкам"</span>,
   <span class="code-key">"assistant_type"</span>: <span class="code-string">"gemini"</span>,
-  <span class="code-key">"caller_number"</span>: <span class="code-string">"79500968479"</span>,
+  <span class="code-key">"caller_number"</span>: <span class="code-string">"79991234567"</span>,
   <span class="code-key">"call_direction"</span>: <span class="code-string">"OUTBOUND"</span>,
   <span class="code-key">"call_cost"</span>: <span class="code-number">2.0252</span>,
   <span class="code-key">"call_duration"</span>: <span class="code-number">14.0</span>,
@@ -1587,7 +1587,7 @@
         </div>
         <h1 class="endpoint-title">Webhook: завершение диалога</h1>
         <p class="endpoint-description">
-          VoiceSystem может уведомлять ваш сервер о каждом завершённом диалоге.
+          Voksy AI может уведомлять ваш сервер о каждом завершённом диалоге.
           По событию <code>conversation.completed</code> на указанный вами URL приходит
           <code>POST</code>-запрос с полным диалогом и метаданными. Событие покрывает
           и веб-чат, и телефонию — источник различается по полю <code>source</code>.
@@ -1606,7 +1606,7 @@
           <ul style="margin-left: 1.25rem; line-height: 1.9;">
             <li>Запрос отправляется методом <code>POST</code> с заголовком
               <code>Content-Type: application/json</code> и
-              <code>User-Agent: Voicyfy-Webhook/1.0</code>.</li>
+              <code>User-Agent: Voksy AI-Webhook/1.0</code>.</li>
             <li>Доставка по принципу «отправили и забыли»: без повторов и без подписи.
               Таймаут запроса — <strong>10 секунд</strong>.</li>
             <li>Ваш сервер должен вернуть статус <code>2xx</code>. Любой другой ответ
@@ -1754,7 +1754,7 @@
     <span class="code-key">"assistant_id"</span>: <span class="code-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
     <span class="code-key">"assistant_name"</span>: <span class="code-string">"Секретарь по звонкам"</span>,
     <span class="code-key">"assistant_type"</span>: <span class="code-string">"gemini"</span>,
-    <span class="code-key">"caller_number"</span>: <span class="code-string">"79500968479"</span>,
+    <span class="code-key">"caller_number"</span>: <span class="code-string">"79991234567"</span>,
     <span class="code-key">"call_direction"</span>: <span class="code-string">"OUTBOUND"</span>,
     <span class="code-key">"duration_seconds"</span>: <span class="code-number">14.0</span>,
     <span class="code-key">"call_cost"</span>: <span class="code-number">2.0252</span>,
@@ -1812,7 +1812,7 @@ async def voicyfy_webhook(request: Request):
     for turn in data["dialog"]:
         print(f"  {turn['role']}: {turn['text']}")
 
-    # Всегда отвечаем 2xx, чтобы VoiceSystem не считал доставку неуспешной
+    # Всегда отвечаем 2xx, чтобы Voksy AI не считал доставку неуспешной
     return {"ok": True}</pre>
             </div>
           </div>

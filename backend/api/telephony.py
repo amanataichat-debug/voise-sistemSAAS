@@ -3290,7 +3290,7 @@ async def get_outbound_config(
             voice_speed = assistant.voice_speed
         elif assistant_type == "cascade":
             # Каскад ходит в OpenAI (gpt-realtime-2.1-mini) через коннектор Voximplant на
-            # СЕРВЕРНОМ ключе Voicyfy (settings.OPENAI_API_KEY). Расход LLM
+            # СЕРВЕРНОМ ключе Voksy AI (settings.OPENAI_API_KEY). Расход LLM
             # оплачивается кредитами каскада (cascade_credits_balance).
             # Гейт: если баланс кредитов исчерпан и юзер не админ — ключ НЕ
             # отдаём, звонок не стартует (0₽ телефонии). Совпадает с inbound /config.
@@ -5552,7 +5552,7 @@ async def get_scenario_config(
             cartesia_voice_id = assistant.cartesia_voice_id
             voice_speed = assistant.voice_speed
         elif phone_record.assistant_type == "cascade":
-            # Каскад ходит в OpenAI (gpt-realtime-2.1-mini) на СЕРВЕРНОМ ключе Voicyfy
+            # Каскад ходит в OpenAI (gpt-realtime-2.1-mini) на СЕРВЕРНОМ ключе Voksy AI
             # (settings.OPENAI_API_KEY). Расход LLM оплачивается кредитами каскада.
             # Гейт: если кредиты исчерпаны и юзер не админ — ключ не отдаём
             # (api_key=None), входящий сценарий каскада прервётся без LLM.

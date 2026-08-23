@@ -1,5 +1,5 @@
 """
-CreditService — атомарный учёт кредитов оркестратора Voicyfy Agent.
+CreditService — атомарный учёт кредитов оркестратора Voksy AI Agent.
 
 Все мутации `users.credits_balance` идут строго через SELECT ... FOR UPDATE,
 чтобы исключить гонки при параллельных запросах (см. ТЗ раздел 9, edge case 1).

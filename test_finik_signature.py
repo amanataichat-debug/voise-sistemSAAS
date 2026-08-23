@@ -153,12 +153,12 @@ def test_body_top_level_sort_only():
     body = {
         "PaymentId": "abc",
         "Amount": 100,
-        "Data": {"accountId": "A1", "name_en": "Voicyfy", "webhookUrl": "https://x/y"},
+        "Data": {"accountId": "A1", "name_en": "Voksy AI", "webhookUrl": "https://x/y"},
         "CardType": "FINIK_QR",
     }
     assert _canonical_json_body(body) == (
         '{"Amount":100,"CardType":"FINIK_QR",'
-        '"Data":{"accountId":"A1","name_en":"Voicyfy","webhookUrl":"https://x/y"},'
+        '"Data":{"accountId":"A1","name_en":"Voksy AI","webhookUrl":"https://x/y"},'
         '"PaymentId":"abc"}'
     )
     print("✅ body canonicalization: top-level sort only, nested order preserved")

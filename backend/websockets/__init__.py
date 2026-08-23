@@ -1,6 +1,6 @@
 # backend/websockets/__init__.py
 """
-WebSocket module for Voicyfy application.
+WebSocket module for Voksy AI application.
 Handles real-time communication with clients.
 
 🆕 Now includes GA Realtime API support (gpt-realtime model)

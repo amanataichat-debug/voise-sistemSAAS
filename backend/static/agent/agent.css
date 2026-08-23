@@ -569,7 +569,7 @@ body::before {
 .msg.assistant .msg-bubble.answer { background:transparent; padding:0; border-radius:0; }
 .msg.assistant .msg-bubble.answer:empty { display:none; }
 
-/* ── Аватар ассистента = лого Voicyfy (contain + белое поле, без обрезки) ── */
+/* ── Аватар ассистента = лого Voksy AI (contain + белое поле, без обрезки) ── */
 .msg.assistant .msg-avatar { background:var(--white); box-shadow:var(--elev-1); overflow:hidden; padding:4px; }
 .msg-avatar img { width:100%; height:100%; object-fit:contain; display:block; }
 

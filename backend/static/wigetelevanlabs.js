@@ -612,7 +612,7 @@
           
           <div class="elevenlabs-voicyfy-container">
             <a href="https://voicyfy.ru/" target="_blank" rel="noopener noreferrer" class="elevenlabs-voicyfy-link">
-              <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Powered by Voicyfy">
+              <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Powered by Voksy AI">
             </a>
           </div>
         </div>

@@ -1575,7 +1575,7 @@ async def fn_send_telegram_notification(args: dict, agent_config: AgentConfig, d
 
     # Тело уведомления может быть в Markdown → конвертируем в безопасный Telegram-HTML
     body_html = markdown_to_telegram_html(message)
-    text = f"🤖 <b>Voicyfy Agent</b>\n\n{body_html}"
+    text = f"🤖 <b>Voksy AI Agent</b>\n\n{body_html}"
     result = await AgentTelegramService.send_to_all_chats(agent_config, text)
 
     logger.info(

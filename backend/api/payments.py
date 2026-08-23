@@ -419,7 +419,7 @@ async def create_payment(
                 amount=subscription_price,
                 payment_id=payment_id,
                 description=description,
-                name_en="Voicyfy",
+                name_en="Voksy AI",
                 lang="ru",
             )
         except FinikError as e:

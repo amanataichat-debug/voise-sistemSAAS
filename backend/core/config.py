@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # OpenAI settings
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 
-    # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voicyfy Agent
+    # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
 
     # STT (speech-to-text) — распознавание голосовых в веб-чате и Telegram.

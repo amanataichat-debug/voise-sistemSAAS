@@ -1,7 +1,7 @@
 /* ============================================================================
  * agent/history.js — «История работы агента»: лента фоновых задач PreCall/PostCall
  * (звонки + обработка входящих SMS) → /api/agent/calls?limit=100
- * Часть страницы /static/agent.html (Voicyfy Agent).
+ * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): функции и состояние — глобальные,
  * доступны между всеми файлами agent/*.js и из inline-onclick в разметке.
  * Подключается из agent.html. Документация: backend/static/agent/CLAUDE.md

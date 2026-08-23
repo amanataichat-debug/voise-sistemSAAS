@@ -72,13 +72,13 @@ class User(Base, BaseModel):
     is_admin = Column(Boolean, default=False)
     payment_status = Column(String(50), nullable=True)
 
-    # ✅ Персональный API-ключ Voicyfy (внешние интеграции: Claude Code и т.п.).
+    # ✅ Персональный API-ключ Voksy AI (внешние интеграции: Claude Code и т.п.).
     # Сам ключ (vfy_...) НЕ хранится — только SHA-256-хэш; префикс показываем в UI.
     api_key_hash = Column(String(64), nullable=True, unique=True, index=True)
     api_key_prefix = Column(String(20), nullable=True)
     api_key_created_at = Column(DateTime(timezone=True), nullable=True)
 
-    # ✅ Система кредитов оркестратора Voicyfy Agent (тариф `agent`)
+    # ✅ Система кредитов оркестратора Voksy AI Agent (тариф `agent`)
     # Поля добавлены в БД вручную через SQL (см. ТЗ раздел 2.1).
     credits_balance = Column(Integer, default=0, nullable=False)
     agent_trial_used = Column(Boolean, default=False, nullable=False)

@@ -10,7 +10,7 @@ function Footer() {
       <div className="footer-inner">
         <div className="foot-top">
           <div className="foot-brand">
-            <span className="foot-logo">VoiceSystem</span>
+            <span className="foot-logo">Voksy AI</span>
             <p>{t('foot.desc')}</p>
             <div className="foot-lang">
               <LangSwitch compact />
@@ -36,7 +36,7 @@ function Footer() {
         </div>
         <div className="foot-bottom">
           <span>{t('foot.rights')}</span>
-          <span>ИП Шишкин Валерий Сергеевич · ИНН: 385101159652</span>
+          <span>ИП Торобеков Нагызбек Чыныбекович</span>
         </div>
       </div>
     </footer>

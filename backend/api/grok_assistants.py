@@ -866,7 +866,7 @@ async def get_grok_embed_code(
             raise HTTPException(status_code=400, detail="Assistant must be active to generate embed code")
 
         host_url = settings.HOST_URL
-        embed_code = f"""<!-- Voicyfy Grok Voice Assistant -->
+        embed_code = f"""<!-- Voksy AI Grok Voice Assistant -->
 <script>
     (function() {{
         var script = document.createElement('script');
@@ -879,7 +879,7 @@ async def get_grok_embed_code(
         document.head.appendChild(script);
     }})();
 </script>
-<!-- End Voicyfy Grok -->"""
+<!-- End Voksy AI Grok -->"""
         return EmbedCodeResponse(embed_code=embed_code, assistant_id=assistant_id)
     except HTTPException:
         raise

@@ -354,7 +354,7 @@ async def enforce_assistant_limit(db: Session, current_user: User) -> User:
     
     # Count user's assistants across every provider (OpenAI, Gemini, Grok,
     # Cascade, Cartesia, Yandex, Translate). Голосовые ассистенты мастера
-    # Voicyfy Agent в лимит не входят.
+    # Voksy AI Agent в лимит не входят.
     assistant_count = count_user_assistants(db, current_user.id)
     
     # ✅ НОВОЕ: Проверяем специальные лимиты для отдельных пользователей

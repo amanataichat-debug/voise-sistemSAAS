@@ -209,7 +209,7 @@ async def test_email_sending(settings):
         
         result = EmailService._send_email_smtp(
             to_email=test_email,
-            subject=f"Тестовый код Voicyfy: {code}",
+            subject=f"Тестовый код Voksy AI: {code}",
             html_content=html_content
         )
         

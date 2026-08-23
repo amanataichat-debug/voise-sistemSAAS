@@ -1,6 +1,6 @@
 # backend/models/grok_assistant.py
 """
-Grok Assistant models for Voicyfy application.
+Grok Assistant models for Voksy AI application.
 xAI Grok Voice Agent API integration.
 
 Voices: Ara, Rex, Sal, Eve, Leo

@@ -472,7 +472,7 @@ class TelegramNotificationService:
         
         test_message = (
             "✅ <b>Тест подключения успешен!</b>\n\n"
-            "Voicyfy будет отправлять уведомления о новых звонках в этот чат.\n\n"
+            "Voksy AI будет отправлять уведомления о новых звонках в этот чат.\n\n"
             f"📅 Время теста: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         

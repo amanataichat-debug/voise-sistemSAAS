@@ -1,5 +1,5 @@
 /**
- * Voicyfy - Main Application Logic
+ * Voksy AI - Main Application Logic
  * Handles tab switching, form submissions, and initialization
  */
 

@@ -1,6 +1,6 @@
 # backend/models/translate_assistant.py
 """
-Translate Assistant models for Voicyfy application.
+Translate Assistant models for Voksy AI application.
 OpenAI Realtime Translation API integration (gpt-realtime-translate).
 
 ✅ v1.0: Initial Translate Assistant implementation
