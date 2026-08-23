@@ -1971,6 +1971,46 @@ def ensure_agent_connectors_table():
         logger.error(f"❌ ensure_agent_connectors_table error: {e}")
 
 
+def ensure_agent_instagram_schema():
+    """
+    Идемпотентно доводит схему Instagram-коннектора:
+      • колонки поллера в agent_connectors (external_account_id, last_poll_at) —
+        явным ALTER, не полагаясь на универсальный доводчик (без них падает
+        ЛЮБОЙ SELECT модели AgentConnector, т.е. весь /api/agent/connectors);
+      • таблицы Instagram DM (agent_instagram_conversations,
+        agent_instagram_messages) — через ORM-метаданные, как остальные
+        agent-таблицы.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.models.agent_instagram import (
+            AgentInstagramConversation, AgentInstagramMessage,
+        )
+
+        ddl = [
+            "ALTER TABLE agent_connectors ADD COLUMN IF NOT EXISTS external_account_id VARCHAR(64)",
+            "ALTER TABLE agent_connectors ADD COLUMN IF NOT EXISTS last_poll_at TIMESTAMP",
+        ]
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                for stmt in ddl:
+                    conn.execute(text(stmt))
+                trans.commit()
+                logger.info("✅ agent_connectors: Instagram poller columns ensured")
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"❌ ensure agent_connectors instagram columns: {e}")
+
+        inspector = inspect(engine)
+        for model in (AgentInstagramConversation, AgentInstagramMessage):
+            if not inspector.has_table(model.__tablename__):
+                model.__table__.create(bind=engine, checkfirst=True)
+                logger.info(f"✅ Created table {model.__tablename__}")
+    except Exception as e:
+        logger.error(f"❌ ensure_agent_instagram_schema error: {e}")
+
+
 def ensure_agent_telegram_account_tables():
     """
     Идемпотентно создаёт таблицы личного Telegram-аккаунта агента (MTProto):
@@ -2138,6 +2178,10 @@ async def startup_event():
 
                 # 🆕 Шаг 21: Таблицы личного Telegram-аккаунта агента (MTProto)
                 ensure_agent_telegram_account_tables()
+
+                # 🆕 Шаг 21.5: Схема Instagram-коннектора (колонки поллера в
+                #    agent_connectors + таблицы agent_instagram_*)
+                ensure_agent_instagram_schema()
 
                 # 🆕 Шаг 22: FK-колонки yandex_assistant_id (агент + задачи)
                 ensure_yandex_agent_columns()
