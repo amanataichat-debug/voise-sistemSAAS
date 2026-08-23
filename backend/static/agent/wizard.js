@@ -100,7 +100,7 @@ function drawStep0(c){
       ] : (t.type==='gemini' ? [{l:'Gemini',ok:!!wizardUser.has_gemini_api_key}] : [{l:'OpenAI',ok:!!wizardUser.has_api_key}])));
       keyHtml += `<div class="type-key-status">` + pills.map(p => `<span class="key-pill ${p.ok?'ok':'miss'}"><i class="fas ${p.ok?'fa-check':'fa-triangle-exclamation'}"></i> ${p.l} ${p.ok?'настроен':'не настроен'}</span>`).join('') + `</div>`;
       if(ks.missing.length){
-        keyHtml += `<div class="key-input-block">` + ks.missing.map(m => `<div class="form-group" style="margin-bottom:10px"><label class="form-label">${m.label}</label><input type="${m.t||'password'}" class="form-input" id="wk-${m.field}" placeholder="${m.ph}"></div>`).join('') + `<button class="btn btn-primary btn-sm" onclick="saveWizardKeys('${t.type}')"><i class="fas fa-save"></i> Сохранить и продолжить</button></div>`;
+        keyHtml += `<div class="key-input-block"><div class="form-hint" style="margin-bottom:10px">Ключ не обязателен для создания агента — он понадобится только для звонков. Можно добавить сейчас или позже в настройках.</div>` + ks.missing.map(m => `<div class="form-group" style="margin-bottom:10px"><label class="form-label">${m.label}</label><input type="${m.t||'password'}" class="form-input" id="wk-${m.field}" placeholder="${m.ph}"></div>`).join('') + `<button class="btn btn-secondary btn-sm" onclick="saveWizardKeys('${t.type}')"><i class="fas fa-save"></i> Сохранить ключ</button></div>`;
       }
     }
     return `<div class="type-card ${selected?'selected':''}" onclick="selectType('${t.type}')">
@@ -115,8 +115,9 @@ function drawStep0(c){
     ? `<div class="tele-banner ok"><i class="fas fa-circle-check"></i> Телефония подключена и верифицирована</div>`
     : `<div class="tele-banner info"><i class="fas fa-circle-info"></i> <span>Телефонию можно подключить позже — без неё агент не сможет звонить, но остальные функции доступны.</span><a class="btn btn-secondary btn-sm" href="/static/telephony.html">Настроить телефонию</a></div>`;
 
-  const ks = keyState(sel);
-  const canNext = sel && ks.ok;
+  // Ключ голосового провайдера при создании НЕ обязателен (v3.2): оркестратор
+  // работает на серверном ключе, голосовой ключ нужен только для звонков.
+  const canNext = !!sel;
 
   c.innerHTML = `<h2>Создание агента</h2><p class="hint">Выберите тип голосового ассистента.</p>
     ${cards}

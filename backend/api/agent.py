@@ -850,8 +850,10 @@ async def create_agent(
     #    агент создаётся без телефонии, звонки недоступны до её подключения.
     #    _check_telephony_verified оставлена для обратной совместимости.
 
-    # 4. Required API keys for the chosen assistant type
-    _check_assistant_keys(body.assistant_type, current_user)
+    # 4. Ключи голосового провайдера при создании НЕ требуются (v3.2):
+    #    оркестратор работает на серверном ключе OpenRouter, голосовой ключ
+    #    понадобится только для звонков. _check_assistant_keys оставлена
+    #    для обратной совместимости.
 
     # 5. До MAX_AGENTS_PER_USER агентов на пользователя
     agents_count = db.query(AgentConfig).filter(
@@ -949,7 +951,8 @@ async def update_agent(
     if new_type and new_type != agent.assistant_type:
         if new_type not in VALID_ASSISTANT_TYPES:
             raise HTTPException(status_code=400, detail="invalid_assistant_type")
-        _check_assistant_keys(new_type, current_user)
+        # Ключи голосового провайдера при смене типа не требуются (v3.2) —
+        # как и при создании; проверка вернётся вместе с телефонией.
         # Старых ассистентов запоминаем ДО обнуления FK — после смены типа они
         # никому не нужны и удаляются (иначе копились бы «сироты»: висят в
         # списках провайдера и съедают лимит ассистентов тарифа).
