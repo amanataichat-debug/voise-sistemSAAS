@@ -1201,7 +1201,7 @@
       let currentUserPlanCode = 'free';
 
       // Привилегированные пользователи
-      const PRIVILEGED_USERS = ['well96well@gmail.com', 'stas@gmail.com'];
+      const PRIVILEGED_USERS = ['amanat.aichat@gmail.com', 'stas@gmail.com'];
 
       // Матрица доступа к функциям по тарифам
       // ВАЖНО: ai_voice НЕ включен → для него эти функции заблокированы
@@ -1357,8 +1357,8 @@
             userAvatar.textContent = userInfo.email.substring(0, 2).toUpperCase();
           }
           
-          // Показываем админ ссылку только для well96well@gmail.com
-          if (userInfo.email === 'well96well@gmail.com') {
+          // Показываем админ ссылку только для amanat.aichat@gmail.com
+          if (userInfo.email === 'amanat.aichat@gmail.com') {
             // Добавляем раздел администрирования
             console.log('Проверка email для админ панели:', userInfo.email);
             console.log('Email подтвержден, добавляем админ панель');

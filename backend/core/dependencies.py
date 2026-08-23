@@ -30,7 +30,7 @@ SPECIAL_ASSISTANT_LIMITS = {
 
 # Пользователи без лимита ассистентов (помимо is_admin)
 PRIVILEGED_UNLIMITED_EMAILS = {
-    "well96well@gmail.com",
+    "amanat.aichat@gmail.com",
     "stas@gmail.com",
 }
 
@@ -228,7 +228,7 @@ async def check_subscription_active(
     from backend.services.user_service import UserService
     
     # Администраторы и привилегированные пользователи всегда имеют доступ
-    if current_user.is_admin or current_user.email == "well96well@gmail.com" or current_user.email == "stas@gmail.com":
+    if current_user.is_admin or current_user.email == "amanat.aichat@gmail.com" or current_user.email == "stas@gmail.com":
         return current_user
     
     # Check subscription status
@@ -270,7 +270,7 @@ async def check_subscription_active_for_assistants(
     from backend.services.user_service import UserService
     
     # Администраторы и привилегированные пользователи всегда имеют доступ
-    if current_user.is_admin or current_user.email == "well96well@gmail.com" or current_user.email == "stas@gmail.com":
+    if current_user.is_admin or current_user.email == "amanat.aichat@gmail.com" or current_user.email == "stas@gmail.com":
         return current_user
     
     # Проверяем статус подписки
@@ -416,7 +416,7 @@ async def check_subscription_or_show_popup(
     from backend.services.user_service import UserService
     
     # Администраторы и привилегированные пользователи всегда имеют доступ
-    if current_user.is_admin or current_user.email == "well96well@gmail.com" or current_user.email == "stas@gmail.com":
+    if current_user.is_admin or current_user.email == "amanat.aichat@gmail.com" or current_user.email == "stas@gmail.com":
         return current_user
     
     # Для других пользователей просто возвращаем - проверку делает фронтенд

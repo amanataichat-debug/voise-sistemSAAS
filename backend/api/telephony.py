@@ -3398,7 +3398,7 @@ async def admin_update_all_scenarios(
     🔐 ADMIN ONLY: Обновить сценарии у ВСЕХ дочерних аккаунтов.
     """
     # Проверка админа
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
@@ -3529,7 +3529,7 @@ async def admin_deploy_scenarios_sse(
     🔐 ADMIN: SSE-стриминг обновления сценариев на всех дочерних аккаунтах.
     Замена admin/update-all-scenarios — не таймаутится.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     service = get_voximplant_partner_service()
@@ -3642,7 +3642,7 @@ async def admin_deploy_turn_taking_sse(
     1. Загружает/обновляет сценарий vox-turn-taking
     2. Обновляет inbound rules для cascade-номеров (turn-taking первым)
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     service = get_voximplant_partner_service()
@@ -3839,7 +3839,7 @@ async def admin_setup_outbound_rules(
     outbound сценариев у аккаунтов, где их ещё нет.
     """
     # Проверка админа
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
@@ -3951,7 +3951,7 @@ async def admin_setup_service_accounts(
     После выполнения все аккаунты смогут скачивать записи с secure URLs.
     """
     # Проверка админа
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
@@ -4057,7 +4057,7 @@ async def admin_setup_cartesia_scenarios(
     - Если outbound_cartesia rule отсутствует → создать (AddRule) и сохранить в vox_rule_ids
     - Аккаунты без vox_application_id → пропустить
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -4302,7 +4302,7 @@ async def admin_setup_cascade_scenarios(
     на ВСЕ дочерние аккаунты + создать outbound_cascade rule.
     Логика идентична /admin/setup-cartesia-scenarios.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -4773,7 +4773,7 @@ async def admin_setup_fish_scenarios(
     (обработчик при этом продолжит работу, прогресс коммитится по каждому
     аккаунту). Чтобы видеть ход — /admin/setup-fish-scenarios-stream.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -4807,7 +4807,7 @@ async def admin_setup_fish_scenarios_sse(
     🔐 ADMIN: то же, что /admin/setup-fish-scenarios, но SSE-стримом —
     видно аккаунт за аккаунтом и не упирается в таймаут прокси.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     async def generate():
@@ -4840,7 +4840,7 @@ async def admin_setup_yandex_scenarios(
     на ВСЕ дочерние аккаунты + создать outbound_yandex rule.
     Логика идентична /admin/setup-cascade-scenarios.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -5062,7 +5062,7 @@ async def admin_setup_crm_rules(
     Migration: creates Rule for outbound_crm scenario,
     used by task_scheduler for CRM calls.
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -6103,7 +6103,7 @@ async def admin_enable_sms_all(
     - Если is_sms_supported=False → пропускает (городские номера)
     - Если is_sms_enabled=True → уже включено, пропускает
     """
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     import httpx
@@ -6428,7 +6428,7 @@ async def admin_setup_sms_webhooks(
     """
     🔐 Admin: Обновить webhook на всех аккаунтах для включения sms_inbound callback.
     """
-    if current_user.email != "well96well@gmail.com":
+    if current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(status_code=403, detail="Admin only")
 
     service = get_voximplant_partner_service()

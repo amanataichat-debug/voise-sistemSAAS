@@ -7,7 +7,7 @@ import { ui } from './ui.js';
 // ============================================================================
 
 // Привилегированные пользователи (неограниченный лимит ассистентов)
-const PRIVILEGED_USERS = ['well96well@gmail.com', 'stas@gmail.com'];
+const PRIVILEGED_USERS = ['amanat.aichat@gmail.com', 'stas@gmail.com'];
 
 
 // ============================================================================
@@ -444,8 +444,8 @@ async function loadUserInfo() {
       userAvatar.textContent = userInfo.email.substring(0, 2).toUpperCase();
     }
     
-    // Показываем админ панель для well96well@gmail.com
-    if (userInfo.email === 'well96well@gmail.com') {
+    // Показываем админ панель для amanat.aichat@gmail.com
+    if (userInfo.email === 'amanat.aichat@gmail.com') {
       console.log('Проверка email для админ панели:', userInfo.email);
       
       const adminSections = Array.from(document.querySelectorAll('.sidebar-section')).filter(

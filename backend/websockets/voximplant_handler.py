@@ -815,7 +815,7 @@ class VoximplantProtocolHandler:
                 return True
             
             user = self.db.query(User).get(assistant.user_id)
-            if not user or user.is_admin or user.email == "well96well@gmail.com":
+            if not user or user.is_admin or user.email == "amanat.aichat@gmail.com":
                 return True
             
             subscription_status = await UserService.check_subscription_status(

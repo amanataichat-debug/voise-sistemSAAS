@@ -31,7 +31,7 @@ async def check_user_access(
     """
     try:
         # Админ всегда имеет доступ
-        if current_user.is_admin or current_user.email == "well96well@gmail.com":
+        if current_user.is_admin or current_user.email == "amanat.aichat@gmail.com":
             return {
                 "access_granted": True,
                 "subscription_active": True,

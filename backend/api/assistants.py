@@ -84,7 +84,7 @@ async def create_assistant(
         # Дополнительная проверка подписки (check_assistant_limit уже включает её)
         subscription_status = await UserService.check_subscription_status(db, str(current_user.id))
         
-        if not subscription_status["active"] and not current_user.is_admin and current_user.email != "well96well@gmail.com":
+        if not subscription_status["active"] and not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail={

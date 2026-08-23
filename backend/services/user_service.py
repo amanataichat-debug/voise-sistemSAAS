@@ -362,7 +362,7 @@ class UserService:
             user = await UserService.get_user_by_id(db, user_id)
             
             # Администраторы всегда имеют активную подписку
-            if user.is_admin or user.email == "well96well@gmail.com":
+            if user.is_admin or user.email == "amanat.aichat@gmail.com":
                 return {
                     "active": True,
                     "is_trial": False,

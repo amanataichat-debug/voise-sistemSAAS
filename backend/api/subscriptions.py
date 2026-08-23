@@ -96,7 +96,7 @@ async def get_my_subscription(
         max_assistants = 1  # Default для тестового периода
         
         # Проверка на админа
-        if current_user.is_admin or current_user.email == "well96well@gmail.com":
+        if current_user.is_admin or current_user.email == "amanat.aichat@gmail.com":
             max_assistants = 10
             # Форсируем активность подписки для админа
             days_left = 999  # Админу не нужно беспокоиться о сроках
@@ -144,7 +144,7 @@ async def get_my_subscription(
             "formatted_end_date": formatted_end_date,        # Строка для UI
             "is_trial": current_user.is_trial,
             "days_left": days_left,
-            "active": True if days_left > 0 or current_user.is_admin or current_user.email == "well96well@gmail.com" else False,
+            "active": True if days_left > 0 or current_user.is_admin or current_user.email == "amanat.aichat@gmail.com" else False,
             "current_assistants": current_assistants
         }
     except Exception as e:
@@ -469,7 +469,7 @@ async def check_expired_subscriptions(
         Result of the check
     """
     # Проверяем, что пользователь - админ
-    if not current_user.is_admin and current_user.email != "well96well@gmail.com":
+    if not current_user.is_admin and current_user.email != "amanat.aichat@gmail.com":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can perform this action"

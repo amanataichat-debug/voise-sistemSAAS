@@ -112,7 +112,7 @@ async def handle_websocket_connection(
             user = db.query(User).get(assistant.user_id)
             if user:
                 # Проверяем подписку только для НЕ-админов
-                if not user.is_admin and user.email != "well96well@gmail.com":
+                if not user.is_admin and user.email != "amanat.aichat@gmail.com":
                     from backend.services.user_service import UserService
                     subscription_status = await UserService.check_subscription_status(db, str(user.id))
                     

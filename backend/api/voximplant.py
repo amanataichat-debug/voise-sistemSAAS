@@ -748,7 +748,7 @@ async def get_assistant_config(
                 logger.info(f"[VOXIMPLANT] Найден пользователь ассистента: {user.id}")
                 
                 # Проверяем статус подписки (кроме админов)
-                if not user.is_admin and user.email != "well96well@gmail.com":
+                if not user.is_admin and user.email != "amanat.aichat@gmail.com":
                     try:
                         subscription_status = await UserService.check_subscription_status(db, str(user.id))
                         if not subscription_status["active"]:

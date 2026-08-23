@@ -389,7 +389,7 @@ async def handle_grok_websocket_connection(
                 log_to_render(f"👤 User: {user.email}")
                 
                 # Check subscription
-                if not user.is_admin and user.email != "well96well@gmail.com":
+                if not user.is_admin and user.email != "amanat.aichat@gmail.com":
                     from backend.services.user_service import UserService
                     subscription_status = await UserService.check_subscription_status(db, str(user.id))
                     
