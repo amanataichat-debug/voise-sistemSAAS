@@ -11,9 +11,11 @@
 
 let connectorsState = null;
 
+// icon — полный класс Font Awesome (у брендовых иконок семейство fa-brands).
 const CONNECTOR_META = {
-  google_calendar: { label: 'Google Календарь', icon: 'fa-calendar-days', color: '#4285F4' },
-  gmail:           { label: 'Gmail',            icon: 'fa-envelope',      color: '#EA4335' },
+  google_calendar: { label: 'Google Календарь', icon: 'fas fa-calendar-days',   color: '#4285F4' },
+  gmail:           { label: 'Gmail',            icon: 'fas fa-envelope',        color: '#EA4335' },
+  instagram:       { label: 'Instagram',        icon: 'fa-brands fa-instagram', color: '#E1306C' },
 };
 
 async function loadConnectors(){
@@ -49,7 +51,7 @@ function renderConnectorsBlock(){
     return;
   }
   el.innerHTML = connected.map(c => {
-    const m = CONNECTOR_META[c.toolkit] || { label: c.toolkit, icon: 'fa-plug', color: '#64748b' };
+    const m = CONNECTOR_META[c.toolkit] || { label: c.toolkit, icon: 'fas fa-plug', color: '#64748b' };
     const who = c.connected_email ? ' · ' + esc(c.connected_email) : '';
     return `<div style="font-size:13px;color:var(--green-dark,#166534);margin:2px 0">`
       + `<i class="fas fa-circle-check"></i> ${esc(m.label)}${who}</div>`;
@@ -81,7 +83,7 @@ function renderConnectorsList(){
     return;
   }
   el.innerHTML = tgRow + (s.connectors || []).map(c => {
-    const m = CONNECTOR_META[c.toolkit] || { label: c.toolkit, icon: 'fa-plug', color: '#64748b' };
+    const m = CONNECTOR_META[c.toolkit] || { label: c.toolkit, icon: 'fas fa-plug', color: '#64748b' };
     let right;
     if(!c.available){
       right = `<span style="font-size:12px;color:#94a3b8">Недоступен</span>`;
@@ -104,7 +106,7 @@ function renderConnectorsList(){
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;`
       + `padding:12px 0;border-bottom:1px solid var(--border,#e2e8f0)">`
       + `<div style="display:flex;align-items:center;gap:10px">`
-      + `<i class="fas ${m.icon}" style="color:${m.color};font-size:18px;width:22px;text-align:center"></i>`
+      + `<i class="${m.icon}" style="color:${m.color};font-size:18px;width:22px;text-align:center"></i>`
       + `<div><div style="font-weight:600;font-size:14px">${esc(m.label)}</div>`
       + `<div style="font-size:12px;color:${subColor}">${sub}</div></div></div>`
       + `<div style="text-align:right">${right}</div></div>`;

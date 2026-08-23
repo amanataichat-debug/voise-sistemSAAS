@@ -65,7 +65,7 @@ TIMELINE_MAX_EVENTS = 40      # сколько последних событий
 TIMELINE_DAYS_WINDOW = 30     # окно по времени (дни)
 TIMELINE_CALL_SNIPPET = 300   # длина сниппета транскрипта звонка в ленте
 
-_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️"}
+_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷"}
 
 
 def _timeline_call_events(db, agent_contact, exclude_call_id, since, limit) -> list:
@@ -149,6 +149,26 @@ def _timeline_telegram_events(db, agent_contact, since, limit) -> list:
         return []
 
 
+def _timeline_instagram_events(db, agent_contact, since, limit) -> list:
+    """События-Instagram (DM, обе стороны) для таймлайна. Best-effort."""
+    try:
+        from backend.services.instagram_service import get_thread as ig_get_thread
+        rows = ig_get_thread(db, agent_contact.id, limit=limit)
+        events = []
+        for m in rows:
+            ts = m.sent_at or m.created_at
+            if not ts:
+                continue
+            if since is not None and _as_naive_utc(ts) < since:
+                continue
+            who = "агент → клиент" if (m.direction or "inbound") == "outbound" else "клиент → агент"
+            events.append((ts, "instagram", f"Instagram, {who}: {(m.body or '').strip()}"))
+        return events
+    except Exception as e:
+        logger.warning(f"[AGENT] timeline instagram events failed: {e}")
+        return []
+
+
 def _as_naive_utc(dt):
     """К naive-UTC для единообразного сравнения (часть колонок tz-aware, часть — нет)."""
     if dt is not None and dt.tzinfo is not None:
@@ -180,6 +200,7 @@ def build_conversation_timeline(
         events += _timeline_call_events(db, agent_contact, exclude_call_id, since, max_events)
         events += _timeline_sms_events(db, agent_contact, since, max_events)
         events += _timeline_telegram_events(db, agent_contact, since, max_events)
+        events += _timeline_instagram_events(db, agent_contact, since, max_events)
         if not events:
             return ""
         # Сортируем по времени (naive-UTC), берём последние N.
@@ -903,6 +924,7 @@ class PostCallOrchestrator:
 
         is_sms = (call_direction or "").lower() == "sms_inbound"
         is_tg = (call_direction or "").lower() == "telegram_inbound"
+        is_ig = (call_direction or "").lower() == "instagram_inbound"
         is_tg_out = (call_direction or "").lower() == "telegram_outbound"
         is_inbound = (call_direction or "outbound").lower() == "inbound"
 
@@ -933,6 +955,24 @@ class PostCallOrchestrator:
                 "   не готовый текст). Сам факт сообщения НЕ требует звонка."
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ TELEGRAM"
+            status_label = "СТАТУС"
+            analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
+        elif is_ig:
+            direction_line = (
+                "СОБЫТИЕ: ВХОДЯЩЕЕ СООБЩЕНИЕ В INSTAGRAM (DM бизнес-аккаунта "
+                "владельца) — клиент написал в Instagram, это не звонок."
+            )
+            callback_rule = (
+                "3. Если уместно ответить клиенту — ответь в Instagram через\n"
+                "   instagram_send_message (тем же каналом, которым написал клиент).\n"
+                "   Пиши как живой человек, коротко и по делу, без markdown.\n"
+                "   ВАЖНО: Instagram позволяет отвечать только в течение 24 часов\n"
+                "   после сообщения клиента и не позволяет писать первым — отвечай\n"
+                "   сейчас, откладывать ответ нельзя. Если по сути сообщения нужен\n"
+                "   звонок (клиент просит позвонить и есть его номер) — запланируй\n"
+                "   через create_agent_task. Сам факт сообщения НЕ требует звонка."
+            )
+            transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ INSTAGRAM"
             status_label = "СТАТУС"
             analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
         elif is_sms:
@@ -1068,6 +1108,29 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             call_direction="telegram_inbound",
         )
 
+    async def run_for_instagram(self, agent_call, agent_contact, agent_config, user, message_body, db):
+        """
+        Прогнать входящее Instagram DM через ту же PostCall-логику, что звонки,
+        SMS и Telegram. «Транскрипт» — текст сообщения (полная переписка
+        подмешивается через единую хронологию build_conversation_timeline).
+        Ответить клиенту агент может тулзой instagram_send_message (домешивается
+        в build_postcall_tools, когда коннектор Instagram подключён).
+        """
+        transcript = f'Клиент написал в Instagram: "{(message_body or "").strip()}"'
+        await self._analyze(
+            agent_call=agent_call,
+            agent_contact=agent_contact,
+            agent_config=agent_config,
+            user=user,
+            task=None,
+            transcript=transcript,
+            call_status="answered",
+            duration_seconds=0,
+            openai_key=(user.openai_api_key or "") if user else "",
+            db=db,
+            call_direction="instagram_inbound",
+        )
+
     async def run_for_scheduled_telegram(self, agent_call, agent_contact, agent_config, user, task, db):
         """
         Исполнить запланированную задачу «написать клиенту в Telegram»
@@ -1158,7 +1221,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         # Подставляем стратегию PreCall в текст (симуляция цепочки). Для входящего
         # SMS/Telegram и запланированной отправки в Telegram PreCall не было —
         # блок стратегии не добавляем.
-        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound"):
+        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound"):
             post_call_input += f"""
 
 СТРАТЕГИЯ КОТОРУЮ ТЫ ПЛАНИРОВАЛ ПЕРЕД ЗВОНКОМ:
@@ -2770,5 +2833,78 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
 
     except Exception as e:
         logger.error(f"[AGENT-TG-USER] handle_inbound_telegram error: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, message_body: str):
+    """
+    Event-driven обработка входящего Instagram DM.
+
+    Вызывается поллером (backend/core/instagram_poller.py) ПОСЛЕ того, как он
+    сохранил входящие в agent_instagram_messages, связал тред с контактом и
+    продвинул watermark (поэтому падение здесь не приводит к повторной
+    обработке). Зеркалит handle_inbound_telegram: проверка доступа →
+    AgentCall(direction="inbound") → PostCall с call_direction="instagram_inbound"
+    (агент отвечает тулзой instagram_send_message).
+
+    Открывает собственную сессию БД — безопасно для asyncio.create_task().
+    """
+    db = SessionLocal()
+    try:
+        agent = db.query(AgentConfig).filter(
+            AgentConfig.id == agent_config_id,
+        ).first()
+        if not agent or not agent.is_active:
+            logger.info(f"[AGENT-IG] agent inactive/missing {agent_config_id}, skip")
+            return
+
+        user = db.query(User).filter(User.id == agent.user_id).first()
+        if not user:
+            return
+
+        # Доступ к агенту (триал/подписка) — как у SMS/Telegram и планировщика.
+        try:
+            if not user.has_active_agent_subscription():
+                logger.info(f"[AGENT-IG] user {user.id} has no agent access, skip ig message")
+                return
+        except Exception:
+            pass
+
+        # v2-агента без личного OpenAI-ключа обслужить не сможем.
+        if not getattr(agent, "uses_hardcoded_prompt", False) and not user.openai_api_key:
+            logger.info(f"[AGENT-IG] v2 agent {agent.id} without OpenAI key, skip ig message")
+            return
+
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id,
+            AgentContact.agent_config_id == agent.id,
+        ).first()
+        if not contact:
+            return
+
+        inbound_call = AgentCall(
+            agent_contact_id=contact.id,
+            agent_config_id=agent.id,
+            user_id=user.id,
+            source_task_id=None,
+            call_session_id=None,
+            status="calling",
+            direction="inbound",
+            started_at=datetime.utcnow(),
+        )
+        db.add(inbound_call)
+        db.commit()
+
+        logger.info(
+            f"[AGENT-IG] Inbound IG message -> agent {agent.id}, "
+            f"contact={contact.id}, call={inbound_call.id}"
+        )
+        await PostCallOrchestrator().run_for_instagram(
+            inbound_call, contact, agent, user, message_body, db
+        )
+
+    except Exception as e:
+        logger.error(f"[AGENT-IG] handle_inbound_instagram error: {e}", exc_info=True)
     finally:
         db.close()

@@ -27,7 +27,7 @@ from .base import Base
 
 # Поддерживаемые toolkit'ы (ключ → человекочитаемое имя). Slug Composio
 # резолвится в composio_service.TOOLKIT_SLUGS.
-CONNECTOR_TOOLKITS = ("google_calendar", "gmail")
+CONNECTOR_TOOLKITS = ("google_calendar", "gmail", "instagram")
 
 
 class AgentConnector(Base):
@@ -66,6 +66,16 @@ class AgentConnector(Base):
 
     # Email/аккаунт, который пользователь подключил (для отображения в UI)
     connected_email = Column(String(255), nullable=True)
+
+    # Instagram: числовой IG User ID подключённого Business-аккаунта — нужен
+    # поллеру, чтобы отличать свои сообщения от входящих (from.id == свой id).
+    # Заполняется лениво поллером через INSTAGRAM_GET_USER_INFO('me').
+    external_account_id = Column(String(64), nullable=True)
+
+    # Instagram: метка последнего опроса входящих DM. Одновременно служит
+    # атомарным claim'ом в мультиворкере (см. backend/core/instagram_poller.py,
+    # та же идея, что last_poll_at у agent_telegram_accounts).
+    last_poll_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

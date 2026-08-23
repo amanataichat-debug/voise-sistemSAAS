@@ -114,12 +114,16 @@ class AgentCall(Base):
                 return "sms"
             if post.get("call_direction") in ("telegram_inbound", "telegram_outbound"):
                 return "telegram"
+            if post.get("call_direction") == "instagram_inbound":
+                return "instagram"
         if self.transcript:
             t = self.transcript.strip()
             if t.startswith("Клиент прислал SMS"):
                 return "sms"
             if t.startswith("Клиент написал в Telegram"):
                 return "telegram"
+            if t.startswith("Клиент написал в Instagram"):
+                return "instagram"
         return "call"
 
     def to_dict(self):

@@ -73,6 +73,12 @@ from .agent_telegram_account import (
     AgentTelegramMessage,
 )
 
+# ✅ НОВОЕ: Instagram DM агента (коннектор Composio INSTAGRAM)
+from .agent_instagram import (
+    AgentInstagramConversation,
+    AgentInstagramMessage,
+)
+
 # ✅ НОВОЕ v3.0: Импортируем Voximplant Partner модели
 from .voximplant_child import (
     VoximplantChildAccount,

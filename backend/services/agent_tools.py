@@ -20,6 +20,7 @@ from backend.models.user import User
 from backend.models.agent_connector import AgentConnector
 from backend.services import composio_service
 from backend.services import telegram_user_service
+from backend.services import instagram_service
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
@@ -295,20 +296,23 @@ async def _augment_with_connectors(base_tools: list, agent_config, db: Session) 
 async def build_chat_tools(agent_config, db: Session) -> list:
     """
     Tools для чата/Telegram оркестратора (Chat Completions формат): базовый
-    AGENT_CHAT_TOOLS + коннекторы Composio + личный Telegram (если подключён).
+    AGENT_CHAT_TOOLS + коннекторы Composio + личный Telegram + Instagram
+    (последние два — только если подключены).
     """
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_CHAT_TOOLS), agent_config, db
     )
-    return _augment_with_telegram_account(tools, agent_config, db)
+    tools = _augment_with_telegram_account(tools, agent_config, db)
+    return _augment_with_instagram(tools, agent_config, db)
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
-    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + личный Telegram."""
+    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + личный Telegram + Instagram."""
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_POSTCALL_TOOLS), agent_config, db
     )
-    return _augment_with_telegram_account(tools, agent_config, db)
+    tools = _augment_with_telegram_account(tools, agent_config, db)
+    return _augment_with_instagram(tools, agent_config, db)
 
 
 async def fn_execute_connector(tool_name: str, args: dict, agent_config_id: str, db: Session) -> dict:
@@ -428,6 +432,146 @@ def _augment_with_telegram_account(base_tools: list, agent_config, db: Session) 
         logger.warning(f"[AGENT-TOOLS] telegram account lookup failed: {e}")
         return base_tools
     return base_tools + to_chat_completions_tools(TELEGRAM_USER_TOOLS)
+
+
+# ============================================================================
+# INSTAGRAM TOOLS — DM бизнес-аккаунта Instagram (коннектор Composio).
+# Домешиваются в чат и PostCall, ТОЛЬКО когда коннектор подключён. Голосовому
+# ассистенту эти функции намеренно НЕ отдаются. Отправка идёт через нашу
+# обёртку (а не сырой Composio-слаг), чтобы исходящие попадали в историю
+# переписки (agent_instagram_messages) и в хронологию оркестратора.
+# ============================================================================
+
+INSTAGRAM_SEND_MESSAGE_TOOL = {
+    "type": "function",
+    "name": "instagram_send_message",
+    "description": (
+        "Отправить клиенту сообщение в Instagram Direct с бизнес-аккаунта "
+        "владельца. Работает ТОЛЬКО как ответ в уже существующем диалоге и "
+        "только в течение 24 часов после последнего сообщения клиента — писать "
+        "первым Instagram не позволяет. Указывай agent_contact_id. Пиши как "
+        "живой человек, коротко, без markdown."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "text": {"type": "string", "description": "Текст сообщения"},
+        },
+        "required": ["agent_contact_id", "text"],
+    },
+}
+
+INSTAGRAM_GET_THREAD_TOOL = {
+    "type": "function",
+    "name": "instagram_get_thread",
+    "description": (
+        "Получить последние сообщения Instagram-переписки с контактом "
+        "(DM бизнес-аккаунта владельца) — для контекста перед ответом."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "limit": {"type": "integer", "description": "Сколько сообщений (по умолчанию 20)"},
+        },
+        "required": ["agent_contact_id"],
+    },
+}
+
+INSTAGRAM_TOOLS = [
+    INSTAGRAM_SEND_MESSAGE_TOOL,
+    INSTAGRAM_GET_THREAD_TOOL,
+]
+
+
+def _augment_with_instagram(base_tools: list, agent_config, db: Session) -> list:
+    """Дописать тулзы Instagram, если коннектор агента подключён."""
+    if agent_config is None:
+        return base_tools
+    try:
+        if not instagram_service.connected(db, agent_config.id):
+            return base_tools
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] instagram connector lookup failed: {e}")
+        return base_tools
+    return base_tools + to_chat_completions_tools(INSTAGRAM_TOOLS)
+
+
+async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    """
+    Отправка DM с бизнес-аккаунта Instagram владельца (через Composio).
+    Только ответ в существующем треде (IGSID резолвится из
+    agent_instagram_conversations); почасовой анти-спам лимит.
+    """
+    from backend.models.agent_instagram import AgentInstagramMessage
+
+    if agent_config is None:
+        return {"ok": False, "error": "Коннектор Instagram не подключён"}
+    connector = instagram_service.connector_for_agent(db, agent_config.id)
+    if connector is None:
+        return {"ok": False, "error": "Коннектор Instagram не подключён"}
+
+    text = (args.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "error": "Пустой текст сообщения"}
+
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == args.get("agent_contact_id"),
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config.id,
+    ).first()
+    if not contact:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    conversation = instagram_service.conversation_for_contact(db, agent_config.id, contact.id)
+    if conversation is None or not conversation.igsid:
+        return {
+            "ok": False,
+            "error": ("У контакта нет Instagram-диалога — написать первым в "
+                      "Instagram нельзя, клиент должен написать сам."),
+        }
+
+    hour_ago = datetime.utcnow() - timedelta(hours=1)
+    sent_last_hour = db.query(AgentInstagramMessage).filter(
+        AgentInstagramMessage.agent_config_id == agent_config.id,
+        AgentInstagramMessage.direction == "outbound",
+        AgentInstagramMessage.created_at >= hour_ago,
+    ).count()
+    if sent_last_hour >= instagram_service.IG_SEND_HOURLY_LIMIT:
+        return {"ok": False, "error": "Достигнут почасовой лимит исходящих Instagram-сообщений"}
+
+    composio_user_id = connector.composio_user_id or composio_service.composio_user_id_for_agent(agent_config.id)
+    result = await instagram_service.send_text(composio_user_id, conversation.igsid, text)
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error")}
+
+    instagram_service.store_message(
+        db, agent_config.id, "outbound", text,
+        agent_contact_id=contact.id,
+        ig_conversation_id=conversation.ig_conversation_id,
+        ig_message_id=result.get("message_id"),
+        sent_at=datetime.utcnow(),
+    )
+    db.commit()
+
+    to_label = ("@" + conversation.ig_username) if conversation.ig_username else conversation.igsid
+    logger.info(f"[AGENT-TOOLS] instagram_send_message → {to_label}")
+    return {"ok": True, "to": to_label}
+
+
+async def fn_instagram_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Последние сообщения Instagram-переписки с контактом."""
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == args.get("agent_contact_id"),
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if not contact:
+        return {"ok": False, "error": "Контакт не найден"}
+    limit = min(int(args.get("limit") or 20), 50)
+    rows = instagram_service.get_thread(db, contact.id, limit=limit)
+    return {"ok": True, "messages": [m.to_dict() for m in rows]}
 
 
 async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: Session) -> dict:
@@ -2511,6 +2655,13 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
             result = await fn_schedule_telegram_message(tool_args, user_id, agent_config, db)
+        elif tool_name == "instagram_send_message":
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            result = await fn_instagram_send_message(tool_args, user_id, agent_config, db)
+        elif tool_name == "instagram_get_thread":
+            result = await fn_instagram_get_thread(tool_args, user_id, agent_config_id, db)
         elif composio_service.is_composio_tool(tool_name):
             result = await fn_execute_connector(tool_name, tool_args, agent_config_id, db)
         else:

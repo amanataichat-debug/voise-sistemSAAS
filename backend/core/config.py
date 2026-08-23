@@ -149,6 +149,8 @@ class Settings(BaseSettings):
     # Нужен для link() — старта OAuth-флоу подключения аккаунта пользователя.
     COMPOSIO_AUTH_CONFIG_GOOGLECALENDAR: Optional[str] = os.getenv("COMPOSIO_AUTH_CONFIG_GOOGLECALENDAR")
     COMPOSIO_AUTH_CONFIG_GMAIL: Optional[str] = os.getenv("COMPOSIO_AUTH_CONFIG_GMAIL")
+    # Instagram (Business/Creator, Instagram Login через Meta) — обмен DM.
+    COMPOSIO_AUTH_CONFIG_INSTAGRAM: Optional[str] = os.getenv("COMPOSIO_AUTH_CONFIG_INSTAGRAM")
 
     # =========================================================================
     # ✅ НОВОЕ: Личный Telegram-аккаунт агента (MTProto через Telethon)
@@ -291,6 +293,7 @@ try:
             name for name, val in (
                 ("GoogleCalendar", settings.COMPOSIO_AUTH_CONFIG_GOOGLECALENDAR),
                 ("Gmail", settings.COMPOSIO_AUTH_CONFIG_GMAIL),
+                ("Instagram", settings.COMPOSIO_AUTH_CONFIG_INSTAGRAM),
             ) if val
         ]
         print(f"🔌 Composio configured. Auth configs: {', '.join(_cfgd) if _cfgd else 'none (set COMPOSIO_AUTH_CONFIG_*)'}")

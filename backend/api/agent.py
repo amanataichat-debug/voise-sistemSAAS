@@ -1652,7 +1652,11 @@ def _connectors_base_url() -> str:
 
 
 def _toolkit_label(toolkit: str) -> str:
-    return {"google_calendar": "Google Календарь", "gmail": "Gmail"}.get(toolkit, toolkit)
+    return {
+        "google_calendar": "Google Календарь",
+        "gmail": "Gmail",
+        "instagram": "Instagram",
+    }.get(toolkit, toolkit)
 
 
 def _connectors_status(db: Session, agent: AgentConfig) -> dict:
@@ -2526,6 +2530,15 @@ async def get_agent_contact_details(
     except Exception as e:
         logger.warning(f"[AGENT] failed to load telegram thread for contact {contact_id}: {e}")
     contact_data["telegram"] = telegram
+
+    # Instagram-переписка (DM бизнес-аккаунта владельца) с контактом.
+    instagram = []
+    try:
+        from backend.services.instagram_service import get_thread as ig_get_thread
+        instagram = [m.to_dict() for m in ig_get_thread(db, contact.id, limit=30)]
+    except Exception as e:
+        logger.warning(f"[AGENT] failed to load instagram thread for contact {contact_id}: {e}")
+    contact_data["instagram"] = instagram
     return contact_data
 
 

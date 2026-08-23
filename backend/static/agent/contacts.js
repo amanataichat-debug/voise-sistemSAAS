@@ -176,8 +176,14 @@ function renderContactDetails(c){
     <div class="cd-sms-thread">${c.telegram.map(_cdSmsBubble).join('')}</div>
   ` : '';
 
+  // Instagram-переписка (DM бизнес-аккаунта владельца) — те же пузыри.
+  const igBlock = (c.instagram && c.instagram.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fa-brands fa-instagram" style="color:#E1306C"></i> Instagram-переписка (${c.instagram.length})</div>
+    <div class="cd-sms-thread">${c.instagram.map(_cdSmsBubble).join('')}</div>
+  ` : '';
+
   _cdTasks = (c.tasks || []).slice().sort((a,b)=> new Date(a.scheduled_time)-new Date(b.scheduled_time));
-  document.getElementById('contact-details-body').innerHTML = infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock;
+  document.getElementById('contact-details-body').innerHTML = infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock;
   renderContactTasksSection();
 }
 

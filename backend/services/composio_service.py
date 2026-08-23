@@ -31,6 +31,11 @@ logger = get_logger(__name__)
 TOOLKIT_SLUGS: Dict[str, str] = {
     "google_calendar": "GOOGLECALENDAR",
     "gmail": "GMAIL",
+    # Instagram (Business/Creator) — только обмен DM. Сырые Composio-тулзы
+    # оркестратору НЕ отдаются (TOOLKIT_CHAT_TOOLS пуст): отправка идёт через
+    # нашу тулзу instagram_send_message (agent_tools), чтобы исходящие
+    # попадали в историю переписки; входящие забирает instagram_poller.
+    "instagram": "INSTAGRAM",
 }
 
 # Обратный маппинг slug → ключ коннектора.
@@ -125,6 +130,7 @@ def auth_config_for(toolkit: str) -> Optional[str]:
     mapping = {
         "google_calendar": settings.COMPOSIO_AUTH_CONFIG_GOOGLECALENDAR,
         "gmail": settings.COMPOSIO_AUTH_CONFIG_GMAIL,
+        "instagram": settings.COMPOSIO_AUTH_CONFIG_INSTAGRAM,
     }
     return mapping.get(toolkit)
 
@@ -553,7 +559,8 @@ def _extract_email(acc) -> Optional[str]:
             return val
     data = getattr(acc, "data", None) or getattr(acc, "metadata", None)
     if isinstance(data, dict):
-        for key in ("email", "user_email", "login"):
+        # username — идентификатор аккаунта у Instagram (email там не бывает).
+        for key in ("email", "user_email", "login", "username"):
             if data.get(key):
                 return data[key]
     return None

@@ -56,6 +56,7 @@ from backend.db.session import engine
 from backend.core.scheduler import start_subscription_checker
 from backend.core.task_scheduler import start_task_scheduler  # ✅ Task Scheduler
 from backend.core.telegram_user_poller import start_telegram_user_poller  # ✅ Поллер личного Telegram агента
+from backend.core.instagram_poller import start_instagram_poller  # ✅ Поллер Instagram DM агента
 from backend.services.subscription_blocker import start_subscription_blocker  # ✅ Agent subscription blocker
 from backend.api.partners import router as partners_router
 
@@ -2198,6 +2199,11 @@ async def startup_event():
             #    TELEGRAM_API_ID/HASH/SESSION_KEY; мультиворкер — claim по БД)
             asyncio.create_task(start_telegram_user_poller(check_interval=60))
             logger.info("✅ Telegram user poller started (check every 60s)")
+
+            # ✅ Поллер Instagram DM агента (каждые 90 сек; no-op без
+            #    COMPOSIO_API_KEY/COMPOSIO_AUTH_CONFIG_INSTAGRAM; claim по БД)
+            asyncio.create_task(start_instagram_poller())
+            logger.info("✅ Instagram poller started (check every 90s)")
 
         except Exception as e:
             logger.error(f"❌ Error starting schedulers: {str(e)}")
