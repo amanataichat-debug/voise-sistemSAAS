@@ -70,12 +70,12 @@ async def check_expired_subscriptions():
                 for user in expired_users:
                     try:
                         # Проверяем, не обработали ли мы уже эту подписку за последние 24 часа
-                        from backend.models.subscription import SubscriptionEventLog
-                        recent_expire_event = db.query(SubscriptionEventLog).filter(
+                        from backend.models.subscription import SubscriptionLog
+                        recent_expire_event = db.query(SubscriptionLog).filter(
                             and_(
-                                SubscriptionEventLog.user_id == user.id,
-                                SubscriptionEventLog.event_type == "expire",
-                                SubscriptionEventLog.created_at > now - timedelta(hours=24)
+                                SubscriptionLog.user_id == user.id,
+                                SubscriptionLog.action == "expire",
+                                SubscriptionLog.created_at > now - timedelta(hours=24)
                             )
                         ).first()
                         

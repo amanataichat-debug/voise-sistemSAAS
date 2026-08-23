@@ -65,6 +65,20 @@ const api = {
       method: 'POST',
       body: data
     });
+  },
+
+  resetPasswordRequest(data) {
+    return this.fetch('/auth/reset-password', {
+      method: 'POST',
+      body: data
+    });
+  },
+
+  resetPasswordConfirm(data) {
+    return this.fetch('/auth/reset-password-confirm', {
+      method: 'POST',
+      body: data
+    });
   }
 };
 

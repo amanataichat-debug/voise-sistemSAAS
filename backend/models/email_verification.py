@@ -36,6 +36,9 @@ class EmailVerification(Base, BaseModel):
     
     # Verification code (6 digits)
     code = Column(String(6), nullable=False, index=True)
+
+    # Purpose of the code: 'verify' (email confirmation) or 'reset' (password reset)
+    purpose = Column(String(10), nullable=False, default="verify", server_default="verify", index=True)
     
     # Expiration timestamp
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -127,50 +130,55 @@ class EmailVerification(Base, BaseModel):
     
     @classmethod
     def create_verification_code(
-        cls, 
-        user_id: uuid.UUID, 
-        code: str, 
-        expiration_minutes: int = 10
+        cls,
+        user_id: uuid.UUID,
+        code: str,
+        expiration_minutes: int = 10,
+        purpose: str = "verify"
     ) -> 'EmailVerification':
         """
         Factory method to create a new verification code
-        
+
         Args:
             user_id: UUID of the user
             code: 6-digit verification code
             expiration_minutes: Minutes until expiration (default: 10)
-        
+            purpose: 'verify' (email confirmation) or 'reset' (password reset)
+
         Returns:
             New EmailVerification instance
         """
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=expiration_minutes)
-        
+
         return cls(
             user_id=user_id,
             code=code,
             expires_at=expires_at,
             is_used=False,
-            attempts=0
+            attempts=0,
+            purpose=purpose
         )
-    
+
     @classmethod
-    def get_active_code_for_user(cls, db_session, user_id: uuid.UUID):
+    def get_active_code_for_user(cls, db_session, user_id: uuid.UUID, purpose: str = "verify"):
         """
         Get the most recent active (unused, not expired) verification code for a user
-        
+
         Args:
             db_session: Database session
             user_id: UUID of the user
-        
+            purpose: 'verify' (email confirmation) or 'reset' (password reset)
+
         Returns:
             EmailVerification instance or None
         """
         now = datetime.now(timezone.utc)
-        
+
         return db_session.query(cls).filter(
             cls.user_id == user_id,
             cls.is_used == False,
-            cls.expires_at > now
+            cls.expires_at > now,
+            cls.purpose == purpose
         ).order_by(cls.created_at.desc()).first()
     
     @classmethod

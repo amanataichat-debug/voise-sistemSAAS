@@ -164,28 +164,38 @@ class PasswordResetRequest(BaseModel):
         }
 
 class PasswordResetConfirm(BaseModel):
-    """Schema for password reset confirmation"""
-    token: str = Field(..., description="Password reset token")
+    """Schema for password reset confirmation (6-digit emailed code)"""
+    email: EmailStr = Field(..., description="User email")
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit reset code from email")
     new_password: str = Field(..., min_length=8, description="New password")
+
+    @validator('code')
+    def code_format(cls, v):
+        """Validate reset code format"""
+        code = str(v).strip()
+        if not code.isdigit() or len(code) != 6:
+            raise ValueError('Reset code must be 6 digits')
+        return code
 
     @validator('new_password')
     def password_complexity(cls, v):
         """Validate password complexity"""
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
-            
+
         if not any(c.isdigit() for c in v):
             raise ValueError('Password must contain at least one digit')
-        
+
         if not any(c.isalpha() for c in v):
             raise ValueError('Password must contain at least one letter')
-            
+
         return v
 
     class Config:
         schema_extra = {
             "example": {
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "email": "user@example.com",
+                "code": "123456",
                 "new_password": "newpassword123"
             }
         }

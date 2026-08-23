@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../../utils/api';
 import InlineNotification from '../InlineNotification';
+import ForgotPasswordForm from './ForgotPasswordForm';
 import { useT } from '../../i18n';
 
 function LoginForm({ onSwitchToRegister }) {
@@ -8,7 +9,22 @@ function LoginForm({ onSwitchToRegister }) {
   const [password, setPassword] = useState('');
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const { t } = useT();
+
+  if (showForgot) {
+    return (
+      <ForgotPasswordForm
+        initialEmail={email}
+        onBackToLogin={(resetEmail) => {
+          if (resetEmail) setEmail(resetEmail);
+          setPassword('');
+          setNotification(null);
+          setShowForgot(false);
+        }}
+      />
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -69,6 +85,18 @@ function LoginForm({ onSwitchToRegister }) {
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
+
+      <p className="auth-hint" style={{ textAlign: 'right', marginTop: 0 }}>
+        <a
+          onClick={(e) => {
+            e.preventDefault();
+            setNotification(null);
+            setShowForgot(true);
+          }}
+        >
+          {t('forgot.link')}
+        </a>
+      </p>
 
       <button
         type="submit"

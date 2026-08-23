@@ -160,6 +160,86 @@ class EmailService:
         """
     
     @classmethod
+    def _create_password_reset_email_html(cls, code: str, user_email: str) -> str:
+        """
+        Create HTML email template for password reset code.
+
+        Args:
+            code: 6-digit reset code
+            user_email: User's email address
+
+        Returns:
+            HTML email content
+        """
+        return f"""
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Восстановление пароля - Voksy AI</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f8fafc;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+                <!-- Header -->
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #2563eb; font-size: 28px; margin: 0;">Voksy AI</h1>
+                    <p style="color: #64748b; font-size: 16px; margin: 10px 0 0 0;">
+                        Ваш голосовой ИИ. Говорит. Слушает. Понимает.
+                    </p>
+                </div>
+
+                <!-- Main Content -->
+                <div style="background: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <h2 style="color: #0f172a; font-size: 24px; margin: 0 0 20px 0;">
+                        Восстановление пароля
+                    </h2>
+
+                    <p style="color: #64748b; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+                        Здравствуйте! Вы запросили восстановление пароля на платформе Voksy AI.
+                        Введите этот код на странице восстановления, чтобы задать новый пароль:
+                    </p>
+
+                    <!-- Reset Code Box -->
+                    <div style="background: linear-gradient(135deg, #4a86e8, #2563eb); border-radius: 8px; padding: 30px; text-align: center; margin: 30px 0;">
+                        <div style="font-size: 42px; font-weight: 700; color: white; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                            {code}
+                        </div>
+                    </div>
+
+                    <!-- Important Info -->
+                    <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
+                        <p style="color: #1e40af; font-size: 14px; margin: 0; line-height: 1.6;">
+                            <strong>⏰ Важно:</strong> Код действителен <strong>10 минут</strong>.
+                            У вас есть <strong>3 попытки</strong> для ввода.
+                        </p>
+                    </div>
+
+                    <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin: 20px 0 0 0;">
+                        Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо —
+                        ваш пароль останется прежним.
+                    </p>
+                </div>
+
+                <!-- Footer -->
+                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 10px 0;">
+                        С уважением, команда Voksy AI
+                    </p>
+                    <p style="color: #cbd5e1; font-size: 12px; margin: 0;">
+                        ИП Торобеков Нагызбек Чыныбекович
+                    </p>
+                    <p style="color: #cbd5e1; font-size: 12px; margin: 5px 0 0 0;">
+                        <a href="https://t.me/Aibotconnect" style="color: #2563eb; text-decoration: none;">Telegram</a> |
+                        <a href="mailto:voksyai@gmail.com" style="color: #2563eb; text-decoration: none;">Поддержка</a>
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    @classmethod
     def _send_email_smtp(cls, to_email: str, subject: str, html_content: str) -> bool:
         """
         Send email via Mail.ru SMTP with SSL/TLS support.
@@ -599,6 +679,167 @@ class EmailService:
                 detail="Failed to verify code"
             )
     
+    @classmethod
+    async def send_password_reset_code(
+        cls,
+        db: Session,
+        user_id: Union[str, uuid.UUID],
+        user_email: str
+    ) -> Dict[str, Any]:
+        """
+        Generate and send a password reset code to user's email.
+        Reuses the email_verifications table with purpose='reset'.
+
+        Args:
+            db: Database session
+            user_id: User UUID (string or UUID object)
+            user_email: User's email address
+
+        Returns:
+            Dictionary with success status and message
+
+        Raises:
+            HTTPException: If cooldown active or send fails
+        """
+        try:
+            user_uuid = cls._ensure_uuid(user_id)
+
+            # Cooldown: не отправляем новый код чаще, чем раз в RESEND_COOLDOWN_SECONDS
+            last_reset = EmailVerification.get_active_code_for_user(db, user_uuid, purpose="reset")
+            if last_reset:
+                created_at = last_reset.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+
+                time_since_last = datetime.now(timezone.utc) - created_at
+                if time_since_last.total_seconds() < cls.RESEND_COOLDOWN_SECONDS:
+                    remaining_seconds = cls.RESEND_COOLDOWN_SECONDS - int(time_since_last.total_seconds())
+                    logger.warning(f"Reset code cooldown active for user {user_id}: {remaining_seconds}s remaining")
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Please wait {remaining_seconds} seconds before requesting a new code"
+                    )
+
+            code = cls._generate_verification_code()
+            logger.info(f"Generated password reset code for {user_email}: {code[:2]}****")
+
+            reset_record = EmailVerification.create_verification_code(
+                user_id=user_uuid,
+                code=code,
+                expiration_minutes=cls.CODE_EXPIRY_MINUTES,
+                purpose="reset"
+            )
+
+            db.add(reset_record)
+            db.commit()
+            db.refresh(reset_record)
+
+            html_content = cls._create_password_reset_email_html(code, user_email)
+            subject = f"Восстановление пароля Voksy AI: {code}"
+
+            # smtplib синхронный — уводим в отдельный поток (см. send_verification_code)
+            await asyncio.to_thread(cls._send_email_smtp, user_email, subject, html_content)
+
+            return {
+                "success": True,
+                "message": "Password reset code sent successfully",
+                "expires_in_minutes": cls.CODE_EXPIRY_MINUTES,
+                "max_attempts": cls.MAX_ATTEMPTS
+            }
+
+        except HTTPException:
+            raise
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error sending password reset code: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send password reset code. Please try again later."
+            )
+
+    @classmethod
+    async def verify_password_reset_code(
+        cls,
+        db: Session,
+        user_id: Union[str, uuid.UUID],
+        code: str
+    ) -> Dict[str, Any]:
+        """
+        Verify a password reset code (purpose='reset') and mark it as used.
+        Does NOT change the password itself — that is done by AuthService.
+
+        Args:
+            db: Database session
+            user_id: User UUID (string or UUID object)
+            code: 6-digit reset code
+
+        Returns:
+            Dictionary with success status
+
+        Raises:
+            HTTPException: If code invalid, expired, or max attempts reached
+        """
+        try:
+            user_uuid = cls._ensure_uuid(user_id)
+
+            reset_record = EmailVerification.get_active_code_for_user(db, user_uuid, purpose="reset")
+
+            if not reset_record:
+                logger.warning(f"No active password reset code for user {user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No active reset code found. Please request a new code."
+                )
+
+            if reset_record.is_expired:
+                logger.warning(f"Password reset code expired for user {user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Reset code has expired. Please request a new code."
+                )
+
+            if reset_record.attempts >= cls.MAX_ATTEMPTS:
+                logger.warning(f"Max reset code attempts reached for user {user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Maximum attempts exceeded. Please request a new code."
+                )
+
+            reset_record.increment_attempts()
+
+            if reset_record.code != code:
+                db.commit()
+
+                remaining_attempts = cls.MAX_ATTEMPTS - reset_record.attempts
+                logger.warning(
+                    f"Invalid password reset code for user {user_id}. "
+                    f"Attempts: {reset_record.attempts}/{cls.MAX_ATTEMPTS}"
+                )
+
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid reset code. {remaining_attempts} attempts remaining."
+                )
+
+            # Код верный — помечаем использованным (одноразовый)
+            reset_record.mark_as_used()
+            db.commit()
+
+            logger.info(f"✅ Password reset code verified for user {user_id}")
+            return {"success": True}
+
+        except HTTPException:
+            raise
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error verifying password reset code: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify reset code"
+            )
+
     @classmethod
     async def get_verification_status(
         cls, 

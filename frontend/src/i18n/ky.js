@@ -297,6 +297,24 @@ export default {
   'verif.resend': 'Кодду кайра жөнөтүү',
   'verif.sending': 'Жөнөтүлүүдө...',
 
+  // Восстановление пароля
+  'forgot.link': 'Сырсөздү унуттуңузбу?',
+  'forgot.intro': 'Аккаунтуңуздун email дарегин жазыңыз — сырсөздү калыбына келтирүү кодун жөнөтөбүз.',
+  'forgot.sendCodeBtn': 'Код жөнөтүү',
+  'forgot.sending': 'Жөнөтүлүүдө...',
+  'forgot.sendingCode': 'Кодду emailге жөнөтүп жатабыз...',
+  'forgot.codeSent': 'Эгер аккаунт бар болсо, код emailге жөнөтүлдү.',
+  'forgot.sendError': 'Код жөнөтүлгөн жок. Кийинчерээк кайталап көрүңүз.',
+  'forgot.cooldown': 'Код мурунтан жөнөтүлгөн. Кайра жөнөтүү үчүн таймерди күтүңүз.',
+  'forgot.newPassword': 'Жаңы сырсөз',
+  'forgot.resetBtn': 'Сырсөздү алмаштыруу',
+  'forgot.resettingBtn': 'Алмаштырууда...',
+  'forgot.resetting': 'Жаңы сырсөз орнотулууда...',
+  'forgot.success': 'Сырсөз өзгөртүлдү! Эми жаңы сырсөз менен кириңиз.',
+  'forgot.resetError': 'Сырсөздү алмаштыруу мүмкүн болгон жок',
+  'forgot.codeInvalid': 'Каттагы 6 орундуу кодду киргизиңиз',
+  'forgot.backToLogin': '← Кирүүгө кайтуу',
+
   // Общее
   'common.loading': 'Жүктөлүүдө…',
 };

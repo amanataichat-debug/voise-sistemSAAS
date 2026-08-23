@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 
 from backend.core.logging import get_logger
 from backend.db.session import get_db
-from backend.schemas.auth import LoginRequest, RegisterRequest, Token
+from backend.schemas.auth import (
+    LoginRequest,
+    RegisterRequest,
+    Token,
+    PasswordResetRequest,
+    PasswordResetConfirm
+)
 from backend.schemas.user import UserResponse
 from backend.services.auth_service import AuthService
 from backend.services.email_service import EmailService
@@ -221,51 +227,75 @@ async def login(
 
 @router.post("/reset-password", response_model=dict)
 async def reset_password_request(
-    email: str,
+    reset_data: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
     """
-    Request a password reset email.
-    
+    Request a password reset: send a 6-digit code to the user's email.
+
     Args:
-        email: User email
+        reset_data: Request body with user email
         db: Database session dependency
-    
+
     Returns:
-        Confirmation message
+        Confirmation message (same whether the account exists or not)
     """
     try:
-        await AuthService.reset_password_request(db, email)
+        await AuthService.reset_password_request(db, reset_data.email)
         # Always return success for security reasons
         return {
-            "success": True, 
-            "message": "If an account with this email exists, a password reset link has been sent"
+            "success": True,
+            "message": "If an account with this email exists, a password reset code has been sent"
+        }
+    except HTTPException as e:
+        # 429 (cooldown) пробрасываем — фронту нужен таймер повторной отправки
+        if e.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            raise
+        logger.error(f"Error in reset password request: {e.detail}")
+        return {
+            "success": True,
+            "message": "If an account with this email exists, a password reset code has been sent"
         }
     except Exception as e:
         logger.error(f"Error in reset password request: {str(e)}")
         # Still return success for security reasons
         return {
-            "success": True, 
-            "message": "If an account with this email exists, a password reset link has been sent"
+            "success": True,
+            "message": "If an account with this email exists, a password reset code has been sent"
         }
 
 
 @router.post("/reset-password-confirm", response_model=dict)
 async def reset_password_confirm(
-    token: str,
-    new_password: str,
+    confirm_data: PasswordResetConfirm,
     db: Session = Depends(get_db)
 ):
     """
-    Confirm a password reset using a token.
-    
+    Confirm a password reset using the emailed 6-digit code.
+
     Args:
-        token: Password reset token
-        new_password: New password
+        confirm_data: Request body with email, code and new password
         db: Database session dependency
-    
+
     Returns:
         Confirmation message
     """
-    # TODO: Implement password reset confirmation
-    return {"success": True, "message": "Password reset successfully"}
+    try:
+        await AuthService.reset_password_confirm(
+            db=db,
+            email=confirm_data.email,
+            code=confirm_data.code,
+            new_password=confirm_data.new_password
+        )
+        return {
+            "success": True,
+            "message": "Password reset successfully. You can now log in with your new password."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in reset password confirm: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset failed due to server error"
+        )

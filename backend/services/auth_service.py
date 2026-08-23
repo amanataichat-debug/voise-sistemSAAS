@@ -393,23 +393,91 @@ class AuthService:
     @staticmethod
     async def reset_password_request(db: Session, email: str) -> bool:
         """
-        Request password reset (placeholder for future implementation)
-        
+        Request password reset: send a 6-digit code to the user's email.
+
+        Анти-перебор: если пользователя с таким email нет — молча возвращаем True,
+        endpoint в любом случае отвечает одинаковым сообщением.
+
         Args:
             db: Database session
             email: User email
-            
+
         Returns:
             True if request processed
         """
-        logger.info(f"📧 Password reset requested for email: {email}")
-        
-        # TODO: Implement password reset functionality
-        # 1. Generate reset token
-        # 2. Send email with reset link
-        # 3. Store reset token in database
-        
+        from backend.services.email_service import EmailService
+
+        normalized_email = str(email).lower().strip()
+        logger.info(f"📧 Password reset requested for email: {normalized_email}")
+
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            logger.info(f"Password reset requested for unknown email: {normalized_email}")
+            return True
+
+        await EmailService.send_password_reset_code(
+            db=db,
+            user_id=str(user.id),
+            user_email=user.email
+        )
         return True
+
+    @staticmethod
+    async def reset_password_confirm(
+        db: Session,
+        email: str,
+        code: str,
+        new_password: str
+    ) -> bool:
+        """
+        Confirm password reset: verify the emailed code and set the new password.
+
+        Args:
+            db: Database session
+            email: User email
+            code: 6-digit reset code from the email
+            new_password: New password (already validated by schema)
+
+        Returns:
+            True if password was reset
+
+        Raises:
+            HTTPException: If code invalid/expired or user not found
+        """
+        from backend.services.email_service import EmailService
+
+        normalized_email = str(email).lower().strip()
+        logger.info(f"🔑 Password reset confirmation for email: {normalized_email}")
+
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            # Не раскрываем, существует ли аккаунт — та же ошибка, что при неверном коде
+            logger.warning(f"Password reset confirm for unknown email: {normalized_email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reset code. Please request a new code."
+            )
+
+        # Проверяем код (бросит HTTPException при неверном/истёкшем коде)
+        await EmailService.verify_password_reset_code(db, str(user.id), code)
+
+        try:
+            user.password_hash = hash_password(new_password)
+            user.updated_at = datetime.now(timezone.utc)
+            # Код из письма подтверждает владение почтой — заодно снимаем блокировку входа
+            user.email_verified = True
+            db.commit()
+
+            logger.info(f"✅ Password reset successfully for user: {user.email}")
+            return True
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ Error resetting password for {normalized_email}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset password"
+            )
     
     @staticmethod
     def create_access_token(data: dict) -> str:

@@ -296,6 +296,24 @@ export default {
   'verif.resend': 'Отправить код повторно',
   'verif.sending': 'Отправка...',
 
+  // Восстановление пароля
+  'forgot.link': 'Забыли пароль?',
+  'forgot.intro': 'Укажите email вашего аккаунта — мы отправим на него код для восстановления пароля.',
+  'forgot.sendCodeBtn': 'Отправить код',
+  'forgot.sending': 'Отправляем...',
+  'forgot.sendingCode': 'Отправляем код на email...',
+  'forgot.codeSent': 'Если аккаунт существует, код отправлен на email.',
+  'forgot.sendError': 'Не удалось отправить код. Попробуйте позже.',
+  'forgot.cooldown': 'Код уже был отправлен. Дождитесь таймера для повторной отправки.',
+  'forgot.newPassword': 'Новый пароль',
+  'forgot.resetBtn': 'Сменить пароль',
+  'forgot.resettingBtn': 'Меняем...',
+  'forgot.resetting': 'Устанавливаем новый пароль...',
+  'forgot.success': 'Пароль изменён! Теперь войдите с новым паролем.',
+  'forgot.resetError': 'Не удалось сменить пароль',
+  'forgot.codeInvalid': 'Введите 6-значный код из письма',
+  'forgot.backToLogin': '← Вернуться ко входу',
+
   // Общее
   'common.loading': 'Загрузка…',
 };
