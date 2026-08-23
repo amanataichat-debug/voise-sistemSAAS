@@ -846,8 +846,9 @@ async def create_agent(
     # в БД должно лежать только то, что реально существует на OpenRouter.
     orchestrator_model = resolve_slug(orchestrator_model)
 
-    # 3. Telephony must be verified
-    _check_telephony_verified(current_user, db)
+    # 3. Верификация телефонии при создании агента НЕ требуется (v3.2):
+    #    агент создаётся без телефонии, звонки недоступны до её подключения.
+    #    _check_telephony_verified оставлена для обратной совместимости.
 
     # 4. Required API keys for the chosen assistant type
     _check_assistant_keys(body.assistant_type, current_user)

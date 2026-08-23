@@ -109,12 +109,14 @@ function drawStep0(c){
     </div>`;
   }).join('');
 
+  // Телефония НЕ обязательна для создания агента (v3.2): баннер информационный,
+  // кнопку «Далее» не блокирует. Подключить телефонию можно позже.
   const teleBanner = tele
     ? `<div class="tele-banner ok"><i class="fas fa-circle-check"></i> Телефония подключена и верифицирована</div>`
-    : `<div class="tele-banner bad"><i class="fas fa-triangle-exclamation"></i> <span>Телефония не верифицирована. Без верифицированной телефонии агент не сможет звонить.</span><a class="btn btn-primary btn-sm" href="/static/telephony.html">Настроить телефонию</a></div>`;
+    : `<div class="tele-banner info"><i class="fas fa-circle-info"></i> <span>Телефонию можно подключить позже — без неё агент не сможет звонить, но остальные функции доступны.</span><a class="btn btn-secondary btn-sm" href="/static/telephony.html">Настроить телефонию</a></div>`;
 
   const ks = keyState(sel);
-  const canNext = sel && ks.ok && tele;
+  const canNext = sel && ks.ok;
 
   c.innerHTML = `<h2>Создание агента</h2><p class="hint">Выберите тип голосового ассистента.</p>
     ${cards}

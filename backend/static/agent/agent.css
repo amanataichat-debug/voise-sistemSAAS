@@ -728,6 +728,7 @@ body::before {
 .tele-banner { padding:13px 16px; border-radius:var(--radius-sm); font-size:13px; margin-top:8px; display:flex; align-items:center; gap:10px; line-height:1.4; }
 .tele-banner.ok { background:var(--green-light); color:#166534; }
 .tele-banner.bad { background:var(--red-light); color:#991B1B; flex-wrap:wrap; }
+.tele-banner.info { background:var(--blue-light); color:var(--blue-dark); flex-wrap:wrap; }
 .tele-banner .btn { margin-left:auto; }
 
 .creation-list { list-style:none; }

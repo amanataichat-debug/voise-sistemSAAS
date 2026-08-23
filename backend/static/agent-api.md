@@ -585,7 +585,7 @@ curl -H "X-Api-Key: vfy_..." \
 | Код | `detail` | Причина |
 |-----|----------|---------|
 | 401 | `invalid_api_key` | Неверный или отозванный API-ключ |
-| 400 | `telephony_not_verified` | Телефония Voximplant не верифицирована (делается в кабинете) |
+| 400 | `telephony_not_verified` | Устарело: с v3.2 при создании агента не возвращается — телефония для создания не требуется |
 | 400 | `api_key_required_gemini` / `api_key_required_openai` / `api_key_required_cartesia` / `api_key_required_yandex` | Не задан ключ голосового провайдера в настройках кабинета. Для `cascade` такой ошибки не бывает — ключ ему не нужен |
 | 400 | `agent_limit_reached` | Уже 3 агента |
 | 400 | `invalid_assistant_type` / `invalid_orchestrator_model` / `invalid_voice` | Невалидное значение поля |
