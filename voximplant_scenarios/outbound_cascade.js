@@ -794,7 +794,7 @@ if (typeof VoxTurnTaking === "undefined") {
     };
 }
 
-const BACKEND_URL = "https://voicyfy.ru";
+const BACKEND_URL = "https://voksyai.online";
 const LOG_URL = BACKEND_URL + "/api/voximplant/log";
 const FUNCTIONS_URL = BACKEND_URL + "/api/voximplant/functions/execute";
 const LLM_MODEL = "gpt-realtime-2.1-mini";

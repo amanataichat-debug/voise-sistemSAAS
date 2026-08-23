@@ -29,7 +29,7 @@ function Navbar({ onOpenModal }) {
         <a href="#providers" className="nav-link">{t('nav.tech')}</a>
         <a href="#pricing" className="nav-link">{t('nav.pricing')}</a>
         <a href="/static/prompts-wiki.html" className="nav-link" target="_blank" rel="noopener noreferrer">{t('nav.kb')}</a>
-        <a href="https://t.me/voicyfy_support" className="nav-link" target="_blank" rel="noopener noreferrer">{t('nav.support')}</a>
+        <a href="https://t.me/Aibotconnect" className="nav-link" target="_blank" rel="noopener noreferrer">{t('nav.support')}</a>
         <a href="/static/api-docs.html" className="nav-link">{t('nav.api')}</a>
       </div>
 

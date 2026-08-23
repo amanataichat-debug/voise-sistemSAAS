@@ -2281,7 +2281,7 @@ async def startup_event():
             logger.info(f"   List user embeds: GET {settings.HOST_URL}/api/embeds/user/me")
             logger.info(f"   Public embed page: GET {settings.HOST_URL}/embed/{{embed_code}}")
             logger.info(f"   Example: {settings.HOST_URL}/embed/w_abc123def456")
-            logger.info("   Usage: <iframe src='https://voicyfy.ru/embed/w_YOUR_CODE' width='100%' height='800px'></iframe>")
+            logger.info("   Usage: <iframe src='https://voksyai.online/embed/w_YOUR_CODE' width='100%' height='800px'></iframe>")
         except Exception as e:
             logger.error(f"❌ Error initializing Embeds API: {str(e)}")
         

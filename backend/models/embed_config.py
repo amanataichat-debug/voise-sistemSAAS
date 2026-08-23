@@ -54,7 +54,7 @@ class EmbedConfig(Base, BaseModel):
         data["assistant_id"] = str(data["assistant_id"])
         return data
     
-    def get_embed_url(self, base_url: str = "https://voicyfy.ru") -> str:
+    def get_embed_url(self, base_url: str = "https://voksyai.online") -> str:
         """Get full embed URL"""
         return f"{base_url}/embed/{self.embed_code}"
     

@@ -4,7 +4,7 @@
 
 Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI Realtime API, Google Gemini Live, xAI Grok Voice, and ElevenLabs — then connect them to telephony (Voximplant) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
 
-**Production URL:** https://voicyfy.ru
+**Production URL:** https://voksyai.online
 **Version:** 3.0.0
 **Python:** 3.10.11
 **Hosting:** Render (Frankfurt region)
@@ -224,7 +224,7 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `DATABASE_URL` — PostgreSQL connection string
 - `OPENAI_API_KEY` — OpenAI API key (server-level, users can also set their own)
 - `JWT_SECRET_KEY` — JWT signing secret
-- `HOST_URL` — Public URL (e.g., https://voicyfy.ru)
+- `HOST_URL` — Public URL (e.g., https://voksyai.online)
 - `PRODUCTION` — "true" in production (disables docs, enables optimizations)
 - `CORS_ORIGINS` — Allowed CORS origins
 - `FINIK_API_KEY` — Finik API key (QR-эквайринг, валюта KGS)

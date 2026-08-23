@@ -409,7 +409,7 @@
       </div>
       <div class="section-body">
         <p>Список агентов пользователя. Отсюда берётся <code>agent_id</code> (поле <code>id</code>) для остальных запросов.</p>
-        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/list</pre></div>
+        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." https://voksyai.online/api/agent/list</pre></div>
         <div class="code-block"><pre>{
   "total": 1,
   "max_agents": 3,
@@ -427,7 +427,7 @@
       </div>
       <div class="section-body">
         <p>Один агент со всеми настройками. Без <code>agent_id</code> возвращается первый (самый старый) агент. Перед редактированием всегда читайте текущее состояние этим запросом.</p>
-        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." "https://voicyfy.ru/api/agent/?agent_id=&lt;uuid&gt;"</pre></div>
+        <div class="code-block"><pre>curl -H "X-Api-Key: vfy_..." "https://voksyai.online/api/agent/?agent_id=&lt;uuid&gt;"</pre></div>
       </div>
     </div>
 
@@ -449,7 +449,7 @@
       </div>
       <div class="section-body">
         <p>Создание агента. Все 5 документов обязательны.</p>
-        <div class="code-block"><pre>curl -X POST https://voicyfy.ru/api/agent/create \
+        <div class="code-block"><pre>curl -X POST https://voksyai.online/api/agent/create \
   -H "X-Api-Key: vfy_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -512,7 +512,7 @@
             </tbody>
           </table>
         </div>
-        <div class="code-block"><pre>curl -X PUT "https://voicyfy.ru/api/agent/?agent_id=&lt;uuid&gt;" \
+        <div class="code-block"><pre>curl -X PUT "https://voksyai.online/api/agent/?agent_id=&lt;uuid&gt;" \
   -H "X-Api-Key: vfy_..." \
   -H "Content-Type: application/json" \
   -d '{

@@ -14,7 +14,7 @@ import sys
 
 # Finik-сервис не требует настроек при импорте, но config.py валидирует env —
 # подставляем минимум для локального запуска теста
-os.environ.setdefault("HOST_URL", "https://voicyfy.ru")
+os.environ.setdefault("HOST_URL", "https://voksyai.online")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@example.com/test")
 
 # Загружаем модуль напрямую по пути, чтобы не тянуть весь backend-пакет

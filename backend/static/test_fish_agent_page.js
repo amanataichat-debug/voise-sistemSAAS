@@ -143,7 +143,7 @@ function check(cond, msg, errors) {
     {
         agentsExist = false;
         const { page, errors } = await makePage(browser);
-        await page.goto("https://voicyfy.ru/static/agent.html", { waitUntil: "networkidle" });
+        await page.goto("https://voksyai.online/static/agent.html", { waitUntil: "networkidle" });
         await page.waitForTimeout(600);
 
         // Обучающая карусель показывается всегда — пропускаем её.
@@ -223,7 +223,7 @@ function check(cond, msg, errors) {
     {
         agentsExist = true;
         const { page, errors } = await makePage(browser);
-        await page.goto("https://voicyfy.ru/static/agent.html", { waitUntil: "networkidle" });
+        await page.goto("https://voksyai.online/static/agent.html", { waitUntil: "networkidle" });
         await page.waitForTimeout(900);
 
         const head = await page.textContent("body");

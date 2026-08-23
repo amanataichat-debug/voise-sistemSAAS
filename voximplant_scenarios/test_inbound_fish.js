@@ -22,7 +22,7 @@ const CONFIG = {
     fish_model: "s2.1-pro",
     fish_latency: "balanced",
     sample_rate: 8000,
-    fish_tts_url: "wss://voicyfy.ru/ws/fish/tts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    fish_tts_url: "wss://voksyai.online/ws/fish/tts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     functions: null,
 };
 

@@ -23,7 +23,7 @@ async def test_real_call():
     print("🚀 ТЕСТ С РЕАЛЬНЫМИ ДАННЫМИ VOXIMPLANT")
     print("="*70)
     
-    BASE_URL = "https://voicyfy.ru"
+    BASE_URL = "https://voksyai.online"
     ENDPOINT = f"{BASE_URL}/api/voximplant/start-outbound-call"
     
     print(f"\n📍 URL: {ENDPOINT}")

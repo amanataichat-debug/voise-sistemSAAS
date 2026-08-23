@@ -281,12 +281,12 @@ async def websocket_info():
         "usage": {
             "production": {
                 "url": "wss://your-domain.com/ws/{assistant_id}",
-                "example": "wss://voicyfy.ru/ws/84480767-76f3-491f-8c76-8181bdfe8c5a",
+                "example": "wss://voksyai.online/ws/84480767-76f3-491f-8c76-8181bdfe8c5a",
                 "description": "Replace {assistant_id} with your actual assistant ID"
             },
             "demo": {
                 "url": "wss://your-domain.com/ws/demo",
-                "example": "wss://voicyfy.ru/ws/demo",
+                "example": "wss://voksyai.online/ws/demo",
                 "description": "Public demo endpoint for testing"
             }
         },
@@ -351,9 +351,9 @@ async def websocket_info():
         },
         
         "support": {
-            "documentation": "https://docs.voicyfy.ru",
+            "documentation": "https://voksyai.online",
             "issues": "Report issues to support team",
-            "email": "support@voicyfy.ru"
+            "email": "voksyai@gmail.com"
         }
     }
 
@@ -422,16 +422,16 @@ USAGE EXAMPLES
 🏭 Production:
 --------------
 JavaScript:
-const ws = new WebSocket('wss://voicyfy.ru/ws/YOUR-ASSISTANT-ID');
+const ws = new WebSocket('wss://voksyai.online/ws/YOUR-ASSISTANT-ID');
 
 Python:
 import websockets
-async with websockets.connect('wss://voicyfy.ru/ws/YOUR-ASSISTANT-ID') as ws:
+async with websockets.connect('wss://voksyai.online/ws/YOUR-ASSISTANT-ID') as ws:
     # your code here
 
 🎮 Demo (No Auth):
 ------------------
-const wsDemo = new WebSocket('wss://voicyfy.ru/ws/demo');
+const wsDemo = new WebSocket('wss://voksyai.online/ws/demo');
 
 
 ROLLBACK PROCEDURE (Emergency Only)
@@ -455,5 +455,5 @@ SUPPORT
 For issues or questions:
 - Check /ws/status for current API status
 - Check /ws/info for detailed documentation
-- Contact: support@voicyfy.ru
+- Contact: voksyai@gmail.com
 """

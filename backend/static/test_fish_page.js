@@ -124,7 +124,7 @@ const API = {
     }
 
     // ── 1. Режим создания ──────────────────────────────────────────────────
-    await page.goto("https://voicyfy.ru/static/fish-agents.html?mode=create",
+    await page.goto("https://voksyai.online/static/fish-agents.html?mode=create",
                     { waitUntil: "networkidle" });
     await page.waitForTimeout(600);
 
@@ -197,7 +197,7 @@ const API = {
 
     // ── 3. Список агентов и режим редактирования ───────────────────────────
     errors.length = 0;
-    await page.goto("https://voicyfy.ru/static/fish-agents.html", { waitUntil: "networkidle" });
+    await page.goto("https://voksyai.online/static/fish-agents.html", { waitUntil: "networkidle" });
     await page.waitForTimeout(600);
     check(errors.length === 0, "ошибки JS в списке агентов:\n   " + errors.join("\n   "));
 
@@ -208,7 +208,7 @@ const API = {
     console.log("✅ карточка агента рендерится без undefined");
 
     errors.length = 0;
-    await page.goto("https://voicyfy.ru/static/fish-agents.html?mode=edit&id=" + AGENT.id,
+    await page.goto("https://voksyai.online/static/fish-agents.html?mode=edit&id=" + AGENT.id,
                     { waitUntil: "networkidle" });
     await page.waitForTimeout(600);
     check(errors.length === 0, "ошибки JS в режиме редактирования:\n   " + errors.join("\n   "));

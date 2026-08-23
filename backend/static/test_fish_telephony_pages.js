@@ -109,7 +109,7 @@ function check(cond, msg, errors) {
     // ── telephony.html ─────────────────────────────────────────────────────
     {
         const { page, errors } = await makePage(browser);
-        await page.goto("https://voicyfy.ru/static/telephony.html", { waitUntil: "networkidle" });
+        await page.goto("https://voksyai.online/static/telephony.html", { waitUntil: "networkidle" });
         await page.waitForTimeout(800);
 
         const opts = await page.$$eval("#bind-assistant-type option",
@@ -152,7 +152,7 @@ function check(cond, msg, errors) {
     // ── test_outbound-calls.html ───────────────────────────────────────────
     {
         const { page, errors } = await makePage(browser);
-        await page.goto("https://voicyfy.ru/static/test_outbound-calls.html",
+        await page.goto("https://voksyai.online/static/test_outbound-calls.html",
                         { waitUntil: "networkidle" });
         await page.waitForTimeout(800);
 

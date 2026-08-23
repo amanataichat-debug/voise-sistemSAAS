@@ -250,14 +250,14 @@ async def vox_gemini_websocket_endpoint(
       call_id: ID звонка в Voximplant (опционально)
     
     Voximplant script usage:
-      const ws = VoxEngine.createWebSocket("wss://voicyfy.ru/ws/vox-gemini/{assistant_id}?caller=..." );
+      const ws = VoxEngine.createWebSocket("wss://voksyai.online/ws/vox-gemini/{assistant_id}?caller=..." );
       ws.addEventListener(WebSocketEvents.OPEN, function() {
           call.sendMediaTo(ws, {encoding: "PCM16"});
           ws.sendMediaTo(call);
       });
     
     Example:
-        wss://voicyfy.ru/ws/vox-gemini/550e8400-e29b-41d4-a716-446655440000?caller=+79001234567
+        wss://voksyai.online/ws/vox-gemini/550e8400-e29b-41d4-a716-446655440000?caller=+79001234567
     """
     try:
         logger.info(f"[VOX-GEMINI-WS] New Voximplant bridge connection")

@@ -902,7 +902,7 @@
       <div class="endpoint-header" id="public-call">
         <div class="endpoint-method-url">
           <span class="method-tag post">POST</span>
-          <code class="endpoint-url">https://voicyfy.ru/api/telephony/public/call</code>
+          <code class="endpoint-url">https://voksyai.online/api/telephony/public/call</code>
         </div>
         <h1 class="endpoint-title">Запуск исходящего звонка</h1>
         <p class="endpoint-description">
@@ -1060,7 +1060,7 @@
               </button>
             </div>
             <div class="code-content">
-              <pre id="curl-example">curl -X POST "https://voicyfy.ru/api/telephony/public/call" \
+              <pre id="curl-example">curl -X POST "https://voksyai.online/api/telephony/public/call" \
   -H "Content-Type: application/json" \
   -d '{
     "assistant_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -1272,7 +1272,7 @@
       <div class="endpoint-header" id="call-lookup">
         <div class="endpoint-method-url">
           <span class="method-tag get">GET</span>
-          <code class="endpoint-url">https://voicyfy.ru/api/telephony/call/{session_history_id}</code>
+          <code class="endpoint-url">https://voksyai.online/api/telephony/call/{session_history_id}</code>
         </div>
         <h1 class="endpoint-title">Получить данные звонка</h1>
         <p class="endpoint-description">
@@ -1432,7 +1432,7 @@
               </button>
             </div>
             <div class="code-content">
-              <pre id="curl-example-get">curl "https://voicyfy.ru/api/telephony/call/4382022730"</pre>
+              <pre id="curl-example-get">curl "https://voksyai.online/api/telephony/call/4382022730"</pre>
             </div>
           </div>
         </div>
@@ -2008,7 +2008,7 @@ app.listen(3000);</pre>
       const startTime = performance.now();
 
       try {
-        const response = await fetch('https://voicyfy.ru/api/telephony/public/call', {
+        const response = await fetch('https://voksyai.online/api/telephony/public/call', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody)
@@ -2067,7 +2067,7 @@ app.listen(3000);</pre>
       const startTime = performance.now();
 
       try {
-        const response = await fetch(`https://voicyfy.ru/api/telephony/call/${encodeURIComponent(sessionId)}`);
+        const response = await fetch(`https://voksyai.online/api/telephony/call/${encodeURIComponent(sessionId)}`);
 
         const duration = Math.round(performance.now() - startTime);
         const data = await response.json();

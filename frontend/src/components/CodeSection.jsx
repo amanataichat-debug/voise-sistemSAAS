@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
 
-// Демо-виджет грузится с чужого прода (voicyfy.ru) — скрыт за флагом.
+// Демо-виджет грузится с чужого прода (voksyai.online) — скрыт за флагом.
 // Код не удалять: включим обратно, когда появится собственный виджет.
 const SHOW_WIDGET_DEMO = false;
 
@@ -22,9 +22,9 @@ function CodeSection() {
             observer.disconnect();
 
             const script = document.createElement('script');
-            script.src = 'https://voicyfy.ru/static/gemini-widget.js';
+            script.src = 'https://voksyai.online/static/gemini-widget.js';
             script.dataset.assistantId = '991b2b45-b52b-43be-9e59-81eaf7ea980a';
-            script.dataset.server = 'https://voicyfy.ru';
+            script.dataset.server = 'https://voksyai.online';
             script.dataset.position = 'bottom-right';
             script.async = true;
             document.head.appendChild(script);

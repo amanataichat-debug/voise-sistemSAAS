@@ -150,7 +150,7 @@ class EmailService:
                         ИП Торобеков Нагызбек Чыныбекович
                     </p>
                     <p style="color: #cbd5e1; font-size: 12px; margin: 5px 0 0 0;">
-                        <a href="https://t.me/voicyfy" style="color: #2563eb; text-decoration: none;">Telegram</a> | 
+                        <a href="https://t.me/Aibotconnect" style="color: #2563eb; text-decoration: none;">Telegram</a> | 
                         <a href="mailto:voksyai@gmail.com" style="color: #2563eb; text-decoration: none;">Поддержка</a>
                     </p>
                 </div>

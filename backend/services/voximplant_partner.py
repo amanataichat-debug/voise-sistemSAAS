@@ -85,7 +85,7 @@ class VoximplantPartnerService:
     BILLING_URL = "https://billing.voximplant.com/login.php"
     
     # ✅ v1.6: URL для webhook
-    WEBHOOK_URL = "https://voicyfy.ru/api/telephony/webhook/verification-status"
+    WEBHOOK_URL = "https://voksyai.online/api/telephony/webhook/verification-status"
     
     # ✅ v3.0: Типы сценариев для outbound
     OUTBOUND_SCENARIO_TYPES = ["outbound_openai", "outbound_gemini", "outbound_cartesia", "outbound_yandex", "outbound_crm", "outbound_cascade", "outbound_fish"]
@@ -279,7 +279,7 @@ class VoximplantPartnerService:
             local_part = user_email.split("@")[0]
             return f"{local_part}+vox{timestamp}@gmail.com"
         
-        return f"vox-{user_id[:8]}-{timestamp}@voicyfy.ru"
+        return f"vox-{user_id[:8]}-{timestamp}@voksyai.online"
     
     # =========================================================================
     # ВЕРИФИКАЦИЯ
@@ -461,7 +461,7 @@ class VoximplantPartnerService:
             "api_key": child_api_key,
             "callback_url": callback_url,
             "account_document_status_updated": "true",
-            "incoming_sms_notification_url": "https://voicyfy.ru/api/telephony/webhook/sms",
+            "incoming_sms_notification_url": "https://voksyai.online/api/telephony/webhook/sms",
         }
         
         logger.info(f"[VOXIMPLANT] Setting callback URL for account {child_account_id}: {callback_url}")

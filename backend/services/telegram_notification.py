@@ -20,7 +20,7 @@
             {"role": "assistant", "text": "Здравствуйте!", "ts": 1737267554000},
             {"role": "user", "text": "Привет", "ts": 1737267558000}
         ],
-        record_url="https://r2.voicyfy.ru/recordings/..."
+        record_url="https://r2.voksyai.online/recordings/..."
     )
 
 ЛИМИТЫ TELEGRAM:

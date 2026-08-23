@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     HOST_URL: Optional[str] = os.getenv("HOST_URL")
 
     # ✅ v2.2: Публичный базовый URL (для Telegram webhook и т.п.).
-    # По умолчанию совпадает с HOST_URL. Вид: https://voicyfy.ru
+    # По умолчанию совпадает с HOST_URL. Вид: https://voksyai.online
     PUBLIC_BASE_URL: Optional[str] = os.getenv("PUBLIC_BASE_URL") or os.getenv("HOST_URL")
 
     # ✅ Базовый URL для регистрации Telegram-webhook напрямую на Render,

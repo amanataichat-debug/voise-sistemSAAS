@@ -30,8 +30,8 @@ function Footer() {
           </div>
           <div className="foot-col">
             <h5>{t('foot.contacts')}</h5>
-            <a href="https://t.me/voicyfy" target="_blank" rel="noopener noreferrer">{t('foot.tg')}</a>
-            <a href="https://t.me/voicyfy_support">{t('foot.support')}</a>
+            <a href="https://t.me/Aibotconnect" target="_blank" rel="noopener noreferrer">{t('foot.tg')}</a>
+            <a href="https://t.me/Aibotconnect">{t('foot.support')}</a>
           </div>
         </div>
         <div className="foot-bottom">

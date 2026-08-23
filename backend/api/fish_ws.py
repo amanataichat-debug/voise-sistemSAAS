@@ -7,7 +7,7 @@ WebSocket router для озвучки Fish Audio.
 сюда сценарий шлёт готовый текст реплики и получает обратно PCM-кадры.
 
 Voximplant VoxEngine:
-    const tts = VoxEngine.createWebSocket("wss://voicyfy.ru/ws/fish/tts/" + assistantId);
+    const tts = VoxEngine.createWebSocket("wss://voksyai.online/ws/fish/tts/" + assistantId);
     tts.addEventListener(WebSocketEvents.OPEN, () => tts.sendMediaTo(call));
     tts.send(JSON.stringify({ event: "text", text: "Здравствуйте!" }));
     tts.send(JSON.stringify({ event: "flush" }));

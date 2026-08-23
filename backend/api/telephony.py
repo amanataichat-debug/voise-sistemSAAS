@@ -6449,7 +6449,7 @@ async def admin_setup_sms_webhooks(
                 results["details"].append({
                     "account_id": str(account.vox_account_id),
                     "status": "updated",
-                    "sms_webhook": "https://voicyfy.ru/api/telephony/webhook/sms",
+                    "sms_webhook": "https://voksyai.online/api/telephony/webhook/sms",
                 })
             else:
                 results["failed"] += 1

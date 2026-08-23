@@ -126,9 +126,9 @@ VoxEngine.addEventListener(AppEvents.CallAlerting, async function(e) {
     var ASSISTANT_ID = null;
     var functionNameToIdMap = {};
 
-    var CONFIG_URL = "https://voicyfy.ru/api/telephony/config?phone=" + called_number.replace(/\D/g, '');
-    var FUNCTIONS_URL = "https://voicyfy.ru/api/voximplant/functions/execute";
-    var LOG_URL = "https://voicyfy.ru/api/voximplant/log";
+    var CONFIG_URL = "https://voksyai.online/api/telephony/config?phone=" + called_number.replace(/\D/g, '');
+    var FUNCTIONS_URL = "https://voksyai.online/api/voximplant/functions/execute";
+    var LOG_URL = "https://voksyai.online/api/voximplant/log";
 
     Logger.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     Logger.write("📞 INBOUND CALL (Fish v1.0)");

@@ -102,7 +102,7 @@ class OpenRouterClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://voicyfy.ru",
+            "HTTP-Referer": "https://voksyai.online",
             "X-Title": "Voksy AI Agent",
         }
 
@@ -158,7 +158,7 @@ class OpenRouterClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://voicyfy.ru",
+            "HTTP-Referer": "https://voksyai.online",
             "X-Title": "Voksy AI Agent",
         }
 

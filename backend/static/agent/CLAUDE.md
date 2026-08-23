@@ -17,7 +17,7 @@ Fish — половинный каскад на ключах пользоват�
 Эта папка (`backend/static/agent/`) содержит результат разбиения исходного
 монолитного `agent.html` (~3700 строк) на стили + доменные скрипты.
 
-- **Прод-URL:** `https://voicyfy.ru/static/agent.html`
+- **Прод-URL:** `https://voksyai.online/static/agent.html`
 - **Как раздаётся:** статикой через `app.mount("/static", StaticFiles(...))` в `app.py`.
   Отдельного backend-роута для самой страницы нет — это чистый фронтенд.
 

@@ -156,9 +156,9 @@ VoxEngine.addEventListener(AppEvents.Started, async function(e) {
     var GREETING = null;
     var functionNameToIdMap = {};
 
-    var CONFIG_URL    = "https://voicyfy.ru/api/telephony/outbound-config?assistant_id=" + ASSISTANT_ID;
-    var FUNCTIONS_URL = "https://voicyfy.ru/api/voximplant/functions/execute";
-    var LOG_URL       = "https://voicyfy.ru/api/voximplant/log";
+    var CONFIG_URL    = "https://voksyai.online/api/telephony/outbound-config?assistant_id=" + ASSISTANT_ID;
+    var FUNCTIONS_URL = "https://voksyai.online/api/voximplant/functions/execute";
+    var LOG_URL       = "https://voksyai.online/api/voximplant/log";
 
     Logger.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     Logger.write("📞 OUTBOUND CALL (Fish v1.1)");

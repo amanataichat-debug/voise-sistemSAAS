@@ -1,8 +1,8 @@
 # Voksy AI Agent API — создание и настройка автономных агентов
 
 API для программного управления автономными агентами обзвона Voksy AI
-(страница `https://voicyfy.ru/static/agent.html`) и каскад-ассистентами
-(страница `https://voicyfy.ru/static/cascade.html`). Предназначено для
+(страница `https://voksyai.online/static/agent.html`) и каскад-ассистентами
+(страница `https://voksyai.online/static/cascade.html`). Предназначено для
 интеграций вроде Claude Code: агент или ассистент создаётся и настраивается
 HTTP-запросами.
 
@@ -11,7 +11,7 @@ HTTP-запросами.
 писать профессиональные промпты и отвечать пользователям на вопросы «а умеет
 ли агент X» без домыслов.
 
-**Base URL:** `https://voicyfy.ru`
+**Base URL:** `https://voksyai.online`
 
 ---
 
@@ -24,7 +24,7 @@ X-Api-Key: vfy_...
 ```
 
 Ключ генерируется в кабинете: **Настройки → API-ключ для интеграций**
-(`https://voicyfy.ru/static/settings.html`). Ключ показывается один раз при
+(`https://voksyai.online/static/settings.html`). Ключ показывается один раз при
 генерации; при перевыпуске старый ключ мгновенно перестаёт работать.
 
 Ошибки авторизации: `401 {"detail": "invalid_api_key"}`.
@@ -344,7 +344,7 @@ PostCall и чата — агент «помнит» клиента между �
 ### 1. GET /api/agent/list — список агентов
 
 ```bash
-curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/list
+curl -H "X-Api-Key: vfy_..." https://voksyai.online/api/agent/list
 ```
 
 Ответ:
@@ -364,7 +364,7 @@ curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/list
 ### 2. GET /api/agent/?agent_id={id} — один агент
 
 ```bash
-curl -H "X-Api-Key: vfy_..." "https://voicyfy.ru/api/agent/?agent_id=<uuid>"
+curl -H "X-Api-Key: vfy_..." "https://voksyai.online/api/agent/?agent_id=<uuid>"
 ```
 
 Без `agent_id` возвращается первый (самый старый) агент пользователя.
@@ -373,7 +373,7 @@ curl -H "X-Api-Key: vfy_..." "https://voicyfy.ru/api/agent/?agent_id=<uuid>"
 ### 3. GET /api/agent/orchestrator-models — доступные модели оркестратора
 
 ```bash
-curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/orchestrator-models
+curl -H "X-Api-Key: vfy_..." https://voksyai.online/api/agent/orchestrator-models
 ```
 
 Ответ: `{"models": [{"slug": "...", "name": "...", "description": "..."}], "default": "..."}`.
@@ -383,7 +383,7 @@ curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/agent/orchestrator-models
 ### 4. POST /api/agent/create — создать агента
 
 ```bash
-curl -X POST https://voicyfy.ru/api/agent/create \
+curl -X POST https://voksyai.online/api/agent/create \
   -H "X-Api-Key: vfy_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -436,7 +436,7 @@ curl -X POST https://voicyfy.ru/api/agent/create \
 Передавай **только изменяемые поля** — остальные не трогаются:
 
 ```bash
-curl -X PUT "https://voicyfy.ru/api/agent/?agent_id=<uuid>" \
+curl -X PUT "https://voksyai.online/api/agent/?agent_id=<uuid>" \
   -H "X-Api-Key: vfy_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -506,13 +506,13 @@ profi — 10) наравне с OpenAI/Gemini/Cartesia/Yandex.
 ### 6. GET /api/grok-assistants/cascade — список
 
 ```bash
-curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/grok-assistants/cascade
+curl -H "X-Api-Key: vfy_..." https://voksyai.online/api/grok-assistants/cascade
 ```
 
 ### 7. POST /api/grok-assistants/cascade — создать
 
 ```bash
-curl -X POST https://voicyfy.ru/api/grok-assistants/cascade \
+curl -X POST https://voksyai.online/api/grok-assistants/cascade \
   -H "X-Api-Key: vfy_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -546,15 +546,15 @@ curl -X POST https://voicyfy.ru/api/grok-assistants/cascade \
 
 ```bash
 # прочитать
-curl -H "X-Api-Key: vfy_..." https://voicyfy.ru/api/grok-assistants/cascade/<uuid>
+curl -H "X-Api-Key: vfy_..." https://voksyai.online/api/grok-assistants/cascade/<uuid>
 
 # изменить (только передаваемые поля)
-curl -X PUT https://voicyfy.ru/api/grok-assistants/cascade/<uuid> \
+curl -X PUT https://voksyai.online/api/grok-assistants/cascade/<uuid> \
   -H "X-Api-Key: vfy_..." -H "Content-Type: application/json" \
   -d '{"tts_voice": "Sergey", "greeting_message": "АкваЛето, слушаю вас."}'
 
 # удалить
-curl -X DELETE https://voicyfy.ru/api/grok-assistants/cascade/<uuid> \
+curl -X DELETE https://voksyai.online/api/grok-assistants/cascade/<uuid> \
   -H "X-Api-Key: vfy_..."
 ```
 
@@ -564,7 +564,7 @@ curl -X DELETE https://voicyfy.ru/api/grok-assistants/cascade/<uuid> \
 
 ```bash
 curl -H "X-Api-Key: vfy_..." \
-  https://voicyfy.ru/api/grok-assistants/cascade/credits/balance
+  https://voksyai.online/api/grok-assistants/cascade/credits/balance
 ```
 
 Возвращает текущий баланс кредитов каскада. Полезно проверить перед тем, как
@@ -575,7 +575,7 @@ curl -H "X-Api-Key: vfy_..." \
 
 Привязка ассистента к телефонному номеру, запуск исходящих звонков, покупка
 кредитов и номеров по API-ключу **недоступны** — это делает владелец аккаунта
-на `https://voicyfy.ru/static/cascade.html` и странице телефонии. По ключу
+на `https://voksyai.online/static/cascade.html` и странице телефонии. По ключу
 доступны только создание и настройка самих ассистентов.
 
 ---

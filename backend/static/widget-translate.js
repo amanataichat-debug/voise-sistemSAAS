@@ -16,8 +16,8 @@
  *  - Auto-reconnect при разрыве соединения
  *
  * Подключение:
- *  <script src="https://voicyfy.ru/static/widget-translate.js"
- *          data-assistant-id="{id}" data-server="https://voicyfy.ru"></script>
+ *  <script src="https://voksyai.online/static/widget-translate.js"
+ *          data-assistant-id="{id}" data-server="https://voksyai.online"></script>
  */
 (function () {
     'use strict';

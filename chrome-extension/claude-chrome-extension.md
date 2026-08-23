@@ -19,7 +19,7 @@ Chrome-расширение (Manifest V3), дающее доступ к голо
 - Использует: backend API (`/api/auth`, `/api/assistants`) и голосовой WebSocket (`/ws/{assistant_id}`) — фактически тот же контракт, что у web-виджета (`backend/static/widget.js`).
 
 ## На что обратить внимание
-- **Хардкод хоста.** `popup.js` и `sidepanel.js` содержат прод-URL `https://realtime-saas.onrender.com` (старый домен Render), а `manifest.json` `host_permissions` — тот же. Это НЕ `voicyfy.ru`; при смене бэкенда нужно править во всех трёх местах. Возможно легаси-домен.
+- **Хардкод хоста.** `popup.js` и `sidepanel.js` содержат прод-URL `https://realtime-saas.onrender.com` (старый домен Render), а `manifest.json` `host_permissions` — тот же. Это НЕ `voksyai.online`; при смене бэкенда нужно править во всех трёх местах. Возможно легаси-домен.
 - **Протокол WS** должен совпадать с серверным голосовым хендлером (`/ws/{assistant_id}`) — при изменениях в `backend/websockets/` проверяйте совместимость расширения.
 - Логика side panel помечена комментарием «копируем из widget.js» — источник правды по аудио/WS — web-виджет `backend/static/widget.js`.
 - Токен хранится в `chrome.storage.local` — отдельно от localStorage веб-приложения.

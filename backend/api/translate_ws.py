@@ -32,7 +32,7 @@ async def translate_websocket_endpoint(
     и транскрипты исходника/перевода.
 
     Example:
-        wss://voicyfy.ru/ws/translate/550e8400-e29b-41d4-a716-446655440000
+        wss://voksyai.online/ws/translate/550e8400-e29b-41d4-a716-446655440000
     """
     try:
         logger.info(f"[TRANSLATE-WS] New connection: assistant_id={assistant_id}")

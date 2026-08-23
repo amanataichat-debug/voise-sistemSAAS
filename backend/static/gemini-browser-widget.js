@@ -1325,7 +1325,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
                     </div>
                     
                     <div class="bw-branding">
-                        <a href="https://voicyfy.ru/" target="_blank">
+                        <a href="https://voksyai.online/" target="_blank">
                             <img src="https://i.ibb.co/ccw6sjdk/photo-2025-06-03-05-04-02.jpg" alt="Voksy AI">
                         </a>
                     </div>
