@@ -348,7 +348,12 @@ class TaskScheduler:
             call_session_id = None
             call_success = False
 
-            if child_account and child_account.can_make_outbound_calls:
+            sip_number = self._sip_number_for(user, task, assistant_type, db)
+            if sip_number is not None:
+                call_session_id, call_success = await self._agent_call_via_sip_gateway(
+                    task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
+                )
+            elif child_account and child_account.can_make_outbound_calls:
                 call_session_id, call_success = await self._agent_call_via_partner(
                     task, agent_contact, child_account, assistant_id, assistant_name, assistant_type, db
                 )
@@ -489,6 +494,85 @@ class TaskScheduler:
                 db.commit()
             except Exception:
                 pass
+
+    # =========================================================================
+    # ✅ Собственный SIP-шлюз (infra/sip-gateway): исходящие без Voximplant
+    # =========================================================================
+
+    def _sip_number_for(self, user, task, assistant_type: str, db):
+        """
+        Номер оператора для исходящего через SIP-шлюз, либо None (тогда Voximplant).
+        Условия: у пользователя есть активный номер с разрешёнными исходящими и
+        тип ассистента поддерживается телефонным хендлером (openai, gemini).
+        """
+        try:
+            from backend.models.sip_gateway import SIP_SUPPORTED_ASSISTANT_TYPES
+            from backend.services.sip_gateway_service import SipGatewayService
+            if assistant_type not in SIP_SUPPORTED_ASSISTANT_TYPES:
+                return None
+            return SipGatewayService.outbound_number_for_user(db, user.id, getattr(task, "caller_id", None))
+        except Exception as e:
+            logger.warning(f"[TASK-SCHEDULER] SIP gateway lookup failed: {e}")
+            return None
+
+    def _sip_call_metadata(self, task, contact_name: str) -> dict:
+        return {
+            k: v for k, v in {
+                "contact_name": contact_name or "",
+                "task_title": task.title or "",
+                "task_description": task.description or "",
+                "custom_greeting": task.custom_greeting or "",
+                "source": "task_scheduler",
+            }.items() if v
+        }
+
+    async def _agent_call_via_sip_gateway(
+        self, task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
+    ) -> Tuple[Optional[str], bool]:
+        """Поставить исходящий агентский звонок в очередь SIP-шлюза. Итог звонка проставит событие моста."""
+        from backend.services.sip_gateway_service import SipGatewayService
+        try:
+            call = SipGatewayService.queue_outbound_call(
+                db,
+                user_id=task.user_id,
+                to_number=agent_contact.phone,
+                caller_number=sip_number,
+                assistant_type=assistant_type,
+                assistant_id=assistant_id,
+                metadata=self._sip_call_metadata(task, agent_contact.name or ""),
+                task_id=task.id,
+            )
+            logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {agent_contact.phone} ({assistant_name}), call {call.id}")
+            return str(call.id), True
+        except Exception as e:
+            logger.error(f"[TASK-SCHEDULER] ❌ SIP gateway queue failed: {e}", exc_info=True)
+            task.call_result = f"SIP gateway error: {e}"
+            return None, False
+
+    async def _execute_via_sip_gateway(self, task, contact, sip_number, assistant_id, assistant_type, db) -> None:
+        """Обычная (не агентская) задача через SIP-шлюз. Статус задачи доводит событие моста."""
+        from backend.services.sip_gateway_service import SipGatewayService
+        try:
+            call = SipGatewayService.queue_outbound_call(
+                db,
+                user_id=task.user_id,
+                to_number=contact.phone,
+                caller_number=sip_number,
+                assistant_type=assistant_type,
+                assistant_id=assistant_id,
+                metadata=self._sip_call_metadata(task, getattr(contact, "name", "") or ""),
+                task_id=task.id,
+            )
+            task.call_session_id = str(call.id)
+            task.status = TaskStatus.COMPLETED
+            task.call_completed_at = datetime.utcnow()
+            task.call_result = f"Call queued on SIP gateway. Session: {call.id}"
+            db.commit()
+        except Exception as e:
+            logger.error(f"[TASK-SCHEDULER] ❌ SIP gateway queue failed: {e}", exc_info=True)
+            task.status = TaskStatus.FAILED
+            task.call_result = f"SIP gateway error: {e}"
+            db.commit()
 
     async def _agent_call_via_partner(
         self, task, agent_contact, child_account, assistant_id, assistant_name, assistant_type, db
@@ -674,7 +758,19 @@ class TaskScheduler:
                 child_account = user.voximplant_child_account
             
             # Определяем какую интеграцию использовать
-            if child_account and child_account.can_make_outbound_calls:
+            sip_number = self._sip_number_for(user, task, assistant_type, db)
+            if sip_number is not None:
+                # ✅ Собственный SIP-шлюз (Asterisk + мост)
+                logger.info(f"[TASK-SCHEDULER] 📞 Using SIP GATEWAY integration (number {sip_number.phone_number})")
+                await self._execute_via_sip_gateway(
+                    task=task,
+                    contact=contact,
+                    sip_number=sip_number,
+                    assistant_id=assistant_id,
+                    assistant_type=assistant_type,
+                    db=db
+                )
+            elif child_account and child_account.can_make_outbound_calls:
                 # ✅ НОВАЯ партнёрская интеграция
                 logger.info(f"[TASK-SCHEDULER] 🆕 Using PARTNER integration (VoximplantChildAccount)")
                 await self._execute_via_partner_api(

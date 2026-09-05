@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     # Создай его вручную в Voximplant, настрой приложение и сценарии,
     # затем укажи здесь ID для автоматического клонирования
     VOXIMPLANT_TEMPLATE_ACCOUNT_ID: Optional[str] = os.getenv("VOXIMPLANT_TEMPLATE_ACCOUNT_ID")
+
+    # =========================================================================
+    # Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
+    # =========================================================================
+    # Токен, по которому мост на VPS подключается к /ws/sip-gateway/control и /ws/sip/{call_id}.
+    # Должен совпадать с GATEWAY_TOKEN из /etc/voksy-bridge/bridge.env на шлюзе.
+    SIP_GATEWAY_TOKEN: Optional[str] = os.getenv("SIP_GATEWAY_TOKEN")
+    # Имя шлюза по умолчанию для новых номеров/звонков (gateway_id моста)
+    SIP_GATEWAY_DEFAULT_ID: str = os.getenv("SIP_GATEWAY_DEFAULT_ID", "sip-gw-1")
     
     # =========================================================================
     # ✅ НОВОЕ v3.3: Cloudflare R2 Storage для записей звонков

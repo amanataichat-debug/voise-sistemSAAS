@@ -130,10 +130,34 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 - OpenAI Realtime принимает `g711_alaw` напрямую (audioop `lin2alaw`) либо PCM16 24 кГц после ресемплинга;
 - Gemini Live: вход PCM16 16 кГц (ресемплинг 8→16), выход 24 кГц (ресемплинг 24→8).
 
+## Бэкенд
+
+Реализовано в репозитории:
+
+| Файл | Что |
+|---|---|
+| `backend/api/sip_gateway.py` | `/ws/sip-gateway/control`, `/ws/sip/{call_id}`, HTTP `/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways` |
+| `backend/websockets/sip_media_adapter.py` | Адаптер: бинарный PCM16 8 кГц моста ⇄ JSON-протокол браузерных хендлеров OpenAI/Gemini, ресемплинг, перебивание, hangup через функцию `hangup_call` |
+| `backend/services/sip_gateway_service.py` | Очередь исходящих (FOR UPDATE SKIP LOCKED), применение событий моста к `sip_calls`/`tasks`/`agent_calls`, простановка номера в `conversations` |
+| `backend/models/sip_gateway.py` | Таблицы `sip_phone_numbers`, `sip_calls` |
+| `backend/core/task_scheduler.py` | Если у пользователя есть номер оператора и ассистент OpenAI/Gemini — исходящий идёт через шлюз, иначе Voximplant как раньше |
+
+Переменные окружения бэкенда (Render): `SIP_GATEWAY_TOKEN` (= `GATEWAY_TOKEN` шлюза),
+опционально `SIP_GATEWAY_DEFAULT_ID` (по умолчанию `sip-gw-1`).
+
+Добавить номер оператора (админ):
+
+```bash
+curl -X POST https://voksyai.online/api/sip/numbers -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number":"996705579977","label":"O! основной","assistant_type":"openai","assistant_id":"<uuid ассистента>"}'
+```
+
+Тестовый исходящий: `POST /api/sip/calls` с `{"to":"996555123456"}`.
+
 ## Что ещё не сделано
 
-- Бэкенд: эндпоинты `/ws/sip/{call_id}` и `/ws/sip-gateway/control`, таблица
-  «номер → ассистент», переключение планировщика исходящих на шлюз.
+- Страница в интерфейсе для номеров и журнала звонков (сейчас только API).
 - Запись разговоров (MixMonitor в dialplan + загрузка в R2).
 - После запуска с оператором: удалить правило 5080 в файрволе и секцию `test` в `pjsip.conf`.
 - Второй шлюз для резервирования.
