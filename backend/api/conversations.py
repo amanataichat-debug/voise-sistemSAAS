@@ -20,7 +20,7 @@ Version: 3.6 - Yandex assistants + call log/record links in session cards
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, case, or_, text
+from sqlalchemy import func, desc, case, or_, text, select, union_all, null, cast, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List
 from datetime import datetime
@@ -45,6 +45,103 @@ logger = get_logger(__name__)
 
 # Create router
 router = APIRouter()
+
+
+class _MessageView:
+    """
+    Единый вид записи диалога для таблиц conversations и gemini_conversations.
+    У gemini_conversations нет client_info / duration_seconds / call_cost /
+    call_direction — здесь они None, чтобы общий код деталей и удаления не менялся.
+    """
+
+    def __init__(self, row):
+        self.id = row.id
+        self.assistant_id = row.assistant_id
+        self.session_id = row.session_id
+        self.user_message = row.user_message
+        self.assistant_message = row.assistant_message
+        self.caller_number = row.caller_number
+        self.tokens_used = row.tokens_used
+        self.created_at = row.created_at
+        self.client_info = getattr(row, "client_info", None)
+        self.duration_seconds = getattr(row, "duration_seconds", None)
+        self.call_cost = getattr(row, "call_cost", None)
+        self.call_direction = getattr(row, "call_direction", None)
+        self._row = row  # ORM-запись, если нужно что-то дописать и закоммитить
+
+
+def _find_session_record(db: Session, conversation_id: str):
+    """
+    Найти запись сессии по session_id или id сообщения: сначала в conversations,
+    затем в gemini_conversations. Возвращает (record, model) или (None, None).
+    """
+    for model in (Conversation, GeminiConversation):
+        record = db.query(model).filter(model.session_id == conversation_id).first()
+        if not record:
+            try:
+                conv_uuid = UUID(conversation_id)
+                record = db.query(model).filter(model.id == conv_uuid).first()
+            except ValueError:
+                record = None
+        if record:
+            return record, model
+    return None, None
+
+
+def _preview_sql(table_name: str):
+    return text(f"""
+        SELECT DISTINCT ON (session_id)
+            session_id,
+            COALESCE(
+                NULLIF(
+                    CASE
+                        WHEN LOWER(TRIM(user_message)) IN ('[no user input]', '[no_user_input]', '[system]', '[silence]', '[timeout]')
+                        THEN NULL
+                        ELSE user_message
+                    END,
+                    ''
+                ),
+                NULLIF(assistant_message, '')
+            ) as preview
+        FROM {table_name}
+        WHERE session_id = ANY(:session_ids)
+        ORDER BY session_id, created_at ASC
+    """)
+
+
+def _sessions_select(model, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed):
+    """
+    Группировка сообщений в сессии для одной таблицы. Набор колонок одинаковый для
+    conversations и gemini_conversations, чтобы результаты можно было объединить UNION ALL.
+    """
+    rich = model is Conversation
+    created = model.created_at if rich else cast(model.created_at, DateTime(timezone=True))
+    q = (
+        select(
+            model.session_id.label("session_id"),
+            model.assistant_id.label("assistant_id"),
+            func.max(model.caller_number).label("caller_number"),
+            func.count(model.id).label("messages_count"),
+            func.min(created).label("created_at"),
+            func.max(created).label("updated_at"),
+            func.sum(model.tokens_used).label("total_tokens"),
+            (func.sum(model.duration_seconds) if rich else null()).label("total_duration"),
+            (func.sum(model.call_cost) if rich else null()).label("total_cost"),
+            (func.max(model.client_info.op("->>")("record_url")) if rich else null()).label("record_url"),
+            (func.max(model.client_info.op("->>")("log_url")) if rich else null()).label("log_url"),
+        )
+        .where(model.assistant_id.in_(user_assistant_ids))
+        .group_by(model.session_id, model.assistant_id)
+    )
+    if assistant_uuid:
+        q = q.where(model.assistant_id == assistant_uuid)
+    if caller_number:
+        q = q.having(func.max(model.caller_number) == caller_number)
+    if date_from_parsed:
+        q = q.having(func.min(created) >= date_from_parsed)
+    if date_to_parsed:
+        q = q.having(func.max(created) <= date_to_parsed)
+    return q
 
 
 # =============================================================================
@@ -403,37 +500,13 @@ async def get_conversation_sessions(
         fish_id_set = {str(f.id) for f in fish_ids}
 
         # =============================================================================
-        # 🆕 v3.5: Основной запрос БЕЗ preview (preview загружаем отдельно)
+        # 🆕 v3.6: Сессии из conversations (OpenAI и др.) + gemini_conversations одним
+        # UNION ALL — честная сортировка и пагинация по обеим таблицам.
         # =============================================================================
-        query = (
-            db.query(
-                Conversation.session_id,
-                Conversation.assistant_id,
-                func.max(Conversation.caller_number).label('caller_number'),
-                func.count(Conversation.id).label('messages_count'),
-                func.min(Conversation.created_at).label('created_at'),
-                func.max(Conversation.created_at).label('updated_at'),
-                func.sum(Conversation.tokens_used).label('total_tokens'),
-                func.sum(Conversation.duration_seconds).label('total_duration'),
-                func.sum(Conversation.call_cost).label('total_cost'),
-                # Ссылки на запись и лог звонка из client_info (есть только у телефонии)
-                func.max(Conversation.client_info.op('->>')('record_url')).label('record_url'),
-                func.max(Conversation.client_info.op('->>')('log_url')).label('log_url'),
-            )
-            .group_by(
-                Conversation.session_id,
-                Conversation.assistant_id,
-            )
-        )
-        
-        # Фильтр по пользователю (OpenAI + Gemini)
-        query = query.filter(Conversation.assistant_id.in_(user_assistant_ids))
-        
-        # Фильтр по конкретному assistant_id
+        assistant_uuid = None
         if assistant_id:
             try:
                 assistant_uuid = UUID(assistant_id)
-                query = query.filter(Conversation.assistant_id == assistant_uuid)
             except ValueError:
                 logger.warning(f"Invalid assistant_id format: {assistant_id}")
                 return {
@@ -442,30 +515,23 @@ async def get_conversation_sessions(
                     "page": 0,
                     "page_size": limit
                 }
-        
-        # Фильтр по номеру телефона
-        if caller_number:
-            query = query.having(func.max(Conversation.caller_number) == caller_number)
-        
-        # Фильтр по датам
-        if date_from_parsed:
-            query = query.having(func.min(Conversation.created_at) >= date_from_parsed)
-        if date_to_parsed:
-            query = query.having(func.max(Conversation.created_at) <= date_to_parsed)
-        
+
+        union_query = union_all(
+            _sessions_select(Conversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
+            _sessions_select(GeminiConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
+        ).subquery("sessions")
+
         # Подсчет общего количества
-        from sqlalchemy import select
-        count_query = select(func.count()).select_from(query.subquery())
-        total = db.execute(count_query).scalar()
-        
+        total = db.execute(select(func.count()).select_from(union_query)).scalar()
+
         # Сортировка и пагинация
-        sessions = (
-            query.order_by(desc(func.max(Conversation.created_at)))
+        sessions = db.execute(
+            select(union_query)
+            .order_by(desc(union_query.c.updated_at))
             .limit(limit)
             .offset(offset)
-            .all()
-        )
-        
+        ).all()
+
         logger.info(f"✅ Found {len(sessions)} sessions (total: {total})")
         
         # =============================================================================
@@ -476,37 +542,27 @@ async def get_conversation_sessions(
         preview_map = {}
         
         if session_ids:
-            # PostgreSQL DISTINCT ON - берём первую запись для каждой сессии по времени
-            preview_sql = text("""
-                SELECT DISTINCT ON (session_id) 
-                    session_id,
-                    COALESCE(
-                        NULLIF(
-                            CASE 
-                                WHEN LOWER(TRIM(user_message)) IN ('[no user input]', '[no_user_input]', '[system]', '[silence]', '[timeout]')
-                                THEN NULL 
-                                ELSE user_message 
-                            END, 
-                            ''
-                        ), 
-                        NULLIF(assistant_message, '')
-                    ) as preview
-                FROM conversations
-                WHERE session_id = ANY(:session_ids)
-                ORDER BY session_id, created_at ASC
-            """)
-            
+            # PostgreSQL DISTINCT ON - берём первую запись для каждой сессии по времени,
+            # из обеих таблиц (conversations и gemini_conversations)
             try:
-                preview_results = db.execute(preview_sql, {"session_ids": session_ids}).fetchall()
-                preview_map = {row.session_id: row.preview for row in preview_results if row.preview}
+                for table_name in ("conversations", "gemini_conversations"):
+                    preview_results = db.execute(_preview_sql(table_name), {"session_ids": session_ids}).fetchall()
+                    for row in preview_results:
+                        if row.preview and row.session_id not in preview_map:
+                            preview_map[row.session_id] = row.preview
                 logger.info(f"   📝 Loaded {len(preview_map)} previews via DISTINCT ON")
             except Exception as e:
                 logger.warning(f"   ⚠️ DISTINCT ON failed, using fallback: {e}")
+                db.rollback()
                 # Fallback - загружаем по одному (медленнее, но работает везде)
                 for session_id in session_ids:
-                    first_msg = db.query(Conversation).filter(
-                        Conversation.session_id == session_id
-                    ).order_by(Conversation.created_at.asc()).first()
+                    first_msg = None
+                    for model in (Conversation, GeminiConversation):
+                        first_msg = db.query(model).filter(
+                            model.session_id == session_id
+                        ).order_by(model.created_at.asc()).first()
+                        if first_msg:
+                            break
                     
                     if first_msg:
                         preview = get_clean_text(first_msg.user_message) or get_clean_text(first_msg.assistant_message)
@@ -783,27 +839,16 @@ async def get_conversation_detail(
         logger.info(f"[CONVERSATIONS-API-v3.5] Get full dialog for: {conversation_id}")
         logger.info(f"   User: {current_user.id}")
         
-        # Пробуем найти по session_id напрямую
-        conversation = db.query(Conversation).filter(
-            Conversation.session_id == conversation_id
-        ).first()
+        # Ищем сессию в conversations, затем в gemini_conversations
+        record, source_model = _find_session_record(db, conversation_id)
         
-        # Если не нашли, пробуем как UUID conversation_id
-        if not conversation:
-            try:
-                conv_uuid = UUID(conversation_id)
-                conversation = db.query(Conversation).filter(
-                    Conversation.id == conv_uuid
-                ).first()
-            except ValueError:
-                pass
-        
-        if not conversation:
+        if not record:
             logger.warning(f"Conversation not found: {conversation_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found"
             )
+        conversation = _MessageView(record)
         
         # Проверяем права доступа
         assistant, assistant_type = find_assistant_by_id(db, conversation.assistant_id)
@@ -822,15 +867,17 @@ async def get_conversation_detail(
                 detail="Access denied: this conversation doesn't belong to you"
             )
         
-        # Загружаем ВСЕ сообщения из этой сессии
+        # Загружаем ВСЕ сообщения из этой сессии (из той таблицы, где она нашлась)
         session_id = conversation.session_id
         
-        all_messages = db.query(Conversation).filter(
-            Conversation.session_id == session_id,
-            Conversation.assistant_id == conversation.assistant_id
-        ).order_by(Conversation.created_at.asc()).all()
+        all_messages = [
+            _MessageView(row) for row in db.query(source_model).filter(
+                source_model.session_id == session_id,
+                source_model.assistant_id == conversation.assistant_id
+            ).order_by(source_model.created_at.asc()).all()
+        ]
         
-        logger.info(f"   Found {len(all_messages)} DB records in session {session_id}")
+        logger.info(f"   Found {len(all_messages)} DB records in session {session_id} ({source_model.__tablename__})")
         logger.info(f"   Assistant type: {assistant_type}")
         
         # =============================================================================
@@ -968,7 +1015,7 @@ async def get_conversation_detail(
                         if session_history_record is not None:
                             updated_info = dict(session_history_record.client_info or {})
                             updated_info["log_url"] = fetched_log_url
-                            session_history_record.client_info = updated_info
+                            session_history_record._row.client_info = updated_info
                             db.commit()
                         logger.info(f"   📄 log_url fetched from Voximplant and cached")
             except Exception as log_fetch_error:
@@ -1015,8 +1062,9 @@ async def get_conversation_detail(
                 msg['function_calls'] = []
         
         # Извлекаем assistant_type из client_info
-        main_client_info = conversation.client_info or {}
+        main_client_info = dict(conversation.client_info or {})
         detected_type = main_client_info.get('assistant_type', assistant_type)
+        main_client_info.setdefault('assistant_type', detected_type)  # бейдж провайдера на фронте
         
         # Форматируем стоимость
         call_cost = round(total_cost, 2) if total_cost > 0 else None
@@ -1088,20 +1136,8 @@ async def delete_conversation(
         logger.info(f"[CONVERSATIONS-API-v3.5] Delete conversation request: {conversation_id}")
         logger.info(f"   User: {current_user.id}")
         
-        # Пробуем найти по session_id напрямую
-        conversation = db.query(Conversation).filter(
-            Conversation.session_id == conversation_id
-        ).first()
-        
-        # Если не нашли, пробуем как UUID conversation_id
-        if not conversation:
-            try:
-                conv_uuid = UUID(conversation_id)
-                conversation = db.query(Conversation).filter(
-                    Conversation.id == conv_uuid
-                ).first()
-            except ValueError:
-                pass
+        # Ищем сессию в conversations, затем в gemini_conversations
+        conversation, source_model = _find_session_record(db, conversation_id)
         
         if not conversation:
             logger.warning(f"Conversation not found: {conversation_id}")
@@ -1130,9 +1166,9 @@ async def delete_conversation(
         session_id = conversation.session_id
         
         # Получаем все сообщения из сессии
-        all_messages = db.query(Conversation).filter(
-            Conversation.session_id == session_id,
-            Conversation.assistant_id == conversation.assistant_id
+        all_messages = db.query(source_model).filter(
+            source_model.session_id == session_id,
+            source_model.assistant_id == conversation.assistant_id
         ).all()
         
         message_ids = [msg.id for msg in all_messages]
@@ -1150,9 +1186,9 @@ async def delete_conversation(
             logger.info(f"   Deleted {deleted_functions} function logs")
         
         # Удаляем ВСЕ сообщения из сессии
-        deleted_messages = db.query(Conversation).filter(
-            Conversation.session_id == session_id,
-            Conversation.assistant_id == conversation.assistant_id
+        deleted_messages = db.query(source_model).filter(
+            source_model.session_id == session_id,
+            source_model.assistant_id == conversation.assistant_id
         ).delete(synchronize_session=False)
         
         db.commit()
