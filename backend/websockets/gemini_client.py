@@ -399,24 +399,33 @@ class GeminiLiveClient:
         # Детектор речи (VAD) Gemini. По умолчанию Gemini ждёт долгой чистой тишины и
         # отвечает с большой задержкой, на телефонном звуке с шумом — иногда не отвечает вовсе.
         # Один профиль для виджета и телефонии. Настраивается через окружение:
-        #   GEMINI_VAD_PROFILE=default — отключить и вернуть поведение Gemini по умолчанию
-        #   GEMINI_VAD_SILENCE_MS      — пауза, после которой фраза считается законченной (500)
+        #   GEMINI_VAD_PROFILE=default        — отключить и вернуть поведение Gemini по умолчанию
+        #   GEMINI_VAD_SILENCE_MS             — пауза, после которой фраза считается законченной (500)
+        #   GEMINI_VAD_START_SENSITIVITY      — low|high: насколько легко Gemini решает, что человек
+        #                                       НАЧАЛ говорить. high на телефонной линии срабатывает
+        #                                       на шум и обрывает приветствие, поэтому по умолчанию low
+        #   GEMINI_VAD_END_SENSITIVITY        — low|high: насколько быстро считает, что человек ЗАКОНЧИЛ
         vad_profile = os.getenv("GEMINI_VAD_PROFILE", "fast").lower()
         if vad_profile != "default":
             try:
                 silence_ms = int(os.getenv("GEMINI_VAD_SILENCE_MS", "500"))
             except ValueError:
                 silence_ms = 500
+            start_sens = os.getenv("GEMINI_VAD_START_SENSITIVITY", "low").strip().lower()
+            end_sens = os.getenv("GEMINI_VAD_END_SENSITIVITY", "high").strip().lower()
+            start_value = "START_SENSITIVITY_HIGH" if start_sens == "high" else "START_SENSITIVITY_LOW"
+            end_value = "END_SENSITIVITY_HIGH" if end_sens != "low" else "END_SENSITIVITY_LOW"
             setup_payload["setup"]["realtimeInputConfig"] = {
                 "automaticActivityDetection": {
                     "disabled": False,
-                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                    "startOfSpeechSensitivity": start_value,
+                    "endOfSpeechSensitivity": end_value,
                     "prefixPaddingMs": 100,
                     "silenceDurationMs": silence_ms,
                 }
             }
-            logger.info(f"[GEMINI-CLIENT] VAD profile '{vad_profile}': high sensitivity, {silence_ms} ms silence")
+            logger.info(f"[GEMINI-CLIENT] VAD profile '{vad_profile}': start={start_value}, "
+                        f"end={end_value}, {silence_ms} ms silence")
 
         # Add tools if any
         if tools:

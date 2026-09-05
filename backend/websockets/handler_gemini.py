@@ -326,7 +326,9 @@ async def handle_gemini_websocket_connection(
             "last_speech_start": 0,
             "last_speech_stop": 0,
             "interruption_count": 0,
-            "last_interruption_time": 0
+            "last_interruption_time": 0,
+            "assistant_audio_ever": False,   # был ли хоть один звуковой чанк от ассистента
+            "greeting_retries": 0            # сколько раз повторяли оборванное приветствие
         }
 
         log_to_render(f"🎬 Starting Gemini message handler (v1.6.1 - Turn-Based Dialog)...")
@@ -814,6 +816,16 @@ async def handle_gemini_messages(
                         interruption_state["last_interruption_time"] = time.time()
                         interruption_state["is_assistant_speaking"] = False
                         gemini_client.set_assistant_speaking(False)
+
+                        # Приветствие оборвано ещё до первого звука (VAD принял шум/«алло» за речь).
+                        # Gemini сам его не повторит — просим ещё раз, но только один раз.
+                        if (gemini_client.greeting_sent and not interruption_state["assistant_audio_ever"]
+                                and interruption_state["greeting_retries"] < 1):
+                            interruption_state["greeting_retries"] += 1
+                            log_to_render(f"👋 Greeting was cut before any audio - resending it once")
+                            gemini_client.greeting_sent = False
+                            await gemini_client.send_initial_greeting()
+                            continue
                         
                         # 🔥 v1.6.1: При прерывании сохраняем что есть
                         if current_user_transcript.strip() or current_assistant_transcript.strip():
@@ -885,6 +897,7 @@ async def handle_gemini_messages(
                                 data = inline_data.get("data", "")
                                 
                                 if "audio/pcm" in mime_type:
+                                    interruption_state["assistant_audio_ever"] = True
                                     if not interruption_state["is_assistant_speaking"]:
                                         log_to_render(f"🔊 Assistant started speaking")
                                         interruption_state["is_assistant_speaking"] = True
