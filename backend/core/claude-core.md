@@ -11,6 +11,8 @@
 - `scheduler.py` — фоновая корутина проверки истёкших подписок (раз в час) с PostgreSQL advisory lock против дублей между воркерами.
 - `task_scheduler.py` — класс `TaskScheduler`: каждые 30 сек выбирает SCHEDULED-задачи и инициирует исходящие звонки через Voximplant (партнёрская + legacy интеграции), запускает Pre/PostCall-оркестраторы агента. Агентские задачи с `channel="telegram"` уходят не в звонилку, а в `execute_agent_telegram_task` → `PostCallOrchestrator.run_for_scheduled_telegram` (составление и отправка сообщения с личного TG-аккаунта).
 
+- `task_scheduler.py` (дополнение): перед Voximplant проверяется собственный SIP-шлюз — `_sip_number_for()`, `_execute_via_sip_gateway()`, `_agent_call_via_sip_gateway()`; звонок ставится в очередь `sip_calls`, дальше его забирает control-сокет моста в `api/sip_gateway.py`. `config.py`: `SIP_GATEWAY_TOKEN`, `SIP_GATEWAY_DEFAULT_ID`.
+
 ## Ключевые сущности / точки входа
 - `settings` — единый объект конфигурации (импортируется почти везде как `from backend.core.config import settings`).
 - `create_jwt_token(user_id, expires_delta_minutes)` / `decode_jwt_token(token)` — выпуск и проверка access-токена (`type: access_token`, алгоритм HS256).

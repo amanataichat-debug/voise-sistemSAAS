@@ -46,6 +46,10 @@
 - `openrouter_client.py` — тонкий async-клиент OpenRouter (`chat_completion`) на системном ключе `settings.OPENROUTER_API_KEY`; синглтон `get_openrouter_client`.
 - `llm_streaming/` — отдельный пакет low-latency стриминга OpenAI Chat для функции `query_llm` (см. дочернюю доку).
 
+### Собственная SIP-телефония
+- `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- `conversation_service.save_conversation(assistant_type="gemini")` пишет в `gemini_conversations`, а не в `conversations` (там FK на `assistant_configs`).
+
 ## Ключевые сущности / точки входа
 
 - **Оркестратор:** `PreCallOrchestrator.run(...)`, `PostCallOrchestrator.poll_and_run(...)` / `.run_for_scheduled_telegram(...)` (исполнение Task с channel="telegram": один прогон v3, составляет и отправляет сообщение с личного TG-аккаунта, `call_direction="telegram_outbound"`, без инкремента attempts_count и авто-стадии), `ChatOrchestrator.run(...)` / `.run_telegram(...)`. Все три выбирают ветку v3 (OpenRouter, `_run_v3_openrouter` / `_analyze_v3_openrouter` / `_run_telegram_v3`) или v2 (OpenAI Responses API, `store=True`). Usage токенов достаётся через `_extract_usage`.

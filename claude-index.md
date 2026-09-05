@@ -39,6 +39,9 @@
 - [`backend/migrations/claude-migrations.md`](backend/migrations/claude-migrations.md) — легаси raw-SQL миграция Voksy AI Agent v2 (вне цепочки Alembic).
 - Примечание: третий механизм изменения схемы — авто-добавление колонок в startup-событии `app.py`.
 
+## Инфраструктура вне Render
+- [`infra/sip-gateway/claude-sip-gateway.md`](infra/sip-gateway/claude-sip-gateway.md) — собственная SIP-телефония: VPS Hetzner с Asterisk 20 и мостом `bridge.py`, протокол мост⇄бэкенд, файлы бэкенда (`api/sip_gateway.py`, `websockets/sip_media_adapter.py`, `services/sip_gateway_service.py`, `models/sip_gateway.py`), текущее состояние и что не сделано. Памятка по серверу для человека — `infra/sip-gateway/SERVER.md`, протокол — `infra/sip-gateway/README.md`.
+
 ## Лендинг (React)
 - [`frontend/claude-frontend.md`](frontend/claude-frontend.md) — React + Vite лендинг (сборка → `backend/static/landing/`).
 - [`frontend/src/claude-frontend-src.md`](frontend/src/claude-frontend-src.md) — исходники: компоненты, хуки (auth/email/referral), API-клиент, стили.
@@ -57,6 +60,7 @@
 - **Мульти-провайдер с дублированием.** Виды голосовых ассистентов (OpenAI/Gemini/Grok/Cascade/Cartesia/Yandex/Translate) + ElevenLabs дублируются на каждом слое (model → api → handler → widget). Общая правка = правка во всех ветках. Каскад — особый случай: живёт в таблице Grok (`assistant_type='cascade'`) и обслуживается тем же роутером `/api/grok-assistants`.
 - **Лимит ассистентов — один на всех провайдеров.** Считается в `services/assistant_limit_service.py` (единственный источник правды для `check_assistant_limit` и `GET /api/subscriptions/assistants-usage`). Голосовые ассистенты мастера Voksy AI Agent из подсчёта исключены.
 - **Voksy AI Agent v5.0** — автономный обзвон: оркестратор (`services/agent_orchestrator`) + планировщик звонков (`core/task_scheduler`) + кредиты (`services/credit_service`). Это самостоятельная подсистема со своим биллингом (кредиты, не подписочные минуты).
+- **Две телефонии.** Voximplant (партнёрская и legacy интеграции) и собственный SIP-шлюз (`infra/sip-gateway/`, VPS + Asterisk). Планировщик `core/task_scheduler.py` выбирает шлюз, если у пользователя есть активный номер в `sip_phone_numbers` с `allow_outbound` и ассистент OpenAI/Gemini; иначе Voximplant. Телефонный звонок через шлюз проходит через те же браузерные хендлеры, что и виджет — поведение должно быть одинаковым.
 - **Версионные дубликаты** в `websockets/` — ориентируйтесь на то, что реально импортирует роутер, а не на имя/комментарий файла.
 - **Платежи — Finik (finik.kg, KGS)**. **Пароли хешируются SHA-256 без соли**; API-ключи и Voximplant-креды в БД без шифрования.
 - **Import-redirect** в `main.py` делает эквивалентными `from backend.x...` и `from x...`.

@@ -34,6 +34,10 @@
 - `sentence_detector.py` — `StreamingSentenceDetector`: детектор границ предложений для стриминговой TTS-озвучки.
 - `__init__.py` — реэкспорт хендлеров/клиентов для импорта из роутеров.
 
+### Собственная SIP-телефония
+- `sip_media_adapter.py` — `HandlerSocket`: псевдо-WebSocket, через который телефонный звонок с VPS-шлюза проходит через **те же** `handler_realtime_new` / `handler_gemini`, что и виджет. Ресемплинг 8↔24/16 кГц, батчинг входа, barge-in → `clear`, `hangup_call` → прощание → `mark` → `hangup`, замер `reply latency`. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- `gemini_client.py` — VAD-профиль Gemini задаётся глобально через env `GEMINI_VAD_*` (одинаково для виджета и телефона); `handler_gemini.py` повторяет приветствие один раз, если Gemini оборвал его до первого аудио.
+
 ## Ключевые сущности / точки входа
 - **`handle_websocket_connection_new`** (`handler_realtime_new.py`) — точка входа OpenAI-голоса, вызывается из `api/websocket.py` для `/ws/{assistant_id}` и `/ws/demo`.
 - **`handle_gemini_websocket_connection`** / `handle_gemini_31_websocket_connection` / `handle_vox_gemini_websocket` — точки входа Gemini (`api/gemini_ws.py`).

@@ -34,6 +34,8 @@
 - `sms_message.py` — `SmsMessage` (`sms_messages`), входящие/исходящие SMS через Voximplant.
 - `voximplant_child.py` — `VoximplantChildAccount` (`voximplant_child_accounts`) + `VoximplantPhoneNumber` (`voximplant_phone_numbers`) + enum `VoximplantVerificationStatus`.
 
+- **Собственная SIP-телефония**: `sip_gateway.py` — `SipPhoneNumber` (номер оператора → ассистент OpenAI/Gemini, `allow_outbound`) и `SipCall` (журнал/очередь звонков со статусами `SipCallStatus`, `call_metadata` JSON, `attempts`). `normalize_sip_number()` приводит номера КР к `996XXXXXXXXX`. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+
 ## Ключевые сущности / точки входа
 - **`User`** (`users`) — центр графа. Связи: `assistants`, `gemini_assistants`, `grok_assistants`, `cartesia_assistants`, `translate_assistants`, `elevenlabs_agents`, `files`, `subscription_plan_rel`; backref-ы: `contacts`, `partner_profile`, `voximplant_child_account`. Хранит per-user API-ключи (`openai_api_key`, `gemini_api_key`, `grok_api_key`, `cartesia_api_key`, `openrouter_api_key`, `elevenlabs_api_key`), Voximplant-креды, баланс `credits_balance`, флаги триала агента.
 - **Ассистенты по провайдерам** — пять отдельных таблиц с похожей, но не унифицированной структурой: `AssistantConfig` (OpenAI), `GeminiAssistantConfig`, `GrokAssistantConfig`, `CartesiaAssistantConfig`, `TranslateAssistantConfig`. У каждого свой `*Conversation` (кроме Cartesia). Общие поля: `user_id`, `name`, `system_prompt`, `voice`, `language`, `greeting_message`, `is_active`, `is_public`, `functions` (JSON), `total_conversations`.

@@ -43,7 +43,8 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── gemini_ws.py     # Gemini Live WebSocket proxy
 │   │   ├── grok_ws.py       # Grok Voice WebSocket proxy
 │   │   ├── telephony.py     # Outbound calls, call scheduling
-│   │   ├── voximplant.py    # Voximplant telephony integration
+│   │   ├── voximplant.py    # Voximplant telephony integration (legacy path)
+│   │   ├── sip_gateway.py   # Own SIP telephony: bridge WS (/ws/sip-gateway/control, /ws/sip/{id}) + /api/sip/*
 │   │   ├── conversations.py # Conversation history and analytics
 │   │   ├── contacts.py      # CRM contacts management
 │   │   ├── knowledge_base.py # Knowledge base (Pinecone)
@@ -70,6 +71,7 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── contact.py       # CRM Contact model
 │   │   ├── subscription.py  # Subscription, SubscriptionPlan
 │   │   ├── task.py          # Scheduled call tasks
+│   │   ├── sip_gateway.py   # SipPhoneNumber, SipCall (own SIP telephony)
 │   │   ├── partner.py       # Partner referral model
 │   │   ├── embed_config.py  # Embeddable widget config
 │   │   └── ...
@@ -85,6 +87,7 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── pinecone_service.py      # Pinecone vector search
 │   │   ├── r2_storage.py            # Cloudflare R2 file storage
 │   │   ├── partner_service.py       # Partner program logic
+│   │   ├── sip_gateway_service.py   # SIP gateway: outbound queue, bridge events, conversation tagging
 │   │   ├── telegram_notification.py # Telegram notifications
 │   │   ├── notification_service.py  # General notifications
 │   │   └── llm_streaming/          # LLM streaming utilities
@@ -109,7 +112,8 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── openai_client.py         # OpenAI WS client
 │   │   ├── gemini_client.py         # Gemini WS client
 │   │   ├── grok_client.py           # Grok WS client
-│   │   ├── voximplant_handler.py    # Telephony WS bridge
+│   │   ├── sip_media_adapter.py     # HandlerSocket: SIP bridge audio <-> browser handler protocol
+│   │   ├── voximplant_handler.py    # Telephony WS bridge (Voximplant, legacy)
 │   │   ├── voximplant_adapter.py    # Voximplant audio adapter
 │   │   └── sentence_detector.py     # Sentence boundary detection
 │   ├── utils/               # Utility modules
@@ -140,11 +144,16 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   └── utils/           # api.js, notifications.js
 │   ├── package.json
 │   └── vite.config.js
-└── chrome-extension/        # Chrome extension (side panel + popup)
-    ├── manifest.json
-    ├── background.js
-    ├── popup/
-    └── sidepanel/
+├── chrome-extension/        # Chrome extension (side panel + popup)
+│   ├── manifest.json
+│   ├── background.js
+│   ├── popup/
+│   └── sidepanel/
+└── infra/
+    └── sip-gateway/         # Own SIP telephony on a VPS (Asterisk + Python bridge). See claude-sip-gateway.md, SERVER.md
+        ├── install.sh       # One-command install/update on the VPS (fetches this folder from raw GitHub)
+        ├── asterisk/        # pjsip.conf (operator trunk + test softphone), extensions.conf, rtp.conf, manager.conf, modules.conf
+        └── bridge/          # bridge.py (AudioSocket <-> backend WebSocket, AMI originate), systemd unit
 ```
 
 ## Running the Project
@@ -212,12 +221,17 @@ cd .. && git add -A backend/static/landing frontend
 | `/ws/openai/{id}` | OpenAI Realtime voice WS |
 | `/ws/gemini/{id}` | Gemini Live voice WS |
 | `/ws/grok/{id}` | Grok Voice WS |
+| `/api/sip` | Own SIP telephony: numbers, call journal, manual outbound (`/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`) |
+| `/ws/sip-gateway/control` | Control socket from the VPS bridge (auth by `SIP_GATEWAY_TOKEN`) |
+| `/ws/sip/{call_id}` | Per-call media socket from the VPS bridge (PCM16 8 kHz) |
 
 ## Database
 
 PostgreSQL with SQLAlchemy ORM. Migrations managed by Alembic (`alembic/versions/`).
 
-Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `elevenlabs_agents`, `conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`.
+Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `elevenlabs_agents`, `conversations`, `gemini_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
+
+`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations`; the "Диалоги" page unions both tables.
 
 ## Environment Variables (Key)
 
@@ -233,6 +247,9 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `FINIK_ACCOUNT_ID` — ID счёта Finik для зачисления средств
 - `FINIK_PUBLIC_KEY` — публичный ключ Finik для проверки подписи webhook'ов (опционально до выдачи)
 - `FINIK_VERIFY_WEBHOOK_SIGNATURE` — проверять подпись webhook'ов (default "True")
+- `SIP_GATEWAY_TOKEN` — shared secret with the VPS SIP bridge (equals `GATEWAY_TOKEN` in `/etc/voksy-bridge/bridge.env` on the VPS)
+- `SIP_GATEWAY_DEFAULT_ID` — gateway id used for outbound calls (default `sip-gw-1`)
+- `GEMINI_VAD_PROFILE` / `GEMINI_VAD_START_SENSITIVITY` / `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_MS` — Gemini Live speech detection profile, same for widget and telephony (defaults: `fast`, `low`, `high`, `500`)
 
 Users provide their own API keys for: Google Gemini, xAI Grok, ElevenLabs, Voximplant.
 
@@ -241,6 +258,15 @@ Users provide their own API keys for: Google Gemini, xAI Grok, ElevenLabs, Voxim
 - **Import redirection:** `main.py` contains a custom `MetaPathFinder` that redirects bare module imports (e.g., `core.config`) to `backend.core.config`. This allows modules to work both standalone and within the backend package.
 - **Modular functions:** `backend/functions/` uses a registry pattern — new AI-callable functions are auto-discovered at startup via `discover_functions()`.
 - **Multi-provider voice:** The WebSocket layer abstracts three different voice AI providers (OpenAI, Gemini, Grok) behind similar handler interfaces, with Voximplant telephony bridge support.
+- **Own SIP telephony (no Voximplant):** a Hetzner VPS (`178.105.79.237`, Asterisk 20 + `infra/sip-gateway/bridge/bridge.py`) terminates the operator's SIP trunk and streams call audio to the backend over outbound WebSockets. On the backend `backend/websockets/sip_media_adapter.py` wraps the *same* browser handlers (OpenAI, Gemini), so phone calls and the widget share functions, transcripts, conversation saving and behaviour. Rule: telephony and widget must behave the same. Outbound calls are queued in `sip_calls` and picked up by the worker that holds the control socket. Full picture: `infra/sip-gateway/claude-sip-gateway.md`; server how-to: `infra/sip-gateway/SERVER.md`.
 - **Startup schema fixes:** `app.py` startup event runs comprehensive schema checks and auto-adds missing columns for backwards compatibility.
 - **Task scheduler:** Background scheduler (`core/task_scheduler.py`) polls for scheduled call tasks every 30 seconds and executes them automatically.
 - **Static pages:** App pages (agents, dashboard, CRM, etc.) are vanilla HTML/JS served by FastAPI's `StaticFiles`. The React app is only used for the landing page.
+
+## Development Workflow (current)
+
+- Work happens on branch `2308-agent-v2` (telephony/agent v2). Commit and push there; no pull requests unless asked.
+- The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
+- Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
+- Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.
+- Documentation for AI agents lives in `claude-*.md` files next to the code, indexed in `claude-index.md`. Update them when adding a subsystem.
