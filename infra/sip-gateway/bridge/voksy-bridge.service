@@ -1,0 +1,20 @@
+[Unit]
+Description=Voksy AI SIP gateway bridge (Asterisk AudioSocket <-> backend WebSocket)
+After=network-online.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voksy
+Group=voksy
+EnvironmentFile=/etc/voksy-bridge/bridge.env
+ExecStart=/opt/voksy-bridge/venv/bin/python /opt/voksy-bridge/bridge.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
