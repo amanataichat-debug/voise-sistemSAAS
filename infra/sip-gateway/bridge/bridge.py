@@ -56,7 +56,7 @@ from urllib.parse import quote
 import websockets
 from aiohttp import web
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -106,6 +106,8 @@ AS_ERROR = 0xFF
 FRAME_MS = 20
 FRAME_BYTES = 320  # 8000 Hz * 2 bytes * 0.02 s
 SAMPLE_RATE = 8000
+KEEPALIVE_SILENCE = _env("KEEPALIVE_SILENCE", "1") == "1"
+SILENCE_FRAME = struct.pack("!BH", AS_AUDIO, FRAME_BYTES) + bytes(FRAME_BYTES)
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -143,6 +145,7 @@ class Call:
     out_buf: bytearray = field(default_factory=bytearray)
     marks: list = field(default_factory=list)  # (byte_offset_when_reached, name)
     played_bytes: int = 0
+    playing: bool = False
     ended: bool = False
     frames_in: int = 0
     frames_out: int = 0
@@ -331,6 +334,17 @@ class Bridge:
                     await writer.drain()
                     call.frames_out += 1
                     call.played_bytes += len(chunk)
+                    if not call.playing:
+                        call.playing = True
+                        log.info("call %s: playback started (%.1f s queued)", call.call_id, len(call.out_buf) / (SAMPLE_RATE * 2))
+                else:
+                    if call.playing:
+                        call.playing = False
+                        log.info("call %s: playback idle after %d frames", call.call_id, call.frames_out)
+                    if KEEPALIVE_SILENCE:
+                        # Тишина вместо пауз: Asterisk шлёт RTP непрерывно, NAT у абонента не закрывается
+                        writer.write(SILENCE_FRAME)
+                        await writer.drain()
                     # Fire marks whose position has been reached.
                     while call.marks and call.marks[0][0] <= call.played_bytes:
                         _, name = call.marks.pop(0)
@@ -382,6 +396,8 @@ class Bridge:
                     continue
                 mtype = data.get("type")
                 if mtype == "clear":
+                    dropped_ms = len(call.out_buf) / (SAMPLE_RATE * 2) * 1000
+                    log.info("call %s: clear from backend, dropping %.0f ms of queued audio", call.call_id, dropped_ms)
                     call.out_buf.clear()
                     call.marks.clear()
                 elif mtype == "hangup":

@@ -83,6 +83,9 @@ class HandlerSocket:
         self.handler_error: Optional[Dict[str, Any]] = None
         self.frames_in = 0
         self.frames_out = 0
+        self.barge_ins = 0
+        self.audio_bytes_out = 0
+        self._last_delta_at = 0.0
         self.started_at = time.time()
         self._speech_started = asyncio.Event()
         self._speech_ended = asyncio.Event()
@@ -217,6 +220,8 @@ class HandlerSocket:
                 pcm = self._down(base64.b64decode(delta))
                 if pcm:
                     self.frames_out += 1
+                    self.audio_bytes_out += len(pcm)
+                    self._last_delta_at = time.time()
                     try:
                         await self.ws.send_bytes(pcm)
                     except Exception:
@@ -224,6 +229,12 @@ class HandlerSocket:
             return
 
         if mtype in BARGE_IN_EVENTS:
+            self.barge_ins += 1
+            since_delta = (time.time() - self._last_delta_at) if self._last_delta_at else -1
+            logger.info(
+                f"[SIP-MEDIA] call {self.call_id}: barge-in #{self.barge_ins} ({mtype}, {self.provider}), "
+                f"{since_delta:.1f}s after last audio delta, {self.audio_bytes_out / 16000:.1f}s of audio sent so far"
+            )
             await self._send_text({"type": "clear"})
             self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера

@@ -348,7 +348,8 @@ async def sip_media(
                     # Мост ещё пришлёт событие ended; если нет — закроем здесь
                     pass
                 logger.info(
-                    f"[SIP-MEDIA] call {call_id} finished: frames_in={socket.frames_in} frames_out={socket.frames_out} "
+                    f"[SIP-MEDIA] call {call_id} finished: frames_in={socket.frames_in} deltas_out={socket.frames_out} "
+                    f"audio_out={socket.audio_bytes_out / 16000:.1f}s barge_ins={socket.barge_ins} "
                     f"reason={socket.end_reason} tagged_conversations={tagged}"
                     + (f" handler_error={socket.handler_error}" if socket.handler_error else "")
                 )
