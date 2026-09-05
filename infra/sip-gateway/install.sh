@@ -129,7 +129,7 @@ systemctl daemon-reload
 say "restarting services"
 systemctl enable asterisk >/dev/null 2>&1 || true
 systemctl restart asterisk
-sleep 3
+asterisk -rx "core waitfullybooted" >/dev/null 2>&1 || sleep 5
 systemctl enable voksy-bridge >/dev/null 2>&1
 systemctl restart voksy-bridge
 sleep 2

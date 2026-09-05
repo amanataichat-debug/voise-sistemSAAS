@@ -93,6 +93,9 @@ from .sms_message import SmsMessage
 from .credit_transaction import CreditTransaction, CreditTransactionType
 from .credit_package import CreditPackage
 
+# ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
+from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
+
 # Export specific models
 __all__ = [
     "Base", 
@@ -164,4 +167,7 @@ __all__ = [
     "CreditTransaction",
     "CreditTransactionType",
     "CreditPackage",
+    "SipPhoneNumber",
+    "SipCall",
+    "SipCallStatus",
 ]
