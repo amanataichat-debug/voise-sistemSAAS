@@ -351,6 +351,7 @@ async def sip_media(
                 logger.info(
                     f"[SIP-MEDIA] call {call_id} finished: frames_in={socket.frames_in} deltas_out={socket.frames_out} "
                     f"audio_out={socket.audio_bytes_out / 16000:.1f}s barge_ins={socket.barge_ins} "
+                    f"reply_latencies={socket.reply_latencies} "
                     f"reason={socket.end_reason} tagged_conversations={tagged}"
                     + (f" handler_error={socket.handler_error}" if socket.handler_error else "")
                 )

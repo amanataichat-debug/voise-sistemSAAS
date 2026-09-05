@@ -28,6 +28,7 @@ Features:
 """
 
 import asyncio
+import os
 import json
 import uuid
 import base64
@@ -395,20 +396,27 @@ class GeminiLiveClient:
             }
         }
         
-        # 📞 Телефонный режим (звонки через SIP-шлюз): узкополосный звук с фоновым шумом,
-        # детектор речи по умолчанию долго не видит «тишину» и не отдаёт ход модели.
-        # Флаг выставляет backend/api/sip_gateway.py на объекте ассистента (в БД не пишется).
-        if getattr(self.assistant_config, "telephony_mode", False):
+        # Детектор речи (VAD) Gemini. По умолчанию Gemini ждёт долгой чистой тишины и
+        # отвечает с большой задержкой, на телефонном звуке с шумом — иногда не отвечает вовсе.
+        # Один профиль для виджета и телефонии. Настраивается через окружение:
+        #   GEMINI_VAD_PROFILE=default — отключить и вернуть поведение Gemini по умолчанию
+        #   GEMINI_VAD_SILENCE_MS      — пауза, после которой фраза считается законченной (500)
+        vad_profile = os.getenv("GEMINI_VAD_PROFILE", "fast").lower()
+        if vad_profile != "default":
+            try:
+                silence_ms = int(os.getenv("GEMINI_VAD_SILENCE_MS", "500"))
+            except ValueError:
+                silence_ms = 500
             setup_payload["setup"]["realtimeInputConfig"] = {
                 "automaticActivityDetection": {
                     "disabled": False,
                     "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
                     "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
                     "prefixPaddingMs": 100,
-                    "silenceDurationMs": 500,
+                    "silenceDurationMs": silence_ms,
                 }
             }
-            logger.info("[GEMINI-CLIENT] 📞 Telephony VAD profile enabled (high sensitivity, 500 ms silence)")
+            logger.info(f"[GEMINI-CLIENT] VAD profile '{vad_profile}': high sensitivity, {silence_ms} ms silence")
 
         # Add tools if any
         if tools:

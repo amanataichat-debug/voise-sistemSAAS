@@ -40,6 +40,9 @@ INBOUND_BATCH_MS = {"openai": 20, "gemini": 100}
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
+# события «пользователь договорил» (для замера задержки ответа модели)
+USER_DONE_EVENTS = {"speech.stopped", "input.transcription", "input.transcription.complete",
+                    "conversation.item.input_audio_transcription.completed"}
 # события начала/конца речи ассистента
 SPEECH_STARTED_EVENTS = {"assistant.speech.started"}
 SPEECH_ENDED_EVENTS = {"assistant.speech.ended", "response.output_audio.done", "response.audio.done"}
@@ -92,6 +95,9 @@ class HandlerSocket:
         self.barge_ins = 0
         self.audio_bytes_out = 0
         self._last_delta_at = 0.0
+        self._user_done_at = 0.0
+        self._awaiting_reply = False
+        self.reply_latencies: list = []
         self.started_at = time.time()
         self._speech_started = asyncio.Event()
         self._speech_ended = asyncio.Event()
@@ -223,7 +229,18 @@ class HandlerSocket:
             except Exception:
                 pass
 
+        if mtype in USER_DONE_EVENTS:
+            self._user_done_at = time.time()
+            self._awaiting_reply = True
+            return
+
         if mtype == "response.audio.delta":
+            if self._awaiting_reply and self._user_done_at:
+                latency = time.time() - self._user_done_at
+                self._awaiting_reply = False
+                self.reply_latencies.append(round(latency, 2))
+                logger.info(f"[SIP-MEDIA] call {self.call_id}: {self.provider} reply latency {latency:.2f}s "
+                            f"(user done -> first audio)")
             delta = data.get("delta") or ""
             if delta:
                 pcm = self._down(base64.b64decode(delta))
