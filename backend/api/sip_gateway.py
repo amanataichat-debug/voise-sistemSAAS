@@ -61,6 +61,26 @@ STALE_DIALING_SECONDS = 180
 STALE_ANSWERED_SECONDS = 2 * 3600
 
 
+_tables_ready = False
+
+
+def _ensure_tables() -> None:
+    """
+    Создать sip_phone_numbers / sip_calls, если их нет. Идемпотентно и дёшево.
+    Страховка: воркер, который делает create_all на старте, на Render иногда
+    убивается по таймауту, и остальные стартуют без миграций.
+    """
+    global _tables_ready
+    if _tables_ready:
+        return
+    try:
+        from backend.models.base import Base, engine
+        Base.metadata.create_all(engine, tables=[SipPhoneNumber.__table__, SipCall.__table__], checkfirst=True)
+        _tables_ready = True
+    except Exception as exc:
+        logger.error(f"[SIP] ensure tables failed: {exc}")
+
+
 def _token_ok(token: Optional[str]) -> bool:
     expected = settings.SIP_GATEWAY_TOKEN
     if not expected:
@@ -84,6 +104,7 @@ async def sip_gateway_control(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     await websocket.accept()
+    _ensure_tables()
     gateway_id = gateway or settings.SIP_GATEWAY_DEFAULT_ID
     state: Dict[str, Any] = {
         "gateway_id": gateway_id,
@@ -223,6 +244,7 @@ async def sip_media(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     await websocket.accept()
+    _ensure_tables()
     gateway_id = gateway or settings.SIP_GATEWAY_DEFAULT_ID
 
     async def reject(reason: str) -> None:
@@ -388,6 +410,7 @@ async def list_numbers(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     query = db.query(SipPhoneNumber)
     if not (all_users and current_user.is_admin):
         query = query.filter(SipPhoneNumber.user_id == current_user.id)
@@ -401,6 +424,7 @@ async def create_number(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Только администратор добавляет номера оператора")
     digits = normalize_sip_number(body.phone_number)
@@ -451,6 +475,7 @@ async def update_number(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     number = _get_own_number(db, current_user, number_id)
     data = body.dict(exclude_unset=True)
     if "assistant_type" in data or "assistant_id" in data:
@@ -478,6 +503,7 @@ async def delete_number(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Только администратор удаляет номера")
     number = _get_own_number(db, current_user, number_id)
@@ -493,6 +519,7 @@ async def list_calls(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     query = db.query(SipCall)
     if not (all_users and current_user.is_admin):
         query = query.filter(SipCall.user_id == current_user.id)
@@ -506,6 +533,7 @@ async def get_call(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     try:
         call = db.get(SipCall, uuid.UUID(call_id))
     except ValueError:
@@ -521,6 +549,7 @@ async def create_call(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     """Ручной запуск исходящего звонка (тест или звонок из интерфейса)."""
     number = SipGatewayService.outbound_number_for_user(db, current_user.id, body.caller_id)
     if number is None:
@@ -560,6 +589,7 @@ async def hangup_call(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_tables()
     """Положить трубку. Работает, если шлюз подключён к этому воркеру; иначе звонок завершит сам ассистент."""
     try:
         call = db.get(SipCall, uuid.UUID(call_id))
