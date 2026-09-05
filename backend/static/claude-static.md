@@ -6,7 +6,9 @@
 ## Состав (верхний уровень)
 ### HTML-страницы кабинета
 - `dashboard.html` — дашборд пользователя.
-- `agents.html` — OpenAI-ассистенты; `gemini-agents.html`, `grok-agents.html`, `cartesia-agents.html`, `yandex-agents.html`, `cascade.html`, `elevenlabs-agents.html`, `translate.html` — страницы по провайдерам; `gemini-agents_old.html` — легаси.
+- `agents.html` — OpenAI-ассистенты; `gemini-agents.html`, `grok-agents.html`, `fish-agents.html`, `cartesia-agents.html`, `yandex-agents.html`, `cascade.html`, `elevenlabs-agents.html`, `translate.html` — страницы по провайдерам; `gemini-agents_old.html` — легаси.
+- `fish-agents.html` — Fish-агенты на серверных ключах (карточка ключей убрана; статус сервера через `GET /api/fish-assistants/status`), кнопка «Тест» открывает `fish-test.html?id=<uuid>` — тот же `widget.js`, но со `data-ws-path="/ws/fish/"`. `widget.js` понимает атрибут `data-ws-path` (по умолчанию `/ws/`), так один виджет обслуживает все провайдеры с протоколом виджета.
+- `telephony.html`, `outbound-calls.html` — страницы Voximplant, **мёртвые** (Voximplant не используется, см. корневой `CLAUDE.md`).
 - `crm.html`, `crm-contact.html` — CRM (список и карточка контакта).
 - `conversations.html` — история диалогов.
 - `telephony.html`, `outbound-calls.html`, `test_outbound-calls.html` — телефония и обзвон.

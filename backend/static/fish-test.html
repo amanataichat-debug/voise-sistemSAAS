@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Тест Fish-агента — Voksy AI</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #eff6ff, #f8fafc); color: #0f172a; padding: 2rem;
+    }
+    .card {
+      max-width: 560px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 1rem;
+      padding: 2rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.08);
+    }
+    h1 { font-size: 1.375rem; margin-bottom: .75rem; }
+    h1 span { color: #0ea5e9; }
+    p { color: #64748b; line-height: 1.6; font-size: .9375rem; }
+    .id { font-family: monospace; font-size: .8125rem; background: #f1f5f9; padding: .5rem .75rem; border-radius: .5rem; margin: 1rem 0; word-break: break-all; }
+    .steps { margin-top: 1rem; padding-left: 1.25rem; color: #334155; line-height: 1.8; font-size: .9375rem; }
+    .err { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: .5rem; padding: .75rem 1rem; margin-top: 1rem; display: none; }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Тест <span>Fish</span>-агента в браузере</h1>
+    <p>Это тот же виджет, что встраивается на сайт, но с сокетом <code>/ws/fish/</code>.
+       Разрешите доступ к микрофону, нажмите на кружок виджета в углу и говорите.
+       Диалог ведёт OpenAI Realtime, озвучивает Fish Audio на ключах Voksy AI.</p>
+    <div class="id" id="agent-id">—</div>
+    <ol class="steps">
+      <li>Нажмите на виджет в правом нижнем углу.</li>
+      <li>Агент скажет приветствие — перебивайте его, чтобы проверить barge-in.</li>
+      <li>Диалог появится на странице <a href="/static/conversations.html">«Диалоги»</a>.</li>
+    </ol>
+    <div class="err" id="err"></div>
+    <p style="margin-top:1.25rem;font-size:.8125rem;">Код для сайта:
+      <code id="embed">&lt;script src="/static/widget.js" data-assistantId="…" data-ws-path="/ws/fish/"&gt;&lt;/script&gt;</code></p>
+  </div>
+  <script>
+    (function () {
+      const id = new URLSearchParams(window.location.search).get('id');
+      const err = document.getElementById('err');
+      if (!id) {
+        err.textContent = 'В адресе нет параметра ?id=<uuid агента>. Откройте тест со страницы «Fish агенты».';
+        err.style.display = 'block';
+        return;
+      }
+      document.getElementById('agent-id').textContent = id;
+      document.getElementById('embed').textContent =
+        `<script src="${window.location.origin}/static/widget.js" data-assistantId="${id}" data-ws-path="/ws/fish/"><\/script>`;
+      // widget.js читает data-атрибуты со своего <script>, поэтому подставляем их до загрузки
+      const s = document.createElement('script');
+      s.src = '/static/widget.js';
+      s.setAttribute('data-assistantId', id);
+      s.setAttribute('data-ws-path', '/ws/fish/');
+      s.setAttribute('data-server', window.location.origin);
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

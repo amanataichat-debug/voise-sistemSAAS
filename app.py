@@ -38,7 +38,7 @@ from backend.api import (
     cartesia_assistants,  # 🆕 v4.0: Cartesia Assistants CRUD API
     yandex_assistants,  # 🆕 Yandex Assistants CRUD API (SpeechKit Realtime)
     fish_assistants,  # 🆕 Fish Assistants CRUD API (Fish Audio TTS)
-    fish_ws,  # 🆕 Fish Audio TTS proxy WebSocket
+    fish_ws,  # 🆕 Fish voice WebSocket: /ws/fish/{id} (OpenAI Realtime текст + Fish Audio)
     sip_gateway,  # 📞 Собственная SIP-телефония (шлюз Asterisk + мост)
     translate_assistants,  # 🆕 v1.0: Translate Assistants CRUD API
     translate_ws,  # 🆕 v1.0: Translate WebSocket API
@@ -214,7 +214,7 @@ app.include_router(translate_assistants.router, prefix="/api/translate-assistant
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(gemini_ws.router, tags=["Gemini WebSocket"])  # BEFORE websocket.router — /ws/llm-stream must match before /ws/{assistant_id}
 app.include_router(translate_ws.router, tags=["Translate WebSocket"])  # BEFORE websocket.router — /ws/translate/{id} must match before /ws/{assistant_id}
-app.include_router(fish_ws.router, tags=["Fish TTS WebSocket"])  # BEFORE websocket.router — /ws/fish/tts/{id} must match before /ws/{assistant_id}
+app.include_router(fish_ws.router, tags=["Fish WebSocket"])  # BEFORE websocket.router — /ws/fish/{id} must match before /ws/{assistant_id}
 app.include_router(sip_gateway.router, tags=["SIP Gateway"])  # BEFORE websocket.router — /ws/sip/{call_id} and /ws/sip-gateway/control must match before /ws/{assistant_id}
 app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(grok_ws.router, tags=["Grok WebSocket"])  # 🆕 v3.0
@@ -593,11 +593,11 @@ def create_fish_tables():
     """
     Create Fish assistant tables and check missing columns.
 
-    Fish Audio — TTS-провайдер: диалог ведёт OpenAI Realtime в сценарии
-    Voximplant, озвучка идёт через прокси /ws/fish/tts/{assistant_id}.
+    Fish-ассистент: OpenAI Realtime (текст) + озвучка Fish Audio в хендлере
+    backend/websockets/handler_fish.py; диалоги пишутся в fish_conversations.
     """
     try:
-        from backend.models.fish_assistant import FishAssistantConfig
+        from backend.models.fish_assistant import FishAssistantConfig, FishConversation
         from backend.models.base import Base
         from sqlalchemy import text, inspect
 
@@ -645,6 +645,17 @@ def create_fish_tables():
                 logger.error(f"❌ Failed to create table fish_assistant_configs: {str(e)}")
         else:
             logger.info("✅ Table fish_assistant_configs already exists")
+
+        # Журнал диалогов Fish (у conversations FK на assistant_configs — туда нельзя)
+        if not inspector.has_table('fish_conversations'):
+            logger.info("➕ Creating missing table: fish_conversations")
+            try:
+                FishConversation.__table__.create(engine)
+                logger.info("✅ Successfully created table: fish_conversations")
+            except Exception as e:
+                logger.error(f"❌ Failed to create table fish_conversations: {str(e)}")
+        else:
+            logger.info("✅ Table fish_conversations already exists")
 
         logger.info("✅ Fish tables and columns setup completed")
 

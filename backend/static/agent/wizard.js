@@ -62,7 +62,7 @@ function keyState(type){
   if(type==='cartesia'){ const m=[]; if(!u.has_api_key) m.push({field:'openai_api_key',label:'OpenAI API Key',ph:'sk-...'}); if(!u.has_cartesia_api_key) m.push({field:'cartesia_api_key',label:'Cartesia API Key',ph:'sk_car_...'}); return { ok:m.length===0, missing:m }; }
   if(type==='yandex'){ const m=[]; if(!u.has_yandex_api_key) m.push({field:'yandex_api_key',label:'Yandex Cloud API Key',ph:'AQVN...'}); if(!u.yandex_folder_id) m.push({field:'yandex_folder_id',label:'Yandex Cloud Folder ID',ph:'b1g...',t:'text'}); return { ok:m.length===0, missing:m }; }
   if(type==='cascade'){ return { ok:true, missing:[] }; }  // наш ключ + кредиты каскада
-  if(type==='fish'){ const m=[]; if(!u.has_api_key) m.push({field:'openai_api_key',label:'OpenAI API Key',ph:'sk-...'}); if(!u.has_fish_api_key) m.push({field:'fish_api_key',label:'Fish Audio API Key',ph:'...'}); return { ok:m.length===0, missing:m }; }
+  if(type==='fish'){ return { ok:true, missing:[] }; }  // серверные ключи OpenAI + Fish
   return { ok:false, missing:[] };
 }
 
@@ -72,7 +72,7 @@ const TYPE_DEFS = [
   { type:'cartesia', name:'Cartesia', desc:'Cartesia TTS + OpenAI LLM в каскаде, гибкая настройка.' },
   { type:'yandex', name:'Yandex SpeechKit', desc:'Yandex Realtime — российская инфраструктура, оплата в Yandex Cloud.' },
   { type:'cascade', name:'Cascade', desc:'LLM на нашем ключе (gpt-realtime-2.1-mini) + VoxTTS. Без своих ключей — оплата кредитами каскада.' },
-  { type:'fish', name:'Fish Audio', desc:'OpenAI Realtime ведёт диалог, озвучивает Fish Audio — живые голоса и свои клоны.' },
+  { type:'fish', name:'Fish Audio', desc:'OpenAI Realtime ведёт диалог, озвучивает Fish Audio — живые голоса и свои клоны. Работает на нашем ключе.' },
 ];
 
 function drawStep0(c){
@@ -84,20 +84,18 @@ function drawStep0(c){
     let keyHtml='';
     if(selected && t.type==='cascade'){
       keyHtml += `<div class="form-hint" style="margin-top:8px">Свои ключи не нужны: LLM работает на нашем ключе, оплата — <b>кредитами каскада</b> (списываются за токены звонка). Управление кредитами — на странице «Cascade агенты».</div>`;
+    } else if(selected && t.type==='fish'){
+      keyHtml += `<div class="form-hint" style="margin-top:8px">Свои ключи не нужны: OpenAI ведёт диалог и распознаёт речь, Fish Audio озвучивает — оба на нашем ключе.</div>`;
     } else if(selected){
       if(t.type==='cartesia' && ks.missing.length) keyHtml += `<div class="form-hint" style="margin-top:8px">Cartesia работает в каскаде: OpenAI отвечает за понимание речи и текст, Cartesia — за озвучку. Нужны оба ключа.</div>`;
       if(t.type==='yandex' && ks.missing.length) keyHtml += `<div class="form-hint" style="margin-top:8px">Нужны API-ключ сервисного аккаунта и Folder ID каталога Yandex Cloud — оплата токенов идёт с вашего биллинга Yandex Cloud.</div>`;
-      if(t.type==='fish' && ks.missing.length) keyHtml += `<div class="form-hint" style="margin-top:8px">Fish работает в каскаде: OpenAI ведёт диалог и распознаёт речь, Fish Audio озвучивает. Нужны оба ключа.</div>`;
       const pills = (t.type==='cartesia') ? [
         {l:'OpenAI', ok:!!wizardUser.has_api_key},
         {l:'Cartesia', ok:!!wizardUser.has_cartesia_api_key},
       ] : (t.type==='yandex' ? [
         {l:'Yandex API', ok:!!wizardUser.has_yandex_api_key},
         {l:'Folder ID', ok:!!wizardUser.yandex_folder_id},
-      ] : (t.type==='fish' ? [
-        {l:'OpenAI', ok:!!wizardUser.has_api_key},
-        {l:'Fish', ok:!!wizardUser.has_fish_api_key},
-      ] : (t.type==='gemini' ? [{l:'Gemini',ok:!!wizardUser.has_gemini_api_key}] : [{l:'OpenAI',ok:!!wizardUser.has_api_key}])));
+      ] : (t.type==='gemini' ? [{l:'Gemini',ok:!!wizardUser.has_gemini_api_key}] : [{l:'OpenAI',ok:!!wizardUser.has_api_key}]));
       keyHtml += `<div class="type-key-status">` + pills.map(p => `<span class="key-pill ${p.ok?'ok':'miss'}"><i class="fas ${p.ok?'fa-check':'fa-triangle-exclamation'}"></i> ${p.l} ${p.ok?'настроен':'не настроен'}</span>`).join('') + `</div>`;
       if(ks.missing.length){
         keyHtml += `<div class="key-input-block"><div class="form-hint" style="margin-bottom:10px">Ключ не обязателен для создания агента — он понадобится только для звонков. Можно добавить сейчас или позже в настройках.</div>` + ks.missing.map(m => `<div class="form-group" style="margin-bottom:10px"><label class="form-label">${m.label}</label><input type="${m.t||'password'}" class="form-input" id="wk-${m.field}" placeholder="${m.ph}"></div>`).join('') + `<button class="btn btn-secondary btn-sm" onclick="saveWizardKeys('${t.type}')"><i class="fas fa-save"></i> Сохранить ключ</button></div>`;

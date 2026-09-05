@@ -1,26 +1,24 @@
 # backend/models/fish_assistant.py
 """
 Fish Assistant model for Voksy AI application.
-Fish Audio TTS provider integration — config only, call logic lives in Voximplant.
 
-Тракт звонка (сценарии inbound_fish / outbound_fish на родительском аккаунте):
+Fish-ассистент — «половинный каскад» на серверных ключах:
 
-    Voximplant ⇄ OpenAI Realtime (gpt-realtime-2.1-mini, output_modalities=["text"])
-                    │  модель сама транскрибирует речь, отдельный ASR не нужен
-                    ▼
-                 текст ответа
-                    │
-                    ▼
-    VoxEngine.createWebSocket → /ws/fish/tts/{assistant_id}  (наш прокси)
-                    │  прокси говорит с Fish Audio по MessagePack
-                    ▼
-              wss://api.fish.audio/v1/tts/live → PCM16 обратно в звонок
+    клиент (виджет / SIP-шлюз через HandlerSocket)
+        │  PCM16 24 кГц, протокол виджета
+        ▼
+    backend/websockets/handler_fish.py
+        ├── OpenAI Realtime (gpt-realtime-2, output_modalities=["text"]):
+        │     распознаёт речь, детектирует конец реплики, ведёт диалог, зовёт функции
+        └── Fish Audio TTS (wss://api.fish.audio/v1/tts/live, MessagePack):
+              озвучивает текст модели голосом reference_id → PCM16 24 кГц клиенту
 
-Почему нужен прокси: у Voximplant нет встроенного модуля Fish (в отличие от
-Modules.Cartesia), а медиа-WebSocket VoxEngine принимает только собственный
-JSON-протокол. Fish говорит на своём — состыковать их напрямую нельзя.
+Ключи серверные: settings.OPENAI_API_KEY (диалог) и settings.FISH_API_KEY
+(синтез). Пользовательские ключи не используются.
 
-Оба ключа пользовательские: User.openai_api_key (LLM) и User.fish_api_key (TTS).
+Телефония и виджет проходят через один и тот же хендлер, поэтому функции,
+приветствие, транскрипты и запись диалогов у них общие. Диалоги пишутся в
+fish_conversations (у conversations FK на assistant_configs).
 """
 
 import uuid
@@ -34,11 +32,13 @@ from backend.models.base import Base
 DEFAULT_FISH_MODEL = "s2.1-pro-free"
 
 # Модель OpenAI Realtime, которая ведёт диалог и транскрибирует речь.
-DEFAULT_FISH_LLM_MODEL = "gpt-realtime-2.1-mini"
+DEFAULT_FISH_LLM_MODEL = "gpt-realtime-2"
+FISH_LLM_MODELS = ["gpt-realtime-2", "gpt-realtime-2.1-mini"]
 
-# Частота дискретизации PCM, которую прокси запрашивает у Fish и отдаёт
-# в звонок. 8000 — телефонный тракт Voximplant (PCM16_8KHZ по умолчанию).
-DEFAULT_FISH_SAMPLE_RATE = 8000
+# Частота PCM, которую хендлер запрашивает у Fish. 24000 — частота выхода
+# браузерных хендлеров (виджет играет 24 кГц, SIP-адаптер сам ресемплирует в 8).
+# Колонка sample_rate у старых записей может хранить 8000 — хендлер её не читает.
+DEFAULT_FISH_SAMPLE_RATE = 24000
 
 # Режим латентности Fish: balanced — минимальное время до первого аудио
 # (то, что нужно голосовому агенту), normal — выше качество, выше задержка,
@@ -66,9 +66,8 @@ class FishAssistantConfig(Base):
     """
     Configuration for a Fish Audio voice assistant.
 
-    Fish Audio is a TTS provider — вся логика звонка живёт в сценариях
-    Voximplant. Бэкенд хранит конфиг и отдаёт его сценарию через
-    /api/telephony/config и /api/telephony/outbound-config.
+    Обслуживается хендлером backend/websockets/handler_fish.py
+    (маршрут /ws/fish/{assistant_id}; по телефону — через SIP-шлюз).
     """
     __tablename__ = "fish_assistant_configs"
 
@@ -89,7 +88,7 @@ class FishAssistantConfig(Base):
     # Скорость речи Fish (prosody.speed, 0.5–2.0). 1.0 — обычный темп.
     voice_speed = Column(Float, default=1.0, nullable=True)
 
-    # LLM settings (OpenAI Realtime на ключе пользователя)
+    # LLM settings (OpenAI Realtime на серверном ключе)
     llm_model = Column(String(100), default=DEFAULT_FISH_LLM_MODEL, nullable=False)
     language = Column(String(10), default="ru", nullable=False)
 
@@ -117,16 +116,20 @@ class FishAssistantConfig(Base):
 
     # Relationships
     user = relationship("User", back_populates="fish_assistants")
+    conversations = relationship(
+        "FishConversation", back_populates="assistant", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<FishAssistantConfig(id={self.id}, name='{self.name}', voice='{self.fish_voice_id}')>"
 
-    def get_fish_start_request(self):
+    def get_fish_start_request(self, sample_rate: int = None):
         """
         Тело StartEvent для wss://api.fish.audio/v1/tts/live.
 
-        Прокси досылает его первым сообщением после подключения; format
-        всегда pcm — иначе аудио пришлось бы декодировать в сценарии.
+        Клиент Fish шлёт его первым сообщением после подключения; format
+        всегда pcm. sample_rate — частота, которую ждёт получатель аудио
+        (хендлер передаёт 24000); без аргумента берётся колонка.
         """
         def clamp(value, low, high, default):
             if value is None:
@@ -136,7 +139,7 @@ class FishAssistantConfig(Base):
         request = {
             "text": "",
             "format": "pcm",
-            "sample_rate": self.sample_rate or DEFAULT_FISH_SAMPLE_RATE,
+            "sample_rate": sample_rate or self.sample_rate or DEFAULT_FISH_SAMPLE_RATE,
             "latency": self.fish_latency or DEFAULT_FISH_LATENCY,
             # Живость интонации. Ограничиваем на всякий случай: у старых
             # записей temperature могла быть до 2 (когда поле трактовалось
@@ -177,3 +180,37 @@ class FishAssistantConfig(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class FishConversation(Base):
+    """
+    Журнал диалогов Fish-ассистентов (таблица fish_conversations).
+
+    Отдельная таблица по той же причине, что и gemini_conversations:
+    conversations.assistant_id ссылается на assistant_configs (OpenAI), и
+    запись Fish-диалога туда падает по внешнему ключу. Набор колонок совпадает
+    с gemini_conversations плюс call_direction — страница «Диалоги» объединяет
+    все три таблицы через UNION ALL, а SIP-сервис проставляет номер и
+    направление после звонка (tag_conversations).
+    """
+    __tablename__ = "fish_conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assistant_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("fish_assistant_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id = Column(String, nullable=False, index=True)
+    user_message = Column(Text, nullable=True)
+    assistant_message = Column(Text, nullable=True)
+    caller_number = Column(String, nullable=True)   # номер абонента (SIP-звонок)
+    call_direction = Column(String(20), nullable=True)  # INBOUND / OUTBOUND
+    tokens_used = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    assistant = relationship("FishAssistantConfig", back_populates="conversations")
+
+    def __repr__(self):
+        return f"<FishConversation(id={self.id}, assistant_id={self.assistant_id}, session_id='{self.session_id}')>"

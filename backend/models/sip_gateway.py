@@ -18,8 +18,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from backend.models.base import Base
 
 
-# Типы ассистентов, которые умеет обслуживать телефонный WS-хендлер.
-SIP_SUPPORTED_ASSISTANT_TYPES = ("openai", "gemini")
+# Типы ассистентов, которые умеет обслуживать телефонный тракт: у каждого есть
+# браузерный хендлер с протоколом виджета, который заворачивается в HandlerSocket.
+SIP_SUPPORTED_ASSISTANT_TYPES = ("openai", "gemini", "fish")
 
 
 class SipPhoneNumber(Base):
@@ -35,7 +36,8 @@ class SipPhoneNumber(Base):
     # Какой шлюз обслуживает номер (gateway_id из /etc/voksy-bridge/bridge.env)
     gateway_id = Column(String(50), nullable=False, default="sip-gw-1")
 
-    # Привязка к ассистенту: "openai" → assistant_configs, "gemini" → gemini_assistant_configs
+    # Привязка к ассистенту: "openai" → assistant_configs, "gemini" → gemini_assistant_configs,
+    # "fish" → fish_assistant_configs
     assistant_type = Column(String(20), nullable=True)
     assistant_id = Column(UUID(as_uuid=True), nullable=True)
 

@@ -561,6 +561,18 @@ class ConversationService:
                     caller_number=normalized_phone,
                     tokens_used=tokens_used or 0
                 )
+            elif assistant_type == "fish":
+                # Fish-диалоги — в fish_conversations (та же причина: FK conversations → assistant_configs).
+                from backend.models.fish_assistant import FishConversation
+                conversation = FishConversation(
+                    assistant_id=assistant_uuid,
+                    session_id=session_id or str(uuid.uuid4()),
+                    user_message=user_message or "",
+                    assistant_message=assistant_message or "",
+                    caller_number=normalized_phone,
+                    call_direction=call_direction,
+                    tokens_used=tokens_used or 0
+                )
             else:
                 conversation = Conversation(
                     assistant_id=assistant_uuid,

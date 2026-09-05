@@ -201,9 +201,21 @@
   const SERVER_URL = getServerUrl();
   const ASSISTANT_ID = getAssistantId();
   const WIDGET_POSITION = getWidgetPosition();
-  
+
+  // Путь голосового сокета. По умолчанию /ws/ (OpenAI-ассистенты); другие
+  // провайдеры с тем же протоколом задают свой: data-ws-path="/ws/fish/".
+  const getWsPath = () => {
+    const scriptTags = document.querySelectorAll('script');
+    for (let i = 0; i < scriptTags.length; i++) {
+      const p = scriptTags[i].getAttribute('data-ws-path');
+      if (p) return p.endsWith('/') ? p : p + '/';
+    }
+    return '/ws/';
+  };
+  const WS_PATH = getWsPath();
+
   // Формируем WebSocket URL с указанием ID ассистента
-  const WS_URL = SERVER_URL.replace(/^http/, 'ws') + '/ws/' + ASSISTANT_ID;
+  const WS_URL = SERVER_URL.replace(/^http/, 'ws') + WS_PATH + ASSISTANT_ID;
   
   widgetLog(`[v4.0 Clean UI] Configuration: Server: ${SERVER_URL}, Assistant: ${ASSISTANT_ID}, Position: ${WIDGET_POSITION.vertical}-${WIDGET_POSITION.horizontal}`);
   widgetLog(`[v4.0 Clean UI] WebSocket URL: ${WS_URL}`);

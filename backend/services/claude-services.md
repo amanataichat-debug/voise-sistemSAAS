@@ -20,7 +20,7 @@
 - `subscription_service.py` — управление планами подписки, активация триалов (в т.ч. реферальных), лог событий подписки.
 - `payment_service.py` — `RobokassaService`: формирование платёжных ссылок, проверка подписи, расчёт длительности подписки по сумме/периоду, интеграция с партнёрскими комиссиями. ⚠️ Провайдер — Robokassa (а не YooKassa, как указано в корневом CLAUDE.md).
 - `partner_service.py` — партнёрская/реферальная программа: генерация кодов, реферальные связи, начисление комиссий.
-- `voximplant_partner.py` — `VoximplantPartnerService`: Voximplant Partner API (дочерние аккаунты, SubUsers, верификация/биллинг-ссылки, номера телефонов, сценарии/правила маршрутизации, исходящие звонки, Service Account JWT для secure-записей). Самый крупный файл папки.
+- `voximplant_partner.py` — **МЁРТВЫЙ КОД** (Voximplant не используется, см. `CLAUDE.md`). `VoximplantPartnerService`: Voximplant Partner API (дочерние аккаунты, SubUsers, верификация/биллинг-ссылки, номера телефонов, сценарии/правила маршрутизации, исходящие звонки, Service Account JWT для secure-записей). Самый крупный файл папки.
 
 ### Ассистенты / диалоги / контент
 - `assistant_service.py` — CRUD OpenAI-ассистентов (`AssistantConfig`), генерация embed-кода.
@@ -47,8 +47,8 @@
 - `llm_streaming/` — отдельный пакет low-latency стриминга OpenAI Chat для функции `query_llm` (см. дочернюю доку).
 
 ### Собственная SIP-телефония
-- `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
-- `conversation_service.save_conversation(assistant_type="gemini")` пишет в `gemini_conversations`, а не в `conversations` (там FK на `assistant_configs`).
+- `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations`/`fish_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- `conversation_service.save_conversation` выбирает таблицу по типу ассистента: Gemini → `gemini_conversations`, Fish → `fish_conversations`, остальные → `conversations` (там FK на `assistant_configs`). `tag_conversations` в SIP-сервисе использует ту же карту.
 
 ## Ключевые сущности / точки входа
 

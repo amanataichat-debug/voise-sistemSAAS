@@ -2,13 +2,12 @@
 """
 REST API endpoints for Fish Audio voice assistants management.
 
-Fish Audio — TTS-провайдер. Диалог ведёт OpenAI Realtime
-(gpt-realtime-2.1-mini, output_modalities=["text"]) прямо в сценарии
-Voximplant, озвучивает Fish через наш прокси /ws/fish/tts/{assistant_id}.
-Оба ключа пользовательские: openai_api_key (LLM) и fish_api_key (TTS).
-
-Конфиг ассистента отдаётся сценарию через существующие
-/api/telephony/config и /api/telephony/outbound-config.
+Fish-ассистент: OpenAI Realtime (gpt-realtime-2, output_modalities=["text"])
+ведёт диалог, Fish Audio озвучивает — оба в хендлере
+backend/websockets/handler_fish.py (виджет /ws/fish/{id}, телефон через
+SIP-шлюз). Ключи серверные: settings.OPENAI_API_KEY и settings.FISH_API_KEY;
+пользовательские ключи не используются, поэтому эндпоинтов для них нет —
+только /status с проверкой, что сервер настроен.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,6 +17,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import uuid
 
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.db.session import get_db
 from backend.models.user import User
@@ -25,6 +25,7 @@ from backend.models.fish_assistant import (
     FishAssistantConfig,
     DEFAULT_FISH_MODEL,
     DEFAULT_FISH_LLM_MODEL,
+    FISH_LLM_MODELS,
     DEFAULT_FISH_SAMPLE_RATE,
     DEFAULT_FISH_LATENCY,
     FISH_MODELS,
@@ -112,30 +113,17 @@ class FishAssistantResponse(BaseModel):
         from_attributes = True
 
 
-class FishApiKeysUpdate(BaseModel):
-    """Schema for updating Fish-related API keys"""
-    openai_api_key: Optional[str] = None
-    fish_api_key: Optional[str] = None
-
-
-class FishApiKeysStatus(BaseModel):
-    """Schema for API keys status response"""
-    has_openai_key: bool
-    has_fish_key: bool
-    openai_key_preview: Optional[str] = None
-    fish_key_preview: Optional[str] = None
+class FishServerStatus(BaseModel):
+    """Настроены ли на сервере ключи, на которых работают Fish-агенты."""
+    openai_key: bool
+    fish_key: bool
+    ready: bool
+    ws_path: str = "/ws/fish/"
 
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-def mask_api_key(key: Optional[str]) -> Optional[str]:
-    """Return masked version of API key for display."""
-    if not key or len(key) < 8:
-        return None
-    return f"{key[:3]}...{key[-3:]}"
-
 
 def validate_fish_model(model: Optional[str]) -> None:
     if model is not None and model not in FISH_MODELS:
@@ -226,7 +214,7 @@ async def get_fish_options():
         "default_model": DEFAULT_FISH_MODEL,
         "latency_modes": FISH_LATENCY_MODES,
         "default_latency": DEFAULT_FISH_LATENCY,
-        "llm_models": [DEFAULT_FISH_LLM_MODEL, "gpt-realtime-1.5"],
+        "llm_models": FISH_LLM_MODELS,
         "default_llm_model": DEFAULT_FISH_LLM_MODEL,
         "sample_rate": DEFAULT_FISH_SAMPLE_RATE,
         "speed": {"min": FISH_SPEED_MIN, "max": FISH_SPEED_MAX, "default": 1.0},
@@ -236,53 +224,12 @@ async def get_fish_options():
     }
 
 
-@router.get("/api-keys", response_model=FishApiKeysStatus)
-async def get_api_keys_status(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Get status of API keys needed for Fish agents."""
-    return FishApiKeysStatus(
-        has_openai_key=bool(current_user.openai_api_key),
-        has_fish_key=bool(current_user.fish_api_key),
-        openai_key_preview=mask_api_key(current_user.openai_api_key),
-        fish_key_preview=mask_api_key(current_user.fish_api_key),
-    )
-
-
-@router.put("/api-keys", response_model=FishApiKeysStatus)
-async def update_api_keys(
-    keys_data: FishApiKeysUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Update OpenAI and/or Fish Audio API keys."""
-    try:
-        if keys_data.openai_api_key is not None:
-            current_user.openai_api_key = keys_data.openai_api_key or None
-
-        if keys_data.fish_api_key is not None:
-            current_user.fish_api_key = keys_data.fish_api_key or None
-
-        db.commit()
-        db.refresh(current_user)
-
-        logger.info(f"[FISH-API] API keys updated for user {current_user.id}")
-
-        return FishApiKeysStatus(
-            has_openai_key=bool(current_user.openai_api_key),
-            has_fish_key=bool(current_user.fish_api_key),
-            openai_key_preview=mask_api_key(current_user.openai_api_key),
-            fish_key_preview=mask_api_key(current_user.fish_api_key),
-        )
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[FISH-API] Error updating API keys: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update API keys",
-        )
+@router.get("/status", response_model=FishServerStatus)
+async def get_fish_server_status(current_user: User = Depends(get_current_user)):
+    """Готов ли сервер обслуживать Fish-агентов (ключи OpenAI и Fish Audio из env)."""
+    openai_ok = bool(settings.OPENAI_API_KEY)
+    fish_ok = bool(settings.FISH_API_KEY)
+    return FishServerStatus(openai_key=openai_ok, fish_key=fish_ok, ready=openai_ok and fish_ok)
 
 
 # ============================================================================
@@ -298,7 +245,7 @@ async def get_fish_assistants(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all Fish assistants for the current user + API key status."""
+    """Get all Fish assistants for the current user."""
     try:
         query = db.query(FishAssistantConfig).filter(
             FishAssistantConfig.user_id == current_user.id
@@ -311,8 +258,8 @@ async def get_fish_assistants(
 
         return {
             "assistants": [to_response(a) for a in assistants],
-            "has_openai_key": bool(current_user.openai_api_key),
-            "has_fish_key": bool(current_user.fish_api_key),
+            # Ключи серверные — фронту важно лишь, настроен ли сервер
+            "server_ready": bool(settings.OPENAI_API_KEY and settings.FISH_API_KEY),
         }
 
     except Exception as e:

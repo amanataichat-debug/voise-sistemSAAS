@@ -38,7 +38,7 @@ from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConvers
 from backend.models.cartesia_assistant import CartesiaAssistantConfig
 from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.grok_assistant import GrokAssistantConfig  # 🆕 cascade
-from backend.models.fish_assistant import FishAssistantConfig  # 🆕 fish
+from backend.models.fish_assistant import FishAssistantConfig, FishConversation  # 🆕 fish
 from backend.models.function_log import FunctionLog
 
 logger = get_logger(__name__)
@@ -49,9 +49,9 @@ router = APIRouter()
 
 class _MessageView:
     """
-    Единый вид записи диалога для таблиц conversations и gemini_conversations.
-    У gemini_conversations нет client_info / duration_seconds / call_cost /
-    call_direction — здесь они None, чтобы общий код деталей и удаления не менялся.
+    Единый вид записи диалога для таблиц conversations, gemini_conversations и
+    fish_conversations. У таблиц провайдеров нет client_info / duration_seconds /
+    call_cost — здесь они None, чтобы общий код деталей и удаления не менялся.
     """
 
     def __init__(self, row):
@@ -73,9 +73,9 @@ class _MessageView:
 def _find_session_record(db: Session, conversation_id: str):
     """
     Найти запись сессии по session_id или id сообщения: сначала в conversations,
-    затем в gemini_conversations. Возвращает (record, model) или (None, None).
+    затем в gemini_conversations и fish_conversations. Возвращает (record, model) или (None, None).
     """
-    for model in (Conversation, GeminiConversation):
+    for model in (Conversation, GeminiConversation, FishConversation):
         record = db.query(model).filter(model.session_id == conversation_id).first()
         if not record:
             try:
@@ -112,7 +112,8 @@ def _preview_sql(table_name: str):
 def _sessions_select(model, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed):
     """
     Группировка сообщений в сессии для одной таблицы. Набор колонок одинаковый для
-    conversations и gemini_conversations, чтобы результаты можно было объединить UNION ALL.
+    conversations, gemini_conversations и fish_conversations, чтобы результаты можно
+    было объединить UNION ALL.
     """
     rich = model is Conversation
     created = model.created_at if rich else cast(model.created_at, DateTime(timezone=True))
@@ -519,6 +520,7 @@ async def get_conversation_sessions(
         union_query = union_all(
             _sessions_select(Conversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
             _sessions_select(GeminiConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
+            _sessions_select(FishConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
         ).subquery("sessions")
 
         # Подсчет общего количества
@@ -545,7 +547,7 @@ async def get_conversation_sessions(
             # PostgreSQL DISTINCT ON - берём первую запись для каждой сессии по времени,
             # из обеих таблиц (conversations и gemini_conversations)
             try:
-                for table_name in ("conversations", "gemini_conversations"):
+                for table_name in ("conversations", "gemini_conversations", "fish_conversations"):
                     preview_results = db.execute(_preview_sql(table_name), {"session_ids": session_ids}).fetchall()
                     for row in preview_results:
                         if row.preview and row.session_id not in preview_map:
@@ -557,7 +559,7 @@ async def get_conversation_sessions(
                 # Fallback - загружаем по одному (медленнее, но работает везде)
                 for session_id in session_ids:
                     first_msg = None
-                    for model in (Conversation, GeminiConversation):
+                    for model in (Conversation, GeminiConversation, FishConversation):
                         first_msg = db.query(model).filter(
                             model.session_id == session_id
                         ).order_by(model.created_at.asc()).first()
@@ -590,6 +592,14 @@ async def get_conversation_sessions(
         for gc in gemini_conv_query:
             conv_to_session[str(gc.id)] = gc.session_id
             conv_ids.append(gc.id)
+
+        # Fish: журнал в fish_conversations, function_logs привязаны к его id
+        fish_conv_query = db.query(FishConversation.id, FishConversation.session_id).filter(
+            FishConversation.session_id.in_(session_ids)
+        ).all()
+        for fc in fish_conv_query:
+            conv_to_session[str(fc.id)] = fc.session_id
+            conv_ids.append(fc.id)
         
         logger.info(f"   🔧 Total conversation IDs for function lookup: {len(conv_ids)} (OpenAI: {len(conv_ids_query)}, Gemini: {len(gemini_conv_query)})")
         
@@ -1027,14 +1037,15 @@ async def get_conversation_detail(
         if include_functions:
             message_ids = [msg.id for msg in all_messages]
             
-            # Для Gemini также ищем в gemini_conversations
-            if assistant_type == 'gemini':
-                gemini_messages = db.query(GeminiConversation.id).filter(
-                    GeminiConversation.session_id == session_id
+            # Для Gemini и Fish также ищем в их таблицах диалогов
+            provider_model = {'gemini': GeminiConversation, 'fish': FishConversation}.get(assistant_type)
+            if provider_model is not None:
+                provider_messages = db.query(provider_model.id).filter(
+                    provider_model.session_id == session_id
                 ).all()
-                gemini_ids = [m.id for m in gemini_messages]
-                message_ids.extend(gemini_ids)
-                logger.info(f"   🔧 Added {len(gemini_ids)} Gemini conversation IDs for function lookup")
+                provider_ids = [m.id for m in provider_messages]
+                message_ids.extend(provider_ids)
+                logger.info(f"   🔧 Added {len(provider_ids)} {assistant_type} conversation IDs for function lookup")
             
             logs = db.query(FunctionLog).filter(
                 FunctionLog.conversation_id.in_(message_ids)

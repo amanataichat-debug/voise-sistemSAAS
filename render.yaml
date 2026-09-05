@@ -9,6 +9,8 @@ services:
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      - key: FISH_API_KEY  # серверный ключ Fish Audio для Fish-ассистентов
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: HOST_URL

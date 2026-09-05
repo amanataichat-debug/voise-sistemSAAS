@@ -30,6 +30,7 @@ from backend.models.sip_gateway import (
 )
 from backend.models.assistant import AssistantConfig
 from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConversation
+from backend.models.fish_assistant import FishAssistantConfig, FishConversation
 from backend.models.conversation import Conversation
 from backend.models.task import Task, TaskStatus
 from backend.models.agent_call import AgentCall
@@ -98,6 +99,8 @@ class SipGatewayService:
             return db.query(AssistantConfig).filter(AssistantConfig.id == aid).first()
         if assistant_type == "gemini":
             return db.query(GeminiAssistantConfig).filter(GeminiAssistantConfig.id == aid).first()
+        if assistant_type == "fish":
+            return db.query(FishAssistantConfig).filter(FishAssistantConfig.id == aid).first()
         return None
 
     # ------------------------------------------------------------------ calls
@@ -329,7 +332,7 @@ class SipGatewayService:
             phone, direction = call.to_number, "OUTBOUND"
         if not phone:
             return 0
-        model = GeminiConversation if call.assistant_type == "gemini" else Conversation
+        model = {"gemini": GeminiConversation, "fish": FishConversation}.get(call.assistant_type, Conversation)
         rows = (
             db.query(model)
             .filter(

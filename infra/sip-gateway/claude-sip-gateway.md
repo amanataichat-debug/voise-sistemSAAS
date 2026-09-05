@@ -6,11 +6,11 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 стоит Asterisk 20 и мост `bridge.py`, который гонит звук звонка по WebSocket в
 бэкенд на Render. На бэкенде звонок проходит через **те же** голосовые
 хендлеры, что и браузерный виджет (`handler_realtime_new` для OpenAI,
-`handler_gemini` для Gemini), через адаптер `backend/websockets/sip_media_adapter.py`.
+`handler_gemini` для Gemini, `handler_fish` для Fish), через адаптер `backend/websockets/sip_media_adapter.py`.
 Функции, транскрипты, запись диалогов и CRM работают для телефона так же, как
 для виджета. Правило проекта: **для телефонии и виджета поведение одинаковое**.
 
-Поддерживаются ассистенты OpenAI и Gemini. Входящие и исходящие звонки.
+Поддерживаются ассистенты OpenAI, Gemini и Fish (`SIP_HANDLERS` в `api/sip_gateway.py`). Входящие и исходящие звонки.
 Человеческая памятка по серверу: `SERVER.md`; спецификация протокола и
 установка: `README.md`.
 
@@ -39,10 +39,10 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 | Файл | Что |
 |---|---|
 | `backend/api/sip_gateway.py` | Роутер. WS `/ws/sip-gateway/control` (реестр `GATEWAYS`, `_originate_loop` раз в 1 с, `_sweep_stale_calls`), WS `/ws/sip/{call_id}` (поиск номера → загрузка ассистента → override приветствия/промпта → запуск хендлера через `HandlerSocket` → лог `finished frames_in=… deltas_out=… audio_out=… barge_ins=… reply_latencies=…`). HTTP `/api/sip/numbers` (GET, POST admin, PATCH, DELETE), `/api/sip/calls` (GET, POST ручной исходящий, `/{id}/hangup`), `/api/sip/gateways` (admin). `_ensure_tables()` создаёт таблицы лениво при первом обращении, потому что startup-воркер Gunicorn может быть убит по таймауту 120 с |
-| `backend/websockets/sip_media_adapter.py` | `HandlerSocket` — псевдо-WebSocket для хендлера: ресемплинг 8↔24 кГц (OpenAI) и 8→16 / 24→8 (Gemini) через `audioop.ratecv`; батчинг входа `INBOUND_BATCH_MS` (OpenAI 20 мс, Gemini 100 мс); barge-in на `speech.started`/`conversation.interrupted`/`response.cancelled` → `clear` + подкладывает хендлеру `audio_playback.stopped`; функция `hangup_call` → дождаться прощания → `mark` → `hangup`; замер `reply latency` (событие «пользователь договорил» → первый аудио-дельта) |
-| `backend/services/sip_gateway_service.py` | `find_number` (точное, затем по последним 9 цифрам), `queue_outbound_call`, `claim_queued_calls` (`FOR UPDATE SKIP LOCKED`), `apply_bridge_event` (статусы, requeue до 6 попыток с паузой 30 с при `RETRYABLE_FAIL_REASONS`, `_finish_task` обновляет `Task`/`AgentCall`), `tag_conversations` (проставляет `caller_number`/`direction` в `conversations` или `gemini_conversations` по `assistant_type`), `resolve_greeting`, `call_context_text` |
+| `backend/websockets/sip_media_adapter.py` | `HandlerSocket` — псевдо-WebSocket для хендлера: ресемплинг 8↔24 кГц (OpenAI, Fish) и 8→16 / 24→8 (Gemini) через `audioop.ratecv`; батчинг входа `INBOUND_BATCH_MS` (OpenAI 20 мс, Gemini 100 мс); barge-in на `speech.started`/`conversation.interrupted`/`response.cancelled` → `clear` + подкладывает хендлеру `audio_playback.stopped`; функция `hangup_call` → дождаться прощания → `mark` → `hangup`; замер `reply latency` (событие «пользователь договорил» → первый аудио-дельта) |
+| `backend/services/sip_gateway_service.py` | `find_number` (точное, затем по последним 9 цифрам), `queue_outbound_call`, `claim_queued_calls` (`FOR UPDATE SKIP LOCKED`), `apply_bridge_event` (статусы, requeue до 6 попыток с паузой 30 с при `RETRYABLE_FAIL_REASONS`, `_finish_task` обновляет `Task`/`AgentCall`), `tag_conversations` (проставляет `caller_number`/`direction` в `conversations`, `gemini_conversations` или `fish_conversations` по `assistant_type`), `resolve_greeting`, `call_context_text` |
 | `backend/models/sip_gateway.py` | `SipPhoneNumber` (user_id, phone_number — только цифры, unique; gateway_id; assistant_type/assistant_id; first_phrase; allow_outbound; is_active), `SipCall` (direction, `SipCallStatus` queued/dialing/ringing/answered/completed/failed, did/caller/to_number, task_id, call_metadata JSON, trunk_host, timestamps, duration_sec, end_reason, attempts), `normalize_sip_number()` |
-| `backend/core/task_scheduler.py` | `_sip_number_for()`, `_execute_via_sip_gateway()`, `_agent_call_via_sip_gateway()`: если у пользователя есть активный номер шлюза с `allow_outbound` и ассистент OpenAI/Gemini, запланированный звонок ставится в очередь `sip_calls`; иначе прежний путь через Voximplant |
+| `backend/core/task_scheduler.py` | `_sip_number_for()`, `_execute_via_sip_gateway()`, `_agent_call_via_sip_gateway()`: если у пользователя есть активный номер шлюза с `allow_outbound` и ассистент OpenAI/Gemini/Fish, запланированный звонок ставится в очередь `sip_calls`; без номера задача падает в мёртвые ветки Voximplant и завершится ошибкой |
 | `backend/core/config.py` | `SIP_GATEWAY_TOKEN` (равен `GATEWAY_TOKEN` на VPS), `SIP_GATEWAY_DEFAULT_ID` (`sip-gw-1`) |
 | `backend/websockets/gemini_client.py` | VAD-профиль Gemini для всех сессий: `GEMINI_VAD_PROFILE` (`fast`/`default`), `GEMINI_VAD_START_SENSITIVITY` (`low` по умолчанию: high на телефонной линии принимает шум за речь и обрывает приветствие), `GEMINI_VAD_END_SENSITIVITY` (`high`), `GEMINI_VAD_SILENCE_MS` (500) |
 | `backend/websockets/handler_gemini.py` | Если Gemini прервал приветствие до первого аудио-чанка, приветствие отправляется повторно один раз (`interruption_state["greeting_retries"]`) |
@@ -67,9 +67,12 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 - `GATEWAY_TOKEN` на VPS и `SIP_GATEWAY_TOKEN` на Render должны совпадать, иначе мост получает 403.
 - Render во время деплоя недоступен 1–2 минуты: в логах моста `backend_unavailable`, в логах Render `bad_start`. Не баг.
 - Render фактически запускает Python 3.14 (несмотря на runtime.txt 3.10); `audioop` даёт пакет `audioop-lts`.
-- `assistant.telephony_mode = True` ставится как обычный атрибут объекта ассистента, не колонка. Overrides приветствия/промпта делаются через `set_committed_value` при `expire_on_commit=False`, чтобы не попасть в БД.
+- `assistant.telephony_mode = True` ставится как обычный атрибут объекта ассистента, не колонка. Его читает Fish-хендлер (телефонный профиль VAD в `fish_llm_client.TELEPHONY_VAD`). Overrides приветствия/промпта делаются через `set_committed_value` при `expire_on_commit=False`, чтобы не попасть в БД.
 - Хендлеры считают «100 audio chunks» по сообщениям, для Gemini это 100 мс батчи, то есть 10 в секунду.
 - После запуска с оператором удалить транспорт 5080 и endpoint `test` из `pjsip.conf` и правило 5080/UDP в файрволе Hetzner.
+
+## Fish по телефону
+Привязка номера: `PATCH /api/sip/numbers/{id}` с `{"assistant_type":"fish","assistant_id":"<uuid>"}`. Звонок идёт через `handler_fish` на серверных ключах `OPENAI_API_KEY`/`FISH_API_KEY`; в логах Render искать `[FISH]` и `[FISH-TTS]` рядом с `[SIP-MEDIA]`. Задержка ответа выше OpenAI (текст модели → синтез Fish), после перебивания Fish переподключается.
 
 ## Что не сделано
 - UI-страница для номеров и журнала звонков (сейчас только API `/api/sip/*`).

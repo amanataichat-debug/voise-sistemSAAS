@@ -2,7 +2,22 @@
 
 ## Overview
 
-Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI Realtime API, Google Gemini Live, xAI Grok Voice, and ElevenLabs — then connect them to telephony (Voximplant) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
+Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI Realtime API, Google Gemini Live, Fish Audio (OpenAI text + Fish TTS), xAI Grok Voice, and ElevenLabs — then connect them to telephony (own SIP gateway, see below) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
+
+## ⚠️ Voximplant is NOT used (read this first)
+
+Telephony runs **only** through our own SIP gateway (`infra/sip-gateway/`: Hetzner VPS with Asterisk + `bridge.py` → `/ws/sip/{call_id}` on the backend → the same voice handlers as the web widget). Voximplant is switched off: no account, no scenarios deployed, no calls go through it.
+
+The Voximplant code is still in the tree and is **dead code awaiting removal**. Do not fix, extend or document it as a working path, and never route a new feature through it:
+
+- `backend/api/voximplant.py`, `backend/api/voximplant_settings.py`, `backend/api/telephony.py` (number binding, scenario deployment, `/config`, `/outbound-config`)
+- `backend/services/voximplant_partner.py`, `backend/models/voximplant_child.py`, `User.voximplant_*` columns, `VOXIMPLANT_*` settings
+- `backend/websockets/voximplant_handler.py`, `voximplant_adapter.py`, `handler_vox_gemini.py`, `handler_fish_tts.py` (old Fish TTS proxy for VoxEngine)
+- `voximplant_scenarios/`, `.claude/skills/voximplant-*`, `backend/static/telephony.html`, `outbound-calls.html`
+- fallbacks in `backend/core/task_scheduler.py` (`_execute_via_partner_api`, `_execute_via_legacy_api`) and Voximplant number handling in `backend/api/agent.py`
+- `send_sms` function (Voximplant Management API) — has no working transport now
+
+Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`, `yandex`) do not work anymore and are being re-implemented as backend handlers one by one, the way Fish was (see **Fish assistants** below). A new provider = a handler in `backend/websockets/` speaking the widget protocol + registration in `SIP_HANDLERS` (`backend/api/sip_gateway.py`), `SIP_SUPPORTED_ASSISTANT_TYPES` and `HANDLER_IN_RATE`.
 
 **Production URL:** https://voksyai.online
 **Version:** 3.0.0
@@ -18,7 +33,7 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 - **WebSocket:** Native FastAPI WebSocket for real-time voice streaming
 - **Storage:** Cloudflare R2 (S3-compatible)
 - **Vector DB:** Pinecone (knowledge base search)
-- **External APIs:** OpenAI, Google Gemini, xAI Grok, ElevenLabs, Voximplant, Finik (payments, KGS)
+- **External APIs:** OpenAI, Google Gemini, Fish Audio, xAI Grok, ElevenLabs, Finik (payments, KGS); telephony — own SIP gateway (Asterisk) with operator O!
 
 ## Project Structure
 
@@ -43,7 +58,9 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── gemini_ws.py     # Gemini Live WebSocket proxy
 │   │   ├── grok_ws.py       # Grok Voice WebSocket proxy
 │   │   ├── telephony.py     # Outbound calls, call scheduling
-│   │   ├── voximplant.py    # Voximplant telephony integration (legacy path)
+│   │   ├── voximplant.py    # DEAD: Voximplant integration (not used, see warning above)
+│   │   ├── fish_assistants.py # Fish assistant CRUD (/api/fish-assistants)
+│   │   ├── fish_ws.py       # Fish voice WS: /ws/fish/{id} (OpenAI Realtime text + Fish TTS)
 │   │   ├── sip_gateway.py   # Own SIP telephony: bridge WS (/ws/sip-gateway/control, /ws/sip/{id}) + /api/sip/*
 │   │   ├── conversations.py # Conversation history and analytics
 │   │   ├── contacts.py      # CRM contacts management
@@ -66,6 +83,7 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── assistant.py     # OpenAI AssistantConfig
 │   │   ├── gemini_assistant.py  # GeminiAssistantConfig
 │   │   ├── grok_assistant.py    # GrokAssistantConfig
+│   │   ├── fish_assistant.py    # FishAssistantConfig + FishConversation (fish_conversations)
 │   │   ├── elevenlabs.py    # ElevenLabsAgent, ElevenLabsConversation
 │   │   ├── conversation.py  # Conversation model
 │   │   ├── contact.py       # CRM Contact model
@@ -113,8 +131,11 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │   │   ├── gemini_client.py         # Gemini WS client
 │   │   ├── grok_client.py           # Grok WS client
 │   │   ├── sip_media_adapter.py     # HandlerSocket: SIP bridge audio <-> browser handler protocol
-│   │   ├── voximplant_handler.py    # Telephony WS bridge (Voximplant, legacy)
-│   │   ├── voximplant_adapter.py    # Voximplant audio adapter
+│   │   ├── handler_fish.py          # Fish handler: OpenAI Realtime (text) + Fish Audio TTS, widget protocol
+│   │   ├── fish_llm_client.py       # Text-mode OpenAI Realtime client for Fish (server VAD, transcription, tools)
+│   │   ├── fish_tts_client.py       # Fish Audio live TTS client (msgpack, barge-in via reconnect)
+│   │   ├── voximplant_handler.py    # DEAD: Voximplant WS bridge
+│   │   ├── voximplant_adapter.py    # DEAD: Voximplant audio adapter
 │   │   └── sentence_detector.py     # Sentence boundary detection
 │   ├── utils/               # Utility modules
 │   ├── db/                  # Database session management
@@ -123,6 +144,8 @@ Voksy AI is a SaaS platform for creating and managing AI-powered voice assistant
 │       ├── agents.html      # OpenAI agents management page
 │       ├── gemini-agents.html   # Gemini agents page
 │       ├── grok-agents.html     # Grok agents page
+│       ├── fish-agents.html     # Fish agents page (server keys, browser test button)
+│       ├── fish-test.html       # Browser test of a Fish agent: widget.js with data-ws-path="/ws/fish/"
 │       ├── dashboard.html       # User dashboard
 │       ├── telephony.html       # Telephony settings
 │       ├── conversations.html   # Conversation history
@@ -209,7 +232,8 @@ cd .. && git add -A backend/static/landing frontend
 | `/api/grok-assistants` | Grok assistant CRUD |
 | `/api/elevenlabs` | ElevenLabs agents |
 | `/api/telephony` | Outbound calls, call tasks |
-| `/api/voximplant` | Voximplant telephony |
+| `/api/voximplant` | DEAD — Voximplant (not used) |
+| `/api/fish-assistants` | Fish assistant CRUD, `/options`, `/status` (server keys configured?) |
 | `/api/conversations` | Conversation history |
 | `/api/contacts` | CRM contacts |
 | `/api/knowledge-base` | Knowledge base (Pinecone) |
@@ -221,6 +245,7 @@ cd .. && git add -A backend/static/landing frontend
 | `/ws/openai/{id}` | OpenAI Realtime voice WS |
 | `/ws/gemini/{id}` | Gemini Live voice WS |
 | `/ws/grok/{id}` | Grok Voice WS |
+| `/ws/fish/{id}` | Fish voice WS (widget protocol; OpenAI text brain + Fish TTS) |
 | `/api/sip` | Own SIP telephony: numbers, call journal, manual outbound (`/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`) |
 | `/ws/sip-gateway/control` | Control socket from the VPS bridge (auth by `SIP_GATEWAY_TOKEN`) |
 | `/ws/sip/{call_id}` | Per-call media socket from the VPS bridge (PCM16 8 kHz) |
@@ -229,14 +254,15 @@ cd .. && git add -A backend/static/landing frontend
 
 PostgreSQL with SQLAlchemy ORM. Migrations managed by Alembic (`alembic/versions/`).
 
-Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `elevenlabs_agents`, `conversations`, `gemini_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
+Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `fish_assistant_configs`, `elevenlabs_agents`, `conversations`, `gemini_conversations`, `fish_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
 
-`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations`; the "Диалоги" page unions both tables.
+`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations` and Fish dialogs to `fish_conversations`; the "Диалоги" page unions all three tables (`backend/api/conversations.py`), and `SipGatewayService.tag_conversations` picks the table by `assistant_type`.
 
 ## Environment Variables (Key)
 
 - `DATABASE_URL` — PostgreSQL connection string
-- `OPENAI_API_KEY` — OpenAI API key (server-level, users can also set their own)
+- `OPENAI_API_KEY` — OpenAI API key (server-level, users can also set their own; Fish assistants always use the server key)
+- `FISH_API_KEY` — Fish Audio API key (server-level; Fish assistants never use user keys)
 - `JWT_SECRET_KEY` — JWT signing secret
 - `HOST_URL` — Public URL (e.g., https://voksyai.online)
 - `PRODUCTION` — "true" in production (disables docs, enables optimizations)
@@ -251,21 +277,22 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `SIP_GATEWAY_DEFAULT_ID` — gateway id used for outbound calls (default `sip-gw-1`)
 - `GEMINI_VAD_PROFILE` / `GEMINI_VAD_START_SENSITIVITY` / `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_MS` — Gemini Live speech detection profile, same for widget and telephony (defaults: `fast`, `low`, `high`, `500`)
 
-Users provide their own API keys for: Google Gemini, xAI Grok, ElevenLabs, Voximplant.
+Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini, xAI Grok, ElevenLabs. Fish assistants run on server keys only.
 
 ## Architecture Notes
 
 - **Import redirection:** `main.py` contains a custom `MetaPathFinder` that redirects bare module imports (e.g., `core.config`) to `backend.core.config`. This allows modules to work both standalone and within the backend package.
 - **Modular functions:** `backend/functions/` uses a registry pattern — new AI-callable functions are auto-discovered at startup via `discover_functions()`.
-- **Multi-provider voice:** The WebSocket layer abstracts three different voice AI providers (OpenAI, Gemini, Grok) behind similar handler interfaces, with Voximplant telephony bridge support.
-- **Own SIP telephony (no Voximplant):** a Hetzner VPS (`178.105.79.237`, Asterisk 20 + `infra/sip-gateway/bridge/bridge.py`) terminates the operator's SIP trunk and streams call audio to the backend over outbound WebSockets. On the backend `backend/websockets/sip_media_adapter.py` wraps the *same* browser handlers (OpenAI, Gemini), so phone calls and the widget share functions, transcripts, conversation saving and behaviour. Rule: telephony and widget must behave the same. Outbound calls are queued in `sip_calls` and picked up by the worker that holds the control socket. Full picture: `infra/sip-gateway/claude-sip-gateway.md`; server how-to: `infra/sip-gateway/SERVER.md`.
+- **Multi-provider voice:** The WebSocket layer abstracts the voice providers (OpenAI, Gemini, Fish, Grok) behind handlers with one client protocol (the "widget protocol": `input_audio_buffer.append` in, `response.audio.delta` 24 kHz out, `speech.started` / `conversation.interrupted` / `assistant.speech.*` / `function_call.*` events). Anything speaking that protocol works in the widget and on the phone.
+- **Own SIP telephony:** a Hetzner VPS (`178.105.79.237`, Asterisk 20 + `infra/sip-gateway/bridge/bridge.py`) terminates the operator's SIP trunk and streams call audio to the backend over outbound WebSockets. On the backend `backend/websockets/sip_media_adapter.py` wraps the *same* browser handlers (OpenAI, Gemini, Fish — map `SIP_HANDLERS` in `backend/api/sip_gateway.py`), so phone calls and the widget share functions, transcripts, conversation saving and behaviour. Rule: telephony and widget must behave the same. Outbound calls are queued in `sip_calls` and picked up by the worker that holds the control socket. Full picture: `infra/sip-gateway/claude-sip-gateway.md`; server how-to: `infra/sip-gateway/SERVER.md`.
+- **Fish assistants (half-cascade on server keys):** `backend/websockets/handler_fish.py`. OpenAI Realtime `gpt-realtime-2` in text-only mode (`fish_llm_client.py`: server VAD, input transcription, tools) is the brain; Fish Audio live TTS (`fish_tts_client.py`, msgpack, PCM16 24 kHz) is the voice. Text deltas are cut into sentences (`sentence_detector.py`) and sent to Fish; the greeting goes to Fish directly and is added to the OpenAI context as an assistant message. Barge-in = `response.cancel` + Fish reconnect (Fish has no cancel). Functions reuse `execute_and_send_function_result` from the OpenAI handler; `hangup_call` is handled by `HandlerSocket`. Keys: `OPENAI_API_KEY` + `FISH_API_KEY` from env only. Dialogs → `fish_conversations`. Browser test: `/static/fish-test.html?id=<uuid>` (widget.js with `data-ws-path="/ws/fish/"`). Billing gate (cascade credits) is planned, not implemented yet.
 - **Startup schema fixes:** `app.py` startup event runs comprehensive schema checks and auto-adds missing columns for backwards compatibility.
 - **Task scheduler:** Background scheduler (`core/task_scheduler.py`) polls for scheduled call tasks every 30 seconds and executes them automatically.
 - **Static pages:** App pages (agents, dashboard, CRM, etc.) are vanilla HTML/JS served by FastAPI's `StaticFiles`. The React app is only used for the landing page.
 
 ## Development Workflow (current)
 
-- Work happens on branch `2308-agent-v2` (telephony/agent v2). Commit and push there; no pull requests unless asked.
+- Work happens on branch `0509-v1-sip-good` (SIP telephony + Fish on server keys; branched from `2308-agent-v2`). Commit and push there; no pull requests unless asked. `infra/sip-gateway/install.sh` still defaults to `VOKSY_BRANCH=2308-agent-v2` — pass `VOKSY_BRANCH=0509-v1-sip-good` when updating the VPS from this branch.
 - The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
 - Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
 - Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.

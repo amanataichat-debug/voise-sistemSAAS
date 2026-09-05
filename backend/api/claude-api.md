@@ -13,13 +13,15 @@
 - `assistants.py` — `/api/assistants` — OpenAI Realtime ассистенты.
 - `gemini_assistants.py` — `/api/gemini-assistants` — Google Gemini Live.
 - `grok_assistants.py` — `/api/grok-assistants` — xAI Grok Voice **и каскад-ассистенты**: `/cascade*` (CRUD, справочник TTS, кошелёк кредитов каскада). Каскад хранится в той же таблице, что и Grok, и различается `assistant_type='cascade'`; порядок роутов важен — все `/cascade/*` объявлены до `/{assistant_id}`. CRUD каскада и `/cascade/credits/balance` принимают авторизацию `get_current_user_flexible` (JWT или `X-Api-Key`), остальные роуты — только JWT.
-- `cartesia_assistants.py` — `/api/cartesia-assistants` — Cartesia TTS.
+- `cartesia_assistants.py` — `/api/cartesia-assistants` — Cartesia TTS (тип работал только через Voximplant — сейчас не звонит, ждёт переноса на хендлер).
+- `fish_assistants.py` — `/api/fish-assistants` — Fish-ассистенты: CRUD, `/options` (модели синтеза, латентность, `llm_models`), `/status` (настроены ли на сервере `OPENAI_API_KEY` и `FISH_API_KEY`). Пользовательских ключей у Fish нет.
 - `translate_assistants.py` — `/api/translate-assistants` — ассистент синхронного перевода.
 - `elevenlabs.py` — `/api/elevenlabs` — ElevenLabs-агенты (данные в основном на стороне ElevenLabs API).
 
 ### Голосовые WebSocket-эндпоинты (делегируют в backend/websockets/)
 - `websocket.py` — `/ws/{assistant_id}`, `/ws/demo` — OpenAI Realtime (хендлер `handler_realtime_new`). Регистрируется ПОСЛЕ gemini_ws/translate_ws.
 - `gemini_ws.py` — `/ws/gemini/{id}`, `/ws/gemini-31/{id}`, `/ws/gemini-browser/{id}`, `/ws/vox-gemini/{id}`, `/ws/llm-stream` — Gemini Live + текстовый LLM-стрим. Регистрируется ДО websocket.py.
+- `fish_ws.py` — `/ws/fish/{id}` — Fish-ассистент (хендлер `handler_fish`: OpenAI Realtime текст + Fish TTS, серверные ключи), `/fish/health`. Регистрируется ДО websocket.py.
 - `grok_ws.py` — `/ws/grok/{id}`, `/ws/grok/voximplant/{id}`, `/ws/grok/custom/{id}` — Grok Voice.
 - `translate_ws.py` — `/ws/translate/{id}` — перевод. Регистрируется ДО websocket.py.
 
@@ -30,9 +32,10 @@
 - `llm_streaming.py` — префикс встроен (`/api/llm/...`) — `/stream`, `/models`, `/status`, CRUD `/agent-config`. Текстовый LLM + конфиг агента.
 
 ### Телефония
-- `telephony.py` — `/api/telephony` — номера, настройка (`/setup`), статус, баланс, история звонков, покупка номеров, webhook-регистрация, анализ логов.
-- `voximplant.py` — `/api/voximplant` (Production v3.9) — конфиг ассистента для сценария, `/functions/execute` (исполнение AI-функций из телефонии), `/webhook/transcript`, `/log`, запуск исходящего звонка, аналитика стоимости, пересчёт стоимости.
-- `voximplant_settings.py` — `/api/users` (тот же префикс, что users) — настройки Voximplant пользователя.
+Рабочая телефония — только собственный SIP-шлюз (раздел ниже). **Voximplant не используется**, файлы ниже — мёртвый код до общей чистки (см. `CLAUDE.md`):
+- `telephony.py` — `/api/telephony` — бывшее управление номерами/сценариями Voximplant, `/config` и `/outbound-config` для VoxEngine.
+- `voximplant.py` — `/api/voximplant` — бывшие колбэки сценариев (`/functions/execute`, `/webhook/transcript`, `/log`).
+- `voximplant_settings.py` — настройки Voximplant пользователя.
 
 ### CRM, диалоги, база знаний, файлы
 - `contacts.py` — `/api/contacts` — CRM-контакты и заметки.
@@ -63,7 +66,7 @@
 - **Аутентификация:** `auth.py` (`/register`, `/login`) выдаёт JWT; остальные роутеры защищены зависимостью `get_current_user` из `core/dependencies.py`, плюс гейты по подписке/лимитам.
 - **Голосовые WS:** единственная их работа — принять соединение и вызвать соответствующий handler из `backend/websockets/` (см. его доку).
 - **Агент:** `agent.py` `/chat` запускает `ChatOrchestrator`; `/create` собирает `AgentConfig` из документов-промптов; `credits.py` управляет балансом, на котором держится весь обзвон.
-- **Telephony vs Voximplant:** `telephony.py` — высокоуровневое управление номерами/настройкой пользователя; `voximplant.py` — низкоуровневая интеграция со сценариями Voximplant и обработка их колбэков.
+- **Телефония:** единственный рабочий путь — `sip_gateway.py`; `telephony.py`/`voximplant.py` не трогать и не расширять.
 
 ## Связи с другими частями проекта
 - Используется: `app.py` (регистрация всех роутеров, монтирование статики).
@@ -75,7 +78,7 @@
 - **Незарегистрированные роутеры.** `function_logs.py` и `subscription_status.py` присутствуют в папке, но в списке `app.py` их нет — это либо легаси, либо подключаются иначе; не считайте их эндпоинты живыми без проверки.
 - **Платёжка — Finik (finik.kg, QR-эквайринг, валюта KGS)**. Webhook `/api/payments/finik-webhook` проверяет RSA-подпись и идемпотентность — критичный для безопасности путь.
 - **Дублирование по провайдерам.** Пять почти одинаковых `*_assistants.py` — общие правки нужно вносить во все. Объединённой абстракции нет.
-- **`voximplant.py` большой** (v3.9, ~2000 строк) — ищите конкретный эндпоинт, не читайте целиком.
+- **`telephony.py` и `voximplant.py` большие** и мёртвые — не читайте целиком и не чините.
 - Привилегированные email'ы и спец-лимиты зашиты в `core/dependencies.py` — влияют на доступ к `admin.py` и обход проверок подписки.
 - Создание ассистентов у всех провайдеров закрыто зависимостью `check_assistant_limit` / `check_assistant_limit_flexible`; лимит общий на все типы. Добавляя нового провайдера, не забудь повесить её на его POST-роут.
 

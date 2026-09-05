@@ -49,6 +49,15 @@ from backend.services.sip_gateway_service import SipGatewayService
 from backend.websockets.sip_media_adapter import HandlerSocket
 from backend.websockets.handler_realtime_new import handle_websocket_connection_new
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
+from backend.websockets.handler_fish import handle_fish_websocket_connection
+
+# Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
+# Новый провайдер подключается сюда + в SIP_SUPPORTED_ASSISTANT_TYPES + HANDLER_IN_RATE адаптера.
+SIP_HANDLERS = {
+    "openai": handle_websocket_connection_new,
+    "gemini": handle_gemini_websocket_connection,
+    "fish": handle_fish_websocket_connection,
+}
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -332,7 +341,7 @@ async def sip_media(
     socket = HandlerSocket(websocket, call.assistant_type, call_id)
     socket.start()
     started_at = datetime.utcnow()
-    handler = handle_websocket_connection_new if call.assistant_type == "openai" else handle_gemini_websocket_connection
+    handler = SIP_HANDLERS[call.assistant_type]
     try:
         await handler(socket, str(assistant.id), db)
     except Exception as exc:

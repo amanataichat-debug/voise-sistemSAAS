@@ -1,7 +1,7 @@
 # models — SQLAlchemy ORM-модели (схема БД PostgreSQL)
 
 ## Назначение
-Папка содержит все ORM-модели приложения на SQLAlchemy 2.x — декларативные описания таблиц PostgreSQL. Здесь определены пользователи, ассистенты всех провайдеров (OpenAI, Gemini, Grok, Cartesia, ElevenLabs, Translate), диалоги, CRM-контакты, задачи обзвона, подписки/платежи, кредиты, партнёрская программа и Voximplant-телефония. Модели — единственный источник истины по структуре БД; миграции в `alembic/versions/` должны им соответствовать. Дополнительно `base.py` содержит самодельную инициализацию таблиц с ручными `CREATE TABLE` фолбэками.
+Папка содержит все ORM-модели приложения на SQLAlchemy 2.x — декларативные описания таблиц PostgreSQL. Здесь определены пользователи, ассистенты всех провайдеров (OpenAI, Gemini, Grok, Cartesia, ElevenLabs, Translate), диалоги, CRM-контакты, задачи обзвона, подписки/платежи, кредиты, партнёрская программа и телефония (SIP-шлюз; Voximplant-модели — мёртвый код). Модели — единственный источник истины по структуре БД; миграции в `alembic/versions/` должны им соответствовать. Дополнительно `base.py` содержит самодельную инициализацию таблиц с ручными `CREATE TABLE` фолбэками.
 
 ## Состав
 - `__init__.py` — реэкспорт всех моделей + `Base`, `engine`, `create_tables_with_full_tracking`; список `__all__`. Импорт всех моделей здесь критичен для регистрации в `Base.metadata`.
@@ -34,7 +34,8 @@
 - `sms_message.py` — `SmsMessage` (`sms_messages`), входящие/исходящие SMS через Voximplant.
 - `voximplant_child.py` — `VoximplantChildAccount` (`voximplant_child_accounts`) + `VoximplantPhoneNumber` (`voximplant_phone_numbers`) + enum `VoximplantVerificationStatus`.
 
-- **Собственная SIP-телефония**: `sip_gateway.py` — `SipPhoneNumber` (номер оператора → ассистент OpenAI/Gemini, `allow_outbound`) и `SipCall` (журнал/очередь звонков со статусами `SipCallStatus`, `call_metadata` JSON, `attempts`). `normalize_sip_number()` приводит номера КР к `996XXXXXXXXX`. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- **Fish**: `fish_assistant.py` — `FishAssistantConfig` (`fish_assistant_configs`: `fish_voice_id` reference_id, `fish_model`, `fish_latency`, `voice_speed`, `temperature`, `llm_model` = `gpt-realtime-2`, `greeting_message`, `functions`; `get_fish_start_request(sample_rate)` — StartEvent для Fish TTS) и `FishConversation` (`fish_conversations`: как `gemini_conversations` плюс `call_direction`). Константы `DEFAULT_FISH_LLM_MODEL`, `FISH_LLM_MODELS`, `FISH_MODELS`, `FISH_LATENCY_MODES`.
+- **Собственная SIP-телефония**: `sip_gateway.py` — `SipPhoneNumber` (номер оператора → ассистент OpenAI/Gemini/Fish, `allow_outbound`) и `SipCall` (журнал/очередь звонков со статусами `SipCallStatus`, `call_metadata` JSON, `attempts`). `normalize_sip_number()` приводит номера КР к `996XXXXXXXXX`. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
 
 ## Ключевые сущности / точки входа
 - **`User`** (`users`) — центр графа. Связи: `assistants`, `gemini_assistants`, `grok_assistants`, `cartesia_assistants`, `translate_assistants`, `elevenlabs_agents`, `files`, `subscription_plan_rel`; backref-ы: `contacts`, `partner_profile`, `voximplant_child_account`. Хранит per-user API-ключи (`openai_api_key`, `gemini_api_key`, `grok_api_key`, `cartesia_api_key`, `openrouter_api_key`, `elevenlabs_api_key`), Voximplant-креды, баланс `credits_balance`, флаги триала агента.

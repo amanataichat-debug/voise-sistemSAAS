@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     VOXIMPLANT_TEMPLATE_ACCOUNT_ID: Optional[str] = os.getenv("VOXIMPLANT_TEMPLATE_ACCOUNT_ID")
 
     # =========================================================================
+    # Fish Audio — серверный ключ синтеза речи для Fish-ассистентов
+    # (backend/websockets/handler_fish.py). Пользовательские ключи не используются:
+    # диалог ведёт OpenAI Realtime на OPENAI_API_KEY, озвучивает Fish на этом ключе.
+    FISH_API_KEY: Optional[str] = os.getenv("FISH_API_KEY")
+
     # Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
     # =========================================================================
     # Токен, по которому мост на VPS подключается к /ws/sip-gateway/control и /ws/sip/{call_id}.

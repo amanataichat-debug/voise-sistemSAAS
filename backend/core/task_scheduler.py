@@ -503,7 +503,7 @@ class TaskScheduler:
         """
         Номер оператора для исходящего через SIP-шлюз, либо None (тогда Voximplant).
         Условия: у пользователя есть активный номер с разрешёнными исходящими и
-        тип ассистента поддерживается телефонным хендлером (openai, gemini).
+        тип ассистента поддерживается телефонным хендлером (openai, gemini, fish).
         """
         try:
             from backend.models.sip_gateway import SIP_SUPPORTED_ASSISTANT_TYPES

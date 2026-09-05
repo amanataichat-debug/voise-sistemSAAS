@@ -1010,56 +1010,17 @@
     <!-- Content Area -->
     <div class="content-container">
 
-      <!-- API Keys Card -->
-      <div class="api-keys-card" id="api-keys-card">
-        <h3><i class="fas fa-key" style="color: var(--fish-accent);"></i> Ключи Fish-агентов</h3>
-
-        <div class="api-key-row">
-          <label>API-ключ OpenAI (диалог)</label>
-          <input type="password" id="openai-key-input" placeholder="sk-..." autocomplete="off">
-          <div class="api-key-actions">
-            <button class="btn-icon" id="toggle-openai-key" title="Показать/скрыть"><i class="fas fa-eye"></i></button>
-          </div>
-        </div>
-
-        <div class="api-key-row">
-          <label>API-ключ Fish Audio (озвучка)</label>
-          <input type="password" id="fish-key-input" placeholder="..." autocomplete="off">
-          <div class="api-key-actions">
-            <button class="btn-icon" id="toggle-fish-key" title="Показать/скрыть"><i class="fas fa-eye"></i></button>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
-          <button class="btn btn-primary btn-sm" id="save-keys-btn"><i class="fas fa-save"></i> Сохранить креды</button>
-          <button class="btn btn-secondary btn-sm" id="clear-keys-btn"><i class="fas fa-trash"></i> Очистить</button>
-        </div>
-
-        <div class="api-key-warning" id="keys-warning" style="display: none;">
+      <!-- Статус серверных ключей (Fish работает на ключах Voksy AI, свои не нужны) -->
+      <div class="api-keys-card" id="server-status-card" style="display: none;">
+        <h3><i class="fas fa-server" style="color: var(--fish-accent);"></i> Fish-агенты работают на ключах Voksy AI</h3>
+        <p style="color: var(--text-gray); font-size: 0.875rem; margin-top: 0.5rem;">
+          Диалог ведёт OpenAI Realtime, озвучивает Fish Audio. Свои API-ключи вводить не нужно.
+          Агент работает в браузерном виджете и по телефону через SIP-шлюз одинаково.
+        </p>
+        <div class="api-key-warning" id="server-keys-warning" style="display: none;">
           <i class="fas fa-exclamation-triangle"></i>
-          <span>Добавьте ключи OpenAI и Fish Audio для работы агентов</span>
+          <span id="server-keys-warning-text">На сервере не настроены ключи OpenAI / Fish Audio — агенты не смогут отвечать.</span>
         </div>
-      </div>
-
-      <!-- Setup Screen (no keys) -->
-      <div class="api-key-setup" id="setup-screen">
-        <div class="api-key-setup-icon"><i class="fas fa-fish"></i></div>
-        <h2 class="api-key-setup-title">Настройте ключи Fish-агентов</h2>
-        <p class="api-key-setup-description">
-          Диалог ведёт OpenAI Realtime, озвучивает Fish Audio. Нужны оба ключа: OpenAI — за диалог и распознавание речи, Fish Audio — за синтез. Расход идёт с ваших аккаунтов у этих провайдеров.
-        </p>
-        <div class="api-key-setup-steps">
-          <h3>Как начать:</h3>
-          <ol>
-            <li>Получите API-ключ в <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI</a> и в <a href="https://fish.audio/go-api/" target="_blank">Fish Audio</a></li>
-            <li>Создайте сервисный аккаунт с ролью <b>ai.speechkit-stt.user</b> и <b>ai.speechkit-tts.user</b></li>
-            <li>Выпустите API-ключ для сервисного аккаунта</li>
-            <li>Вставьте API-ключ и Folder ID в поля выше и нажмите «Сохранить креды»</li>
-          </ol>
-        </div>
-        <p style="color: var(--text-light); font-size: 0.875rem; text-align: center;">
-          После добавления ключей вы сможете создавать и управлять Fish-агентами
-        </p>
       </div>
 
       <!-- Agents List Container -->
@@ -1104,7 +1065,7 @@
             <div class="form-group">
               <label for="agent-greeting">Первая фраза (приветствие)</label>
               <input type="text" class="form-control" id="agent-greeting" placeholder="Здравствуйте! Чем я могу вам помочь?" value="Здравствуйте! Чем я могу вам помочь?" maxlength="500">
-              <p class="hint">Эта фраза будет первым, что скажет ассистент при звонке. Максимум 500 символов.</p>
+              <p class="hint">Эта фраза будет первым, что скажет ассистент при звонке или запуске виджета. Максимум 500 символов.</p>
             </div>
 
             <div class="form-group">
@@ -1169,7 +1130,7 @@
               <div class="form-group">
                 <label for="agent-llm-model">Диалоговая модель</label>
                 <select class="form-control" id="agent-llm-model"></select>
-                <p class="hint">Модель OpenAI, которая слушает абонента и придумывает ответ. Отдельное распознавание речи не нужно — она делает это сама.</p>
+                <p class="hint">Модель OpenAI Realtime, которая слушает абонента и придумывает ответ текстом; озвучивает его Fish. Работает на ключе Voksy AI. Отдельное распознавание речи не нужно — она делает это сама.</p>
               </div>
               <div class="form-group" id="agent-active-wrap" style="display: none;">
                 <label for="agent-active">Статус</label>
@@ -1573,104 +1534,41 @@
     }
 
     // ============================================================================
-    // API KEYS (OpenAI + Fish Audio)
+    // SERVER STATUS (ключи OpenAI + Fish Audio живут на сервере)
     // ============================================================================
-    async function loadApiKeysStatus() {
+    async function loadServerStatus() {
+      const card = document.getElementById('server-status-card');
+      const warning = document.getElementById('server-keys-warning');
+      const warningText = document.getElementById('server-keys-warning-text');
+      card.style.display = 'block';
       try {
-        const status = await apiRequest('/fish-assistants/api-keys');
-        const keyInput = document.getElementById('openai-key-input');
-        const fishInput = document.getElementById('fish-key-input');
-        const warning = document.getElementById('keys-warning');
-
-        if (status.openai_key_preview) keyInput.placeholder = status.openai_key_preview;
-        if (status.fish_key_preview) fishInput.placeholder = status.fish_key_preview;
-
-        const hasKeys = status.has_openai_key && status.has_fish_key;
-        warning.style.display = hasKeys ? 'none' : 'flex';
-        return hasKeys;
-      } catch (e) {
-        console.error('Error loading API keys status:', e);
-        return false;
-      }
-    }
-
-    async function saveApiKeys() {
-      const openaiKey = document.getElementById('openai-key-input').value.trim();
-      const fishKey = document.getElementById('fish-key-input').value.trim();
-
-      if (!openaiKey && !fishKey) {
-        showNotification('Введите ключ OpenAI и/или Fish Audio', 'error');
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const body = {};
-        if (openaiKey) body.openai_api_key = openaiKey;
-        if (fishKey) body.fish_api_key = fishKey;
-
-        await apiRequest('/fish-assistants/api-keys', { method: 'PUT', body });
-
-        document.getElementById('openai-key-input').value = '';
-        document.getElementById('fish-key-input').value = '';
-
-        showNotification('Ключи сохранены', 'success');
-        const hasKeys = await loadApiKeysStatus();
-        checkApiKeyAndShowContent(hasKeys);
-
-        if (hasKeys) {
-          await loadAgentsList();
-          await loadAssistantsLimitInfo();
-          applyFeatureAccessToSidebar();
-          updateCreateButtonState();
+        const status = await apiRequest('/fish-assistants/status');
+        const missing = [];
+        if (!status.openai_key) missing.push('OpenAI');
+        if (!status.fish_key) missing.push('Fish Audio');
+        if (missing.length) {
+          warningText.textContent = `На сервере не настроен ключ ${missing.join(' и ')} — агенты не смогут отвечать. Добавьте переменные окружения OPENAI_API_KEY / FISH_API_KEY.`;
+          warning.style.display = 'flex';
+        } else {
+          warning.style.display = 'none';
         }
+        return status;
       } catch (e) {
-        showNotification('Ошибка сохранения: ' + e.message, 'error');
-      } finally {
-        setLoading(false);
+        console.error('Error loading server status:', e);
+        return null;
       }
     }
 
-    async function clearApiKeys() {
-      if (!confirm('Вы уверены, что хотите удалить ключи OpenAI и Fish Audio?')) return;
-
-      setLoading(true);
-      try {
-        await apiRequest('/fish-assistants/api-keys', {
-          method: 'PUT',
-          body: { openai_api_key: '', fish_api_key: '' }
-        });
-
-        document.getElementById('openai-key-input').value = '';
-        document.getElementById('openai-key-input').placeholder = 'sk-...';
-        document.getElementById('fish-key-input').value = '';
-        document.getElementById('fish-key-input').placeholder = '...';
-
-        showNotification('Ключи удалены', 'success');
-        const hasKeys = await loadApiKeysStatus();
-        checkApiKeyAndShowContent(hasKeys);
-      } catch (e) {
-        showNotification('Ошибка: ' + e.message, 'error');
-      } finally {
-        setLoading(false);
-      }
+    function showListContent() {
+      document.getElementById('agents-list-container').classList.add('show');
+      document.getElementById('create-agent-btn').style.display = 'inline-flex';
+      updateCreateButtonState();
     }
 
-    function checkApiKeyAndShowContent(hasKeys) {
-      const setupScreen = document.getElementById('setup-screen');
-      const agentsContainer = document.getElementById('agents-list-container');
-      const createBtn = document.getElementById('create-agent-btn');
-
-      if (hasKeys) {
-        setupScreen.classList.remove('show');
-        agentsContainer.classList.add('show');
-        createBtn.style.display = 'inline-flex';
-        updateCreateButtonState();
-      } else {
-        setupScreen.classList.add('show');
-        agentsContainer.classList.remove('show');
-        createBtn.style.display = 'none';
-      }
+    // Тестовый звонок агенту в браузере — тот же виджет, что у OpenAI-агентов,
+    // но с путём сокета /ws/fish/ (страница fish-test.html подставляет data-ws-path).
+    function openTestCall(id) {
+      window.open(`/static/fish-test.html?id=${encodeURIComponent(id)}`, '_blank', 'noopener');
     }
 
     // ============================================================================
@@ -1750,6 +1648,7 @@
             </div>
           </div>
           <div class="agent-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openTestCall('${agent.id}')" title="Поговорить с агентом в браузере"><i class="fas fa-headset"></i> Тест</button>
             <button class="btn btn-primary btn-sm" onclick="editAgent('${agent.id}')"><i class="fas fa-edit"></i> Редактировать</button>
           </div>
         `;
@@ -2042,7 +1941,6 @@
 
     function switchToEditMode() {
       document.getElementById('agents-list-container').classList.remove('show');
-      document.getElementById('setup-screen').classList.remove('show');
       document.getElementById('edit-container').classList.add('show');
       document.getElementById('create-agent-btn').style.display = 'none';
 
@@ -2112,35 +2010,29 @@
       applyFeatureAccessToSidebar();
 
       await loadFishOptions();
+      await loadServerStatus();
 
-      const hasKeys = await loadApiKeysStatus();
+      // Handle URL params
+      const params = new URLSearchParams(window.location.search);
+      const agentId = params.get('id');
+      const mode = params.get('mode');
 
-      if (!hasKeys) {
-        checkApiKeyAndShowContent(false);
-      } else {
-
-        // Handle URL params
-        const params = new URLSearchParams(window.location.search);
-        const agentId = params.get('id');
-        const mode = params.get('mode');
-
-        if (agentId) {
-          checkApiKeyAndShowContent(true);
-          await loadAvailableFunctions();
-          editAgent(agentId);
-        } else if (mode === 'create') {
-          if (!canCreateAssistant()) {
-            showLimitReachedNotification();
-            window.location.href = '/static/fish-agents.html';
-            return;
-          }
-          checkApiKeyAndShowContent(true);
-          await loadAvailableFunctions();
-          navigateToCreateAgent();
-        } else {
-          checkApiKeyAndShowContent(true);
-          await loadAgentsList();
+      if (agentId) {
+        showListContent();
+        await loadAvailableFunctions();
+        editAgent(agentId);
+      } else if (mode === 'create') {
+        if (!canCreateAssistant()) {
+          showLimitReachedNotification();
+          window.location.href = '/static/fish-agents.html';
+          return;
         }
+        showListContent();
+        await loadAvailableFunctions();
+        navigateToCreateAgent();
+      } else {
+        showListContent();
+        await loadAgentsList();
       }
     }
 
@@ -2188,21 +2080,6 @@
       if (agentId && agentId !== '-') {
         navigator.clipboard.writeText(agentId).then(() => showNotification('ID агента скопирован!', 'success'));
       }
-    });
-
-    // API keys
-    document.getElementById('save-keys-btn').addEventListener('click', saveApiKeys);
-    document.getElementById('clear-keys-btn').addEventListener('click', clearApiKeys);
-
-    // Toggle key visibility
-    document.getElementById('toggle-openai-key').addEventListener('click', () => {
-      const input = document.getElementById('openai-key-input');
-      input.type = input.type === 'password' ? 'text' : 'password';
-    });
-
-    document.getElementById('toggle-fish-key').addEventListener('click', () => {
-      const input = document.getElementById('fish-key-input');
-      input.type = input.type === 'password' ? 'text' : 'password';
     });
 
     // Tabs

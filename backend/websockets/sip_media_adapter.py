@@ -6,14 +6,14 @@
 PCM16 8 кГц (320 байт = 20 мс). Обратно ждёт бинарные кадры PCM16 8 кГц и
 текстовые команды {"type":"clear"|"hangup"|"mark"}.
 
-Браузерные хендлеры (handler_realtime_new / handler_gemini) ждут объект с
+Браузерные хендлеры (handler_realtime_new / handler_gemini / handler_fish) ждут объект с
 интерфейсом FastAPI WebSocket и JSON-протокол виджета:
     клиент → {"type":"input_audio_buffer.append","audio":"<base64 PCM16>"}
     сервер → {"type":"response.audio.delta","delta":"<base64 PCM16 24 кГц>"}
     плюс события speech.started / conversation.interrupted / function_call.* ...
 
 `HandlerSocket` притворяется WebSocket'ом для хендлера и переводит один
-протокол в другой, включая ресемплинг 8 кГц ↔ 24 кГц (OpenAI) или 8 → 16 кГц
+протокол в другой, включая ресемплинг 8 кГц ↔ 24 кГц (OpenAI, Fish) или 8 → 16 кГц
 на вход и 24 → 8 кГц на выход (Gemini). Так телефонный звонок проходит через ту
 же логику функций, транскриптов и записи диалогов, что и виджет.
 """
@@ -33,10 +33,10 @@ logger = get_logger(__name__)
 
 PHONE_RATE = 8000
 HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
-HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000}
+HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000}
 # Размер порции входящего звука для хендлера, мс. Gemini Live лучше работает с порциями ~100 мс,
-# чем с 50 сообщениями в секунду; OpenAI Realtime спокойно принимает 20 мс.
-INBOUND_BATCH_MS = {"openai": 20, "gemini": 100}
+# чем с 50 сообщениями в секунду; OpenAI Realtime (в т.ч. текстовый мозг Fish) спокойно принимает 20 мс.
+INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20}
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}

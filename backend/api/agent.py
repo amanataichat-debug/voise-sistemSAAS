@@ -401,12 +401,10 @@ def _check_assistant_keys(assistant_type: str, current_user: User):
         # гейт по кредитам стоит на старте звонка (outbound-config / config).
         pass
     elif assistant_type == "fish":
-        # Fish — половинный каскад на пользовательских ключах: диалог ведёт
-        # OpenAI Realtime, озвучивает Fish Audio (через наш прокси синтеза).
-        if not current_user.openai_api_key:
-            raise HTTPException(status_code=400, detail="api_key_required_openai")
-        if not current_user.fish_api_key:
-            raise HTTPException(status_code=400, detail="api_key_required_fish")
+        # Fish работает на серверных ключах (OPENAI_API_KEY + FISH_API_KEY):
+        # диалог ведёт OpenAI Realtime текстом, озвучивает Fish Audio
+        # (backend/websockets/handler_fish.py). Пользовательские ключи не нужны.
+        pass
 
 
 # Функции, доступные голосовому агенту во время звонка по умолчанию.
@@ -487,9 +485,9 @@ def _create_voice_assistant(assistant_type: str, name: str, user_id, db,
             functions=_default_voice_functions(),
         )
     elif assistant_type == "fish":
-        # Fish: диалог ведёт OpenAI Realtime внутри сценария Voximplant,
-        # озвучка идёт через наш прокси синтеза (/ws/fish/tts/{id}) на ключе
-        # Fish владельца. Голос — reference_id из библиотеки fish.audio.
+        # Fish: OpenAI Realtime (текст) + озвучка Fish Audio в хендлере
+        # backend/websockets/handler_fish.py на серверных ключах; виджет и
+        # телефон (SIP-шлюз) общие. Голос — reference_id из библиотеки fish.audio.
         va = FishAssistantConfig(
             id=uuid.uuid4(), user_id=user_id, name=f"{name} Voice",
             system_prompt=prompt, greeting_message="", is_active=True,

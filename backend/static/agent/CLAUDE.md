@@ -9,10 +9,13 @@
 кредитами каскада (`users.cascade_credits_balance`); хранится в
 `grok_assistant_configs (assistant_type='cascade')`, исходящие идут через отдельный
 rule `outbound_cascade` (цепочка с `vox-turn-taking`).
-Fish — половинный каскад на ключах пользователя (OpenAI Realtime ведёт диалог,
-озвучивает Fish Audio через прокси `/ws/fish/tts/{id}`); хранится в
+Fish — половинный каскад на **серверных** ключах (OpenAI Realtime ведёт диалог
+текстом, озвучивает Fish Audio; хендлер `backend/websockets/handler_fish.py`,
+виджет `/ws/fish/{id}`, телефон через SIP-шлюз); хранится в
 `fish_assistant_configs`, голос задаётся `fish_voice_id` (reference_id из
-библиотеки fish.audio), исходящие идут через rule `outbound_fish`.
+библиотеки fish.audio). В визарде `keyState('fish')` всегда `ok` — свои ключи не нужны.
+Телефония агента — собственный SIP-шлюз (`sip_phone_numbers`); Voximplant не
+используется, его остатки в `agent.py`/`telephony.py` — мёртвый код (см. корневой `CLAUDE.md`).
 
 Эта папка (`backend/static/agent/`) содержит результат разбиения исходного
 монолитного `agent.html` (~3700 строк) на стили + доменные скрипты.
