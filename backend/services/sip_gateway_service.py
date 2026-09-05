@@ -29,7 +29,7 @@ from backend.models.sip_gateway import (
     normalize_sip_number,
 )
 from backend.models.assistant import AssistantConfig
-from backend.models.gemini_assistant import GeminiAssistantConfig
+from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConversation
 from backend.models.conversation import Conversation
 from backend.models.task import Task, TaskStatus
 from backend.models.agent_call import AgentCall
@@ -329,13 +329,14 @@ class SipGatewayService:
             phone, direction = call.to_number, "OUTBOUND"
         if not phone:
             return 0
+        model = GeminiConversation if call.assistant_type == "gemini" else Conversation
         rows = (
-            db.query(Conversation)
+            db.query(model)
             .filter(
-                Conversation.assistant_id == call.assistant_id,
-                Conversation.created_at >= started_at - timedelta(seconds=10),
-                Conversation.created_at <= _utcnow() + timedelta(seconds=5),
-                or_(Conversation.caller_number.is_(None), Conversation.caller_number == ""),
+                model.assistant_id == call.assistant_id,
+                model.created_at >= started_at - timedelta(seconds=10),
+                model.created_at <= _utcnow() + timedelta(seconds=5),
+                or_(model.caller_number.is_(None), model.caller_number == "", model.caller_number == "unknown"),
             )
             .all()
         )

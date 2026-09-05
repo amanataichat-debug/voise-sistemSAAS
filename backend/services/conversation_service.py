@@ -548,19 +548,32 @@ class ConversationService:
                 client_info = {}
             client_info["assistant_type"] = assistant_type
             
-            # Создаем запись диалога
-            conversation = Conversation(
-                assistant_id=assistant_uuid,
-                session_id=session_id or str(uuid.uuid4()),
-                user_message=user_message or "",
-                assistant_message=assistant_message or "",
-                caller_number=normalized_phone,
-                call_direction=call_direction,
-                contact_id=contact_id,
-                client_info=client_info,
-                audio_duration=audio_duration,
-                tokens_used=tokens_used or 0
-            )
+            # Создаем запись диалога.
+            # conversations.assistant_id ссылается на assistant_configs (OpenAI) — для Gemini
+            # запись идёт в gemini_conversations, иначе INSERT падает по внешнему ключу.
+            if assistant_type == "gemini":
+                from backend.models.gemini_assistant import GeminiConversation
+                conversation = GeminiConversation(
+                    assistant_id=assistant_uuid,
+                    session_id=session_id or str(uuid.uuid4()),
+                    user_message=user_message or "",
+                    assistant_message=assistant_message or "",
+                    caller_number=normalized_phone,
+                    tokens_used=tokens_used or 0
+                )
+            else:
+                conversation = Conversation(
+                    assistant_id=assistant_uuid,
+                    session_id=session_id or str(uuid.uuid4()),
+                    user_message=user_message or "",
+                    assistant_message=assistant_message or "",
+                    caller_number=normalized_phone,
+                    call_direction=call_direction,
+                    contact_id=contact_id,
+                    client_info=client_info,
+                    audio_duration=audio_duration,
+                    tokens_used=tokens_used or 0
+                )
             
             db.add(conversation)
             db.commit()
