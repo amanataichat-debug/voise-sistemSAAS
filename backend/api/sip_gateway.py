@@ -321,6 +321,7 @@ async def sip_media(
     context = SipGatewayService.call_context_text(call)
     base_prompt = getattr(assistant, "system_prompt", None) or ""
     set_committed_value(assistant, "system_prompt", f"{base_prompt}\n\n[Контекст звонка] {context}".strip())
+    assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
 
     logger.info(
         f"[SIP-MEDIA] call {call_id} {direction}: did={call.did} caller={call.caller} to={call.to_number} "

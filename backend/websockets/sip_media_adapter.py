@@ -34,6 +34,9 @@ logger = get_logger(__name__)
 PHONE_RATE = 8000
 HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
 HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000}
+# Размер порции входящего звука для хендлера, мс. Gemini Live лучше работает с порциями ~100 мс,
+# чем с 50 сообщениями в секунду; OpenAI Realtime спокойно принимает 20 мс.
+INBOUND_BATCH_MS = {"openai": 20, "gemini": 100}
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
@@ -74,6 +77,9 @@ class HandlerSocket:
         self._queue: "asyncio.Queue[Optional[Dict[str, Any]]]" = asyncio.Queue()
         self._up = Resampler(PHONE_RATE, HANDLER_IN_RATE.get(provider, 24000))
         self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
+        in_rate = HANDLER_IN_RATE.get(provider, 24000)
+        self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
+        self._in_buf = bytearray()
         self._reader_task: Optional[asyncio.Task] = None
         self._hangup_task: Optional[asyncio.Task] = None
         self.closed = False
@@ -105,14 +111,17 @@ class HandlerSocket:
                     break
                 if raw.get("bytes") is not None:
                     self.frames_in += 1
-                    pcm = self._up(raw["bytes"])
-                    await self._queue.put({
-                        "type": "websocket.receive",
-                        "text": json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(pcm).decode("ascii"),
-                        }),
-                    })
+                    self._in_buf.extend(self._up(raw["bytes"]))
+                    if len(self._in_buf) >= self._in_batch_bytes:
+                        pcm = bytes(self._in_buf)
+                        self._in_buf.clear()
+                        await self._queue.put({
+                            "type": "websocket.receive",
+                            "text": json.dumps({
+                                "type": "input_audio_buffer.append",
+                                "audio": base64.b64encode(pcm).decode("ascii"),
+                            }),
+                        })
                     continue
                 text = raw.get("text")
                 if not text:

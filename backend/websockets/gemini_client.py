@@ -395,6 +395,21 @@ class GeminiLiveClient:
             }
         }
         
+        # 📞 Телефонный режим (звонки через SIP-шлюз): узкополосный звук с фоновым шумом,
+        # детектор речи по умолчанию долго не видит «тишину» и не отдаёт ход модели.
+        # Флаг выставляет backend/api/sip_gateway.py на объекте ассистента (в БД не пишется).
+        if getattr(self.assistant_config, "telephony_mode", False):
+            setup_payload["setup"]["realtimeInputConfig"] = {
+                "automaticActivityDetection": {
+                    "disabled": False,
+                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                    "prefixPaddingMs": 100,
+                    "silenceDurationMs": 500,
+                }
+            }
+            logger.info("[GEMINI-CLIENT] 📞 Telephony VAD profile enabled (high sensitivity, 500 ms silence)")
+
         # Add tools if any
         if tools:
             setup_payload["setup"]["tools"] = tools
