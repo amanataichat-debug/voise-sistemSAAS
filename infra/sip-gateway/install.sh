@@ -54,7 +54,9 @@ say "public IP: $PUBLIC_IP"
 say "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq asterisk python3-venv python3-pip curl >/dev/null
+# asterisk-modules carries func_curl/res_curl, which the dialplan needs to register
+# inbound calls with the bridge. It is only a Recommends of "asterisk", so name it.
+apt-get install -y -qq asterisk asterisk-modules python3-venv python3-pip curl >/dev/null
 
 say "downloading gateway files from $BASE"
 TMP="$(mktemp -d)"
@@ -160,11 +162,21 @@ sleep 2
 # ---------------------------------------------------------------- checks
 say "checking"
 ok=1
+module_loaded() { asterisk -rx "module show like $1" | grep -q "^$1"; }
 for mod in app_audiosocket res_pjsip func_curl; do
-  if asterisk -rx "module show like $mod" | grep -q "^$mod"; then
+  # autoload can skip a module whose dependency was not ready at boot; one explicit
+  # load settles whether it is really missing from disk.
+  module_loaded "$mod" || asterisk -rx "module load ${mod}.so" >/dev/null 2>&1 || true
+  if module_loaded "$mod"; then
     echo "  [ok] Asterisk module $mod"
   else
     echo "  [!!] Asterisk module $mod is NOT loaded"; ok=0
+    if [ ! -f "/usr/lib/asterisk/modules/${mod}.so" ]; then
+      echo "       ${mod}.so is missing on disk: apt-get install --reinstall asterisk-modules"
+    else
+      echo "       the file exists but refuses to load, see: grep -i ${mod} /var/log/asterisk/full"
+    fi
+    [ "$mod" = func_curl ] && echo "       without func_curl every INBOUND call gets congestion"
   fi
 done
 if asterisk -rx "pjsip show endpoints" | grep -q "o-trunk"; then
