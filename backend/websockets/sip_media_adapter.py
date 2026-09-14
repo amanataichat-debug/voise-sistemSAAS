@@ -31,6 +31,16 @@ from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+try:
+    import numpy
+except ImportError:  # без numpy ресемплинг деградирует до ratecv, но звонки идут
+    numpy = None
+    logger.warning("[SIP-MEDIA] numpy недоступен: ресемплинг без фильтра, возможен шум в трубке")
+
+# Полоса телефонного канала G.711. Фильтруем по ней перед сменой частоты дискретизации.
+ANTIALIAS_CUTOFF_HZ = 3400
+ANTIALIAS_TAPS = 63
+
 PHONE_RATE = 8000
 HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
 HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000}
@@ -48,20 +58,67 @@ SPEECH_STARTED_EVENTS = {"assistant.speech.started"}
 SPEECH_ENDED_EVENTS = {"assistant.speech.ended", "response.output_audio.done", "response.audio.done"}
 
 
+class _LowPass:
+    """Потоковый КИХ-фильтр НЧ (окно Хэмминга) с переносом хвоста между кадрами.
+
+    Хвост обязателен: без него на стыке каждых 20 мс возникал бы разрыв, то есть
+    щелчок 50 раз в секунду.
+    """
+
+    def __init__(self, rate: int, cutoff: int = ANTIALIAS_CUTOFF_HZ, taps: int = ANTIALIAS_TAPS) -> None:
+        k = numpy.arange(taps) - (taps - 1) / 2.0
+        h = numpy.sinc(2.0 * cutoff / rate * k) * numpy.hamming(taps)
+        self.coeffs = (h / h.sum()).astype(numpy.float32)
+        self._tail = numpy.zeros(taps - 1, dtype=numpy.float32)
+
+    def __call__(self, samples):
+        buf = numpy.concatenate((self._tail, samples))
+        self._tail = buf[-(len(self.coeffs) - 1):]
+        # "valid" даёт ровно len(samples) отсчётов, задержка (taps-1)/2 ≈ 1.3 мс
+        return numpy.convolve(buf, self.coeffs, mode="valid")
+
+
 class Resampler:
-    """Потоковый ресемплер PCM16 mono на audioop.ratecv с сохранением состояния между кадрами."""
+    """Потоковый ресемплер PCM16 mono на audioop.ratecv с сохранением состояния между кадрами.
+
+    audioop.ratecv — линейная интерполяция без фильтра, поэтому сам по себе он
+    непригоден для смены частоты: при понижении 24 → 8 кГц всё, что выше 4 кГц
+    (шипящие, придыхания синтеза), зеркалится обратно в голосовую полосу с той же
+    громкостью и слышно как шум поверх речи; при повышении 8 → 24 кГц он так же
+    порождает призвуки выше 4 кГц, которые слышит уже не абонент, а VAD модели.
+    Поэтому фильтруем на большей из двух частот: при понижении — до прореживания,
+    при повышении — после интерполяции.
+    """
 
     def __init__(self, src_rate: int, dst_rate: int) -> None:
         self.src, self.dst = src_rate, dst_rate
         self._state = None
+        self._filter = None
+        if src_rate != dst_rate and numpy is not None:
+            self._filter = _LowPass(max(src_rate, dst_rate))
 
     def __call__(self, pcm: bytes) -> bytes:
         if not pcm:
             return b""
         if self.src == self.dst:
             return pcm
+        if self._filter is None:  # без numpy работаем как раньше, звонок важнее качества
+            out, self._state = audioop.ratecv(pcm, 2, 1, self.src, self.dst, self._state)
+            return out
+        if self.src > self.dst:
+            pcm = self._to_pcm(self._filter(self._to_samples(pcm)))
+            out, self._state = audioop.ratecv(pcm, 2, 1, self.src, self.dst, self._state)
+            return out
         out, self._state = audioop.ratecv(pcm, 2, 1, self.src, self.dst, self._state)
-        return out
+        return self._to_pcm(self._filter(self._to_samples(out)))
+
+    @staticmethod
+    def _to_samples(pcm: bytes):
+        return numpy.frombuffer(pcm, dtype=numpy.int16).astype(numpy.float32)
+
+    @staticmethod
+    def _to_pcm(samples) -> bytes:
+        return numpy.clip(samples, -32768, 32767).astype(numpy.int16).tobytes()
 
 
 class HandlerSocket:
