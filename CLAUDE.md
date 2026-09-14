@@ -292,7 +292,7 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 
 ## Development Workflow (current)
 
-- Work happens on branch `0509-v1-sip-good` (SIP telephony + Fish on server keys; branched from `2308-agent-v2`). Commit and push there; no pull requests unless asked. `infra/sip-gateway/install.sh` still defaults to `VOKSY_BRANCH=2308-agent-v2` — pass `VOKSY_BRANCH=0509-v1-sip-good` when updating the VPS from this branch.
+- Work happens on branch `1409-sip-v1` (operator trunk live: national number format, 5+5 channels; branched from `0509-v1-sip-good`). Commit and push there; no pull requests unless asked. `infra/sip-gateway/install.sh` now defaults to `VOKSY_BRANCH=1409-sip-v1`, so updating the VPS needs no extra variable.
 - The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
 - Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
 - Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.

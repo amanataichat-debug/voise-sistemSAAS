@@ -3,7 +3,7 @@
 # Voksy AI SIP gateway — installer / updater.
 #
 # Run on the gateway VPS (Ubuntu 24.04) as root:
-#   curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/2308-agent-v2/infra/sip-gateway/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/1409-sip-v1/infra/sip-gateway/install.sh | bash
 #
 # Idempotent: re-running updates Asterisk configs and the bridge code, keeps
 # the generated secrets in /etc/voksy-bridge/bridge.env.
@@ -18,7 +18,7 @@
 # =============================================================================
 set -euo pipefail
 
-BRANCH="${VOKSY_BRANCH:-2308-agent-v2}"
+BRANCH="${VOKSY_BRANCH:-1409-sip-v1}"
 BASE="${VOKSY_BASE:-https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/${BRANCH}/infra/sip-gateway}"
 BACKEND_WS_URL="${VOKSY_BACKEND_WS_URL:-wss://voksyai.online}"
 GATEWAY_ID="${VOKSY_GATEWAY_ID:-sip-gw-1}"
@@ -86,8 +86,15 @@ AMI_SECRET=$AMI_SECRET
 
 TRUNK_ENDPOINT=o-trunk
 TRUNK_HOSTS=195.216.237.6:5070,195.216.237.7:5070
-MAX_OUTBOUND=4
+# Channels sold by the operator (service card): 5 in + 5 out
+MAX_OUTBOUND=5
+MAX_INBOUND=5
 ORIGINATE_TIMEOUT_MS=45000
+
+# Number format towards the operator: 996705701707 -> 0705701707 (national, "070"/"050")
+COUNTRY_CODE=996
+NATIONAL_PREFIX=0
+SUBSCRIBER_DIGITS=9
 
 # Temporary softphone account (user "test" on UDP 5080)
 TEST_SIP_PASSWORD=$TEST_SIP_PASSWORD
@@ -96,6 +103,22 @@ EOF
   chmod 600 "$ENV_FILE"
 else
   say "keeping existing $ENV_FILE"
+  # Settings introduced after the first install are appended here, so an already
+  # running gateway picks up the operator's real channel counts and the number
+  # format without anyone editing bridge.env by hand.
+  add_env() {
+    grep -q "^$1=" "$ENV_FILE" || { printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"; say "added $1=$2"; }
+  }
+  # MAX_OUTBOUND=4 was our placeholder before the operator confirmed 5 channels.
+  if grep -q '^MAX_OUTBOUND=4$' "$ENV_FILE"; then
+    sed -i 's|^MAX_OUTBOUND=4$|MAX_OUTBOUND=5|' "$ENV_FILE"
+    say "raised MAX_OUTBOUND 4 -> 5"
+  fi
+  add_env MAX_OUTBOUND 5
+  add_env MAX_INBOUND 5
+  add_env COUNTRY_CODE 996
+  add_env NATIONAL_PREFIX 0
+  add_env SUBSCRIBER_DIGITS 9
 fi
 # shellcheck disable=SC1090
 set -a; . "$ENV_FILE"; set +a

@@ -29,7 +29,7 @@ class SipPhoneNumber(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # Номер в цифровом виде без "+": 996705579977
+    # Номер в цифровом виде без "+": 996705701707
     phone_number = Column(String(20), nullable=False, unique=True)
     label = Column(String(100), nullable=True)
 
@@ -140,7 +140,11 @@ class SipCall(Base):
 
 
 def normalize_sip_number(value: str) -> str:
-    """Оставить только цифры: '+996 705 57-99-77' → '996705579977', '0705579977' → '996705579977'."""
+    """Оставить только цифры: '+996 705 70-17-07' → '996705701707', '0705701707' → '996705701707'.
+
+    Это канонический формат Voksy. Оператору в INVITE нужен обратный, national
+    (0705701707) — его делает to_national() в infra/sip-gateway/bridge/bridge.py.
+    """
     digits = "".join(ch for ch in (value or "") if ch.isdigit())
     if len(digits) == 10 and digits.startswith("0"):
         digits = "996" + digits[1:]

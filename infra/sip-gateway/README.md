@@ -35,7 +35,7 @@ SSH, SIP 5060/UDP и RTP 10000-20000/UDP с адресов оператора, �
 ## Установка / обновление (на VPS, под root)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/2308-agent-v2/infra/sip-gateway/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/1409-sip-v1/infra/sip-gateway/install.sh | bash
 ```
 
 Скрипт печатает в конце: публичный IP для анкеты оператора, логин/пароль
@@ -61,7 +61,7 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 Тест без оператора: в софтфоне (Zoiper, MicroSIP, Linphone) сервер
 `178.105.79.237:5080`, пользователь `test`, пароль из вывода `install.sh`.
 Набрать `100` — эхо-тест Asterisk (проверяет SIP и звук). Набрать любой
-номер, например `996705579977`, — звонок уходит в мост и дальше в бэкенд как
+номер, например `996705701707`, — звонок уходит в мост и дальше в бэкенд как
 входящий на этот номер.
 
 ## Протокол мост ⇄ бэкенд
@@ -72,7 +72,7 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 
 ```json
 {"type":"start","call_id":"…","direction":"inbound|outbound",
- "did":"996705579977","caller":"996555…","to":"","assistant_id":"…","assistant_type":"openai|gemini",
+ "did":"996705701707","caller":"996555…","to":"","assistant_id":"…","assistant_type":"openai|gemini",
  "metadata":{},"format":{"encoding":"pcm16","sample_rate":8000,"channels":1,"frame_ms":20}}
 ```
 
@@ -113,7 +113,7 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 Бэкенд → мост:
 
 ```json
-{"type":"originate","call_id":"<uuid, опционально>","to":"996555123456","caller_id":"996705579977",
+{"type":"originate","call_id":"<uuid, опционально>","to":"996555123456","caller_id":"996705701707",
  "assistant_id":"…","assistant_type":"openai","metadata":{"task_id":"…"}}
 {"type":"hangup","call_id":"…"}
 {"type":"ping"}   → {"type":"pong"}
@@ -122,7 +122,22 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 
 Исходящий: мост пробует первый сервер оператора, при `trunk_unavailable` /
 `congestion` — второй. `busy` / `no_answer` второй раз не набирает.
-Одновременных исходящих не больше `MAX_OUTBOUND` (лимит транка, сейчас 4).
+Одновременных исходящих не больше `MAX_OUTBOUND`, входящих — не больше
+`MAX_INBOUND` (оператор продал 5 + 5). Лишний входящий получает от моста
+не-UUID в ответ, и диалплан играет ему `congestion`.
+
+### Формат номера на плече оператора
+
+Внутри Voksy номера канонические, E.164 без плюса: `996705701707`. Оператор
+требует в INVITE **national**-формат (`070`/`050`) и для А-номера (`From`), и
+для Б-номера (`Request-URI`/`To`) — иначе отвечает `403 Forbidden`.
+Конвертацию делает `to_national()` в `bridge.py` в момент originate, наружу
+(события, журнал, CRM) по-прежнему уходят канонические номера:
+
+```
+backend: to=996555123456 caller_id=996705701707
+INVITE:  sip:0555123456@195.216.237.7:5070   From: <sip:0705701707@178.105.79.237>
+```
 
 ## Аудио и провайдеры
 
@@ -150,7 +165,7 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 ```bash
 curl -X POST https://voksyai.online/api/sip/numbers -H "Authorization: Bearer <JWT>" \
   -H "Content-Type: application/json" \
-  -d '{"phone_number":"996705579977","label":"O! основной","assistant_type":"openai","assistant_id":"<uuid ассистента>"}'
+  -d '{"phone_number":"996705701707","label":"O! основной","assistant_type":"openai","assistant_id":"<uuid ассистента>"}'
 ```
 
 Тестовый исходящий: `POST /api/sip/calls` с `{"to":"996555123456"}`.

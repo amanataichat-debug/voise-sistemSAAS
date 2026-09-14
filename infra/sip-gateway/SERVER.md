@@ -131,9 +131,9 @@ cat /etc/voksy-bridge/bridge.env
 
 ## Обновление шлюза после правок в репозитории
 
-На сервере одной командой (ветка `2308-agent-v2`):
+На сервере одной командой (ветка `1409-sip-v1`):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/2308-agent-v2/infra/sip-gateway/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/1409-sip-v1/infra/sip-gateway/install.sh | bash
 ```
 
 Скрипт идемпотентный: перекачивает конфиги Asterisk и `bridge.py`, ставит
@@ -153,7 +153,8 @@ curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS
 
 ## Тест без оператора (софтфон)
 
-Пока транк у оператора не включён, звонить можно через временный аккаунт:
+Транк у оператора уже включён, так что это запасной путь: он проверяет
+Asterisk, мост и Render, не трогая оператора.
 
 | Поле в Zoiper / MicroSIP | Значение |
 |---|---|
@@ -162,8 +163,60 @@ curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS
 | Пароль | `TEST_SIP_PASSWORD` из `bridge.env` |
 
 - Набрать `100` — эхо-тест Asterisk, проверяет SIP и звук без Render.
-- Набрать `996705579977` или `996706579977` — звонок пойдёт как входящий на этот
-  номер, ответит ассистент, который привязан к номеру в `/api/sip/numbers`.
+- Набрать `996705701707` — звонок пойдёт как входящий на этот номер, ответит
+  ассистент, который привязан к номеру в `/api/sip/numbers`.
+
+## Номер и формат набора
+
+| Параметр | Значение |
+|---|---|
+| Номер по карточке | `+996705701707` / `0705701707` |
+| Каналов | 5 входящих + 5 исходящих |
+| SIP оператора | `195.216.237.6:5070`, `195.216.237.7:5070` (работают оба) |
+| RTP оператора | `195.216.237.6`–`.9`, порты 10000–65535 |
+| Авторизация | по IP, без логина и пароля |
+
+Внутри Voksy номера канонические — `996705701707`. Оператор же требует в INVITE
+**national**-формат (`070`/`050`) и для А-номера, и для Б-номера. Мост
+конвертирует их сам (`to_national()` в `bridge.py`), поэтому в API и в журнале
+звонков везде пишем канонический формат — руками ничего переводить не надо.
+
+Завести номер в системе (нужен JWT администратора):
+
+```bash
+curl -X POST https://voksyai.online/api/sip/numbers \
+  -H "Authorization: Bearer <JWT>" -H "Content-Type: application/json" \
+  -d '{"phone_number":"996705701707","label":"O! основной",
+       "assistant_type":"openai","assistant_id":"<uuid ассистента>"}'
+```
+
+## Если оператор отвечает `403 Forbidden`
+
+Так оператор реагирует на любое несовпадение данных INVITE с карточкой. Порядок
+разбора — тот же, что в инструкции оператора:
+
+1. Включить SIP-лог и повторить звонок:
+   ```bash
+   asterisk -rvvv
+     pjsip set logger on
+   ```
+   Либо снять пакеты целиком: `tcpdump -i any -n -s0 -w /tmp/sip.pcap udp port 5060 or udp port 5070`
+   (файл забрать через `scp` и открыть в Wireshark).
+2. Найти в логе исходящий `INVITE` и сверить четыре поля с карточкой:
+
+| Поле INVITE | Должно быть | Частая ошибка |
+|---|---|---|
+| `Request-URI` | `sip:0555123456@195.216.237.6:5070` | Б-номер в формате `996…` или `+996…` |
+| `From` | `<sip:0705701707@178.105.79.237>` | А-номер не наш или не в national |
+| `To` | `sip:0555123456@195.216.237.6` | — |
+| `Contact` | `<sip:asterisk@178.105.79.237:5060>` | не наш IP (NAT, сменился IP сервера) |
+
+3. Если номера в INVITE оказались в формате `996…` — сломалась конвертация в
+   мосте. Проверить `COUNTRY_CODE`, `NATIONAL_PREFIX`, `SUBSCRIBER_DIGITS` в
+   `/etc/voksy-bridge/bridge.env` и строку `originating to … (dial …)` в
+   `journalctl -u voksy-bridge`: в ней видно оба формата сразу.
+4. Если все поля совпадают, а `403` остаётся — вопрос к оператору: наш IP или
+   номер не заведены у них в базе.
 
 ## Файрвол в Hetzner Cloud
 
@@ -186,7 +239,11 @@ localhost и снаружи недоступны.
 |---|---|---|
 | В логе моста `403` при подключении | Токен на Render не совпадает с `bridge.env` | Сверить `SIP_GATEWAY_TOKEN` на Render с `GATEWAY_TOKEN` |
 | `backend_unavailable`, `bad_start` | Идёт деплой на Render | Подождать 2 минуты |
+| Оператор отвечает `403 Forbidden` на INVITE | Номер в INVITE не в формате `070`/`050`, либо IP не совпадает с карточкой | См. раздел «Если оператор отвечает `403 Forbidden`» |
 | Звонок есть, звука нет | Закрыт UDP 10000–20000 в файрволе или у оператора другой RTP-диапазон | Проверить файрвол, `pjsip set logger on`, смотреть SDP |
+| Звук только в одну сторону | RTP оператора приходит с другого IP (`.8`/`.9`), чем указан в SDP, и его режет `strictrtp` | Временно `strictrtp=no` в `rtp.conf`, повторить звонок; если помогло — сообщить оператору |
+| Исходящий падает с `channel_limit` | Заняты все 5 каналов оператора | `curl -s 127.0.0.1:9091/health` → `active_outbound`/`active_inbound` |
+| Входящий слышит «занято» сразу | Заняты все 5 входящих каналов, мост отказал | В логе моста `inbound call rejected: all 5 channels busy` |
 | Ассистент молчит (`out=0`) | Проблема на стороне Render: смотреть логи Render по `SIP-MEDIA` и `call_id` | Логи Render → строки `reply latency`, `finished` |
 | Софтфон не регистрируется | Порт 5080 закрыт или неверный пароль | `cat /etc/voksy-bridge/bridge.env`, проверить файрвол |
 | SSH: `HOST IDENTIFICATION HAS CHANGED` | Сервер пересоздан | На компьютере `ssh-keygen -R 178.105.79.237` |

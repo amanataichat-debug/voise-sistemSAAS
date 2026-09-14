@@ -31,13 +31,22 @@ Wire protocol (bridge <-> backend media socket)
                            {"type":"mark","name":...}  (echoed back when playback reaches it)
 
 Wire protocol (bridge <-> backend control socket)
-  bridge -> backend: {"type":"hello","gateway_id":...,"version":...,"max_outbound":N,"public_ip":...}
+  bridge -> backend: {"type":"hello","gateway_id":...,"version":...,"max_outbound":N,"max_inbound":N,
+                      "public_ip":...}
                      {"type":"call.event","event":"started"|"answered"|"ended"|"failed", ...call fields...}
                      {"type":"pong"}
-  backend -> bridge: {"type":"originate","call_id":?,"to":"996...", "caller_id":"996705579977",
+  backend -> bridge: {"type":"originate","call_id":?,"to":"996...", "caller_id":"996705701707",
                       "assistant_id":..., "assistant_type":..., "metadata":{...}}
                      {"type":"hangup","call_id":...}
                      {"type":"ping"}
+
+Number formats
+  Inside Voksy (backend, DB, control socket) numbers are canonical E.164 without
+  the plus: 996705701707. The operator O! (NUR Telecom) requires the NATIONAL
+  format in the INVITE for BOTH the A-number (From) and the B-number
+  (Request-URI / To): 0705701707. A mismatch is answered with SIP 403 Forbidden.
+  The conversion happens here, at the operator leg only (see to_national()):
+  nothing outside this module ever sees the national form.
 """
 
 import asyncio
@@ -56,7 +65,7 @@ from urllib.parse import quote
 import websockets
 from aiohttp import web
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -88,7 +97,13 @@ AMI_SECRET = _env("AMI_SECRET", required=True)
 
 TRUNK_ENDPOINT = _env("TRUNK_ENDPOINT", "o-trunk")
 TRUNK_HOSTS = [h.strip() for h in _env("TRUNK_HOSTS", "195.216.237.6:5070,195.216.237.7:5070").split(",") if h.strip()]
-MAX_OUTBOUND = int(_env("MAX_OUTBOUND", "4"))
+# Channels sold by the operator: 5 inbound + 5 outbound (see the "Форма реализации" card).
+MAX_OUTBOUND = int(_env("MAX_OUTBOUND", "5"))
+MAX_INBOUND = int(_env("MAX_INBOUND", "5"))
+# Number format on the operator leg: 996705701707 -> 0705701707
+COUNTRY_CODE = _env("COUNTRY_CODE", "996")
+NATIONAL_PREFIX = _env("NATIONAL_PREFIX", "0")
+SUBSCRIBER_DIGITS = int(_env("SUBSCRIBER_DIGITS", "9"))
 ORIGINATE_TIMEOUT_MS = int(_env("ORIGINATE_TIMEOUT_MS", "45000"))
 OUTBOUND_CONTEXT = _env("OUTBOUND_CONTEXT", "outbound-answered")
 BACKEND_CONNECT_TIMEOUT = float(_env("BACKEND_CONNECT_TIMEOUT", "6"))
@@ -114,6 +129,28 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("bridge")
+
+
+# ----------------------------------------------------------------------------
+# Number formats
+# ----------------------------------------------------------------------------
+
+
+def to_national(number: str) -> str:
+    """Canonical E.164-without-plus -> the national format the operator demands.
+
+    996705701707 -> 0705701707,  705701707 -> 0705701707,  0705701707 -> unchanged.
+    The operator matches the A-number and the B-number of every INVITE against the
+    numbers registered in the service card; anything else gets SIP 403 Forbidden.
+    Unknown shapes (short codes, foreign numbers) are passed through untouched so
+    that the operator, not this function, decides whether to reject them.
+    """
+    digits = "".join(ch for ch in (number or "") if ch.isdigit())
+    if digits.startswith(COUNTRY_CODE) and len(digits) == len(COUNTRY_CODE) + SUBSCRIBER_DIGITS:
+        return NATIONAL_PREFIX + digits[len(COUNTRY_CODE):]
+    if len(digits) == SUBSCRIBER_DIGITS:
+        return NATIONAL_PREFIX + digits
+    return digits
 
 
 # ----------------------------------------------------------------------------
@@ -186,6 +223,9 @@ class Bridge:
     # ------------------------------------------------------------------ calls
     def active_outbound(self) -> int:
         return sum(1 for c in self.calls.values() if c.direction == "outbound" and not c.ended)
+
+    def active_inbound(self) -> int:
+        return sum(1 for c in self.calls.values() if c.direction == "inbound" and not c.ended)
 
     def new_call(self, direction: str, **kw: Any) -> Call:
         call_id = kw.pop("call_id", None) or str(uuid.uuid4())
@@ -435,6 +475,7 @@ class Bridge:
                         "gateway_id": GATEWAY_ID,
                         "version": VERSION,
                         "max_outbound": MAX_OUTBOUND,
+                        "max_inbound": MAX_INBOUND,
                         "public_ip": PUBLIC_IP,
                         "active_calls": [c.public() for c in self.calls.values() if not c.ended],
                     }
@@ -513,6 +554,11 @@ class Bridge:
             await self._fail(call, "ami_unavailable")
             return
 
+        # The call keeps its canonical numbers everywhere (events, journal, CRM);
+        # only the INVITE towards the operator carries the national format.
+        dial_to = to_national(to)
+        dial_cid = to_national(caller_id)
+
         self.emit("started", call)
         last_reason = "failed"
         for index, host in enumerate(TRUNK_HOSTS):
@@ -520,15 +566,16 @@ class Bridge:
                 return
             call.trunk_host = host
             action_id = f"{call.call_id}:{index}"
-            log.info("call %s: originating to %s via %s (cid=%s)", call.call_id, to, host, caller_id)
+            log.info("call %s: originating to %s (dial %s) via %s (cid=%s dial %s)",
+                     call.call_id, to, dial_to, host, caller_id, dial_cid)
             try:
                 result = await self.ami.originate(
                     action_id=action_id,
-                    channel=f"PJSIP/{TRUNK_ENDPOINT}/sip:{to}@{host}",
+                    channel=f"PJSIP/{TRUNK_ENDPOINT}/sip:{dial_to}@{host}",
                     context=OUTBOUND_CONTEXT,
                     exten="s",
                     priority="1",
-                    caller_id=f'"{caller_id}" <{caller_id}>',
+                    caller_id=f'"{dial_cid}" <{dial_cid}>',
                     timeout_ms=ORIGINATE_TIMEOUT_MS,
                     variables={"VOKSY_UUID": call.call_id},
                 )
@@ -567,6 +614,13 @@ class Bridge:
         log.info("HTTP listening on %s:%d", HTTP_HOST, HTTP_PORT)
 
     async def _http_inbound(self, request: web.Request) -> web.Response:
+        # The operator sells a fixed number of inbound channels; refuse the extra
+        # ones ourselves instead of running calls we are not paying for. Any reply
+        # that is not a 36-char UUID makes the dialplan play congestion.
+        if self.active_inbound() >= MAX_INBOUND:
+            log.warning("inbound call rejected: all %d channels busy (did=%s)",
+                        MAX_INBOUND, request.query.get("did", ""))
+            return web.Response(text="channel_limit", status=503)
         call = self.new_call(
             "inbound",
             did=request.query.get("did", ""),
@@ -587,6 +641,8 @@ class Bridge:
             "active_calls": sum(1 for c in self.calls.values() if not c.ended),
             "active_outbound": self.active_outbound(),
             "max_outbound": MAX_OUTBOUND,
+            "active_inbound": self.active_inbound(),
+            "max_inbound": MAX_INBOUND,
         })
 
     async def _http_calls(self, request: web.Request) -> web.Response:
