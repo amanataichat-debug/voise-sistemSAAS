@@ -62,6 +62,12 @@ def generate_short_id(prefix: str = "") -> str:
     max_id_len = 32 - len(prefix)
     return f"{prefix}{raw_id[:max_id_len]}"
 
+# Телефонная линия: GSM-шум, эхо и сжатие речи заставляют чувствительный VAD
+# принимать шум за речь и обрывать ассистента на полуслове. Порог выше, паузы
+# длиннее — те же значения, что у Fish (fish_llm_client.TELEPHONY_VAD).
+TELEPHONY_VAD = {"threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_ms": 500}
+
+
 def get_device_vad_settings(user_agent: str = "") -> Dict[str, Any]:
     """
     Возвращает оптимальные настройки VAD в зависимости от устройства.
@@ -161,9 +167,18 @@ class OpenAIRealtimeClient:
         self.interruption_occurred = False
         self.last_interruption_time = 0
         
-        # Получаем УЛУЧШЕННЫЕ настройки VAD с учетом iOS
-        self.vad_settings = get_device_vad_settings(user_agent)
-        logger.info(f"[VAD] Настройки для устройства ({user_agent[:50]}): {self.vad_settings}")
+        # Получаем УЛУЧШЕННЫЕ настройки VAD с учетом iOS.
+        # На телефонном звонке user_agent пустой, и определение по устройству дало бы
+        # самый чувствительный профиль ("десктоп"), который на линии оператора рвёт
+        # речь ассистента ложными перебиваниями. Телефон определяем по флагу
+        # assistant.telephony_mode, который ставит backend/api/sip_gateway.py.
+        self.is_telephony = bool(getattr(assistant_config, "telephony_mode", False))
+        if self.is_telephony:
+            self.vad_settings = dict(TELEPHONY_VAD)
+            logger.info(f"[VAD] Телефонный профиль: {self.vad_settings}")
+        else:
+            self.vad_settings = get_device_vad_settings(user_agent)
+            logger.info(f"[VAD] Настройки для устройства ({user_agent[:50]}): {self.vad_settings}")
         
         # Определяем тип устройства для специальной обработки
         self.is_ios = "iphone" in user_agent.lower() or "ipad" in user_agent.lower()
