@@ -59,7 +59,7 @@
 - `__init__.py` — агрегирует роутеры для импорта в `app.py`.
 
 ### Собственная SIP-телефония
-- `sip_gateway.py` — WS `/ws/sip-gateway/control` и `/ws/sip/{call_id}` для моста на VPS (авторизация по `SIP_GATEWAY_TOKEN`), HTTP `/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`. Подключён в `app.py` **до** `websocket.router`. Таблицы создаёт лениво (`_ensure_tables`). Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- `sip_gateway.py` — WS `/ws/sip-gateway/control` и `/ws/sip/{call_id}` для моста на VPS (авторизация по `SIP_GATEWAY_TOKEN`), HTTP `/api/sip/numbers` (список с `assistant_name`/`agent_name`; `PATCH` принимает либо `assistant_type`+`assistant_id`, либо `agent_config_id` — тогда ассистент берётся у агента и прямая привязка сбрасывает агента), `/api/sip/calls` (`POST` отклоняет номера не O!), `/api/sip/gateways`. Подключён в `app.py` **до** `websocket.router`. Таблицы создаёт лениво (`_ensure_tables`). Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
 
 ## Ключевые сущности / точки входа
 - **Webhooks (внешние POST'ы, без JWT):** `payments.py` `/api/payments/finik-webhook` (Finik, проверка RSA-подписи по публичному ключу), `voximplant.py` `/api/voximplant/webhook/transcript` и `/log`, `agent_telegram.py` Telegram webhook. Эти эндпоинты — точки входа извне, к ним особое внимание по безопасности.

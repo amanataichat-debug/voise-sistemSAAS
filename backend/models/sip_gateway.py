@@ -22,6 +22,18 @@ from backend.models.base import Base
 # браузерный хендлер с протоколом виджета, который заворачивается в HandlerSocket.
 SIP_SUPPORTED_ASSISTANT_TYPES = ("openai", "gemini", "fish")
 
+# Префиксы мобильных номеров оператора O! (НУР Телеком) в national-формате.
+# Транк пропускает исходящие только на номера O!, поэтому чужие префиксы
+# отклоняются ещё в API, а не 403 от оператора. Список правится здесь.
+O_MOBILE_PREFIXES = ("050", "070", "099")
+
+
+def is_o_number(digits: str) -> bool:
+    """Канонический номер (996XXXXXXXXX) принадлежит O!?"""
+    if len(digits) != 12 or not digits.startswith("996"):
+        return False
+    return ("0" + digits[3:]).startswith(O_MOBILE_PREFIXES)
+
 
 class SipPhoneNumber(Base):
     __tablename__ = "sip_phone_numbers"
@@ -40,6 +52,12 @@ class SipPhoneNumber(Base):
     # "fish" → fish_assistant_configs
     assistant_type = Column(String(20), nullable=True)
     assistant_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Привязка к агенту обзвона (agent_configs). Звонок всё равно идёт через
+    # голосового ассистента агента, поэтому при привязке сюда же копируются
+    # assistant_type/assistant_id; при смене типа у агента их обновляет
+    # backend/api/agent.py. NULL — номер привязан к ассистенту напрямую.
+    agent_config_id = Column(UUID(as_uuid=True), ForeignKey("agent_configs.id", ondelete="SET NULL"), nullable=True)
 
     # Первая фраза при входящем звонке (переопределяет greeting_message ассистента)
     first_phrase = Column(Text, nullable=True)
@@ -60,6 +78,7 @@ class SipPhoneNumber(Base):
             "gateway_id": self.gateway_id,
             "assistant_type": self.assistant_type,
             "assistant_id": str(self.assistant_id) if self.assistant_id else None,
+            "agent_config_id": str(self.agent_config_id) if self.agent_config_id else None,
             "first_phrase": self.first_phrase,
             "allow_outbound": self.allow_outbound,
             "is_active": self.is_active,

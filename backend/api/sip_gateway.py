@@ -42,8 +42,11 @@ from backend.models.sip_gateway import (
     SipCall,
     SipCallStatus,
     SIP_SUPPORTED_ASSISTANT_TYPES,
+    O_MOBILE_PREFIXES,
+    is_o_number,
     normalize_sip_number,
 )
+from backend.models.agent_config import AgentConfig
 from backend.models.task import Task, TaskStatus
 from backend.services.sip_gateway_service import SipGatewayService
 from backend.websockets.sip_media_adapter import HandlerSocket
@@ -83,11 +86,24 @@ def _ensure_tables() -> None:
     if _tables_ready:
         return
     try:
+        from sqlalchemy import text
         from backend.models.base import Base, engine
         Base.metadata.create_all(engine, tables=[SipPhoneNumber.__table__, SipCall.__table__], checkfirst=True)
-        _tables_ready = True
     except Exception as exc:
         logger.error(f"[SIP] ensure tables failed: {exc}")
+        return
+    try:
+        # Колонки, добавленные после создания таблиц (create_all их не дописывает).
+        # Дублирует alembic/versions/add_sip_number_agent_binding.py.
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE sip_phone_numbers ADD COLUMN IF NOT EXISTS agent_config_id UUID "
+                "REFERENCES agent_configs(id) ON DELETE SET NULL"
+            ))
+    except Exception as exc:
+        logger.error(f"[SIP] ensure columns failed: {exc}")
+        return
+    _tables_ready = True
 
 
 def _token_ok(token: Optional[str]) -> bool:
@@ -388,6 +404,9 @@ class SipNumberUpdate(BaseModel):
     label: Optional[str] = None
     assistant_type: Optional[str] = None
     assistant_id: Optional[str] = None
+    # Привязка к агенту обзвона: ассистент берётся у агента. Пустая строка/None вместе
+    # с пустыми assistant_* = отвязать номер.
+    agent_config_id: Optional[str] = None
     first_phrase: Optional[str] = None
     allow_outbound: Optional[bool] = None
     is_active: Optional[bool] = None
@@ -396,7 +415,7 @@ class SipNumberUpdate(BaseModel):
 class SipCallCreate(BaseModel):
     to: str = Field(..., description="Кому звоним, любой формат")
     caller_id: Optional[str] = Field(None, description="С какого нашего номера; по умолчанию первый доступный")
-    assistant_type: Optional[str] = Field(None, description="openai | gemini; по умолчанию как у номера")
+    assistant_type: Optional[str] = Field(None, description="openai | gemini | fish; по умолчанию как у номера")
     assistant_id: Optional[str] = None
     contact_name: Optional[str] = None
     custom_greeting: Optional[str] = None
@@ -427,7 +446,7 @@ async def list_numbers(
     if not (all_users and current_user.is_admin):
         query = query.filter(SipPhoneNumber.user_id == current_user.id)
     rows = query.order_by(SipPhoneNumber.created_at.asc()).all()
-    return {"numbers": [n.to_dict() for n in rows]}
+    return {"numbers": [SipGatewayService.describe_number(db, n) for n in rows]}
 
 
 @router.post("/api/sip/numbers", status_code=201)
@@ -466,7 +485,7 @@ async def create_number(
     db.add(number)
     db.commit()
     db.refresh(number)
-    return number.to_dict()
+    return SipGatewayService.describe_number(db, number)
 
 
 def _get_own_number(db: Session, current_user: User, number_id: str) -> SipPhoneNumber:
@@ -490,7 +509,22 @@ async def update_number(
     _ensure_tables()
     number = _get_own_number(db, current_user, number_id)
     data = body.dict(exclude_unset=True)
-    if "assistant_type" in data or "assistant_id" in data:
+    agent_id = data.pop("agent_config_id", None) or None
+    if agent_id:
+        # Привязка к агенту обзвона: ассистент копируется из агента.
+        try:
+            agent = db.get(AgentConfig, uuid.UUID(agent_id))
+        except ValueError:
+            agent = None
+        if agent is None or (agent.user_id != current_user.id and not current_user.is_admin):
+            raise HTTPException(status_code=404, detail="Агент не найден")
+        try:
+            SipGatewayService.bind_number_to_agent(number, agent)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        data.pop("assistant_type", None)
+        data.pop("assistant_id", None)
+    elif "assistant_type" in data or "assistant_id" in data:
         a_type = data.get("assistant_type", number.assistant_type)
         a_id = data.get("assistant_id", str(number.assistant_id) if number.assistant_id else None)
         if a_type is None and a_id is None:
@@ -500,13 +534,15 @@ async def update_number(
             _validate_assistant(db, current_user, a_type, a_id)
             number.assistant_type = a_type
             number.assistant_id = uuid.UUID(a_id)
+        # Прямая привязка к ассистенту (или отвязка) снимает привязку к агенту.
+        number.agent_config_id = None
         data.pop("assistant_type", None)
         data.pop("assistant_id", None)
     for key, value in data.items():
         setattr(number, key, value)
     db.commit()
     db.refresh(number)
-    return number.to_dict()
+    return SipGatewayService.describe_number(db, number)
 
 
 @router.delete("/api/sip/numbers/{number_id}")
@@ -574,6 +610,11 @@ async def create_call(
     to_digits = normalize_sip_number(body.to)
     if len(to_digits) < 9:
         raise HTTPException(status_code=400, detail="Некорректный номер назначения")
+    if not is_o_number(to_digits):
+        raise HTTPException(
+            status_code=400,
+            detail="Исходящие возможны только на номера O! (префиксы " + ", ".join(O_MOBILE_PREFIXES) + ")",
+        )
     metadata = {
         k: v for k, v in {
             "contact_name": body.contact_name,

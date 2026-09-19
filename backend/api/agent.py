@@ -637,12 +637,17 @@ async def _rebind_agent_phone_numbers(db: Session, agent: AgentConfig,
     повторной привязкой номера на странице телефонии.
     """
     from backend.models.voximplant_child import VoximplantPhoneNumber
+    from backend.services.sip_gateway_service import SipGatewayService
 
+    # Номера собственного SIP-шлюза: рабочий путь телефонии.
+    sip_rebound = SipGatewayService.sync_agent_numbers(db, agent.id, new_type, new_assistant_id)
+
+    # Ниже — Voximplant (мёртвый код, ждёт удаления).
     numbers = db.query(VoximplantPhoneNumber).filter(
         VoximplantPhoneNumber.agent_config_id == agent.id
     ).all()
     if not numbers:
-        return 0
+        return sip_rebound
 
     # Локальные импорты — telephony импортирует agent-модели, на уровне модуля
     # получилась бы циклическая зависимость.
@@ -718,7 +723,7 @@ async def _rebind_agent_phone_numbers(db: Session, agent: AgentConfig,
     # Сессия с autoflush=False: сбрасываем новые привязки до того, как удаление
     # старого ассистента пройдётся bulk-запросом по voximplant_phone_numbers.
     db.flush()
-    return len(numbers)
+    return len(numbers) + sip_rebound
 
 
 def _agent_to_dict(agent: AgentConfig) -> dict:
@@ -1196,6 +1201,7 @@ async def delete_agent(
         #    следующей привязке номера (telephony пересоздаёт его только если
         #    vox_rule_id заполнен).
         from backend.models.voximplant_child import VoximplantPhoneNumber
+        from backend.services.sip_gateway_service import SipGatewayService
         agent_numbers = db.query(VoximplantPhoneNumber).filter(
             VoximplantPhoneNumber.agent_config_id == agent.id
         ).all()
@@ -1204,7 +1210,8 @@ async def delete_agent(
             num.assistant_id = None
             num.first_phrase = None
             num.agent_config_id = None
-        summary["phone_numbers_unbound"] = len(agent_numbers)
+        # Номера собственного SIP-шлюза (рабочий путь) отвязываем так же.
+        summary["phone_numbers_unbound"] = len(agent_numbers) + SipGatewayService.unbind_agent_numbers(db, agent.id)
 
         # 4. AgentConfig — каскадом уносит agent_contacts и agent_calls.
         db.delete(agent)

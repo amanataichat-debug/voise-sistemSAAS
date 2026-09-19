@@ -13,7 +13,7 @@ The Voximplant code is still in the tree and is **dead code awaiting removal**. 
 - `backend/api/voximplant.py`, `backend/api/voximplant_settings.py`, `backend/api/telephony.py` (number binding, scenario deployment, `/config`, `/outbound-config`)
 - `backend/services/voximplant_partner.py`, `backend/models/voximplant_child.py`, `User.voximplant_*` columns, `VOXIMPLANT_*` settings
 - `backend/websockets/voximplant_handler.py`, `voximplant_adapter.py`, `handler_vox_gemini.py`, `handler_fish_tts.py` (old Fish TTS proxy for VoxEngine)
-- `voximplant_scenarios/`, `.claude/skills/voximplant-*`, `backend/static/telephony.html`, `outbound-calls.html`
+- `voximplant_scenarios/`, `.claude/skills/voximplant-*`, `backend/static/outbound-calls.html`, `test_outbound-calls.html` (the old Voximplant `telephony.html` is gone: the page now works on `/api/sip/*`)
 - fallbacks in `backend/core/task_scheduler.py` (`_execute_via_partner_api`, `_execute_via_legacy_api`) and Voximplant number handling in `backend/api/agent.py`
 - `send_sms` function (Voximplant Management API) — has no working transport now
 
@@ -89,7 +89,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── contact.py       # CRM Contact model
 │   │   ├── subscription.py  # Subscription, SubscriptionPlan
 │   │   ├── task.py          # Scheduled call tasks
-│   │   ├── sip_gateway.py   # SipPhoneNumber, SipCall (own SIP telephony)
+│   │   ├── sip_gateway.py   # SipPhoneNumber (assistant or agent binding), SipCall, O! prefix check (own SIP telephony)
 │   │   ├── partner.py       # Partner referral model
 │   │   ├── embed_config.py  # Embeddable widget config
 │   │   └── ...
@@ -147,7 +147,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │       ├── fish-agents.html     # Fish agents page (server keys, browser test button)
 │       ├── fish-test.html       # Browser test of a Fish agent: widget.js with data-ws-path="/ws/fish/"
 │       ├── dashboard.html       # User dashboard
-│       ├── telephony.html       # Telephony settings
+│       ├── telephony.html       # Own SIP telephony UI: numbers → bind assistant/agent, outbound call to an O! number, call journal (/api/sip/*)
 │       ├── conversations.html   # Conversation history
 │       ├── crm.html             # CRM contacts list
 │       ├── crm-contact.html     # Individual contact view
@@ -246,7 +246,7 @@ cd .. && git add -A backend/static/landing frontend
 | `/ws/gemini/{id}` | Gemini Live voice WS |
 | `/ws/grok/{id}` | Grok Voice WS |
 | `/ws/fish/{id}` | Fish voice WS (widget protocol; OpenAI text brain + Fish TTS) |
-| `/api/sip` | Own SIP telephony: numbers, call journal, manual outbound (`/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`) |
+| `/api/sip` | Own SIP telephony: numbers (bind to an assistant or an `agent_configs` agent), call journal, manual outbound to O! numbers only (`/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`) |
 | `/ws/sip-gateway/control` | Control socket from the VPS bridge (auth by `SIP_GATEWAY_TOKEN`) |
 | `/ws/sip/{call_id}` | Per-call media socket from the VPS bridge (PCM16 8 kHz) |
 

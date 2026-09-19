@@ -76,8 +76,11 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 ## Fish по телефону
 Привязка номера: `PATCH /api/sip/numbers/{id}` с `{"assistant_type":"fish","assistant_id":"<uuid>"}`. Звонок идёт через `handler_fish` на серверных ключах `OPENAI_API_KEY`/`FISH_API_KEY`; в логах Render искать `[FISH]` и `[FISH-TTS]` рядом с `[SIP-MEDIA]`. Задержка ответа выше OpenAI (текст модели → синтез Fish), после перебивания Fish переподключается.
 
+## Страница «Телефония» (`backend/static/telephony.html`)
+Целиком на `/api/sip/*`, Voximplant-логики (верификация, баланс, покупка номеров) на ней нет. Номера пользователя → привязка к ассистенту OpenAI/Gemini/Fish **или к агенту обзвона** (`PATCH /api/sip/numbers/{id}` с `agent_config_id`: в `sip_phone_numbers` пишется `agent_config_id`, а `assistant_type`/`assistant_id` копируются из голосового ассистента агента; `backend/api/agent.py` при смене типа агента переводит номера на нового ассистента через `SipGatewayService.sync_agent_numbers`, при удалении агента отвязывает через `unbind_agent_numbers`). Исходящий звонок: `POST /api/sip/calls` с `to`, `caller_id`, `assistant_type`, `assistant_id`; номер абонента проверяется на префиксы O! (`O_MOBILE_PREFIXES` в `backend/models/sip_gateway.py`, на странице тот же список) — транк пропускает только O!. Статус звонка страница опрашивает через `GET /api/sip/calls/{id}` раз в 2 с; отбой — `POST /api/sip/calls/{id}/hangup` (работает, если control-сокет на этом воркере, иначе 409 и повтор). Журнал — `GET /api/sip/calls`.
+
 ## Что не сделано
-- UI-страница для номеров и журнала звонков (сейчас только API `/api/sip/*`).
+- Форма добавления номера в UI (сейчас номер заводит админ через `POST /api/sip/numbers`).
 - Запись разговоров (MixMonitor + R2).
 - Передача номера звонящего в хендлер во время звонка (сейчас диалог помечается номером после звонка через `tag_conversations`).
 - Gemini-диалоги без длительности/стоимости на странице «Диалоги».

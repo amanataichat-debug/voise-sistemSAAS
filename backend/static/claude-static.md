@@ -8,10 +8,11 @@
 - `dashboard.html` — дашборд пользователя.
 - `agents.html` — OpenAI-ассистенты; `gemini-agents.html`, `grok-agents.html`, `fish-agents.html`, `cartesia-agents.html`, `yandex-agents.html`, `cascade.html`, `elevenlabs-agents.html`, `translate.html` — страницы по провайдерам; `gemini-agents_old.html` — легаси.
 - `fish-agents.html` — Fish-агенты на серверных ключах (карточка ключей убрана; статус сервера через `GET /api/fish-assistants/status`), кнопка «Тест» открывает `fish-test.html?id=<uuid>` — тот же `widget.js`, но со `data-ws-path="/ws/fish/"`. `widget.js` понимает атрибут `data-ws-path` (по умолчанию `/ws/`), так один виджет обслуживает все провайдеры с протоколом виджета.
-- `telephony.html`, `outbound-calls.html` — страницы Voximplant, **мёртвые** (Voximplant не используется, см. корневой `CLAUDE.md`).
+- `telephony.html` — телефония через собственный SIP-шлюз, целиком на `/api/sip/*`: таблица номеров пользователя (`GET /api/sip/numbers`), модалка привязки к ассистенту OpenAI/Gemini/Fish или к агенту обзвона (`PATCH /api/sip/numbers/{id}` с `assistant_type`+`assistant_id` или `agent_config_id`), форма исходящего звонка (`POST /api/sip/calls`, номер абонента проверяется на префиксы O! `050/070/099` и на странице, и в API) с живым статусом (опрос `GET /api/sip/calls/{id}` раз в 2 с, отбой `POST /api/sip/calls/{id}/hangup`), журнал звонков (`GET /api/sip/calls`). Номера заводит только админ через API. Верификации, баланса, покупки номеров и SMS больше нет.
+- `outbound-calls.html`, `test_outbound-calls.html` — страницы Voximplant, **мёртвые** (Voximplant не используется, см. корневой `CLAUDE.md`).
 - `crm.html`, `crm-contact.html` — CRM (список и карточка контакта).
 - `conversations.html` — история диалогов.
-- `telephony.html`, `outbound-calls.html`, `test_outbound-calls.html` — телефония и обзвон.
+- `telephony.html` — телефония (SIP-шлюз); `outbound-calls.html`, `test_outbound-calls.html` — старый обзвон Voximplant (мёртвые).
 - `agent.html` — страница Voksy AI Agent (оркестратор/обзвон).
 - `knowledge-base.html`, `integrations.html`, `settings.html`, `admin.html` — база знаний, интеграции, настройки, админка.
 - `index.html`, `index_original.html` — входные/легаси страницы; `widget.html` — демо виджета.

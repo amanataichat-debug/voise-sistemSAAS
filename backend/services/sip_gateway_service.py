@@ -31,6 +31,7 @@ from backend.models.sip_gateway import (
 from backend.models.assistant import AssistantConfig
 from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConversation
 from backend.models.fish_assistant import FishAssistantConfig, FishConversation
+from backend.models.agent_config import AgentConfig
 from backend.models.conversation import Conversation
 from backend.models.task import Task, TaskStatus
 from backend.models.agent_call import AgentCall
@@ -88,6 +89,55 @@ class SipGatewayService:
             if record:
                 return record
         return query.order_by(SipPhoneNumber.created_at.asc()).first()
+
+    @staticmethod
+    def describe_number(db: Session, number: SipPhoneNumber) -> Dict[str, Any]:
+        """to_dict() номера + имена привязанного ассистента и агента для интерфейса."""
+        data = number.to_dict()
+        assistant = SipGatewayService.load_assistant(db, number.assistant_type, number.assistant_id)
+        data["assistant_name"] = getattr(assistant, "name", None)
+        data["assistant_active"] = bool(getattr(assistant, "is_active", False)) if assistant else None
+        agent = db.get(AgentConfig, number.agent_config_id) if number.agent_config_id else None
+        data["agent_name"] = agent.name if agent else None
+        return data
+
+    @staticmethod
+    def bind_number_to_agent(number: SipPhoneNumber, agent: AgentConfig) -> None:
+        """Привязать номер к агенту обзвона: входящие идут через его голосового ассистента.
+
+        Тип ассистента агента должен поддерживаться телефонией, иначе ValueError.
+        """
+        if agent.assistant_type not in SIP_SUPPORTED_ASSISTANT_TYPES:
+            raise ValueError(f"Тип ассистента агента «{agent.assistant_type}» не поддерживается телефонией")
+        voice_id = agent.get_voice_assistant_id()
+        if not voice_id:
+            raise ValueError("У агента нет голосового ассистента")
+        number.agent_config_id = agent.id
+        number.assistant_type = agent.assistant_type
+        number.assistant_id = voice_id
+
+    @staticmethod
+    def sync_agent_numbers(db: Session, agent_id: uuid.UUID, assistant_type: Optional[str], assistant_id: Any) -> int:
+        """Перевести номера агента на его нового голосового ассистента (после смены типа).
+
+        Если новый тип телефонией не поддерживается, номера отвязываются целиком,
+        чтобы входящий не ушёл на несуществующий хендлер.
+        """
+        numbers = db.query(SipPhoneNumber).filter(SipPhoneNumber.agent_config_id == agent_id).all()
+        for number in numbers:
+            if assistant_type in SIP_SUPPORTED_ASSISTANT_TYPES and assistant_id:
+                number.assistant_type = assistant_type
+                number.assistant_id = _parse_uuid(assistant_id)
+            else:
+                number.agent_config_id = None
+                number.assistant_type = None
+                number.assistant_id = None
+        return len(numbers)
+
+    @staticmethod
+    def unbind_agent_numbers(db: Session, agent_id: uuid.UUID) -> int:
+        """Отвязать номера агента перед его удалением (assistant_id без FK сам не обнулится)."""
+        return SipGatewayService.sync_agent_numbers(db, agent_id, None, None)
 
     @staticmethod
     def load_assistant(db: Session, assistant_type: Optional[str], assistant_id: Any):
