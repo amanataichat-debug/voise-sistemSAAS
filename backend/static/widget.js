@@ -1,16 +1,18 @@
 /**
  * WellcomeAI Widget Loader Script
- * Версия: 4.0 - gpt-realtime-2 compatibility
+ * Версия: 5.0 - OpenAI GPT-Live (gpt-live-1) full-duplex
  *
- * ✅ Использует OpenAI Realtime API (gpt-realtime-2)
- * ✅ Совместим с handler_realtime_new.py v3.0 + openai_client_new.py v4.0
+ * ✅ OpenAI-ассистенты: handler_live.py (gpt-live-1). Fish/другие: тот же протокол виджета.
  * ✅ Автоматический захват DOM каждые 3 секунды
  *
- * ✨ v4.0 changes:
- * - Совместим с новой моделью gpt-realtime-2 на сервере
- * - Косметическое обновление версий
- * - Server VAD единственный механизм коммита
- * - Воспроизведение через AudioContext (AEC работает корректно)
+ * ✨ v5.0 changes (режим full_duplex, включается сервером в connection_status):
+ * - Микрофон стримится непрерывно, в том числе пока ассистент говорит — модель
+ *   сама слышит перебивание и замолкает (эхо гасит AEC браузера: воспроизведение
+ *   идёт через тот же AudioContext, что и захват)
+ * - Аудио ассистента приходит в реальном темпе: воспроизведение планируется по
+ *   таймлайну AudioContext без разрывов, с запасом 200 мс против джиттера
+ * - Событий VAD (speech.started / conversation.interrupted) в этом режиме нет
+ * Без флага full_duplex работает как v4.0 (пауза микрофона на время речи ассистента).
  */
 
 (function() {
@@ -1079,6 +1081,12 @@
     let isPlayingAudio = false;
     let lastPlaybackEndTime = 0;
     const PLAYBACK_ECHO_TAIL_MS = 300; // пауза после окончания воспроизведения
+    // v5.0: full-duplex (GPT-Live) — сервер включает флагом connection_status.full_duplex
+    let fullDuplexMode = false;
+    let liveAudioRate = 24000;
+    const LIVE_PLAYBACK_CUSHION_SEC = 0.2; // запас перед стартом реплики против сетевого джиттера
+    let liveNextPlayTime = 0;              // позиция на таймлайне AudioContext для следующего куска
+    let liveSources = [];                  // запланированные AudioBufferSourceNode
     let isListening = false;
     let websocket = null;
     let audioProcessor = null;
@@ -1283,12 +1291,70 @@
     // Добавить аудио в очередь воспроизведения
     function addAudioToPlaybackQueue(audioBase64) {
       if (!audioBase64 || typeof audioBase64 !== 'string') return;
-      
+
+      if (fullDuplexMode) {
+        scheduleLiveAudio(audioBase64);
+        return;
+      }
+
       audioPlaybackQueue.push(audioBase64);
-      
+
       if (!isPlayingAudio) {
         playNextAudio();
       }
+    }
+
+    // v5.0: gapless-воспроизведение для full-duplex. Куски PCM16 приходят в реальном
+    // темпе, поэтому каждый планируется встык к предыдущему на таймлайне AudioContext;
+    // первый кусок реплики стартует с запасом LIVE_PLAYBACK_CUSHION_SEC.
+    function scheduleLiveAudio(audioBase64) {
+      const ctx = window.globalAudioContext;
+      if (!ctx) return;
+      let pcm;
+      try {
+        pcm = base64ToArrayBuffer(audioBase64);
+      } catch (e) {
+        return;
+      }
+      if (!pcm || pcm.byteLength < 2) return;
+      const samples = new Int16Array(pcm, 0, Math.floor(pcm.byteLength / 2));
+      const buffer = ctx.createBuffer(1, samples.length, liveAudioRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const now = ctx.currentTime;
+      if (liveNextPlayTime < now + 0.02) {
+        // новая реплика или буфер опустел — стартуем с запасом
+        liveNextPlayTime = now + LIVE_PLAYBACK_CUSHION_SEC;
+      }
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      liveSources.push(source);
+      source.onended = function() {
+        const idx = liveSources.indexOf(source);
+        if (idx > -1) liveSources.splice(idx, 1);
+        if (liveSources.length === 0) onLivePlaybackIdle();
+      };
+      source.start(liveNextPlayTime);
+      liveNextPlayTime += buffer.duration;
+
+      isPlayingAudio = true;
+      interruptionState.is_assistant_speaking = true;
+      mainCircle.classList.add('speaking');
+      mainCircle.classList.remove('listening');
+    }
+
+    function onLivePlaybackIdle() {
+      isPlayingAudio = false;
+      lastPlaybackEndTime = Date.now();
+      interruptionState.is_assistant_speaking = false;
+      mainCircle.classList.remove('speaking');
+      if (isListening) mainCircle.classList.add('listening');
+      if (!isWidgetOpen) widgetButton.classList.add('wellcomeai-pulse-animation');
     }
 
     // Обработка событий перебивания
@@ -1325,6 +1391,13 @@
       isPlayingAudio = false;
       lastPlaybackEndTime = Date.now(); // хвост эха при принудительной остановке
       interruptionState.is_assistant_speaking = false;
+
+      // v5.0: запланированные куски full-duplex
+      liveSources.forEach(source => {
+        try { source.onended = null; source.stop(); source.disconnect(); } catch (e) {}
+      });
+      liveSources = [];
+      liveNextPlayTime = 0;
 
       // Останавливаем AudioBufferSourceNode (новый подход)
       if (interruptionState.current_audio_sources) {
@@ -1679,7 +1752,8 @@
     
     // Начало записи голоса
     async function startListening() {
-      if (!isConnected || isPlayingAudio || isReconnecting || isListening) {
+      // v5.0: в full-duplex слушаем и во время речи ассистента
+      if (!isConnected || isReconnecting || isListening || (isPlayingAudio && !fullDuplexMode)) {
         widgetLog(`[v4.0] Не удается начать прослушивание: isConnected=${isConnected}, isPlayingAudio=${isPlayingAudio}, isReconnecting=${isReconnecting}, isListening=${isListening}`);
         return;
       }
@@ -1727,9 +1801,13 @@
         
         // v4.0: Simplified audio handler — server VAD manages commits
         audioProcessor.onaudioprocess = function(e) {
-          // ПАУЗА: не стримим пока ассистент говорит — иначе его голос попадает в микрофон
-          const echoTailActive = (Date.now() - lastPlaybackEndTime) < PLAYBACK_ECHO_TAIL_MS;
-          if (!isListening || isPlayingAudio || isReconnecting || echoTailActive) return;
+          if (!isListening || isReconnecting) return;
+          // v4.0 (не full-duplex): не стримим пока ассистент говорит — иначе его голос попадает в микрофон.
+          // v5.0 full-duplex: стримим всегда — модель сама слышит перебивание, эхо гасит AEC браузера.
+          if (!fullDuplexMode) {
+            const echoTailActive = (Date.now() - lastPlaybackEndTime) < PLAYBACK_ECHO_TAIL_MS;
+            if (isPlayingAudio || echoTailActive) return;
+          }
           if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
 
           const inputBuffer = e.inputBuffer;
@@ -2103,6 +2181,11 @@
                   // ✅ Читаем флаги от сервера
                   window._visionEnabled = data.enable_vision === true;
                   widgetLog(`[v4.0] Vision AI: ${window._visionEnabled ? 'включен' : 'выключен'}`);
+                  // v5.0: full-duplex (GPT-Live) — непрерывный микрофон + gapless-воспроизведение
+                  fullDuplexMode = data.full_duplex === true;
+                  if (data.audio_rate) liveAudioRate = Number(data.audio_rate) || 24000;
+                  liveNextPlayTime = 0;
+                  widgetLog(`[v5.0] Режим: ${fullDuplexMode ? 'full-duplex (' + (data.model || '') + ')' : 'half-duplex'}`);
 
                   hideConnectionError();
 
@@ -2220,7 +2303,12 @@
                 'response.output_audio.done',
                 'input_audio_buffer.committed',
                 'input_audio_buffer.cleared',
-                'rate_limits.updated'
+                'rate_limits.updated',
+                // v5.0: служебные события GPT-Live
+                'transcript.delta',
+                'usage',
+                'delegation.',
+                'session.closed'
               ];
               if (data.type && IGNORED_PREFIXES.some(prefix => data.type.includes(prefix))) {
                 return;
@@ -2414,7 +2502,7 @@
     
     widgetLog('[v4.0] ✅ Widget initialization complete');
     widgetLog('[v4.0] ⚡ Features: Streaming audio, Instant UI feedback, Clean UX');
-    widgetLog('[v4.0] 🔗 Compatible with: backend handler v3.0 + client v4.0 (gpt-realtime-2)');
+    widgetLog('[v5.0] 🔗 Compatible with: backend handler_live.py (gpt-live-1, full-duplex) and Fish/half-duplex handlers');
   }
   
   // Проверяем, есть ли уже виджет на странице

@@ -6,7 +6,7 @@
 PCM16 8 кГц (320 байт = 20 мс). Обратно ждёт бинарные кадры PCM16 8 кГц и
 текстовые команды {"type":"clear"|"hangup"|"mark"}.
 
-Браузерные хендлеры (handler_realtime_new / handler_gemini / handler_fish) ждут объект с
+Браузерные хендлеры (handler_live / handler_gemini / handler_fish) ждут объект с
 интерфейсом FastAPI WebSocket и JSON-протокол виджета:
     клиент → {"type":"input_audio_buffer.append","audio":"<base64 PCM16>"}
     сервер → {"type":"response.audio.delta","delta":"<base64 PCM16 24 кГц>"}
@@ -16,6 +16,12 @@ PCM16 8 кГц (320 байт = 20 мс). Обратно ждёт бинарны�
 протокол в другой, включая ресемплинг 8 кГц ↔ 24 кГц (OpenAI, Fish) или 8 → 16 кГц
 на вход и 24 → 8 кГц на выход (Gemini). Так телефонный звонок проходит через ту
 же логику функций, транскриптов и записи диалогов, что и виджет.
+
+OpenAI (GPT-Live) отдаёт аудио в реальном темпе, а не быстрее реального времени:
+очередь у моста почти пуста, и любой сетевой джиттер слышен как провал. Поэтому
+для провайдеров из OUTBOUND_CUSHION_MS адаптер придерживает начало каждой
+реплики на N мс и только потом отдаёт поток мосту — у пейсера моста появляется
+запас. Перебивания у GPT-Live обрабатывает сама модель (событий VAD нет).
 """
 
 import asyncio
@@ -45,8 +51,13 @@ PHONE_RATE = 8000
 HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
 HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000}
 # Размер порции входящего звука для хендлера, мс. Gemini Live лучше работает с порциями ~100 мс,
-# чем с 50 сообщениями в секунду; OpenAI Realtime (в т.ч. текстовый мозг Fish) спокойно принимает 20 мс.
+# чем с 50 сообщениями в секунду; OpenAI GPT-Live и Realtime (текстовый мозг Fish) спокойно принимают 20 мс.
 INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20}
+# Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
+# 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
+OUTBOUND_CUSHION_MS = {"openai": 200}
+# Пауза в потоке аудио, после которой следующая порция считается новой репликой и снова копит запас
+OUTBOUND_IDLE_RESET_SEC = 0.6
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
@@ -140,6 +151,11 @@ class HandlerSocket:
         in_rate = HANDLER_IN_RATE.get(provider, 24000)
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
+        self._cushion_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
+        self._out_hold = bytearray()
+        self._out_streaming = False
+        self._out_last_at = 0.0
+        self._cushion_task: Optional[asyncio.Task] = None
         self._reader_task: Optional[asyncio.Task] = None
         self._hangup_task: Optional[asyncio.Task] = None
         self.closed = False
@@ -232,6 +248,8 @@ class HandlerSocket:
         """Завершить всё: трубка, задачи, реальный сокет. Вызывается после выхода хендлера."""
         if self._hangup_task and not self._hangup_task.done():
             self._hangup_task.cancel()
+        if self._cushion_task and not self._cushion_task.done():
+            self._cushion_task.cancel()
         await self.hangup("handler_finished")
         self.closed = True
         if self._reader_task and not self._reader_task.done():
@@ -305,10 +323,7 @@ class HandlerSocket:
                     self.frames_out += 1
                     self.audio_bytes_out += len(pcm)
                     self._last_delta_at = time.time()
-                    try:
-                        await self.ws.send_bytes(pcm)
-                    except Exception:
-                        pass
+                    await self._send_audio(pcm)
             return
 
         if mtype in BARGE_IN_EVENTS:
@@ -320,6 +335,8 @@ class HandlerSocket:
             )
             await self._send_text({"type": "clear"})
             self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
+            self._out_hold.clear()
+            self._out_streaming = False
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера
             await self._queue.put({"type": "websocket.receive", "text": json.dumps({"type": "audio_playback.stopped"})})
             return
@@ -348,6 +365,49 @@ class HandlerSocket:
 
     async def close(self, code: int = 1000, reason: Optional[str] = None) -> None:
         await self.hangup("handler_closed" if code == 1000 else f"handler_close_{code}")
+
+    # ------------------------------------------------------------- outbound audio
+    async def _send_audio(self, pcm: bytes) -> None:
+        """Отдать кадр мосту; для провайдеров с запасом — сначала накопить начало реплики."""
+        if not self._cushion_bytes:
+            await self._send_bytes(pcm)
+            return
+        now = time.time()
+        if self._out_streaming and now - self._out_last_at > OUTBOUND_IDLE_RESET_SEC:
+            self._out_streaming = False  # пауза в речи: следующая реплика снова копит запас
+        self._out_last_at = now
+        if self._out_streaming:
+            await self._send_bytes(pcm)
+            return
+        self._out_hold.extend(pcm)
+        if len(self._out_hold) >= self._cushion_bytes:
+            await self._flush_hold()
+        elif self._cushion_task is None or self._cushion_task.done():
+            # Короткая реплика («да», «угу») может быть меньше запаса — не держать её дольше запаса
+            self._cushion_task = asyncio.create_task(self._flush_hold_later())
+
+    async def _flush_hold_later(self) -> None:
+        try:
+            await asyncio.sleep(self._cushion_bytes / (PHONE_RATE * 2))
+            if not self._out_streaming and self._out_hold:
+                await self._flush_hold()
+        except asyncio.CancelledError:
+            pass
+
+    async def _flush_hold(self) -> None:
+        self._out_streaming = True
+        data = bytes(self._out_hold)
+        self._out_hold.clear()
+        if data:
+            await self._send_bytes(data)
+
+    async def _send_bytes(self, pcm: bytes) -> None:
+        if self.closed:
+            return
+        try:
+            await self.ws.send_bytes(pcm)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------- hangup flow
     async def _hangup_after_farewell(self) -> None:

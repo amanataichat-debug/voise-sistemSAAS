@@ -54,7 +54,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── gemini_assistants.py  # Gemini assistant CRUD
 │   │   ├── grok_assistants.py    # Grok assistant CRUD
 │   │   ├── elevenlabs.py    # ElevenLabs agent management
-│   │   ├── websocket.py     # OpenAI Realtime WebSocket proxy
+│   │   ├── websocket.py     # OpenAI voice WS: /ws/{id}, /ws/demo → handler_live (GPT-Live)
 │   │   ├── gemini_ws.py     # Gemini Live WebSocket proxy
 │   │   ├── grok_ws.py       # Grok Voice WebSocket proxy
 │   │   ├── telephony.py     # Outbound calls, call scheduling
@@ -124,10 +124,13 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── read_google_doc.py
 │   │   └── start_browser_task.py
 │   ├── websockets/          # WebSocket handlers for real-time voice
-│   │   ├── handler.py               # OpenAI Realtime handler
+│   │   ├── handler_live.py          # OpenAI GPT-Live handler (gpt-live-1, full-duplex) — production
+│   │   ├── live_client.py           # GPT-Live WS client (session.start, delegation.responses, tools)
+│   │   ├── function_calls.py        # Shared async function executor (handler_live, handler_fish)
+│   │   ├── handler.py               # LEGACY: OpenAI Realtime handler
 │   │   ├── handler_gemini.py        # Gemini Live handler
 │   │   ├── handler_grok.py          # Grok Voice handler
-│   │   ├── openai_client.py         # OpenAI WS client
+│   │   ├── openai_client.py         # LEGACY: OpenAI Realtime WS client (handler_realtime_new/openai_client_new — legacy too)
 │   │   ├── gemini_client.py         # Gemini WS client
 │   │   ├── grok_client.py           # Grok WS client
 │   │   ├── sip_media_adapter.py     # HandlerSocket: SIP bridge audio <-> browser handler protocol
@@ -275,6 +278,7 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `FINIK_VERIFY_WEBHOOK_SIGNATURE` — проверять подпись webhook'ов (default "True")
 - `SIP_GATEWAY_TOKEN` — shared secret with the VPS SIP bridge (equals `GATEWAY_TOKEN` in `/etc/voksy-bridge/bridge.env` on the VPS)
 - `SIP_GATEWAY_DEFAULT_ID` — gateway id used for outbound calls (default `sip-gw-1`)
+- `LIVE_MODEL` / `LIVE_DELEGATION_MODEL` / `LIVE_DEFAULT_VOICE` / `LIVE_VOICE_INSTRUCTIONS_MAX_CHARS` — OpenAI GPT-Live transport (defaults: `gpt-live-1`, `gpt-5.6-terra`, `marin`, `6000`). GPT-Live and its delegation backend run on the assistant owner's `openai_api_key`
 - `GEMINI_VAD_PROFILE` / `GEMINI_VAD_START_SENSITIVITY` / `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_MS` — Gemini Live speech detection profile, same for widget and telephony (defaults: `fast`, `low`, `high`, `500`)
 
 Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini, xAI Grok, ElevenLabs. Fish assistants run on server keys only.
@@ -284,6 +288,7 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 - **Import redirection:** `main.py` contains a custom `MetaPathFinder` that redirects bare module imports (e.g., `core.config`) to `backend.core.config`. This allows modules to work both standalone and within the backend package.
 - **Modular functions:** `backend/functions/` uses a registry pattern — new AI-callable functions are auto-discovered at startup via `discover_functions()`.
 - **Multi-provider voice:** The WebSocket layer abstracts the voice providers (OpenAI, Gemini, Fish, Grok) behind handlers with one client protocol (the "widget protocol": `input_audio_buffer.append` in, `response.audio.delta` 24 kHz out, `speech.started` / `conversation.interrupted` / `assistant.speech.*` / `function_call.*` events). Anything speaking that protocol works in the widget and on the phone.
+- **OpenAI assistants run on GPT-Live (`gpt-live-1`):** `backend/websockets/handler_live.py` + `live_client.py` replaced the Realtime API handler (`handler_realtime_new.py`/`openai_client_new.py` are legacy, not routed). GPT-Live is full-duplex: no VAD events, the model listens while speaking and handles interruptions itself, output audio arrives at real-time pace. Consequences: the widget streams the microphone continuously and plays audio gapless with a 200 ms cushion when `connection_status.full_duplex` is true; the SIP adapter holds the start of each reply for `OUTBOUND_CUSHION_MS`; `assistant.speech.started/ended` are derived from the audio stream. Functions run in the delegation backend (`delegation.responses`, model `LIVE_DELEGATION_MODEL`, Responses-format tools): calls arrive as `response.event` → `response.output_item.done`, results go back via `response.item.create` + `response.create`. Transcripts are fragments; dialogs are saved as (user, assistant) pairs at session end. The greeting is requested with `session.instructions.append`. Vision (`screen.context`) is not available on this model. Details: `backend/websockets/claude-websockets.md`.
 - **Own SIP telephony:** a Hetzner VPS (`178.105.79.237`, Asterisk 20 + `infra/sip-gateway/bridge/bridge.py`) terminates the operator's SIP trunk and streams call audio to the backend over outbound WebSockets. On the backend `backend/websockets/sip_media_adapter.py` wraps the *same* browser handlers (OpenAI, Gemini, Fish — map `SIP_HANDLERS` in `backend/api/sip_gateway.py`), so phone calls and the widget share functions, transcripts, conversation saving and behaviour. Rule: telephony and widget must behave the same. Outbound calls are queued in `sip_calls` and picked up by the worker that holds the control socket. Full picture: `infra/sip-gateway/claude-sip-gateway.md`; server how-to: `infra/sip-gateway/SERVER.md`.
 - **Fish assistants (half-cascade on server keys):** `backend/websockets/handler_fish.py`. OpenAI Realtime `gpt-realtime-2` in text-only mode (`fish_llm_client.py`: server VAD, input transcription, tools) is the brain; Fish Audio live TTS (`fish_tts_client.py`, msgpack, PCM16 24 kHz) is the voice. Text deltas are cut into sentences (`sentence_detector.py`) and sent to Fish; the greeting goes to Fish directly and is added to the OpenAI context as an assistant message. Barge-in = `response.cancel` + Fish reconnect (Fish has no cancel). Functions reuse `execute_and_send_function_result` from the OpenAI handler; `hangup_call` is handled by `HandlerSocket`. Keys: `OPENAI_API_KEY` + `FISH_API_KEY` from env only. Dialogs → `fish_conversations`. Browser test: `/static/fish-test.html?id=<uuid>` (widget.js with `data-ws-path="/ws/fish/"`). Billing gate (cascade credits) is planned, not implemented yet.
 - **Startup schema fixes:** `app.py` startup event runs comprehensive schema checks and auto-adds missing columns for backwards compatibility.

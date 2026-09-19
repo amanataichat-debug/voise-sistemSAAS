@@ -2,7 +2,7 @@
 """
 Хендлер Fish-ассистента: OpenAI Realtime (текст) + Fish Audio (озвучка).
 
-Говорит с клиентом на протоколе виджета — том же, что handler_realtime_new и
+Говорит с клиентом на протоколе виджета — том же, что handler_live и
 handler_gemini, поэтому обслуживает и браузерный виджет (/ws/fish/{id}), и
 телефонные звонки через SIP-шлюз (HandlerSocket в sip_media_adapter):
 
@@ -26,9 +26,9 @@ response.cancel в OpenAI, сброс Fish (переподключение), к�
 шлёт мосту clear).
 
 Функции: тот же реестр backend/functions и тот же асинхронный исполнитель
-execute_and_send_function_result, что у OpenAI-хендлера (логи функций с
-conversation_id в fish_conversations). hangup_call обрабатывает адаптер SIP по
-событию function_call.executing.
+execute_and_send_function_result (function_calls.py), что у OpenAI-хендлера
+(логи функций с conversation_id в fish_conversations). hangup_call обрабатывает
+адаптер SIP по событию function_call.executing.
 
 Ключи серверные: settings.OPENAI_API_KEY и settings.FISH_API_KEY.
 """
@@ -53,7 +53,7 @@ from backend.models.user import User
 from backend.services.conversation_service import ConversationService
 from backend.websockets.fish_llm_client import FishLLMClient
 from backend.websockets.fish_tts_client import FishTTSClient
-from backend.websockets.handler_realtime_new import (
+from backend.websockets.function_calls import (
     execute_and_send_function_result,
     async_save_to_google_sheets,
 )

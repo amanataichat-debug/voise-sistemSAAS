@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     # OpenAI settings
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 
+    # OpenAI GPT-Live — голосовой транспорт OpenAI-ассистентов (backend/websockets/live_client.py).
+    # Работает на ключе владельца ассистента (user.openai_api_key), как и раньше Realtime.
+    LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gpt-live-1")
+    # Бэкенд-модель делегирования (функции, рассуждения): gpt-5.6-terra — качество, gpt-5.6-luna — дешевле
+    LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-terra")
+    # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
+    LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
+    # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду)
+    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "6000"))
+
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
 

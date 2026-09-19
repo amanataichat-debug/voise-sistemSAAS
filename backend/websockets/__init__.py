@@ -3,7 +3,7 @@
 WebSocket module for Voksy AI application.
 Handles real-time communication with clients.
 
-🆕 Now includes GA Realtime API support (gpt-realtime model)
+🆕 OpenAI voice runs on GPT-Live (gpt-live-1, full-duplex); Realtime GA kept as legacy
 🆕 Now includes Google Gemini Live API support (gemini-2.5-flash-native-audio)
 🆕 Now includes Browser Agent support (gemini-2.0-flash + DOM control)
 🆕 Now includes xAI Grok Voice Agent API support
@@ -15,7 +15,11 @@ Handles real-time communication with clients.
 from .handler import handle_websocket_connection
 from .openai_client import OpenAIRealtimeClient
 
-# 🆕 OpenAI - НОВЫЕ обработчики (GA API)
+# OpenAI GPT-Live (gpt-live-1) — актуальный голосовой транспорт OpenAI
+from .handler_live import handle_live_websocket_connection
+from .live_client import OpenAILiveClient
+
+# OpenAI Realtime GA (легаси, оставлен для отката)
 from .handler_realtime_new import handle_websocket_connection_new
 from .openai_client_new import OpenAIRealtimeClientNew
 
@@ -57,7 +61,11 @@ __all__ = [
     "handle_websocket_connection", 
     "OpenAIRealtimeClient",
     
-    # 🆕 OpenAI GA API (новая версия)
+    # OpenAI GPT-Live (актуальный транспорт)
+    "handle_live_websocket_connection",
+    "OpenAILiveClient",
+
+    # OpenAI GA API (легаси)
     "handle_websocket_connection_new",
     "OpenAIRealtimeClientNew",
     

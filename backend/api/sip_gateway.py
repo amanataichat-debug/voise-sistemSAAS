@@ -7,7 +7,7 @@ WebSocket (для моста, авторизация по токену SIP_GATEW
     исходящих живёт в таблице sip_calls, воркер с этим сокетом её разгребает.
   * /ws/sip/{call_id}        — медиа одного звонка. Первым сообщением "start",
     дальше бинарный PCM16 8 кГц. Звонок заворачивается в браузерный хендлер
-    OpenAI/Gemini через backend.websockets.sip_media_adapter.
+    OpenAI (GPT-Live) / Gemini / Fish через backend.websockets.sip_media_adapter.
 
 HTTP (JWT пользователя):
   * /api/sip/numbers         — номера от оператора и привязка к ассистентам
@@ -50,14 +50,14 @@ from backend.models.agent_config import AgentConfig
 from backend.models.task import Task, TaskStatus
 from backend.services.sip_gateway_service import SipGatewayService
 from backend.websockets.sip_media_adapter import HandlerSocket
-from backend.websockets.handler_realtime_new import handle_websocket_connection_new
+from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
 from backend.websockets.handler_fish import handle_fish_websocket_connection
 
 # Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
 # Новый провайдер подключается сюда + в SIP_SUPPORTED_ASSISTANT_TYPES + HANDLER_IN_RATE адаптера.
 SIP_HANDLERS = {
-    "openai": handle_websocket_connection_new,
+    "openai": handle_live_websocket_connection,  # GPT-Live (gpt-live-1), full-duplex
     "gemini": handle_gemini_websocket_connection,
     "fish": handle_fish_websocket_connection,
 }
