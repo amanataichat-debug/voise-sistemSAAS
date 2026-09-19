@@ -203,8 +203,13 @@ class LiveVoiceSession:
         self.closed = False
         self.assistant_speaking = False
         self._last_audio_at = 0.0
+        self._first_audio_at: Optional[float] = None
         self.audio_bytes_out = 0
+        self.audio_deltas_out = 0
         self.audio_chunks_in = 0
+        # Буфер стенограммы для лога: фрагменты склеиваются в реплику и пишутся при смене говорящего
+        self._log_buf: Dict[str, str] = {"user": "", "assistant": ""}
+        self._log_role: Optional[str] = None
         self.function_calls = 0
         self.delegations = 0
         self.errors = 0
@@ -239,6 +244,10 @@ class LiveVoiceSession:
             return
         self._last_audio_at = time.time()
         self.audio_bytes_out += len(delta_b64) * 3 // 4
+        self.audio_deltas_out += 1
+        if self._first_audio_at is None:
+            self._first_audio_at = time.time()
+            _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
         if not self.assistant_speaking:
             self.assistant_speaking = True
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
@@ -252,9 +261,23 @@ class LiveVoiceSession:
                 await asyncio.sleep(0.1)
                 if self.assistant_speaking and time.time() - self._last_audio_at > OUTPUT_IDLE_SEC:
                     self.assistant_speaking = False
+                    self._flush_log("assistant")
                     await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
         except asyncio.CancelledError:
             pass
+
+    def _log_transcript(self, role: str, delta: str) -> None:
+        """Копим фрагменты по ролям, пишем реплику в лог при смене говорящего."""
+        if self._log_role and self._log_role != role:
+            self._flush_log(self._log_role)
+        self._log_role = role
+        self._log_buf[role] += delta
+
+    def _flush_log(self, role: str) -> None:
+        text = " ".join(self._log_buf.get(role, "").split())
+        if text:
+            _log(f"{role}: {text[:300]}")
+        self._log_buf[role] = ""
 
     # ------------------------------------------------------------------ Live events
     async def handle_live_events(self) -> None:
@@ -281,6 +304,7 @@ class LiveVoiceSession:
             role = "user" if etype.startswith("session.input") else "assistant"
             delta = event.get("delta") or event.get("text") or ""
             self.transcript.add(role, delta, event.get("start_ms"), event.get("end_ms"))
+            self._log_transcript(role, delta)
             await self.emit({"type": "transcript.delta", "role": role, "delta": delta,
                              "start_ms": event.get("start_ms"), "end_ms": event.get("end_ms")})
             return
@@ -463,8 +487,11 @@ class LiveVoiceSession:
             self.stop_event.set()
             if self.assistant_speaking:
                 self.assistant_speaking = False
-                await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
+                if reason != "client_disconnected":
+                    await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
             self.closed = True  # дальше клиенту ничего не шлём
+            for role in ("user", "assistant"):
+                self._flush_log(role)
             # 1. Закрыть сессию у OpenAI (дождаться session.closed с итоговым usage)
             closed = None
             try:
@@ -502,7 +529,9 @@ class LiveVoiceSession:
             _log(
                 f"session {self.client_id} finished ({reason}): {elapsed:.1f}s, live_usage={usage_seconds}s, "
                 f"close_reason={(closed or {}).get('reason')}, audio_in={self.audio_chunks_in} chunks, "
-                f"audio_out={self.audio_bytes_out / (LIVE_AUDIO_RATE * 2):.1f}s, delegations={self.delegations}, "
+                f"audio_out={self.audio_bytes_out / (LIVE_AUDIO_RATE * 2):.1f}s in {self.audio_deltas_out} deltas "
+                f"(first after {'-' if self._first_audio_at is None else f'{self._first_audio_at - self.started_at:.2f}s'}), "
+                f"delegations={self.delegations}, "
                 f"functions={self.function_calls}, errors={self.errors}, dialog_pairs={len(pairs)} saved={saved}"
             )
             await self._send_webhook()
