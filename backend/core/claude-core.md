@@ -33,7 +33,7 @@
 - Правки лимита ассистентов делай в `enforce_assistant_limit`, а не в обёртках: иначе кабинет и внешний API разъедутся в правилах.
 - `scheduler.py` использует advisory lock с magic-числом `12345`; запуск защищён ещё и process-level флагом `_scheduler_running`. Истёкшие подписки не удаляют даты (сохраняются для истории), сбрасывается только `is_trial`.
 - `task_scheduler.py` поддерживает две интеграции Voximplant: новую (`VoximplantChildAccount`, партнёрская) и legacy (`user.get_voximplant_config()`); выбор по `can_make_outbound_calls`. Gemini-ассистенту в legacy добавляется префикс `gemini_` к id.
-- Ключевые env: `JWT_SECRET_KEY`, `DATABASE_URL`, `HOST_URL`, `OPENAI_API_KEY`, `LIVE_*` (GPT-Live: модель, бэкенд делегирования, голос по умолчанию), `OPENROUTER_API_KEY`, `FINIK_*`, `VOXIMPLANT_PARENT_*`, `R2_*`, `EMAIL_*`, `DEBUG`/`FORCE_DEBUG`, `PRODUCTION`.
+- Ключевые env: `JWT_SECRET_KEY`, `DATABASE_URL`, `HOST_URL`, `OPENAI_API_KEY`, `LIVE_*` (GPT-Live: модель, бэкенд делегирования, голос по умолчанию), `GEMINI_LIVE_MODEL`/`GEMINI_TOOL_SCHEDULING` (Gemini Live), `OPENROUTER_API_KEY`, `FINIK_*`, `VOXIMPLANT_PARENT_*`, `R2_*`, `EMAIL_*`, `DEBUG`/`FORCE_DEBUG`, `PRODUCTION`.
 
 ## Связанные файлы документации
 - `../claude-backend.md` — родительская

@@ -58,7 +58,7 @@ class GeminiAssistantCreate(BaseModel):
     enable_thinking: bool = Field(default=False, description="Enable thinking mode")
     thinking_budget: Optional[int] = Field(default=1024, ge=128, le=4096, description="Thinking token budget")
     enable_screen_context: bool = Field(default=False, description="Enable screen context")
-    model: str = Field(default="models/gemini-2.5-flash-native-audio-preview-12-2025", description="Gemini model name")
+    model: str = Field(default="models/gemini-3.8-live", description="Gemini model name")
 
 
 class GeminiAssistantUpdate(BaseModel):

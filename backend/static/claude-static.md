@@ -23,7 +23,7 @@
 
 ### Встраиваемые виджеты (JS)
 - `widget.js` — основной голосовой web-виджет (v5.0). Протокол виджета общий для OpenAI (GPT-Live, `/ws/{id}`) и Fish (`data-ws-path="/ws/fish/"`). Если сервер прислал `connection_status.full_duplex: true` (GPT-Live), виджет стримит микрофон непрерывно, включая время речи ассистента (эхо гасит AEC браузера), и воспроизводит аудио gapless по таймлайну AudioContext (`scheduleLiveAudio`, запас 200 мс); без флага — прежний half-duplex режим с паузой микрофона и очередью `playNextAudio`. `widget-test-new.js` — старая тестовая копия.
-- `gemini-widget.js`, `gemini-31-widget.js`, `gemini-browser-widget.js`, `gemini-widget-fullscreen.js`, `test-gemini-widget.js` — виджеты Gemini.
+- `gemini-widget.js`, `gemini-widget-fullscreen.js` — виджеты Gemini (оба ходят в `/ws/gemini/{id}`, модель `gemini-3.8-live`; атрибут `data-model` у fullscreen-виджета устарел и игнорируется). Виджеты 3.1, browser-агента и захвата экрана удалены.
 - `grok-widget.js` — Grok; `widget-translate.js` — перевод; `wigetelevanlabs.js` — ElevenLabs (имя файла с опечаткой).
 
 ### Подпапки

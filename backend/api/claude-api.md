@@ -20,7 +20,7 @@
 
 ### Голосовые WebSocket-эндпоинты (делегируют в backend/websockets/)
 - `websocket.py` — `/ws/{assistant_id}`, `/ws/demo` — OpenAI GPT-Live `gpt-live-1` (хендлер `handler_live`), плюс `/ws/status`, `/ws/info`, `/ws/health`. Регистрируется ПОСЛЕ gemini_ws/translate_ws/fish_ws/sip_gateway.
-- `gemini_ws.py` — `/ws/gemini/{id}`, `/ws/gemini-31/{id}`, `/ws/gemini-browser/{id}`, `/ws/vox-gemini/{id}`, `/ws/llm-stream` — Gemini Live + текстовый LLM-стрим. Регистрируется ДО websocket.py.
+- `gemini_ws.py` — `/ws/gemini/{id}` (Gemini Live `gemini-3.8-live`), `/ws/llm-stream` (текстовый LLM-стрим), `/ws/vox-gemini/{id}` (мёртвый мост Voximplant), `/gemini/health`, `/gemini/info`. Регистрируется ДО websocket.py. Маршруты `/ws/gemini-31/` и `/ws/gemini-browser/` удалены.
 - `fish_ws.py` — `/ws/fish/{id}` — Fish-ассистент (хендлер `handler_fish`: OpenAI Realtime текст + Fish TTS, серверные ключи), `/fish/health`. Регистрируется ДО websocket.py.
 - `grok_ws.py` — `/ws/grok/{id}`, `/ws/grok/voximplant/{id}`, `/ws/grok/custom/{id}` — Grok Voice.
 - `translate_ws.py` — `/ws/translate/{id}` — перевод. Регистрируется ДО websocket.py.

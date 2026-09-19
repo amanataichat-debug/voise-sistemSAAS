@@ -1697,31 +1697,13 @@
               <div class="testing-info-box">
                 <h4 class="testing-info-title">Голосовой ассистент готов к использованию. Для взаимодействия нажмите на кнопку в правом нижнем углу экрана.</h4>
 
-                <!-- Переключатель модели -->
-                <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
-                  <button
-                    class="btn btn-primary"
-                    id="test-model-25"
-                    onclick="switchTestModel('2.5')"
-                    style="flex: 1; justify-content: center;">
-                    🔵 Gemini 2.5 Flash (стабильный)
-                  </button>
-                  <button
-                    class="btn btn-outline"
-                    id="test-model-31"
-                    onclick="switchTestModel('3.1')"
-                    style="flex: 1; justify-content: center;">
-                    🟣 Gemini 3.1 Flash Live (новый)
-                  </button>
-                </div>
-
-                <!-- Индикатор активной модели -->
+                <!-- Модель одна: gemini-3.8-live -->
                 <div id="active-model-indicator" style="
                   text-align: center;
                   font-size: 0.875rem;
                   color: var(--text-gray);
                   margin-bottom: 1rem;">
-                  Активна: <strong id="active-model-name">Gemini 2.5 Flash</strong>
+                  Модель: <strong id="active-model-name">Gemini 3.8 Live</strong>
                 </div>
 
                 <!-- Переключатель типа виджета -->
@@ -1819,100 +1801,30 @@
               </div>
             </div>
             
-            <!-- Блок 2: Голосовой ассистент + захват экрана -->
-            <div class="widget-type-block screen-capture">
-              <div class="widget-type-header">
-                <i class="fas fa-desktop"></i>
-                <h4>Голосовой ассистент + захват экрана</h4>
-                <span class="widget-badge beta">Beta</span>
-              </div>
-              <p class="widget-type-description">
-                Ассистент видит экран пользователя и может комментировать происходящее.
-                Требуется разрешение пользователя на захват экрана. Скриншоты делаются каждые 3 секунды.
-              </p>
-              <div class="embed-container">
-                <div class="embed-code" id="embed-code-screen">
-                <!-- Код будет загружен динамически -->
-                </div>
-                <div class="embed-actions">
-                  <button class="btn btn-primary" id="copy-embed-code-screen">
-                    <i class="fas fa-copy"></i> Копировать код
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Блок 3: Gemini 3.1 Flash Live (Новый) -->
-            <div class="widget-type-block gemini31" style="border-left: 4px solid #7c3aed; background: linear-gradient(135deg, rgba(124,58,237,0.03), rgba(79,70,229,0.03));">
-              <div class="widget-type-header">
-                <i class="fas fa-bolt" style="color: #7c3aed;"></i>
-                <h4>Gemini 3.1 Flash Live</h4>
-                <span class="widget-badge beta" style="background-color: rgba(124,58,237,0.15); color: #7c3aed;">New</span>
-              </div>
-              <p class="widget-type-description">
-                Новая модель Gemini 3.1 Flash Live с улучшенным качеством речи и меньшей задержкой.
-                Thinking отключён (budget=0) для максимальной скорости голосового ответа.
-                Виджет визуально отличается фиолетовым цветом.
-              </p>
-              <div class="embed-container">
-                <div class="embed-code" id="embed-code-31">
-                  <!-- Код будет загружен динамически -->
-                </div>
-                <div class="embed-actions">
-                  <button class="btn btn-primary" id="copy-embed-code-31" style="background-color: #7c3aed;">
-                    <i class="fas fa-copy"></i> Копировать код
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Блок 4: Fullscreen виджет — Gemini 2.5 -->
+            <!-- Блок 2: Fullscreen виджет -->
             <div class="widget-type-block fullscreen-widget" style="border-left: 4px solid #059669; background: linear-gradient(135deg, rgba(5,150,105,0.03), rgba(16,185,129,0.03));">
               <div class="widget-type-header">
                 <i class="fas fa-expand" style="color: #059669;"></i>
-                <h4>Fullscreen виджет — Gemini 2.5</h4>
+                <h4>Fullscreen виджет</h4>
                 <span class="widget-badge beta" style="background-color: rgba(5,150,105,0.15); color: #059669;">New</span>
               </div>
               <p class="widget-type-description">
                 Голосовой ассистент с поддержкой показа изображений на весь экран через функцию <code>show_image</code>.
                 При вызове функции изображение появляется поверх сайта. Пользователь может свернуть изображение и продолжить разговор.
-                Используется модель Gemini 2.5 Flash.
+                Модель — Gemini 3.8 Live.
               </p>
               <div class="embed-container">
-                <div class="embed-code" id="embed-code-fullscreen-25">
+                <div class="embed-code" id="embed-code-fullscreen">
                   <!-- Код будет загружен динамически -->
                 </div>
                 <div class="embed-actions">
-                  <button class="btn btn-primary" id="copy-embed-code-fullscreen-25" style="background-color: #059669;">
+                  <button class="btn btn-primary" id="copy-embed-code-fullscreen" style="background-color: #059669;">
                     <i class="fas fa-copy"></i> Копировать код
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Блок 5: Fullscreen виджет — Gemini 3.1 -->
-            <div class="widget-type-block fullscreen-widget" style="border-left: 4px solid #0d9488; background: linear-gradient(135deg, rgba(13,148,136,0.03), rgba(20,184,166,0.03));">
-              <div class="widget-type-header">
-                <i class="fas fa-expand" style="color: #0d9488;"></i>
-                <h4>Fullscreen виджет — Gemini 3.1</h4>
-                <span class="widget-badge beta" style="background-color: rgba(13,148,136,0.15); color: #0d9488;">New</span>
-              </div>
-              <p class="widget-type-description">
-                Голосовой ассистент с поддержкой показа изображений на весь экран через функцию <code>show_image</code>.
-                Использует новую модель Gemini 3.1 Flash Live с минимальной задержкой.
-                Виджет идентичен версии 2.5 — отличается только моделью.
-              </p>
-              <div class="embed-container">
-                <div class="embed-code" id="embed-code-fullscreen-31">
-                  <!-- Код будет загружен динамически -->
-                </div>
-                <div class="embed-actions">
-                  <button class="btn btn-primary" id="copy-embed-code-fullscreen-31" style="background-color: #0d9488;">
-                    <i class="fas fa-copy"></i> Копировать код
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div class="form-section">
@@ -2664,39 +2576,9 @@
     // ФУНКЦИЯ ЗАГРУЗКИ ДЕМО ВИДЖЕТА
     // ============================================================================
     
-    // Текущая тестируемая модель ('2.5' или '3.1')
-    let activeTestModel = '2.5';
+    // Модель одна — gemini-3.8-live; переключатель модели убран
+    const activeTestModel = '3.8';
     let activeTestType = 'standard'; // 'standard' | 'fullscreen'
-
-    function switchTestModel(version) {
-      activeTestModel = version;
-
-      const btn25 = document.getElementById('test-model-25');
-      const btn31 = document.getElementById('test-model-31');
-
-      if (version === '2.5') {
-        btn25.className = 'btn btn-primary';
-        btn25.style.flex = '1';
-        btn25.style.justifyContent = 'center';
-        btn31.className = 'btn btn-outline';
-        btn31.style.flex = '1';
-        btn31.style.justifyContent = 'center';
-        document.getElementById('active-model-name').textContent = 'Gemini 2.5 Flash';
-        document.getElementById('active-model-name').style.color = 'var(--primary-blue)';
-      } else {
-        btn31.className = 'btn btn-primary';
-        btn31.style.cssText = 'flex: 1; justify-content: center; background-color: #7c3aed;';
-        btn25.className = 'btn btn-outline';
-        btn25.style.flex = '1';
-        btn25.style.justifyContent = 'center';
-        document.getElementById('active-model-name').textContent = 'Gemini 3.1 Flash Live';
-        document.getElementById('active-model-name').style.color = '#7c3aed';
-      }
-
-      if (currentAgentId) {
-        loadDemoWidget(currentAgentId, version, activeTestType);
-      }
-    }
 
     function switchTestType(type) {
       activeTestType = type;
@@ -2752,12 +2634,12 @@
 
       // 3. Удаляем все скрипты виджетов из <head>
       const oldScripts = document.querySelectorAll(
-        'script[src*="gemini-widget.js"], script[src*="gemini-31-widget.js"], script[src*="gemini-widget-fullscreen.js"]'
+        'script[src*="gemini-widget.js"], script[src*="gemini-widget-fullscreen.js"]'
       );
       oldScripts.forEach(s => s.remove());
 
       // 4. Удаляем скрипты по устаревшим ID (на случай если были)
-      ['gemini-voice-widget', 'gemini-31-voice-widget'].forEach(id => {
+      ['gemini-voice-widget'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.remove();
       });
@@ -2774,15 +2656,10 @@
 
       container.style.display = 'block';
 
-      // Выбор скрипта по комбинации модель × тип
-      let scriptSrc;
-      if (type === 'fullscreen') {
-        scriptSrc = '/static/gemini-widget-fullscreen.js';
-      } else {
-        scriptSrc = version === '3.1'
-          ? '/static/gemini-31-widget.js'
-          : '/static/gemini-widget.js';
-      }
+      // Выбор скрипта по типу виджета (модель одна)
+      const scriptSrc = type === 'fullscreen'
+        ? '/static/gemini-widget-fullscreen.js'
+        : '/static/gemini-widget.js';
 
       const script = document.createElement('script');
       // Cache-bust: браузер не перевыполнит IIFE для того же URL
@@ -2791,10 +2668,6 @@
       script.setAttribute('data-assistantId', assistantId);
       script.setAttribute('data-server', window.location.origin);
       script.setAttribute('data-position', 'bottom-right');
-      // Для fullscreen виджета — передаём модель
-      if (type === 'fullscreen') {
-        script.setAttribute('data-model', version);
-      }
       script.async = true;
       script.onload = () => {
         console.log(`[DEMO-WIDGET] ${version} ${type} loaded successfully`);
@@ -2807,71 +2680,18 @@
     }
     
     // ============================================================================
-    // ГЕНЕРАЦИЯ EMBED-КОДА ДЛЯ ВИДЖЕТА С ЗАХВАТОМ ЭКРАНА
+    // ГЕНЕРАЦИЯ EMBED-КОДА FULLSCREEN-ВИДЖЕТА
     // ============================================================================
-    
-    function generateGemini31EmbedCode(assistantId) {
-      const serverUrl = window.location.origin;
-      return `<!-- Gemini 3.1 Flash Live Widget -->
-<scr` + `ipt>
-    (function() {
-        var script = document.createElement('script');
-        script.src = '${serverUrl}/static/gemini-31-widget.js';
-        script.dataset.assistantId = '${assistantId}';
-        script.dataset.server = '${serverUrl}';
-        script.dataset.position = 'bottom-right';
-        script.async = true;
-        document.head.appendChild(script);
-    })();
-</scr` + `ipt>
-<!-- End Gemini 3.1 Flash Live Widget -->`;
-    }
 
-    function generateScreenCaptureEmbedCode(assistantId) {
+    function generateFullscreenEmbedCode(assistantId) {
       const serverUrl = window.location.origin;
-      return `<!-- Voksy AI Gemini Voice Assistant + Screen Capture -->
-<scr` + `ipt>
-    (function() {
-        var script = document.createElement('script');
-        script.src = '${serverUrl}/static/test-gemini-widget.js';
-        script.dataset.assistantId = '${assistantId}';
-        script.dataset.server = '${serverUrl}';
-        script.dataset.position = 'bottom-right';
-        script.async = true;
-        document.head.appendChild(script);
-    })();
-</scr` + `ipt>
-<!-- End Voksy AI Gemini + Screen Capture -->`;
-    }
-
-    function generateFullscreenEmbedCode25(assistantId) {
-      const serverUrl = window.location.origin;
-      return `<!-- Voksy AI Fullscreen Voice Widget (Gemini 2.5) -->
+      return `<!-- Voksy AI Fullscreen Voice Widget (Gemini 3.8 Live) -->
 <scr` + `ipt>
     (function() {
         var script = document.createElement('script');
         script.src = '${serverUrl}/static/gemini-widget-fullscreen.js';
         script.setAttribute('data-assistantId', '${assistantId}');
         script.setAttribute('data-server', '${serverUrl}');
-        script.setAttribute('data-model', '2.5');
-        script.setAttribute('data-position', 'bottom-right');
-        script.async = true;
-        document.head.appendChild(script);
-    })();
-</scr` + `ipt>
-<!-- End Voksy AI Fullscreen Widget -->`;
-    }
-
-    function generateFullscreenEmbedCode31(assistantId) {
-      const serverUrl = window.location.origin;
-      return `<!-- Voksy AI Fullscreen Voice Widget (Gemini 3.1) -->
-<scr` + `ipt>
-    (function() {
-        var script = document.createElement('script');
-        script.src = '${serverUrl}/static/gemini-widget-fullscreen.js';
-        script.setAttribute('data-assistantId', '${assistantId}');
-        script.setAttribute('data-server', '${serverUrl}');
-        script.setAttribute('data-model', '3.1');
         script.setAttribute('data-position', 'bottom-right');
         script.async = true;
         document.head.appendChild(script);
@@ -2999,20 +2819,8 @@
         const embedData = await apiRequest(`/gemini-assistants/${id}/embed-code`);
         document.getElementById('embed-code').textContent = embedData.embed_code;
         
-        // Генерируем код для виджета с захватом экрана
-        const screenCaptureEmbedCode = generateScreenCaptureEmbedCode(id);
-        document.getElementById('embed-code-screen').textContent = screenCaptureEmbedCode;
-
-        // Генерируем код для Gemini 3.1 виджета
-        const gemini31EmbedCode = generateGemini31EmbedCode(id);
-        document.getElementById('embed-code-31').textContent = gemini31EmbedCode;
-
-        // Fullscreen embed коды
-        const fullscreen25Code = generateFullscreenEmbedCode25(id);
-        document.getElementById('embed-code-fullscreen-25').textContent = fullscreen25Code;
-
-        const fullscreen31Code = generateFullscreenEmbedCode31(id);
-        document.getElementById('embed-code-fullscreen-31').textContent = fullscreen31Code;
+        // Fullscreen embed код
+        document.getElementById('embed-code-fullscreen').textContent = generateFullscreenEmbedCode(id);
 
         document.getElementById('view-embed-code').style.display = 'inline-flex';
         document.getElementById('delete-agent').style.display = 'inline-flex';
@@ -3241,16 +3049,13 @@
       
       document.getElementById('agent-id-display').textContent = '-';
       document.getElementById('embed-code').textContent = '<!-- Код появится после сохранения агента -->';
-      document.getElementById('embed-code-screen').textContent = '<!-- Код появится после сохранения агента -->';
-      document.getElementById('embed-code-31').textContent = '<!-- Код появится после сохранения агента -->';
 
       // Сброс типа виджета
       activeTestType = 'standard';
       switchTestType('standard');
 
       // Пустые embed-коды для fullscreen
-      document.getElementById('embed-code-fullscreen-25').textContent = '<!-- Код появится после сохранения агента -->';
-      document.getElementById('embed-code-fullscreen-31').textContent = '<!-- Код появится после сохранения агента -->';
+      document.getElementById('embed-code-fullscreen').textContent = '<!-- Код появится после сохранения агента -->';
     }
     
     // ============================================================================
@@ -3386,31 +3191,10 @@
         });
       });
       
-      document.getElementById('copy-embed-code-screen').addEventListener('click', function() {
-        const embedCode = document.getElementById('embed-code-screen').textContent;
-        navigator.clipboard.writeText(embedCode).then(() => {
-          showNotification('Код виджета с захватом экрана скопирован!', 'success');
-        });
-      });
-
-      document.getElementById('copy-embed-code-31').addEventListener('click', function() {
-        const embedCode = document.getElementById('embed-code-31').textContent;
-        navigator.clipboard.writeText(embedCode).then(() => {
-          showNotification('Код виджета Gemini 3.1 скопирован!', 'success');
-        });
-      });
-
-      document.getElementById('copy-embed-code-fullscreen-25').addEventListener('click', function() {
-        const code = document.getElementById('embed-code-fullscreen-25').textContent;
+      document.getElementById('copy-embed-code-fullscreen').addEventListener('click', function() {
+        const code = document.getElementById('embed-code-fullscreen').textContent;
         navigator.clipboard.writeText(code).then(() => {
-          showNotification('Код Fullscreen виджета (2.5) скопирован!', 'success');
-        });
-      });
-
-      document.getElementById('copy-embed-code-fullscreen-31').addEventListener('click', function() {
-        const code = document.getElementById('embed-code-fullscreen-31').textContent;
-        navigator.clipboard.writeText(code).then(() => {
-          showNotification('Код Fullscreen виджета (3.1) скопирован!', 'success');
+          showNotification('Код Fullscreen виджета скопирован!', 'success');
         });
       });
 

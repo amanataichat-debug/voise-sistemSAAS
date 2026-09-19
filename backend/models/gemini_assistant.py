@@ -14,7 +14,7 @@ from backend.models.base import Base
 class GeminiAssistantConfig(Base):
     """
     Configuration for a Gemini voice assistant.
-    Uses Google Gemini Live API (gemini-2.5-flash-native-audio-preview-09-2025)
+    Uses Google Gemini Live API (gemini-3.8-live)
     """
     __tablename__ = "gemini_assistant_configs"
     
@@ -57,7 +57,7 @@ class GeminiAssistantConfig(Base):
     enable_thinking = Column(Boolean, default=False, nullable=False)
     thinking_budget = Column(Integer, default=1024, nullable=True)  # Token budget for thinking
     enable_screen_context = Column(Boolean, default=False, nullable=False)  # For future UI
-    model = Column(String(100), default="models/gemini-2.5-flash-native-audio-preview-12-2025", nullable=False)
+    model = Column(String(100), default="models/gemini-3.8-live", nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="gemini_assistants")

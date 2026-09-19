@@ -4,8 +4,7 @@ WebSocket module for Voksy AI application.
 Handles real-time communication with clients.
 
 🆕 OpenAI voice runs on GPT-Live (gpt-live-1, full-duplex); Realtime GA kept as legacy
-🆕 Now includes Google Gemini Live API support (gemini-2.5-flash-native-audio)
-🆕 Now includes Browser Agent support (gemini-2.0-flash + DOM control)
+🆕 Google Gemini Live on gemini-3.8-live (Browser Agent and 3.1/2.5 variants removed)
 🆕 Now includes xAI Grok Voice Agent API support
 🆕 v3.3: Voximplant ↔ Gemini bridge (fallback for Vox Gemini module)
 🧪 Experimental: Streaming TTS with sentence detection + ElevenLabs
@@ -23,16 +22,9 @@ from .live_client import OpenAILiveClient
 from .handler_realtime_new import handle_websocket_connection_new
 from .openai_client_new import OpenAIRealtimeClientNew
 
-# 🆕 Google Gemini - Live API обработчики
+# Google Gemini Live (gemini-3.8-live)
 from .gemini_client import GeminiLiveClient
 from .handler_gemini import handle_gemini_websocket_connection
-
-# 🆕 Gemini 3.1 Flash Live
-from .gemini_client_31 import GeminiLiveClient31
-from .handler_gemini_31 import handle_gemini_31_websocket_connection
-
-# 🤖 Google Gemini + Browser Agent (v2.0)
-from .browser_handler_gemini import handle_gemini_websocket_connection as handle_gemini_browser_websocket_connection
 
 # 🆕 xAI Grok Voice Agent API
 from .grok_client import GrokVoiceClient, map_voice_to_grok
@@ -69,16 +61,9 @@ __all__ = [
     "handle_websocket_connection_new",
     "OpenAIRealtimeClientNew",
     
-    # 🆕 Google Gemini Live API (без Browser Agent)
+    # Google Gemini Live (gemini-3.8-live)
     "GeminiLiveClient",
     "handle_gemini_websocket_connection",
-
-    # 🆕 Gemini 3.1 Flash Live
-    "GeminiLiveClient31",
-    "handle_gemini_31_websocket_connection",
-    
-    # 🤖 Google Gemini + Browser Agent (v2.0)
-    "handle_gemini_browser_websocket_connection",
     
     # 🆕 xAI Grok Voice Agent API
     "GrokVoiceClient",

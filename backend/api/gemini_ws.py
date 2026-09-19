@@ -1,223 +1,60 @@
 """
-WebSocket router for Google Gemini Live API integration.
-Handles real-time voice conversations with Gemini assistants.
+WebSocket-роутер Google Gemini Live и изолированного текстового LLM-стрима.
 
-🚀 PRODUCTION VERSION 3.3 - DUAL WEBSOCKET ARCHITECTURE + VOX BRIDGE
-✅ Complete WebSocket handling
-✅ Database integration
-✅ Subscription validation
-✅ Error handling
-✅ Browser Agent integration (v2.0)
-🆕 LLM Stream isolated channel (v3.0)
-🔧 FIX v3.1: Changed LLM stream path to /llm-stream to avoid conflict with /ws/{assistant_id}
-🔧 FIX v3.2: OpenAI API key from User model via assistant_id parameter
-🆕 v3.3: Voximplant ↔ Gemini bridge endpoint (fallback when Vox Gemini module fails)
+  * /ws/gemini/{assistant_id} — голосовой Gemini-ассистент (gemini-3.8-live,
+    хендлер backend/websockets/handler_gemini.py; тот же хендлер обслуживает
+    телефон через SIP_HANDLERS["gemini"]).
+  * /ws/llm-stream           — текстовый LLM-стрим (OpenAI-ключ владельца),
+    отдельный канал, чтобы текст не мешал голосу.
+  * /ws/vox-gemini/{id}      — мост Voximplant ↔ Gemini: МЁРТВЫЙ КОД (Voximplant не используется).
+  * /gemini/health, /gemini/info
 
-ARCHITECTURE:
-┌─────────────┐     WS1 (voice)     ┌──────────────────┐
-│   Browser   │◄───────────────────►│ Gemini Handler   │
-│             │     WS2 (text)      │                  │
-│             │◄───────────────────►│ LLM Stream       │
-└─────────────┘                     └──────────────────┘
+Роутер регистрируется в app.py ДО websocket.router: иначе /ws/llm-stream и
+/ws/gemini/* перехватит /ws/{assistant_id}.
 
-┌─────────────┐   Vox WS Protocol   ┌──────────────────┐  Native WS  ┌─────────┐
-│  Voximplant  │◄──────────────────►│ Vox-Gemini Bridge│◄───────────►│  Gemini  │
-│ (telephony)  │ start/media/stop    │  (NEW v3.3)      │  PCM audio   │ Live API │
-└─────────────┘                     └──────────────────┘              └─────────┘
+Удалены (сентябрь 2026, переход на gemini-3.8-live): /ws/gemini-31/{id}
+(gemini-3.1-flash-live-preview) и /ws/gemini-browser/{id} (browser-агент).
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
-from sqlalchemy.orm import Session
 import traceback
 from typing import Optional
 
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import Session
+
 from backend.core.logging import get_logger
 from backend.db.session import get_db
-from backend.websockets import (
-    handle_gemini_websocket_connection,
-    handle_gemini_browser_websocket_connection
-)
-# 🆕 Gemini 3.1 Flash Live
-from backend.websockets.handler_gemini_31 import handle_gemini_31_websocket_connection
-# 🆕 v3.0: Isolated LLM streaming
+from backend.websockets import handle_gemini_websocket_connection
+from backend.websockets.gemini_client import GEMINI_LIVE_MODEL, GEMINI_TOOL_SCHEDULING
 from backend.websockets.openai_client_streaming import handle_openai_streaming_websocket
-# 🆕 v3.3: Voximplant ↔ Gemini bridge
-from backend.websockets.handler_vox_gemini import handle_vox_gemini_websocket
+from backend.websockets.handler_vox_gemini import handle_vox_gemini_websocket  # dead code (Voximplant)
 
 logger = get_logger(__name__)
-
 router = APIRouter()
 
 
-# =============================================================================
-# 🎤 VOICE ONLY - Original endpoint (без Browser Agent)
-# =============================================================================
-
 @router.websocket("/ws/gemini/{assistant_id}")
-async def gemini_websocket_endpoint(
-    websocket: WebSocket,
-    assistant_id: str,
-    db: Session = Depends(get_db)
-):
+async def gemini_websocket_endpoint(websocket: WebSocket, assistant_id: str, db: Session = Depends(get_db)):
     """
-    🎤 WebSocket endpoint for Gemini Live API voice assistants (Voice Only).
-    
-    Features:
-    - Real-time bidirectional audio streaming (PCM 16kHz input, 24kHz output)
-    - Automatic Voice Activity Detection (VAD)
-    - Manual function calling support
-    - Thinking mode support (configurable)
-    - Screen context support
-    - Google Sheets logging
-    - Database conversation storage
-    - Subscription validation
-    
-    Args:
-        websocket: WebSocket connection from client
-        assistant_id: UUID of Gemini assistant or "demo" for public assistant
-        db: Database session
-    
-    Example:
-        wss://api.yourserver.com/ws/gemini/550e8400-e29b-41d4-a716-446655440000
+    Голосовой WebSocket Gemini-ассистента (протокол виджета).
+
+    PCM16 16 кГц на вход, 24 кГц на выход, VAD Gemini, функции (асинхронные),
+    транскрипция, запись диалогов в gemini_conversations, Google Sheets.
+    assistant_id — UUID ассистента или "demo".
     """
     try:
-        logger.info(f"[GEMINI-WS] New connection attempt: assistant_id={assistant_id}")
-        
-        # Delegate to handler
-        await handle_gemini_websocket_connection(
-            websocket=websocket,
-            assistant_id=assistant_id,
-            db=db
-        )
-        
+        logger.info(f"[GEMINI-WS] New connection: assistant_id={assistant_id} ({GEMINI_LIVE_MODEL})")
+        await handle_gemini_websocket_connection(websocket=websocket, assistant_id=assistant_id, db=db)
     except WebSocketDisconnect:
         logger.info(f"[GEMINI-WS] Client disconnected: assistant_id={assistant_id}")
     except Exception as e:
         logger.error(f"[GEMINI-WS] WebSocket error for assistant {assistant_id}: {e}")
         logger.error(f"[GEMINI-WS] Traceback: {traceback.format_exc()}")
-        
         try:
             await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
 
-
-# =============================================================================
-# 🆕 GEMINI 3.1 FLASH LIVE - New model endpoint
-# =============================================================================
-
-@router.websocket("/ws/gemini-31/{assistant_id}")
-async def gemini_31_websocket_endpoint(
-    websocket: WebSocket,
-    assistant_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    WebSocket endpoint for Gemini 3.1 Flash Live API.
-
-    Differences from /ws/gemini/{assistant_id}:
-    - Model: gemini-3.1-flash-live-preview
-    - Init message: "config" key instead of "setup"
-    - Thinking: thinkingBudget=0 (minimal latency)
-    - Response protocol: identical to 2.5
-    """
-    try:
-        logger.info(f"[GEMINI-31-WS] New connection: assistant_id={assistant_id}")
-
-        await handle_gemini_31_websocket_connection(
-            websocket=websocket,
-            assistant_id=assistant_id,
-            db=db
-        )
-
-    except WebSocketDisconnect:
-        logger.info(f"[GEMINI-31-WS] Client disconnected: assistant_id={assistant_id}")
-    except Exception as e:
-        logger.error(f"[GEMINI-31-WS] Error for assistant {assistant_id}: {e}")
-        logger.error(f"[GEMINI-31-WS] Traceback: {traceback.format_exc()}")
-        try:
-            await websocket.close(code=1011, reason="Internal server error")
-        except:
-            pass
-
-
-# =============================================================================
-# 🤖 VOICE + BROWSER AGENT - New endpoint (v2.0)
-# =============================================================================
-
-@router.websocket("/ws/gemini-browser/{assistant_id}")
-async def gemini_browser_websocket_endpoint(
-    websocket: WebSocket,
-    assistant_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    🤖 WebSocket endpoint for Gemini Live API + Browser Agent (v3.2).
-    
-    This endpoint includes all features of the regular Gemini endpoint,
-    plus autonomous browser control capabilities.
-    
-    🆕 v3.2: LLM текстовый стриминг использует OpenAI ключ из модели User.
-    
-    Voice Features (same as /ws/gemini):
-    - Real-time bidirectional audio streaming (PCM 16kHz input, 24kHz output)
-    - Automatic Voice Activity Detection (VAD)
-    - Manual function calling support
-    - Thinking mode support (configurable)
-    - Screen context support
-    - Google Sheets logging
-    - Database conversation storage
-    - Subscription validation
-    
-    🆕 Browser Agent Features:
-    - Autonomous DOM manipulation
-    - Multi-step task execution
-    - Visual element highlighting
-    - Progress notifications via voice
-    - Parallel execution (doesn't block voice)
-    
-    🆕 LLM Integration (v3.2):
-    - query_llm function triggers llm.request event
-    - Client connects to /ws/llm-stream?assistant_id=xxx for text
-    - OpenAI API key fetched from User model via assistant chain
-    - Voice and text channels are isolated
-    
-    Args:
-        websocket: WebSocket connection from client
-        assistant_id: UUID of Gemini assistant or "demo" for public assistant
-        db: Database session
-    
-    Example:
-        wss://api.yourserver.com/ws/gemini-browser/550e8400-e29b-41d4-a716-446655440000
-    """
-    try:
-        logger.info(f"[GEMINI-BROWSER-WS] New connection attempt: assistant_id={assistant_id}")
-        logger.info(f"[GEMINI-BROWSER-WS] Browser Agent: ENABLED")
-        logger.info(f"[GEMINI-BROWSER-WS] LLM Streaming: DUAL WEBSOCKET MODE (v3.2 - User API key)")
-        
-        # Delegate to browser-enabled handler
-        await handle_gemini_browser_websocket_connection(
-            websocket=websocket,
-            assistant_id=assistant_id,
-            db=db
-        )
-        
-    except WebSocketDisconnect:
-        logger.info(f"[GEMINI-BROWSER-WS] Client disconnected: assistant_id={assistant_id}")
-    except Exception as e:
-        logger.error(f"[GEMINI-BROWSER-WS] WebSocket error for assistant {assistant_id}: {e}")
-        logger.error(f"[GEMINI-BROWSER-WS] Traceback: {traceback.format_exc()}")
-        
-        try:
-            await websocket.close(code=1011, reason="Internal server error")
-        except:
-            pass
-
-
-# =============================================================================
-# 📞 VOXIMPLANT ↔ GEMINI BRIDGE (v3.3)
-# Fallback: когда встроенный Gemini модуль Voximplant не работает
-# =============================================================================
 
 @router.websocket("/ws/vox-gemini/{assistant_id}")
 async def vox_gemini_websocket_endpoint(
@@ -225,246 +62,89 @@ async def vox_gemini_websocket_endpoint(
     assistant_id: str,
     caller: Optional[str] = Query(None, description="Caller phone number"),
     call_id: Optional[str] = Query(None, description="Voximplant call ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    📞 Voximplant ↔ Gemini Live API bridge (v3.3).
-    
-    Используется как FALLBACK когда встроенный модуль Gemini в Voximplant
-    не получает SetupComplete в течение таймаута.
-    
-    Voximplant подключается сюда через VoxEngine.createWebSocket() и шлёт
-    аудио в стандартном Voximplant WebSocket протоколе (start/media/stop).
-    Сервер мостит аудио в Gemini Live API и обратно.
-    
-    Протокол:
-      Voximplant → Server: {"event":"start"}, {"event":"media","media":{"payload":"base64pcm"}}, {"event":"stop"}
-      Server → Voximplant: тот же формат + {"customEvent":"transcription",...}
-    
-    Аудио:
-      Вход: PCM16 16kHz (от Voximplant sendMediaTo с encoding PCM16)
-      Выход: PCM16 16kHz (даунсэмплинг с 24kHz от Gemini)
-    
-    Query Parameters:
-      caller: Номер звонящего (опционально)
-      call_id: ID звонка в Voximplant (опционально)
-    
-    Voximplant script usage:
-      const ws = VoxEngine.createWebSocket("wss://voksyai.online/ws/vox-gemini/{assistant_id}?caller=..." );
-      ws.addEventListener(WebSocketEvents.OPEN, function() {
-          call.sendMediaTo(ws, {encoding: "PCM16"});
-          ws.sendMediaTo(call);
-      });
-    
-    Example:
-        wss://voksyai.online/ws/vox-gemini/550e8400-e29b-41d4-a716-446655440000?caller=+79001234567
-    """
+    """МЁРТВЫЙ КОД: мост Voximplant ↔ Gemini. Voximplant отключён, телефония идёт через SIP-шлюз."""
     try:
-        logger.info(f"[VOX-GEMINI-WS] New Voximplant bridge connection")
-        logger.info(f"[VOX-GEMINI-WS] Assistant: {assistant_id}")
-        logger.info(f"[VOX-GEMINI-WS] Caller: {caller}")
-        logger.info(f"[VOX-GEMINI-WS] Call ID: {call_id}")
-        
-        await handle_vox_gemini_websocket(
-            websocket=websocket,
-            assistant_id=assistant_id,
-            db=db,
-            caller_number=caller,
-            call_id=call_id,
-        )
-        
+        logger.warning(f"[VOX-GEMINI-WS] dead endpoint hit: assistant={assistant_id} caller={caller} call_id={call_id}")
+        await handle_vox_gemini_websocket(websocket=websocket, assistant_id=assistant_id, db=db,
+                                          caller_number=caller, call_id=call_id)
     except WebSocketDisconnect:
-        logger.info(f"[VOX-GEMINI-WS] Voximplant disconnected: assistant_id={assistant_id}")
+        logger.info(f"[VOX-GEMINI-WS] disconnected: assistant_id={assistant_id}")
     except Exception as e:
         logger.error(f"[VOX-GEMINI-WS] Error for assistant {assistant_id}: {e}")
-        logger.error(f"[VOX-GEMINI-WS] Traceback: {traceback.format_exc()}")
-        
         try:
             await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
 
-
-# =============================================================================
-# 📝 LLM STREAM - Isolated text streaming endpoint (v3.2)
-# 🔧 v3.2: OpenAI API key from User model via assistant_id parameter
-# =============================================================================
 
 @router.websocket("/ws/llm-stream")
 async def llm_stream_websocket_endpoint(
     websocket: WebSocket,
     assistant_id: Optional[str] = Query(None, description="Gemini Assistant ID to get OpenAI key from user"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    📝 Isolated LLM text streaming endpoint (v3.2 Dual WebSocket Architecture).
-    
-    🔧 v3.2: OpenAI API key fetched from User model via assistant chain:
-        assistant_id → GeminiAssistantConfig → user_id → User → openai_api_key
-    
-    Полностью изолирован от голосового канала для предотвращения искажения аудио.
-    Используется для вывода развёрнутых текстовых ответов от OpenAI.
-    
-    Query Parameters:
-        assistant_id: UUID of Gemini assistant (required for user API key lookup)
-    
-    Почему отдельный WebSocket?
-    - Discord, Zoom, Teams используют такую же архитектуру
-    - Голосовой трафик имеет приоритет и не блокируется текстом
-    - Браузер не перегружается параллельными потоками в одном соединении
-    
-    Client → Server:
-        {"type": "llm.query", "query": "Что такое интернет?", "request_id": "req_123"}
-    
-    Server → Client:
-        {"type": "llm.stream.start", "request_id": "req_123", "query": "..."}
-        {"type": "llm.stream.delta", "request_id": "req_123", "content": "Интернет — это..."}
-        {"type": "llm.stream.delta", "request_id": "req_123", "content": " глобальная сеть..."}
-        {"type": "llm.stream.done", "request_id": "req_123", "full_content": "...", "tokens_used": 150}
-    
-    Error:
-        {"type": "llm.stream.error", "request_id": "req_123", "error": "..."}
-    
-    Example connection:
-        wss://api.yourserver.com/ws/llm-stream?assistant_id=550e8400-e29b-41d4-a716-446655440000
-    
-    Example flow:
-        1. User asks Gemini: "Спроси у ИИ что такое интернет"
-        2. Gemini calls query_llm function
-        3. browser_handler sends {type: "llm.request"} to client via WS1 (voice)
-        4. Client receives llm.request, sends query to WS2 (this endpoint) with assistant_id
-        5. This endpoint loads User from assistant chain and gets openai_api_key
-        6. Streams text response to client using user's OpenAI key
-        7. Voice (WS1) and text (WS2) work in parallel without interference
+    Изолированный текстовый LLM-стрим. OpenAI-ключ берётся по цепочке
+    assistant_id → GeminiAssistantConfig → User.openai_api_key.
+
+    Client → Server: {"type": "llm.query", "query": "...", "request_id": "req_123"}
+    Server → Client: llm.stream.start / llm.stream.delta / llm.stream.done / llm.stream.error
     """
     try:
-        logger.info(f"[LLM-STREAM-WS] ★★★ ENDPOINT HIT (v2 deploy check) ★★★")
-        logger.info(f"[LLM-STREAM-WS] New connection (isolated text channel)")
-        logger.info(f"[LLM-STREAM-WS] Assistant ID: {assistant_id}")
-
-        await handle_openai_streaming_websocket(
-            websocket=websocket,
-            assistant_id=assistant_id,
-            db=db
-        )
-        
+        logger.info(f"[LLM-STREAM-WS] New connection (assistant_id={assistant_id})")
+        await handle_openai_streaming_websocket(websocket=websocket, assistant_id=assistant_id, db=db)
     except WebSocketDisconnect:
-        logger.info(f"[LLM-STREAM-WS] Client disconnected")
+        logger.info("[LLM-STREAM-WS] Client disconnected")
     except Exception as e:
         logger.error(f"[LLM-STREAM-WS] Error: {e}")
         logger.error(f"[LLM-STREAM-WS] Traceback: {traceback.format_exc()}")
         try:
             await websocket.close(code=1011, reason="Internal server error")
-        except:
+        except Exception:
             pass
 
 
-# =============================================================================
-# 📊 HEALTH & INFO ENDPOINTS
-# =============================================================================
-
 @router.get("/gemini/health")
 async def gemini_health_check():
-    """
-    Health check endpoint for Gemini WebSocket service.
-    
-    Returns:
-        dict: Service status information
-    """
     return {
         "status": "healthy",
         "service": "gemini_websocket",
-        "version": "3.3",
-        "model": "gemini-2.5-flash-native-audio-preview-09-2025",
-        "browser_agent_model": "gemini-2.0-flash",
+        "version": "4.0",
+        "model": GEMINI_LIVE_MODEL,
         "llm_model": "gpt-4o-mini",
-        "architecture": "dual_websocket + vox_bridge",
         "features": [
-            "real_time_audio",
-            "automatic_vad",
-            "function_calling",
-            "thinking_mode",
-            "screen_context",
-            "google_sheets_logging",
-            "browser_agent",
-            "isolated_llm_streaming",
-            "user_api_keys",
-            "voximplant_bridge",
-            "gemini_31_flash_live"
-        ]
+            "real_time_audio", "automatic_vad", "async_function_calling", "screen_context",
+            "google_sheets_logging", "isolated_llm_streaming", "user_api_keys", "sip_telephony",
+        ],
     }
 
 
 @router.get("/gemini/info")
 async def gemini_info():
-    """
-    Get information about Gemini Live API integration.
-    
-    Returns:
-        dict: Detailed service information
-    """
     return {
         "service": "Google Gemini Live API",
-        "version": "3.3",
-        "architecture": "dual_websocket + vox_bridge",
-        "models": {
-            "voice": "gemini-2.5-flash-native-audio-preview-09-2025",
-            "browser_agent": "gemini-2.0-flash",
-            "llm_streaming": "gpt-4o-mini"
-        },
+        "version": "4.0",
+        "models": {"voice": GEMINI_LIVE_MODEL, "llm_streaming": "gpt-4o-mini"},
         "audio": {
             "input_format": "PCM 16kHz mono 16-bit",
             "output_format": "PCM 24kHz mono 16-bit",
-            "vad": "automatic (built-in)",
-            "vox_bridge_output": "PCM 16kHz mono 16-bit (resampled from 24kHz)"
+            "vad": "automatic (Gemini, profile from GEMINI_VAD_*)",
         },
         "features": {
-            "function_calling": "manual (handler-controlled)",
-            "thinking_mode": "configurable per assistant",
+            "function_calling": f"asynchronous (NON_BLOCKING, scheduling={GEMINI_TOOL_SCHEDULING})",
+            "thinking": "not available on gemini-3.8-live (fast model only)",
             "screen_context": "supported (silent mode)",
             "interruptions": "automatic via VAD",
-            "multi_language": "24 languages supported",
-            "voices": "30 HD voices available",
-            "browser_agent": "autonomous DOM control",
-            "llm_streaming": "isolated text channel (no audio distortion)",
+            "voices": "30 HD voices",
+            "session_limits": "audio-only session 15 min, connection ~10 min (no context compression)",
             "api_keys": "from User model (not environment)",
-            "voximplant_bridge": "fallback when Vox Gemini module fails"
-        },
-        "browser_agent": {
-            "capabilities": [
-                "click elements",
-                "type text into inputs",
-                "scroll pages",
-                "extract data",
-                "multi-step tasks",
-                "visual highlighting"
-            ],
-            "max_iterations": 25,
-            "action_timeout": "15s",
-            "parallel_execution": True
-        },
-        "llm_streaming": {
-            "model": "gpt-4o-mini",
-            "max_tokens": 4096,
-            "buffering": "30 chars or 200ms",
-            "isolation": "separate WebSocket channel",
-            "api_key_source": "User.openai_api_key via assistant_id"
-        },
-        "voximplant_bridge": {
-            "protocol": "Voximplant WebSocket (start/media/stop)",
-            "input_encoding": "PCM16 16kHz",
-            "output_encoding": "PCM16 16kHz (resampled from 24kHz)",
-            "function_calling": True,
-            "transcription": True,
-            "google_sheets_logging": True,
-            "use_case": "Fallback when Vox Gemini module SetupComplete timeout"
         },
         "endpoints": {
             "websocket_voice": "/ws/gemini/{assistant_id}",
-            "websocket_browser": "/ws/gemini-browser/{assistant_id}",
             "websocket_llm": "/ws/llm-stream?assistant_id={assistant_id}",
-            "websocket_vox_bridge": "/ws/vox-gemini/{assistant_id}?caller=...&call_id=...",
             "health": "/gemini/health",
-            "info": "/gemini/info"
-        }
+            "info": "/gemini/info",
+        },
     }

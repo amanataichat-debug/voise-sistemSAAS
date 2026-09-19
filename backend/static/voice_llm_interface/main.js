@@ -918,7 +918,7 @@ async function connectWebSocket() {
     }
 
     try {
-        const WS_URL = Config.SERVER_URL.replace(/^http/, 'ws') + '/ws/gemini-browser/' + ASSISTANT_ID;
+        const WS_URL = Config.SERVER_URL.replace(/^http/, 'ws') + '/ws/gemini/' + ASSISTANT_ID;
         
         Config.log(`🔌 Connecting to Gemini WebSocket...`);
         Config.log(`   URL: ${WS_URL}`);

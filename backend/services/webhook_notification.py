@@ -18,7 +18,7 @@
         session_id="abc-123",
         assistant_id="...",
         assistant_name="Продажи",
-        assistant_type="gemini",          # "gemini" | "gemini_31" | "openai"
+        assistant_type="gemini",          # "gemini" | "openai" | "fish"
     )
 
 АРХИТЕКТУРА:
@@ -69,7 +69,7 @@ class WebhookNotificationService:
         Args:
             db: Сессия SQLAlchemy
             session_id: Идентификатор сессии диалога
-            assistant_type: "gemini" | "gemini_31" | "openai"
+            assistant_type: "gemini" | "openai" | "fish"
 
         Returns:
             Массив реплик [{"role": "user/assistant", "text": "...", "ts": <ms>}]
@@ -93,7 +93,7 @@ class WebhookNotificationService:
         from backend.models.conversation import Conversation
 
         # Определяем порядок таблиц: основная + fallback
-        if assistant_type in ("gemini", "gemini_31"):
+        if assistant_type == "gemini":
             models_to_try = [GeminiConversation, Conversation]
         elif assistant_type == "openai":
             models_to_try = [Conversation, GeminiConversation]
@@ -171,7 +171,7 @@ class WebhookNotificationService:
                 "session_id": session_id,
                 "assistant_id": assistant_id,
                 "assistant_name": assistant_name,
-                "assistant_type": assistant_type,  # "gemini" | "gemini_31" | "openai"
+                "assistant_type": assistant_type,  # "gemini" | "openai" | "fish"
                 "caller_number": caller_number,    # None для web_chat
                 "call_direction": call_direction,  # None для web_chat
                 "duration_seconds": duration_seconds,  # None для web_chat
@@ -247,7 +247,7 @@ class WebhookNotificationService:
         session_id: str,
         assistant_id: str,
         assistant_name: str,
-        assistant_type: str,            # "gemini" | "gemini_31" | "openai"
+        assistant_type: str,            # "gemini" | "openai" | "fish"
         caller_number: Optional[str] = None,
         call_direction: Optional[str] = None,
         duration_seconds: Optional[float] = None,

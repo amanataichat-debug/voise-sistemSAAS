@@ -1,6 +1,6 @@
 """
 Query Orchestrator function for JARVIS AI Agent Mode.
-Registered in the function registry, intercepted in browser_handler_gemini.py.
+Registered in the function registry (the former browser_handler_gemini interception is gone).
 """
 from typing import Dict, Any
 from backend.functions.base import FunctionBase
@@ -56,5 +56,5 @@ class QueryOrchestratorFunction(FunctionBase):
     @staticmethod
     async def execute(arguments: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
         # This method is NOT called directly — the function is intercepted
-        # in browser_handler_gemini.py before execute() is called
+        # (historically in browser_handler_gemini.py, removed) before execute() is called
         return {"success": True, "message": "Задача передана оркестратору"}

@@ -144,6 +144,13 @@ class Settings(BaseSettings):
     # диалог ведёт OpenAI Realtime на OPENAI_API_KEY, озвучивает Fish на этом ключе.
     FISH_API_KEY: Optional[str] = os.getenv("FISH_API_KEY")
 
+    # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
+    # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.
+    GEMINI_LIVE_MODEL: str = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
+    # Как модель озвучивает результат асинхронной функции: WHEN_IDLE (договорить, потом озвучить),
+    # INTERRUPT (сразу) или SILENT (молча учесть)
+    GEMINI_TOOL_SCHEDULING: str = os.getenv("GEMINI_TOOL_SCHEDULING", "WHEN_IDLE")
+
     # Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
     # =========================================================================
     # Токен, по которому мост на VPS подключается к /ws/sip-gateway/control и /ws/sip/{call_id}.

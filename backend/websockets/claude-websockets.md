@@ -17,11 +17,10 @@
 - `handler_realtime_streaming.py` — **экспериментальный** хендлер с sentence-based TTS-стримингом (LLM → ElevenLabs параллельно). Не в основном проде; см. `sentence_detector`.
 - `openai_client_streaming.py` — хендлер `/ws/llm-stream` (текстовый LLM-стрим v3.0), изолированный от голосового канала. Подключён через `api/gemini_ws.py`.
 
-### Google Gemini Live
-- `handler_gemini.py` — хендлер Gemini Live (PRODUCTION v1.6.1), чистый Gemini VAD, непрерывный стрим аудио. Роут `/ws/gemini/{assistant_id}`.
-- `gemini_client.py` — WS-клиент Gemini Live (v1.6, модель `gemini-2.5-flash-native-audio-preview`).
-- `handler_gemini_31.py` / `gemini_client_31.py` — вариант под Gemini 3.1 Flash Live (`gemini-3.1-flash-live-preview`). Роут `/ws/gemini-31/{assistant_id}`.
-- `browser_handler_gemini.py` — Gemini-хендлер с DUAL WebSocket (v3.3): голос + отдельный канал для браузерных/визуальных функций и function calling. Роут `/ws/gemini-browser/{assistant_id}`.
+### Google Gemini Live (gemini-3.8-live)
+- `handler_gemini.py` — хендлер Gemini Live (v2.0), чистый Gemini VAD, непрерывный стрим аудио, диалог сохраняется по `turnComplete`. Роут `/ws/gemini/{assistant_id}` и телефон через `SIP_HANDLERS["gemini"]`. Функции запускает в фоне через общий `execute_and_send_function_result` (`function_calls.py`, `_launch_function_call`), цикл событий Gemini не блокируется; `toolCallCancellation` отменяет задачу. Thinking убран.
+- `gemini_client.py` — WS-клиент Gemini Live (v2.0): модель `GEMINI_LIVE_MODEL` (по умолчанию `gemini-3.8-live`, думающий вариант `gemini-3.8-live-extended-thinking` осознанно не используется — нужна скорость), `thinkingConfig` не передаётся, function declarations с `behavior: NON_BLOCKING`, `toolResponse` с `id`/`name`/`response`/`scheduling` (`GEMINI_TOOL_SCHEDULING`, по умолчанию `WHEN_IDLE`; `register_function_call(id, name)` хранит имя по id). Proactive audio у 3.8 включён всегда. Сжатие контекста и возобновление сессии не включены: аудио-сессия ограничена 15 мин, соединение ~10 мин (решение: длинных разговоров не ожидается).
+- Удалены в сентябре 2026 (переход на 3.8): `handler_gemini_31.py`/`gemini_client_31.py` (`/ws/gemini-31/`), `browser_handler_gemini.py` (`/ws/gemini-browser/`, browser-агент) и их виджеты.
 - `handler_vox_gemini.py` — мост Voximplant ↔ Gemini Live (v1.0), fallback когда встроенный Gemini-модуль Voximplant недоступен. Роут `/ws/vox-gemini/{assistant_id}`.
 
 ### Fish Audio (OpenAI текст + Fish TTS, серверные ключи)
@@ -50,7 +49,7 @@
 
 ## Ключевые сущности / точки входа
 - **`handle_live_websocket_connection`** (`handler_live.py`) — точка входа OpenAI-голоса (GPT-Live), вызывается из `api/websocket.py` для `/ws/{assistant_id}` и `/ws/demo` и из `api/sip_gateway.py` для телефона.
-- **`handle_gemini_websocket_connection`** / `handle_gemini_31_websocket_connection` / `handle_vox_gemini_websocket` — точки входа Gemini (`api/gemini_ws.py`).
+- **`handle_gemini_websocket_connection`** — точка входа Gemini (`api/gemini_ws.py`, `api/sip_gateway.py`); `handle_vox_gemini_websocket` — мёртвый мост Voximplant.
 - **`handle_grok_websocket_connection`** — точка входа Grok (`api/grok_ws.py`).
 - **`handle_translate_connection`** — точка входа перевода (`api/translate_ws.py`).
 - **`handle_openai_streaming_websocket`** — текстовый LLM-стрим `/ws/llm-stream`.
@@ -62,9 +61,8 @@
 - Использует: `backend/functions/` (исполнение AI-функций), `backend/services/` (`conversation_service` — запись диалогов, `telegram_notification`/`webhook_notification` — пост-обработка, `credit_service` — списание, `pinecone_service`), `backend/models/` (Conversation, *Conversation по провайдерам, AssistantConfig и аналоги, User для API-ключей), `backend/utils/audio_utils.py` (конвертация аудио), `backend/core/` (config, logging). Внешние провайдеры: OpenAI/Gemini/Grok realtime, Fish Audio TTS.
 
 ## На что обратить внимание
-- **Много версионных дубликатов** — для одного провайдера сосуществуют актуальные, легаси и экспериментальные хендлеры/клиенты. **Источник истины — какой модуль реально импортирует роутер** (`backend/api/*_ws.py`): сейчас это `handler_live` + `live_client` (OpenAI, GPT-Live), `handler_gemini`/`handler_gemini_31`/`browser_handler_gemini` (Gemini), `handler_fish` + `fish_llm_client` + `fish_tts_client` (Fish), `handler_grok` (Grok), `handler_translate`. `handler_realtime_new.py`/`openai_client_new.py`, `handler.py`/`openai_client.py` и `handler_realtime_streaming.py` напрямую не подключены — не правьте их, думая что это прод.
+- **Много версионных дубликатов** — для одного провайдера сосуществуют актуальные, легаси и экспериментальные хендлеры/клиенты. **Источник истины — какой модуль реально импортирует роутер** (`backend/api/*_ws.py`): сейчас это `handler_live` + `live_client` (OpenAI, GPT-Live), `handler_gemini` (Gemini, `gemini-3.8-live`), `handler_fish` + `fish_llm_client` + `fish_tts_client` (Fish), `handler_grok` (Grok), `handler_translate`. `handler_realtime_new.py`/`openai_client_new.py`, `handler.py`/`openai_client.py` и `handler_realtime_streaming.py` напрямую не подключены — не правьте их, думая что это прод.
 - **GPT-Live — full-duplex.** Клиент обязан стримить микрофон непрерывно (и пока ассистент говорит), иначе модель не услышит перебивание; аудио от модели идёт в реальном темпе, поэтому клиенту нужен буфер ~200 мс (виджет — `scheduleLiveAudio`, телефон — `OUTBOUND_CUSHION_MS`). Событий `speech.started`/`conversation.interrupted`/`response.done` в этом транспорте нет — не завязывайте на них новую логику для OpenAI.
-- **`gemini_client_31.py`/`handler_gemini_31.py` начинаются со старого docstring** (`# backend/websockets/gemini_client.py`) — комментарии скопированы, ориентируйтесь на версию/модель в теле, а не на первую строку.
 - **Порядок роутеров важен:** `/ws/llm-stream`, `/ws/gemini/*`, `/ws/fish/*`, `/ws/sip/*`, `/ws/translate/*` должны матчиться ДО `/ws/{assistant_id}` — иначе их перехватит OpenAI-хендлер (в `api/websocket.py` есть явная проверка ROUTE COLLISION).
 - **Аудиоформат** — PCM16, обычно 24 кГц mono, base64. Конвертация — через `utils/audio_utils.py`; при смене частоты/каналов проверяйте обе стороны (клиент и провайдер).
 - **Новый провайдер** = хендлер с протоколом виджета + запись в `SIP_HANDLERS` (`api/sip_gateway.py`), `SIP_SUPPORTED_ASSISTANT_TYPES` (`models/sip_gateway.py`) и `HANDLER_IN_RATE`/`INBOUND_BATCH_MS` (`sip_media_adapter.py`). Диалоги провайдера — в своей таблице (`conversations` привязана FK к `assistant_configs`), таблицу надо добавить в union на странице «Диалоги» и в `tag_conversations`.

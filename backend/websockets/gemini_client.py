@@ -1,30 +1,25 @@
 # backend/websockets/gemini_client.py
 """
-🚀 PRODUCTION VERSION 1.6 - Google Gemini Live API Client
-Model: gemini-2.5-flash-native-audio-preview-12-2025
+Клиент Google Gemini Live API (v2.0) — модель gemini-3.8-live.
 
-CRITICAL FIX in v1.6:
-✅ Added auto-greeting on connect using greeting_message from config
-✅ Correct toolResponse format for function results
-   - Changed from client_content to toolResponse
-   - Proper BidiGenerateContentToolResponse structure
-   - ID matching for function calls (from toolCall event)
-   
-Features:
-✅ PURE GEMINI VAD - automatic voice activity detection
-✅ Continuous audio streaming - no manual commit needed
-✅ Native audio I/O (PCM 16kHz input, 24kHz output)
-✅ Manual function calling support
-✅ Thinking mode support (configurable)
-✅ Screen context support (silent mode)
-✅ Audio transcription support (input + output)
-✅ Interruption handling
-✅ Reconnection logic
-✅ Performance monitoring
-✅ Production-ready stability
-✅ Auto-greeting on connect
-✅ FIXED: Correct WebSocket endpoint for Live API
-✅ FIXED: toolResponse format per official documentation
+Протокол: WebSocket BidiGenerateContent (v1beta), первое сообщение `setup`,
+готовность — `setupComplete`. Аудио PCM16 16 кГц на вход (`realtimeInput.audio`),
+24 кГц на выход (`serverContent.modelTurn.parts[].inlineData`). VAD Gemini
+(`realtimeInputConfig.automaticActivityDetection`, профиль из env GEMINI_VAD_*).
+
+Особенности gemini-3.8-live (сентябрь 2026):
+- Настроек thinking нет: `thinkingConfig` в setup не передаётся (у модели он
+  не поддерживается; думающий вариант gemini-3.8-live-extended-thinking не используем).
+- Функции асинхронные по умолчанию (`behavior: NON_BLOCKING`): модель продолжает
+  говорить, пока функция выполняется; в `toolResponse.functionResponses[]` нужны
+  `id`, `name`, `response` и `scheduling` (INTERRUPT | WHEN_IDLE | SILENT,
+  env GEMINI_TOOL_SCHEDULING, по умолчанию WHEN_IDLE — договорить и озвучить результат).
+- Proactive audio включён всегда: модель сама решает, обращались ли к ней.
+- Одно событие serverContent может нести несколько parts (аудио + текст).
+- Лимиты без сжатия контекста: аудио-сессия 15 мин, соединение ~10 мин
+  (contextWindowCompression / sessionResumption не включены — осознанно).
+
+Модель задаётся env GEMINI_LIVE_MODEL (backend/core/config.py).
 """
 
 import asyncio
@@ -47,6 +42,12 @@ from backend.functions import get_function_definitions, get_enabled_functions, n
 logger = get_logger(__name__)
 
 DEFAULT_VOICE = "Aoede"
+GEMINI_LIVE_MODEL = getattr(settings, "GEMINI_LIVE_MODEL", None) or "gemini-3.8-live"
+# Как модель озвучивает результат асинхронной функции: WHEN_IDLE — договорить и
+# затем озвучить, INTERRUPT — сразу, SILENT — молча учесть.
+GEMINI_TOOL_SCHEDULING = (getattr(settings, "GEMINI_TOOL_SCHEDULING", None) or "WHEN_IDLE").upper()
+if GEMINI_TOOL_SCHEDULING not in ("INTERRUPT", "WHEN_IDLE", "SILENT"):
+    GEMINI_TOOL_SCHEDULING = "WHEN_IDLE"
 DEFAULT_SYSTEM_MESSAGE = "Ты мой умный помощник. Ты веселый и приятный. Отвечай по существу и с энергией."
 
 
@@ -123,8 +124,7 @@ class GeminiLiveClient:
         self.ws = None
         self.is_connected = False
         
-        # ✅ FIXED: Correct WebSocket endpoint for Gemini Live API
-        self.model = "gemini-2.5-flash-native-audio-preview-12-2025"
+        self.model = GEMINI_LIVE_MODEL
         self.base_url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
         self.gemini_url = f"{self.base_url}?key={self.api_key}"
         
@@ -143,6 +143,8 @@ class GeminiLiveClient:
         
         # ✅ NEW: Greeting state
         self.greeting_sent = False
+        # Имена функций по id вызова: нужны для toolResponse (name обязателен у 3.8)
+        self.call_names: Dict[str, str] = {}
         
         # Device detection
         self.is_ios = "iphone" in user_agent.lower() or "ipad" in user_agent.lower()
@@ -195,7 +197,7 @@ class GeminiLiveClient:
                     ping_timeout=120,
                     close_timeout=15,
                     extra_headers={
-                        'User-Agent': 'Voksy AI/1.6'
+                        'User-Agent': 'Voksy AI/2.0'
                     }
                 ),
                 timeout=30
@@ -345,7 +347,9 @@ class GeminiLiveClient:
                 "function_declarations": [{
                     "name": func_def["name"],
                     "description": func_def["description"],
-                    "parameters": func_def["parameters"]
+                    "parameters": func_def["parameters"],
+                    # gemini-3.8-live: асинхронный вызов, модель не ждёт результата молча
+                    "behavior": "NON_BLOCKING",
                 }]
             })
         
@@ -373,16 +377,6 @@ class GeminiLiveClient:
                 "text": system_message
             }]
         }
-        
-        # Thinking config (if enabled)
-        thinking_config = None
-        if getattr(self.assistant_config, "enable_thinking", False):
-            thinking_budget = getattr(self.assistant_config, "thinking_budget", 1024)
-            thinking_config = {
-                "thinkingBudget": thinking_budget,
-                "includeThoughts": False
-            }
-            logger.info(f"[GEMINI-CLIENT] Thinking mode enabled (budget: {thinking_budget})")
         
         # ✅ Build correct setup payload for Live API
         # Транскрипция на верхнем уровне setup, НЕ в generation_config!
@@ -431,10 +425,6 @@ class GeminiLiveClient:
         if tools:
             setup_payload["setup"]["tools"] = tools
         
-        # Add thinking config if enabled
-        if thinking_config:
-            setup_payload["setup"]["thinkingConfig"] = thinking_config
-        
         try:
             logger.info(f"[GEMINI-CLIENT] Sending setup message...")
             logger.info(f"[GEMINI-CLIENT] Setup payload keys: {list(setup_payload['setup'].keys())}")
@@ -447,7 +437,6 @@ class GeminiLiveClient:
             logger.info(f"[GEMINI-CLIENT]   Model: {self.model}")
             logger.info(f"[GEMINI-CLIENT]   Voice: {voice}")
             logger.info(f"[GEMINI-CLIENT]   Tools: {len(tools)}")
-            logger.info(f"[GEMINI-CLIENT]   Thinking: {bool(thinking_config)}")
             logger.info(f"[GEMINI-CLIENT]   Transcription: ENABLED")
         except Exception as e:
             logger.error(f"[GEMINI-CLIENT] ❌ Error sending setup: {e}")
@@ -608,21 +597,19 @@ class GeminiLiveClient:
         """Increment audio sample count."""
         self.current_audio_samples += sample_count
 
-    async def send_function_result(self, function_call_id: str, result: Dict[str, Any]) -> Dict[str, bool]:
+    def register_function_call(self, function_call_id: str, name: str) -> None:
+        """Запомнить имя функции по id вызова (для name в toolResponse)."""
+        if function_call_id and name:
+            self.call_names[function_call_id] = name
+            self.last_function_name = name
+
+    async def send_function_result(self, function_call_id: str, result: Any) -> Dict[str, Any]:
         """
-        Send function result back to Gemini via toolResponse.
-        
-        According to Gemini Live API documentation:
-        "BidiGenerateContentClientContent shouldn't be used to provide a response 
-        to the function calls issued by the model. BidiGenerateContentToolResponse 
-        should be used instead."
-        
-        Args:
-            function_call_id: ID from the toolCall event
-            result: Function execution result
-            
-        Returns:
-            Dict with success status
+        Результат функции → toolResponse (BidiGenerateContentToolResponse).
+        clientContent для ответов на вызовы использовать нельзя.
+
+        gemini-3.8-live: функции NON_BLOCKING, поэтому в ответе передаём name и
+        scheduling (GEMINI_TOOL_SCHEDULING) — когда модели озвучить результат.
         """
         if not self.is_connected or not self.ws:
             error_msg = "Cannot send function result: not connected"
@@ -638,14 +625,17 @@ class GeminiLiveClient:
             
             # ✅ CORRECT FORMAT per Live API WebSocket documentation
             # https://ai.google.dev/api/live#BidiGenerateContentToolResponse
-            result_payload = {
-                "toolResponse": {  # NOT client_content!
-                    "functionResponses": [{  # Plural!
-                        "id": function_call_id,  # CRITICAL: ID from toolCall event
-                        "response": result  # Your result as-is
-                    }]
-                }
+            if not isinstance(result, dict):
+                result = {"result": result}
+            function_response: Dict[str, Any] = {
+                "id": function_call_id,
+                "response": result,
+                "scheduling": GEMINI_TOOL_SCHEDULING,
             }
+            name = self.call_names.pop(function_call_id, None) or self.last_function_name
+            if name:
+                function_response["name"] = name
+            result_payload = {"toolResponse": {"functionResponses": [function_response]}}
             
             # Log payload preview
             payload_preview = json.dumps(result_payload, ensure_ascii=False)[:300]

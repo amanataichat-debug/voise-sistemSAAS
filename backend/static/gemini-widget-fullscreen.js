@@ -14,8 +14,7 @@
  *   - FIX: Все исправления v2.0.0 сохранены (same-URL, z-index, STATE.mode)
  *
  * Supports:
- *   data-model="2.5"  → /ws/gemini/{id}
- *   data-model="3.1"  → /ws/gemini-31/{id}
+ *   data-model — устарел и игнорируется: все модели идут через /ws/gemini/{id} (gemini-3.8-live)
  *
  * @version 3.0.0
  * @author WellcomeAI Team
@@ -966,9 +965,7 @@ registerProcessor('audio-stream-processor', AudioStreamProcessor);
 
     function getWSEndpoint() {
         const base = CONFIG.serverUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-        return CONFIG.model === '3.1'
-            ? `${base}/ws/gemini-31/${CONFIG.assistantId}`
-            : `${base}/ws/gemini/${CONFIG.assistantId}`;
+        return `${base}/ws/gemini/${CONFIG.assistantId}`;
     }
 
     function connectWebSocket() {

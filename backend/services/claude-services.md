@@ -71,7 +71,7 @@
 ## На что обратить внимание
 - **Ключи и конфиг:** `OPENROUTER_API_KEY` (оркестратор), `OPENAI_API_KEY`, `PINECONE_API_KEY`/`PINECONE_ENVIRONMENT`, `ROBOKASSA_MERCHANT_LOGIN`/`PASSWORD_1`/`PASSWORD_2`, R2-креды, Voximplant Partner-креды. Часть берётся из `settings` (Pydantic), часть — напрямую из `os.environ` (Pinecone).
 - **Платёжный провайдер:** код реализует **Robokassa**, а не YooKassa (расхождение с корневым CLAUDE.md). Подпись MD5/HMAC проверяется в `RobokassaService`.
-- **Именование-ловушка:** `browser_agent_service.py` — это LLM-стриминг (OpenAI Chat → WebSocket), а НЕ управление браузером. Реальная браузерная задача живёт в функции `backend/functions/start_browser_task.py`.
+- **Именование-ловушка:** `browser_agent_service.py` — это LLM-стриминг (OpenAI Chat → WebSocket), а НЕ управление браузером. Браузерная автоматизация (browser-агент Gemini и функция `start_browser_task`) удалена в сентябре 2026.
 - **Версионность оркестратора:** в коде сосуществуют ветки v2 (OpenAI Responses API, `store=True`) и v3 (OpenRouter). При правках следить, какая ветка активна для агента (зависит от модели/конфига). PostCall ищет транскрипт по номеру телефона + временному окну, а не по `session_id` (изменение v2.1).
 - **Инварианты кредитов:** все мутации баланса строго через `SELECT ... FOR UPDATE`; каждая операция фиксируется в `credit_transactions` (источник правды). `charge` никогда не уводит баланс в минус и не бросает исключений (оркестратор уже отработал). Гранты trial идемпотентны (по типу транзакции).
 - **Блокировка подписок:** `subscription_blocker` отменяет SCHEDULED agent-задачи истёкших подписок, но НЕ списывает кредиты. Админ освобождён от проверок подписки, но НЕ от проверки баланса.
