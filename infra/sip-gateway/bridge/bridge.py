@@ -65,7 +65,7 @@ from urllib.parse import quote
 import websockets
 from aiohttp import web
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -588,7 +588,11 @@ class Bridge:
                 # Answered: AudioSocket will connect and emit "answered".
                 return
             last_reason = result["reason"]
-            log.info("call %s: originate via %s failed: %s", call.call_id, host, last_reason)
+            # Текст ошибки AMI / сырой Reason из OriginateResponse — без них
+            # "trunk_unavailable" не отличить от опечатки в канале или 403 оператора.
+            detail = result.get("message") or (f"Reason={result['raw_reason']}" if result.get("raw_reason") else "")
+            log.info("call %s: originate via %s failed: %s%s", call.call_id, host, last_reason,
+                     f" ({detail})" if detail else "")
             if last_reason not in ("trunk_unavailable", "congestion"):
                 break  # busy / no answer — the callee did not pick up, no point trying server B
         await self._fail(call, last_reason)
