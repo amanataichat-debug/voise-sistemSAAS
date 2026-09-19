@@ -49,10 +49,10 @@ ANTIALIAS_TAPS = 63
 
 PHONE_RATE = 8000
 HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
-HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000}
+HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000, "eleven": 24000}
 # Размер порции входящего звука для хендлера, мс. Gemini Live лучше работает с порциями ~100 мс,
 # чем с 50 сообщениями в секунду; OpenAI GPT-Live и Realtime (текстовый мозг Fish) спокойно принимают 20 мс.
-INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20}
+INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20, "eleven": 20}
 # Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
 # 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
 OUTBOUND_CUSHION_MS = {"openai": 200}

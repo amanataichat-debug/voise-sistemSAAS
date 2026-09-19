@@ -11,7 +11,9 @@ Realtime здесь — не голосовой стек, а «мозг» кас
 общий код исполнения функций (execute_and_send_function_result из
 handler_realtime_new): assistant_config, client_id, db_session, session_id,
 conversation_record_id, enabled_functions, send_function_result().
-Запись для привязки function_logs создаётся в fish_conversations.
+Запись для привязки function_logs создаётся в fish_conversations (или в
+таблице, переданной через conversation_model — так клиент переиспользует
+Eleven-хендлер с eleven_conversations).
 """
 
 import asyncio
@@ -37,6 +39,19 @@ TELEPHONY_VAD = {"threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_m
 INPUT_RATE = 24000
 MAX_OUTPUT_TOKENS = 2000
 
+# Язык ответов по коду из карточки ассистента. Для ru инструкция не добавляется
+# (исторически промпты Fish-агентов уже на русском), для остальных — дописывается
+# к system_prompt, иначе модель отвечает на языке промпта, а не абонента.
+LANGUAGE_INSTRUCTIONS = {
+    "ky": "Сүйлөшүүнү кыргыз тилинде жүргүз. Всегда отвечай на кыргызском языке (кириллица), "
+          "даже если системный промпт написан по-русски; переходи на другой язык только если "
+          "собеседник явно попросил.",
+    "kk": "Всегда отвечай на казахском языке, если собеседник не просит иначе.",
+    "uz": "Всегда отвечай на узбекском языке, если собеседник не просит иначе.",
+    "en": "Always answer in English unless the caller asks for another language.",
+    "tr": "Her zaman Türkçe yanıt ver; arayan başka bir dil istemedikçe.",
+}
+
 
 class FishLLMClient:
     def __init__(
@@ -47,6 +62,8 @@ class FishLLMClient:
         db_session: Any = None,
         user_agent: str = "",
         telephony: bool = False,
+        conversation_model=None,
+        label: str = "FISH-LLM",
     ) -> None:
         self.api_key = api_key
         self.assistant_config = assistant_config
@@ -54,6 +71,8 @@ class FishLLMClient:
         self.db_session = db_session
         self.user_agent = user_agent or ""
         self.telephony = telephony
+        self.conversation_model = conversation_model  # None → FishConversation
+        self.label = label
 
         model = getattr(assistant_config, "llm_model", None) or DEFAULT_FISH_LLM_MODEL
         if model not in FISH_LLM_MODELS:
@@ -117,6 +136,9 @@ class FishLLMClient:
     async def update_session(self) -> bool:
         tools = self._build_tools()
         instructions = getattr(self.assistant_config, "system_prompt", None) or "Ты вежливый голосовой помощник."
+        language = (getattr(self.assistant_config, "language", None) or "").strip().lower()[:2]
+        if language in LANGUAGE_INSTRUCTIONS:
+            instructions = f"{instructions}\n\n{LANGUAGE_INSTRUCTIONS[language]}"
         payload = {
             "type": "session.update",
             "session": {
@@ -155,8 +177,10 @@ class FishLLMClient:
         if self.db_session is None:
             return
         try:
-            from backend.models.fish_assistant import FishConversation
-            conv = FishConversation(
+            model_cls = self.conversation_model
+            if model_cls is None:
+                from backend.models.fish_assistant import FishConversation as model_cls
+            conv = model_cls(
                 assistant_id=self.assistant_config.id,
                 session_id=self.session_id,
                 user_message="",

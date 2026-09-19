@@ -28,6 +28,7 @@ from backend.models.subscription import SubscriptionPlan
 from backend.models.translate_assistant import TranslateAssistantConfig
 from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.fish_assistant import FishAssistantConfig
+from backend.models.eleven_assistant import ElevenAssistantConfig
 
 logger = get_logger(__name__)
 
@@ -103,6 +104,7 @@ def get_assistants_breakdown(db: Session, user_id: Any) -> Dict[str, int]:
         "cartesia": count(CartesiaAssistantConfig),
         "yandex": count(YandexAssistantConfig),
         "fish": count(FishAssistantConfig),
+        "eleven": count(ElevenAssistantConfig),
         "translate": count(TranslateAssistantConfig),
     }
     breakdown["total"] = sum(breakdown.values())

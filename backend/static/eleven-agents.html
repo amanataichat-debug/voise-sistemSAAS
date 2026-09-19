@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cartesia агенты — Voksy AI</title>
+  <title>ElevenLabs агенты — Voksy AI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#7c3aed">
+  <meta name="theme-color" content="#fc3f1d">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,9 +34,9 @@
       --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
       --radius-md: 0.5rem;
       --radius-lg: 1rem;
-      --cartesia-gradient: linear-gradient(135deg, #7c3aed, #5b21b6);
-      --cartesia-light: #ede9fe;
-      --cartesia-accent: #8b5cf6;
+      --eleven-gradient: linear-gradient(135deg, #111827, #4f46e5);
+      --eleven-light: #eef2ff;
+      --eleven-accent: #4f46e5;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -136,14 +136,14 @@
     }
 
     .sidebar-nav-item:hover {
-      background-color: var(--cartesia-light);
-      color: var(--cartesia-accent);
+      background-color: var(--eleven-light);
+      color: var(--eleven-accent);
     }
 
     .sidebar-nav-item.active {
-      background-color: var(--cartesia-light);
-      color: var(--cartesia-accent);
-      border-left-color: var(--cartesia-accent);
+      background-color: var(--eleven-light);
+      color: var(--eleven-accent);
+      border-left-color: var(--eleven-accent);
       font-weight: 600;
     }
 
@@ -170,7 +170,7 @@
 
     .plan-locked-feature:hover {
       opacity: 0.8;
-      background-color: var(--cartesia-light);
+      background-color: var(--eleven-light);
     }
 
     /* ============================================================================
@@ -240,7 +240,7 @@
       border: none;
     }
 
-    .btn-primary { background: var(--cartesia-gradient); color: white; }
+    .btn-primary { background: var(--eleven-gradient); color: white; }
     .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
 
     .btn-outline {
@@ -271,7 +271,7 @@
       border-radius: var(--radius-md);
       transition: all 0.2s;
     }
-    .btn-icon:hover { background-color: var(--bg-light); color: var(--cartesia-accent); }
+    .btn-icon:hover { background-color: var(--bg-light); color: var(--eleven-accent); }
 
     /* ============================================================================
        USER DROPDOWN
@@ -297,7 +297,7 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: var(--cartesia-gradient);
+      background: var(--eleven-gradient);
       display: flex;
       justify-content: center;
       align-items: center;
@@ -339,7 +339,7 @@
       font-size: 0.875rem;
       transition: background-color 0.2s;
     }
-    .dropdown-item:hover { background-color: var(--bg-light); color: var(--cartesia-accent); }
+    .dropdown-item:hover { background-color: var(--bg-light); color: var(--eleven-accent); }
 
     .dropdown-divider { height: 1px; background-color: var(--border-color); margin: 0.25rem 0; }
 
@@ -386,8 +386,8 @@
     }
     .api-key-row input:focus {
       outline: none;
-      border-color: var(--cartesia-accent);
-      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+      border-color: var(--eleven-accent);
+      box-shadow: 0 0 0 3px rgba(252, 63, 29, 0.1);
     }
 
     .api-key-actions { display: flex; gap: 0.5rem; }
@@ -420,7 +420,7 @@
 
     .api-key-setup-icon {
       font-size: 4rem;
-      background: var(--cartesia-gradient);
+      background: var(--eleven-gradient);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       margin-bottom: 1.5rem;
@@ -448,7 +448,7 @@
     .api-key-setup-steps h3 { margin-bottom: 1rem; }
     .api-key-setup-steps ol { padding-left: 1.5rem; line-height: 1.8; }
     .api-key-setup-steps li { margin-bottom: 0.5rem; }
-    .api-key-setup-steps a { color: var(--cartesia-accent); text-decoration: none; }
+    .api-key-setup-steps a { color: var(--eleven-accent); text-decoration: none; }
     .api-key-setup-steps a:hover { text-decoration: underline; }
 
     /* ============================================================================
@@ -503,11 +503,11 @@
     }
     .agent-item:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
-    .cartesia-badge {
+    .eleven-badge {
       position: absolute;
       top: 0.75rem;
       right: 0.75rem;
-      background: var(--cartesia-gradient);
+      background: var(--eleven-gradient);
       color: white;
       padding: 0.25rem 0.75rem;
       border-radius: 1rem;
@@ -515,14 +515,34 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+      box-shadow: 0 2px 8px rgba(252, 63, 29, 0.3);
     }
+
+    /* ---------------- ElevenLabs: выбор голоса и библиотека ---------------- */
+    .voice-row { display: flex; gap: 0.5rem; align-items: center; }
+    .voice-row select { flex: 1; min-width: 0; }
+    .voice-preview { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; font-size: 0.8125rem; color: var(--text-gray); flex-wrap: wrap; }
+    .voice-preview audio { height: 32px; max-width: 260px; }
+    .voice-chip { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 999px; font-size: 0.6875rem; font-weight: 600; background: var(--eleven-light); color: var(--eleven-accent); }
+    .voice-chip.rec { background: #dcfce7; color: #166534; }
+    .library-panel { margin-top: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; background: #fafafa; display: none; }
+    .library-panel.show { display: block; }
+    .library-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .library-filters .form-control { flex: 1; min-width: 160px; }
+    .library-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 420px; overflow-y: auto; }
+    .library-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.75rem; background: var(--white); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+    .library-item .lib-info { flex: 1; min-width: 0; }
+    .library-item .lib-name { font-weight: 600; font-size: 0.875rem; }
+    .library-item .lib-meta { font-size: 0.75rem; color: var(--text-gray); margin-top: 0.125rem; }
+    .library-item audio { height: 30px; width: 190px; }
+    .library-empty { font-size: 0.8125rem; color: var(--text-gray); padding: 0.5rem 0; }
+    .price-hint { font-weight: 600; color: var(--eleven-accent); }
 
     .agent-icon {
       width: 50px;
       height: 50px;
       border-radius: 50%;
-      background: var(--cartesia-gradient);
+      background: var(--eleven-gradient);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -557,6 +577,7 @@
       gap: 1rem;
       color: var(--text-light);
       font-size: 0.875rem;
+      flex-wrap: wrap;
     }
 
     .agent-actions {
@@ -600,7 +621,7 @@
       font-size: 0.875rem;
     }
     .tab:hover { color: var(--text-dark); }
-    .tab.active { color: var(--cartesia-accent); border-bottom-color: var(--cartesia-accent); font-weight: 600; }
+    .tab.active { color: var(--eleven-accent); border-bottom-color: var(--eleven-accent); font-weight: 600; }
 
     .tab-content { display: none; padding: 1.5rem; }
     .tab-content.active { display: block; }
@@ -621,6 +642,12 @@
     .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.875rem; color: var(--text-dark); }
     .form-group .hint { font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem; }
 
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
     .form-control {
       width: 100%;
       padding: 0.75rem 1rem;
@@ -629,11 +656,12 @@
       font-size: 0.875rem;
       color: var(--text-dark);
       transition: all 0.2s;
+      background-color: var(--white);
     }
     .form-control:focus {
       outline: none;
-      border-color: var(--cartesia-accent);
-      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+      border-color: var(--eleven-accent);
+      box-shadow: 0 0 0 3px rgba(252, 63, 29, 0.1);
     }
     textarea.form-control { min-height: 150px; resize: vertical; font-family: inherit; }
 
@@ -659,10 +687,10 @@
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background: var(--cartesia-accent);
+      background: var(--eleven-accent);
       cursor: pointer;
     }
-    .slider-value { min-width: 40px; text-align: center; font-weight: 600; color: var(--cartesia-accent); }
+    .slider-value { min-width: 40px; text-align: center; font-weight: 600; color: var(--eleven-accent); }
 
     /* Agent ID info */
     .agent-id-info {
@@ -670,16 +698,16 @@
       align-items: center;
       gap: 1rem;
       padding: 1rem;
-      background-color: var(--cartesia-light);
+      background-color: var(--eleven-light);
       border-radius: var(--radius-md);
-      border: 1px solid var(--cartesia-accent);
+      border: 1px solid var(--eleven-accent);
       margin-bottom: 1.5rem;
     }
     .agent-id-label { font-weight: 600; color: var(--text-dark); font-size: 0.875rem; }
     .agent-id-value {
       font-family: monospace;
       font-size: 0.85rem;
-      color: var(--cartesia-accent);
+      color: var(--eleven-accent);
       background-color: var(--white);
       padding: 0.375rem 0.75rem;
       border-radius: var(--radius-md);
@@ -701,7 +729,7 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .function-option:hover { background-color: var(--cartesia-light); }
+    .function-option:hover { background-color: var(--eleven-light); }
     .function-option input { margin: 0; }
 
     .function-info {
@@ -753,11 +781,11 @@
     .notification.show { transform: translateY(0); opacity: 1; }
     .notification-success { border-left: 4px solid #10b981; }
     .notification-error { border-left: 4px solid #ef4444; }
-    .notification-info { border-left: 4px solid var(--cartesia-accent); }
+    .notification-info { border-left: 4px solid var(--eleven-accent); }
     .notification-icon { font-size: 1.25rem; }
     .notification-success .notification-icon { color: #10b981; }
     .notification-error .notification-icon { color: #ef4444; }
-    .notification-info .notification-icon { color: var(--cartesia-accent); }
+    .notification-info .notification-icon { color: var(--eleven-accent); }
     .notification-content { flex: 1; }
     .notification-close { background: none; border: none; color: var(--text-gray); cursor: pointer; font-size: 1.125rem; }
 
@@ -778,9 +806,9 @@
     .loading-spinner {
       width: 50px;
       height: 50px;
-      border: 5px solid var(--cartesia-light);
+      border: 5px solid var(--eleven-light);
       border-radius: 50%;
-      border-top-color: var(--cartesia-accent);
+      border-top-color: var(--eleven-accent);
       animation: spin 1s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -868,7 +896,7 @@
     }
     .feature-blocked-modal .current-plan-info span { font-weight: 600; color: var(--text-dark); }
     .feature-blocked-modal .required-plans { font-size: 0.875rem; color: var(--text-gray); }
-    .feature-blocked-modal .required-plans strong { color: var(--cartesia-accent); }
+    .feature-blocked-modal .required-plans strong { color: var(--eleven-accent); }
     .feature-blocked-modal .fb-footer { padding: 1rem 1.5rem 1.5rem; display: flex; gap: 1rem; }
     .feature-blocked-modal .fb-footer .btn { flex: 1; justify-content: center; }
 
@@ -909,6 +937,7 @@
       .agent-id-info { flex-direction: column; align-items: flex-start; }
       .copy-id-btn { margin-left: 0; width: 100%; }
       .form-footer { flex-direction: column; }
+      .form-row { grid-template-columns: 1fr; }
       .user-dropdown { right: auto; left: 0; }
     }
 
@@ -947,10 +976,10 @@
       <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item"><i class="fas fa-headset"></i> Агент обзвона <span class="badge-realtime">new</span></a>
       <a href="/static/agents.html" class="sidebar-nav-item"><i class="fas fa-robot"></i> OpenAI агенты</a>
       <a href="/static/gemini-agents.html" class="sidebar-nav-item"><i class="fas fa-gem"></i> Gemini агенты</a>
-      <a href="/static/cartesia-agents.html" class="sidebar-nav-item active"><i class="fas fa-wave-square"></i> Cartesia агенты</a>
+      <a href="/static/cartesia-agents.html" class="sidebar-nav-item"><i class="fas fa-wave-square"></i> Cartesia агенты</a>
       <a href="/static/yandex-agents.html" class="sidebar-nav-item"><i class="fab fa-yandex"></i> Яндекс агенты</a>
       <a href="/static/fish-agents.html" class="sidebar-nav-item"><i class="fas fa-fish"></i> Fish агенты</a>
-      <a href="/static/eleven-agents.html" class="sidebar-nav-item"><i class="fas fa-wave-square"></i> ElevenLabs агенты</a>
+      <a href="/static/eleven-agents.html" class="sidebar-nav-item active"><i class="fas fa-wave-square"></i> ElevenLabs агенты</a>
       <a href="/static/cascade.html" class="sidebar-nav-item"><i class="fas fa-water"></i> Cascade агенты</a>
       <a href="/static/knowledge-base.html" class="sidebar-nav-item"><i class="fas fa-book"></i> База знаний</a>
       <a href="/static/telephony.html" class="sidebar-nav-item" data-feature="telephony"><i class="fas fa-phone"></i> Телефония</a>
@@ -977,8 +1006,8 @@
       <div class="top-nav-left">
         <button class="mobile-menu-toggle" id="mobile-menu-toggle"><i class="fas fa-bars"></i></button>
         <h1 class="page-title">
-          <i class="fas fa-wave-square" style="color: var(--cartesia-accent);"></i>
-          Cartesia агенты
+          <i class="fas fa-wave-square" style="color: var(--eleven-accent);"></i>
+          ElevenLabs агенты
         </h1>
       </div>
       <div class="top-nav-right">
@@ -1002,62 +1031,24 @@
     <!-- Content Area -->
     <div class="content-container">
 
-      <!-- API Keys Card -->
-      <div class="api-keys-card" id="api-keys-card">
-        <h3><i class="fas fa-key" style="color: var(--cartesia-accent);"></i> API ключи для Cartesia агентов</h3>
-
-        <div class="api-key-row">
-          <label>OpenAI API Key (LLM)</label>
-          <input type="password" id="openai-key-input" placeholder="sk-..." autocomplete="off">
-          <div class="api-key-actions">
-            <button class="btn-icon" id="toggle-openai-key" title="Показать/скрыть"><i class="fas fa-eye"></i></button>
-          </div>
-        </div>
-
-        <div class="api-key-row">
-          <label>Cartesia API Key (TTS)</label>
-          <input type="password" id="cartesia-key-input" placeholder="sk_car_..." autocomplete="off">
-          <div class="api-key-actions">
-            <button class="btn-icon" id="toggle-cartesia-key" title="Показать/скрыть"><i class="fas fa-eye"></i></button>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
-          <button class="btn btn-primary btn-sm" id="save-keys-btn"><i class="fas fa-save"></i> Сохранить ключи</button>
-          <button class="btn btn-secondary btn-sm" id="clear-keys-btn"><i class="fas fa-trash"></i> Очистить</button>
-        </div>
-
-        <div class="api-key-warning" id="keys-warning" style="display: none;">
+      <!-- Статус серверных ключей (ElevenLabs-агенты работают на ключах Voksy AI, свои не нужны) -->
+      <div class="api-keys-card" id="server-status-card" style="display: none;">
+        <h3><i class="fas fa-server" style="color: var(--eleven-accent);"></i> ElevenLabs-агенты работают на ключах Voksy AI</h3>
+        <p style="color: var(--text-gray); font-size: 0.875rem; margin-top: 0.5rem;">
+          Диалог ведёт OpenAI Realtime, озвучивает ElevenLabs (Eleven v3 — единственное семейство с кыргызским языком).
+          Свои API-ключи вводить не нужно. Агент работает в браузерном виджете и по телефону через SIP-шлюз одинаково.
+        </p>
+        <div class="api-key-warning" id="server-keys-warning" style="display: none;">
           <i class="fas fa-exclamation-triangle"></i>
-          <span>Добавьте OpenAI и Cartesia API ключи для работы агентов</span>
+          <span id="server-keys-warning-text">На сервере не настроены ключи OpenAI / ElevenLabs — агенты не смогут отвечать.</span>
         </div>
-      </div>
-
-      <!-- Setup Screen (no keys) -->
-      <div class="api-key-setup" id="setup-screen">
-        <div class="api-key-setup-icon"><i class="fas fa-wave-square"></i></div>
-        <h2 class="api-key-setup-title">Настройте API ключи</h2>
-        <p class="api-key-setup-description">
-          Для работы Cartesia агентов необходимо добавить OpenAI API Key (для LLM обработки) и Cartesia API Key (для синтеза речи).
-        </p>
-        <div class="api-key-setup-steps">
-          <h3>Как начать:</h3>
-          <ol>
-            <li>Получите OpenAI API Key на <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></li>
-            <li>Получите Cartesia API Key на <a href="https://play.cartesia.ai/" target="_blank">play.cartesia.ai</a></li>
-            <li>Вставьте ключи в поля выше и нажмите "Сохранить ключи"</li>
-          </ol>
-        </div>
-        <p style="color: var(--text-light); font-size: 0.875rem; text-align: center;">
-          После добавления ключей вы сможете создавать и управлять Cartesia агентами
-        </p>
       </div>
 
       <!-- Agents List Container -->
       <div class="agents-list-container" id="agents-list-container">
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">Ваши голосовые ассистенты на Cartesia</h2>
+            <h2 class="card-title">Ваши голосовые ассистенты с озвучкой ElevenLabs</h2>
           </div>
           <div id="agents-list"></div>
         </div>
@@ -1089,13 +1080,13 @@
 
             <div class="form-group">
               <label for="agent-name">Название агента *</label>
-              <input type="text" class="form-control" id="agent-name" placeholder="Мой Cartesia агент" required>
+              <input type="text" class="form-control" id="agent-name" placeholder="Мой ElevenLabs агент" required>
             </div>
 
             <div class="form-group">
               <label for="agent-greeting">Первая фраза (приветствие)</label>
-              <input type="text" class="form-control" id="agent-greeting" placeholder="Здравствуйте! Чем я могу вам помочь?" value="Здравствуйте! Чем я могу вам помочь?" maxlength="200">
-              <p class="hint">Эта фраза будет первым, что скажет ассистент при звонке. Максимум 200 символов.</p>
+              <input type="text" class="form-control" id="agent-greeting" placeholder="Саламатсызбы! Мен сизге кантип жардам бере алам?" value="Саламатсызбы! Мен сизге кантип жардам бере алам?" maxlength="500">
+              <p class="hint">Эта фраза будет первым, что скажет ассистент при звонке или запуске виджета. Пишите её на языке агента (по умолчанию кыргызский). Максимум 500 символов.</p>
             </div>
 
             <div class="form-group">
@@ -1109,19 +1100,66 @@
               <p class="hint">Задайте инструкции для вашего ассистента. Это определит его знания, стиль общения и поведение.</p>
             </div>
 
-            <div class="form-group">
-              <label for="agent-voice-id">Cartesia Voice ID</label>
-              <input type="text" class="form-control" id="agent-voice-id" placeholder="a0e99841-438c-4a64-b679-ae501e7d6091">
-              <p class="hint">ID голоса из личного кабинета <a href="https://play.cartesia.ai/" target="_blank" style="color: var(--cartesia-accent);">play.cartesia.ai</a></p>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="agent-tts-model">Модель синтеза ElevenLabs</label>
+                <select class="form-control" id="agent-tts-model"></select>
+                <p class="hint" id="tts-model-hint">Только семейство Eleven v3 умеет кыргызский.</p>
+              </div>
+              <div class="form-group">
+                <label for="agent-language">Язык агента</label>
+                <select class="form-control" id="agent-language"></select>
+                <p class="hint">Язык, на котором агент говорит и на который настроен синтез. По умолчанию — кыргызский. Диалоговая модель получает инструкцию отвечать на этом языке.</p>
+              </div>
             </div>
 
             <div class="form-group">
-              <label>Скорость голоса</label>
-              <div class="slider-container">
-                <span style="font-size: 0.75rem; color: var(--text-light);">0.5x</span>
-                <input type="range" id="agent-voice-speed" min="0.5" max="1.5" step="0.1" value="1.0">
-                <span style="font-size: 0.75rem; color: var(--text-light);">1.5x</span>
-                <span class="slider-value" id="voice-speed-value">1.0</span>
+              <label for="agent-voice">Голос ElevenLabs</label>
+              <div class="voice-row">
+                <select class="form-control" id="agent-voice"></select>
+                <button type="button" class="btn btn-secondary btn-sm" id="reload-voices-btn" title="Обновить список голосов аккаунта"><i class="fas fa-sync"></i></button>
+                <button type="button" class="btn btn-outline btn-sm" id="toggle-library-btn"><i class="fas fa-search"></i> Найти в библиотеке</button>
+              </div>
+              <input type="hidden" id="agent-voice-name">
+              <div class="voice-preview" id="voice-preview"></div>
+              <p class="hint">Голоса из аккаунта ElevenLabs Voksy AI. Первыми идут голоса с подтверждённым выбранным языком (отмечены «рекомендован»). Нужного голоса нет — найдите его в публичной библиотеке и добавьте в аккаунт одной кнопкой.</p>
+
+              <div class="library-panel" id="library-panel">
+                <div class="library-filters">
+                  <input type="text" class="form-control" id="library-search" placeholder="Поиск по названию (необязательно)">
+                  <select class="form-control" id="library-gender" style="max-width: 160px;">
+                    <option value="">Любой пол</option>
+                    <option value="female">Женский</option>
+                    <option value="male">Мужской</option>
+                  </select>
+                  <button type="button" class="btn btn-primary btn-sm" id="library-search-btn"><i class="fas fa-search"></i> Искать</button>
+                </div>
+                <p class="hint" id="library-hint" style="margin-bottom: 0.5rem;">Библиотека ElevenLabs, отфильтрованная по языку агента. «Добавить» кладёт голос в аккаунт и сразу выбирает его.</p>
+                <div class="library-list" id="library-list"><div class="library-empty">Нажмите «Искать», чтобы загрузить голоса для выбранного языка.</div></div>
+                <div style="margin-top: 0.5rem; display: none;" id="library-more-wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" id="library-more-btn">Показать ещё</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="agent-stability">Стабильность голоса</label>
+              <select class="form-control" id="agent-stability"></select>
+              <p class="hint">У Eleven v3 три режима: Creative — эмоциональнее, Natural — естественно, Robust — ровно и одинаково от звонка к звонку. На содержание ответов не влияет — за него отвечает системный промпт.</p>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="agent-llm-model">Диалоговая модель</label>
+                <select class="form-control" id="agent-llm-model"></select>
+                <p class="hint">Модель OpenAI Realtime, которая слушает абонента и придумывает ответ текстом; озвучивает его ElevenLabs. Работает на ключе Voksy AI. Отдельное распознавание речи не нужно — она делает это сама.</p>
+              </div>
+              <div class="form-group" id="agent-active-wrap" style="display: none;">
+                <label for="agent-active">Статус</label>
+                <select class="form-control" id="agent-active">
+                  <option value="true">Активен</option>
+                  <option value="false">Выключен</option>
+                </select>
               </div>
             </div>
 
@@ -1228,6 +1266,7 @@
 
     const API_BASE_URL = '/api';
 
+
     // ============================================================================
     // STATE
     // ============================================================================
@@ -1235,16 +1274,33 @@
     let currentAgentId = null;
     let agents = [];
     let availableFunctions = [];
-    // Имена включённых у агента функций. Держим отдельно от DOM, чтобы состояние
-    // не терялось из-за гонки между рендером чекбоксов (loadAvailableFunctions)
-    // и загрузкой данных агента (loadAgentData) — какой бы порядок ни сложился,
-    // applyFunctionSelection() приводит чекбоксы к этому состоянию.
-    let selectedFunctionNames = [];
-    // Функции агента как пришли с сервера (страховка от затирания при сохранении,
-    // если каталог функций так и не загрузился и чекбоксов в DOM нет).
-    let currentAgentFunctions = null;
+    let currentAgentFunctions = null; // функции агента как пришли с сервера (страховка от затирания)
     let isLoading = false;
     let currentUserPlanCode = 'free';
+    const DEFAULT_GREETING = 'Саламатсызбы! Мен сизге кантип жардам бере алам?';
+    let elevenOptions = {
+      tts_models: [
+        { id: 'eleven_v3_conversational', title: 'Eleven v3 Conversational', description: 'Для живого диалога: первый звук ≈ 280 мс.', price: '$0.05 за 1000 символов' },
+        { id: 'eleven_v3', title: 'Eleven v3', description: 'Максимальное качество, задержка выше.', price: '$0.10 за 1000 символов' },
+      ],
+      default_tts_model: 'eleven_v3_conversational',
+      languages: [
+        { code: 'ky', title: 'Кыргызский' }, { code: 'ru', title: 'Русский' }, { code: 'kk', title: 'Казахский' },
+        { code: 'uz', title: 'Узбекский' }, { code: 'en', title: 'Английский' }, { code: 'tr', title: 'Турецкий' },
+      ],
+      default_language: 'ky',
+      stability_levels: [
+        { value: 0, title: 'Creative — эмоциональнее' }, { value: 0.5, title: 'Natural — естественно (рекомендуется)' }, { value: 1, title: 'Robust — ровно и предсказуемо' },
+      ],
+      default_stability: 0.5,
+      llm_models: ['gpt-realtime-2', 'gpt-realtime-2.1-mini'],
+      default_llm_model: 'gpt-realtime-2',
+      default_greeting: DEFAULT_GREETING,
+    };
+    let accountVoices = [];          // голоса аккаунта ElevenLabs (с флагом recommended)
+    let voicesLoadedFor = null;      // язык, для которого загружен список
+    let libraryPage = 0;
+    let libraryHasMore = false;
 
     let assistantsLimitInfo = {
       totalCount: 0,
@@ -1338,7 +1394,7 @@
     }
 
     // ============================================================================
-    // PRIVILEGES & LIMITS (как в Gemini)
+    // PRIVILEGES & LIMITS (как в Gemini/Cartesia)
     // ============================================================================
     function isPrivilegedUser() {
       if (!currentUser) return false;
@@ -1348,7 +1404,7 @@
     async function loadAssistantsLimitInfo() {
       try {
         // Единый источник правды: сервер сам считает ассистентов по всем
-        // провайдерам (OpenAI, Gemini, Grok, Cascade, Cartesia, Yandex, Translate)
+        // провайдерам (OpenAI, Gemini, Grok, Cascade, Cartesia, Yandex, Fish, ElevenLabs, Translate)
         // и применяет те же правила, что и при создании.
         const usage = await apiRequest('/subscriptions/assistants-usage');
 
@@ -1482,102 +1538,268 @@
     }
 
     // ============================================================================
-    // API KEYS
+    // ELEVEN OPTIONS (модели синтеза с ценами / языки / стабильность / диалоговая модель)
     // ============================================================================
-    async function loadApiKeysStatus() {
+    async function loadElevenOptions() {
       try {
-        const status = await apiRequest('/cartesia-assistants/api-keys');
-        const openaiInput = document.getElementById('openai-key-input');
-        const cartesiaInput = document.getElementById('cartesia-key-input');
-        const warning = document.getElementById('keys-warning');
-
-        if (status.openai_key_preview) openaiInput.placeholder = status.openai_key_preview;
-        if (status.cartesia_key_preview) cartesiaInput.placeholder = status.cartesia_key_preview;
-
-        const hasKeys = status.has_openai_key && status.has_cartesia_key;
-        warning.style.display = hasKeys ? 'none' : 'flex';
-        return hasKeys;
+        const data = await apiRequest('/eleven-assistants/options');
+        if (data && data.tts_models && data.tts_models.length) elevenOptions = data;
       } catch (e) {
-        console.error('Error loading API keys status:', e);
-        return false;
+        console.warn('[OPTIONS] Используем дефолтные опции:', e.message);
       }
+      fillTtsModelSelect(elevenOptions.default_tts_model);
+      fillLanguageSelect(elevenOptions.default_language);
+      fillStabilitySelect(elevenOptions.default_stability);
+      fillSelect('agent-llm-model', elevenOptions.llm_models, elevenOptions.default_llm_model);
     }
 
-    async function saveApiKeys() {
-      const openaiKey = document.getElementById('openai-key-input').value.trim();
-      const cartesiaKey = document.getElementById('cartesia-key-input').value.trim();
+    function fillSelect(id, items, selected) {
+      const sel = document.getElementById(id);
+      sel.innerHTML = '';
+      items.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        if (v === selected) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
 
-      if (!openaiKey && !cartesiaKey) {
-        showNotification('Введите хотя бы один ключ', 'error');
-        return;
-      }
+    // Модель синтеза: в выпадашке название + цена, под ней описание выбранной
+    function fillTtsModelSelect(selected) {
+      const sel = document.getElementById('agent-tts-model');
+      const models = elevenOptions.tts_models.slice();
+      if (selected && !models.some(m => m.id === selected)) models.unshift({ id: selected, title: selected, description: '', price: '' });
+      sel.innerHTML = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.price ? `${m.title} — ${m.price}` : m.title;
+        if (m.id === selected) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      updateTtsModelHint();
+    }
 
-      setLoading(true);
-      try {
-        const body = {};
-        if (openaiKey) body.openai_api_key = openaiKey;
-        if (cartesiaKey) body.cartesia_api_key = cartesiaKey;
+    function updateTtsModelHint() {
+      const id = document.getElementById('agent-tts-model').value;
+      const m = elevenOptions.tts_models.find(x => x.id === id);
+      const hint = document.getElementById('tts-model-hint');
+      if (!m) { hint.textContent = 'Только семейство Eleven v3 умеет кыргызский.'; return; }
+      hint.innerHTML = `${escapeHtml(m.description || '')} <span class="price-hint">${escapeHtml(m.price || '')}</span>. Цена — прайс ElevenLabs API за символы текста ответов.`;
+    }
 
-        await apiRequest('/cartesia-assistants/api-keys', { method: 'PUT', body });
+    function fillLanguageSelect(selected) {
+      const sel = document.getElementById('agent-language');
+      const langs = elevenOptions.languages.slice();
+      if (selected && !langs.some(l => l.code === selected)) langs.unshift({ code: selected, title: selected });
+      sel.innerHTML = '';
+      langs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.code;
+        opt.textContent = `${l.title} (${l.code})`;
+        if (l.code === selected) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
 
-        document.getElementById('openai-key-input').value = '';
-        document.getElementById('cartesia-key-input').value = '';
+    function fillStabilitySelect(selected) {
+      const sel = document.getElementById('agent-stability');
+      const levels = elevenOptions.stability_levels.slice();
+      const sv = Number(selected);
+      if (!Number.isNaN(sv) && !levels.some(l => Number(l.value) === sv)) levels.push({ value: sv, title: `Своё значение (${sv})` });
+      sel.innerHTML = '';
+      levels.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = String(Number(l.value));
+        opt.textContent = l.title;
+        if (Number(l.value) === sv) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
 
-        showNotification('API ключи сохранены', 'success');
-        const hasKeys = await loadApiKeysStatus();
-        checkApiKeyAndShowContent(hasKeys);
+    // ============================================================================
+    // VOICES (аккаунт ElevenLabs + публичная библиотека)
+    // ============================================================================
+    function currentLanguage() {
+      return document.getElementById('agent-language').value || elevenOptions.default_language || 'ky';
+    }
 
-        if (hasKeys) {
-          await loadAgentsList();
-          await loadAssistantsLimitInfo();
-          applyFeatureAccessToSidebar();
-          updateCreateButtonState();
+    // Загружает голоса аккаунта для языка и заполняет select; selectedId — что выбрать
+    async function loadAccountVoices(selectedId, selectedName, force) {
+      const language = currentLanguage();
+      const sel = document.getElementById('agent-voice');
+      if (force || voicesLoadedFor !== language) {
+        sel.innerHTML = '<option value="">Загрузка голосов…</option>';
+        try {
+          const data = await apiRequest(`/eleven-assistants/voices?language=${encodeURIComponent(language)}`);
+          accountVoices = data.voices || [];
+          voicesLoadedFor = language;
+        } catch (e) {
+          accountVoices = [];
+          voicesLoadedFor = null;
+          console.error('[VOICES] Ошибка загрузки:', e.message);
+          showNotification('Не удалось загрузить голоса ElevenLabs: ' + e.message, 'error');
         }
-      } catch (e) {
-        showNotification('Ошибка сохранения: ' + e.message, 'error');
-      } finally {
-        setLoading(false);
       }
+      renderVoiceSelect(selectedId, selectedName);
     }
 
-    async function clearApiKeys() {
-      if (!confirm('Вы уверены, что хотите удалить API ключи?')) return;
+    function renderVoiceSelect(selectedId, selectedName) {
+      const sel = document.getElementById('agent-voice');
+      sel.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = accountVoices.length ? '— выберите голос —' : '— в аккаунте нет голосов, добавьте из библиотеки —';
+      sel.appendChild(placeholder);
 
-      setLoading(true);
-      try {
-        await apiRequest('/cartesia-assistants/api-keys', {
-          method: 'PUT',
-          body: { openai_api_key: '', cartesia_api_key: '' }
+      const rec = accountVoices.filter(v => v.recommended);
+      const other = accountVoices.filter(v => !v.recommended);
+      const addGroup = (label, list) => {
+        if (!list.length) return;
+        const g = document.createElement('optgroup');
+        g.label = label;
+        list.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v.voice_id;
+          const meta = [v.gender, v.accent, v.category].filter(Boolean).join(', ');
+          opt.textContent = meta ? `${v.name} (${meta})` : v.name;
+          opt.dataset.name = v.name || '';
+          g.appendChild(opt);
         });
+        sel.appendChild(g);
+      };
+      addGroup(`Рекомендованы для языка «${currentLanguage()}»`, rec);
+      addGroup('Остальные голоса аккаунта', other);
 
-        document.getElementById('openai-key-input').value = '';
-        document.getElementById('cartesia-key-input').value = '';
+      // Сохранённый голос агента может отсутствовать в аккаунте (удалён) — показываем как есть
+      if (selectedId && !accountVoices.some(v => v.voice_id === selectedId)) {
+        const opt = document.createElement('option');
+        opt.value = selectedId;
+        opt.textContent = `${selectedName || selectedId} (нет в аккаунте)`;
+        opt.dataset.name = selectedName || '';
+        sel.appendChild(opt);
+      }
+      sel.value = selectedId || '';
+      onVoiceChanged();
+    }
 
-        showNotification('API ключи удалены', 'success');
-        const hasKeys = await loadApiKeysStatus();
-        checkApiKeyAndShowContent(hasKeys);
+    function onVoiceChanged() {
+      const sel = document.getElementById('agent-voice');
+      const opt = sel.options[sel.selectedIndex];
+      document.getElementById('agent-voice-name').value = opt ? (opt.dataset.name || '') : '';
+      const v = accountVoices.find(x => x.voice_id === sel.value);
+      const box = document.getElementById('voice-preview');
+      if (!v) { box.innerHTML = ''; return; }
+      const chips = [];
+      if (v.recommended) chips.push('<span class="voice-chip rec">рекомендован для ' + escapeHtml(currentLanguage()) + '</span>');
+      (v.languages || []).filter(Boolean).slice(0, 6).forEach(l => chips.push('<span class="voice-chip">' + escapeHtml(l) + '</span>'));
+      box.innerHTML = (v.preview_url ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>` : '') +
+        chips.join(' ') + (v.description ? `<span>${escapeHtml(v.description)}</span>` : '');
+    }
+
+    async function searchLibrary(nextPage) {
+      const list = document.getElementById('library-list');
+      const moreWrap = document.getElementById('library-more-wrap');
+      if (!nextPage) { libraryPage = 0; list.innerHTML = '<div class="library-empty"><i class="fas fa-spinner fa-spin"></i> Ищем голоса…</div>'; }
+      const language = currentLanguage();
+      const search = document.getElementById('library-search').value.trim();
+      const gender = document.getElementById('library-gender').value;
+      const qs = new URLSearchParams({ language, page: String(libraryPage), page_size: '30' });
+      if (search) qs.set('search', search);
+      if (gender) qs.set('gender', gender);
+      try {
+        const data = await apiRequest(`/eleven-assistants/voices/library?${qs.toString()}`);
+        const voices = data.voices || [];
+        libraryHasMore = !!data.has_more;
+        if (!nextPage) list.innerHTML = '';
+        if (!voices.length && !nextPage) {
+          list.innerHTML = `<div class="library-empty">В библиотеке не нашлось голосов для языка «${escapeHtml(language)}». Попробуйте другой язык или без фильтров.</div>`;
+        }
+        const hint = document.getElementById('library-hint');
+        if (data.language_code_used && data.language_code_used !== language) {
+          hint.textContent = `Библиотека отдала голоса по коду языка «${data.language_code_used}».`;
+        }
+        voices.forEach(v => list.appendChild(renderLibraryItem(v)));
+        moreWrap.style.display = libraryHasMore ? 'block' : 'none';
       } catch (e) {
-        showNotification('Ошибка: ' + e.message, 'error');
-      } finally {
-        setLoading(false);
+        list.innerHTML = `<div class="library-empty" style="color: var(--danger-color);">Ошибка поиска: ${escapeHtml(e.message)}</div>`;
+        moreWrap.style.display = 'none';
       }
     }
 
-    function checkApiKeyAndShowContent(hasKeys) {
-      const setupScreen = document.getElementById('setup-screen');
-      const agentsContainer = document.getElementById('agents-list-container');
-      const createBtn = document.getElementById('create-agent-btn');
+    function renderLibraryItem(v) {
+      const el = document.createElement('div');
+      el.className = 'library-item';
+      const meta = [v.gender, v.age, v.accent, v.use_case, v.language].filter(Boolean).join(' · ');
+      el.innerHTML = `
+        <div class="lib-info">
+          <div class="lib-name">${escapeHtml(v.name || v.voice_id)} ${v.recommended ? '<span class="voice-chip rec">рекомендован</span>' : ''} ${v.is_added ? '<span class="voice-chip">уже в аккаунте</span>' : ''}</div>
+          <div class="lib-meta">${escapeHtml(meta)}${v.cloned_by_count ? ` · использован ${v.cloned_by_count} раз` : ''}</div>
+          ${v.description ? `<div class="lib-meta">${escapeHtml(v.description)}</div>` : ''}
+        </div>
+        ${v.preview_url ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>` : ''}
+        <button type="button" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> ${v.is_added ? 'Выбрать' : 'Добавить'}</button>
+      `;
+      el.querySelector('button').addEventListener('click', () => addLibraryVoice(v, el.querySelector('button')));
+      return el;
+    }
 
-      if (hasKeys) {
-        setupScreen.classList.remove('show');
-        agentsContainer.classList.add('show');
-        createBtn.style.display = 'inline-flex';
-        updateCreateButtonState();
-      } else {
-        setupScreen.classList.add('show');
-        agentsContainer.classList.remove('show');
-        createBtn.style.display = 'none';
+    async function addLibraryVoice(v, btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      try {
+        const res = await apiRequest('/eleven-assistants/voices/library/add', {
+          method: 'POST',
+          body: { public_owner_id: v.public_owner_id, voice_id: v.voice_id, name: v.name },
+        });
+        showNotification(res.already_added ? 'Голос уже был в аккаунте — выбран' : 'Голос добавлен в аккаунт и выбран', 'success');
+        await loadAccountVoices(res.voice_id, res.name, true);
+        document.getElementById('library-panel').classList.remove('show');
+      } catch (e) {
+        showNotification('Не удалось добавить голос: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plus"></i> Добавить';
       }
+    }
+
+    // ============================================================================
+    // SERVER STATUS (ключи OpenAI + ElevenLabs живут на сервере)
+    // ============================================================================
+    async function loadServerStatus() {
+      const card = document.getElementById('server-status-card');
+      const warning = document.getElementById('server-keys-warning');
+      const warningText = document.getElementById('server-keys-warning-text');
+      card.style.display = 'block';
+      try {
+        const status = await apiRequest('/eleven-assistants/status');
+        const missing = [];
+        if (!status.openai_key) missing.push('OpenAI');
+        if (!status.elevenlabs_key) missing.push('ElevenLabs');
+        if (missing.length) {
+          warningText.textContent = `На сервере не настроен ключ ${missing.join(' и ')} — агенты не смогут отвечать. Добавьте переменные окружения OPENAI_API_KEY / ELEVENLABS_API_KEY.`;
+          warning.style.display = 'flex';
+        } else {
+          warning.style.display = 'none';
+        }
+        return status;
+      } catch (e) {
+        console.error('Error loading server status:', e);
+        return null;
+      }
+    }
+
+    function showListContent() {
+      document.getElementById('agents-list-container').classList.add('show');
+      document.getElementById('create-agent-btn').style.display = 'inline-flex';
+      updateCreateButtonState();
+    }
+
+    // Тестовый звонок агенту в браузере — тот же виджет, что у OpenAI-агентов,
+    // но с путём сокета /ws/eleven/ (страница eleven-test.html подставляет data-ws-path).
+    function openTestCall(id) {
+      window.open(`/static/eleven-test.html?id=${encodeURIComponent(id)}`, '_blank', 'noopener');
     }
 
     // ============================================================================
@@ -1585,7 +1807,7 @@
     // ============================================================================
     async function loadAgentsList() {
       try {
-        const data = await apiRequest('/cartesia-assistants');
+        const data = await apiRequest('/eleven-assistants');
         agents = data.assistants || [];
         renderAgentsList();
       } catch (e) {
@@ -1607,9 +1829,9 @@
         container.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon"><i class="fas fa-wave-square"></i></div>
-            <h3 class="empty-title">У вас ещё нет Cartesia агентов</h3>
+            <h3 class="empty-title">У вас ещё нет ElevenLabs-агентов</h3>
             <p class="empty-description">
-              Создайте первого голосового ассистента на базе Cartesia TTS
+              Создайте первого голосового ассистента с озвучкой ElevenLabs — по умолчанию он говорит по-кыргызски
               ${limitText}
             </p>
             <button class="btn btn-primary" id="empty-create-btn" ${isDisabled ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''}>
@@ -1635,7 +1857,7 @@
 
       const headerEl = document.createElement('div');
       headerEl.className = 'agent-list-header';
-      headerEl.innerHTML = `<h4 class="agents-count">Cartesia агентов: ${agents.length} ${limitInfo}</h4>`;
+      headerEl.innerHTML = `<h4 class="agents-count">ElevenLabs-агентов: ${agents.length} ${limitInfo}</h4>`;
       container.appendChild(headerEl);
 
       const listEl = document.createElement('div');
@@ -1645,18 +1867,20 @@
         const agentEl = document.createElement('div');
         agentEl.className = 'agent-item';
         agentEl.innerHTML = `
-          <div class="cartesia-badge">Cartesia</div>
+          <div class="eleven-badge">ElevenLabs</div>
           <div class="agent-icon"><i class="fas fa-wave-square"></i></div>
           <div class="agent-info">
             <h3 class="agent-name">${escapeHtml(agent.name)}</h3>
             <p class="agent-description">${agent.description ? escapeHtml(agent.description) : 'Нет описания'}</p>
             <div class="agent-meta">
-              ${agent.cartesia_voice_id ? `<span><i class="fas fa-microphone"></i> Voice: ${escapeHtml(agent.cartesia_voice_id.substring(0, 12))}...</span>` : ''}
-              <span><i class="fas fa-tachometer-alt"></i> Скорость: ${agent.voice_speed || 1.0}x</span>
+              <span><i class="fas fa-microchip"></i> ${escapeHtml(ttsModelTitle(agent.tts_model))}</span>
+              <span><i class="fas fa-microphone"></i> ${agent.voice_id ? escapeHtml(agent.voice_name || agent.voice_id) : 'голос не задан'}</span>
+              <span><i class="fas fa-language"></i> ${escapeHtml(languageTitle(agent.language))}</span>
               <span><i class="fas fa-calendar"></i> ${new Date(agent.created_at).toLocaleDateString('ru-RU')}</span>
             </div>
           </div>
           <div class="agent-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openTestCall('${agent.id}')" title="Поговорить с агентом в браузере"><i class="fas fa-headset"></i> Тест</button>
             <button class="btn btn-primary btn-sm" onclick="editAgent('${agent.id}')"><i class="fas fa-edit"></i> Редактировать</button>
           </div>
         `;
@@ -1664,6 +1888,16 @@
       });
 
       container.appendChild(listEl);
+    }
+
+    function ttsModelTitle(id) {
+      const m = elevenOptions.tts_models.find(x => x.id === id);
+      return m ? m.title : (id || '');
+    }
+
+    function languageTitle(code) {
+      const l = elevenOptions.languages.find(x => x.code === code);
+      return l ? l.title : (code || '');
     }
 
     function escapeHtml(text) {
@@ -1675,13 +1909,17 @@
     async function loadAgentData(id) {
       setLoading(true);
       try {
-        const agent = await apiRequest(`/cartesia-assistants/${id}`);
-        fillAgentForm(agent);
+        // Чекбоксы функций должны существовать ДО fillAgentForm → loadFunctions,
+        // иначе состояние галочек молча теряется (и затирается при сохранении)
+        if (availableFunctions.length === 0) await loadAvailableFunctions();
+        const agent = await apiRequest(`/eleven-assistants/${id}`);
+        await fillAgentForm(agent);
         currentAgentId = id;
         document.getElementById('edit-title').textContent = 'Редактирование: ' + agent.name;
         document.getElementById('delete-agent-btn').style.display = 'inline-flex';
         document.getElementById('agent-id-display').textContent = id;
         document.getElementById('agent-id-info').style.display = 'flex';
+        document.getElementById('agent-active-wrap').style.display = 'block';
       } catch (e) {
         showNotification('Ошибка загрузки агента: ' + e.message, 'error');
         switchToListMode();
@@ -1690,19 +1928,25 @@
       }
     }
 
-    function fillAgentForm(agent) {
+    async function fillAgentForm(agent) {
       document.getElementById('agent-name').value = agent.name || '';
-      document.getElementById('agent-greeting').value = agent.greeting_message || 'Здравствуйте! Чем я могу вам помочь?';
+      document.getElementById('agent-greeting').value = agent.greeting_message || elevenOptions.default_greeting || DEFAULT_GREETING;
       document.getElementById('agent-description').value = agent.description || '';
       document.getElementById('agent-system-prompt').value = agent.system_prompt || '';
-      document.getElementById('agent-voice-id').value = agent.cartesia_voice_id || '';
+      document.getElementById('agent-active').value = String(!!agent.is_active);
 
-      const speedSlider = document.getElementById('agent-voice-speed');
-      speedSlider.value = agent.voice_speed || 1.0;
-      document.getElementById('voice-speed-value').textContent = speedSlider.value;
+      // Модель/язык агента могут отсутствовать в актуальном списке — fill* добавляют их сами
+      fillTtsModelSelect(agent.tts_model || elevenOptions.default_tts_model);
+      fillLanguageSelect(agent.language || elevenOptions.default_language);
+      fillStabilitySelect(agent.stability ?? elevenOptions.default_stability);
+      const llmModels = elevenOptions.llm_models.includes(agent.llm_model) ? elevenOptions.llm_models : [agent.llm_model, ...elevenOptions.llm_models];
+      fillSelect('agent-llm-model', llmModels, agent.llm_model);
+      document.getElementById('library-panel').classList.remove('show');
 
       currentAgentFunctions = agent.functions || null;
-      loadFunctions(agent.functions || []);
+      loadFunctions(agent.functions);
+
+      await loadAccountVoices(agent.voice_id || '', agent.voice_name || '');
     }
 
     function getFormData() {
@@ -1714,8 +1958,8 @@
         }
       });
 
-      // Если каталог функций не загрузился (чекбоксов в DOM нет) — не затираем
-      // сохранённые функции агента, отправляем их как есть.
+      // Если список функций не загрузился (чекбоксов нет) — не затираем
+      // сохранённые функции агента, отправляем их как есть
       const functionsValue = (availableFunctions.length === 0)
         ? currentAgentFunctions
         : (enabledFunctions.length > 0 ? enabledFunctions : null);
@@ -1725,8 +1969,12 @@
         greeting_message: document.getElementById('agent-greeting').value.trim() || null,
         description: document.getElementById('agent-description').value.trim() || null,
         system_prompt: document.getElementById('agent-system-prompt').value.trim() || null,
-        cartesia_voice_id: document.getElementById('agent-voice-id').value.trim() || null,
-        voice_speed: parseFloat(document.getElementById('agent-voice-speed').value),
+        tts_model: document.getElementById('agent-tts-model').value,
+        voice_id: document.getElementById('agent-voice').value || null,
+        voice_name: document.getElementById('agent-voice-name').value || null,
+        stability: parseFloat(document.getElementById('agent-stability').value),
+        llm_model: document.getElementById('agent-llm-model').value,
+        language: document.getElementById('agent-language').value || 'ky',
         functions: functionsValue,
       };
     }
@@ -1737,20 +1985,25 @@
         showNotification('Введите название агента', 'error');
         return;
       }
+      if (!data.voice_id) {
+        showNotification('Выберите голос ElevenLabs — без него агент не сможет говорить', 'error');
+        return;
+      }
+      if (Number.isNaN(data.stability)) data.stability = elevenOptions.default_stability;
 
       setLoading(true);
       try {
         if (currentAgentId) {
-          await apiRequest(`/cartesia-assistants/${currentAgentId}`, { method: 'PUT', body: data });
+          data.is_active = document.getElementById('agent-active').value === 'true';
+          await apiRequest(`/eleven-assistants/${currentAgentId}`, { method: 'PUT', body: data });
           showNotification('Агент обновлён', 'success');
-          await loadAgentData(currentAgentId);
         } else {
           if (!canCreateAssistant()) {
             showLimitReachedNotification();
             setLoading(false);
             return;
           }
-          const created = await apiRequest('/cartesia-assistants', { method: 'POST', body: data });
+          const created = await apiRequest('/eleven-assistants', { method: 'POST', body: data });
           currentAgentId = created.id;
           showNotification('Агент создан', 'success');
           await loadAssistantsLimitInfo();
@@ -1775,7 +2028,7 @@
         document.getElementById('confirm-modal').classList.remove('show');
         setLoading(true);
         try {
-          await apiRequest(`/cartesia-assistants/${currentAgentId}`, { method: 'DELETE' });
+          await apiRequest(`/eleven-assistants/${currentAgentId}`, { method: 'DELETE' });
           showNotification('Агент удалён', 'success');
           currentAgentId = null;
           await loadAgentsList();
@@ -1793,38 +2046,26 @@
     // ============================================================================
     // FUNCTIONS
     // ============================================================================
-    // Каталог функций грузим ровно один раз: switchToEditMode() и клик по вкладке
-    // «Функции» могут позвать загрузку параллельно, а повторный renderFunctions()
-    // пересоздал бы чекбоксы и сбросил уже сделанный (ещё не сохранённый) выбор.
-    let functionsLoadPromise = null;
-
     async function loadAvailableFunctions() {
-      if (functionsLoadPromise) return functionsLoadPromise;
-
-      functionsLoadPromise = (async () => {
-        try {
-          console.log('[FUNCTIONS] Загружаем список доступных функций...');
-          const functions = await apiRequest('/functions/');
-          availableFunctions = functions;
-          console.log('[FUNCTIONS] Загружено функций:', availableFunctions.length);
-          renderFunctions(functions);
-        } catch (error) {
-          console.error('[FUNCTIONS] Ошибка загрузки функций:', error);
-          functionsLoadPromise = null; // разрешаем повторную попытку
-          const container = document.getElementById('functions-container');
-          container.innerHTML = `
-            <div style="text-align: center; padding: 2rem; color: #ef4444;">
-              <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
-              <p>Ошибка загрузки функций: ${error.message}</p>
-              <button class="btn btn-outline" onclick="loadAvailableFunctions()" style="margin-top: 1rem;">
-                <i class="fas fa-sync-alt"></i> Попробовать снова
-              </button>
-            </div>
-          `;
-        }
-      })();
-
-      return functionsLoadPromise;
+      try {
+        console.log('[FUNCTIONS] Загружаем список доступных функций...');
+        const functions = await apiRequest('/functions/');
+        availableFunctions = functions;
+        console.log('[FUNCTIONS] Загружено функций:', availableFunctions.length);
+        renderFunctions(functions);
+      } catch (error) {
+        console.error('[FUNCTIONS] Ошибка загрузки функций:', error);
+        const container = document.getElementById('functions-container');
+        container.innerHTML = `
+          <div style="text-align: center; padding: 2rem; color: #ef4444;">
+            <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+            <p>Ошибка загрузки функций: ${error.message}</p>
+            <button class="btn btn-outline" onclick="loadAvailableFunctions()" style="margin-top: 1rem;">
+              <i class="fas fa-sync-alt"></i> Попробовать снова
+            </button>
+          </div>
+        `;
+      }
     }
 
     function renderFunctions(functions) {
@@ -1877,54 +2118,68 @@
           infoDiv.style.display = this.checked ? 'block' : 'none';
         });
       });
-
-      // Чекбоксы только что отрисованы — приводим их к сохранённому выбору
-      // агента (важно, если данные агента загрузились раньше рендера).
-      applyFunctionSelection();
-    }
-
-    // Приводит чекбоксы функций в соответствие с selectedFunctionNames.
-    function applyFunctionSelection() {
-      document.querySelectorAll('input[type="checkbox"][data-function-name]').forEach(cb => {
-        const name = cb.dataset.functionName;
-        const on = selectedFunctionNames.includes(name);
-        cb.checked = on;
-        const info = document.getElementById(`${name}-info`);
-        if (info) info.style.display = on ? 'block' : 'none';
-      });
     }
 
     function loadFunctions(agentFunctions) {
-      selectedFunctionNames = (agentFunctions || [])
-        .map(fn => (fn && fn.name) ? fn.name : fn)
-        .filter(Boolean);
-      // Применяем к уже отрисованным чекбоксам; если рендер ещё не случился,
-      // его финальный applyFunctionSelection() подхватит этот же выбор.
-      applyFunctionSelection();
+      document.querySelectorAll('input[type="checkbox"][data-function-name]').forEach(cb => {
+        cb.checked = false;
+        const info = document.getElementById(`${cb.dataset.functionName}-info`);
+        if (info) info.style.display = 'none';
+      });
+
+      if (!agentFunctions) return;
+
+      // Поддерживаем оба формата: [{name, ...}] / ["name"] и {"enabled_functions": ["name"]}
+      let names = [];
+      if (Array.isArray(agentFunctions)) {
+        names = agentFunctions.map(fn => fn.name || fn);
+      } else if (agentFunctions.enabled_functions) {
+        names = agentFunctions.enabled_functions;
+      }
+
+      names.forEach(name => {
+        const cb = document.querySelector(`input[data-function-name="${name}"]`);
+        if (cb) {
+          cb.checked = true;
+          const info = document.getElementById(`${name}-info`);
+          if (info) info.style.display = 'block';
+        }
+      });
     }
 
     // ============================================================================
     // NAVIGATION
     // ============================================================================
+    // Состояние страницы живёт в URL (?id= / ?mode=create) — initPage()
+    // восстанавливает его после перезагрузки
+    function setUrlState(params) {
+      const url = new URL(window.location);
+      url.searchParams.delete('id');
+      url.searchParams.delete('mode');
+      Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+      history.replaceState(null, '', url);
+    }
+
     function navigateToCreateAgent() {
       if (!canCreateAssistant()) {
         showLimitReachedNotification();
         return;
       }
       currentAgentId = null;
+      setUrlState({ mode: 'create' });
       initCreateMode();
       switchToEditMode();
     }
 
     function editAgent(id) {
       currentAgentId = id;
+      setUrlState({ id: id });
       switchToEditMode();
       loadAgentData(id);
     }
 
     function switchToEditMode() {
       document.getElementById('agents-list-container').classList.remove('show');
-      document.getElementById('setup-screen').classList.remove('show');
       document.getElementById('edit-container').classList.add('show');
       document.getElementById('create-agent-btn').style.display = 'none';
 
@@ -1945,7 +2200,7 @@
       updateCreateButtonState();
       currentAgentId = null;
       currentAgentFunctions = null;
-      selectedFunctionNames = [];
+      setUrlState({});
     }
 
     function initCreateMode() {
@@ -1953,19 +2208,28 @@
       document.getElementById('delete-agent-btn').style.display = 'none';
       document.getElementById('agent-id-info').style.display = 'none';
       document.getElementById('agent-id-display').textContent = '-';
+      document.getElementById('agent-active-wrap').style.display = 'none';
 
       document.getElementById('agent-name').value = '';
-      document.getElementById('agent-greeting').value = 'Здравствуйте! Чем я могу вам помочь?';
+      document.getElementById('agent-greeting').value = elevenOptions.default_greeting || DEFAULT_GREETING;
       document.getElementById('agent-description').value = '';
       document.getElementById('agent-system-prompt').value = '';
-      document.getElementById('agent-voice-id').value = '';
-      document.getElementById('agent-voice-speed').value = '1.0';
-      document.getElementById('voice-speed-value').textContent = '1.0';
+      document.getElementById('agent-active').value = 'true';
+
+      fillTtsModelSelect(elevenOptions.default_tts_model);
+      fillLanguageSelect(elevenOptions.default_language);
+      fillStabilitySelect(elevenOptions.default_stability);
+      fillSelect('agent-llm-model', elevenOptions.llm_models, elevenOptions.default_llm_model);
+      document.getElementById('library-panel').classList.remove('show');
+      loadAccountVoices('', '');
 
       // Сбрасываем функции
       currentAgentFunctions = null;
-      selectedFunctionNames = [];
-      applyFunctionSelection();
+      document.querySelectorAll('input[type="checkbox"][data-function-name]').forEach(cb => {
+        cb.checked = false;
+        const info = document.getElementById(`${cb.dataset.functionName}-info`);
+        if (info) info.style.display = 'none';
+      });
     }
 
     // ============================================================================
@@ -1977,38 +2241,34 @@
       await loadUserData();
 
       // Загружаем лимиты и применяем матрицу доступа к сайдбару всегда,
-      // независимо от наличия API ключей
+      // независимо от наличия кредов
       await loadAssistantsLimitInfo();
       applyFeatureAccessToSidebar();
 
-      const hasKeys = await loadApiKeysStatus();
+      await loadElevenOptions();
+      await loadServerStatus();
 
-      if (!hasKeys) {
-        checkApiKeyAndShowContent(false);
-      } else {
+      // Handle URL params
+      const params = new URLSearchParams(window.location.search);
+      const agentId = params.get('id');
+      const mode = params.get('mode');
 
-        // Handle URL params
-        const params = new URLSearchParams(window.location.search);
-        const agentId = params.get('id');
-        const mode = params.get('mode');
-
-        if (agentId) {
-          checkApiKeyAndShowContent(true);
-          await loadAvailableFunctions();
-          editAgent(agentId);
-        } else if (mode === 'create') {
-          if (!canCreateAssistant()) {
-            showLimitReachedNotification();
-            window.location.href = '/static/cartesia-agents.html';
-            return;
-          }
-          checkApiKeyAndShowContent(true);
-          await loadAvailableFunctions();
-          navigateToCreateAgent();
-        } else {
-          checkApiKeyAndShowContent(true);
-          await loadAgentsList();
+      if (agentId) {
+        showListContent();
+        await loadAvailableFunctions();
+        editAgent(agentId);
+      } else if (mode === 'create') {
+        if (!canCreateAssistant()) {
+          showLimitReachedNotification();
+          window.location.href = '/static/eleven-agents.html';
+          return;
         }
+        showListContent();
+        await loadAvailableFunctions();
+        navigateToCreateAgent();
+      } else {
+        showListContent();
+        await loadAgentsList();
       }
     }
 
@@ -2058,20 +2318,6 @@
       }
     });
 
-    // API keys
-    document.getElementById('save-keys-btn').addEventListener('click', saveApiKeys);
-    document.getElementById('clear-keys-btn').addEventListener('click', clearApiKeys);
-
-    // Toggle key visibility
-    document.getElementById('toggle-openai-key').addEventListener('click', () => {
-      const input = document.getElementById('openai-key-input');
-      input.type = input.type === 'password' ? 'text' : 'password';
-    });
-    document.getElementById('toggle-cartesia-key').addEventListener('click', () => {
-      const input = document.getElementById('cartesia-key-input');
-      input.type = input.type === 'password' ? 'text' : 'password';
-    });
-
     // Tabs
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -2086,10 +2332,31 @@
       });
     });
 
-    // Voice speed slider
-    document.getElementById('agent-voice-speed').addEventListener('input', (e) => {
-      document.getElementById('voice-speed-value').textContent = e.target.value;
+    // Модель синтеза → описание и цена под селектом
+    document.getElementById('agent-tts-model').addEventListener('change', updateTtsModelHint);
+
+    // Язык → перезагружаем голоса с новой раскладкой «рекомендованные первыми»
+    document.getElementById('agent-language').addEventListener('change', () => {
+      const sel = document.getElementById('agent-voice');
+      const opt = sel.options[sel.selectedIndex];
+      loadAccountVoices(sel.value, opt ? (opt.dataset.name || '') : '');
     });
+
+    document.getElementById('agent-voice').addEventListener('change', onVoiceChanged);
+    document.getElementById('reload-voices-btn').addEventListener('click', () => {
+      const sel = document.getElementById('agent-voice');
+      const opt = sel.options[sel.selectedIndex];
+      loadAccountVoices(sel.value, opt ? (opt.dataset.name || '') : '', true);
+    });
+
+    document.getElementById('toggle-library-btn').addEventListener('click', () => {
+      const panel = document.getElementById('library-panel');
+      panel.classList.toggle('show');
+      if (panel.classList.contains('show') && !document.getElementById('library-list').querySelector('.library-item')) searchLibrary(false);
+    });
+    document.getElementById('library-search-btn').addEventListener('click', () => searchLibrary(false));
+    document.getElementById('library-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchLibrary(false); } });
+    document.getElementById('library-more-btn').addEventListener('click', () => { libraryPage += 1; searchLibrary(true); });
 
     // Confirm modal cancel
     document.getElementById('confirm-cancel').addEventListener('click', () => {

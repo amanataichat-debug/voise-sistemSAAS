@@ -35,6 +35,7 @@ execute_and_send_function_result (function_calls.py), что у OpenAI-хенд�
 
 import asyncio
 import base64
+import contextvars
 import json
 import time
 import traceback
@@ -71,13 +72,19 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 QUIET_OPENAI_ERRORS = {"response_cancel_not_active", "cancel_not_active"}
 
 
+# Префикс логов: FishVoiceSession переиспользует Eleven-хендлер (handler_eleven.py),
+# который выставляет свой тег в контексте задачи — все вложенные задачи его наследуют.
+LOG_TAG: contextvars.ContextVar = contextvars.ContextVar("voice_session_log_tag", default="FISH")
+
+
 def _log(message: str, level: str = "INFO") -> None:
+    tag = LOG_TAG.get()
     if level == "ERROR":
-        logger.error(f"[FISH] {message}")
+        logger.error(f"[{tag}] {message}")
     elif level == "WARNING":
-        logger.warning(f"[FISH] {message}")
+        logger.warning(f"[{tag}] {message}")
     else:
-        logger.info(f"[FISH] {message}")
+        logger.info(f"[{tag}] {message}")
 
 
 async def _save_dialog(assistant_id: str, user_message: str, assistant_message: str,
@@ -105,20 +112,23 @@ async def _save_dialog(assistant_id: str, user_message: str, assistant_message: 
 
 class FishVoiceSession:
     """
-    Один диалог: сокет клиента + OpenAI (текст) + Fish (звук).
+    Один диалог: сокет клиента + OpenAI (текст) + синтез (Fish или ElevenLabs).
 
     Хендлер создаёт сессию после проверок и вызывает run(); всё состояние хода
     (стенограммы, активный ответ, ожидающие вызовы функций) живёт здесь.
+    tts — любой клиент с интерфейсом FishTTSClient (say / end_of_response / clear /
+    close, speaking, audio_bytes, chunks); provider — тип ассистента для контекста функций.
     """
 
     def __init__(
         self,
         websocket: WebSocket,
-        assistant: FishAssistantConfig,
+        assistant,
         llm: FishLLMClient,
-        tts: FishTTSClient,
+        tts,
         db: Optional[Session],
         client_id: str,
+        provider: str = "fish",
     ) -> None:
         self.ws = websocket
         self.assistant = assistant
@@ -126,6 +136,7 @@ class FishVoiceSession:
         self.tts = tts
         self.db = db
         self.client_id = client_id
+        self.provider = provider
 
         self.response_active = False
         self.response_id: Optional[str] = None
@@ -344,7 +355,7 @@ class FishVoiceSession:
                 "client_id": self.client_id,
                 "db_session": self.db,
                 "websocket": self.ws,
-                "provider": "fish",
+                "provider": self.provider,
             },
             user_transcript=self.user_transcript or self.last_user_transcript,
         ))
@@ -471,7 +482,7 @@ class FishVoiceSession:
                 f"session {self.client_id} finished: {time.time() - started:.1f}s, "
                 f"interruptions={self.interruptions} functions={self.function_calls} "
                 f"tokens_in={self.tokens_in} tokens_out={self.tokens_out} "
-                f"fish_audio={self.tts.audio_bytes / (TTS_RATE * 2):.1f}s in {self.tts.chunks} chunks"
+                f"tts_audio={self.tts.audio_bytes / (TTS_RATE * 2):.1f}s in {self.tts.chunks} chunks"
             )
 
 

@@ -20,7 +20,7 @@ from backend.models.base import Base
 
 # Типы ассистентов, которые умеет обслуживать телефонный тракт: у каждого есть
 # браузерный хендлер с протоколом виджета, который заворачивается в HandlerSocket.
-SIP_SUPPORTED_ASSISTANT_TYPES = ("openai", "gemini", "fish")
+SIP_SUPPORTED_ASSISTANT_TYPES = ("openai", "gemini", "fish", "eleven")
 
 # Префиксы мобильных номеров оператора O! (НУР Телеком) в national-формате.
 # Транк пропускает исходящие только на номера O!, поэтому чужие префиксы
@@ -49,7 +49,7 @@ class SipPhoneNumber(Base):
     gateway_id = Column(String(50), nullable=False, default="sip-gw-1")
 
     # Привязка к ассистенту: "openai" → assistant_configs, "gemini" → gemini_assistant_configs,
-    # "fish" → fish_assistant_configs
+    # "fish" → fish_assistant_configs, "eleven" → eleven_assistant_configs
     assistant_type = Column(String(20), nullable=True)
     assistant_id = Column(UUID(as_uuid=True), nullable=True)
 

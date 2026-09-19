@@ -1,7 +1,7 @@
 # services/ — слой бизнес-логики между API/WebSocket-ами и моделями
 
 ## Назначение
-`backend/services/` содержит сервисный слой Voksy AI: вся доменная логика, которая не должна жить в роутерах FastAPI или в ORM-моделях. Здесь же находится «мозг» автономного обзвона — оркестратор Voksy AI Agent (PreCall / PostCall / Chat), кредитный/биллинговый учёт, интеграции с внешними API (OpenRouter, OpenAI, Robokassa, Pinecone, Cloudflare R2, Voximplant Partner, Telegram, Google Sheets, ElevenLabs, SMTP). Сервисы вызываются из `backend/api/`, `backend/websockets/`, `backend/functions/` и фоновых планировщиков из `backend/core/`. Большинство сервисов — классы со `@staticmethod`/`@classmethod` либо синглтоны; собственного состояния обычно не держат, работают через переданную `Session`.
+`backend/services/` содержит сервисный слой Voksy AI: вся доменная логика, которая не должна жить в роутерах FastAPI или в ORM-моделях. Здесь же находится «мозг» автономного обзвона — оркестратор Voksy AI Agent (PreCall / PostCall / Chat), кредитный/биллинговый учёт, интеграции с внешними API (OpenRouter, OpenAI, Robokassa, Pinecone, Cloudflare R2, Voximplant Partner, Telegram, Google Sheets, SMTP; ElevenLabs — только TTS из `websockets/eleven_tts_client.py`). Сервисы вызываются из `backend/api/`, `backend/websockets/`, `backend/functions/` и фоновых планировщиков из `backend/core/`. Большинство сервисов — классы со `@staticmethod`/`@classmethod` либо синглтоны; собственного состояния обычно не держат, работают через переданную `Session`.
 
 ## Состав
 
@@ -15,7 +15,7 @@
 ### Кредиты / биллинг / подписки
 - `credit_service.py` — атомарный учёт кредитов (`users.credits_balance`) через `SELECT ... FOR UPDATE`; `precheck`, `calculate_cost`, `charge`, гранты (trial/subscription/purchase), `refund`, `manual_adjust`; исключения `InsufficientCreditsError`, `SubscriptionExpiredError`, `SubscriptionRequiredError`; `activate_agent_trial`.
 - `cascade_credit_service.py` — второй, независимый кошелёк: кредиты каскад-ассистентов (`users.cascade_credits_balance`, транзакции с `product='cascade'`). Не связан ни с кредитами оркестратора, ни с подпиской `agent` — доступен на всех тарифах, включая free. `calculate_cost`, `charge`, `grant_trial` (разовый стартовый пакет), `grant_purchase`, `manual_adjust`, `get_balance`, `get_transactions`. Гейт по балансу стоит не в CRUD, а на старте звонка (`telephony.py`: outbound-config / config).
-- `assistant_limit_service.py` — единый подсчёт ассистентов пользователя по всем таблицам провайдеров (OpenAI/Gemini/Grok/Cascade/Cartesia/Yandex/Translate) для лимита тарифа: `count_user_assistants`, `get_assistants_breakdown`, `get_assistants_usage`. Голосовые ассистенты мастера Voksy AI Agent исключаются по внешним ключам в `agent_configs`. Используется `core/dependencies.enforce_assistant_limit` и `GET /api/subscriptions/assistants-usage`.
+- `assistant_limit_service.py` — единый подсчёт ассистентов пользователя по всем таблицам провайдеров (OpenAI/Gemini/Grok/Fish/Eleven/Cascade/Cartesia/Yandex/Translate) для лимита тарифа: `count_user_assistants`, `get_assistants_breakdown`, `get_assistants_usage`. Голосовые ассистенты мастера Voksy AI Agent исключаются по внешним ключам в `agent_configs`. Используется `core/dependencies.enforce_assistant_limit` и `GET /api/subscriptions/assistants-usage`.
 - `subscription_blocker.py` — фоновый раннер (каждые 5 мин): блокирует истёкшие подписки тарифа `agent` и отменяет их SCHEDULED-задачи. Кредиты не сгорают.
 - `subscription_service.py` — управление планами подписки, активация триалов (в т.ч. реферальных), лог событий подписки.
 - `payment_service.py` — `RobokassaService`: формирование платёжных ссылок, проверка подписи, расчёт длительности подписки по сумме/периоду, интеграция с партнёрскими комиссиями. ⚠️ Провайдер — Robokassa (а не YooKassa, как указано в корневом CLAUDE.md).
@@ -25,7 +25,6 @@
 ### Ассистенты / диалоги / контент
 - `assistant_service.py` — CRUD OpenAI-ассистентов (`AssistantConfig`), генерация embed-кода.
 - `conversation_service.py` — трекинг и анализ диалогов; нормализация телефонов, направление звонка, авто-создание CRM-контактов, поддержка OpenAI/Gemini/Cartesia ассистентов.
-- `elevenlabs_service.py` — клиент ElevenLabs API (агенты, документы базы знаний/RAG, кеширование).
 - `function_log_service.py` — запись логов вызовов AI-функций (`FunctionLog`).
 - `integration_service.py` — CRUD интеграций ассистента.
 
@@ -40,15 +39,15 @@
 
 ### Пользователи / файлы / стриминг
 - `auth_service.py` — регистрация/логин, JWT, обработка UTM и реферальных кодов при регистрации.
-- `user_service.py` — управление аккаунтом и пользовательскими API-ключами (gemini/grok/elevenlabs).
+- `user_service.py` — управление аккаунтом и пользовательскими API-ключами (gemini/grok; поле `elevenlabs_api_key` сохранилось, но не используется).
 - `file_service.py` — загрузка/обработка файлов базы знаний (валидация расширений/типов).
 - `browser_agent_service.py` — ⚠️ несмотря на имя, это LLM-стриминг-сервис: стриминг текстовых ответов OpenAI Chat API на фронтенд через WebSocket во время голосового взаимодействия Gemini (`get_browser_agent_service`, `stream_response`, события `llm.stream.*`). Реального браузера/Playwright не использует.
 - `openrouter_client.py` — тонкий async-клиент OpenRouter (`chat_completion`) на системном ключе `settings.OPENROUTER_API_KEY`; синглтон `get_openrouter_client`.
 - `llm_streaming/` — отдельный пакет low-latency стриминга OpenAI Chat для функции `query_llm` (см. дочернюю доку).
 
 ### Собственная SIP-телефония
-- `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations`/`fish_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
-- `conversation_service.save_conversation` выбирает таблицу по типу ассистента: Gemini → `gemini_conversations`, Fish → `fish_conversations`, остальные → `conversations` (там FK на `assistant_configs`). `tag_conversations` в SIP-сервисе использует ту же карту.
+- `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations`/`fish_conversations`/`eleven_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
+- `conversation_service.save_conversation` выбирает таблицу по типу ассистента: Gemini → `gemini_conversations`, Fish → `fish_conversations`, Eleven → `eleven_conversations`, остальные → `conversations` (там FK на `assistant_configs`). `tag_conversations` в SIP-сервисе использует ту же карту.
 
 ## Ключевые сущности / точки входа
 
@@ -66,7 +65,7 @@
 
 ## Связи с другими частями проекта
 - **Используется:** `backend/api/` (роутеры дергают сервисы), `backend/websockets/` (handler'ы голоса вызывают conversation/telegram/webhook/credit-сервисы), `backend/functions/` (модульные AI-функции используют `pinecone_service`, `google_sheets_service`, `llm_streaming`, `telegram_notification`), `backend/core/` (планировщики `scheduler`, `task_scheduler`, фоновый `subscription_blocker`).
-- **Использует:** `backend/models/` (User, AgentConfig, AgentContact, AgentCall, Task, Conversation, Subscription/Plan, CreditTransaction, CreditPackage, Partner и др.), `backend/core/` (`config.settings`, `logging`, `db.session.SessionLocal`), `backend/schemas/` (Pydantic-схемы запросов/ответов), внешние API: OpenRouter, OpenAI (Realtime/Responses/Chat/Embeddings), Pinecone, Cloudflare R2, Robokassa, Voximplant Partner, Telegram Bot API, Google Sheets, ElevenLabs, SMTP.
+- **Использует:** `backend/models/` (User, AgentConfig, AgentContact, AgentCall, Task, Conversation, Subscription/Plan, CreditTransaction, CreditPackage, Partner и др.), `backend/core/` (`config.settings`, `logging`, `db.session.SessionLocal`), `backend/schemas/` (Pydantic-схемы запросов/ответов), внешние API: OpenRouter, OpenAI (Realtime/Responses/Chat/Embeddings), Pinecone, Cloudflare R2, Robokassa, Voximplant Partner, Telegram Bot API, Google Sheets, SMTP.
 
 ## На что обратить внимание
 - **Ключи и конфиг:** `OPENROUTER_API_KEY` (оркестратор), `OPENAI_API_KEY`, `PINECONE_API_KEY`/`PINECONE_ENVIRONMENT`, `ROBOKASSA_MERCHANT_LOGIN`/`PASSWORD_1`/`PASSWORD_2`, R2-креды, Voximplant Partner-креды. Часть берётся из `settings` (Pydantic), часть — напрямую из `os.environ` (Pinecone).
@@ -76,7 +75,7 @@
 - **Инварианты кредитов:** все мутации баланса строго через `SELECT ... FOR UPDATE`; каждая операция фиксируется в `credit_transactions` (источник правды). `charge` никогда не уводит баланс в минус и не бросает исключений (оркестратор уже отработал). Гранты trial идемпотентны (по типу транзакции).
 - **Блокировка подписок:** `subscription_blocker` отменяет SCHEDULED agent-задачи истёкших подписок, но НЕ списывает кредиты. Админ освобождён от проверок подписки, но НЕ от проверки баланса.
 - **Telegram:** агентский Telegram (`agent_telegram_service`) — это отдельный механизм от уведомлений о звонках (`telegram_notification`). Оба используют только REST через httpx, без python-telegram-bot. Markdown-таблицы в Telegram запрещены (узкий экран) — конвертеры это учитывают.
-- **Размер файлов:** `voximplant_partner.py` (~75 КБ) и `elevenlabs_service.py` (~51 КБ) — крупные; перед правкой искать конкретный метод, а не читать целиком.
+- **Размер файлов:** `voximplant_partner.py` (~75 КБ) — крупный; перед правкой искать конкретный метод, а не читать целиком.
 
 ## Связанные файлы документации
 - `../claude-backend.md` — родительская

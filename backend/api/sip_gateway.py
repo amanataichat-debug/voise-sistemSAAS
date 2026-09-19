@@ -53,6 +53,7 @@ from backend.websockets.sip_media_adapter import HandlerSocket
 from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
 from backend.websockets.handler_fish import handle_fish_websocket_connection
+from backend.websockets.handler_eleven import handle_eleven_websocket_connection
 
 # Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
 # Новый провайдер подключается сюда + в SIP_SUPPORTED_ASSISTANT_TYPES + HANDLER_IN_RATE адаптера.
@@ -60,6 +61,7 @@ SIP_HANDLERS = {
     "openai": handle_live_websocket_connection,  # GPT-Live (gpt-live-1), full-duplex
     "gemini": handle_gemini_websocket_connection,
     "fish": handle_fish_websocket_connection,
+    "eleven": handle_eleven_websocket_connection,  # OpenAI Realtime текст + ElevenLabs TTS
 }
 
 logger = get_logger(__name__)

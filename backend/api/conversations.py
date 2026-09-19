@@ -39,6 +39,7 @@ from backend.models.cartesia_assistant import CartesiaAssistantConfig
 from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.grok_assistant import GrokAssistantConfig  # 🆕 cascade
 from backend.models.fish_assistant import FishAssistantConfig, FishConversation  # 🆕 fish
+from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation  # eleven
 from backend.models.function_log import FunctionLog
 
 logger = get_logger(__name__)
@@ -201,6 +202,9 @@ def get_user_assistant_ids(db: Session, user_id: UUID) -> List[UUID]:
     fish_ids = db.query(FishAssistantConfig.id).filter(
         FishAssistantConfig.user_id == user_id
     ).all()
+    eleven_ids = db.query(ElevenAssistantConfig.id).filter(
+        ElevenAssistantConfig.user_id == user_id
+    ).all()
 
     all_ids = (
         [a.id for a in openai_ids]
@@ -209,6 +213,7 @@ def get_user_assistant_ids(db: Session, user_id: UUID) -> List[UUID]:
         + [a.id for a in yandex_ids]
         + [a.id for a in cascade_ids]
         + [a.id for a in fish_ids]
+        + [a.id for a in eleven_ids]
     )
 
     return all_ids
@@ -260,6 +265,12 @@ def find_assistant_by_id(db: Session, assistant_id: UUID):
 
     if assistant:
         return assistant, 'fish'
+
+    assistant = db.query(ElevenAssistantConfig).filter(
+        ElevenAssistantConfig.id == assistant_id
+    ).first()
+    if assistant:
+        return assistant, 'eleven'
 
     # Try cascade (GrokAssistantConfig)
     assistant = db.query(GrokAssistantConfig).filter(
@@ -499,6 +510,10 @@ async def get_conversation_sessions(
             FishAssistantConfig.user_id == current_user.id
         ).all()
         fish_id_set = {str(f.id) for f in fish_ids}
+        eleven_ids = db.query(ElevenAssistantConfig.id).filter(
+            ElevenAssistantConfig.user_id == current_user.id
+        ).all()
+        eleven_id_set = {str(e.id) for e in eleven_ids}
 
         # =============================================================================
         # 🆕 v3.6: Сессии из conversations (OpenAI и др.) + gemini_conversations одним
@@ -521,6 +536,7 @@ async def get_conversation_sessions(
             _sessions_select(Conversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
             _sessions_select(GeminiConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
             _sessions_select(FishConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
+            _sessions_select(ElevenConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
         ).subquery("sessions")
 
         # Подсчет общего количества
@@ -547,7 +563,7 @@ async def get_conversation_sessions(
             # PostgreSQL DISTINCT ON - берём первую запись для каждой сессии по времени,
             # из обеих таблиц (conversations и gemini_conversations)
             try:
-                for table_name in ("conversations", "gemini_conversations", "fish_conversations"):
+                for table_name in ("conversations", "gemini_conversations", "fish_conversations", "eleven_conversations"):
                     preview_results = db.execute(_preview_sql(table_name), {"session_ids": session_ids}).fetchall()
                     for row in preview_results:
                         if row.preview and row.session_id not in preview_map:
@@ -559,7 +575,7 @@ async def get_conversation_sessions(
                 # Fallback - загружаем по одному (медленнее, но работает везде)
                 for session_id in session_ids:
                     first_msg = None
-                    for model in (Conversation, GeminiConversation, FishConversation):
+                    for model in (Conversation, GeminiConversation, FishConversation, ElevenConversation):
                         first_msg = db.query(model).filter(
                             model.session_id == session_id
                         ).order_by(model.created_at.asc()).first()
@@ -600,6 +616,12 @@ async def get_conversation_sessions(
         for fc in fish_conv_query:
             conv_to_session[str(fc.id)] = fc.session_id
             conv_ids.append(fc.id)
+        eleven_conv_query = db.query(ElevenConversation.id, ElevenConversation.session_id).filter(
+            ElevenConversation.session_id.in_(session_ids)
+        ).all()
+        for ec in eleven_conv_query:
+            conv_to_session[str(ec.id)] = ec.session_id
+            conv_ids.append(ec.id)
         
         logger.info(f"   🔧 Total conversation IDs for function lookup: {len(conv_ids)} (OpenAI: {len(conv_ids_query)}, Gemini: {len(gemini_conv_query)})")
         
@@ -667,6 +689,8 @@ async def get_conversation_sessions(
                 assistant_type = 'cascade'
             elif str(s.assistant_id) in fish_id_set:
                 assistant_type = 'fish'
+            elif str(s.assistant_id) in eleven_id_set:
+                assistant_type = 'eleven'
             else:
                 assistant_type = 'openai'
             
@@ -1038,7 +1062,7 @@ async def get_conversation_detail(
             message_ids = [msg.id for msg in all_messages]
             
             # Для Gemini и Fish также ищем в их таблицах диалогов
-            provider_model = {'gemini': GeminiConversation, 'fish': FishConversation}.get(assistant_type)
+            provider_model = {'gemini': GeminiConversation, 'fish': FishConversation, 'eleven': ElevenConversation}.get(assistant_type)
             if provider_model is not None:
                 provider_messages = db.query(provider_model.id).filter(
                     provider_model.session_id == session_id

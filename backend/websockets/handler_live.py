@@ -48,7 +48,6 @@ from backend.core.logging import get_logger
 from backend.functions import normalize_function_name
 from backend.models.assistant import AssistantConfig
 from backend.models.conversation import Conversation
-from backend.models.elevenlabs import ElevenLabsAgent
 from backend.models.user import User
 from backend.services.conversation_service import ConversationService
 from backend.websockets.function_calls import (
@@ -587,17 +586,6 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
 
     try:
         await websocket.accept()
-
-        # ElevenLabs-агент по этому id — виджет переключится сам
-        elevenlabs_agent = db.query(ElevenLabsAgent).filter(ElevenLabsAgent.id == assistant_id).first()
-        if elevenlabs_agent:
-            await websocket.send_json({
-                "type": "elevenlabs_agent_detected",
-                "agent_info": {"id": str(elevenlabs_agent.id), "name": elevenlabs_agent.name},
-            })
-            await asyncio.sleep(1)
-            await websocket.close(code=1000)
-            return
 
         if assistant_id == "demo":
             assistant = db.query(AssistantConfig).filter(AssistantConfig.is_public.is_(True)).first()

@@ -144,6 +144,11 @@ class Settings(BaseSettings):
     # диалог ведёт OpenAI Realtime на OPENAI_API_KEY, озвучивает Fish на этом ключе.
     FISH_API_KEY: Optional[str] = os.getenv("FISH_API_KEY")
 
+    # ElevenLabs — серверный ключ синтеза речи для Eleven-ассистентов
+    # (backend/websockets/handler_eleven.py). Как у Fish: диалог ведёт OpenAI Realtime на
+    # OPENAI_API_KEY, озвучивает ElevenLabs (Eleven v3, кыргызский по умолчанию) на этом ключе.
+    ELEVENLABS_API_KEY: Optional[str] = os.getenv("ELEVENLABS_API_KEY")
+
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.
     GEMINI_LIVE_MODEL: str = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")

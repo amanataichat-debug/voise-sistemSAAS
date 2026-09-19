@@ -31,6 +31,7 @@ from backend.models.sip_gateway import (
 from backend.models.assistant import AssistantConfig
 from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConversation
 from backend.models.fish_assistant import FishAssistantConfig, FishConversation
+from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation
 from backend.models.agent_config import AgentConfig
 from backend.models.conversation import Conversation
 from backend.models.task import Task, TaskStatus
@@ -151,6 +152,8 @@ class SipGatewayService:
             return db.query(GeminiAssistantConfig).filter(GeminiAssistantConfig.id == aid).first()
         if assistant_type == "fish":
             return db.query(FishAssistantConfig).filter(FishAssistantConfig.id == aid).first()
+        if assistant_type == "eleven":
+            return db.query(ElevenAssistantConfig).filter(ElevenAssistantConfig.id == aid).first()
         return None
 
     # ------------------------------------------------------------------ calls
@@ -382,7 +385,8 @@ class SipGatewayService:
             phone, direction = call.to_number, "OUTBOUND"
         if not phone:
             return 0
-        model = {"gemini": GeminiConversation, "fish": FishConversation}.get(call.assistant_type, Conversation)
+        model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
+            call.assistant_type, Conversation)
         rows = (
             db.query(model)
             .filter(

@@ -28,7 +28,7 @@ from backend.core.logging import setup_logging, get_logger
 from backend.api import (
     auth, users, assistants, files, websocket, healthcheck, 
     subscriptions, subscription_logs, admin, 
-    knowledge_base, payments, voximplant, elevenlabs, conversations,
+    knowledge_base, payments, voximplant, conversations,
     email_verification,
     embeds,
     gemini_ws,  # ✅ Gemini WebSocket API
@@ -39,6 +39,8 @@ from backend.api import (
     yandex_assistants,  # 🆕 Yandex Assistants CRUD API (SpeechKit Realtime)
     fish_assistants,  # 🆕 Fish Assistants CRUD API (Fish Audio TTS)
     fish_ws,  # 🆕 Fish voice WebSocket: /ws/fish/{id} (OpenAI Realtime текст + Fish Audio)
+    eleven_assistants,  # Eleven Assistants CRUD API (OpenAI Realtime текст + ElevenLabs TTS, кыргызский по умолчанию)
+    eleven_ws,  # Eleven voice WebSocket: /ws/eleven/{id}
     sip_gateway,  # 📞 Собственная SIP-телефония (шлюз Asterisk + мост)
     translate_assistants,  # 🆕 v1.0: Translate Assistants CRUD API
     translate_ws,  # 🆕 v1.0: Translate WebSocket API
@@ -210,11 +212,13 @@ app.include_router(grok_assistants.router, prefix="/api/grok-assistants", tags=[
 app.include_router(cartesia_assistants.router, prefix="/api/cartesia-assistants", tags=["Cartesia Assistants"])  # 🆕 v4.0
 app.include_router(yandex_assistants.router, prefix="/api/yandex-assistants", tags=["Yandex Assistants"])  # 🆕 Yandex SpeechKit Realtime
 app.include_router(fish_assistants.router, prefix="/api/fish-assistants", tags=["Fish Assistants"])  # 🆕 Fish Audio TTS
+app.include_router(eleven_assistants.router, prefix="/api/eleven-assistants", tags=["Eleven Assistants"])  # ElevenLabs TTS
 app.include_router(translate_assistants.router, prefix="/api/translate-assistants", tags=["Translate Assistants"])  # 🆕 v1.0
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(gemini_ws.router, tags=["Gemini WebSocket"])  # BEFORE websocket.router — /ws/llm-stream must match before /ws/{assistant_id}
 app.include_router(translate_ws.router, tags=["Translate WebSocket"])  # BEFORE websocket.router — /ws/translate/{id} must match before /ws/{assistant_id}
 app.include_router(fish_ws.router, tags=["Fish WebSocket"])  # BEFORE websocket.router — /ws/fish/{id} must match before /ws/{assistant_id}
+app.include_router(eleven_ws.router, tags=["Eleven WebSocket"])  # BEFORE websocket.router — /ws/eleven/{id}
 app.include_router(sip_gateway.router, tags=["SIP Gateway"])  # BEFORE websocket.router — /ws/sip/{call_id} and /ws/sip-gateway/control must match before /ws/{assistant_id}
 app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(grok_ws.router, tags=["Grok WebSocket"])  # 🆕 v3.0
@@ -225,7 +229,6 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
-app.include_router(elevenlabs.router, prefix="/api/elevenlabs", tags=["ElevenLabs"])
 app.include_router(partners_router, prefix="/api/partners", tags=["Partners"])
 app.include_router(conversations.router, prefix="/api/conversations", tags=["Conversations"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["CRM"])
@@ -310,7 +313,6 @@ def create_elevenlabs_tables():
     Create ElevenLabs tables and automatically add missing columns
     """
     try:
-        from backend.models.elevenlabs import ElevenLabsAgent, ElevenLabsConversation
         from backend.models.base import Base
         from sqlalchemy import text, inspect
         
@@ -367,10 +369,7 @@ def create_elevenlabs_tables():
             logger.error(f"❌ Error checking users table: {str(table_error)}")
         
         # Проверяем другие возможные недостающие таблицы
-        required_tables = {
-            'elevenlabs_agents': ElevenLabsAgent,
-            'elevenlabs_conversations': ElevenLabsConversation,
-        }
+        required_tables = {}  # таблицы ElevenLabs Conversational AI больше не создаются (интеграция удалена)
         
         for table_name, model_class in required_tables.items():
             if not inspector.has_table(table_name):
@@ -585,6 +584,19 @@ def create_cartesia_tables():
 
     except Exception as e:
         logger.error(f"❌ Error creating Cartesia tables: {str(e)}")
+        if not settings.PRODUCTION:
+            raise
+
+
+def create_eleven_tables():
+    """Таблицы Eleven-ассистентов (OpenAI Realtime текстом + ElevenLabs TTS)."""
+    try:
+        from backend.models.base import Base
+        from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation
+        Base.metadata.create_all(engine, tables=[ElevenAssistantConfig.__table__, ElevenConversation.__table__], checkfirst=True)
+        logger.info("✅ Eleven tables ready")
+    except Exception as e:
+        logger.error(f"❌ Error creating Eleven tables: {str(e)}")
         if not settings.PRODUCTION:
             raise
 
@@ -2134,6 +2146,7 @@ async def startup_event():
 
                 # 🐟 Создаем таблицы Fish
                 create_fish_tables()
+                create_eleven_tables()
 
                 # 🆕 Шаг 11: Сидинг данных системы кредитов (план agent + пакеты)
                 seed_credits_data()
@@ -2284,14 +2297,11 @@ async def startup_event():
         except Exception as e:
             logger.error(f"❌ Error initializing Voximplant integration: {str(e)}")
         
-        # Логирование инициализации ElevenLabs интеграции
-        try:
-            logger.info("🎙️ ElevenLabs integration initialized")
-            logger.info(f"   API endpoints: {settings.HOST_URL}/api/elevenlabs/")
-            logger.info(f"   WebSocket endpoint: {settings.HOST_URL}/api/elevenlabs/ws/{{agent_id}}")
-            logger.info(f"   Voice generation endpoint: {settings.HOST_URL}/api/elevenlabs/generate")
-        except Exception as e:
-            logger.error(f"❌ Error initializing ElevenLabs integration: {str(e)}")
+        # Eleven-ассистенты (OpenAI Realtime текст + ElevenLabs TTS на серверном ключе)
+        logger.info(
+            f"🎙️ Eleven assistants: {settings.HOST_URL}/api/eleven-assistants/, ws {settings.HOST_URL}/ws/eleven/{{id}} "
+            f"(ELEVENLABS_API_KEY {'configured' if settings.ELEVENLABS_API_KEY else 'NOT configured'})"
+        )
         
         # Логирование инициализации Conversations API
         try:
@@ -2460,7 +2470,7 @@ async def health_check():
             "gemini_assistants_crud": True,
             "grok_voice": True,  # 🆕 v3.0
             "grok_assistants_crud": True,  # 🆕 v3.0
-            "elevenlabs": True,
+            "eleven_assistants": True,  # OpenAI text + ElevenLabs TTS
             "voximplant": True,
             "embeds": True,
             "email_verification": True,

@@ -102,7 +102,7 @@ class User(Base, BaseModel):
     translate_assistants = relationship("TranslateAssistantConfig", back_populates="user", cascade="all, delete-orphan")  # ✅ v1.0
     files = relationship("File", back_populates="user", cascade="all, delete-orphan")
     subscription_plan_rel = relationship("SubscriptionPlan", foreign_keys=[subscription_plan_id])
-    elevenlabs_agents = relationship("ElevenLabsAgent", back_populates="user", cascade="all, delete-orphan")
+    eleven_assistants = relationship("ElevenAssistantConfig", back_populates="user", cascade="all, delete-orphan")  # OpenAI text + ElevenLabs TTS
    
     def __repr__(self):
         """Строковое представление пользователя"""

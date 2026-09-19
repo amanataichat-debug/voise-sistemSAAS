@@ -23,7 +23,6 @@ from .pinecone_config import PineconeConfig
 from .subscription import SubscriptionPlan, SubscriptionLog, PaymentTransaction
 
 # ✅ ДОБАВЛЕНО: Импортируем ElevenLabs модели
-from .elevenlabs import ElevenLabsAgent, ElevenLabsConversation
 
 from .function_log import FunctionLog
 
@@ -48,6 +47,9 @@ from .yandex_assistant import YandexAssistantConfig, YandexConversation
 
 # ✅ Fish модель (OpenAI Realtime текстом + озвучка Fish Audio) и её журнал диалогов
 from .fish_assistant import FishAssistantConfig, FishConversation
+
+# Eleven-ассистент (OpenAI Realtime текстом + озвучка ElevenLabs) и его журнал
+from .eleven_assistant import ElevenAssistantConfig, ElevenConversation
 
 # ✅ НОВОЕ: Импортируем Contact и ContactNote для CRM
 from .contact import Contact, ContactNote
@@ -111,9 +113,9 @@ __all__ = [
     "SubscriptionPlan",
     "SubscriptionLog", 
     "PaymentTransaction",
-    # ElevenLabs модели
-    "ElevenLabsAgent",
-    "ElevenLabsConversation",
+    # Eleven-ассистенты
+    "ElevenAssistantConfig",
+    "ElevenConversation",
     "FunctionLog",
     # ✅ НОВОЕ: Email верификация
     "EmailVerification",

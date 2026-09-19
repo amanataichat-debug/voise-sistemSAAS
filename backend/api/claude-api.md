@@ -15,13 +15,14 @@
 - `grok_assistants.py` — `/api/grok-assistants` — xAI Grok Voice **и каскад-ассистенты**: `/cascade*` (CRUD, справочник TTS, кошелёк кредитов каскада). Каскад хранится в той же таблице, что и Grok, и различается `assistant_type='cascade'`; порядок роутов важен — все `/cascade/*` объявлены до `/{assistant_id}`. CRUD каскада и `/cascade/credits/balance` принимают авторизацию `get_current_user_flexible` (JWT или `X-Api-Key`), остальные роуты — только JWT.
 - `cartesia_assistants.py` — `/api/cartesia-assistants` — Cartesia TTS (тип работал только через Voximplant — сейчас не звонит, ждёт переноса на хендлер).
 - `fish_assistants.py` — `/api/fish-assistants` — Fish-ассистенты: CRUD, `/options` (модели синтеза, латентность, `llm_models`), `/status` (настроены ли на сервере `OPENAI_API_KEY` и `FISH_API_KEY`). Пользовательских ключей у Fish нет.
+- `eleven_assistants.py` — `/api/eleven-assistants` — Eleven-ассистенты (OpenAI текст + ElevenLabs TTS, серверный ключ `ELEVENLABS_API_KEY`): CRUD (`voice_id`, `voice_name`, `tts_model`, `stability`, `language` по умолчанию `ky`, `llm_model`, `greeting_message` по умолчанию на кыргызском), `/options` (модели синтеза с описанием и ценой за 1000 символов, языки, уровни стабильности, `llm_models`, `default_greeting`), `/status`, `/voices?language=` (голоса аккаунта ElevenLabs, `recommended=true` у голосов с подтверждённым языком — они первыми), `/voices/library?language=&search=&gender=&page=` (публичная библиотека, пробует алиасы кода языка `ky`/`kir`/`kyrgyz`), `POST /voices/library/add` (копирует голос библиотеки в аккаунт). Фиксированные пути объявлены до `/{assistant_id}`.
 - `translate_assistants.py` — `/api/translate-assistants` — ассистент синхронного перевода.
-- `elevenlabs.py` — `/api/elevenlabs` — ElevenLabs-агенты (данные в основном на стороне ElevenLabs API).
 
 ### Голосовые WebSocket-эндпоинты (делегируют в backend/websockets/)
-- `websocket.py` — `/ws/{assistant_id}`, `/ws/demo` — OpenAI GPT-Live `gpt-live-1` (хендлер `handler_live`), плюс `/ws/status`, `/ws/info`, `/ws/health`. Регистрируется ПОСЛЕ gemini_ws/translate_ws/fish_ws/sip_gateway.
+- `websocket.py` — `/ws/{assistant_id}`, `/ws/demo` — OpenAI GPT-Live `gpt-live-1` (хендлер `handler_live`), плюс `/ws/status`, `/ws/info`, `/ws/health`. Регистрируется ПОСЛЕ gemini_ws/translate_ws/fish_ws/eleven_ws/sip_gateway.
 - `gemini_ws.py` — `/ws/gemini/{id}` (Gemini Live `gemini-3.8-live`), `/ws/llm-stream` (текстовый LLM-стрим), `/ws/vox-gemini/{id}` (мёртвый мост Voximplant), `/gemini/health`, `/gemini/info`. Регистрируется ДО websocket.py. Маршруты `/ws/gemini-31/` и `/ws/gemini-browser/` удалены.
 - `fish_ws.py` — `/ws/fish/{id}` — Fish-ассистент (хендлер `handler_fish`: OpenAI Realtime текст + Fish TTS, серверные ключи), `/fish/health`. Регистрируется ДО websocket.py.
+- `eleven_ws.py` — `/ws/eleven/{id}` — Eleven-ассистент (хендлер `handler_eleven`: OpenAI Realtime текст + ElevenLabs TTS, серверные ключи), `/eleven/health`. Регистрируется ДО websocket.py.
 - `grok_ws.py` — `/ws/grok/{id}`, `/ws/grok/voximplant/{id}`, `/ws/grok/custom/{id}` — Grok Voice.
 - `translate_ws.py` — `/ws/translate/{id}` — перевод. Регистрируется ДО websocket.py.
 

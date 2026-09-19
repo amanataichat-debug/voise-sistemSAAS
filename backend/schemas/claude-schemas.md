@@ -10,7 +10,7 @@
 - `assistant.py` — OpenAI-ассистент: `AssistantBase/Create/Update/Response`, `EmbedCodeResponse`, плюс модели описания функций (`Function`, `FunctionParameter(s)`) для function-calling.
 - `conversation.py` — диалоги: `ConversationBase/Create/Update/Response`, `ConversationListResponse`, `ConversationStats` (агрегаты для дашборда).
 - `file.py` — файлы базы знаний: `FileBase/Create/Update/Response`, `FileUploadResponse`, `FilesListResponse`.
-- `elevenlabs.py` — ElevenLabs: `ElevenLabsApiKeyRequest`, `ElevenLabsVoiceResponse`, `ElevenLabsAgentCreate/Update/Response`, `ElevenLabsEmbedResponse`.
+- Схемы Eleven-ассистентов (`ElevenAssistantCreate/Update/Response`, `LibraryVoiceAdd`) живут прямо в `backend/api/eleven_assistants.py`, как у Fish. Старый `elevenlabs.py` удалён.
 - `integration.py` — webhook-интеграции ассистента: `IntegrationBase/Create/Update/Response`.
 - `subscription.py` — подписки: `SubscriptionPlanBase/Create/Update/Response`, `UserSubscriptionInfo`.
 - `translate_assistant.py` — ассистент синхронного перевода: `TranslateAssistantBase/Create/Update/Response`, `TranslateEmbedCodeResponse`; содержит список поддерживаемых выходных языков (13) OpenAI Realtime Translation.
@@ -27,7 +27,7 @@
 
 ## На что обратить внимание
 - **Покрытие неполное.** Новые подсистемы (Voksy AI Agent `api/agent.py`, кредиты `api/credits.py`, telephony, voximplant, gemini/grok/cartesia-ассистенты) часто описывают тела запросов локальными Pydantic-классами прямо в роутере или принимают `dict`/`Request`. Не ищите для них схему здесь — смотрите сам роутер.
-- **`__init__.py` реэкспортит не всё** — `elevenlabs`, `integration`, `subscription`, `translate_assistant` импортируются напрямую из своих модулей. При добавлении схемы решите, нужен ли реэкспорт.
+- **`__init__.py` реэкспортит не всё** — `integration`, `subscription`, `translate_assistant` импортируются напрямую из своих модулей. При добавлении схемы решите, нужен ли реэкспорт.
 - **Схемы ≠ модели.** Имена полей в `*Response` могут отличаться от колонок в `backend/models/` (например, переименования/вычисляемые поля). Несоответствие схемы и модели — частый источник 422/500.
 - Файла схем для gemini/grok/cartesia-ассистентов нет, хотя их роутеры существуют — валидация там inline.
 

@@ -25,6 +25,7 @@ from backend.models.cartesia_assistant import CartesiaAssistantConfig
 from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.grok_assistant import GrokAssistantConfig  # 🆕 cascade
 from backend.models.fish_assistant import FishAssistantConfig  # 🆕 fish
+from backend.models.eleven_assistant import ElevenAssistantConfig  # eleven (OpenAI text + ElevenLabs TTS)
 from backend.models.function_log import FunctionLog
 from backend.schemas.conversation import ConversationCreate, ConversationResponse, ConversationStats
 
@@ -46,6 +47,7 @@ class ConversationService:
         (CartesiaAssistantConfig, "cartesia"),
         (YandexAssistantConfig, "yandex"),
         (FishAssistantConfig, "fish"),
+        (ElevenAssistantConfig, "eleven"),
         # Каскад и Grok живут в одной таблице и различаются assistant_type.
         (GrokAssistantConfig, "cascade"),
     )
@@ -559,6 +561,17 @@ class ConversationService:
                     user_message=user_message or "",
                     assistant_message=assistant_message or "",
                     caller_number=normalized_phone,
+                    tokens_used=tokens_used or 0
+                )
+            elif assistant_type == "eleven":
+                from backend.models.eleven_assistant import ElevenConversation
+                conversation = ElevenConversation(
+                    assistant_id=assistant_uuid,
+                    session_id=session_id or str(uuid.uuid4()),
+                    user_message=user_message or "",
+                    assistant_message=assistant_message or "",
+                    caller_number=normalized_phone,
+                    call_direction=call_direction,
                     tokens_used=tokens_used or 0
                 )
             elif assistant_type == "fish":

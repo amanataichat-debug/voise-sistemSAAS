@@ -39,7 +39,6 @@ from backend.core.config import settings
 from backend.models.user import User
 from backend.models.assistant import AssistantConfig
 from backend.models.conversation import Conversation
-from backend.models.elevenlabs import ElevenLabsAgent
 from backend.utils.audio_utils import base64_to_audio_buffer
 from backend.websockets.openai_client_new import OpenAIRealtimeClientNew
 from backend.services.google_sheets_service import GoogleSheetsService
@@ -453,9 +452,7 @@ async def handle_websocket_connection_new(
         log_to_render(f"✅ WebSocket accepted for client {client_id}")
 
         # Check for ElevenLabs agents
-        elevenlabs_agent = db.query(ElevenLabsAgent).filter(
-            ElevenLabsAgent.id == assistant_id
-        ).first()
+        elevenlabs_agent = None  # ElevenLabs Conversational AI удалён
         if elevenlabs_agent:
             log_to_render(f"🔊 ElevenLabs agent detected: {assistant_id}")
             await websocket.send_json({

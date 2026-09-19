@@ -33,7 +33,6 @@ from .payments import router as payments_router
 from .subscription_status import router as subscription_status_router
 from .voximplant import router as voximplant_router
 from .voximplant_settings import router as voximplant_settings_router
-from .elevenlabs import router as elevenlabs_router
 from .partners import router as partners_router
 from .conversations import router as conversations_router
 from .email_verification import router as email_verification_router
@@ -65,7 +64,6 @@ api_router.include_router(payments_router, prefix="/payments", tags=["Payments"]
 api_router.include_router(subscription_status_router, prefix="/subscription-status", tags=["Subscription Status"])
 api_router.include_router(voximplant_router, prefix="/voximplant", tags=["Voximplant"])
 api_router.include_router(voximplant_settings_router, prefix="/users", tags=["Voximplant Settings"])
-api_router.include_router(elevenlabs_router, prefix="/elevenlabs", tags=["ElevenLabs"])
 api_router.include_router(partners_router, prefix="/partners", tags=["Partners"])
 api_router.include_router(conversations_router, tags=["Conversations"])
 api_router.include_router(email_verification_router, prefix="/email-verification", tags=["Email Verification"])
@@ -96,7 +94,6 @@ __all__ = [
     "subscription_status_router",
     "voximplant_router",
     "voximplant_settings_router",
-    "elevenlabs_router",
     "partners_router",
     "conversations_router",
     "email_verification_router",

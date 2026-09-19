@@ -6,9 +6,10 @@
 ## Состав (верхний уровень)
 ### HTML-страницы кабинета
 - `dashboard.html` — дашборд пользователя.
-- `agents.html` — OpenAI-ассистенты; `gemini-agents.html`, `grok-agents.html`, `fish-agents.html`, `cartesia-agents.html`, `yandex-agents.html`, `cascade.html`, `elevenlabs-agents.html`, `translate.html` — страницы по провайдерам; `gemini-agents_old.html` — легаси.
+- `agents.html` — OpenAI-ассистенты; `gemini-agents.html`, `grok-agents.html`, `fish-agents.html`, `eleven-agents.html`, `cartesia-agents.html`, `yandex-agents.html`, `cascade.html`, `translate.html` — страницы по провайдерам; `gemini-agents_old.html` — легаси.
 - `fish-agents.html` — Fish-агенты на серверных ключах (карточка ключей убрана; статус сервера через `GET /api/fish-assistants/status`), кнопка «Тест» открывает `fish-test.html?id=<uuid>` — тот же `widget.js`, но со `data-ws-path="/ws/fish/"`. `widget.js` понимает атрибут `data-ws-path` (по умолчанию `/ws/`), так один виджет обслуживает все провайдеры с протоколом виджета.
-- `telephony.html` — телефония через собственный SIP-шлюз, целиком на `/api/sip/*`: таблица номеров пользователя (`GET /api/sip/numbers`), модалка привязки к ассистенту OpenAI/Gemini/Fish или к агенту обзвона (`PATCH /api/sip/numbers/{id}` с `assistant_type`+`assistant_id` или `agent_config_id`), форма исходящего звонка (`POST /api/sip/calls`, номер абонента проверяется на префиксы O! `050/070/099` и на странице, и в API) с живым статусом (опрос `GET /api/sip/calls/{id}` раз в 2 с, отбой `POST /api/sip/calls/{id}/hangup`), журнал звонков (`GET /api/sip/calls`). Номера заводит только админ через API. Верификации, баланса, покупки номеров и SMS больше нет.
+- `eleven-agents.html` — ElevenLabs-агенты на серверном ключе (копия страницы Fish, API `/api/eleven-assistants`): селектор модели синтеза с ценой (`/options`), голос — `<select>` из аккаунта ElevenLabs (`/voices?language=`, рекомендованные для языка первыми, превью `<audio>`), панель «Найти в библиотеке» (`/voices/library`, поиск/пол/пагинация, «Добавить» → `/voices/library/add` и голос сразу выбран), язык (по умолчанию кыргызский, при смене список голосов перезагружается), стабильность (Creative/Natural/Robust), диалоговая модель. Приветствие по умолчанию на кыргызском. Кнопка «Тест» открывает `eleven-test.html?id=<uuid>` (`widget.js` с `data-ws-path="/ws/eleven/"`). Сайдбар всех страниц кабинета содержит и «Fish агенты», и «ElevenLabs агенты» (после «Яндекс агенты»).
+- `telephony.html` — телефония через собственный SIP-шлюз, целиком на `/api/sip/*`: таблица номеров пользователя (`GET /api/sip/numbers`), модалка привязки к ассистенту OpenAI/Gemini/Fish/Eleven или к агенту обзвона (`PATCH /api/sip/numbers/{id}` с `assistant_type`+`assistant_id` или `agent_config_id`), форма исходящего звонка (`POST /api/sip/calls`, номер абонента проверяется на префиксы O! `050/070/099` и на странице, и в API) с живым статусом (опрос `GET /api/sip/calls/{id}` раз в 2 с, отбой `POST /api/sip/calls/{id}/hangup`), журнал звонков (`GET /api/sip/calls`). Номера заводит только админ через API. Верификации, баланса, покупки номеров и SMS больше нет.
 - `outbound-calls.html`, `test_outbound-calls.html` — страницы Voximplant, **мёртвые** (Voximplant не используется, см. корневой `CLAUDE.md`).
 - `crm.html`, `crm-contact.html` — CRM (список и карточка контакта).
 - `conversations.html` — история диалогов.
@@ -22,15 +23,15 @@
   старых ссылок).
 
 ### Встраиваемые виджеты (JS)
-- `widget.js` — основной голосовой web-виджет (v5.0). Протокол виджета общий для OpenAI (GPT-Live, `/ws/{id}`) и Fish (`data-ws-path="/ws/fish/"`). Если сервер прислал `connection_status.full_duplex: true` (GPT-Live), виджет стримит микрофон непрерывно, включая время речи ассистента (эхо гасит AEC браузера), и воспроизводит аудио gapless по таймлайну AudioContext (`scheduleLiveAudio`, запас 200 мс); без флага — прежний half-duplex режим с паузой микрофона и очередью `playNextAudio`. `widget-test-new.js` — старая тестовая копия.
+- `widget.js` — основной голосовой web-виджет (v5.0). Протокол виджета общий для OpenAI (GPT-Live, `/ws/{id}`), Fish (`data-ws-path="/ws/fish/"`) и Eleven (`data-ws-path="/ws/eleven/"`). Если сервер прислал `connection_status.full_duplex: true` (GPT-Live), виджет стримит микрофон непрерывно, включая время речи ассистента (эхо гасит AEC браузера), и воспроизводит аудио gapless по таймлайну AudioContext (`scheduleLiveAudio`, запас 200 мс); без флага — прежний half-duplex режим с паузой микрофона и очередью `playNextAudio`. `widget-test-new.js` — старая тестовая копия.
 - `gemini-widget.js`, `gemini-widget-fullscreen.js` — виджеты Gemini (оба ходят в `/ws/gemini/{id}`, модель `gemini-3.8-live`; атрибут `data-model` у fullscreen-виджета устарел и игнорируется). Виджеты 3.1, browser-агента и захвата экрана удалены.
-- `grok-widget.js` — Grok; `widget-translate.js` — перевод; `wigetelevanlabs.js` — ElevenLabs (имя файла с опечаткой).
+- `grok-widget.js` — Grok; `widget-translate.js` — перевод. (`wigetelevanlabs.js` старой интеграции ElevenLabs удалён.)
 
 ### Подпапки
 - `landing/` — **собранный** React-лендинг (артефакт Vite-сборки из `frontend/`, + `assets/`). Не редактировать вручную.
 - `agents/` — JS-модули страницы агентов: `index.js` (логика), `api.js` (клиент), `ui.js` (рендер).
 - `conversations/` — `index.js` для страницы диалогов.
-- `js/` — общие JS-модули страниц: `crm.js`, `crm-contact.js`, семейство `elevenlabs-agents-*.js` (core/tabs/conversation-manager/event-handlers) и др.
+- `js/` — общие JS-модули страниц: `crm.js`, `crm-contact.js` и др. (семейство `elevenlabs-agents-*.js` и `elevenlabs-*.js` старой интеграции удалено).
 - `index/` — `css/` и `js/` для входной страницы.
 - `voice_llm_interface/` — отдельный голосовой LLM-интерфейс: `index.html`, `jarvis-ui.html`, `main.js`, `audio.js`, `config.js`, `styles.css`.
 - `css/`, `images/` — стили и изображения (`logo.png` и т.п.).

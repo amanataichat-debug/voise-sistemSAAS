@@ -2,7 +2,7 @@
 
 ## Overview
 
-Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI GPT-Live, Google Gemini Live (gemini-3.8-live), Fish Audio (OpenAI text + Fish TTS), xAI Grok Voice, and ElevenLabs — then connect them to telephony (own SIP gateway, see below) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
+Voksy AI is a SaaS platform for creating and managing AI-powered voice assistants. Users can build conversational agents using OpenAI GPT-Live, Google Gemini Live (gemini-3.8-live), Fish Audio (OpenAI text + Fish TTS), ElevenLabs (OpenAI text + Eleven v3 TTS, Kyrgyz by default), and xAI Grok Voice — then connect them to telephony (own SIP gateway, see below) or embed as web widgets. The platform includes a CRM, knowledge base, conversation analytics, partner program, and subscription billing.
 
 ## ⚠️ Voximplant is NOT used (read this first)
 
@@ -33,7 +33,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 - **WebSocket:** Native FastAPI WebSocket for real-time voice streaming
 - **Storage:** Cloudflare R2 (S3-compatible)
 - **Vector DB:** Pinecone (knowledge base search)
-- **External APIs:** OpenAI, Google Gemini, Fish Audio, xAI Grok, ElevenLabs, Finik (payments, KGS); telephony — own SIP gateway (Asterisk) with operator O!
+- **External APIs:** OpenAI, Google Gemini, Fish Audio, ElevenLabs (TTS only, server key), xAI Grok, Finik (payments, KGS); telephony — own SIP gateway (Asterisk) with operator O!
 
 ## Project Structure
 
@@ -53,7 +53,6 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── assistants.py    # OpenAI assistant CRUD
 │   │   ├── gemini_assistants.py  # Gemini assistant CRUD
 │   │   ├── grok_assistants.py    # Grok assistant CRUD
-│   │   ├── elevenlabs.py    # ElevenLabs agent management
 │   │   ├── websocket.py     # OpenAI voice WS: /ws/{id}, /ws/demo → handler_live (GPT-Live)
 │   │   ├── gemini_ws.py     # Gemini Live WebSocket proxy
 │   │   ├── grok_ws.py       # Grok Voice WebSocket proxy
@@ -61,6 +60,8 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── voximplant.py    # DEAD: Voximplant integration (not used, see warning above)
 │   │   ├── fish_assistants.py # Fish assistant CRUD (/api/fish-assistants)
 │   │   ├── fish_ws.py       # Fish voice WS: /ws/fish/{id} (OpenAI Realtime text + Fish TTS)
+│   │   ├── eleven_assistants.py # Eleven assistant CRUD (/api/eleven-assistants: options with prices, voices, library)
+│   │   ├── eleven_ws.py     # Eleven voice WS: /ws/eleven/{id} (OpenAI Realtime text + ElevenLabs TTS)
 │   │   ├── sip_gateway.py   # Own SIP telephony: bridge WS (/ws/sip-gateway/control, /ws/sip/{id}) + /api/sip/*
 │   │   ├── conversations.py # Conversation history and analytics
 │   │   ├── contacts.py      # CRM contacts management
@@ -84,7 +85,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── gemini_assistant.py  # GeminiAssistantConfig
 │   │   ├── grok_assistant.py    # GrokAssistantConfig
 │   │   ├── fish_assistant.py    # FishAssistantConfig + FishConversation (fish_conversations)
-│   │   ├── elevenlabs.py    # ElevenLabsAgent, ElevenLabsConversation
+│   │   ├── eleven_assistant.py  # ElevenAssistantConfig + ElevenConversation (eleven_conversations), TTS models/prices, languages
 │   │   ├── conversation.py  # Conversation model
 │   │   ├── contact.py       # CRM Contact model
 │   │   ├── subscription.py  # Subscription, SubscriptionPlan
@@ -98,7 +99,6 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── auth_service.py          # Authentication logic
 │   │   ├── assistant_service.py     # OpenAI assistant operations
 │   │   ├── conversation_service.py  # Conversation CRUD
-│   │   ├── elevenlabs_service.py    # ElevenLabs API client
 │   │   ├── google_sheets_service.py # Google Sheets integration
 │   │   ├── payment_service.py       # Finik post-payment business logic
 │   │   ├── finik_service.py         # Finik API client (RSA signing, 302→Location, webhook verify)
@@ -136,6 +136,8 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │   │   ├── handler_fish.py          # Fish handler: OpenAI Realtime (text) + Fish Audio TTS, widget protocol
 │   │   ├── fish_llm_client.py       # Text-mode OpenAI Realtime client for Fish (server VAD, transcription, tools)
 │   │   ├── fish_tts_client.py       # Fish Audio live TTS client (msgpack, barge-in via reconnect)
+│   │   ├── handler_eleven.py        # Eleven handler: FishVoiceSession + FishLLMClient + ElevenTTSClient (server keys)
+│   │   ├── eleven_tts_client.py     # ElevenLabs Text-to-Dialogue multi-context WS client (Eleven v3, PCM16 24 kHz, barge-in via close_context)
 │   │   ├── voximplant_handler.py    # DEAD: Voximplant WS bridge
 │   │   ├── voximplant_adapter.py    # DEAD: Voximplant audio adapter
 │   │   └── sentence_detector.py     # Sentence boundary detection
@@ -148,6 +150,8 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
 │       ├── grok-agents.html     # Grok agents page
 │       ├── fish-agents.html     # Fish agents page (server keys, browser test button)
 │       ├── fish-test.html       # Browser test of a Fish agent: widget.js with data-ws-path="/ws/fish/"
+│       ├── eleven-agents.html   # ElevenLabs agents page (TTS model + price, voices from the account / public library, language, stability)
+│       ├── eleven-test.html     # Browser test of an Eleven agent: widget.js with data-ws-path="/ws/eleven/"
 │       ├── dashboard.html       # User dashboard
 │       ├── telephony.html       # Own SIP telephony UI: numbers → bind assistant/agent, outbound call to an O! number, call journal (/api/sip/*)
 │       ├── conversations.html   # Conversation history
@@ -232,10 +236,10 @@ cd .. && git add -A backend/static/landing frontend
 | `/api/assistants` | OpenAI assistant CRUD |
 | `/api/gemini-assistants` | Gemini assistant CRUD |
 | `/api/grok-assistants` | Grok assistant CRUD |
-| `/api/elevenlabs` | ElevenLabs agents |
 | `/api/telephony` | Outbound calls, call tasks |
 | `/api/voximplant` | DEAD — Voximplant (not used) |
 | `/api/fish-assistants` | Fish assistant CRUD, `/options`, `/status` (server keys configured?) |
+| `/api/eleven-assistants` | Eleven assistant CRUD, `/options` (TTS models with prices, languages, stability), `/status`, `/voices` (account voices, recommended for the language first), `/voices/library` + `/voices/library/add` (public library) |
 | `/api/conversations` | Conversation history |
 | `/api/contacts` | CRM contacts |
 | `/api/knowledge-base` | Knowledge base (Pinecone) |
@@ -248,6 +252,7 @@ cd .. && git add -A backend/static/landing frontend
 | `/ws/gemini/{id}` | Gemini Live voice WS |
 | `/ws/grok/{id}` | Grok Voice WS |
 | `/ws/fish/{id}` | Fish voice WS (widget protocol; OpenAI text brain + Fish TTS) |
+| `/ws/eleven/{id}` | Eleven voice WS (widget protocol; OpenAI text brain + ElevenLabs TTS) |
 | `/api/sip` | Own SIP telephony: numbers (bind to an assistant or an `agent_configs` agent), call journal, manual outbound to O! numbers only (`/api/sip/numbers`, `/api/sip/calls`, `/api/sip/gateways`) |
 | `/ws/sip-gateway/control` | Control socket from the VPS bridge (auth by `SIP_GATEWAY_TOKEN`) |
 | `/ws/sip/{call_id}` | Per-call media socket from the VPS bridge (PCM16 8 kHz) |
@@ -256,15 +261,16 @@ cd .. && git add -A backend/static/landing frontend
 
 PostgreSQL with SQLAlchemy ORM. Migrations managed by Alembic (`alembic/versions/`).
 
-Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `fish_assistant_configs`, `elevenlabs_agents`, `conversations`, `gemini_conversations`, `fish_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
+Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `fish_assistant_configs`, `eleven_assistant_configs`, `conversations`, `gemini_conversations`, `fish_conversations`, `eleven_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
 
-`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations` and Fish dialogs to `fish_conversations`; the "Диалоги" page unions all three tables (`backend/api/conversations.py`), and `SipGatewayService.tag_conversations` picks the table by `assistant_type`.
+`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations`, Fish dialogs to `fish_conversations` and Eleven dialogs to `eleven_conversations`; the "Диалоги" page unions all four tables (`backend/api/conversations.py`), and `SipGatewayService.tag_conversations` picks the table by `assistant_type`.
 
 ## Environment Variables (Key)
 
 - `DATABASE_URL` — PostgreSQL connection string
 - `OPENAI_API_KEY` — OpenAI API key (server-level, users can also set their own; Fish assistants always use the server key)
 - `FISH_API_KEY` — Fish Audio API key (server-level; Fish assistants never use user keys)
+- `ELEVENLABS_API_KEY` — ElevenLabs API key (server-level; all Eleven assistants synthesize on this key, the account's voice library is shared by all users)
 - `JWT_SECRET_KEY` — JWT signing secret
 - `HOST_URL` — Public URL (e.g., https://voksyai.online)
 - `PRODUCTION` — "true" in production (disables docs, enables optimizations)
@@ -281,17 +287,18 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `GEMINI_VAD_PROFILE` / `GEMINI_VAD_START_SENSITIVITY` / `GEMINI_VAD_END_SENSITIVITY` / `GEMINI_VAD_SILENCE_MS` — Gemini Live speech detection profile, same for widget and telephony (defaults: `fast`, `low`, `high`, `500`)
 - `GEMINI_LIVE_MODEL` / `GEMINI_TOOL_SCHEDULING` — Gemini Live model (`gemini-3.8-live`; the extended-thinking variant is intentionally not used) and how the model voices async function results (`WHEN_IDLE`, `INTERRUPT` or `SILENT`)
 
-Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini, xAI Grok, ElevenLabs. Fish assistants run on server keys only.
+Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini, xAI Grok. Fish and Eleven assistants run on server keys only (`User.elevenlabs_api_key` is a leftover of the removed ElevenLabs Conversational AI integration and is not used).
 
 ## Architecture Notes
 
 - **Import redirection:** `main.py` contains a custom `MetaPathFinder` that redirects bare module imports (e.g., `core.config`) to `backend.core.config`. This allows modules to work both standalone and within the backend package.
 - **Modular functions:** `backend/functions/` uses a registry pattern — new AI-callable functions are auto-discovered at startup via `discover_functions()`.
-- **Multi-provider voice:** The WebSocket layer abstracts the voice providers (OpenAI, Gemini, Fish, Grok) behind handlers with one client protocol (the "widget protocol": `input_audio_buffer.append` in, `response.audio.delta` 24 kHz out, `speech.started` / `conversation.interrupted` / `assistant.speech.*` / `function_call.*` events). Anything speaking that protocol works in the widget and on the phone.
+- **Multi-provider voice:** The WebSocket layer abstracts the voice providers (OpenAI, Gemini, Fish, Eleven, Grok) behind handlers with one client protocol (the "widget protocol": `input_audio_buffer.append` in, `response.audio.delta` 24 kHz out, `speech.started` / `conversation.interrupted` / `assistant.speech.*` / `function_call.*` events). Anything speaking that protocol works in the widget and on the phone.
 - **OpenAI assistants run on GPT-Live (`gpt-live-1`):** `backend/websockets/handler_live.py` + `live_client.py` replaced the Realtime API handler (`handler_realtime_new.py`/`openai_client_new.py` are legacy, not routed). GPT-Live is full-duplex: no VAD events, the model listens while speaking and handles interruptions itself, output audio arrives at real-time pace. Consequences: the widget streams the microphone continuously and plays audio gapless with a 200 ms cushion when `connection_status.full_duplex` is true; the SIP adapter holds the start of each reply for `OUTBOUND_CUSHION_MS`; `assistant.speech.started/ended` are derived from the audio stream. Functions run in the delegation backend (`delegation.responses`, model `LIVE_DELEGATION_MODEL`, Responses-format tools): calls arrive as `response.event` → `response.output_item.done`, results go back via `response.item.create` + `response.create`. Transcripts are fragments; dialogs are saved as (user, assistant) pairs at session end. The greeting is requested with `session.instructions.append`. Vision (`screen.context`) is not available on this model. Details: `backend/websockets/claude-websockets.md`.
 - **Gemini assistants run on `gemini-3.8-live`:** `backend/websockets/handler_gemini.py` + `gemini_client.py` (v2.0). Same BidiGenerateContent protocol as before, but: no thinking config (the fast model only, the "thinking" toggle is gone from the UI), function declarations are `NON_BLOCKING` and run in the background through `function_calls.py`, `toolResponse` carries `name` + `scheduling`, proactive audio is always on. Context compression / session resumption are not enabled, so an audio session is capped at 15 min and a connection at ~10 min (accepted). The 3.1 / 2.5 variants, the browser agent (`/ws/gemini-browser`, `start_browser_task`) and their widgets were deleted in September 2026.
 - **Own SIP telephony:** a Hetzner VPS (`178.105.79.237`, Asterisk 20 + `infra/sip-gateway/bridge/bridge.py`) terminates the operator's SIP trunk and streams call audio to the backend over outbound WebSockets. On the backend `backend/websockets/sip_media_adapter.py` wraps the *same* browser handlers (OpenAI, Gemini, Fish — map `SIP_HANDLERS` in `backend/api/sip_gateway.py`), so phone calls and the widget share functions, transcripts, conversation saving and behaviour. Rule: telephony and widget must behave the same. Outbound calls are queued in `sip_calls` and picked up by the worker that holds the control socket. Full picture: `infra/sip-gateway/claude-sip-gateway.md`; server how-to: `infra/sip-gateway/SERVER.md`.
 - **Fish assistants (half-cascade on server keys):** `backend/websockets/handler_fish.py`. OpenAI Realtime `gpt-realtime-2` in text-only mode (`fish_llm_client.py`: server VAD, input transcription, tools) is the brain; Fish Audio live TTS (`fish_tts_client.py`, msgpack, PCM16 24 kHz) is the voice. Text deltas are cut into sentences (`sentence_detector.py`) and sent to Fish; the greeting goes to Fish directly and is added to the OpenAI context as an assistant message. Barge-in = `response.cancel` + Fish reconnect (Fish has no cancel). Functions reuse `execute_and_send_function_result` from the OpenAI handler; `hangup_call` is handled by `HandlerSocket`. Keys: `OPENAI_API_KEY` + `FISH_API_KEY` from env only. Dialogs → `fish_conversations`. Browser test: `/static/fish-test.html?id=<uuid>` (widget.js with `data-ws-path="/ws/fish/"`). Billing gate (cascade credits) is planned, not implemented yet.
+- **Eleven assistants (same half-cascade, ElevenLabs voice, Kyrgyz by default):** `backend/websockets/handler_eleven.py` reuses `FishVoiceSession` and `FishLLMClient` (with `conversation_model=ElevenConversation`, `label="ELEVEN-LLM"`); only the TTS client differs: `eleven_tts_client.py` speaks the ElevenLabs Text-to-Dialogue multi-context WebSocket (`/v1/text-to-dialogue/multi-stream-input`, `model_id` `eleven_v3_conversational` or `eleven_v3` — the only family with Kyrgyz, `output_format=pcm_24000`, `language_code` from the card). Each assistant reply is a context: `say()` = `inputs` + `flush` per sentence, `end_of_response()` marks it finished, the context is closed on the server once its audio played out (max 5 open contexts per socket), barge-in = `close_context` + audio from old contexts dropped. `keep_alive` every 12 s (server drops the socket after 20 s of silence). The card language (`ky` default) also appends a "reply in this language" instruction to the OpenAI brain (`LANGUAGE_INSTRUCTIONS` in `fish_llm_client.py`); Kyrgyz speech understanding by `gpt-realtime-2` is untested, and whisper transcripts have no Kyrgyz. Voices come from the ElevenLabs account on the server key (`/voices`, recommended = verified for the language) or the public library (`/voices/library` → `/voices/library/add` copies the voice into the account). Keys: `OPENAI_API_KEY` + `ELEVENLABS_API_KEY` only. Dialogs → `eleven_conversations`. Browser test: `/static/eleven-test.html?id=<uuid>`. Telephony: `SIP_HANDLERS["eleven"]`. The old ElevenLabs Conversational AI integration (`api/elevenlabs.py`, `services/elevenlabs_service.py`, `models/elevenlabs.py`, `elevenlabs-agents.html`, `wigetelevanlabs.js`) was deleted in September 2026; the `elevenlabs_agents` tables are no longer created.
 - **Startup schema fixes:** `app.py` startup event runs comprehensive schema checks and auto-adds missing columns for backwards compatibility.
 - **Task scheduler:** Background scheduler (`core/task_scheduler.py`) polls for scheduled call tasks every 30 seconds and executes them automatically.
 - **Static pages:** App pages (agents, dashboard, CRM, etc.) are vanilla HTML/JS served by FastAPI's `StaticFiles`. The React app is only used for the landing page.

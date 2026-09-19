@@ -1,6 +1,6 @@
 # claude-index — оглавление документации для AI-агентов
 
-Это корневой индекс документации проекта **Voksy AI (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI Realtime, Google Gemini Live, Fish Audio, xAI Grok, ElevenLabs; телефония — собственный SIP-шлюз, **Voximplant не используется**; биллинг Finik (KGS)).
+Это корневой индекс документации проекта **Voksy AI (WellcomeAI)** — SaaS-платформы голосовых AI-ассистентов (FastAPI + PostgreSQL, мульти-провайдер: OpenAI GPT-Live, Google Gemini Live, Fish Audio, ElevenLabs (только TTS, серверный ключ), xAI Grok; телефония — собственный SIP-шлюз, **Voximplant не используется**; биллинг Finik (KGS)).
 
 Документация лежит рядом с кодом: в каждой значимой папке — файл `claude-*.md`, объясняющий её назначение, состав, точки входа, связи и подводные камни. Начинайте с этого индекса, спускайтесь к нужному слою.
 
@@ -15,7 +15,7 @@
 
 ### Транспортный слой
 - [`backend/api/claude-api.md`](backend/api/claude-api.md) — FastAPI-роутеры: все HTTP- и WS-эндпоинты, префиксы, webhooks (Finik, Telegram).
-- [`backend/websockets/claude-websockets.md`](backend/websockets/claude-websockets.md) — реал-тайм голосовые хендлеры (OpenAI, Gemini, Fish, Grok) и WS-клиенты провайдеров + адаптер телефонии `sip_media_adapter`.
+- [`backend/websockets/claude-websockets.md`](backend/websockets/claude-websockets.md) — реал-тайм голосовые хендлеры (OpenAI, Gemini, Fish, Eleven, Grok) и WS-клиенты провайдеров + адаптер телефонии `sip_media_adapter`.
 
 ### Бизнес-логика
 - [`backend/services/claude-services.md`](backend/services/claude-services.md) — сервисный слой: оркестратор Voksy AI Agent, кредиты/биллинг, интеграции внешних API.
@@ -57,11 +57,12 @@
 - Тесты в корне (`test_*.py`) — разрозненные интеграционные скрипты, не структурированная сюита.
 
 ## Сквозные замечания (важно для всего проекта)
-- **Мульти-провайдер с дублированием.** Виды голосовых ассистентов (OpenAI/Gemini/Grok/Cascade/Cartesia/Yandex/Translate) + ElevenLabs дублируются на каждом слое (model → api → handler → widget). Общая правка = правка во всех ветках. Каскад — особый случай: живёт в таблице Grok (`assistant_type='cascade'`) и обслуживается тем же роутером `/api/grok-assistants`.
+- **Мульти-провайдер с дублированием.** Виды голосовых ассистентов (OpenAI/Gemini/Grok/Fish/Eleven/Cascade/Cartesia/Yandex/Translate) дублируются на каждом слое (model → api → handler → widget). Общая правка = правка во всех ветках. Каскад — особый случай: живёт в таблице Grok (`assistant_type='cascade'`) и обслуживается тем же роутером `/api/grok-assistants`.
 - **Лимит ассистентов — один на всех провайдеров.** Считается в `services/assistant_limit_service.py` (единственный источник правды для `check_assistant_limit` и `GET /api/subscriptions/assistants-usage`). Голосовые ассистенты мастера Voksy AI Agent из подсчёта исключены.
 - **Voksy AI Agent v5.0** — автономный обзвон: оркестратор (`services/agent_orchestrator`) + планировщик звонков (`core/task_scheduler`) + кредиты (`services/credit_service`). Это самостоятельная подсистема со своим биллингом (кредиты, не подписочные минуты).
-- **Телефония одна — собственный SIP-шлюз** (`infra/sip-gateway/`, VPS + Asterisk). **Voximplant не используется**; его код (api/telephony.py, api/voximplant.py, services/voximplant_partner.py, websockets/voximplant_*, voximplant_scenarios/, типы `cascade`/`cartesia`/`yandex`) — мёртвый до общей чистки, список в `CLAUDE.md`. Планировщик `core/task_scheduler.py` ставит звонок в очередь шлюза, если у пользователя есть активный номер в `sip_phone_numbers` с `allow_outbound` и ассистент OpenAI/Gemini/Fish. Телефонный звонок проходит через те же браузерные хендлеры, что и виджет — поведение должно быть одинаковым.
+- **Телефония одна — собственный SIP-шлюз** (`infra/sip-gateway/`, VPS + Asterisk). **Voximplant не используется**; его код (api/telephony.py, api/voximplant.py, services/voximplant_partner.py, websockets/voximplant_*, voximplant_scenarios/, типы `cascade`/`cartesia`/`yandex`) — мёртвый до общей чистки, список в `CLAUDE.md`. Планировщик `core/task_scheduler.py` ставит звонок в очередь шлюза, если у пользователя есть активный номер в `sip_phone_numbers` с `allow_outbound` и ассистент OpenAI/Gemini/Fish/Eleven. Телефонный звонок проходит через те же браузерные хендлеры, что и виджет — поведение должно быть одинаковым.
 - **Fish на серверных ключах.** `websockets/handler_fish.py`: OpenAI Realtime текстом + Fish TTS, ключи `OPENAI_API_KEY`/`FISH_API_KEY` из env, диалоги в `fish_conversations`, тест в браузере `/static/fish-test.html?id=`. Образец для переноса остальных Voximplant-only типов.
+- **Eleven — тот же каскад с голосом ElevenLabs.** `websockets/handler_eleven.py` переиспользует `FishVoiceSession`/`FishLLMClient`, синтез — `eleven_tts_client.py` (Text-to-Dialogue multi-context WS, Eleven v3, по умолчанию кыргызский `language_code=ky`), ключ `ELEVENLABS_API_KEY` из env, диалоги в `eleven_conversations`, страница `/static/eleven-agents.html` (голоса из аккаунта и публичной библиотеки), тест `/static/eleven-test.html?id=`. Старая интеграция ElevenLabs Conversational AI удалена.
 - **Версионные дубликаты** в `websockets/` — ориентируйтесь на то, что реально импортирует роутер, а не на имя/комментарий файла.
 - **Платежи — Finik (finik.kg, KGS)**. **Пароли хешируются SHA-256 без соли**; API-ключи провайдеров в БД без шифрования.
 - **Import-redirect** в `main.py` делает эквивалентными `from backend.x...` и `from x...`.
