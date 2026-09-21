@@ -9,7 +9,7 @@
     → {"context_id": C, "voices": [voice_id], "voice_settings": {...}}   первое сообщение контекста
     → {"context_id": C, "inputs": [{"text": "...", "voice_id": V, "new_turn": bool}]}
     → {"context_id": C, "flush": true}          синтезировать накопленное сейчас
-    → {"context_id": C, "close_context": true}  перебивание: бросить контекст
+    → {"context_id": C, "close_context": true}  дозвучить накопленное, прислать is_final и закрыть
     → {"keep_alive": true}                      сервер закрывает сокет после 20 с тишины
     → {"close_socket": true}
     ← {"audio": "<base64 PCM16>", "context_id": C}
@@ -21,19 +21,25 @@
 say(text) / end_of_response() / clear() / close(), колбэки on_audio,
 on_speech_started, on_speech_ended, счётчики audio_bytes / chunks, флаг speaking.
 
-Границы реплики. Сервер буферизует примерно 40 символов перед первым звуком,
-поэтому каждое предложение закрывается flush. Конец реплики — по тишине после
-end_of_response() (UTTERANCE_IDLE_MS), как у Fish; is_final_audio_for_turn
-приходит не на каждый flush, полагаться только на него нельзя.
+Реплика ассистента = один контекст. Предложения приходят по мере генерации
+модели, каждое закрывается flush (сервер буферизует ~40 символов до первого
+звука). Когда модель закончила ответ, end_of_response() шлёт close_context:
+по документации сервер дозвучивает всё накопленное и присылает is_final —
+это и есть конец реплики (on_speech_ended). Ждать конец по тишине нельзя:
+Eleven v3 синтезирует каждый flush отдельно, паузы между предложениями
+доходят до 1–2 с, и «тишина» посреди ответа обрывала его после первого
+предложения. Тишина осталась только страховкой: если is_final не пришёл
+FINAL_TIMEOUT_MS после последнего звука, реплику считаем законченной.
 
-Перебивание. Каждая реплика ассистента — свой context_id; clear() закрывает
-текущий контекст (сервер бросает синтез), аудио от старых контекстов
-отбрасывается, следующий say() открывает новый контекст на том же сокете.
-Если сокет упал — переоткрывается при следующем say().
+Звук принимается от всех «живых» контекстов: текущего и уже закрытых
+end_of_response(), но ещё дозвучивающих. Перебивание (clear) закрывает их
+все на сервере и вычёркивает из живых — их звук дальше отбрасывается. Если
+новая реплика началась, пока прошлая ещё дозвучивала (абонент заговорил до
+первого звука приветствия), прошлую бросаем — иначе два голоса наложатся.
 
-Лимит: не больше 5 открытых контекстов на соединение (и сервер сам закрывает
-контекст после 20 с тишины), поэтому договорённый контекст закрываем сами —
-как только его аудио доиграло (idle watcher) или при старте следующей реплики.
+Лимит: не больше 5 открытых контекстов на соединение; каждый закрывается
+сразу по концу ответа или при перебивании. Если сокет упал — переоткрывается
+при следующем say().
 """
 
 import asyncio
@@ -41,10 +47,11 @@ import base64
 import json
 import time
 import uuid
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, List, Optional, Set
 from urllib.parse import urlencode
 
 import websockets
+from websockets.exceptions import ConnectionClosed
 
 from backend.core.logging import get_logger
 from backend.models.eleven_assistant import (
@@ -58,9 +65,9 @@ logger = get_logger(__name__)
 
 ELEVEN_TTD_WS_URL = "wss://api.elevenlabs.io/v1/text-to-dialogue/multi-stream-input"
 
-# Тишина от ElevenLabs после конца ответа модели, которую считаем концом реплики.
-UTTERANCE_IDLE_MS = 700
-IDLE_POLL_SEC = 0.05
+# Страховка: is_final после close_context не пришёл столько мс после последнего звука.
+FINAL_TIMEOUT_MS = 5000
+IDLE_POLL_SEC = 0.1
 # Сервер рвёт сокет через 20 с без сообщений — шлём keep_alive заранее.
 KEEPALIVE_SEC = 12
 
@@ -99,15 +106,17 @@ class ElevenTTSClient:
         self.ws = None
         self.closing = False
         self.generation = 0
-        self.context_id: Optional[str] = None   # текущая реплика
-        self._context_open = False
-        self._finished_contexts: List[str] = []  # договорённые реплики, ещё не закрытые на сервере
+        self.context_id: Optional[str] = None   # контекст текущей реплики, ещё принимает текст
+        self._live: Set[str] = set()            # контексты, чей звук отдаём клиенту
+        self._finishing: Optional[str] = None   # закрыт end_of_response(), его is_final = конец реплики
         self._new_turn = True
         self.pending_text: List[str] = []
+        self._close_after_pending = False      # end_of_response() пришёл, пока текст ждал переподключения
         self._lock = asyncio.Lock()
         self._reader_task: Optional[asyncio.Task] = None
         self._idle_task: Optional[asyncio.Task] = None
         self._keepalive_task: Optional[asyncio.Task] = None
+        self._bg_tasks: Set[asyncio.Task] = set()
         self._last_sent_at = 0.0
 
         self.speaking = False
@@ -147,8 +156,9 @@ class ElevenTTSClient:
                 timeout=15,
             )
         self.ws = ws
-        self._context_open = False
         self.context_id = None
+        self._live = set()
+        self._finishing = None
         self._last_sent_at = time.monotonic()
         generation = self.generation
         self._reader_task = asyncio.create_task(self._read(ws, generation))
@@ -163,6 +173,9 @@ class ElevenTTSClient:
         pending, self.pending_text = self.pending_text, []
         for text in pending:
             await self._send_text(ws, text)
+        if pending and self._close_after_pending:
+            self._close_after_pending = False
+            self.end_of_response()
 
     async def _ensure_connected(self) -> bool:
         if self.ws is not None:
@@ -178,6 +191,11 @@ class ElevenTTSClient:
         await ws.send(json.dumps(payload, ensure_ascii=False))
         self._last_sent_at = time.monotonic()
 
+    def _spawn(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
     # ------------------------------------------------------------------ читатель
     async def _read(self, ws, generation: int) -> None:
         try:
@@ -190,8 +208,8 @@ class ElevenTTSClient:
                     continue
                 ctx = message.get("context_id") or message.get("contextId")
                 if message.get("audio"):
-                    if ctx and ctx != self.context_id:
-                        continue  # реплика, брошенная при перебивании
+                    if ctx and ctx not in self._live:
+                        continue  # реплика, брошенная при перебивании или вытесненная следующей
                     try:
                         audio = base64.b64decode(message["audio"])
                     except Exception:
@@ -206,12 +224,15 @@ class ElevenTTSClient:
                         if self.on_speech_started:
                             await self.on_speech_started()
                     await self.on_audio(audio)
-                elif message.get("is_final") and ctx == self.context_id:
-                    self._context_open = False
+                elif message.get("is_final"):
+                    if ctx and ctx in self._live:
+                        self._live.discard(ctx)
+                        if ctx == self._finishing:
+                            await self._utterance_ended("is_final")
                 elif message.get("error") or message.get("message") and message.get("code"):
                     self.errors += 1
                     logger.error(f"[ELEVEN-TTS {self.label}] error: {json.dumps(message, ensure_ascii=False)[:300]}")
-        except websockets.exceptions.ConnectionClosed as exc:
+        except ConnectionClosed as exc:
             if not self.closing:
                 logger.warning(f"[ELEVEN-TTS {self.label}] connection closed: code={exc.code} reason={exc.reason}")
         except Exception as exc:
@@ -219,23 +240,36 @@ class ElevenTTSClient:
         finally:
             if self.ws is ws:
                 self.ws = None  # следующий say() переподключится
-                self._context_open = False
+                self.context_id = None
+                self._live = set()
+                if self._finishing is not None or self.speaking:
+                    await self._utterance_ended("socket closed")
+
+    async def _utterance_ended(self, reason: str) -> None:
+        """Реплика доиграна (или бросать больше нечего): сообщить хендлеру."""
+        self._finishing = None
+        self.response_complete = False
+        if not self.speaking:
+            return
+        self.speaking = False
+        if reason != "is_final":
+            logger.warning(f"[ELEVEN-TTS {self.label}] utterance ended without is_final ({reason})")
+        if self.on_speech_ended:
+            await self.on_speech_ended()
 
     async def _idle_watch(self) -> None:
-        """Ловит конец реплики по тишине после end_of_response()."""
+        """Страховка: is_final после close_context так и не пришёл."""
         try:
             while not self.closing:
                 await asyncio.sleep(IDLE_POLL_SEC)
                 if (
                     self.speaking
                     and self.response_complete
-                    and (time.monotonic() - self.last_audio_at) * 1000.0 > UTTERANCE_IDLE_MS
+                    and self._finishing is not None
+                    and (time.monotonic() - self.last_audio_at) * 1000.0 > FINAL_TIMEOUT_MS
                 ):
-                    self.speaking = False
-                    self.response_complete = False
-                    await self._close_finished_contexts()
-                    if self.on_speech_ended:
-                        await self.on_speech_ended()
+                    self._live.discard(self._finishing)
+                    await self._utterance_ended("final timeout")
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -255,32 +289,33 @@ class ElevenTTSClient:
         except asyncio.CancelledError:
             pass
 
-    async def _close_finished_contexts(self) -> None:
-        """Закрыть на сервере договорённые контексты (аудио уже доиграло)."""
-        ctxs, self._finished_contexts = self._finished_contexts, []
+    async def _close_context(self, ctx: str) -> None:
+        """Попросить сервер дозвучить контекст и прислать is_final."""
         ws = self.ws
-        for ctx in ctxs:
-            if ctx == self.context_id and not self._context_open:
-                self.context_id = None
-            if ws is None:
-                continue
-            try:
-                await self._send(ws, {"context_id": ctx, "close_context": True})
-            except Exception as exc:
-                logger.warning(f"[ELEVEN-TTS {self.label}] close_context({ctx}) failed: {exc}")
+        if ws is None:
+            return
+        try:
+            await self._send(ws, {"context_id": ctx, "close_context": True})
+        except Exception as exc:
+            logger.warning(f"[ELEVEN-TTS {self.label}] close_context({ctx}) failed: {exc}")
 
     # ------------------------------------------------------------------ команды
     async def _send_text(self, ws, text: str) -> None:
-        if not self._context_open:
-            if self._finished_contexts:
-                await self._close_finished_contexts()
+        if self.context_id is None:
+            if self._finishing is not None:
+                # Прошлая реплика ещё дозвучивает, а модель уже отвечает дальше
+                # (абонент заговорил до первого звука приветствия) — бросаем её,
+                # иначе два голоса наложатся. close_context ей уже отправлен.
+                self._live.discard(self._finishing)
+                self._finishing = None
+                self.response_complete = False
             self.context_id = f"ctx_{uuid.uuid4().hex[:12]}"
+            self._live.add(self.context_id)
             await self._send(ws, {
                 "context_id": self.context_id,
                 "voices": [self.voice_id],
                 "voice_settings": {"stability": self.stability},
             })
-            self._context_open = True
             self._new_turn = True
         await self._send(ws, {
             "context_id": self.context_id,
@@ -305,39 +340,44 @@ class ElevenTTSClient:
             except Exception as exc:
                 logger.warning(f"[ELEVEN-TTS {self.label}] send failed, will reconnect: {exc}")
                 self.ws = None
-                self._context_open = False
+                self.context_id = None
+                self._live = set()
                 self.pending_text.append(text)
 
     def end_of_response(self) -> None:
-        """Хендлер отдал весь текст ответа: после тишины можно объявлять конец реплики."""
+        """Хендлер отдал весь текст ответа: закрыть контекст, сервер дозвучит и пришлёт is_final."""
         self.response_complete = True
-        # Следующая реплика ассистента — новый контекст (и new_turn для просодии);
-        # этот закроем на сервере, когда аудио доиграет
-        if self._context_open and self.context_id and self.context_id not in self._finished_contexts:
-            self._finished_contexts.append(self.context_id)
-        self._context_open = False
+        ctx, self.context_id = self.context_id, None
+        if not ctx:
+            self._close_after_pending = bool(self.pending_text)
+            return
+        self._finishing = ctx
+        self._spawn(self._close_context(ctx))
 
     async def clear(self) -> None:
-        """Перебивание: закрыть текущий контекст, дальше аудио от него игнорируется."""
+        """Перебивание: закрыть все живые контексты, дальше их звук игнорируется."""
         self.generation += 1
         self.pending_text.clear()
+        self._close_after_pending = False
         self.speaking = False
         self.response_complete = False
-        ws, ctx = self.ws, self.context_id
+        ws = self.ws
+        ctxs, self._live = list(self._live), set()
         self.context_id = None
-        self._context_open = False
-        self._finished_contexts = [c for c in self._finished_contexts if c != ctx]
-        if ws is not None and ctx:
-            try:
-                await self._send(ws, {"context_id": ctx, "close_context": True})
-            except Exception as exc:
-                logger.warning(f"[ELEVEN-TTS {self.label}] close_context failed: {exc}")
-                self.ws = None
-        logger.info(f"[ELEVEN-TTS {self.label}] barge-in: context {ctx} closed (gen={self.generation})")
+        self._finishing = None
+        if ws is not None:
+            for ctx in ctxs:
+                try:
+                    await self._send(ws, {"context_id": ctx, "close_context": True})
+                except Exception as exc:
+                    logger.warning(f"[ELEVEN-TTS {self.label}] close_context failed: {exc}")
+                    self.ws = None
+                    break
+        logger.info(f"[ELEVEN-TTS {self.label}] barge-in: contexts {ctxs} closed (gen={self.generation})")
 
     async def close(self) -> None:
         self.closing = True
-        for task in (self._idle_task, self._keepalive_task):
+        for task in (self._idle_task, self._keepalive_task, *self._bg_tasks):
             if task is not None and not task.done():
                 task.cancel()
         ws, self.ws = self.ws, None
