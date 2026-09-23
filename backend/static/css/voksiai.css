@@ -457,3 +457,8 @@ html:has(body.vf) { scrollbar-width: thin; scrollbar-color: var(--vf-border-stro
 .vf-lang-switch button.active { background: var(--vf-accent-soft); color: var(--vf-accent); }
 /* В топбаре старых страниц (flex, space-between) — прижать к меню пользователя */
 .top-nav > .vf-lang-switch { margin-left: auto; margin-right: 10px; }
+
+/* Мост FA → Lucide: ui.js вставил svg внутрь <i class="fas …"> (класс .vf-fa) —
+   глиф самого Font Awesome (::before) гасим, иначе иконка рисуется дважды.
+   Иконки без аналога в спрайте класса .vf-fa не получают и остаются глифом FA. */
+i.vf-fa::before, span.vf-fa::before, i.vf-fa::after, span.vf-fa::after { content: none !important; display: none !important; }
