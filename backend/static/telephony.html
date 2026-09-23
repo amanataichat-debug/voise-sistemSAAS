@@ -1,1624 +1,192 @@
 <!DOCTYPE html>
-<html lang="ru">
+<!-- /static/telephony.html — телефония через собственный SIP-шлюз (дизайн-система VoksiAI, этап 3).
+     Номера пользователя → привязка ассистента ElevenLabs или агента обзвона, исходящий звонок на номер O!,
+     журнал звонков. Вся логика — /static/js/telephony.js, API — /api/sip/*. -->
+<html lang="ru" data-vf-loader>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Телефония — VoksiAI</title>
+  <meta name="robots" content="noindex, nofollow">
+  <title>Телефония | VoksiAI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2a5ce8">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
-  <style>
-    :root {
-          --primary-blue: #2563eb;
-          --primary-blue-light: #3b82f6;
-          --primary-blue-dark: #1d4ed8;
-          --text-dark: #0f172a;
-          --text-gray: #64748b;
-          --text-light: #94a3b8;
-          --bg-light: #f8fafc;
-          --bg-blue-light: #eff6ff;
-          --white: #ffffff;
-          --border-color: #e2e8f0;
-          --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-          --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-          --radius-md: 0.5rem;
-          --radius-lg: 1rem;
-          --success-green: #10b981;
-          --error-red: #ef4444;
-          --warning-orange: #f59e0b;
-          --purple: #8b5cf6;
-    }
-
-    * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
-    body {
-          background-color: var(--bg-light);
-          color: var(--text-dark);
-          min-height: 100vh;
-          display: flex;
-    }
-
-    .sidebar {
-          width: 260px;
-          background-color: var(--white);
-          border-right: 1px solid var(--border-color);
-          height: 100vh;
-          position: fixed;
-          left: 0;
-          top: 0;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          z-index: 50;
-    }
-
-    .sidebar-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid var(--border-color);
-    }
-
-    .sidebar-logo span {
-          font-family: 'Syne', -apple-system, BlinkMacSystemFont, sans-serif;
-          font-weight: 800;
-          letter-spacing: -0.04em;
-          background: linear-gradient(135deg, #2563eb, #3b82f6);
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          color: #2563eb;
-    }
-
-    .sidebar-logo {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          font-size: 1.25rem;
-          font-weight: 700;
-          color: var(--text-dark);
-          text-decoration: none;
-    }
-
-    .logo-icon {
-          width: 30px;
-          height: 30px;
-          border-radius: var(--radius-md);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-    }
-
-    .logo-icon img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          border-radius: var(--radius-md);
-    }
-
-    .sidebar-nav {
-          padding: 1.5rem 0;
-          flex-grow: 1;
-    }
-
-    .sidebar-footer {
-          padding: 1rem 1.5rem;
-          border-top: 1px solid var(--border-color);
-    }
-
-    .badge-realtime {
-          margin-left: auto;
-          background: #FEF3C7;
-          color: #92400E;
-          font-size: 9px;
-          padding: 2px 6px;
-          border-radius: 4px;
-          text-transform: uppercase;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-    }
-
-    .sidebar-nav-item {
-          display: flex;
-          align-items: center;
-          padding: 0.75rem 1.5rem;
-          color: var(--text-gray);
-          text-decoration: none;
-          transition: background-color 0.2s, color 0.2s;
-          border-left: 3px solid transparent;
-    }
-
-    .sidebar-nav-item.active {
-          background-color: var(--bg-blue-light);
-          color: var(--primary-blue);
-          border-left-color: var(--primary-blue);
-    }
-
-    .sidebar-nav-item:hover {
-          background-color: var(--bg-blue-light);
-          color: var(--primary-blue);
-    }
-
-    .sidebar-nav-item i {
-          margin-right: 0.75rem;
-          width: 20px;
-          text-align: center;
-    }
-
-    .sidebar-section {
-          padding: 0 1.5rem;
-          margin-bottom: 0.75rem;
-          color: var(--text-light);
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          font-weight: 600;
-    }
-
-    .main-content {
-          flex: 1;
-          min-width: 0; /* иначе широкие таблицы растягивают main за экран (flex-элемент не ужимается ниже контента) */
-          margin-left: 260px;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-          min-height: 100vh;
-    }
-
-    .top-nav {
-          background-color: var(--white);
-          border-bottom: 1px solid var(--border-color);
-          padding: 1rem 2rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-    }
-
-    .page-title {
-          font-size: 1.25rem;
-          font-weight: 600;
-    }
-
-    .page-actions {
-          display: flex;
-          gap: 1rem;
-          align-items: center;
-    }
-
-    .user-menu {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          position: relative;
-    }
-
-    .user-button {
-          background: none;
-          border: none;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          color: var(--text-dark);
-          font-weight: 500;
-          padding: 0.5rem 1rem;
-          border-radius: var(--radius-md);
-          transition: all 0.2s;
-    }
-
-    .user-button:hover {
-          background-color: var(--bg-light);
-    }
-
-    .user-avatar {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background-color: var(--bg-blue-light);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          color: var(--primary-blue);
-          font-weight: 600;
-    }
-
-    .user-dropdown {
-          position: absolute;
-          top: calc(100% + 0.5rem);
-          right: 0;
-          background-color: var(--white);
-          border-radius: var(--radius-md);
-          box-shadow: var(--shadow-md);
-          min-width: 180px;
-          z-index: 100;
-          overflow: hidden;
-          display: none;
-    }
-
-    .user-dropdown.show {
-          display: block;
-          animation: dropdown-fade 0.2s ease-in-out forwards;
-    }
-
-    @keyframes dropdown-fade {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-    .dropdown-item {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.75rem 1rem;
-          color: var(--text-gray);
-          text-decoration: none;
-          font-size: 0.875rem;
-          transition: all 0.2s;
-    }
-
-    .dropdown-item:hover {
-          background-color: var(--bg-light);
-          color: var(--primary-blue);
-    }
-
-    .dropdown-divider {
-          height: 1px;
-          background-color: var(--border-color);
-          margin: 0.25rem 0;
-    }
-
-    .btn {
-          padding: 0.6rem 1.25rem;
-          border-radius: var(--radius-md);
-          font-weight: 500;
-          font-size: 0.875rem;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          border: none;
-          text-decoration: none;
-    }
-
-    .btn-primary {
-          background-color: var(--primary-blue);
-          color: var(--white);
-    }
-
-    .btn-primary:hover {
-          background-color: var(--primary-blue-dark);
-    }
-
-    .btn-secondary {
-          background-color: var(--bg-light);
-          color: var(--text-gray);
-          border: 1px solid var(--border-color);
-    }
-
-    .btn-secondary:hover {
-          background-color: var(--border-color);
-          color: var(--text-dark);
-    }
-
-    .btn-success {
-          background-color: var(--success-green);
-          color: var(--white);
-    }
-
-    .btn-success:hover {
-          background-color: #059669;
-    }
-
-    .btn-danger {
-          background-color: var(--error-red);
-          color: var(--white);
-    }
-
-    .btn-danger:hover {
-          background-color: #dc2626;
-    }
-
-    .btn-purple {
-          background-color: var(--purple);
-          color: var(--white);
-    }
-
-    .btn-purple:hover {
-          background-color: #7c3aed;
-    }
-
-    .btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-    }
-
-    .btn-lg {
-          padding: 1rem 2rem;
-          font-size: 1rem;
-    }
-
-    .btn-sm {
-          padding: 0.4rem 0.75rem;
-          font-size: 0.8rem;
-    }
-
-    .content-container {
-          padding: 2rem;
-          flex-grow: 1;
-    }
-
-    .card {
-          background-color: var(--white);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-sm);
-          border: 1px solid var(--border-color);
-          margin-bottom: 2rem;
-          padding: 1.5rem;
-    }
-
-    .card-header {
-          margin-bottom: 1.5rem;
-    }
-
-    .card-title {
-          font-size: 1.125rem;
-          font-weight: 600;
-          margin-bottom: 0.5rem;
-    }
-
-    .card-description {
-          color: var(--text-gray);
-          font-size: 0.875rem;
-    }
-
-    .status-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 1rem;
-          margin-bottom: 1.5rem;
-    }
-
-    .status-item {
-          background-color: var(--bg-light);
-          border-radius: var(--radius-md);
-          padding: 1rem;
-          text-align: center;
-    }
-
-    .status-item-label {
-          font-size: 0.75rem;
-          color: var(--text-gray);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          margin-bottom: 0.5rem;
-    }
-
-    .status-item-value {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: var(--text-dark);
-    }
-
-    .status-item-value.success {
-          color: var(--success-green);
-    }
-
-    .status-item-value.warning {
-          color: var(--warning-orange);
-    }
-
-    .status-item-value.error {
-          color: var(--error-red);
-    }
-
-    .form-group {
-          margin-bottom: 1.5rem;
-    }
-
-    .form-group label {
-          display: block;
-          margin-bottom: 0.5rem;
-          font-weight: 500;
-    }
-
-    .form-control {
-          width: 100%;
-          padding: 0.75rem 1rem;
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-          font-size: 0.875rem;
-    }
-
-    .form-control:focus {
-          outline: none;
-          border-color: var(--primary-blue-light);
-          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-    }
-
-    .form-helper {
-          margin-top: 0.5rem;
-          font-size: 0.875rem;
-          color: var(--text-gray);
-    }
-
-    .numbers-table {
-          width: 100%;
-          border-collapse: collapse;
-    }
-
-    .numbers-table th,
-        .numbers-table td {
-          padding: 1rem;
-          text-align: left;
-          border-bottom: 1px solid var(--border-color);
-    }
-
-    .numbers-table th {
-          font-weight: 600;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-gray);
-          background-color: var(--bg-light);
-    }
-
-    .numbers-table tr:hover {
-          background-color: var(--bg-light);
-    }
-
-    .phone-number {
-          font-family: 'Consolas', 'Monaco', monospace;
-          font-weight: 600;
-          color: var(--text-dark);
-    }
-
-    .assistant-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.25rem 0.75rem;
-          border-radius: 2rem;
-          font-size: 0.75rem;
-          font-weight: 500;
-          background-color: var(--bg-blue-light);
-          color: var(--primary-blue);
-    }
-
-    .assistant-badge.not-bound {
-          background-color: #f1f5f9;
-          color: var(--text-gray);
-    }
-
-    .notification {
-          position: fixed;
-          top: 1rem;
-          right: 1rem;
-          background-color: var(--white);
-          border-radius: var(--radius-md);
-          padding: 1rem;
-          box-shadow: var(--shadow-md);
-          max-width: 350px;
-          z-index: 1000;
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          transition: transform 0.3s, opacity 0.3s;
-          transform: translateY(-20px);
-          opacity: 0;
-    }
-
-    .notification.show {
-          transform: translateY(0);
-          opacity: 1;
-    }
-
-    .notification-success {
-          border-left: 4px solid var(--success-green);
-    }
-
-    .notification-error {
-          border-left: 4px solid var(--error-red);
-    }
-
-    .notification-info {
-          border-left: 4px solid var(--primary-blue);
-    }
-
-    .notification-warning {
-          border-left: 4px solid var(--warning-orange);
-    }
-
-    .notification-icon {
-          font-size: 1.25rem;
-    }
-
-    .notification-success .notification-icon {
-          color: var(--success-green);
-    }
-
-    .notification-error .notification-icon {
-          color: var(--error-red);
-    }
-
-    .notification-info .notification-icon {
-          color: var(--primary-blue);
-    }
-
-    .notification-warning .notification-icon {
-          color: var(--warning-orange);
-    }
-
-    .notification-content {
-          flex: 1;
-    }
-
-    .notification-close {
-          background: none;
-          border: none;
-          color: var(--text-gray);
-          cursor: pointer;
-          font-size: 1.125rem;
-    }
-
-    .loading-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(255, 255, 255, 0.8);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-    }
-
-    .loading-spinner {
-          width: 50px;
-          height: 50px;
-          border: 5px solid var(--bg-blue-light);
-          border-radius: 50%;
-          border-top-color: var(--primary-blue);
-          animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-    .empty-state {
-          text-align: center;
-          padding: 3rem;
-          color: var(--text-gray);
-    }
-
-    .empty-state i {
-          font-size: 4rem;
-          margin-bottom: 1rem;
-          opacity: 0.3;
-    }
-
-    .empty-state h3 {
-          font-size: 1.25rem;
-          margin-bottom: 0.5rem;
-          color: var(--text-dark);
-    }
-
-    .action-buttons {
-          display: flex;
-          gap: 1rem;
-          flex-wrap: wrap;
-    }
-
-    .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(0, 0, 0, 0.5);
-          display: none;
-          justify-content: center;
-          align-items: center;
-          z-index: 1000;
-    }
-
-    .modal-overlay.show {
-          display: flex;
-    }
-
-    .modal {
-          background-color: var(--white);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-lg);
-          width: 100%;
-          max-width: 500px;
-          max-height: 90vh;
-          overflow-y: auto;
-          margin: 1rem;
-    }
-
-    .modal.modal-wide {
-          max-width: 700px;
-    }
-
-    .modal.modal-extra-wide {
-          max-width: 900px;
-    }
-
-    .modal-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-    }
-
-    .modal-title {
-          font-size: 1.125rem;
-          font-weight: 600;
-    }
-
-    .modal-close {
-          background: none;
-          border: none;
-          font-size: 1.5rem;
-          color: var(--text-gray);
-          cursor: pointer;
-    }
-
-    .modal-body {
-          padding: 1.5rem;
-    }
-
-    .modal-body.compact {
-          padding: 1rem 1.5rem;
-    }
-
-    .modal-footer {
-          padding: 1rem 1.5rem;
-          border-top: 1px solid var(--border-color);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-    }
-
-    .modal-footer-left {
-          font-size: 0.875rem;
-          color: var(--text-gray);
-    }
-
-    .modal-footer-left strong {
-          color: var(--text-dark);
-    }
-
-    .modal-footer-right {
-          display: flex;
-          gap: 1rem;
-    }
-
-    @media (max-width: 768px) {
-      .sidebar {
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-      }
-      .sidebar.mobile-open {
-            transform: translateX(0);
-      }
-      .main-content {
-            margin-left: 0;
-      }
-      .top-nav {
-            padding: 1rem;
-      }
-      .content-container {
-            padding: 1rem;
-      }
-      .status-grid {
-            grid-template-columns: 1fr 1fr;
-      }
-      .action-buttons {
-            flex-direction: column;
-      }
-      .action-buttons .btn {
-            width: 100%;
-            justify-content: center;
-      }
-      .numbers-table {
-            font-size: 0.875rem;
-      }
-      .numbers-table th,
-          .numbers-table td {
-            padding: 0.75rem 0.5rem;
-      }
-    }
-
-    .mobile-menu-toggle {
-          display: none;
-          background: none;
-          border: none;
-          font-size: 1.25rem;
-          color: var(--text-gray);
-          cursor: pointer;
-          padding: 0.5rem;
-    }
-
-    @media (max-width: 768px) {
-      .mobile-menu-toggle {
-            display: block;
-      }
-    }
-
-    .sidebar-overlay {
-          display: none;
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(0, 0, 0, 0.5);
-          z-index: 49;
-    }
-
-    @media (max-width: 768px) {
-      .sidebar-overlay.show {
-            display: block;
-      }
-    }
-
-    .badge-inbound {
-          background-color: #f1f5f9;
-          color: #64748b;
-    }
-
-    .badge-outbound {
-          background-color: #eff6ff;
-          color: #2563eb;
-    }
-
-    .hidden {
-          display: none !important;
-    }
-
-    /* ---- Телефония через собственный SIP-шлюз ---- */
-    .numbers-table td { vertical-align: middle; }
-    .numbers-table .phone-number { white-space: nowrap; }
-    .badge-yes, .badge-no {
-      display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px;
-      font-size: 0.75rem; font-weight: 600;
-    }
-    .badge-yes { background: #d1fae5; color: #065f46; }
-    .badge-no { background: #f1f5f9; color: #64748b; }
-    .assistant-sub { font-size: 0.7rem; color: var(--text-light); margin-top: 0.2rem; }
-    .assistant-badge.agent { background: #f5f3ff; color: #5b21b6; }
-    .assistant-badge.broken { background: #fef2f2; color: #991b1b; }
-
-    .call-form { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: end; }
-    .call-form .form-group { margin-bottom: 0; }
-    .call-form .span-2 { grid-column: span 2; }
-    .call-form .form-actions { display: flex; gap: 0.75rem; align-items: center; }
-    .form-helper.error { color: var(--error-red); }
-
-    .call-status {
-      margin-top: 1.25rem; padding: 1rem 1.25rem; border-radius: var(--radius-md);
-      border: 1px solid var(--border-color); background: var(--bg-light);
-      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-    }
-    .call-status .dot {
-      width: 12px; height: 12px; border-radius: 50%; background: var(--text-light); flex-shrink: 0;
-    }
-    .call-status.queued .dot, .call-status.dialing .dot, .call-status.ringing .dot {
-      background: var(--warning-yellow); animation: pulse 1.2s infinite;
-    }
-    .call-status.answered .dot { background: var(--success-green); animation: pulse 1.2s infinite; }
-    .call-status.completed .dot { background: var(--success-green); }
-    .call-status.failed .dot { background: var(--error-red); }
-    .call-status .status-text { font-weight: 600; }
-    .call-status .status-detail { color: var(--text-gray); font-size: 0.875rem; }
-    .call-status .spacer { flex: 1; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-    .status-badge {
-      display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px;
-      font-size: 0.75rem; font-weight: 600; white-space: nowrap;
-    }
-    .status-badge.queued, .status-badge.dialing, .status-badge.ringing { background: #fef3c7; color: #92400e; }
-    .status-badge.answered { background: #dbeafe; color: #1e40af; }
-    .status-badge.completed { background: #d1fae5; color: #065f46; }
-    .status-badge.failed { background: #fee2e2; color: #991b1b; }
-    .dir-badge {
-      display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px;
-      font-size: 0.75rem; font-weight: 600; white-space: nowrap;
-    }
-    .muted { color: var(--text-light); }
-    .table-wrap { overflow-x: auto; }
-    .bind-target-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 50vh; overflow-y: auto; }
-    .bind-group { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-light); margin: 0.5rem 0 0.1rem; }
-    .bind-option {
-      display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem;
-      border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer;
-    }
-    .bind-option:hover { background: var(--bg-light); }
-    .bind-option.selected { border-color: var(--primary-blue); background: var(--bg-blue-light); }
-    .bind-option.disabled { opacity: 0.5; cursor: not-allowed; }
-    .bind-option .name { font-weight: 500; }
-    .bind-option .sub { font-size: 0.75rem; color: var(--text-light); }
-    .bind-option i { width: 1.1rem; text-align: center; color: var(--text-gray); }
-    .info-box {
-      background: var(--bg-blue-light); border: 1px solid #bfdbfe; border-radius: var(--radius-md);
-      padding: 0.85rem 1rem; font-size: 0.875rem; color: #1e3a8a; margin-bottom: 1.25rem;
-    }
-    .info-box i { margin-right: 0.4rem; }
-    @media (max-width: 768px) {
-      .call-form { grid-template-columns: 1fr; }
-      .call-form .span-2 { grid-column: span 1; }
-    }
-  </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
-  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
-  <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
   <script src="/static/js/i18n.js"></script>
   <script src="/static/js/ui.js"></script>
+  <style>
+    .stack-lg { display: flex; flex-direction: column; gap: 20px; max-width: 1200px; }
+    .card-head h2 { font-size: 15px; }
+    .card-head .muted { font-size: 13px; margin-top: 2px; }
+    .phone { font-family: var(--vf-font-mono); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+    .sub { font-size: 12px; color: var(--vf-text-4); margin-top: 2px; }
+    .bind { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+    .bind .ic { width: 15px; height: 15px; color: var(--vf-text-3); }
+    .table td .row { flex-wrap: nowrap; justify-content: flex-end; }
+
+    /* Исходящий звонок */
+    .call-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: start; }
+    .call-form .span-2 { grid-column: 1 / -1; }
+    .hint.error { color: var(--vf-danger); }
+    .call-status { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--vf-r-md); background: var(--vf-surface-2); border: 1px solid var(--vf-border); margin-top: 4px; flex-wrap: wrap; }
+    .call-status .dot { width: 10px; height: 10px; }
+    .call-status.answered .dot { background: var(--vf-success); box-shadow: 0 0 0 4px var(--vf-success-soft); }
+    .call-status.dialing .dot, .call-status.ringing .dot, .call-status.queued .dot { background: var(--vf-warning); animation: tel-pulse 1.2s infinite; }
+    .call-status.failed .dot { background: var(--vf-danger); }
+    .call-status .grow { min-width: 160px; }
+    @keyframes tel-pulse { 50% { opacity: .35; } }
+
+    /* Статусы */
+    .st { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--vf-surface-3); color: var(--vf-text-2); white-space: nowrap; }
+    .st.answered, .st.completed, .st.on { background: var(--vf-success-soft); color: var(--vf-success); }
+    .st.failed { background: var(--vf-danger-soft); color: var(--vf-danger); }
+    .st.queued, .st.dialing, .st.ringing { background: var(--vf-warning-soft); color: var(--vf-warning); }
+    .dir { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
+    .dir .ic { width: 14px; height: 14px; }
+    .dir.in .ic { color: var(--vf-success); }
+    .dir.out .ic { color: var(--vf-accent); }
+
+    /* Модалка привязки */
+    .bind-list { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow: auto; }
+    .bind-group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--vf-text-4); padding: 10px 2px 2px; }
+    .bind-opt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-sm); cursor: pointer; transition: border-color var(--vf-fast), background var(--vf-fast); }
+    .bind-opt:hover { border-color: var(--vf-border-strong); }
+    .bind-opt.selected { border-color: var(--vf-accent); background: var(--vf-accent-soft); }
+    .bind-opt.disabled { opacity: .5; cursor: not-allowed; }
+    .bind-opt .name { font-weight: 600; font-size: 13.5px; }
+    .vf-dialog-foot.split { justify-content: space-between; }
+
+    @media (max-width: 720px) {
+      .call-form { grid-template-columns: 1fr; }
+      .card-head { flex-wrap: wrap; }
+    }
+  </style>
 </head>
 <body class="vf">
-  <!-- Overlay для мобильного меню -->
-  <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
-  <!-- Боковая панель -->
-  <aside class="sidebar" id="sidebar">
+<div class="vf-app">
+  <aside class="sidebar vf-sidebar" id="sidebar">
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
         <span class="mark"><svg class="ic" aria-hidden="true"><use href="/static/icons/ui.svg#i-audio-lines"></use></svg></span>
         <span class="wordmark">VoksiAI</span>
       </a>
-      <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
-        <i class="fas fa-times"></i>
+      <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg>
       </button>
     </div>
-    <nav class="sidebar-nav" id="sidebar-nav"></nav><!-- меню рисует /static/js/sidebar.js -->
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
     <div class="sidebar-footer">
-      <a href="/" data-logout class="btn btn-ghost" id="logout-button" style="width:100%;justify-content:flex-start">
-        <i class="fas fa-sign-out-alt"></i> <span data-i18n="sidebar.logout">Выйти</span>
+      <a href="/" data-logout class="btn btn-ghost" style="width:100%;justify-content:flex-start" id="logout-button">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-log-out"></use></svg> <span data-i18n="sidebar.logout">Выйти</span>
       </a>
     </div>
   </aside>
   <script src="/static/js/sidebar.js"></script>
 
-  <!-- Основной контент -->
-  <main class="main-content">
-    <div class="top-nav">
-      <div style="display: flex; align-items: center; gap: 1rem;">
-        <button class="mobile-menu-toggle" id="mobile-menu-toggle">
-          <i class="fas fa-bars"></i>
+  <main class="vf-main">
+    <header class="vf-topbar">
+      <div class="vf-topbar-left">
+        <button class="btn btn-ghost btn-icon mobile-toggle" id="sidebar-toggle" aria-label="Меню" data-i18n-title="sidebar.open_menu">
+          <svg class="ic"><use href="/static/icons/ui.svg#i-menu"></use></svg>
         </button>
-        <h1 class="page-title">Телефония</h1>
+        <h1 data-i18n="sip.page_title">Телефония</h1>
       </div>
+      <div class="vf-topbar-right"></div>
+    </header>
 
-      <div class="page-actions">
-        <div class="user-menu">
-          <button class="user-button" id="user-menu-button">
-            <div class="user-avatar" id="user-avatar">АП</div>
-            <span class="user-name" id="user-name">Пользователь</span>
-            <i class="fas fa-chevron-down"></i>
-          </button>
+    <div class="vf-content">
+      <div class="stack-lg">
 
-          <div class="user-dropdown" id="user-dropdown">
-            <a href="/static/settings.html" class="dropdown-item">
-              <i class="fas fa-user"></i> Профиль
-            </a>
-            <div class="dropdown-divider"></div>
-            <a href="/static/index.html" class="dropdown-item">
-              <i class="fas fa-sign-out-alt"></i> Выйти
-            </a>
+        <!-- Мои номера -->
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="sip.numbers_title">Мои номера</h2>
+              <p class="muted" data-i18n="sip.numbers_sub">Входящий звонок на номер отвечает привязанный ассистент или агент обзвона.</p>
+            </div>
+            <button class="btn btn-sm" type="button" id="refresh-numbers"><svg class="ic"><use href="/static/icons/ui.svg#i-refresh-cw"></use></svg><span data-i18n="sip.refresh">Обновить</span></button>
           </div>
-        </div>
+          <div class="card-body" id="numbers"><div class="skeleton" style="height:96px"></div></div>
+        </section>
+
+        <!-- Исходящий звонок -->
+        <section class="card" id="outbound-card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="sip.call_title">Исходящий звонок</h2>
+              <p class="muted" data-i18n="sip.call_sub">Ассистент позвонит абоненту с вашего номера. Первая фраза и промпт берутся из настроек ассистента.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="call-form">
+              <div class="field">
+                <label class="label" for="call-from" data-i18n="sip.call_from">С номера</label>
+                <select class="form-control" id="call-from"></select>
+              </div>
+              <div class="field">
+                <label class="label" for="call-to" data-i18n="sip.call_to">Номер абонента O!</label>
+                <input class="input" type="tel" id="call-to" placeholder="0700 123 456" autocomplete="off">
+                <span class="hint" id="call-to-hint"></span>
+              </div>
+              <div class="field span-2">
+                <label class="label" for="call-who" data-i18n="sip.call_who">Кто звонит</label>
+                <select class="form-control" id="call-who"></select>
+                <span class="hint" data-i18n="sip.call_who_hint">По умолчанию тот, кто привязан к номеру</span>
+              </div>
+              <div class="span-2">
+                <button class="btn btn-primary" type="button" id="call-btn"><svg class="ic"><use href="/static/icons/ui.svg#i-phone-outgoing"></use></svg><span data-i18n="sip.call_btn">Позвонить</span></button>
+              </div>
+            </div>
+            <div class="call-status hidden" id="call-status">
+              <span class="dot"></span>
+              <span class="grow"><b id="call-status-text"></b> <span class="muted small" id="call-status-detail"></span></span>
+              <button class="btn btn-sm btn-danger hidden" type="button" id="hangup-btn"><svg class="ic"><use href="/static/icons/ui.svg#i-phone-off"></use></svg><span data-i18n="sip.hangup">Положить трубку</span></button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Журнал -->
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="sip.journal_title">Журнал звонков</h2>
+              <p class="muted" data-i18n="sip.journal_sub">Входящие и исходящие через шлюз. Расшифровки — на странице «Диалоги».</p>
+            </div>
+            <div class="row">
+              <a class="btn btn-sm" href="/static/conversations.html"><svg class="ic"><use href="/static/icons/ui.svg#i-messages-square"></use></svg><span data-i18n="sip.to_dialogs">Диалоги</span></a>
+              <button class="btn btn-sm" type="button" id="refresh-calls"><svg class="ic"><use href="/static/icons/ui.svg#i-refresh-cw"></use></svg><span data-i18n="sip.refresh">Обновить</span></button>
+            </div>
+          </div>
+          <div class="card-body" id="calls"><div class="skeleton" style="height:96px"></div></div>
+        </section>
+
       </div>
-    </div>
-
-    <div class="content-container">
-
-      <!-- Мои номера -->
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
-          <div>
-            <h2 class="card-title">Мои номера</h2>
-            <p class="card-description">Входящий звонок на номер отвечает привязанный ассистент или агент обзвона.</p>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="refresh-numbers-btn">
-            <i class="fas fa-sync-alt"></i> Обновить
-          </button>
-        </div>
-        <div id="numbers-container">
-          <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><h3>Загрузка…</h3></div>
-        </div>
-      </div>
-
-      <!-- Исходящий звонок -->
-      <div class="card" id="outbound-card">
-        <div class="card-header">
-          <h2 class="card-title">Исходящий звонок</h2>
-          <p class="card-description">Ассистент позвонит абоненту с вашего номера. Первая фраза и промпт берутся из настроек ассистента.</p>
-        </div>
-
-        <div class="call-form">
-          <div class="form-group">
-            <label for="call-from">С номера</label>
-            <select id="call-from" class="form-control"></select>
-          </div>
-          <div class="form-group">
-            <label for="call-to">Номер абонента O!</label>
-            <input type="tel" id="call-to" class="form-control" placeholder="0700 123 456" autocomplete="off">
-            <div class="form-helper" id="call-to-helper">Только номера O!: префиксы 050, 070, 099</div>
-          </div>
-          <div class="form-group span-2">
-            <label for="call-assistant">Кто звонит</label>
-            <select id="call-assistant" class="form-control"></select>
-            <div class="form-helper">По умолчанию тот, кто привязан к номеру</div>
-          </div>
-          <div class="form-actions span-2">
-            <button class="btn btn-primary" id="call-btn">
-              <i class="fas fa-phone"></i> Позвонить
-            </button>
-          </div>
-        </div>
-
-        <div class="call-status hidden" id="call-status">
-          <span class="dot"></span>
-          <span class="status-text" id="call-status-text">—</span>
-          <span class="status-detail" id="call-status-detail"></span>
-          <span class="spacer"></span>
-          <button class="btn btn-danger btn-sm hidden" id="hangup-btn">
-            <i class="fas fa-phone-slash"></i> Положить трубку
-          </button>
-        </div>
-      </div>
-
-      <!-- Журнал звонков -->
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
-          <div>
-            <h2 class="card-title">Журнал звонков</h2>
-            <p class="card-description">Входящие и исходящие через шлюз. Транскрипты — на странице «Диалоги».</p>
-          </div>
-          <div style="display:flex; gap:0.5rem;">
-            <a href="/static/conversations.html" class="btn btn-secondary btn-sm"><i class="fas fa-comments"></i> Диалоги</a>
-            <button class="btn btn-secondary btn-sm" id="refresh-calls-btn"><i class="fas fa-sync-alt"></i> Обновить</button>
-          </div>
-        </div>
-        <div id="calls-container">
-          <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><h3>Загрузка…</h3></div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Уведомление -->
-    <div class="notification notification-success" id="notification" style="display: none;">
-      <div class="notification-icon"><i class="fas fa-check-circle"></i></div>
-      <div class="notification-content"><div id="notification-message"></div></div>
-      <button class="notification-close" id="notification-close">&times;</button>
-    </div>
-
-    <div class="loading-overlay" id="loading-overlay" style="display: none;">
-      <div class="loading-spinner"></div>
     </div>
   </main>
+</div>
 
-  <!-- Модальное окно: привязка ассистента / агента -->
-  <div class="modal-overlay" id="bind-modal">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 class="modal-title">Привязать к номеру <span id="bind-phone-label"></span></h3>
-        <button class="modal-close" id="close-bind-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="bind-number-id">
-        <div class="bind-target-list" id="bind-target-list">
-          <div class="empty-state"><i class="fas fa-spinner fa-spin"></i></div>
-        </div>
-      </div>
-      <div class="modal-footer" style="justify-content: space-between;">
-        <button class="btn btn-secondary" id="unbind-btn"><i class="fas fa-unlink"></i> Отвязать</button>
-        <div style="display:flex; gap:0.5rem;">
-          <button class="btn btn-secondary" id="cancel-bind-btn">Отмена</button>
-          <button class="btn btn-primary" id="confirm-bind-btn" disabled><i class="fas fa-link"></i> Привязать</button>
-        </div>
+<!-- Привязка ассистента / агента к номеру -->
+<div class="vf-backdrop" id="bind-modal">
+  <div class="vf-dialog" role="dialog" aria-modal="true" aria-labelledby="bind-title">
+    <div class="vf-dialog-head">
+      <h3 id="bind-title"></h3>
+      <button class="btn btn-ghost btn-icon btn-sm" type="button" data-close aria-label="Закрыть" data-i18n-title="common.close"><svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg></button>
+    </div>
+    <div class="vf-dialog-body"><div class="bind-list" id="bind-list"></div></div>
+    <div class="vf-dialog-foot split">
+      <button class="btn" type="button" id="unbind-btn"><svg class="ic"><use href="/static/icons/ui.svg#i-unlink"></use></svg><span data-i18n="sip.unbind">Отвязать</span></button>
+      <div class="row">
+        <button class="btn" type="button" data-close data-i18n="common.cancel">Отмена</button>
+        <button class="btn btn-primary" type="button" id="bind-btn" disabled><svg class="ic"><use href="/static/icons/ui.svg#i-link"></use></svg><span data-i18n="sip.bind">Привязать</span></button>
       </div>
     </div>
   </div>
+</div>
 
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      // ---------- Константы ----------
-      // Оператор пропускает исходящие только на номера O!. Тот же список на бэкенде:
-      // O_MOBILE_PREFIXES в backend/models/sip_gateway.py.
-      const O_PREFIXES = ['050', '070', '099'];
-      const TYPE_LABELS = { openai: 'OpenAI', gemini: 'Gemini', fish: 'Fish', eleven: 'ElevenLabs' };
-      const TYPE_ICONS = { openai: 'fa-robot', gemini: 'fa-gem', fish: 'fa-fish', eleven: 'fa-wave-square' };
-      const SUPPORTED_TYPES = ['openai', 'gemini', 'fish', 'eleven'];
-      const STATUS_LABELS = {
-        queued: 'В очереди', dialing: 'Набор номера', ringing: 'Вызов', answered: 'Разговор',
-        completed: 'Завершён', failed: 'Не состоялся',
-      };
-      const END_REASONS = {
-        completed: 'завершён', hangup: 'абонент положил трубку', assistant_hangup: 'ассистент завершил',
-        busy: 'занято', no_answer: 'нет ответа', cancelled: 'отменён', channel_limit: 'все каналы заняты',
-        congestion: 'сеть перегружена', rejected: 'отклонён', failed: 'ошибка', user_request: 'отбой из интерфейса',
-        unknown_number: 'номер не найден', assistant_not_found: 'ассистент не найден',
-        ami_unavailable: 'шлюз недоступен', trunk_unavailable: 'транк недоступен',
-      };
-      const ACTIVE_STATUSES = ['queued', 'dialing', 'ringing', 'answered'];
-
-      // ---------- Элементы ----------
-      const $ = (id) => document.getElementById(id);
-      const notification = $('notification');
-      const notificationMessage = $('notification-message');
-      const loadingOverlay = $('loading-overlay');
-      const sidebar = $('sidebar');
-      const sidebarOverlay = $('sidebar-overlay');
-      const userDropdown = $('user-dropdown');
-      const bindModal = $('bind-modal');
-      const callStatus = $('call-status');
-      const hangupBtn = $('hangup-btn');
-
-      // ---------- Состояние ----------
-      let numbers = [];
-      let assistantsCache = null;   // { openai: [], gemini: [], fish: [], agents: [] }
-      let selectedBind = null;       // { kind: 'assistant'|'agent', type, id }
-      let currentCallId = null;
-      let pollTimer = null;
-
-      // ---------- API ----------
-      const api = {
-        getToken() { return localStorage.getItem('auth_token'); },
-        async fetch(endpoint, options = {}) {
-          options.headers = { ...(options.headers || {}) };
-          const token = this.getToken();
-          if (token) options.headers['Authorization'] = `Bearer ${token}`;
-          if (options.body && typeof options.body !== 'string') {
-            options.headers['Content-Type'] = 'application/json';
-            options.body = JSON.stringify(options.body);
-          }
-          const response = await fetch(`/api${endpoint}`, options);
-          if (response.status === 401) {
-            localStorage.removeItem('auth_token');
-            window.location.href = '/static/login.html';
-            throw new Error('Требуется авторизация');
-          }
-          let data = null;
-          try { data = await response.json(); } catch (_) { data = {}; }
-          if (!response.ok) {
-            const detail = data.detail;
-            throw new Error(typeof detail === 'string' ? detail : (data.message || 'Произошла ошибка'));
-          }
-          return data;
-        },
-        get(endpoint) { return this.fetch(endpoint, { method: 'GET' }); },
-        post(endpoint, body) { return this.fetch(endpoint, { method: 'POST', body }); },
-        patch(endpoint, body) { return this.fetch(endpoint, { method: 'PATCH', body }); },
-      };
-
-      if (!api.getToken()) {
-        window.location.href = '/static/login.html';
-        return;
-      }
-
-      // ---------- UI helpers ----------
-      function setLoading(on) { loadingOverlay.style.display = on ? 'flex' : 'none'; }
-
-      let notifyTimer = null;
-      function showNotification(message, type = 'success') {
-        notification.className = `notification notification-${type}`;
-        const icon = notification.querySelector('.notification-icon i');
-        icon.className = 'fas ' + ({ success: 'fa-check-circle', error: 'fa-exclamation-circle', warning: 'fa-exclamation-triangle' }[type] || 'fa-info-circle');
-        notificationMessage.textContent = message;
-        notification.style.display = 'flex';
-        requestAnimationFrame(() => notification.classList.add('show'));
-        clearTimeout(notifyTimer);
-        notifyTimer = setTimeout(hideNotification, 5000);
-      }
-      function hideNotification() {
-        notification.classList.remove('show');
-        setTimeout(() => { notification.style.display = 'none'; }, 300);
-      }
-      $('notification-close').addEventListener('click', hideNotification);
-
-      function esc(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-      }
-
-      // 996705701707 → +996 705 701 707
-      function formatPhone(digits) {
-        if (!digits) return '—';
-        const d = String(digits).replace(/\D/g, '');
-        if (d.length === 12 && d.startsWith('996')) {
-          return `+996 ${d.slice(3, 6)} ${d.slice(6, 9)} ${d.slice(9)}`;
-        }
-        return '+' + d;
-      }
-
-      // Любой ввод → канонический вид 996XXXXXXXXX (как normalize_sip_number на бэкенде)
-      function normalizePhone(value) {
-        let d = String(value || '').replace(/\D/g, '');
-        if (d.length === 10 && d.startsWith('0')) d = '996' + d.slice(1);
-        else if (d.length === 9) d = '996' + d;
-        return d;
-      }
-      function isONumber(digits) {
-        if (digits.length !== 12 || !digits.startsWith('996')) return false;
-        const national = '0' + digits.slice(3);
-        return O_PREFIXES.some((p) => national.startsWith(p));
-      }
-
-      function formatDate(iso) {
-        if (!iso) return '—';
-        const d = new Date(iso);
-        return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-      }
-      function formatDuration(sec) {
-        if (sec === null || sec === undefined) return '—';
-        const s = Math.round(sec);
-        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-      }
-      function statusBadge(status) {
-        return `<span class="status-badge ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span>`;
-      }
-      function endReasonText(call) {
-        if (call.error) return call.error;
-        if (!call.end_reason) return '';
-        return END_REASONS[call.end_reason] || call.end_reason;
-      }
-
-      // ---------- Пользователь ----------
-      async function loadUserInfo() {
-        try {
-          const u = await api.get('/users/me');
-          const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.company_name || u.email || '';
-          $('user-name').textContent = name;
-          $('user-avatar').textContent = name.slice(0, 2).toUpperCase();
-        } catch (e) { console.error(e); }
-      }
-
-      // ---------- Номера ----------
-      function bindingCell(num) {
-        if (num.agent_config_id) {
-          const sub = num.assistant_name
-            ? `${TYPE_LABELS[num.assistant_type] || num.assistant_type} · ${esc(num.assistant_name)}`
-            : 'голосовой ассистент агента не найден';
-          return `<span class="assistant-badge agent"><i class="fas fa-headset"></i> ${esc(num.agent_name || 'Агент удалён')}</span>
-                  <div class="assistant-sub">Агент обзвона · ${sub}</div>`;
-        }
-        if (num.assistant_id) {
-          if (!num.assistant_name) {
-            return `<span class="assistant-badge broken"><i class="fas fa-triangle-exclamation"></i> Ассистент не найден</span>
-                    <div class="assistant-sub">Привяжите заново</div>`;
-          }
-          const inactive = num.assistant_active === false ? ' · неактивен' : '';
-          return `<span class="assistant-badge"><i class="fas ${TYPE_ICONS[num.assistant_type] || 'fa-robot'}"></i> ${esc(num.assistant_name)}</span>
-                  <div class="assistant-sub">${esc(TYPE_LABELS[num.assistant_type] || num.assistant_type)}${inactive}</div>`;
-        }
-        return `<span class="assistant-badge not-bound"><i class="fas fa-unlink"></i> Не привязан</span>`;
-      }
-
-      function renderNumbers() {
-        const container = $('numbers-container');
-        if (!numbers.length) {
-          container.innerHTML = `
-            <div class="empty-state">
-              <i class="fas fa-phone"></i>
-              <h3>Номеров пока нет</h3>
-              <p>Номер оператора выдаёт администратор VoksiAI. Напишите в поддержку, и он появится здесь.</p>
-            </div>`;
-          return;
-        }
-        container.innerHTML = `
-          <div class="table-wrap">
-          <table class="numbers-table">
-            <thead>
-              <tr>
-                <th>Номер</th>
-                <th>Отвечает на входящие</th>
-                <th>Исходящие</th>
-                <th>Статус</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${numbers.map((num) => `
-                <tr>
-                  <td>
-                    <span class="phone-number">${esc(formatPhone(num.phone_number))}</span>
-                    ${num.label ? `<div class="assistant-sub">${esc(num.label)}</div>` : ''}
-                  </td>
-                  <td>${bindingCell(num)}</td>
-                  <td>${num.allow_outbound ? '<span class="badge-yes">разрешены</span>' : '<span class="badge-no">выключены</span>'}</td>
-                  <td>${num.is_active ? '<span class="badge-yes">активен</span>' : '<span class="badge-no">отключён</span>'}</td>
-                  <td style="text-align:right; white-space:nowrap;">
-                    <button class="btn btn-secondary btn-sm bind-btn" data-id="${esc(num.id)}" data-phone="${esc(num.phone_number)}">
-                      <i class="fas fa-link"></i> Привязать
-                    </button>
-                    ${num.allow_outbound && num.is_active ? `
-                    <button class="btn btn-primary btn-sm call-from-btn" data-phone="${esc(num.phone_number)}">
-                      <i class="fas fa-phone"></i> Позвонить
-                    </button>` : ''}
-                  </td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-          </div>`;
-        container.querySelectorAll('.bind-btn').forEach((btn) => {
-          btn.addEventListener('click', () => openBindModal(btn.dataset.id, btn.dataset.phone));
-        });
-        container.querySelectorAll('.call-from-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            $('call-from').value = btn.dataset.phone;
-            fillCallAssistants();
-            $('outbound-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-            $('call-to').focus();
-          });
-        });
-      }
-
-      async function loadNumbers() {
-        try {
-          const result = await api.get('/sip/numbers');
-          numbers = result.numbers || [];
-          renderNumbers();
-          fillCallFrom();
-        } catch (e) {
-          showNotification(e.message || 'Не удалось загрузить номера', 'error');
-        }
-      }
-
-      // ---------- Ассистенты и агенты ----------
-      async function loadAssistants(force = false) {
-        if (assistantsCache && !force) return assistantsCache;
-        const safe = async (p, pick) => {
-          try { return pick(await p); } catch (e) { console.error(e); return []; }
-        };
-        const [openai, gemini, fish, eleven, agents] = await Promise.all([
-          safe(api.get('/assistants/'), (d) => Array.isArray(d) ? d : (d.assistants || [])),
-          safe(api.get('/gemini-assistants'), (d) => Array.isArray(d) ? d : (d.assistants || [])),
-          safe(api.get('/fish-assistants'), (d) => Array.isArray(d) ? d : (d.assistants || [])),
-          safe(api.get('/eleven-assistants'), (d) => Array.isArray(d) ? d : (d.assistants || [])),
-          safe(api.get('/agent/list'), (d) => d.agents || []),
-        ]);
-        assistantsCache = { openai, gemini, fish, eleven, agents };
-        return assistantsCache;
-      }
-
-      function assistantOptionsHtml(cache, selected) {
-        // selected: { kind, type, id } — что выбрать по умолчанию
-        let html = '';
-        const agents = cache.agents.filter((a) => SUPPORTED_TYPES.includes(a.assistant_type) && a.assistant_id);
-        if (agents.length) {
-          html += '<optgroup label="Агенты обзвона">' + agents.map((a) =>
-            `<option value="agent:${esc(a.assistant_type)}:${esc(a.assistant_id)}" ${selected && selected.kind === 'agent' && selected.id === a.id ? 'selected' : ''}>${esc(a.name)} (${TYPE_LABELS[a.assistant_type]})</option>`
-          ).join('') + '</optgroup>';
-        }
-        for (const type of SUPPORTED_TYPES) {
-          const list = cache[type];
-          if (!list.length) continue;
-          html += `<optgroup label="${TYPE_LABELS[type]} ассистенты">` + list.map((a) =>
-            `<option value="assistant:${type}:${esc(a.id)}" ${selected && selected.kind === 'assistant' && selected.id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`
-          ).join('') + '</optgroup>';
-        }
-        return html;
-      }
-
-      // ---------- Привязка ----------
-      async function openBindModal(numberId, phone) {
-        $('bind-number-id').value = numberId;
-        $('bind-phone-label').textContent = formatPhone(phone);
-        selectedBind = null;
-        $('confirm-bind-btn').disabled = true;
-        const list = $('bind-target-list');
-        list.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i></div>';
-        bindModal.classList.add('show');
-
-        const cache = await loadAssistants(true);
-        const num = numbers.find((n) => n.id === numberId) || {};
-        const parts = [];
-
-        const option = (kind, type, id, name, sub, icon, disabled) => {
-          const isCurrent = kind === 'agent'
-            ? num.agent_config_id === id
-            : (!num.agent_config_id && num.assistant_id === id);
-          return `<div class="bind-option ${disabled ? 'disabled' : ''} ${isCurrent ? 'selected' : ''}"
-                       data-kind="${kind}" data-type="${esc(type)}" data-id="${esc(id)}" ${disabled ? 'data-disabled="1"' : ''}>
-                    <i class="fas ${icon}"></i>
-                    <div><div class="name">${esc(name)}</div><div class="sub">${sub}</div></div>
-                  </div>`;
-        };
-
-        if (cache.agents.length) {
-          parts.push('<div class="bind-group">Агенты обзвона</div>');
-          for (const a of cache.agents) {
-            const ok = SUPPORTED_TYPES.includes(a.assistant_type) && a.assistant_id;
-            const sub = ok
-              ? `${TYPE_LABELS[a.assistant_type]} · ${esc(a.voice_assistant_name || '')}`
-              : `тип «${esc(a.assistant_type || '—')}» не поддерживается телефонией`;
-            parts.push(option('agent', a.assistant_type, a.id, a.name, sub, 'fa-headset', !ok));
-          }
-        }
-        for (const type of SUPPORTED_TYPES) {
-          if (!cache[type].length) continue;
-          parts.push(`<div class="bind-group">${TYPE_LABELS[type]} ассистенты</div>`);
-          for (const a of cache[type]) {
-            parts.push(option('assistant', type, a.id, a.name, a.is_active === false ? 'неактивен' : TYPE_LABELS[type], TYPE_ICONS[type], false));
-          }
-        }
-        if (!parts.length) {
-          list.innerHTML = '<div class="empty-state"><i class="fas fa-robot"></i><h3>Нет ассистентов</h3><p>Создайте ассистента OpenAI, Gemini или Fish либо агента обзвона.</p></div>';
-          return;
-        }
-        list.innerHTML = parts.join('');
-
-        list.querySelectorAll('.bind-option').forEach((el) => {
-          if (el.dataset.disabled) return;
-          if (el.classList.contains('selected')) {
-            selectedBind = { kind: el.dataset.kind, type: el.dataset.type, id: el.dataset.id };
-            $('confirm-bind-btn').disabled = false;
-          }
-          el.addEventListener('click', () => {
-            list.querySelectorAll('.bind-option').forEach((o) => o.classList.remove('selected'));
-            el.classList.add('selected');
-            selectedBind = { kind: el.dataset.kind, type: el.dataset.type, id: el.dataset.id };
-            $('confirm-bind-btn').disabled = false;
-          });
-        });
-      }
-      function closeBindModal() { bindModal.classList.remove('show'); }
-      $('close-bind-modal').addEventListener('click', closeBindModal);
-      $('cancel-bind-btn').addEventListener('click', closeBindModal);
-      bindModal.addEventListener('click', (e) => { if (e.target === bindModal) closeBindModal(); });
-
-      $('confirm-bind-btn').addEventListener('click', async () => {
-        if (!selectedBind) return;
-        const numberId = $('bind-number-id').value;
-        const body = selectedBind.kind === 'agent'
-          ? { agent_config_id: selectedBind.id }
-          : { assistant_type: selectedBind.type, assistant_id: selectedBind.id };
-        try {
-          setLoading(true);
-          await api.patch(`/sip/numbers/${numberId}`, body);
-          closeBindModal();
-          showNotification('Привязка сохранена', 'success');
-          await loadNumbers();
-        } catch (e) {
-          showNotification(e.message || 'Не удалось привязать', 'error');
-        } finally {
-          setLoading(false);
-        }
-      });
-
-      $('unbind-btn').addEventListener('click', async () => {
-        const numberId = $('bind-number-id').value;
-        try {
-          setLoading(true);
-          await api.patch(`/sip/numbers/${numberId}`, { assistant_type: null, assistant_id: null });
-          closeBindModal();
-          showNotification('Номер отвязан', 'success');
-          await loadNumbers();
-        } catch (e) {
-          showNotification(e.message || 'Не удалось отвязать', 'error');
-        } finally {
-          setLoading(false);
-        }
-      });
-
-      // ---------- Исходящий звонок ----------
-      function fillCallFrom() {
-        const select = $('call-from');
-        const prev = select.value;
-        const usable = numbers.filter((n) => n.is_active && n.allow_outbound);
-        select.innerHTML = usable.length
-          ? usable.map((n) => `<option value="${esc(n.phone_number)}">${esc(formatPhone(n.phone_number))}${n.label ? ' · ' + esc(n.label) : ''}</option>`).join('')
-          : '<option value="">Нет номера с исходящими</option>';
-        if (prev && usable.some((n) => n.phone_number === prev)) select.value = prev;
-        $('call-btn').disabled = !usable.length;
-        fillCallAssistants();
-      }
-
-      async function fillCallAssistants() {
-        const select = $('call-assistant');
-        const num = numbers.find((n) => n.phone_number === $('call-from').value);
-        const cache = await loadAssistants();
-        let selected = null;
-        if (num && num.agent_config_id) selected = { kind: 'agent', id: num.agent_config_id };
-        else if (num && num.assistant_id) selected = { kind: 'assistant', id: num.assistant_id };
-        const html = assistantOptionsHtml(cache, selected);
-        select.innerHTML = html || '<option value="">Нет ассистентов</option>';
-      }
-      $('call-from').addEventListener('change', fillCallAssistants);
-
-      $('call-to').addEventListener('input', () => {
-        const helper = $('call-to-helper');
-        const digits = normalizePhone($('call-to').value);
-        if (!digits) {
-          helper.textContent = 'Только номера O!: префиксы 050, 070, 099';
-          helper.classList.remove('error');
-        } else if (!isONumber(digits)) {
-          helper.textContent = 'Это не номер O!. Оператор пропускает только префиксы 050, 070, 099';
-          helper.classList.add('error');
-        } else {
-          helper.textContent = `Позвоним на ${formatPhone(digits)}`;
-          helper.classList.remove('error');
-        }
-      });
-
-      $('call-btn').addEventListener('click', async () => {
-        const from = $('call-from').value;
-        const to = normalizePhone($('call-to').value);
-        const who = $('call-assistant').value;   // "agent:type:id" | "assistant:type:id"
-        if (!from) return showNotification('Нет номера для исходящих', 'warning');
-        if (!to) return showNotification('Введите номер абонента', 'warning');
-        if (!isONumber(to)) return showNotification('Исходящие возможны только на номера O! (050, 070, 099)', 'warning');
-        if (!who) return showNotification('Выберите ассистента', 'warning');
-        const [, type, id] = who.split(':');
-        try {
-          $('call-btn').disabled = true;
-          const call = await api.post('/sip/calls', { to, caller_id: from, assistant_type: type, assistant_id: id });
-          showNotification(`Звонок на ${formatPhone(to)} поставлен в очередь`, 'success');
-          trackCall(call);
-          loadCalls();
-        } catch (e) {
-          showNotification(e.message || 'Не удалось запустить звонок', 'error');
-        } finally {
-          $('call-btn').disabled = false;
-        }
-      });
-
-      function renderCallStatus(call) {
-        callStatus.classList.remove('hidden', ...Object.keys(STATUS_LABELS));
-        callStatus.classList.add(call.status);
-        $('call-status-text').textContent = `${STATUS_LABELS[call.status] || call.status} · ${formatPhone(call.to_number)}`;
-        const parts = [];
-        if (call.status === 'answered' && call.answered_at) {
-          parts.push(`идёт ${formatDuration((Date.now() - new Date(call.answered_at)) / 1000)}`);
-        }
-        if (call.status === 'completed') parts.push(`длительность ${formatDuration(call.duration_sec)}`);
-        const reason = endReasonText(call);
-        if (reason && ['completed', 'failed'].includes(call.status)) parts.push(reason);
-        if (call.status === 'queued') parts.push('ждём шлюз');
-        $('call-status-detail').textContent = parts.join(' · ');
-        hangupBtn.classList.toggle('hidden', !ACTIVE_STATUSES.includes(call.status));
-      }
-
-      function trackCall(call) {
-        currentCallId = call.id;
-        renderCallStatus(call);
-        clearInterval(pollTimer);
-        pollTimer = setInterval(pollCall, 2000);
-      }
-
-      async function pollCall() {
-        if (!currentCallId) return clearInterval(pollTimer);
-        try {
-          const call = await api.get(`/sip/calls/${currentCallId}`);
-          renderCallStatus(call);
-          if (!ACTIVE_STATUSES.includes(call.status)) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-            currentCallId = null;
-            loadCalls();
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      hangupBtn.addEventListener('click', async () => {
-        if (!currentCallId) return;
-        try {
-          hangupBtn.disabled = true;
-          await api.post(`/sip/calls/${currentCallId}/hangup`, {});
-          showNotification('Команда отбоя отправлена', 'info');
-        } catch (e) {
-          showNotification(e.message || 'Не удалось положить трубку', 'error');
-        } finally {
-          hangupBtn.disabled = false;
-        }
-      });
-
-      // ---------- Журнал ----------
-      async function loadCalls() {
-        const container = $('calls-container');
-        try {
-          const result = await api.get('/sip/calls?limit=50');
-          const calls = result.calls || [];
-          if (!calls.length) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-phone-volume"></i><h3>Звонков ещё не было</h3></div>';
-            return;
-          }
-          const activeStillRunning = calls.some((c) => ACTIVE_STATUSES.includes(c.status));
-          container.innerHTML = `
-            <div class="table-wrap">
-            <table class="numbers-table">
-              <thead>
-                <tr>
-                  <th>Время</th>
-                  <th>Направление</th>
-                  <th>Абонент</th>
-                  <th>Наш номер</th>
-                  <th>Ассистент</th>
-                  <th>Статус</th>
-                  <th>Длит.</th>
-                  <th>Итог</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${calls.map((c) => {
-                  const inbound = c.direction === 'inbound';
-                  const other = inbound ? c.caller : c.to_number;
-                  const assistant = c.assistant_type ? (TYPE_LABELS[c.assistant_type] || c.assistant_type) : '—';
-                  return `
-                  <tr>
-                    <td class="muted" style="white-space:nowrap;">${esc(formatDate(c.created_at))}</td>
-                    <td><span class="dir-badge ${inbound ? 'badge-inbound' : 'badge-outbound'}">${inbound ? '↙ Входящий' : '↗ Исходящий'}</span></td>
-                    <td><span class="phone-number">${esc(formatPhone(other))}</span></td>
-                    <td class="muted">${esc(formatPhone(c.did))}</td>
-                    <td>${esc(assistant)}</td>
-                    <td>${statusBadge(c.status)}</td>
-                    <td>${esc(formatDuration(c.duration_sec))}</td>
-                    <td class="muted" style="font-size:0.8rem;">${esc(endReasonText(c))}</td>
-                  </tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-            </div>`;
-          // Пока есть активные звонки (в том числе входящие) — обновляем журнал сами
-          if (activeStillRunning && !pollTimer) setTimeout(loadCalls, 5000);
-        } catch (e) {
-          container.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><h3>Не удалось загрузить журнал</h3><p>${esc(e.message || '')}</p></div>`;
-        }
-      }
-
-      $('refresh-numbers-btn').addEventListener('click', loadNumbers);
-      $('refresh-calls-btn').addEventListener('click', loadCalls);
-
-      // ---------- Меню ----------
-      $('mobile-menu-toggle').addEventListener('click', () => {
-        sidebar.classList.toggle('mobile-open');
-        sidebarOverlay.classList.toggle('show');
-      });
-      sidebarOverlay.addEventListener('click', () => {
-        sidebar.classList.remove('mobile-open');
-        sidebarOverlay.classList.remove('show');
-      });
-      $('user-menu-button').addEventListener('click', (e) => {
-        e.stopPropagation();
-        userDropdown.classList.toggle('show');
-      });
-      document.addEventListener('click', (e) => {
-        if (userDropdown.classList.contains('show') && !userDropdown.contains(e.target)) userDropdown.classList.remove('show');
-      });
-
-      // ---------- Старт ----------
-      (async () => {
-        setLoading(true);
-        try {
-          await Promise.all([loadUserInfo(), loadNumbers(), loadCalls()]);
-        } finally {
-          setLoading(false);
-        }
-      })();
-    });
-  </script>
+<script src="/static/js/telephony.js"></script>
 </body>
 </html>
