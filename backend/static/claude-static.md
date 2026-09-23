@@ -42,7 +42,7 @@
 - `icons/ui.svg` (спрайт Lucide, `<svg class="ic"><use href="/static/icons/ui.svg#i-name">`),
   `icons/models/*.svg` (логотипы моделей).
 - На дизайн-системе: `voice-assistants.html`, `telephony.html` — каркас A (`.vf-app`, без моста); каркас B из `design-system/03-layouts.md`
-  (`<body class="vf">` + мост): dashboard, knowledge-base, telephony, conversations, crm, crm-contact, settings,
+  (`<body class="vf">` + мост): dashboard, conversations, crm, crm-contact, settings,
   admin, integrations; `login.html` — на токенах без каркаса. Мёртвые страницы (cartesia, yandex,
   cascade, outbound-calls) остались на старой `css/voicesystem-theme.css`. `agent.html` ещё не переведён.
 
