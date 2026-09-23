@@ -34,6 +34,9 @@
 ### Фронтенд приложения (server-served)
 - [`backend/static/claude-static.md`](backend/static/claude-static.md) — vanilla HTML/JS-страницы кабинета, голосовые виджеты, собранный лендинг.
 
+## Дизайн-система
+- [`design-system/README.md`](design-system/README.md) — пакет дизайн-системы VoksiAI: основы, компоненты, каркасы, спеки страниц кабинета и лендинга, i18n. Перенесённые в кабинет файлы описаны в `backend/static/claude-static.md`.
+
 ## Миграции БД
 - [`alembic/claude-alembic.md`](alembic/claude-alembic.md) — основная система миграций (Alembic, авто-`upgrade head` на старте).
 - [`backend/migrations/claude-migrations.md`](backend/migrations/claude-migrations.md) — легаси raw-SQL миграция Voksy AI Agent v2 (вне цепочки Alembic).

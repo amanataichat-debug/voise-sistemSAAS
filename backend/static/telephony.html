@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Телефония — Voksy AI</title>
+  <title>Телефония — VoksiAI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#2a5ce8">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -866,86 +866,38 @@
       .call-form .span-2 { grid-column: span 1; }
     }
   </style>
-  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
-  <script src="/static/js/voicesystem-motion.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/ui.js"></script>
 </head>
-<body>
+<body class="vf">
   <!-- Overlay для мобильного меню -->
   <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
   <!-- Боковая панель -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <a href="/" class="sidebar-logo">
-        <div class="logo-icon">
-          <img src="/static/images/IMG_2820.PNG" alt="Voksy AI Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <div style="display:none; width: 30px; height: 30px; border-radius: 0.5rem; background: linear-gradient(135deg, #4a86e8, #2563eb); color: white; align-items: center; justify-content: center; font-size: 0.875rem;">
-            <i class="fas fa-robot"></i>
-          </div>
-        </div>
-        <span>Voksy AI</span>
+    <div class="vf-sidebar-head">
+      <a href="/static/dashboard.html" class="vf-logo">
+        <span class="mark"><svg class="ic" aria-hidden="true"><use href="/static/icons/ui.svg#i-audio-lines"></use></svg></span>
+        <span class="wordmark">VoksiAI</span>
       </a>
+      <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
-
-    <nav class="sidebar-nav">
-      <div class="sidebar-section">Основное</div>
-      <a href="/static/dashboard.html" class="sidebar-nav-item">
-        <i class="fas fa-home"></i> Дашборд
-      </a>
-      <a href="/static/agent.html" class="sidebar-nav-item" id="agent-nav-item">
-        <i class="fas fa-headset"></i> Агент обзвона
-        <span class="badge-realtime">new</span>
-      </a>
-      <a href="/static/agents.html" class="sidebar-nav-item">
-        <i class="fas fa-robot"></i> OpenAI агенты
-      </a>
-      <a href="/static/gemini-agents.html" class="sidebar-nav-item">
-        <i class="fas fa-gem"></i> Gemini агенты
-      </a>
-      <a href="/static/fish-agents.html" class="sidebar-nav-item">
-        <i class="fas fa-fish"></i> Fish агенты
-      </a>
-      <a href="/static/eleven-agents.html" class="sidebar-nav-item">
-        <i class="fas fa-wave-square"></i> ElevenLabs агенты
-      </a>
-      <a href="/static/cartesia-agents.html" class="sidebar-nav-item">
-        <i class="fas fa-wave-square"></i> Cartesia агенты
-      </a>
-      <a href="/static/yandex-agents.html" class="sidebar-nav-item">
-        <i class="fab fa-yandex"></i> Яндекс агенты
-      </a>
-      <a href="/static/cascade.html" class="sidebar-nav-item">
-        <i class="fas fa-water"></i> Cascade агенты
-      </a>
-      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
-        <i class="fas fa-book"></i> База знаний
-      </a>
-      <a href="/static/telephony.html" class="sidebar-nav-item active">
-        <i class="fas fa-phone"></i> Телефония
-      </a>
-      <a href="/static/conversations.html" class="sidebar-nav-item">
-         <i class="fas fa-comments"></i> Диалоги
-      </a>
-      <a href="/static/crm.html" class="sidebar-nav-item">
-         <i class="fas fa-address-book"></i> CRM
-      </a>
-
-      <div class="sidebar-section">ИИ Интерфейс</div>
-      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
-        <i class="fas fa-microphone"></i> JARVIS AI
-      </a>
-      <div class="sidebar-section">Аккаунт</div>
-      <a href="/static/settings.html" class="sidebar-nav-item">
-        <i class="fas fa-gear"></i> Настройки
-      </a>
-    </nav>
-
+    <nav class="sidebar-nav" id="sidebar-nav"></nav><!-- меню рисует /static/js/sidebar.js -->
     <div class="sidebar-footer">
-      <a href="/static/index.html" class="btn btn-secondary" style="width: 100%; text-decoration: none; justify-content: center;">
-        <i class="fas fa-sign-out-alt"></i> Выйти
+      <a href="/" data-logout class="btn btn-ghost" id="logout-button" style="width:100%;justify-content:flex-start">
+        <i class="fas fa-sign-out-alt"></i> <span data-i18n="sidebar.logout">Выйти</span>
       </a>
     </div>
   </aside>
+  <script src="/static/js/sidebar.js"></script>
 
   <!-- Основной контент -->
   <main class="main-content">
@@ -1270,7 +1222,7 @@
             <div class="empty-state">
               <i class="fas fa-phone"></i>
               <h3>Номеров пока нет</h3>
-              <p>Номер оператора выдаёт администратор Voksy AI. Напишите в поддержку, и он появится здесь.</p>
+              <p>Номер оператора выдаёт администратор VoksiAI. Напишите в поддержку, и он появится здесь.</p>
             </div>`;
           return;
         }

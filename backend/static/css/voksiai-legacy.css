@@ -1,0 +1,216 @@
+/* ============================================================================
+   VoksiAI Design System — мост для существующих страниц ЛК.
+   Подключается ПОСЛЕ инлайновых стилей страницы (dashboard, telephony,
+   conversations, settings, crm, admin …) и переводит их общие классы на токены
+   дизайн-системы, не трогая разметку и JS страниц.
+
+   Принцип: страницы построены на CSS-переменных (--bg-light, --border-color,
+   --text-gray …) и общих классах (.btn, .form-control, .card, .stat-card,
+   .modal, .table …). Переопределяем переменные и эти классы — и весь экран
+   переезжает на новую палитру и глубину.
+   ============================================================================ */
+
+/* ---------- Переменные старых страниц → токены ---------- */
+body.vf, .vf {
+  --primary-blue: var(--vf-accent);
+  --primary-blue-light: #4a7cf3;
+  --primary-blue-dark: var(--vf-accent-hover);
+  --accent-blue: var(--vf-accent);
+  --gradient-blue: linear-gradient(135deg, #2a5ce8, #4a7cf3);
+  --text-dark: var(--vf-text);
+  --text-gray: var(--vf-text-3);
+  --text-light: var(--vf-text-4);
+  --bg-light: var(--vf-bg);
+  --bg-blue-light: var(--vf-accent-soft);
+  --white: var(--vf-surface);
+  --border-color: var(--vf-border);
+  --shadow-sm: var(--vf-shadow-1);
+  --shadow-md: var(--vf-shadow-2);
+  --shadow-lg: var(--vf-shadow-3);
+  --radius-md: var(--vf-r-sm);
+  --radius-lg: var(--vf-r-lg);
+  --radius-full: 999px;
+  --transition-sm: all var(--vf-fast);
+  --transition-md: all var(--vf-normal);
+  --green-500: var(--vf-success);
+  --red-500: var(--vf-danger);
+  --orange-500: var(--vf-warning);
+}
+body.vf { font-family: var(--vf-font); background: var(--vf-bg); color: var(--vf-text); font-size: 14px; }
+/* Страницы объявляют `* { font-family: Inter }` — оно перебивает наследование Syne у вложенных span */
+body.vf .vf-logo, body.vf .vf-logo .wordmark, body.vf .vf-wallet-balance { font-family: var(--vf-font-display); }
+body.vf i.fas, body.vf i.far, body.vf i.fab { font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands" !important; }
+body.vf i.fab { font-family: "Font Awesome 6 Brands" !important; }
+
+/* ---------- Каркас ---------- */
+body.vf .sidebar { width: var(--vf-sidebar-w); border-right: 1px solid var(--vf-border); box-shadow: none; background: var(--vf-surface); }
+body.vf .main-content { margin-left: var(--vf-sidebar-w); background: var(--vf-bg); }
+body.vf .top-nav {
+  height: var(--vf-topbar-h); padding: 0 28px; background: color-mix(in srgb, var(--vf-bg) 86%, transparent); border-bottom: 1px solid transparent;
+  box-shadow: none; position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(160%) blur(10px); -webkit-backdrop-filter: saturate(160%) blur(10px);
+  transition: border-color var(--vf-fast), box-shadow var(--vf-fast);
+}
+body.vf .top-nav.scrolled { border-bottom-color: var(--vf-border); box-shadow: 0 4px 12px -8px rgba(15,23,42,.12); }
+body.vf .page-title { font-family: var(--vf-font-display); font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--vf-text); margin: 0; }
+body.vf .content-container { padding: 24px 28px 40px; }
+body.vf .user-button { height: 36px; padding: 0 10px 0 4px; border-radius: 999px; border: 1px solid var(--vf-border); background: var(--vf-surface); gap: 8px; box-shadow: var(--vf-shadow-1); color: var(--vf-text); }
+body.vf .user-button:hover { background: var(--vf-surface-2); }
+body.vf .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--vf-accent); color: #fff; font-size: 12px; font-weight: 600; }
+body.vf .user-name { font-weight: 500; font-size: 13.5px; }
+body.vf .user-dropdown { border-radius: var(--vf-r-md); border: 1px solid var(--vf-border); box-shadow: var(--vf-shadow-3); padding: 6px; }
+body.vf .dropdown-item { border-radius: 7px; padding: 8px 10px; font-size: 13.5px; color: var(--vf-text); }
+body.vf .dropdown-item:hover { background: var(--vf-surface-3); color: var(--vf-text); }
+body.vf .dropdown-divider { background: var(--vf-border); }
+body.vf .mobile-toggle, body.vf .btn.mobile-toggle { display: none; }
+body.vf .sidebar-footer .btn-ghost { border: none; box-shadow: none; background: transparent; color: var(--vf-text-2); }
+body.vf .sidebar-footer .btn-ghost:hover { background: var(--vf-surface-3); color: var(--vf-text); }
+
+/* ---------- Кнопки ---------- */
+body.vf .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 14px;
+  border-radius: var(--vf-r-sm); border: 1px solid var(--vf-border-strong); background: var(--vf-surface); color: var(--vf-text);
+  font-weight: 500; font-size: 13.5px; line-height: 1; cursor: pointer; box-shadow: var(--vf-shadow-1); text-decoration: none;
+  transition: background var(--vf-fast), border-color var(--vf-fast), color var(--vf-fast), transform var(--vf-fast);
+}
+body.vf .btn:hover { background: var(--vf-surface-2); color: var(--vf-text); transform: none; box-shadow: var(--vf-shadow-1); }
+body.vf .btn:active { transform: translateY(1px); }
+body.vf .btn-primary, body.vf .btn.btn-primary { background: var(--vf-accent); border-color: var(--vf-accent); color: #fff; box-shadow: 0 1px 2px rgba(42, 92, 232,.3), inset 0 1px 0 rgba(255,255,255,.12); }
+body.vf .btn-primary:hover, body.vf .btn.btn-primary:hover { background: var(--vf-accent-hover); border-color: var(--vf-accent-hover); color: #fff; }
+body.vf .btn-secondary, body.vf .btn-outline { background: var(--vf-surface); border-color: var(--vf-border-strong); color: var(--vf-text); }
+body.vf .btn-secondary:hover, body.vf .btn-outline:hover { background: var(--vf-surface-2); border-color: var(--vf-border-strong); color: var(--vf-text); }
+body.vf .btn-danger { background: var(--vf-surface); border-color: var(--vf-border-strong); color: var(--vf-danger); }
+body.vf .btn-danger:hover { background: var(--vf-danger-soft); border-color: var(--vf-danger); color: var(--vf-danger); }
+body.vf .btn-danger.btn-solid { background: var(--vf-danger); border-color: var(--vf-danger); color: #fff; }
+body.vf .btn-danger.btn-solid:hover { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+body.vf .btn-success { background: var(--vf-success); border-color: var(--vf-success); color: #fff; }
+body.vf .btn-sm { min-height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 7px; }
+body.vf .btn-lg { min-height: 42px; padding: 0 18px; font-size: 14.5px; }
+body.vf .btn[disabled], body.vf .btn:disabled { opacity: .55; cursor: default; }
+
+/* ---------- Формы ---------- */
+body.vf .form-group { margin-bottom: 16px; }
+body.vf .form-label, body.vf label.form-label, body.vf .form-group > label { font-size: 12.5px; font-weight: 600; color: var(--vf-text-2); margin-bottom: 6px; display: block; }
+body.vf .form-control, body.vf .form-input, body.vf .filter-select, body.vf .form-select, body.vf .form-textarea,
+body.vf input[type="text"].form-control, body.vf select.form-control, body.vf textarea.form-control {
+  border: 1px solid var(--vf-border-strong); border-radius: var(--vf-r-sm); background: var(--vf-surface); color: var(--vf-text);
+  font-size: 14px; padding: 0 12px; min-height: 38px; box-shadow: var(--vf-shadow-1); transition: border-color var(--vf-fast), box-shadow var(--vf-fast);
+}
+body.vf textarea.form-control, body.vf textarea.form-input, body.vf .form-textarea { padding: 10px 12px; min-height: 120px; line-height: 1.55; }
+body.vf .form-control:focus, body.vf .form-input:focus, body.vf .filter-select:focus, body.vf .form-select:focus, body.vf .form-textarea:focus { outline: none; border-color: var(--vf-accent); box-shadow: 0 0 0 3px var(--vf-accent-ring); }
+body.vf .form-helper, body.vf .form-hint { font-size: 12px; color: var(--vf-text-4); }
+body.vf select.form-control, body.vf select.form-input, body.vf select.filter-select, body.vf select.form-select {
+  appearance: none; -webkit-appearance: none; padding-right: 34px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+
+/* ---------- Поверхности ---------- */
+body.vf .card, body.vf .stat-card, body.vf .settings-section, body.vf .partner-section, body.vf .subscription-section,
+body.vf .stats-section, body.vf .section-card, body.vf .welcome-section, body.vf .info-card, body.vf .filters-section, body.vf .table-container {
+  background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: var(--vf-r-lg); box-shadow: var(--vf-shadow-1);
+}
+body.vf .stat-card:hover, body.vf .card:hover { box-shadow: var(--vf-shadow-2); transform: none; }
+body.vf .card-header, body.vf .section-header { border-bottom-color: var(--vf-border); }
+body.vf .card-title, body.vf .section-title { font-size: 16px; font-weight: 700; color: var(--vf-text); letter-spacing: -0.01em; text-transform: none; }
+body.vf .section-description { color: var(--vf-text-3); font-size: 13.5px; margin-bottom: 16px; }
+body.vf .section-title i, body.vf .card-title i { color: var(--vf-text-3); margin-right: 6px; }
+body.vf .stat-icon { width: 38px; height: 38px; border-radius: 10px; background: var(--vf-surface-2); border: 1px solid var(--vf-border); color: var(--vf-text-2); display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
+body.vf .stat-icon.green { background: var(--vf-success-soft); color: var(--vf-success); border-color: transparent; }
+body.vf .stat-icon.orange, body.vf .stat-icon.warning { background: var(--vf-warning-soft); color: var(--vf-warning); border-color: transparent; }
+body.vf .stat-icon.red, body.vf .stat-icon.danger { background: var(--vf-danger-soft); color: var(--vf-danger); border-color: transparent; }
+body.vf .stat-icon.blue, body.vf .stat-icon.purple { background: var(--vf-accent-soft); color: var(--vf-accent); border-color: transparent; }
+body.vf .stat-value { font-family: var(--vf-font-display); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--vf-text); }
+body.vf .stat-label { font-size: 12.5px; color: var(--vf-text-3); font-weight: 500; }
+body.vf .stat-subtext { font-size: 12px; color: var(--vf-text-4); }
+body.vf .welcome-title { font-family: var(--vf-font-display); letter-spacing: -0.02em; }
+body.vf .empty-state { color: var(--vf-text-3); border: 1px solid var(--vf-border); border-style: solid; border-radius: var(--vf-r-lg); background: var(--vf-surface-2); }
+body.vf .empty-state i { color: var(--vf-border-strong); }
+
+/* ---------- Таблицы ---------- */
+body.vf .table-container { overflow: auto; border-radius: var(--vf-r-md); box-shadow: none; }
+body.vf .card .table-container, body.vf .stats-section .table-container, body.vf .settings-section .table-container, body.vf .section-card .table-container { border: none; border-radius: 0; }
+body.vf .table { border-collapse: separate; border-spacing: 0; font-size: 13.5px; width: 100%; }
+body.vf .table th { text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--vf-text-4); padding: 10px 12px; background: var(--vf-surface-2); border-bottom: 1px solid var(--vf-border); }
+body.vf .table td { padding: 12px; border-bottom: 1px solid var(--vf-border); vertical-align: middle; color: var(--vf-text); }
+body.vf .table tbody tr:hover td { background: var(--vf-surface-2); }
+body.vf .table tbody tr:last-child td { border-bottom: none; }
+
+/* ---------- Бейджи и статусы ---------- */
+body.vf .status-badge, body.vf .assistant-badge, body.vf .assistant-type-badge, body.vf .badge, body.vf .usage-chip, body.vf .plan-badge {
+  display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; font-size: 12px; font-weight: 500; padding: 3px 9px; background: var(--vf-surface-3); color: var(--vf-text-2); border: 1px solid transparent;
+}
+body.vf .assistant-badge.not-bound { background: var(--vf-warning-soft); color: var(--vf-warning); }
+body.vf .status-badge.active, body.vf .status-badge.success, body.vf .status-badge.paid { background: var(--vf-success-soft); color: var(--vf-success); }
+body.vf .status-badge.inactive, body.vf .status-badge.error, body.vf .status-badge.expired { background: var(--vf-danger-soft); color: var(--vf-danger); }
+body.vf .status-badge.pending, body.vf .status-badge.trial { background: var(--vf-warning-soft); color: var(--vf-warning); }
+
+/* ---------- Модалки ---------- */
+body.vf .modal-overlay { background: rgba(15,23,42,.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+body.vf .modal { border-radius: var(--vf-r-lg); border: 1px solid var(--vf-border); box-shadow: var(--vf-shadow-3); background: var(--vf-surface); }
+body.vf .modal-header { border-bottom: 1px solid var(--vf-border); padding: 18px 22px; }
+body.vf .modal-title { font-size: 16px; font-weight: 700; color: var(--vf-text); }
+body.vf .modal-close { width: 30px; height: 30px; border-radius: 7px; border: none; background: transparent; color: var(--vf-text-3); font-size: 20px; line-height: 1; cursor: pointer; }
+body.vf .modal-close:hover { background: var(--vf-surface-3); color: var(--vf-text); }
+body.vf .modal-body { padding: 20px 22px; color: var(--vf-text-2); }
+body.vf .modal-footer { border-top: 1px solid var(--vf-border); padding: 14px 22px; gap: 8px; }
+
+/* ---------- Уведомления (старый тост) ---------- */
+body.vf .notification { border-radius: var(--vf-r-md); box-shadow: var(--vf-shadow-3); border: none; background: #0e1729; color: #e7ecf5; }
+body.vf .notification .notification-icon { color: #4ade80; }
+body.vf .notification.notification-error .notification-icon, body.vf .notification.error .notification-icon { color: #f87171; }
+body.vf .notification.notification-warning .notification-icon, body.vf .notification.warning .notification-icon { color: #fbbf24; }
+body.vf .notification-close { color: #93a2b8; background: none; border: none; }
+body.vf .notification-close:hover { color: #fff; }
+
+/* ---------- Табы (админка, диалоги) ---------- */
+body.vf .tabs { border-bottom: 1px solid var(--vf-border); gap: 2px; }
+body.vf .tab { padding: 12px 12px; font-size: 13.5px; font-weight: 500; color: var(--vf-text-3); border-bottom: 2px solid transparent; background: none; border-radius: 0; }
+body.vf .tab:hover { color: var(--vf-text); background: none; }
+body.vf .tab.active { color: var(--vf-accent); border-bottom-color: var(--vf-accent); background: none; font-weight: 600; }
+
+/* ---------- Мелочи ---------- */
+body.vf .content-container a:not(.btn), body.vf .modal a:not(.btn) { color: var(--vf-accent); }
+body.vf .plan-locked-feature::after { display: none; }
+body.vf ::selection { background: var(--vf-accent-soft); }
+body.vf .loader, body.vf .spinner, body.vf .subscription-loader { border-color: var(--vf-border); border-top-color: var(--vf-accent); }
+
+@media (max-width: 960px) {
+  body.vf .sidebar { transform: translateX(-100%); }
+  body.vf .sidebar.open, body.vf .sidebar.mobile-open { transform: none; box-shadow: var(--vf-shadow-3); }
+  body.vf .main-content { margin-left: 0; }
+  body.vf .mobile-toggle, body.vf .btn.mobile-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; border: none; background: transparent; color: var(--vf-text-2); font-size: 18px; cursor: pointer; }
+  body.vf .top-nav { padding: 0 12px; }
+  body.vf .page-title { font-size: 17px; }
+  body.vf .content-container { padding: 14px 12px 32px; }
+}
+
+/* ---------- Каркас сайдбара на старых страницах (VoksiAI) ----------
+   Инлайновые стили страниц задают свои отступы пунктов/разделов и рамку
+   активного пункта — приводим к размерам дизайн-системы (03-layouts, A).
+   Сайдбар — flex-колонка с прокруткой: шапка и меню не должны сжиматься. */
+/* z 50: выше затемнения .sidebar-overlay (49) старых страниц */
+body.vf .sidebar { display: flex; flex-direction: column; z-index: 50; height: 100vh; }
+body.vf .sidebar .vf-sidebar-head { flex: 0 0 auto; }
+body.vf .sidebar .sidebar-nav { padding: 12px; flex: 1 0 auto; }
+body.vf .sidebar .sidebar-section { padding: 14px 12px 6px; margin: 0; font-size: 11px; letter-spacing: .06em; color: var(--vf-text-4); }
+body.vf .sidebar .sidebar-nav > .sidebar-section:first-child { padding-top: 4px; }
+body.vf .sidebar .sidebar-nav-item { padding: 9px 12px; margin: 1px 0; gap: 10px; border-left: 0; border-radius: var(--vf-r-sm); color: var(--vf-text); background: none; font-size: 14px; }
+body.vf .sidebar .sidebar-nav-item:hover { background: none; color: var(--vf-text); }
+body.vf .sidebar .sidebar-nav-item.active { background: none; color: var(--vf-text); font-weight: 600; }
+body.vf .sidebar .sidebar-footer { flex: 0 0 auto; padding: 12px; }
+body.vf .sidebar .sidebar-footer .btn { height: 36px; min-height: 36px; }
+body.vf .sidebar .sidebar-footer .btn i { margin: 0; width: auto; }
+
+/* Приветствие дашборда стало карточкой — даём ей внутренние отступы */
+body.vf .welcome-section { padding: 20px 24px; }
+
+/* Узкий экран: шапка в одну строку — заголовок обрезается, у меню пользователя остаётся аватар */
+@media (max-width: 600px) {
+  body.vf .top-nav { flex-wrap: nowrap; gap: 8px; }
+  body.vf .top-nav .page-title { order: 0; width: auto; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.vf .top-nav .user-menu { order: 0; }
+  body.vf .user-name, body.vf .user-button > .fa-chevron-down, body.vf .user-button > i:last-child { display: none; }
+  body.vf .user-button { padding: 0 4px; }
+  body.vf .vf-lang-switch button { padding: 5px 7px; }
+  body.vf .top-nav > .vf-lang-switch { margin-right: 4px; }
+}

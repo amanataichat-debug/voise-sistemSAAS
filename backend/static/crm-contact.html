@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Контакт — Voksy AI CRM</title>
+  <title>Контакт — VoksiAI CRM</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#2a5ce8">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     /* Переменные */
@@ -967,10 +967,16 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
-  <script src="/static/js/voicesystem-motion.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/ui.js"></script>
 </head>
-<body>
+<body class="vf">
   <!-- Header -->
   <div class="header">
     <div class="header-left">

@@ -449,7 +449,7 @@ async function loadUserInfo() {
       console.log('Проверка email для админ панели:', userInfo.email);
       
       const adminSections = Array.from(document.querySelectorAll('.sidebar-section')).filter(
-        section => section.textContent.trim() === 'Администрирование'
+        section => section.textContent.trim() === 'Администрирование' || section.hasAttribute('data-admin')
       );
       
       if (adminSections.length === 0) {

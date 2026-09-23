@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Интеграции — Voksy AI</title>
+  <title>Интеграции — VoksiAI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     /* Стили аналогичны другим страницам проекта */
@@ -514,50 +514,35 @@
       background-size: 1rem;
     }
   </style>
-  <link rel="stylesheet" href="/static/css/voicesystem-theme.css">
-  <script src="/static/js/voicesystem-motion.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/ui.js"></script>
 </head>
-<body>
+<body class="vf">
   <!-- Боковая панель -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <a href="/" class="sidebar-logo">Voksy AI</a>
+  <aside class="sidebar" id="sidebar">
+    <div class="vf-sidebar-head">
+      <a href="/static/dashboard.html" class="vf-logo">
+        <span class="mark"><svg class="ic" aria-hidden="true"><use href="/static/icons/ui.svg#i-audio-lines"></use></svg></span>
+        <span class="wordmark">VoksiAI</span>
+      </a>
+      <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
-    
-    <nav class="sidebar-nav">
-      <div class="sidebar-section">Основное</div>
-      <a href="/static/dashboard.html" class="sidebar-nav-item">
-        <i class="fas fa-home"></i> Дашборд
+    <nav class="sidebar-nav" id="sidebar-nav"></nav><!-- меню рисует /static/js/sidebar.js -->
+    <div class="sidebar-footer">
+      <a href="/" data-logout class="btn btn-ghost" id="logout-button" style="width:100%;justify-content:flex-start">
+        <i class="fas fa-sign-out-alt"></i> <span data-i18n="sidebar.logout">Выйти</span>
       </a>
-      <a href="/static/agents.html" class="sidebar-nav-item">
-        <i class="fas fa-robot"></i> Мои агенты
-      </a>
-      <a href="/static/knowledge-base.html" class="sidebar-nav-item">
-        <i class="fas fa-book"></i> База знаний
-      </a>
-      
-      <div class="sidebar-section">Расширения</div>
-      <a href="/static/integrations.html" class="sidebar-nav-item active">
-        <i class="fas fa-plug"></i> Интеграции
-      </a>
-      <a href="#" class="sidebar-nav-item locked-feature">
-        <i class="fas fa-wand-magic-sparkles"></i> Навыки
-      </a>
-
-      <div class="sidebar-section">ИИ Интерфейс</div>
-      <a href="/static/voice_llm_interface/" class="sidebar-nav-item">
-        <i class="fas fa-microphone"></i> JARVIS AI
-      </a>
-
-      <div class="sidebar-section">Аккаунт</div>
-      <a href="/static/settings.html" class="sidebar-nav-item">
-        <i class="fas fa-gear"></i> Настройки
-      </a>
-      <a href="#" class="sidebar-nav-item" id="logout-button">
-        <i class="fas fa-sign-out-alt"></i> Выйти
-      </a>
-    </nav>
+    </div>
   </aside>
+  <script src="/static/js/sidebar.js"></script>
   
   <!-- Основной контент -->
   <main class="main-content">
