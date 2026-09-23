@@ -2457,6 +2457,15 @@ async def serve_landing():
     return FileResponse("backend/static/landing/index.html")
 
 
+@app.get("/ru")
+@app.get("/ru/")
+async def serve_landing_ru():
+    """
+    Serve Russian version of the React landing page (prerendered, `/` is Kyrgyz).
+    """
+    return FileResponse("backend/static/landing/ru/index.html")
+
+
 @app.get("/health")
 async def health_check():
     """Health check for deployment platforms"""

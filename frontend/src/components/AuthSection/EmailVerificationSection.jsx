@@ -1,7 +1,29 @@
 import React, { useState, useRef } from 'react';
 import { useEmailVerification } from '../../hooks/useEmailVerification';
 import InlineNotification from '../InlineNotification';
+import Icon from '../Icon';
 import { useT } from '../../i18n';
+
+// Хук useEmailVerification отдаёт сообщения по-русски (логику хука не трогаем) —
+// здесь переводим их на язык страницы по известным шаблонам.
+function localize(notification, t) {
+  if (!notification) return notification;
+  const msg = notification.message || '';
+  const map = [
+    [/^Введите 6-значный код$/, () => t('auth.verify_error_format')],
+    [/^Email подтвержден/, () => t('auth.verify_success')],
+    [/^Исчерпаны попытки/, () => t('auth.verify_error_exhausted')],
+    [/^Неверный код\. Осталось попыток: (\d+)/, (m) => t('auth.verify_error_wrong', { n: m[1] })],
+    [/^Новый код отправлен/, () => t('auth.verify_resent')],
+    [/^Подождите перед повторной/, () => t('auth.verify_wait')],
+    [/^Ошибка отправки кода/, () => t('auth.verify_resend_error')],
+  ];
+  for (const [re, fn] of map) {
+    const m = msg.match(re);
+    if (m) return { ...notification, message: fn(m) };
+  }
+  return notification;
+}
 
 function EmailVerificationSection({ email, message, onVerified }) {
   const [code, setCode] = useState('');
@@ -17,7 +39,7 @@ function EmailVerificationSection({ email, message, onVerified }) {
     isResending,
     codeDisabled,
     verifyCode,
-    resendCode
+    resendCode,
   } = useEmailVerification(email, onVerified);
 
   const handleVerify = () => {
@@ -30,8 +52,9 @@ function EmailVerificationSection({ email, message, onVerified }) {
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       handleVerify();
     }
   };
@@ -44,73 +67,95 @@ function EmailVerificationSection({ email, message, onVerified }) {
     }
   };
 
-  const attemptsClass = attempts === 2 ? 'warning' : attempts === 1 ? 'danger' : '';
+  const attemptsChip = attempts === 2 ? ' chip-warning' : attempts === 1 ? ' chip-danger' : '';
 
   return (
-    <div className="verification-section">
-      <div className={`verification-notice${message ? ' warning' : ''}`}>
-        <i className={message ? 'fas fa-info-circle' : 'fas fa-envelope'}></i>
-        {message || (
-          <>{t('verif.sentTo')} <strong>{email}</strong></>
-        )}
+    <form
+      className="lp-form lp-verify"
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleVerify();
+      }}
+    >
+      <div className="lp-auth-head">
+        <div className={`lp-verify-icon${message ? ' warning' : ''}`}>
+          <Icon name={message ? 'info' : 'mail'} />
+        </div>
+        <h2 className="lp-auth-title">{t('auth.verify_title')}</h2>
+        <p className="lp-auth-sub">
+          {message || (
+            <>
+              {t('auth.verify_subtitle_before')}
+              <b>{email}</b>
+              {t('auth.verify_subtitle_after')}
+            </>
+          )}
+        </p>
       </div>
 
-      <InlineNotification notification={notification} />
+      <InlineNotification notification={localize(notification, t)} />
 
-      <div className="code-input-container">
-        <label htmlFor="verification-code">{t('verif.enterCode')}</label>
+      <div className="field">
+        <label className="label" htmlFor="verification-code">
+          {t('auth.verify_code_label')}
+        </label>
         <input
           type="text"
           id="verification-code"
           ref={codeInputRef}
-          className="fi verification-code-input"
-          placeholder="000000"
+          className="input lp-code-input"
+          placeholder={t('auth.verify_code_placeholder')}
           maxLength="6"
           pattern="[0-9]{6}"
           inputMode="numeric"
+          autoComplete="one-time-code"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           disabled={codeDisabled}
           autoFocus
         />
       </div>
 
-      <div className="verification-info">
-        <span className={`attempts-left ${attemptsClass}`}>
-          {t('verif.attempts')} {attempts}
-        </span>
+      <div className="lp-verify-info">
+        <span className={`chip${attemptsChip}`}>{t('auth.verify_attempts', { n: attempts })}</span>
         {isTimerActive && (
-          <span className="resend-timer">
-            {t('verif.resendIn')} <strong>{secondsLeft}</strong>{t('verif.seconds')}
+          <span className="muted">
+            {t('auth.verify_resend_in_before')}
+            <b>{secondsLeft}</b>
+            {t('auth.verify_resend_in_after')}
           </span>
         )}
       </div>
 
-      <button
-        type="button"
-        className="btn-submit"
-        onClick={handleVerify}
-        disabled={isVerifying || codeDisabled}
-      >
-        {isVerifying ? t('verif.verifying') : t('verif.confirm')}
+      <button type="submit" className="btn btn-primary btn-lg lp-form-submit" disabled={isVerifying || codeDisabled}>
+        {isVerifying ? (
+          <>
+            <span className="spin" /> {t('auth.verify_submitting')}
+          </>
+        ) : (
+          <>
+            {t('auth.verify_submit')}
+            <Icon name="arrow-right" />
+          </>
+        )}
       </button>
 
       {!isTimerActive && (
-        <button
-          type="button"
-          className="btn-resend"
-          onClick={handleResend}
-          disabled={isResending}
-        >
+        <button type="button" className="btn btn-lg lp-form-submit" onClick={handleResend} disabled={isResending}>
           {isResending ? (
-            <><div className="spinner"></div> {t('verif.sending')}</>
+            <>
+              <span className="spin" /> {t('auth.verify_resending')}
+            </>
           ) : (
-            <><i className="fas fa-redo"></i> {t('verif.resend')}</>
+            <>
+              <Icon name="refresh-cw" />
+              {t('auth.verify_resend')}
+            </>
           )}
         </button>
       )}
-    </div>
+    </form>
   );
 }
 

@@ -1,31 +1,26 @@
-# frontend — React + Vite лендинг (исходники)
+# frontend — React + Vite лендинг VoksiAI (исходники)
 
 ## Назначение
-Исходный код публичного лендинга voksyai.online на React 18 + Vite. Это **единственная** часть фронтенда на React — все внутренние страницы приложения (дашборд, агенты, CRM и т.д.) сделаны на vanilla HTML/JS в `backend/static/`. При сборке Vite кладёт результат в `backend/static/landing/`, откуда FastAPI отдаёт его на корневом маршруте `/`.
+Публичный лендинг voksyai.online на React 18 + Vite по дизайн-системе VoksiAI
+(`design-system/05-landing.md`). Единственная часть фронтенда на React — страницы кабинета
+сделаны на vanilla HTML/JS в `backend/static/`.
 
 ## Состав
-- `index.html` — HTML-шаблон Vite (точка монтирования `#root`).
-- `package.json` — зависимости (react, react-dom) и скрипты `dev`/`build`/`preview`. Имя пакета `voicyfy-landing`.
-- `vite.config.js` — конфиг сборки: `outDir = ../backend/static/landing`, `emptyOutDir`, `base = /static/landing/`, dev-прокси `/api` и `/static` на `localhost:8000`.
-- `package-lock.json` — лок зависимостей.
-- `src/` — исходники приложения (компоненты, хуки, утилиты, стили) — см. дочернюю доку.
-
-## Ключевые сущности / точки входа
-- **Сборка:** `npm run build` → `backend/static/landing/`. **Не редактируйте** `backend/static/landing/` руками — это артефакт сборки, перезатрётся.
-- **Dev:** `npm run dev` поднимает Vite с прокси на backend (порт 8000); API-запросы идут на реальный backend.
-- **`base: '/static/landing/'`** — все ассеты в проде грузятся из-под этого пути; на `/` FastAPI отдаёт `backend/static/landing/index.html` (см. `app.py`).
-
-## Связи с другими частями проекта
-- Используется: `app.py` — маршрут `/` отдаёт собранный `index.html`; статика монтируется через `StaticFiles`.
-- Использует: backend API (`/api/...`) — через `src/utils/api.js` и хуки (`src/hooks/`). UTM/рефералы обрабатываются клиентски (`useReferralTracker`).
+- `index.html` — шаблон: шрифты Inter + Unbounded, `<link href="/static/css/voksiai.css">`
+  (токены и компоненты ДС, отдаются бэкендом, в бандл не входят), плейсхолдер `<!--app-head-->`
+  для SEO, `<body class="vf">`, `#root`.
+- `package.json` — react, react-dom, `motion` (v13, импорт из `motion/react`), `lenis`.
+  `npm run build` = `vite build && node scripts/prerender.mjs`.
+- `vite.config.js` — `outDir = ../backend/static/landing`, `base = /static/landing/`, dev-прокси.
+- `scripts/prerender.mjs` — после сборки рендерит `src/entry-server.jsx` для двух языков:
+  `backend/static/landing/index.html` (кыргызский, отдаётся на `/`) и
+  `backend/static/landing/ru/index.html` (русский, `/ru/`, маршрут в `app.py`). В `<head>`:
+  title, description, canonical, hreflang (ky/ru/x-default), OG, JSON-LD (Organization, WebSite,
+  SoftwareApplication, FAQPage).
+- `src/` — см. `src/claude-frontend-src.md`.
 
 ## На что обратить внимание
-- **Vite dev-прокси указывает на порт 8000**, тогда как локальный backend по умолчанию стартует на 5050 (`main.py`). При локальной разработке лендинга либо запускайте backend на 8000, либо поправьте прокси.
-- Зависимости минимальны (только React) — никакого роутера/стейт-менеджера; всё в одном `App.jsx` со скроллом по секциям.
-- Граница «React-лендинг vs vanilla-страницы» — частый источник путаницы: правки внутренних страниц приложения делаются в `backend/static/`, а не здесь.
-
-## Связанные файлы документации
-- `../claude-index.md` — корневой индекс
-- `./src/claude-frontend-src.md` — структура исходников (компоненты/хуки/утилиты)
-- `../backend/static/claude-static.md` — собранный лендинг и vanilla-страницы приложения
-- `../backend/api/claude-api.md` — API, который дёргает лендинг
+- Render не собирает фронтенд: после правок в `frontend/` обязательно `npm ci && npm run build`
+  и коммит `backend/static/landing/` (обе страницы + хешированные ассеты).
+- Иконки — спрайт `/static/icons/ui.svg`, логотипы моделей — `/static/icons/models/*.svg`.
+- Dev-прокси указывает на порт 8000 (backend по умолчанию на 5050).

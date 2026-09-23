@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Сборка лендинга: бандл в backend/static/landing/, затем scripts/prerender.mjs
+// дописывает пререндеренные index.html (ky) и ru/index.html (ru).
 export default defineConfig({
   plugins: [react()],
   build: {

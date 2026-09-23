@@ -1,23 +1,21 @@
 import React from 'react';
+import Icon from './Icon';
 
-const icons = {
-  success: 'fas fa-check-circle',
-  error: 'fas fa-exclamation-circle',
-  warning: 'fas fa-exclamation-triangle',
-  info: 'fas fa-info-circle',
+const ICONS = {
+  success: 'circle-check',
+  error: 'circle-alert',
+  warning: 'triangle-alert',
+  info: 'info',
 };
 
+// Единое уведомление под формой: loading | success | error | warning | info
 function InlineNotification({ notification }) {
   if (!notification) return null;
-
+  const { type, message } = notification;
   return (
-    <div className={`inline-notification ${notification.type}`}>
-      {notification.type === 'loading' ? (
-        <div className="spinner" />
-      ) : (
-        <i className={icons[notification.type] || icons.info} />
-      )}
-      <span>{notification.message}</span>
+    <div className={`note lp-inote lp-inote-${type}`} role="status">
+      {type === 'loading' ? <span className="spin" /> : <Icon name={ICONS[type] || ICONS.info} className="ic-sm" />}
+      <span>{message}</span>
     </div>
   );
 }

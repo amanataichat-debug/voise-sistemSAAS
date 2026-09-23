@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import InlineNotification from '../InlineNotification';
+import Icon from '../Icon';
+import PasswordField from './PasswordField';
 import { useT } from '../../i18n';
 
 const RESEND_COOLDOWN = 60;
 
+// Восстановление пароля: код на почту → новый пароль. Логика прежняя
+// (api.resetPasswordRequest / api.resetPasswordConfirm), изменена только разметка.
 function ForgotPasswordForm({ initialEmail, onBackToLogin }) {
   const [step, setStep] = useState('email'); // 'email' | 'code'
   const [email, setEmail] = useState(initialEmail || '');
@@ -23,20 +27,20 @@ function ForgotPasswordForm({ initialEmail, onBackToLogin }) {
   }, [secondsLeft]);
 
   const validatePassword = (pwd) => {
-    if (pwd.length < 8) return t('auth.pwdLength');
-    if (!/\d/.test(pwd)) return t('auth.pwdDigit');
-    if (!/[a-zA-Zа-яА-Я]/.test(pwd)) return t('auth.pwdLetter');
+    if (pwd.length < 8) return t('auth.pwd_length');
+    if (!/\d/.test(pwd)) return t('auth.pwd_digit');
+    if (!/[a-zA-Zа-яА-Я]/.test(pwd)) return t('auth.pwd_letter');
     return null;
   };
 
   const handleSendCode = async (e) => {
     if (e) e.preventDefault();
-    setNotification({ type: 'loading', message: t('forgot.sendingCode') });
+    setNotification({ type: 'loading', message: t('auth.forgot_status_sending') });
     setIsLoading(true);
 
     try {
       await api.resetPasswordRequest({ email });
-      setNotification({ type: 'success', message: t('forgot.codeSent') });
+      setNotification({ type: 'success', message: t('auth.forgot_code_sent') });
       setStep('code');
       setSecondsLeft(RESEND_COOLDOWN);
       setTimeout(() => codeInputRef.current && codeInputRef.current.focus(), 100);
@@ -45,10 +49,10 @@ function ForgotPasswordForm({ initialEmail, onBackToLogin }) {
       const waitMatch = error.message.match(/(\d+)\s*seconds/);
       if (waitMatch) {
         setSecondsLeft(parseInt(waitMatch[1], 10));
-        setNotification({ type: 'warning', message: t('forgot.cooldown') });
+        setNotification({ type: 'warning', message: t('auth.forgot_cooldown') });
         setStep('code');
       } else {
-        setNotification({ type: 'error', message: error.message || t('forgot.sendError') });
+        setNotification({ type: 'error', message: error.message || t('auth.forgot_send_error') });
       }
     } finally {
       setIsLoading(false);
@@ -64,120 +68,166 @@ function ForgotPasswordForm({ initialEmail, onBackToLogin }) {
       return;
     }
     if (code.length !== 6) {
-      setNotification({ type: 'error', message: t('forgot.codeInvalid') });
+      setNotification({ type: 'error', message: t('auth.forgot_code_invalid') });
       return;
     }
 
-    setNotification({ type: 'loading', message: t('forgot.resetting') });
+    setNotification({ type: 'loading', message: t('auth.forgot_status_resetting') });
     setIsLoading(true);
 
     try {
       await api.resetPasswordConfirm({ email, code, new_password: newPassword });
-      setNotification({ type: 'success', message: t('forgot.success') });
+      setNotification({ type: 'success', message: t('auth.forgot_success') });
       setTimeout(() => onBackToLogin(email), 1500);
     } catch (error) {
       setIsLoading(false);
-      setNotification({ type: 'error', message: error.message || t('forgot.resetError') });
+      setNotification({ type: 'error', message: error.message || t('auth.forgot_reset_error') });
     }
   };
 
+  const backLink = (
+    <p className="lp-form-hint">
+      <a
+        href="#"
+        onClick={(e) => {
+          e.preventDefault();
+          onBackToLogin();
+        }}
+      >
+        <Icon name="arrow-left" className="ic-sm" /> {t('auth.forgot_back')}
+      </a>
+    </p>
+  );
+
   if (step === 'email') {
     return (
-      <form onSubmit={handleSendCode}>
-        <InlineNotification notification={notification} />
-
-        <p className="auth-hint" style={{ textAlign: 'left', marginTop: 0 }}>
-          {t('forgot.intro')}
-        </p>
-
-        <div className="fg">
-          <label htmlFor="forgot-email">{t('auth.email')}</label>
-          <input
-            type="email"
-            id="forgot-email"
-            className="fi"
-            placeholder={t('auth.emailPh')}
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoFocus
-          />
+      <form className="lp-form" onSubmit={handleSendCode}>
+        <div className="lp-auth-head">
+          <h2 className="lp-auth-title">{t('auth.forgot_title')}</h2>
+          <p className="lp-auth-sub">{t('auth.forgot_intro')}</p>
         </div>
 
-        <button type="submit" className="btn-submit" disabled={isLoading}>
-          {isLoading ? t('forgot.sending') : t('forgot.sendCodeBtn')}
+        <InlineNotification notification={notification} />
+
+        <div className="field">
+          <label className="label" htmlFor="forgot-email">
+            {t('auth.email_label')}
+          </label>
+          <div className="input-wrap lp-auth-input">
+            <Icon name="mail" className="ic-sm" />
+            <input
+              type="email"
+              id="forgot-email"
+              className="input"
+              placeholder={t('auth.email_placeholder')}
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <button type="submit" className="btn btn-primary btn-lg lp-form-submit" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <span className="spin" /> {t('auth.forgot_sending')}
+            </>
+          ) : (
+            <>
+              {t('auth.forgot_send')}
+              <Icon name="arrow-right" />
+            </>
+          )}
         </button>
 
-        <p className="auth-hint">
-          <a onClick={(e) => { e.preventDefault(); onBackToLogin(); }}>
-            {t('forgot.backToLogin')}
-          </a>
-        </p>
+        {backLink}
       </form>
     );
   }
 
   return (
-    <form onSubmit={handleConfirm}>
-      <div className="verification-notice">
-        <i className="fas fa-envelope"></i>
-        {t('verif.sentTo')} <strong>{email}</strong>
+    <form className="lp-form" onSubmit={handleConfirm}>
+      <div className="lp-auth-head">
+        <h2 className="lp-auth-title">{t('auth.forgot_title')}</h2>
+        <p className="lp-auth-sub">
+          {t('auth.verify_subtitle_before')}
+          <b>{email}</b>
+          {t('auth.verify_subtitle_after')}
+        </p>
       </div>
 
       <InlineNotification notification={notification} />
 
-      <div className="fg">
-        <label htmlFor="forgot-code">{t('verif.enterCode')}</label>
+      <div className="field">
+        <label className="label" htmlFor="forgot-code">
+          {t('auth.verify_code_label')}
+        </label>
         <input
           type="text"
           id="forgot-code"
           ref={codeInputRef}
-          className="fi verification-code-input"
-          placeholder="000000"
+          className="input lp-code-input"
+          placeholder={t('auth.verify_code_placeholder')}
           maxLength="6"
           pattern="[0-9]{6}"
           inputMode="numeric"
+          autoComplete="one-time-code"
           required
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
         />
       </div>
 
-      <div className="fg">
-        <label htmlFor="forgot-new-password">{t('forgot.newPassword')}</label>
-        <input
-          type="password"
+      <div className="field">
+        <label className="label" htmlFor="forgot-new-password">
+          {t('auth.forgot_new_password')} <span className="muted">{t('auth.password_hint')}</span>
+        </label>
+        <PasswordField
           id="forgot-new-password"
-          className="fi"
-          placeholder={t('auth.passwordHint')}
-          required
-          minLength="8"
+          placeholder={t('auth.password_new_placeholder')}
+          autoComplete="new-password"
+          minLength={8}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
         />
       </div>
 
-      <button type="submit" className="btn-submit" disabled={isLoading}>
-        {isLoading ? t('forgot.resettingBtn') : t('forgot.resetBtn')}
+      <button type="submit" className="btn btn-primary btn-lg lp-form-submit" disabled={isLoading}>
+        {isLoading ? (
+          <>
+            <span className="spin" /> {t('auth.forgot_resetting')}
+          </>
+        ) : (
+          <>
+            {t('auth.forgot_reset')}
+            <Icon name="arrow-right" />
+          </>
+        )}
       </button>
 
-      {secondsLeft > 0 ? (
-        <p className="auth-hint">
-          {t('verif.resendIn')} <strong>{secondsLeft}</strong>{t('verif.seconds')}
-        </p>
-      ) : (
-        <p className="auth-hint">
-          <a onClick={(e) => { e.preventDefault(); if (!isLoading) handleSendCode(); }}>
-            {t('verif.resend')}
+      <p className="lp-form-hint lp-form-hint-tight">
+        {secondsLeft > 0 ? (
+          <span className="muted">
+            {t('auth.verify_resend_in_before')}
+            <b>{secondsLeft}</b>
+            {t('auth.verify_resend_in_after')}
+          </span>
+        ) : (
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              if (!isLoading) handleSendCode();
+            }}
+          >
+            {t('auth.verify_resend')}
           </a>
-        </p>
-      )}
-
-      <p className="auth-hint">
-        <a onClick={(e) => { e.preventDefault(); onBackToLogin(); }}>
-          {t('forgot.backToLogin')}
-        </a>
+        )}
       </p>
+
+      {backLink}
     </form>
   );
 }

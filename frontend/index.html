@@ -3,20 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voksy AI — Сүйлөйт. Угат. Түшүнөт.</title>
+  <title>VoksiAI</title>
+  <!--app-head-->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/android-chrome-192x192.png">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#0A0C10">
+  <meta name="theme-color" content="#2a5ce8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Inter поддерживает кыргызские глифы Ң ң, Ө ө, Ү ү (subset cyrillic-ext) -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Unbounded — дисплейный шрифт (в нём нет кыргызских Ң Ө Ү, поэтому на KY-версии
+       заголовки набираются Inter 800, см. landing.css). Inter — основной текст, с cyrillic-ext. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Токены и компоненты дизайн-системы кабинета: отдаются бэкендом, в бандл не входят -->
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <noscript><style>.lp [data-reveal]{opacity:1 !important;transform:none !important}</style></noscript>
 </head>
-<body>
+<body class="vf">
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

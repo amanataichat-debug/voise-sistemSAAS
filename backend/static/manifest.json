@@ -1,11 +1,11 @@
 {
-  "name": "Voksy AI",
-  "short_name": "Voksy AI",
+  "name": "VoksiAI",
+  "short_name": "VoksiAI",
   "description": "Создавайте голосовых ассистентов на основе OpenAI за минуты",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
-  "theme_color": "#2563eb",
+  "theme_color": "#2a5ce8",
   "icons": [
     {
       "src": "/static/android-chrome-192x192.png",
