@@ -22,7 +22,7 @@
 
   var LANGS = ['ru', 'ky'];
   var STORAGE_KEY = 'vs_lang';
-  var DICT_VERSION = '1';
+  var DICT_VERSION = '2';
   // Подстановки по умолчанию для {currency} и {tz} в строках словаря
   var DEFAULTS = { currency: 'сом', tz: 'Бишкек' };
 

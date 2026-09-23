@@ -16,6 +16,7 @@ import asyncio
 import fcntl
 import time
 import gc
+from urllib.parse import urlencode
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -277,6 +278,40 @@ async def voice_interface_redirect(request: Request):
     if query_string:
         url += "?" + query_string
     return RedirectResponse(url=url)
+
+# Старые страницы ассистентов по провайдерам → единая страница «Голосовые ассистенты»
+# (дизайн-система, этап 2). Старые ссылки: ?id=<uuid>, ?mode=create.
+LEGACY_ASSISTANT_PAGES = {
+    "agents.html": "openai",
+    "gemini-agents.html": "gemini",
+    "fish-agents.html": "fish",
+    "eleven-agents.html": "eleven",
+}
+
+
+def _legacy_assistant_redirect(model: str, request: Request) -> RedirectResponse:
+    params = {"model": model}
+    assistant_id = request.query_params.get("id")
+    if assistant_id:
+        params["id"] = assistant_id
+    elif request.query_params.get("mode") == "create":
+        params["new"] = "1"
+    return RedirectResponse(url="/static/voice-assistants.html?" + urlencode(params))
+
+
+def _make_legacy_assistant_route(model: str):
+    async def redirect(request: Request):
+        return _legacy_assistant_redirect(model, request)
+    return redirect
+
+
+for _page, _model in LEGACY_ASSISTANT_PAGES.items():
+    app.add_api_route(
+        f"/static/{_page}",
+        _make_legacy_assistant_route(_model),
+        methods=["GET"],
+        include_in_schema=False,
+    )
 
 # Монтируем статику
 try:
