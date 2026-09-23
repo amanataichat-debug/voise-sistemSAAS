@@ -269,49 +269,43 @@ def ensure_static_directories():
 
 static_dir, js_dir = ensure_static_directories()
 
-# Redirect old voice_llm_interface.html to new directory-based interface
-@app.get("/static/voice_llm_interface.html")
+@app.get("/static/voice_llm_interface.html", include_in_schema=False)
 async def voice_interface_redirect(request: Request):
-    """Redirect old single-file URL to new directory-based interface."""
-    query_string = str(request.query_params)
-    url = "/static/voice_llm_interface/index.html"
-    if query_string:
-        url += "?" + query_string
-    return RedirectResponse(url=url)
+    """JARVIS закрыт — старый адрес ведёт на «Голосовые ассистенты»."""
+    return RedirectResponse(url="/static/voice-assistants.html")
 
-# Старые страницы ассистентов по провайдерам → единая страница «Голосовые ассистенты»
-# (дизайн-система, этап 2). Старые ссылки: ?id=<uuid>, ?mode=create.
-LEGACY_ASSISTANT_PAGES = {
-    "agents.html": "openai",
-    "gemini-agents.html": "gemini",
-    "fish-agents.html": "fish",
-    "eleven-agents.html": "eleven",
-}
+# Закрытые страницы кабинета → «Голосовые ассистенты» (дизайн-система, этапы 2–3).
+# В кабинете остались только ассистенты ElevenLabs: страницы других провайдеров,
+# отдельная база знаний (теперь она у каждого ассистента), переводчик и JARVIS
+# закрыты. Старые ссылки: ?id=<uuid> (ассистент ElevenLabs откроется), ?mode=create.
+LEGACY_ASSISTANT_PAGES = (
+    "agents.html",
+    "gemini-agents.html",
+    "fish-agents.html",
+    "eleven-agents.html",
+    "grok-agents.html",
+    "fish-test.html",
+    "knowledge-base.html",
+    "translate.html",
+    "voice_llm_interface/",
+    "voice_llm_interface/index.html",
+    "voice_llm_interface/jarvis-ui.html",
+)
 
 
-def _legacy_assistant_redirect(model: str, request: Request) -> RedirectResponse:
-    params = {"model": model}
+async def _legacy_assistant_redirect(request: Request) -> RedirectResponse:
+    params = {}
     assistant_id = request.query_params.get("id")
     if assistant_id:
         params["id"] = assistant_id
     elif request.query_params.get("mode") == "create":
         params["new"] = "1"
-    return RedirectResponse(url="/static/voice-assistants.html?" + urlencode(params))
+    url = "/static/voice-assistants.html"
+    return RedirectResponse(url=url + ("?" + urlencode(params) if params else ""))
 
 
-def _make_legacy_assistant_route(model: str):
-    async def redirect(request: Request):
-        return _legacy_assistant_redirect(model, request)
-    return redirect
-
-
-for _page, _model in LEGACY_ASSISTANT_PAGES.items():
-    app.add_api_route(
-        f"/static/{_page}",
-        _make_legacy_assistant_route(_model),
-        methods=["GET"],
-        include_in_schema=False,
-    )
+for _page in LEGACY_ASSISTANT_PAGES:
+    app.add_api_route(f"/static/{_page}", _legacy_assistant_redirect, methods=["GET"], include_in_schema=False)
 
 # Монтируем статику
 try:
@@ -943,6 +937,12 @@ def check_and_fix_all_missing_columns():
             },
             'subscription_plans': {
                 # Добавьте если нужно
+            },
+            # 🆕 Индивидуальная база знаний ассистента (владелец + ассистент любого провайдера)
+            'pinecone_configs': {
+                'user_id': 'UUID NULL',
+                'owner_type': 'VARCHAR(20) NULL',
+                'owner_id': 'VARCHAR(64) NULL',
             },
             # 🆕 Дискриминатор продукта для раздельного учёта кредитов
             # оркестратора ('orchestrator') и каскада ('cascade').

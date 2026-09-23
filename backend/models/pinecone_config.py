@@ -13,8 +13,15 @@ class PineconeConfig(Base):
     __tablename__ = "pinecone_configs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Полностью удаляем поле user_id и связанный с ним relationship
+    # Легаси-привязка к OpenAI-ассистенту (старые базы; новые её не заполняют)
     assistant_id = Column(UUID(as_uuid=True), ForeignKey("assistant_configs.id", ondelete="CASCADE"), nullable=True)
+    # Индивидуальная база ассистента: владелец-пользователь и сам ассистент
+    # любого провайдера (owner_type = 'eleven' | 'fish' | 'gemini' | 'openai',
+    # owner_id = UUID ассистента строкой). Одна база на ассистента.
+    # Колонки добавляются при старте в app.py (check_and_fix_all_missing_columns).
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    owner_type = Column(String(20), nullable=True)
+    owner_id = Column(String(64), nullable=True, index=True)
     namespace = Column(String, nullable=False)
     char_count = Column(Integer, default=0)
     content_preview = Column(Text, nullable=True)  # первые 100-200 символов для предпросмотра

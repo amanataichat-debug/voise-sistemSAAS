@@ -155,13 +155,38 @@ class PineconeSearchFunction(FunctionBase):
             # Модель часто галлюцинирует namespace (например имя индекса
             # "voicyfy"), из-за чего поиск идёт в несуществующем namespace и
             # ничего не находит. Поэтому приоритет:
+            #   0) индивидуальная база ассистента (PineconeConfig.owner_id = id ассистента)
             #   1) AgentConfig.kb_namespace (агент обзвона хранит namespace у себя)
-            #   2) namespace из системного промпта (отдельные ассистенты)
+            #   2) namespace из системного промпта (легаси-ассистенты)
             #   3) аргумент модели — только как legacy-фолбэк
             namespace = None
 
-            # 1. AgentConfig.kb_namespace по id голосового ассистента
+            # 0. База, привязанная к самому ассистенту (любой провайдер)
             if assistant_config and getattr(assistant_config, "id", None):
+                try:
+                    from backend.db.session import get_db
+                    from backend.models.pinecone_config import PineconeConfig
+
+                    _db = getattr(assistant_config, "db_session", None)
+                    _own = False
+                    if _db is None:
+                        _db = next(get_db())
+                        _own = True
+                    try:
+                        kb = _db.query(PineconeConfig).filter(
+                            PineconeConfig.owner_id == str(assistant_config.id)
+                        ).first()
+                        if kb and kb.namespace:
+                            namespace = kb.namespace
+                            logger.info(f"Namespace взят из базы ассистента: {namespace}")
+                    finally:
+                        if _own:
+                            _db.close()
+                except Exception as e:
+                    logger.warning(f"Не удалось получить базу знаний ассистента: {e}")
+
+            # 1. AgentConfig.kb_namespace по id голосового ассистента
+            if not namespace and assistant_config and getattr(assistant_config, "id", None):
                 try:
                     from backend.db.session import get_db
                     from backend.models.agent_config import AgentConfig

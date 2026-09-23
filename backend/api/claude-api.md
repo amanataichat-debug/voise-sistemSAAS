@@ -41,7 +41,7 @@
 ### CRM, диалоги, база знаний, файлы
 - `contacts.py` — `/api/contacts` — CRM-контакты и заметки.
 - `conversations.py` — `/api/conversations` — история и аналитика диалогов.
-- `knowledge_base.py` — `/api/knowledge-base` — база знаний (Pinecone).
+- `knowledge_base.py` — `/api/knowledge-base` — база знаний (Pinecone). **Индивидуальная база ассистента**: `GET/PUT/DELETE /assistant/{owner_type}/{owner_id}` (одна база на ассистента; `PineconeConfig.user_id` + `owner_type` + `owner_id`, колонки добавляются при старте в `app.py`). Эмбеддинги — на ключе пользователя или серверном `OPENAI_API_KEY`. `search_pinecone` сначала берёт базу по id ассистента, ведущего разговор, затем `AgentConfig.kb_namespace` (база агента обзвона, `api/agent.py`), затем namespace из промпта (легаси). Старые эндпоинты (`/all`, `/new`, `/{id}`) — для легаси-баз, привязанных к OpenAI-ассистенту. Удаление Eleven-ассистента удаляет и его базу.
 - `files.py` — `/api/files` — загрузка/управление файлами ассистента (R2).
 - `functions.py` — `/api/functions` — список доступных AI-функций для UI (из реестра `backend/functions/`).
 - `function_logs.py` — логи вызовов AI-функций. ⚠️ В `app.py` напрямую НЕ зарегистрирован — проверяйте подключение.

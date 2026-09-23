@@ -427,6 +427,18 @@ async def update_eleven_assistant(assistant_id: str, data: ElevenAssistantUpdate
 async def delete_eleven_assistant(assistant_id: str, db: Session = Depends(get_db),
                                   current_user: User = Depends(get_current_user)):
     assistant = await verify_assistant_access(assistant_id, str(current_user.id), db)
+    # Индивидуальная база знаний ассистента уходит вместе с ним
+    try:
+        from backend.api.knowledge_base import delete_assistant_kb_record
+        from backend.models.pinecone_config import PineconeConfig
+        kb = db.query(PineconeConfig).filter(
+            PineconeConfig.owner_type == "eleven", PineconeConfig.owner_id == str(assistant.id)
+        ).first()
+        if kb:
+            await delete_assistant_kb_record(kb, db)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[ELEVEN-API] knowledge base of {assistant_id} not deleted: {e}")
     try:
         db.delete(assistant)
         db.commit()

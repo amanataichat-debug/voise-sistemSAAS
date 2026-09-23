@@ -37,17 +37,11 @@
     { href: '/static/dashboard.html', lucide: 'house', label: 'sidebar.dashboard', def: 'Дашборд', id: 'dashboard-nav-item' },
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item' },
     { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
-      aliases: ['/static/agents.html', '/static/gemini-agents.html', '/static/fish-agents.html', '/static/eleven-agents.html',
-                '/static/grok-agents.html', '/static/fish-test.html', '/static/eleven-test.html'] },
+      aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item', feature: 'telephony' },
     { href: '/static/crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', feature: 'crm',
       aliases: ['/static/crm-contact.html'] },
-
-    { section: 'sidebar.section_tools', def: 'Инструменты' },
-    { href: '/static/knowledge-base.html', lucide: 'book-open', label: 'sidebar.knowledge', def: 'База знаний', id: 'knowledge-nav-item' },
-    { href: '/static/translate.html', lucide: 'globe', label: 'sidebar.translate', def: 'Переводчик', id: 'translate-nav-item' },
-    { href: '/static/voice_llm_interface/', lucide: 'mic', label: 'sidebar.jarvis', def: 'JARVIS AI', id: 'jarvis-nav-item' },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
@@ -65,7 +59,6 @@
   function currentPath() {
     var p = location.pathname.replace(/\/+$/, '');
     if (p === '/static' || p === '') p = '/static/dashboard.html';
-    if (p === '/static/voice_llm_interface') p = '/static/voice_llm_interface/';
     return p;
   }
 
