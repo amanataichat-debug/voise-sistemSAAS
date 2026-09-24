@@ -11,6 +11,7 @@ window.addEventListener('focus', () => { if(creditsState) loadCredits(); });
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', async () => {
   if(!getToken()){ location.href='/static/login.html'; return; }
+  initPanels();
   await initAgents();
 
   // ── Кастомный dropdown переключения агентов ──
@@ -41,14 +42,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('active-toggle').addEventListener('change', toggleActive);
   document.querySelectorAll('.doc-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
-  ['edit-modal-overlay','contact-modal-overlay','calls-modal-overlay',
-   'contacts-list-modal-overlay','contact-details-modal-overlay',
-   'instructions-modal-overlay','telegram-modal-overlay','tg-account-modal-overlay',
-   'import-modal-overlay'].forEach(id => {
-    document.getElementById(id)?.addEventListener('click', function(e){ if(e.target===this) this.classList.add('hidden'); });
+  document.querySelectorAll('#settings-nav .settings-nav-item').forEach(b => b.addEventListener('click', () => openSettingsSection(b.dataset.section)));
+  // Клик по фону закрывает модалку (кроме импорта в процессе — там своя логика кнопок)
+  document.querySelectorAll('.modal-overlay').forEach(ov => {
+    ov.addEventListener('click', function(e){ if(e.target===this) this.classList.add('hidden'); });
   });
 });
 
-
-document.addEventListener('keydown', e => { if(e.key==='Escape') ['edit-modal-overlay','contact-modal-overlay','calls-modal-overlay','tasks-cal-modal-overlay','contacts-list-modal-overlay','contact-details-modal-overlay','instructions-modal-overlay','telegram-modal-overlay','tg-account-modal-overlay','import-modal-overlay'].forEach(id=>document.getElementById(id)?.classList.add('hidden')); });
+// Esc закрывает верхнюю открытую модалку (карточка контакта лежит поверх остальных)
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const open = Array.from(document.querySelectorAll('.modal-overlay:not(.hidden)'));
+  if(!open.length) return;
+  const top = open.find(o => o.id === 'contact-details-modal-overlay') || open[open.length - 1];
+  top.classList.add('hidden');
+});
 

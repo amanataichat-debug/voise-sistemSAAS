@@ -1,21 +1,36 @@
-# Voksy AI Agent — фронтенд страницы `/static/agent.html`
+# Агент обзвона VoksiAI — фронтенд страницы `/static/agent.html`
 
-Дашборд **автономного агента для обзвонов** (не путать с `agents.html` — страницей
-управления OpenAI-ассистентами, у которой своя папка `agents/`).
+Дашборд **автономного агента для обзвонов** (не путать с `agents.html` — старой страницей
+OpenAI-ассистентов, закрытой редиректом).
 
-Голосовой ассистент агента — один из шести провайдеров:
-`gemini | openai | cartesia | yandex | cascade | fish` (`AgentConfig.assistant_type`).
-Каскад работает на серверном ключе OpenAI (gpt-realtime-2.1-mini) + VoxTTS, оплата —
-кредитами каскада (`users.cascade_credits_balance`); хранится в
-`grok_assistant_configs (assistant_type='cascade')`, исходящие идут через отдельный
-rule `outbound_cascade` (цепочка с `vox-turn-taking`).
-Fish — половинный каскад на **серверных** ключах (OpenAI Realtime ведёт диалог
-текстом, озвучивает Fish Audio; хендлер `backend/websockets/handler_fish.py`,
-виджет `/ws/fish/{id}`, телефон через SIP-шлюз); хранится в
-`fish_assistant_configs`, голос задаётся `fish_voice_id` (reference_id из
-библиотеки fish.audio). В визарде `keyState('fish')` всегда `ok` — свои ключи не нужны.
-Телефония агента — собственный SIP-шлюз (`sip_phone_numbers`); Voximplant не
-используется, его остатки в `agent.py`/`telephony.py` — мёртвый код (см. корневой `CLAUDE.md`).
+**Голос новых агентов — только ElevenLabs** (`assistant_type='eleven'`, OpenAI Realtime ведёт
+диалог текстом, озвучивает ElevenLabs, серверные ключи; хендлер `backend/websockets/handler_eleven.py`).
+Мастер не предлагает выбор провайдера; голос, язык, модель синтеза и «подача» выбираются на шаге
+«Модель и голос» и в настройках (`elevenVoiceControlHtml`, голоса аккаунта — `/api/eleven-assistants/voices`).
+Старые типы (`gemini | openai | cartesia | yandex | cascade | fish`) остаются у уже созданных агентов:
+их контролы голоса сохранены, в настройках показывается предупреждение.
+
+**Телефония — только собственный SIP-шлюз.** Номер агента: карточка «Номер агента» и раздел
+настроек «Звонки» (`agent/phone.js`, `GET /api/agent/phone-numbers`, `PUT /api/agent/phone-number`).
+Агента можно создать без номера — работают чат, Telegram и Instagram; пока номеров нет, выбор
+заблокирован и показывается пояснение. Выбранный номер = номер исходящих + входящие на него идут
+агенту (PostCall по стенограмме, см. `backend/services/agent_call_finalizer.py`).
+
+**Вёрстка — дизайн-система VoksiAI**, каркас C (`design-system/04-pages-cabinet.md` §1):
+`<html class="vf">`, `/static/css/voksiai.css` → `agent/agent.css` (алиасы старых переменных на
+токены `--vf-*`), иконки — мост Font Awesome → Lucide из `/static/js/ui.js` (разметка по-прежнему
+`<i class="fas fa-…">`; нового имени нет в `FA_MAP` — добавьте туда и символ в `/static/icons/ui.svg`).
+Раскладка: топбар (лого → кабинет, кнопки шторок, переключатель агентов, «новый чат», тумблер
+активности, кредиты, справка/удаление/выход) + `.main-layout` (grid): шторка «Работа» (статистика,
+ближайшие задачи, последние звонки, история) — чат — шторка «Агент» (настройки, документы, номер,
+база знаний, коннекторы, Telegram-бот, кредиты). Шторки открыты по умолчанию, скрываются кнопками
+в топбаре, шевронами в заголовках, «язычками» у краёв чата и клавишами `[` / `]`
+(`agent/panels.js`, состояние `localStorage.agent_panels_v1`). ≤1100px — панели уезжают в drawer.
+Настройки агента — модалка с навигацией слева: Основное / Оркестратор / Звонки / Публичный API
+(`openInstructionsModal(section)`, `openSettingsSection`).
+
+Ошибки API приходят в поле `message` (глобальный обработчик приложения), поэтому везде
+`errText(err.detail ?? err.message)`.
 
 Эта папка (`backend/static/agent/`) содержит результат разбиения исходного
 монолитного `agent.html` (~3700 строк) на стили + доменные скрипты.
@@ -62,7 +77,7 @@ mobile drawer, ~13 модалок). Стили вынесены в `agent.css`, 
 | `dashboard.js` | Раскладка/drawer + дашборд | `applyLayout`, `openDrawer`, `closeDrawer`, `_collectMigrations`, `loadStats`, `loadRecentCalls`, `loadTasks` | `/api/agent/stats`, `/calls`, `/tasks` |
 | `tasks-calendar.js` | Календарь задач (модалка) | `openTasksCalendar`, `tcalDeleteAllTasks`, `tcalDeleteDayTasks`, семейство `_tcal*` | `/api/agent/tasks` (GET/DELETE bulk), `/tasks/{id}` |
 | `chat.js` | Чат с оркестратором (стриминг) + голосовой ввод (STT) | `sendMessage`, `handleStreamEvent`, `createStreamingBubble`, `addAgentBubble`, `newChat`, `renderWelcome`, `suggestionClick`, `showTyping`, `toggleRecording`, `onRecordingStop` (запись с микрофона → распознанный текст в поле ввода) | `/api/agent/chat`, `/chat/stream`, `/chat/clear`, `/transcribe` |
-| `instructions-voice.js` | Edit-модалка + инструкции + выбор голоса | `openEditModal`, `saveEdit`, `openInstructionsModal`, `saveInstructions`, `voiceControlHtml`, `readVoiceBody`, `loadModels`, `loadPhoneNumbers`, `fillCallerIdSelect`, `toggleActive` | `/api/agent/` (PUT), `/orchestrator-models`, `/phone-numbers` |
+| `instructions-voice.js` | Модалка документов + модалка настроек (секции) + выбор голоса | `openEditModal`, `saveEdit`, `openInstructionsModal(section)`, `openSettingsSection`, `saveInstructions`, `voiceControlHtml`, `elevenVoiceControlHtml`, `elevenLoadVoices`, `readVoiceBody`, `loadModels`, `toggleActive` | `/api/agent/` (PUT), `/orchestrator-models`, `/api/eleven-assistants/voices` |
 | `telegram.js` | Telegram-бот агента | `loadTelegramStatus`, `renderTelegramModal`, `connectTelegramBot`, `toggleTelegramEnabled`, `addTelegramChat`, `testTelegram`, `disconnectTelegramBot` | `/api/agent/telegram/*` |
 | `telegram-account.js` | ЛИЧНЫЙ Telegram-аккаунт агента (MTProto): трёхшаговая модалка (телефон → код → пароль 2FA), тумблер автоответа, охват contacts/all. Строка живёт в списке коннекторов — `connectors.js` зовёт `tgAccountConnectorRowHtml`/`tgAccountSummaryHtml`/`tgAccountAvailable` | `loadTgAccount`, `openTgAccountModal`, `renderTgAccountModal`, `tgAccStart/VerifyCode/VerifyPassword/Restart`, `tgAccToggleAutoReply`, `tgAccSetScope`, `tgAccDisconnect`; состояние `tgAccState`, константа `TG_ACC_API` | `/api/agent/telegram-account/*` |
 | `contacts.js` | CRM-контакты | `saveContact`, `openContactsListModal`, `loadContactsList`, `openContactDetailsModal`, `renderContactDetails`, `cdTask*`, `_cdSmsBubble` (SMS-переписка в карточке), `saveContactInfo`, `changeContactStage` | `/api/agent/contacts*` |
@@ -73,7 +88,9 @@ mobile drawer, ~13 модалок). Стили вынесены в `agent.css`, 
 | `knowledge-base.js` | База данных (векторная БД Pinecone) | `loadKnowledgeBaseStatus`, `renderKnowledgeBaseBlock`, `openKnowledgeBaseModal`, `saveKnowledgeBase`, `deleteKnowledgeBase`; состояние `knowledgeBaseState` | `/api/agent/knowledge-base` (GET/POST/DELETE) |
 | `connectors.js` | Внешние коннекторы (Google Календарь, Gmail, Instagram через Composio) | `loadConnectors`, `renderConnectorsBlock`, `openConnectorsModal`, `renderConnectorsList`, `connectConnector`, `disconnectConnector`; состояние `connectorsState`, `CONNECTOR_META` (icon — полный класс FA, у Instagram `fa-brands`). OAuth-возврат ловится через `postMessage` и `?connector=&status=`. Instagram — обмен DM: входящие забирает `backend/core/instagram_poller.py`, отправка — тулза `instagram_send_message`, история в `agent_instagram_messages`, тред виден в карточке контакта | `/api/agent/connectors` (GET / `{toolkit}/connect` POST / `callback` GET / `{toolkit}` DELETE) |
 | `onboarding.js` | Обучающая карусель перед мастером (5 слайдов про суть автономного агента). Показывается из `showWizard()` всегда при создании, с «Пропустить». | `startOnboarding(onDone)`, `renderOnboarding`, `obNext/obBack/obSkip`, `finishOnboarding`; состояние `obStep`, `OB_SLIDES` | — |
-| `wizard.js` | Мастер создания агента (9 шагов 0..8) | `showWizard` (→ `startOnboarding` → `openWizardSteps`), `renderWizard`, `renderStep0`, `saveWizardKeys`, `submitCreate`, `renderCreation`, `persistWizard`; состояние `wizardData`, `wizardStep` | `/api/agent/create` |
+| `wizard.js` | Мастер создания агента (9 шагов 0..8), всегда ElevenLabs | `showWizard` (→ `startOnboarding` → `openWizardSteps`), `renderWizard`, `renderStep0` (голос ElevenLabs + статус номера), `submitCreate`, `renderCreation`, `persistWizard`; состояние `wizardData`, `wizardStep` | `/api/agent/create`, `/api/agent/phone-numbers` |
+| `phone.js` | Номер агента (собственная телефония) | `loadPhoneNumbers`, `renderPhoneBlock`, `fillPhoneSelect`, `savePhoneSelection`, `formatPhone`; состояние `phoneState` | `/api/agent/phone-numbers`, `/api/agent/phone-number` |
+| `panels.js` | Шторки «Работа»/«Агент» | `initPanels`, `togglePanel`, `applyPanels`; `PANELS_KEY`, `panelsState` | — |
 | `init.js` | **Точки входа. Грузится последним.** | главный `DOMContentLoaded`, `window 'focus'` (рефреш кредитов), `keydown Esc` (закрыть модалки) | — |
 
 \* `VOICE_META`/`OPENAI_VOICES`/`GEMINI_VOICES` физически лежат в `instructions-voice.js`

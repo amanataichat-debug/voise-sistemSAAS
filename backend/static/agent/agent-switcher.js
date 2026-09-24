@@ -26,7 +26,7 @@ async function initAgents(){
   }catch(e){ showWizard(); }
 }
 
-const AGENT_TYPE_NAMES = { gemini:'Gemini', openai:'OpenAI', cartesia:'Cartesia', yandex:'Yandex', cascade:'Cascade', fish:'Fish' };
+const AGENT_TYPE_NAMES = { eleven:'ElevenLabs', gemini:'Gemini', openai:'OpenAI', cartesia:'Cartesia', yandex:'Yandex', cascade:'Cascade', fish:'Fish' };
 
 function renderAgentSwitcher(){
   const sw = document.getElementById('agent-switch');
@@ -49,7 +49,7 @@ function renderAgentSwitcher(){
   list.innerHTML = agentsList.map(a => {
     const active = String(a.id)===String(currentAgentId);
     const letter = esc((a.name||'А').trim().charAt(0).toUpperCase());
-    const type = AGENT_TYPE_NAMES[a.assistant_type] || 'Voice';
+    const type = AGENT_TYPE_NAMES[a.assistant_type] || 'Голос';
     return `<div class="agent-dd-item ${active?'active':''}" data-id="${esc(String(a.id))}">
       <div class="agent-dd-avatar">${letter}</div>
       <div class="agent-dd-name">${esc(a.name||'Агент')}</div>
@@ -157,7 +157,7 @@ async function deleteAgent(){
       setTimeout(() => location.reload(), 1200);
     } else {
       const err = await r?.json().catch(()=>({}));
-      showToast(errText(err.detail), 'error');
+      showToast(errText(err.detail ?? err.message), 'error');
     }
   }catch(e){
     showToast('Ошибка сети', 'error');

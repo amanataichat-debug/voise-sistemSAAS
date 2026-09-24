@@ -44,7 +44,7 @@
 - На дизайн-системе: `voice-assistants.html`, `telephony.html` — каркас A (`.vf-app`, без моста); каркас B из `design-system/03-layouts.md`
   (`<body class="vf">` + мост): dashboard, conversations, crm, crm-contact, settings,
   admin, integrations; `login.html` — на токенах без каркаса. Мёртвые страницы (cartesia, yandex,
-  cascade, outbound-calls) остались на старой `css/voicesystem-theme.css`. `agent.html` ещё не переведён.
+  cascade, outbound-calls) остались на старой `css/voicesystem-theme.css`. `agent.html` (агент обзвона) — свой каркас C по `design-system/04-pages-cabinet.md` §1: `voksiai.css` + `agent/agent.css`, топбар с переключателем агентов, шторки «Работа»/«Агент» (`agent/panels.js`), чат с оркестратором по центру; документация — `agent/CLAUDE.md`.
 
 ### Встраиваемые виджеты (JS)
 - `widget.js` — основной голосовой web-виджет (v5.0). Протокол виджета общий для OpenAI (GPT-Live, `/ws/{id}`), Fish (`data-ws-path="/ws/fish/"`) и Eleven (`data-ws-path="/ws/eleven/"`). Если сервер прислал `connection_status.full_duplex: true` (GPT-Live), виджет стримит микрофон непрерывно, включая время речи ассистента (эхо гасит AEC браузера), и воспроизводит аудио gapless по таймлайну AudioContext (`scheduleLiveAudio`, запас 200 мс); без флага — прежний half-duplex режим с паузой микрофона и очередью `playNextAudio`. `widget-test-new.js` — старая тестовая копия.

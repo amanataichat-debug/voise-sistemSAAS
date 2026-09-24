@@ -103,6 +103,9 @@ function errText(detail){
     preview_expired:'Время на подтверждение истекло. Загрузите файл заново.',
     no_valid_rows:'В файле нет валидных контактов.',
     forbidden:'Нет доступа.',
+    number_not_found:'Номер не найден или отключён.',
+    invalid_number_id:'Неверный номер.',
+    subscription_required:'Нужен тариф с доступом к агенту.',
   };
   if(typeof detail === 'string' && map[detail]) return map[detail];
   if(detail && typeof detail === 'object' && detail.error === 'insufficient_credits'){
