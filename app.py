@@ -1514,6 +1514,28 @@ def ensure_task_model_columns():
             defs.append("call_completed_at TIMESTAMP WITH TIME ZONE")
         if 'call_result' not in cols:
             defs.append("call_result TEXT")
+
+        # Колонки, которые в модели Task nullable, а в старой схеме клона NOT NULL.
+        # Главная — contact_id: у задач агента обзвона CRM-контакта нет (только
+        # agent_contact_id), и вставка падала NotNullViolation при постановке звонка.
+        from backend.models.task import Task as _Task
+        nullable_in_model = {c.name for c in _Task.__table__.columns if c.nullable and not c.primary_key}
+        relax = [
+            c['name'] for c in inspector.get_columns('tasks')
+            if c['name'] in nullable_in_model and not c.get('nullable', True)
+        ]
+        if relax:
+            with engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    for name in relax:
+                        conn.execute(text(f'ALTER TABLE tasks ALTER COLUMN "{name}" DROP NOT NULL'))
+                    trans.commit()
+                    logger.info(f"✅ tasks: dropped NOT NULL on {relax}")
+                except Exception as e:
+                    trans.rollback()
+                    logger.error(f"❌ Failed to drop NOT NULL on tasks {relax}: {e}")
+
         if not defs:
             return
         with engine.connect() as conn:
@@ -2194,6 +2216,9 @@ async def startup_event():
                 
                 # Шаг 2: Создаем базовые таблицы
                 create_tables(engine)
+
+                # Шаг 2.1: tasks — сразу, до долгих шагов (NOT NULL на contact_id ломал задачи агента)
+                ensure_task_model_columns()
                 
                 # Шаг 3: Комплексная проверка и исправление схемы
                 check_and_fix_all_missing_columns()
