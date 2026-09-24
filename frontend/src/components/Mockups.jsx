@@ -22,9 +22,7 @@ export function Frame({ active, title, children }) {
     <div className="frame">
       <div className="frame-side">
         <div className="frame-logo">
-          <span className="frame-mark" aria-hidden="true">
-            <Icon name="audio-lines" />
-          </span>
+          <img src="/static/brand/logo.svg" alt="" width="20" height="20" />
           <span>{t('frame.brand')}</span>
         </div>
         <div className="frame-nav">

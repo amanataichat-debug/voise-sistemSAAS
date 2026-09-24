@@ -59,7 +59,8 @@
 - `index/` — `css/` и `js/` для входной страницы.
 - `voice_llm_interface/` — отдельный голосовой LLM-интерфейс: `index.html`, `jarvis-ui.html`, `main.js`, `audio.js`, `config.js`, `styles.css`.
 - `css/`, `images/` — стили и изображения; `icons/` и `i18n/` — дизайн-система (см. выше).
-- Иконки/манифесты PWA (`favicon*`, `android-chrome-*`, `site.webmanifest`, `manifest.json`), аудио-сэмпл `zvuki-razgovorov...mp3`.
+- `brand/` — знак VoksiAI: `logo.svg` (исходник, из него нарезаны все фавиконы) и `logo-512.png`.
+- Иконки/манифесты PWA (`favicon*`, `apple-touch-icon.png`, `android-chrome-*`, `site.webmanifest`, `manifest.json`), аудио-сэмпл `zvuki-razgovorov...mp3`.
 
 ## Ключевые сущности / точки входа
 - **Монтирование статики** — в `app.py`: `/static` → `backend/static` (с `html=True`), `/js` → каталог JS. Отдельный маршрут `/static/voice_llm_interface.html`.
