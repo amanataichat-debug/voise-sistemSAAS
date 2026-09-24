@@ -361,7 +361,7 @@ async def sip_media(
     # 4. Подмена приветствия и контекста звонка в памяти, без записи в БД.
     #    expire_on_commit=False, чтобы коммиты внутри хендлера не перечитали объект из базы.
     db.expire_on_commit = False
-    greeting = SipGatewayService.resolve_greeting(call, number, assistant)
+    greeting = SipGatewayService.resolve_greeting(call, number, assistant, db)
     if greeting:
         set_committed_value(assistant, "greeting_message", greeting)
     context = SipGatewayService.call_context_text(call)

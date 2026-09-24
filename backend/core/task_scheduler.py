@@ -30,6 +30,7 @@ from backend.models.cartesia_assistant import CartesiaAssistantConfig
 from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.grok_assistant import GrokAssistantConfig
 from backend.models.fish_assistant import FishAssistantConfig
+from backend.models.eleven_assistant import ElevenAssistantConfig
 from backend.models.voximplant_child import VoximplantChildAccount
 from backend.models.agent_config import AgentConfig
 from backend.models.agent_contact import AgentContact
@@ -59,6 +60,12 @@ def _outbound_rule_name(assistant_type: Optional[str]) -> str:
     """Имя правила Voximplant для исходящего звонка этим типом ассистента."""
     return OUTBOUND_RULE_BY_TYPE.get(assistant_type, DEFAULT_OUTBOUND_RULE)
 
+
+
+# Звонок агента без номера собственной телефонии (sip_phone_numbers с allow_outbound).
+NO_OUTBOUND_NUMBER_MESSAGE = (
+    "Нет номера для исходящих звонков. Подключите номер в настройках агента."
+)
 
 class TaskScheduler:
     """
@@ -217,6 +224,16 @@ class TaskScheduler:
                 assistant_name = fish_assistant.name
                 assistant_type = "fish"
                 logger.info(f"   Assistant: {fish_assistant.name} (Fish)")
+        elif task.eleven_assistant_id:
+            # Eleven Assistant (OpenAI Realtime текстом + ElevenLabs TTS), только через SIP-шлюз
+            eleven_assistant = db.query(ElevenAssistantConfig).filter(
+                ElevenAssistantConfig.id == task.eleven_assistant_id
+            ).first()
+            if eleven_assistant:
+                assistant_id = str(task.eleven_assistant_id)
+                assistant_name = eleven_assistant.name
+                assistant_type = "eleven"
+                logger.info(f"   Assistant: {eleven_assistant.name} (Eleven)")
 
         return assistant_id, assistant_name, assistant_type
     
@@ -348,11 +365,23 @@ class TaskScheduler:
             call_session_id = None
             call_success = False
 
-            sip_number = self._sip_number_for(user, task, assistant_type, db)
+            sip_number = self._sip_number_for(
+                user, task, assistant_type, db,
+                preferred=getattr(task, "caller_id", None) or (agent_config.default_caller_id if agent_config else None),
+            )
             if sip_number is not None:
                 call_session_id, call_success = await self._agent_call_via_sip_gateway(
                     task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
                 )
+            elif assistant_type == "eleven":
+                # Eleven звонит только через собственный SIP-шлюз (Voximplant выключен).
+                logger.warning(f"[TASK-SCHEDULER] ❌ No SIP number with outbound for agent task {task.id}")
+                task.status = TaskStatus.FAILED
+                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
+                agent_call.status = "failed"
+                agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
+                db.commit()
+                return
             elif child_account and child_account.can_make_outbound_calls:
                 call_session_id, call_success = await self._agent_call_via_partner(
                     task, agent_contact, child_account, assistant_id, assistant_name, assistant_type, db
@@ -362,10 +391,11 @@ class TaskScheduler:
                     task, agent_contact, user, assistant_id, assistant_name, assistant_type, db
                 )
             else:
-                logger.error(f"[TASK-SCHEDULER] ❌ No Voximplant config for agent task {task.id}")
+                logger.error(f"[TASK-SCHEDULER] ❌ No outbound number for agent task {task.id}")
                 task.status = TaskStatus.FAILED
-                task.call_result = "No Voximplant configuration found."
+                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
                 agent_call.status = "failed"
+                agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
                 db.commit()
                 return
 
@@ -507,18 +537,18 @@ class TaskScheduler:
     # ✅ Собственный SIP-шлюз (infra/sip-gateway): исходящие без Voximplant
     # =========================================================================
 
-    def _sip_number_for(self, user, task, assistant_type: str, db):
+    def _sip_number_for(self, user, task, assistant_type: str, db, preferred: Optional[str] = None):
         """
         Номер оператора для исходящего через SIP-шлюз, либо None (тогда Voximplant).
         Условия: у пользователя есть активный номер с разрешёнными исходящими и
-        тип ассистента поддерживается телефонным хендлером (openai, gemini, fish).
+        тип ассистента поддерживается телефонным хендлером (openai, gemini, fish, eleven).
         """
         try:
             from backend.models.sip_gateway import SIP_SUPPORTED_ASSISTANT_TYPES
             from backend.services.sip_gateway_service import SipGatewayService
             if assistant_type not in SIP_SUPPORTED_ASSISTANT_TYPES:
                 return None
-            return SipGatewayService.outbound_number_for_user(db, user.id, getattr(task, "caller_id", None))
+            return SipGatewayService.outbound_number_for_user(db, user.id, preferred or getattr(task, "caller_id", None))
         except Exception as e:
             logger.warning(f"[TASK-SCHEDULER] SIP gateway lookup failed: {e}")
             return None
@@ -540,6 +570,11 @@ class TaskScheduler:
         """Поставить исходящий агентский звонок в очередь SIP-шлюза. Итог звонка проставит событие моста."""
         from backend.services.sip_gateway_service import SipGatewayService
         try:
+            metadata = self._sip_call_metadata(task, agent_contact.name or "")
+            # Стратегия PreCall доходит до голосового агента (в контекст звонка), не только до PostCall
+            agent_call = db.get(AgentCall, task.agent_call_id) if task.agent_call_id else None
+            if agent_call is not None and agent_call.call_strategy:
+                metadata["call_strategy"] = agent_call.call_strategy[:1500]
             call = SipGatewayService.queue_outbound_call(
                 db,
                 user_id=task.user_id,
@@ -547,11 +582,16 @@ class TaskScheduler:
                 caller_number=sip_number,
                 assistant_type=assistant_type,
                 assistant_id=assistant_id,
-                metadata=self._sip_call_metadata(task, agent_contact.name or ""),
+                metadata=metadata,
                 task_id=task.id,
             )
             logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {agent_contact.phone} ({assistant_name}), call {call.id}")
             return str(call.id), True
+        except ValueError as e:
+            # Номер не проходит через транк (не O!) — причина для пользователя, не сбой
+            logger.warning(f"[TASK-SCHEDULER] SIP call rejected for task {task.id}: {e}")
+            task.call_result = str(e)
+            return None, False
         except Exception as e:
             logger.error(f"[TASK-SCHEDULER] ❌ SIP gateway queue failed: {e}", exc_info=True)
             task.call_result = f"SIP gateway error: {e}"

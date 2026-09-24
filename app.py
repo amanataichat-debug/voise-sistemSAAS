@@ -1431,6 +1431,49 @@ def ensure_agent_fish_voice_columns():
         logger.error(f"❌ ensure_agent_fish_voice_columns error: {e}")
 
 
+def ensure_agent_eleven_voice_columns():
+    """
+    Идемпотентно добавляет FK-колонки eleven-голоса:
+      • agent_configs.eleven_assistant_id  → eleven_assistant_configs
+      • tasks.eleven_assistant_id          → eleven_assistant_configs
+    Позволяет агенту обзвона использовать ElevenLabs как голосовой провайдер.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if not inspector.has_table('eleven_assistant_configs'):
+            return
+        stmts = []
+        if inspector.has_table('agent_configs'):
+            cols = {c['name'] for c in inspector.get_columns('agent_configs')}
+            if 'eleven_assistant_id' not in cols:
+                stmts.append(
+                    "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS "
+                    "eleven_assistant_id UUID REFERENCES eleven_assistant_configs(id) ON DELETE SET NULL"
+                )
+        if inspector.has_table('tasks'):
+            cols = {c['name'] for c in inspector.get_columns('tasks')}
+            if 'eleven_assistant_id' not in cols:
+                stmts.append(
+                    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
+                    "eleven_assistant_id UUID REFERENCES eleven_assistant_configs(id) ON DELETE SET NULL"
+                )
+        if not stmts:
+            return
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                for s in stmts:
+                    conn.execute(text(s))
+                trans.commit()
+                logger.info(f"✅ Added eleven voice FK columns ({len(stmts)})")
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"❌ Failed to add eleven voice FK columns: {e}")
+    except Exception as e:
+        logger.error(f"❌ ensure_agent_eleven_voice_columns error: {e}")
+
+
 def ensure_task_model_columns():
     """
     Идемпотентно досоздаёт в tasks колонки, появившиеся позже старых
@@ -2206,6 +2249,9 @@ async def startup_event():
 
                 # 🆕 Шаг 13.2: FK-колонки fish-голоса (agent_configs + tasks)
                 ensure_agent_fish_voice_columns()
+
+                # 🆕 Шаг 13.21: FK-колонки eleven-голоса (agent_configs + tasks)
+                ensure_agent_eleven_voice_columns()
 
                 # 🆕 Шаг 13.25: Недостающие колонки tasks из модели Task
                 #    (cartesia_assistant_id + агентно-оркестраторные поля)

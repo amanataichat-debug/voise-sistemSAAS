@@ -207,6 +207,7 @@ class PineconeSearchFunction(FunctionBase):
                                 AgentConfig.yandex_assistant_id == a_id,
                                 AgentConfig.cascade_assistant_id == a_id,
                                 AgentConfig.fish_assistant_id == a_id,
+                                AgentConfig.eleven_assistant_id == a_id,
                             )
                         ).first()
                         if agent and agent.kb_namespace:

@@ -53,6 +53,7 @@ def get_agent_owned_assistant_ids(db: Session, user_id: Any) -> Set[UUID]:
         AgentConfig.yandex_assistant_id,
         AgentConfig.cascade_assistant_id,
         AgentConfig.fish_assistant_id,
+        AgentConfig.eleven_assistant_id,
     ).filter(AgentConfig.user_id == user_id).all()
 
     return {value for row in rows for value in row if value is not None}

@@ -36,6 +36,10 @@ from backend.models.fish_assistant import (
     DEFAULT_FISH_MODEL, DEFAULT_FISH_LATENCY, DEFAULT_FISH_SAMPLE_RATE,
     DEFAULT_FISH_LLM_MODEL,
 )
+from backend.models.eleven_assistant import (
+    ElevenAssistantConfig, ElevenConversation, ELEVEN_TTS_MODEL_IDS, DEFAULT_ELEVEN_TTS_MODEL,
+    ELEVEN_LANGUAGES, DEFAULT_ELEVEN_LANGUAGE, DEFAULT_ELEVEN_STABILITY, DEFAULT_ELEVEN_LLM_MODEL,
+)
 from backend.models.voximplant_child import VoximplantChildAccount
 from backend.models.task import Task, TaskStatus
 from backend.models.contact import Contact
@@ -68,7 +72,10 @@ router = APIRouter()
 # ============================================================================
 
 
-VALID_ASSISTANT_TYPES = ("gemini", "openai", "cartesia", "yandex", "cascade", "fish")
+VALID_ASSISTANT_TYPES = ("gemini", "openai", "cartesia", "yandex", "cascade", "fish", "eleven")
+# Кабинет предлагает новым агентам только ElevenLabs; остальные типы остаются для уже созданных.
+NEW_AGENT_ASSISTANT_TYPES = ("eleven",)
+ELEVEN_LANGUAGE_CODES = [lang["code"] for lang in ELEVEN_LANGUAGES]
 
 # Доступные голоса по провайдерам (должны совпадать со списками в agent.html).
 OPENAI_VOICES = [
@@ -106,6 +113,18 @@ def _valid_fish_latency(latency: Optional[str]) -> str:
     return latency if latency in FISH_LATENCY_MODES else DEFAULT_FISH_LATENCY
 
 
+def _valid_eleven_model(model: Optional[str]) -> str:
+    return model if model in ELEVEN_TTS_MODEL_IDS else DEFAULT_ELEVEN_TTS_MODEL
+
+
+def _valid_eleven_language(language: Optional[str]) -> str:
+    return language if language in ELEVEN_LANGUAGE_CODES else DEFAULT_ELEVEN_LANGUAGE
+
+
+def _valid_eleven_stability(stability: Optional[float]) -> float:
+    return stability if stability in (0.0, 0.5, 1.0) else DEFAULT_ELEVEN_STABILITY
+
+
 def _is_valid_voice(assistant_type: str, voice: str) -> bool:
     """Проверка имени голоса для select-провайдеров (gemini/openai/yandex/cascade)."""
     if assistant_type == "gemini":
@@ -136,6 +155,8 @@ def _resolve_voice_assistant(db: Session, agent: AgentConfig):
         return db.query(GrokAssistantConfig).filter(GrokAssistantConfig.id == va_id).first()
     if agent.assistant_type == "fish":
         return db.query(FishAssistantConfig).filter(FishAssistantConfig.id == va_id).first()
+    if agent.assistant_type == "eleven":
+        return db.query(ElevenAssistantConfig).filter(ElevenAssistantConfig.id == va_id).first()
     return None
 
 
@@ -227,6 +248,12 @@ class AgentCreateRequest(BaseModel):
     fish_voice_id: Optional[str] = Field(None, max_length=255)
     fish_model: Optional[str] = None
     fish_latency: Optional[str] = None
+    # ElevenLabs: voice_id из аккаунта (/api/eleven-assistants/voices), модель v3, язык, стабильность
+    eleven_voice_id: Optional[str] = Field(None, max_length=255)
+    eleven_voice_name: Optional[str] = Field(None, max_length=255)
+    eleven_tts_model: Optional[str] = None
+    eleven_language: Optional[str] = None
+    eleven_stability: Optional[float] = None
 
 
 class AgentUpdateRequest(BaseModel):
@@ -254,6 +281,12 @@ class AgentUpdateRequest(BaseModel):
     fish_voice_id: Optional[str] = Field(None, max_length=255)
     fish_model: Optional[str] = None
     fish_latency: Optional[str] = None
+    # ElevenLabs: voice_id из аккаунта (/api/eleven-assistants/voices), модель v3, язык, стабильность
+    eleven_voice_id: Optional[str] = Field(None, max_length=255)
+    eleven_voice_name: Optional[str] = Field(None, max_length=255)
+    eleven_tts_model: Optional[str] = None
+    eleven_language: Optional[str] = None
+    eleven_stability: Optional[float] = None
 
 
 class AgentChatRequest(BaseModel):
@@ -400,6 +433,9 @@ def _check_assistant_keys(assistant_type: str, current_user: User):
         # пользовательский ключ не нужен. Проверять баланс здесь не нужно:
         # гейт по кредитам стоит на старте звонка (outbound-config / config).
         pass
+    elif assistant_type == "eleven":
+        # Eleven работает на серверных ключах (OPENAI_API_KEY + ELEVENLABS_API_KEY).
+        pass
     elif assistant_type == "fish":
         # Fish работает на серверных ключах (OPENAI_API_KEY + FISH_API_KEY):
         # диалог ведёт OpenAI Realtime текстом, озвучивает Fish Audio
@@ -422,7 +458,8 @@ def _default_voice_functions():
 def _create_voice_assistant(assistant_type: str, name: str, user_id, db,
                             voice=None, cartesia_voice_id=None, voice_speed=None,
                             voice_additional_instructions=None,
-                            fish_voice_id=None, fish_model=None, fish_latency=None):
+                            fish_voice_id=None, fish_model=None, fish_latency=None,
+                            eleven=None):
     """Create a voice assistant of the given type with the hardcoded base prompt.
 
     voice — имя голоса для gemini/openai/yandex; для cartesia используются
@@ -499,6 +536,22 @@ def _create_voice_assistant(assistant_type: str, name: str, user_id, db,
             llm_model=DEFAULT_FISH_LLM_MODEL, language="ru",
             functions=_default_voice_functions(),
         )
+    elif assistant_type == "eleven":
+        # Eleven: OpenAI Realtime (текст) + синтез ElevenLabs (handler_eleven.py) на серверных
+        # ключах; телефон — собственный SIP-шлюз. Голос — voice_id из аккаунта ElevenLabs.
+        eleven = eleven or {}
+        va = ElevenAssistantConfig(
+            id=uuid.uuid4(), user_id=user_id, name=f"{name} Voice",
+            system_prompt=prompt, greeting_message="", is_active=True,
+            voice_id=(eleven.get("eleven_voice_id") or None),
+            voice_name=(eleven.get("eleven_voice_name") or None),
+            tts_model=_valid_eleven_model(eleven.get("eleven_tts_model")),
+            stability=_valid_eleven_stability(eleven.get("eleven_stability")),
+            language=_valid_eleven_language(eleven.get("eleven_language")),
+            llm_model=DEFAULT_ELEVEN_LLM_MODEL,
+            # send_sms без транспорта (Voximplant выключен) — голосу Eleven не даём
+            functions=[f for f in _default_voice_functions() if f["name"] != "send_sms"],
+        )
     else:
         raise HTTPException(status_code=400, detail="invalid_assistant_type")
     db.add(va)
@@ -517,6 +570,7 @@ _VOICE_ASSISTANT_DEPS = {
     GrokAssistantConfig: (GrokConversation, Task.cascade_assistant_id),
     # У Fish своей таблицы диалогов нет — звонки пишутся в conversations.
     FishAssistantConfig: (None, Task.fish_assistant_id),
+    ElevenAssistantConfig: (ElevenConversation, Task.eleven_assistant_id),
 }
 
 
@@ -527,6 +581,7 @@ _VOICE_MODEL_BY_TYPE = {
     "yandex": YandexAssistantConfig,
     "cascade": GrokAssistantConfig,
     "fish": FishAssistantConfig,
+    "eleven": ElevenAssistantConfig,
 }
 
 
@@ -543,6 +598,7 @@ def _all_voice_assistant_targets(agent: AgentConfig):
         (YandexAssistantConfig, agent.yandex_assistant_id),
         (GrokAssistantConfig, agent.cascade_assistant_id),
         (FishAssistantConfig, agent.fish_assistant_id),
+        (ElevenAssistantConfig, agent.eleven_assistant_id),
     )
     return [(model_cls, va_id) for model_cls, va_id in pairs if va_id]
 
@@ -742,6 +798,7 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "yandex_assistant_id": str(agent.yandex_assistant_id) if agent.yandex_assistant_id else None,
         "cascade_assistant_id": str(agent.cascade_assistant_id) if agent.cascade_assistant_id else None,
         "fish_assistant_id": str(agent.fish_assistant_id) if agent.fish_assistant_id else None,
+        "eleven_assistant_id": str(agent.eleven_assistant_id) if agent.eleven_assistant_id else None,
         "voice_assistant_name": voice_name,
         "gemini_assistant_name": voice_name,  # backward-compat for older frontend
         # Каскад хранит голос в tts_voice; остальные — в voice.
@@ -752,6 +809,12 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "fish_voice_id": getattr(voice, "fish_voice_id", None),
         "fish_model": getattr(voice, "fish_model", None),
         "fish_latency": getattr(voice, "fish_latency", None),
+        # ElevenLabs: voice_id — из аккаунта ElevenLabs на серверном ключе.
+        "eleven_voice_id": getattr(voice, "voice_id", None) if agent.assistant_type == "eleven" else None,
+        "eleven_voice_name": getattr(voice, "voice_name", None) if agent.assistant_type == "eleven" else None,
+        "eleven_tts_model": getattr(voice, "tts_model", None) if agent.assistant_type == "eleven" else None,
+        "eleven_language": getattr(voice, "language", None) if agent.assistant_type == "eleven" else None,
+        "eleven_stability": getattr(voice, "stability", None) if agent.assistant_type == "eleven" else None,
         "name": agent.name,
         "is_active": agent.is_active,
         "orchestrator_model": agent.orchestrator_model,
@@ -837,8 +900,8 @@ async def create_agent(
     db: Session = Depends(get_db)
 ):
     """Create a new Voksy AI Agent v3.0 (one per user). No gpt-4o-mini generation."""
-    # 1. Validate assistant_type
-    if body.assistant_type not in VALID_ASSISTANT_TYPES:
+    # 1. Validate assistant_type: новые агенты — только ElevenLabs
+    if body.assistant_type not in NEW_AGENT_ASSISTANT_TYPES:
         raise HTTPException(status_code=400, detail="invalid_assistant_type")
 
     # 2. Validate orchestrator_model
@@ -881,6 +944,7 @@ async def create_agent(
         fish_voice_id=body.fish_voice_id,
         fish_model=body.fish_model,
         fish_latency=body.fish_latency,
+        eleven=body.dict(),
     )
 
     # 7. Create the AgentConfig (uses_hardcoded_prompt = TRUE, no orchestrator_prompt)
@@ -895,6 +959,7 @@ async def create_agent(
         yandex_assistant_id=voice_assistant.id if body.assistant_type == "yandex" else None,
         cascade_assistant_id=voice_assistant.id if body.assistant_type == "cascade" else None,
         fish_assistant_id=voice_assistant.id if body.assistant_type == "fish" else None,
+        eleven_assistant_id=voice_assistant.id if body.assistant_type == "eleven" else None,
         is_active=True,
         orchestrator_model=orchestrator_model,
         orchestrator_prompt=None,  # собирается на лету из захардкоженного шаблона
@@ -952,7 +1017,8 @@ async def update_agent(
     # ── Смена типа голосового ассистента ──
     new_type = update_data.get("assistant_type")
     if new_type and new_type != agent.assistant_type:
-        if new_type not in VALID_ASSISTANT_TYPES:
+        # Сменить тип можно только на ElevenLabs (старые провайдеры в кабинете закрыты).
+        if new_type not in NEW_AGENT_ASSISTANT_TYPES:
             raise HTTPException(status_code=400, detail="invalid_assistant_type")
         # Ключи голосового провайдера при смене типа не требуются (v3.2) —
         # как и при создании; проверка вернётся вместе с телефонией.
@@ -966,6 +1032,7 @@ async def update_agent(
             fish_voice_id=update_data.get("fish_voice_id"),
             fish_model=update_data.get("fish_model"),
             fish_latency=update_data.get("fish_latency"),
+            eleven=update_data,
         )
         agent.gemini_assistant_id = None
         agent.openai_assistant_id = None
@@ -973,6 +1040,7 @@ async def update_agent(
         agent.yandex_assistant_id = None
         agent.cascade_assistant_id = None
         agent.fish_assistant_id = None
+        agent.eleven_assistant_id = None
         if new_type == "gemini":
             agent.gemini_assistant_id = new_voice.id
         elif new_type == "openai":
@@ -985,6 +1053,8 @@ async def update_agent(
             agent.cascade_assistant_id = new_voice.id
         elif new_type == "fish":
             agent.fish_assistant_id = new_voice.id
+        elif new_type == "eleven":
+            agent.eleven_assistant_id = new_voice.id
         agent.assistant_type = new_type
         # Если у агента есть база знаний — переносим функцию поиска на нового
         # голосового ассистента.
@@ -1050,6 +1120,7 @@ async def update_agent(
     voice_touched = any(k in update_data for k in (
         "voice", "cartesia_voice_id", "voice_speed",
         "fish_voice_id", "fish_model", "fish_latency",
+        "eleven_voice_id", "eleven_tts_model", "eleven_language", "eleven_stability",
     ))
     if voice_touched:
         va = _resolve_voice_assistant(db, agent)
@@ -1081,6 +1152,16 @@ async def update_agent(
                     va.fish_latency = _valid_fish_latency(update_data["fish_latency"])
                 if update_data.get("voice_speed") is not None:
                     va.voice_speed = update_data["voice_speed"]
+            elif agent.assistant_type == "eleven":
+                if "eleven_voice_id" in update_data:
+                    va.voice_id = update_data["eleven_voice_id"] or None
+                    va.voice_name = update_data.get("eleven_voice_name") or None
+                if update_data.get("eleven_tts_model"):
+                    va.tts_model = _valid_eleven_model(update_data["eleven_tts_model"])
+                if update_data.get("eleven_language"):
+                    va.language = _valid_eleven_language(update_data["eleven_language"])
+                if update_data.get("eleven_stability") is not None:
+                    va.stability = _valid_eleven_stability(update_data["eleven_stability"])
 
     # ── Регенерация промпта через gpt-4o-mini — ТОЛЬКО для старых агентов ──
     if docs_changed and not agent.uses_hardcoded_prompt:
@@ -1154,6 +1235,7 @@ async def delete_agent(
             (Task.yandex_assistant_id, agent.yandex_assistant_id),
             (Task.cascade_assistant_id, agent.cascade_assistant_id),
             (Task.fish_assistant_id, agent.fish_assistant_id),
+            (Task.eleven_assistant_id, agent.eleven_assistant_id),
         ):
             if va_id:
                 task_ownership.append(column == va_id)
@@ -2391,43 +2473,111 @@ async def update_agent_task(
 # ============================================================================
 
 
+class AgentPhoneNumberRequest(BaseModel):
+    """Номер собственной телефонии для агента (null — отвязать)."""
+    number_id: Optional[str] = None
+
+
+def _agent_phone_payload(db: Session, user: User, agent: Optional[AgentConfig]) -> dict:
+    """Номера пользователя в собственной SIP-телефонии и какой из них у агента."""
+    from backend.models.sip_gateway import SipPhoneNumber, normalize_sip_number
+
+    numbers = (
+        db.query(SipPhoneNumber)
+        .filter(SipPhoneNumber.user_id == user.id, SipPhoneNumber.is_active == True)  # noqa: E712
+        .order_by(SipPhoneNumber.created_at.asc())
+        .all()
+    )
+    default_digits = normalize_sip_number(agent.default_caller_id) if agent and agent.default_caller_id else None
+    agent_names = {
+        a.id: a.name for a in db.query(AgentConfig).filter(AgentConfig.user_id == user.id).all()
+    }
+    items = []
+    selected_id = None
+    for n in numbers:
+        bound_here = bool(agent and n.agent_config_id == agent.id)
+        if bound_here or (default_digits and n.phone_number == default_digits and selected_id is None):
+            selected_id = str(n.id)
+        items.append({
+            "id": str(n.id),
+            "phone_number": n.phone_number,
+            "label": n.label,
+            "allow_outbound": bool(n.allow_outbound),
+            "agent_config_id": str(n.agent_config_id) if n.agent_config_id else None,
+            "agent_name": agent_names.get(n.agent_config_id),
+            "bound_to_this_agent": bound_here,
+        })
+    return {
+        "phone_numbers": items,
+        "has_numbers": bool(items),
+        "selected_number_id": selected_id,
+        # Устаревшее поле старого фронтенда: номер для caller ID
+        "default_caller_id": agent.default_caller_id if agent else None,
+    }
+
+
 @router.get("/phone-numbers")
 async def get_phone_numbers(
+    agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get available phone numbers for caller_id selection."""
-    from backend.models.voximplant_child import VoximplantChildAccount, VoximplantPhoneNumber
+    """
+    Номера собственной телефонии (SIP-шлюз, sip_phone_numbers) пользователя.
 
-    numbers = []
+    Агента можно создать без номера (работают Telegram, Instagram, чат); пока номеров
+    нет, has_numbers=false — страница показывает «подключите номер в настройках агента»,
+    а выбор номера разблокируется, когда номер появится в базе.
+    """
+    agent = _resolve_agent(db, current_user, agent_id)
+    return _agent_phone_payload(db, current_user, agent)
 
-    # 1. Partner integration — VoximplantPhoneNumber via child account
-    child_account = None
-    if hasattr(current_user, 'voximplant_child_account') and current_user.voximplant_child_account:
-        child_account = current_user.voximplant_child_account
 
-    if child_account and child_account.phone_numbers:
-        for phone in child_account.phone_numbers:
-            if phone.is_active:
-                numbers.append({
-                    "phone_number": phone.phone_number,
-                    "region": phone.phone_region,
-                    "source": phone.phone_source or "voximplant",
-                    "is_active": True,
-                })
+@router.put("/phone-number")
+async def set_agent_phone_number(
+    body: AgentPhoneNumberRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Выбрать номер агента: входящие на него идут через голосового ассистента агента
+    (с PostCall), исходящие агента звонят с него (default_caller_id).
+    number_id=null — отвязать номера агента и сбросить номер для исходящих.
+    """
+    from backend.models.sip_gateway import SipPhoneNumber
+    from backend.services.sip_gateway_service import SipGatewayService
 
-    # 2. Legacy integration — caller_id from user config
-    if not numbers and current_user.has_voximplant_config():
-        vox_config = current_user.get_voximplant_config()
-        if vox_config and vox_config.get("caller_id"):
-            numbers.append({
-                "phone_number": vox_config["caller_id"],
-                "region": None,
-                "source": "legacy",
-                "is_active": True,
-            })
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
 
-    return {"phone_numbers": numbers}
+    # Прежние номера агента отвязываем: у агента один номер.
+    SipGatewayService.unbind_agent_numbers(db, agent.id)
+
+    if body.number_id:
+        try:
+            number_uuid = uuid.UUID(body.number_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid_number_id")
+        number = db.query(SipPhoneNumber).filter(
+            SipPhoneNumber.id == number_uuid,
+            SipPhoneNumber.user_id == current_user.id,
+            SipPhoneNumber.is_active == True,  # noqa: E712
+        ).first()
+        if number is None:
+            raise HTTPException(status_code=404, detail="number_not_found")
+        try:
+            SipGatewayService.bind_number_to_agent(number, agent)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        agent.default_caller_id = number.phone_number
+    else:
+        agent.default_caller_id = None
+
+    db.commit()
+    logger.info(f"[AGENT] Agent {agent.id} phone number set to {body.number_id or '—'}")
+    return _agent_phone_payload(db, current_user, agent)
 
 
 # ============================================================================

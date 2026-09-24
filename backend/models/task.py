@@ -101,6 +101,14 @@ class Task(Base):
         index=True
     )
 
+    # Eleven ассистент (OpenAI Realtime + ElevenLabs TTS) - nullable
+    eleven_assistant_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("eleven_assistant_configs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Пользователь - владелец задачи (обязательно)
     user_id = Column(
         UUID(as_uuid=True), 
@@ -192,6 +200,7 @@ class Task(Base):
     yandex_assistant = relationship("YandexAssistantConfig", foreign_keys=[yandex_assistant_id])
     cascade_assistant = relationship("GrokAssistantConfig", foreign_keys=[cascade_assistant_id])
     fish_assistant = relationship("FishAssistantConfig", foreign_keys=[fish_assistant_id])
+    eleven_assistant = relationship("ElevenAssistantConfig", foreign_keys=[eleven_assistant_id])
     user = relationship("User")
     
     # ==================== Constraints & Indexes ====================
@@ -224,6 +233,8 @@ class Task(Base):
             return "cascade"
         elif self.fish_assistant_id:
             return "fish"
+        elif self.eleven_assistant_id:
+            return "eleven"
         else:
             return "cartesia"
 
@@ -239,6 +250,8 @@ class Task(Base):
             return str(self.cascade_assistant_id)
         elif self.fish_assistant_id:
             return str(self.fish_assistant_id)
+        elif self.eleven_assistant_id:
+            return str(self.eleven_assistant_id)
         else:
             return str(self.cartesia_assistant_id)
     
@@ -253,6 +266,7 @@ class Task(Base):
             "yandex_assistant_id": str(self.yandex_assistant_id) if self.yandex_assistant_id else None,
             "cascade_assistant_id": str(self.cascade_assistant_id) if self.cascade_assistant_id else None,
             "fish_assistant_id": str(self.fish_assistant_id) if self.fish_assistant_id else None,
+            "eleven_assistant_id": str(self.eleven_assistant_id) if self.eleven_assistant_id else None,
             "assistant_type": self.get_assistant_type(),  # ✅ Новое поле
             "user_id": str(self.user_id),
             "status": self.status.value,
