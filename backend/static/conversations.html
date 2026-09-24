@@ -509,6 +509,10 @@
       background: linear-gradient(135deg, #0ea5e9, #2563eb);
     }
 
+    .assistant-avatar.eleven {
+      background: linear-gradient(135deg, #2a5ce8, #4f46e5);
+    }
+
     .card-info {
       flex: 1;
       min-width: 0;
@@ -564,6 +568,11 @@
     .assistant-type-badge.fish {
       background-color: rgba(14, 165, 233, 0.1);
       color: #0ea5e9;
+    }
+
+    .assistant-type-badge.eleven {
+      background-color: rgba(42, 92, 232, 0.1);
+      color: #2a5ce8;
     }
 
     .conversation-date {
@@ -937,10 +946,15 @@
       background: linear-gradient(135deg, #0ea5e9, #2563eb);
     }
 
+    .message.assistant.eleven .message-avatar {
+      background: linear-gradient(135deg, #2a5ce8, #4f46e5);
+    }
+
     .message-bubble {
       padding: 0.75rem 1rem;
       border-radius: 1rem;
       word-wrap: break-word;
+      white-space: pre-wrap;
       line-height: 1.5;
       font-size: 0.9rem;
     }
@@ -2949,7 +2963,8 @@
           : assistantType === 'cartesia' ? 'assistant-avatar cartesia'
           : assistantType === 'yandex' ? 'assistant-avatar yandex'
           : assistantType === 'cascade' ? 'assistant-avatar cascade'
-          : assistantType === 'fish' ? 'assistant-avatar fish' : 'assistant-avatar';
+          : assistantType === 'fish' ? 'assistant-avatar fish'
+          : assistantType === 'eleven' ? 'assistant-avatar eleven' : 'assistant-avatar';
         const typeBadge = assistantType === 'gemini'
           ? '<span class="assistant-type-badge gemini">Gemini</span>'
           : assistantType === 'cartesia'
@@ -2960,6 +2975,8 @@
           ? '<span class="assistant-type-badge cascade">Cascade</span>'
           : assistantType === 'fish'
           ? '<span class="assistant-type-badge fish">Fish</span>'
+          : assistantType === 'eleven'
+          ? '<span class="assistant-type-badge eleven">ElevenLabs</span>'
           : '<span class="assistant-type-badge openai">OpenAI</span>';
         
         let metaItems = '';
@@ -3012,7 +3029,7 @@
             <div class="${avatarClass}">${assistantInitial}</div>
             <div class="card-info">
               <div class="assistant-name">
-                ${assistantName}
+                ${escapeHtmlForModal(assistantName || '')}
                 ${typeBadge}
               </div>
               <div class="conversation-date">${formatDate(conversation.created_at)}</div>
@@ -3024,7 +3041,7 @@
           
           ${callerDisplay}
           
-          <div class="conversation-preview">${preview}</div>
+          <div class="conversation-preview">${escapeHtmlForModal(preview)}</div>
           
           <div class="card-footer">
             <div class="card-meta">
@@ -3119,6 +3136,18 @@
           }
 
           try {
+            const elevenData = await api.get('/eleven-assistants');
+            const elevenList = Array.isArray(elevenData)
+              ? elevenData
+              : (elevenData.assistants || []);
+            elevenList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'eleven' });
+            });
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading ElevenLabs assistants:', e.message);
+          }
+
+          try {
             // Голоса агентов обзвона: диалоги пишутся под id голосового
             // ассистента, а в списках провайдеров этот ассистент скрыт —
             // поэтому в фильтр кладём именно его id под именем агента.
@@ -3134,6 +3163,10 @@
               if (a.assistant_type === 'fish' && a.fish_assistant_id) {
                 assistants.push({ id: a.fish_assistant_id, name: a.name, type: 'fish' });
                 fishAgentCount++;
+              }
+              if (a.assistant_type === 'eleven' && a.eleven_assistant_id
+                  && !assistants.some(x => x.id === a.eleven_assistant_id)) {
+                assistants.push({ id: a.eleven_assistant_id, name: a.name, type: 'eleven' });
               }
             });
             console.log(`[ASSISTANTS] ✅ Loaded ${cascadeCount} Cascade and ${fishAgentCount} Fish agent voices`);
@@ -3165,6 +3198,19 @@
         const yandexAssistants = assistants.filter(a => a.type === 'yandex');
         const cascadeAssistants = assistants.filter(a => a.type === 'cascade');
         const fishAssistants = assistants.filter(a => a.type === 'fish');
+        const elevenAssistants = assistants.filter(a => a.type === 'eleven');
+
+        if (elevenAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = 'ElevenLabs';
+          elevenAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
 
         if (openaiAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
@@ -3334,9 +3380,11 @@
             ? '<span class="assistant-type-badge cascade" style="margin-left: 0.5rem;">Cascade</span>'
             : type === 'fish'
             ? '<span class="assistant-type-badge fish" style="margin-left: 0.5rem;">Fish</span>'
+            : type === 'eleven'
+            ? '<span class="assistant-type-badge eleven" style="margin-left: 0.5rem;">ElevenLabs</span>'
             : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">OpenAI</span>';
           
-          modalTitle.innerHTML = `${dialog.assistant_name} ${typeBadge}`;
+          modalTitle.innerHTML = `${escapeHtmlForModal(dialog.assistant_name || '')} ${typeBadge}`;
           
           // 🆕 v3.6: Используем улучшенную проверку caller_number
           const callerBadge = hasRealCallerNumber(dialog.caller_number)
@@ -3379,7 +3427,8 @@
                 : type === 'cartesia' ? 'message assistant cartesia'
                 : type === 'yandex' ? 'message assistant yandex'
                 : type === 'cascade' ? 'message assistant cascade'
-                : type === 'fish' ? 'message assistant fish' : 'message assistant';
+                : type === 'fish' ? 'message assistant fish'
+                : type === 'eleven' ? 'message assistant eleven' : 'message assistant';
               messageDiv.className = msg.type === 'user' ? 'message user' : assistantClass;
 
               const avatarIcon = msg.type === 'user' ? '👤' : (type === 'gemini' ? '✨' : type === 'yandex' ? '🔴' : type === 'cascade' ? '🌊' : type === 'fish' ? '🐟' : '🤖');
@@ -3435,9 +3484,7 @@
               messageDiv.innerHTML = `
                 <div class="message-avatar">${avatarIcon}</div>
                 <div>
-                  <div class="message-bubble">
-                    ${msg.text}
-                  </div>
+                  <div class="message-bubble">${escapeHtmlForModal(msg.text || '')}</div>
                   ${functionCallsHtml}
                   <div class="message-time">${msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
                 </div>
@@ -3466,7 +3513,7 @@
               </div>
               <div class="footer-item">
                 <i class="${type === 'gemini' ? 'fas fa-gem' : type === 'cartesia' ? 'fas fa-microphone-alt' : type === 'yandex' ? 'fas fa-microphone' : 'fas fa-robot'}"></i>
-                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : 'OpenAI'}</span>
+                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : type === 'eleven' ? 'ElevenLabs' : type === 'fish' ? 'Fish Audio' : 'OpenAI'}</span>
               </div>
               ${costFormatted ? `
                 <div class="footer-item cost">

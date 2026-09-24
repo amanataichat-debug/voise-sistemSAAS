@@ -74,9 +74,10 @@ class _MessageView:
 def _find_session_record(db: Session, conversation_id: str):
     """
     Найти запись сессии по session_id или id сообщения: сначала в conversations,
-    затем в gemini_conversations и fish_conversations. Возвращает (record, model) или (None, None).
+    затем в gemini_conversations, fish_conversations и eleven_conversations.
+    Возвращает (record, model) или (None, None).
     """
-    for model in (Conversation, GeminiConversation, FishConversation):
+    for model in (Conversation, GeminiConversation, FishConversation, ElevenConversation):
         record = db.query(model).filter(model.session_id == conversation_id).first()
         if not record:
             try:
@@ -106,6 +107,8 @@ def _preview_sql(table_name: str):
             ) as preview
         FROM {table_name}
         WHERE session_id = ANY(:session_ids)
+          -- пустая запись-заглушка сессии (Fish/Eleven) не должна становиться превью
+          AND (COALESCE(TRIM(user_message), '') <> '' OR COALESCE(TRIM(assistant_message), '') <> '')
         ORDER BY session_id, created_at ASC
     """)
 
@@ -123,7 +126,10 @@ def _sessions_select(model, user_assistant_ids, assistant_uuid, caller_number, d
             model.session_id.label("session_id"),
             model.assistant_id.label("assistant_id"),
             func.max(model.caller_number).label("caller_number"),
-            func.count(model.id).label("messages_count"),
+            # заглушку сессии (обе реплики пустые) в число сообщений не считаем
+            func.count(case(
+                (or_(func.coalesce(model.user_message, "") != "", func.coalesce(model.assistant_message, "") != ""), model.id)
+            )).label("messages_count"),
             func.min(created).label("created_at"),
             func.max(created).label("updated_at"),
             func.sum(model.tokens_used).label("total_tokens"),
