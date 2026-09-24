@@ -611,6 +611,22 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .badge-no-answer { background: var(--vf-danger-soft); color: var(--vf-danger); }
 .badge-answered, .badge-success { background: var(--vf-success-soft); color: var(--vf-success); }
 .badge-followup { background: var(--vf-accent-soft); color: var(--vf-accent); }
+/* Итог SIP-звонка (calls.js: outcomeBadge / outcomeLine) */
+.status-badge.o-ok { background: var(--vf-success-soft); color: var(--vf-success); }
+.status-badge.o-warn { background: var(--vf-warning-soft); color: var(--vf-warning); }
+.status-badge.o-error { background: var(--vf-danger-soft); color: var(--vf-danger); }
+.status-badge.o-progress { background: var(--vf-accent-soft); color: var(--vf-accent); }
+.status-badge i .ic { width: 12px; height: 12px; }
+.o-pulse { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: aw-pulse 1s ease-in-out infinite; }
+.outcome-line { margin-top: 8px; padding: 6px 10px; border-radius: 7px; font-size: 12px; line-height: 1.45; border-left: 3px solid; }
+.outcome-line.o-ok { background: var(--vf-success-soft); border-color: var(--vf-success); color: #166534; }
+.outcome-line.o-warn { background: var(--vf-warning-soft); border-color: var(--vf-warning); color: #92400e; }
+.outcome-line.o-error { background: var(--vf-danger-soft); border-color: var(--vf-danger); color: #991b1b; }
+.outcome-line.o-progress { background: var(--vf-accent-soft); border-color: var(--vf-accent); color: var(--vf-text-2); }
+.call-dot.o-ok { background: var(--vf-success); }
+.call-dot.o-warn { background: var(--vf-warning); }
+.call-dot.o-error { background: var(--vf-danger); }
+.call-dot.o-progress { background: var(--vf-accent); animation: aw-pulse 1s ease-in-out infinite; }
 .transcript-row td { background: var(--vf-surface-2) !important; padding: 14px 18px !important; font-size: 12.5px; color: var(--vf-text-2); white-space: pre-wrap; line-height: 1.6; }
 
 /* Календарь задач */

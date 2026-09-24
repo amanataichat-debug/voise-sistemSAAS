@@ -14,11 +14,15 @@
 
 // Всегда грузим последние 100 фоновых задач, чтобы не перегружать панель.
 const AGENT_HISTORY_LIMIT = 100;
+// Пока есть звонок «в процессе» (очередь / набор / разговор), ленту и последние
+// звонки тихо обновляем раз в 5 с — итог (ответил / не взял / связь) появится сам.
+let agentHistoryTimer = null;
 
-async function loadAgentHistory(){
+async function loadAgentHistory(silent){
   const el = document.getElementById('agent-history-list');
   if(!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:18px"><div class="spinner" style="margin:0 auto"></div></div>';
+  if(agentHistoryTimer){ clearTimeout(agentHistoryTimer); agentHistoryTimer = null; }
+  if(silent !== true) el.innerHTML = '<div style="text-align:center;padding:18px"><div class="spinner" style="margin:0 auto"></div></div>';
   try{
     const r = await apiFetch(API + '/calls?limit=' + AGENT_HISTORY_LIMIT + '&offset=0');
     if(!r || r.status !== 200){ el.innerHTML = '<div class="empty">Ошибка загрузки</div>'; return; }
@@ -27,6 +31,9 @@ async function loadAgentHistory(){
       el.innerHTML = '<div class="empty">Агент ещё не выполнял задач</div>';
       return;
     }
+    const live = data.calls.some(c => c.outcome && c.outcome.kind === 'progress');
+    if(live || silent === true){ try{ loadRecentCalls(); }catch(e){} }
+    if(live) agentHistoryTimer = setTimeout(() => loadAgentHistory(true), 5000);
     el.innerHTML = data.calls.map((c, i) => `
       <div class="hist-item">
         <div class="hist-item-head">

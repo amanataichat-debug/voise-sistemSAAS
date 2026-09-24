@@ -16,7 +16,7 @@ from fastapi.responses import Response, StreamingResponse, RedirectResponse, HTM
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy import func, or_, false
+from sqlalchemy import func, or_, and_, false
 
 from backend.core.logging import get_logger
 from backend.db.session import get_db, SessionLocal
@@ -2907,20 +2907,34 @@ async def list_agent_calls(
     # есть достоверный результат. Промежуточные статусы ('calling' — звонок идёт,
     # 'finalizing' — идёт пост-обработка) скрываем, чтобы в списке не появлялись
     # звонки без подтверждённой информации.
+    # Исключение — звонки через собственный SIP-шлюз: у них итог известен по событиям
+    # моста, поэтому идущий звонок показываем сразу («в очереди», «набираем», «разговор»).
+    from sqlalchemy import cast, String as SAString
+    from backend.models.sip_gateway import SipCall
+    from backend.services.agent_call_finalizer import call_outcome, sip_calls_for
     FINALIZED_STATUSES = ["answered", "no_answer", "failed"]
     q = db.query(AgentCall).filter(
         AgentCall.agent_config_id == agent.id,
-        AgentCall.status.in_(FINALIZED_STATUSES),
+        or_(
+            AgentCall.status.in_(FINALIZED_STATUSES),
+            and_(
+                AgentCall.status.in_(["calling", "finalizing"]),
+                AgentCall.call_session_id.in_(db.query(cast(SipCall.id, SAString))),
+            ),
+        ),
     )
     if agent_contact_id:
         q = q.filter(AgentCall.agent_contact_id == agent_contact_id)
 
     total = q.count()
     calls = q.order_by(AgentCall.created_at.desc()).offset(offset).limit(limit).all()
+    sip_map = sip_calls_for(db, calls)
 
     result = []
     for c in calls:
         d = c.to_dict()
+        # Что случилось со звонком: ответил / не взял / занято / проблема со связью / идёт
+        d["outcome"] = call_outcome(c, sip_map.get(str(c.call_session_id)))
         # Add contact info
         if c.contact:
             d["contact_name"] = c.contact.name
@@ -2948,6 +2962,8 @@ async def get_agent_call(
         raise HTTPException(status_code=404, detail="not_found")
 
     d = call.to_dict()
+    from backend.services.agent_call_finalizer import call_outcome, sip_calls_for
+    d["outcome"] = call_outcome(call, sip_calls_for(db, [call]).get(str(call.call_session_id)))
     if call.contact:
         d["contact_name"] = call.contact.name
         d["contact_phone"] = call.contact.phone

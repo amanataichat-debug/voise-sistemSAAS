@@ -14,6 +14,7 @@ PostCallOrchestrator.finalize_sip_call забирает звонок атома�
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -148,3 +149,102 @@ class AgentCallFinalizer:
         logger.info(f"[AGENT-FINALIZER] call {call.id} failed ({call.end_reason}) → AgentCall {agent_call.id} no_answer")
         _schedule(str(agent_call.id), "", "no_answer", 0, "outbound")
         return str(agent_call.id)
+
+
+# ---------------------------------------------------------------------------
+# Итог звонка для интерфейса агента: что именно случилось с SIP-звонком.
+# kind: ok (разговор состоялся) | warn (не дозвонились: занято, не взял, молчал)
+#       | error (проблема со связью/номером) | progress (звонок ещё идёт)
+# ---------------------------------------------------------------------------
+
+_NETWORK_REASONS = {
+    "trunk_unavailable": "линия оператора недоступна",
+    "congestion": "сеть оператора перегружена",
+    "channel_limit": "все линии заняты",
+    "ami_unavailable": "шлюз телефонии не отвечает",
+    "ami_error": "ошибка шлюза телефонии",
+    "gateway_timeout": "шлюз не ответил вовремя",
+    "failed": "звонок не удалось начать",
+}
+_BROKEN_REASONS = {
+    "backend_unavailable": "сервер голосового агента недоступен",
+    "backend_closed": "соединение с голосовым агентом прервалось",
+    "asterisk_disconnected": "обрыв соединения со шлюзом",
+    "gateway_shutdown": "шлюз перезапускался",
+    "stale": "звонок завис и был закрыт",
+}
+_END_BY = {
+    "asterisk_hangup": "клиент положил трубку",
+    "backend_hangup": "агент завершил разговор",
+    "handler_finished": "агент завершил разговор",
+    "handler_closed": "агент завершил разговор",
+    "hangup_call": "агент завершил разговор",
+    "max_duration": "достигнут лимит длительности",
+}
+
+
+def _fmt_duration(sec: float) -> str:
+    sec = int(sec or 0)
+    return f"{sec // 60}:{sec % 60:02d}"
+
+
+def call_outcome(agent_call, sip_call: Optional[SipCall]) -> Optional[dict]:
+    """Понятный итог звонка для истории агента (или None для текстовых событий)."""
+    channel = agent_call._resolve_channel() if hasattr(agent_call, "_resolve_channel") else "call"
+    if channel != "call":
+        return None
+    if sip_call is None:
+        if agent_call.status == "failed":
+            return {"kind": "error", "label": "Звонок не состоялся",
+                    "detail": agent_call.call_result or "причина не записана"}
+        return None
+
+    status = sip_call.status
+    reason = sip_call.end_reason or ""
+    attempts = sip_call.attempts or 0
+    if status == "queued":
+        detail = "ждёт свободную линию"
+        if reason in _NETWORK_REASONS and attempts:
+            detail = f"повтор после ошибки: {_NETWORK_REASONS[reason]} (попытка {attempts + 1})"
+        return {"kind": "progress", "label": "В очереди", "detail": detail}
+    if status in ("dialing", "ringing"):
+        return {"kind": "progress", "label": "Набираем номер", "detail": f"попытка {max(attempts, 1)}"}
+    if status == "answered" and not sip_call.ended_at and agent_call.status in ("calling", "finalizing"):
+        return {"kind": "progress", "label": "Идёт разговор", "detail": ""}
+    if status == "failed":
+        if reason == "busy":
+            return {"kind": "warn", "label": "Занято", "detail": "абонент разговаривал или сбросил"}
+        if reason == "no_answer":
+            return {"kind": "warn", "label": "Не взял трубку", "detail": ""}
+        if reason == "bad_number":
+            return {"kind": "error", "label": "Неверный номер", "detail": sip_call.to_number or ""}
+        detail = _NETWORK_REASONS.get(reason) or _BROKEN_REASONS.get(reason) or reason or "неизвестная ошибка"
+        if attempts > 1:
+            detail += f" · попыток: {attempts}"
+        return {"kind": "error", "label": "Проблема со связью", "detail": detail}
+
+    # completed / answered-and-ended
+    duration = sip_call.duration_sec or agent_call.duration_seconds or 0
+    if reason in _BROKEN_REASONS:
+        return {"kind": "error", "label": "Обрыв связи",
+                "detail": f"{_BROKEN_REASONS[reason]} · {_fmt_duration(duration)}"}
+    turns = sip_call.transcript or []
+    client_spoke = any(t.get("role") == "user" for t in turns) if turns else agent_call.status == "answered"
+    if not client_spoke:
+        return {"kind": "warn", "label": "Взял трубку, но молчал",
+                "detail": f"{_fmt_duration(duration)} · {_END_BY.get(reason, 'звонок завершён')}"}
+    return {"kind": "ok", "label": "Разговор состоялся",
+            "detail": f"{_fmt_duration(duration)} · {_END_BY.get(reason, 'звонок завершён')}"}
+
+
+def sip_calls_for(db: Session, agent_calls) -> dict:
+    """{call_session_id: SipCall} для пачки звонков агента одним запросом."""
+    ids = []
+    for c in agent_calls:
+        try:
+            ids.append(uuid.UUID(str(c.call_session_id)))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    return {str(s.id): s for s in db.query(SipCall).filter(SipCall.id.in_(ids)).all()}
