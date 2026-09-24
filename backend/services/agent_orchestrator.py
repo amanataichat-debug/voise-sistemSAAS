@@ -2570,6 +2570,10 @@ class ChatOrchestrator:
 
         except Exception as e:
             logger.error(f"[AGENT-CHAT] (stream) error: {e}", exc_info=True)
+            try:
+                db.rollback()  # не оставлять сессию запроса в PendingRollback
+            except Exception:
+                pass
             yield {"type": "error", "detail": f"chat_error: {e}"}
 
     async def _run_v2_responses_api(

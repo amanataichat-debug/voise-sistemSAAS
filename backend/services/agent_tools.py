@@ -2673,4 +2673,11 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
 
     except Exception as e:
         logger.error(f"[AGENT-TOOLS] Error executing {tool_name}: {e}", exc_info=True)
+        # Упавший commit оставляет сессию в состоянии PendingRollback: без отката
+        # следующее же обращение оркестратора к БД роняет весь чат, а модель так
+        # и не узнаёт об ошибке инструмента.
+        try:
+            db.rollback()
+        except Exception as rb_err:
+            logger.error(f"[AGENT-TOOLS] Rollback after {tool_name} failed: {rb_err}")
         return json.dumps({"ok": False, "error": str(e)})

@@ -1627,6 +1627,139 @@ def ensure_all_model_columns():
         logger.error(f"❌ ensure_all_model_columns error: {e}")
 
 
+def ensure_schema_constraints_match_models():
+    """
+    Идемпотентно убирает из БД ограничения, которых нет в ORM-моделях, — то,
+    что ensure_all_model_columns не трогает (он только добавляет колонки).
+    Старая схема клона/прода строже моделей, и каждый такой хвост всплывал
+    отдельной аварией на первой же вставке:
+      • NOT NULL на колонке, которая в модели nullable (tasks.contact_id);
+      • CHECK, не объявленный в модели (tasks.check_assistant_type не знал про
+        eleven_assistant_id — задачи агента с голосом ElevenLabs не создавались);
+      • VARCHAR(n) короче, чем String(m)/Text в модели;
+      • значения Python-Enum, которых нет в PostgreSQL ENUM-типе.
+    Все шаги только ослабляют схему до модели (данные не меняются, таблицы не
+    переписываются); каждое изменение — своя транзакция, определение снятого
+    CHECK пишется в лог, чтобы его можно было вернуть руками.
+    """
+    try:
+        from sqlalchemy import text, inspect, CheckConstraint, String, Text
+        from sqlalchemy import Enum as SAEnum
+        from backend.models.base import Base
+
+        if engine.dialect.name != 'postgresql':
+            return
+
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        relaxed, dropped, widened, enum_added, failed = [], [], [], [], []
+
+        def _apply(ddl, label, bucket):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(ddl))
+                bucket.append(label)
+            except Exception as e:
+                failed.append(f"{label} ({e})")
+
+        native_enums = {}  # имя PG-типа → значения из модели
+
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            db_cols = {c['name']: c for c in inspector.get_columns(table.name)}
+
+            for col in table.columns:
+                if isinstance(col.type, SAEnum) and col.type.native_enum and col.type.name:
+                    native_enums.setdefault(col.type.name, set()).update(col.type.enums)
+
+                db_col = db_cols.get(col.name)
+                if db_col is None or col.primary_key:
+                    continue
+                label = f"{table.name}.{col.name}"
+
+                # 1. NOT NULL в БД, а в модели колонка nullable
+                if col.nullable and not db_col.get('nullable', True):
+                    _apply(
+                        f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" DROP NOT NULL',
+                        label, relaxed,
+                    )
+
+                # 2. VARCHAR(n) в БД короче, чем в модели (расширение без перезаписи таблицы)
+                if isinstance(col.type, String) and not isinstance(col.type, SAEnum):
+                    db_len = getattr(db_col['type'], 'length', None)
+                    if db_len and type(db_col['type']).__name__.upper() in ('VARCHAR', 'STRING'):
+                        if isinstance(col.type, Text):
+                            target = 'TEXT'
+                        elif col.type.length is None:
+                            target = 'VARCHAR'
+                        elif col.type.length > db_len:
+                            target = f'VARCHAR({col.type.length})'
+                        else:
+                            target = None
+                        if target:
+                            _apply(
+                                f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" TYPE {target}',
+                                f"{label} VARCHAR({db_len})→{target}", widened,
+                            )
+
+            # 3. CHECK-ограничения, которых нет в модели
+            declared = {
+                str(c.name) for c in table.constraints
+                if isinstance(c, CheckConstraint) and c.name
+            }
+            with engine.connect() as conn:
+                checks = conn.execute(text(
+                    "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conrelid = to_regclass(:t) AND contype = 'c'"
+                ), {"t": f'"{table.name}"'}).fetchall()
+            for name, definition in checks:
+                if name in declared:
+                    continue
+                logger.warning(f"⚠️ Dropping CHECK {table.name}.{name} not declared in models: {definition}")
+                _apply(
+                    f'ALTER TABLE "{table.name}" DROP CONSTRAINT IF EXISTS "{name}"',
+                    f"{table.name}.{name}", dropped,
+                )
+
+        # 4. Недостающие значения PostgreSQL ENUM (ADD VALUE — вне транзакции)
+        if native_enums:
+            with engine.connect() as conn:
+                conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+                for type_name, values in native_enums.items():
+                    rows = conn.execute(text(
+                        "SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid "
+                        "WHERE t.typname = :n"
+                    ), {"n": type_name}).fetchall()
+                    if not rows:
+                        continue  # типа нет (или не native) — создаст create_all
+                    present = {r[0] for r in rows}
+                    for value in sorted(values - present):
+                        label = f"{type_name}.{value}"
+                        try:
+                            literal = value.replace("'", "''")
+                            conn.execute(text(f"ALTER TYPE \"{type_name}\" ADD VALUE IF NOT EXISTS '{literal}'"))
+                            enum_added.append(label)
+                        except Exception as e:
+                            failed.append(f"{label} ({e})")
+
+        changes = {
+            "dropped NOT NULL": relaxed,
+            "dropped CHECK": dropped,
+            "widened": widened,
+            "enum values added": enum_added,
+        }
+        done = {k: v for k, v in changes.items() if v}
+        if done:
+            logger.info(f"✅ ensure_schema_constraints_match_models: {done}")
+        else:
+            logger.info("✅ ensure_schema_constraints_match_models: constraints already match models")
+        if failed:
+            logger.error(f"❌ ensure_schema_constraints_match_models: failed for {failed}")
+    except Exception as e:
+        logger.error(f"❌ ensure_schema_constraints_match_models error: {e}")
+
+
 def ensure_task_assistant_fk_on_delete():
     """
     Идемпотентно переводит FK `tasks.*_assistant_id` на ON DELETE SET NULL.
@@ -2219,7 +2352,11 @@ async def startup_event():
 
                 # Шаг 2.1: tasks — сразу, до долгих шагов (NOT NULL на contact_id ломал задачи агента)
                 ensure_task_model_columns()
-                
+
+                # Шаг 2.2: лишние NOT NULL / CHECK / короткие VARCHAR / ENUM из старой
+                #    схемы — сразу, до долгих шагов (check_assistant_type ломал задачи агента)
+                ensure_schema_constraints_match_models()
+
                 # Шаг 3: Комплексная проверка и исправление схемы
                 check_and_fix_all_missing_columns()
                 
@@ -2326,6 +2463,10 @@ async def startup_event():
                 #    всех моделей (запускается ПОСЛЕ специализированных шагов,
                 #    чтобы не перехватывать их FK-колонки)
                 ensure_all_model_columns()
+
+                # 🆕 Шаг 24: Ограничения БД → как в моделях (повтор после всех
+                #    шагов: досозданные выше колонки тоже сверяются)
+                ensure_schema_constraints_match_models()
 
                 migration_completed = True
                 logger.info("✅ All migrations and schema fixes completed")
