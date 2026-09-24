@@ -120,6 +120,9 @@ class SipCall(Base):
     call_metadata = Column(JSON, nullable=True)
     trunk_host = Column(String(50), nullable=True)
     conversation_session_id = Column(String(100), nullable=True)
+    # Стенограмма звонка целиком: [{"role": "user"|"assistant", "text": str, "t": сек}],
+    # собирается по событиям хендлера (services/call_transcript.py), включая приветствие.
+    transcript = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
     dialed_at = Column(DateTime(timezone=True), nullable=True)

@@ -369,7 +369,15 @@ class TaskScheduler:
                 db.commit()
                 return
 
-            if call_success and call_session_id:
+            if call_success and call_session_id and sip_number is not None:
+                # SIP-шлюз: звонок только в очереди. Итог (COMPLETED/FAILED) проставит событие моста,
+                # PostCall запустит AgentCallFinalizer по концу звонка — опрашивать базу не нужно.
+                agent_call.call_session_id = str(call_session_id)
+                task.call_session_id = str(call_session_id)
+                task.status = TaskStatus.PENDING  # 'в работе' (CALLING в проде в enum может не быть)
+                task.call_result = f"Agent call queued on SIP gateway. Session: {call_session_id}"
+                db.commit()
+            elif call_success and call_session_id:
                 agent_call.call_session_id = str(call_session_id)
                 task.call_session_id = str(call_session_id)
                 task.status = TaskStatus.COMPLETED

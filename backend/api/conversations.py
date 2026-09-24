@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, case, or_, text, select, union_all, null, cast, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from collections import defaultdict
 
@@ -88,6 +88,41 @@ def _find_session_record(db: Session, conversation_id: str):
         if record:
             return record, model
     return None, None
+
+
+def _sip_call_transcript(db: Session, session_id: str) -> List[dict]:
+    """Сообщения из sip_calls.transcript, если session_id — id звонка SIP-шлюза (Fish/Eleven)."""
+    try:
+        call_uuid = UUID(str(session_id))
+    except (ValueError, TypeError):
+        return []
+    try:
+        from backend.models.sip_gateway import SipCall
+        call = db.get(SipCall, call_uuid)
+    except Exception:
+        db.rollback()
+        return []
+    if call is None or not call.transcript:
+        return []
+    base = call.answered_at or call.created_at
+    messages = []
+    for i, turn in enumerate(call.transcript):
+        text_value = (turn.get("text") or "").strip()
+        if not text_value:
+            continue
+        ts = None
+        if base is not None:
+            try:
+                ts = (base + timedelta(seconds=float(turn.get("t") or 0))).isoformat()
+            except (TypeError, ValueError):
+                ts = base.isoformat()
+        messages.append({
+            "id": f"{call.id}:{i}",
+            "type": "user" if turn.get("role") == "user" else "assistant",
+            "text": text_value,
+            "timestamp": ts,
+        })
+    return messages
 
 
 def _preview_sql(table_name: str):
@@ -1062,6 +1097,13 @@ async def get_conversation_detail(
                 # Лог — вспомогательная информация, не ломаем детальный просмотр
                 logger.warning(f"   ⚠️ Failed to fetch log_url from Voximplant: {log_fetch_error}")
         
+        # Телефонный звонок через SIP-шлюз: полная стенограмма лежит в sip_calls.transcript
+        # (с приветствием и последней репликой, которых нет в построчных записях).
+        sip_turns = _sip_call_transcript(db, session_id)
+        if sip_turns:
+            messages = sip_turns
+            logger.info(f"   📞 Using SIP call transcript: {len(messages)} turns")
+
         # Загружаем function calls
         function_calls = []
         if include_functions:

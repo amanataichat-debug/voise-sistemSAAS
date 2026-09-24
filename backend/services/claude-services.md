@@ -8,7 +8,7 @@
 ### Подсистема Voksy AI Agent v5.0 (оркестратор автономного обзвона)
 - `agent_models.py` — справочник `ORCHESTRATOR_MODELS` (slug'и OpenRouter). Ставки списания НЕ хардкодятся: у каждой модели задаётся её себестоимость в $ за 1k токенов, а `_rates()` считает кредиты по формуле `$/1k × ORCHESTRATOR_MARGIN × USD_RUB / CREDIT_PRICE_RUB` (≈×1900.63), плюс `credits_per_call` и `tier` для показа цены в UI. Helpers: `get_default_model`, `is_valid_model`, `get_model_rates`, `resolve_slug` (+ карта `LEGACY_MODEL_ALIASES` для снятых с OpenRouter слагов). Подробности — `docs/credits_system.md`.
 - `agent_prompts.py` — захардкоженные промпты оркестратора и голосового агента; `build_orchestrator_prompt(agent_config)` собирает системный промпт из «документов» компании (кто мы / кому звоним / как говорим / что предлагаем / правила).
-- `agent_orchestrator.py` — три фазы оркестратора: `PreCallOrchestrator` (стратегия перед звонком), `PostCallOrchestrator` (анализ транскрипта после звонка, решение SUCCESS/FOLLOWUP/NO_ANSWER, перезвон), `ChatOrchestrator` (диалог владельца с агентом в чате/Telegram). Каждая фаза имеет ветки v3 (OpenRouter) и legacy v2 (OpenAI Responses API).
+- `agent_orchestrator.py` — три фазы оркестратора: `PreCallOrchestrator` (стратегия перед звонком), `PostCallOrchestrator` (анализ транскрипта после звонка, решение SUCCESS/FOLLOWUP/NO_ANSWER, перезвон; для SIP-звонков — `finalize_sip_call` с готовой стенограммой из `sip_calls.transcript`, `poll_and_run`/`finalize_from_webhook` остались для мёртвого пути Voximplant), `ChatOrchestrator` (диалог владельца с агентом в чате/Telegram). Каждая фаза имеет ветки v3 (OpenRouter) и legacy v2 (OpenAI Responses API).
 - `agent_tools.py` — определения tools для агента (`AGENT_CHAT_TOOLS`, `AGENT_POSTCALL_TOOLS`), их реализации (create/get контактов, задач, статистики, память контакта, Telegram-уведомление) и диспетчер `execute_tool`; конвертер `to_chat_completions_tools` (Responses API → Chat Completions/OpenRouter).
 - `agent_telegram_service.py` — весь Telegram Bot API агента (REST через httpx): отправка сообщений во все chat_id агента, обработка входящих (`process_telegram_message`), конвертер `markdown_to_telegram_html`, генерация webhook-секрета. Бот агента служит и фронтендом для chat, и каналом уведомлений PostCall.
 
@@ -46,6 +46,8 @@
 - `llm_streaming/` — отдельный пакет low-latency стриминга OpenAI Chat для функции `query_llm` (см. дочернюю доку).
 
 ### Собственная SIP-телефония
+- `call_transcript.py` — стенограмма телефонного звонка по событиям хендлера (`CallTranscript`), `transcript_as_text()` для оркестратора.
+- `agent_call_finalizer.py` — конец SIP-звонка → `AgentCall` (исходящий по задаче или входящий на номер агента) → `PostCallOrchestrator.finalize_sip_call`.
 - `sip_gateway_service.py` — очередь исходящих `sip_calls` (`FOR UPDATE SKIP LOCKED`), применение событий моста (`apply_bridge_event`, requeue до 6 попыток), обновление `Task`/`AgentCall`, простановка номера/направления в `conversations`/`gemini_conversations`/`fish_conversations`/`eleven_conversations` (`tag_conversations`), выбор приветствия. Подробно: `infra/sip-gateway/claude-sip-gateway.md`.
 - `conversation_service.save_conversation` выбирает таблицу по типу ассистента: Gemini → `gemini_conversations`, Fish → `fish_conversations`, Eleven → `eleven_conversations`, остальные → `conversations` (там FK на `assistant_configs`). `tag_conversations` в SIP-сервисе использует ту же карту.
 

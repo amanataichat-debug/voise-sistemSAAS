@@ -908,6 +908,92 @@ class PostCallOrchestrator:
         finally:
             db.close()
 
+    @staticmethod
+    async def finalize_sip_call(
+        agent_call_id: str,
+        transcript: str,
+        call_status: str,
+        duration_seconds: int = 0,
+        call_direction: str = "outbound",
+    ):
+        """
+        Event-driven финализация звонка агента через собственный SIP-шлюз.
+
+        Вызывается из services/agent_call_finalizer.py, когда звонок закончился:
+        транскрипт уже собран по событиям хендлера (sip_calls.transcript), искать
+        его по номеру и времени не нужно. call_status: "answered" — абонент
+        говорил; "no_answer" — не взял трубку / занято / молчал; "failed" — ошибка
+        дозвона (для оркестратора тоже «не дозвонились»).
+
+        Забирает звонок из calling / no_answer / failed атомарно, поэтому повторный
+        вызов (событие моста + конец медиа-сокета) звонок второй раз не анализирует.
+        Открывает собственную сессию БД — безопасно для asyncio.create_task().
+        """
+        logger.info(f"[AGENT-POSTCALL] (sip) Finalizing agent_call {agent_call_id}: {call_status}, {duration_seconds}s")
+        db = SessionLocal()
+        try:
+            agent_call = db.query(AgentCall).filter(AgentCall.id == agent_call_id).first()
+            if not agent_call:
+                logger.warning(f"[AGENT-POSTCALL] (sip) AgentCall {agent_call_id} not found")
+                return
+            agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_call.agent_config_id).first()
+            agent_contact = db.query(AgentContact).filter(AgentContact.id == agent_call.agent_contact_id).first()
+            user = db.query(User).filter(User.id == agent_call.user_id).first()
+            if not agent_config or not agent_contact:
+                logger.warning(f"[AGENT-POSTCALL] (sip) config/contact missing for {agent_call_id}")
+                return
+
+            can_orchestrate = getattr(agent_config, "uses_hardcoded_prompt", False) or (user and user.openai_api_key)
+            if not can_orchestrate:
+                # Без оркестратора звонок всё равно закрываем: транскрипт и статус видны в истории.
+                agent_call.transcript = transcript or agent_call.transcript
+                agent_call.duration_seconds = int(duration_seconds or 0)
+                agent_call.status = "answered" if call_status == "answered" else "no_answer"
+                agent_call.completed_at = datetime.utcnow()
+                db.commit()
+                logger.info(f"[AGENT-POSTCALL] (sip) agent can't orchestrate, call {agent_call_id} closed without analysis")
+                return
+
+            if not PostCallOrchestrator._claim_for_finalization(db, agent_call_id, ["calling", "no_answer", "failed"]):
+                logger.info(f"[AGENT-POSTCALL] (sip) call {agent_call_id} already owned/finalized, skip")
+                return
+            db.refresh(agent_call)
+
+            task = None
+            if agent_call.source_task_id:
+                task = db.query(Task).filter(Task.id == agent_call.source_task_id).first()
+
+            orchestrator = PostCallOrchestrator()
+            try:
+                await orchestrator._analyze(
+                    agent_call=agent_call,
+                    agent_contact=agent_contact,
+                    agent_config=agent_config,
+                    user=user,
+                    task=task,
+                    transcript=transcript or "(Разговора не было)",
+                    call_status="answered" if call_status == "answered" else "no_answer",
+                    duration_seconds=int(duration_seconds or 0),
+                    openai_key=(user.openai_api_key or "") if user else "",
+                    db=db,
+                    call_direction=call_direction,
+                )
+                logger.info(f"[AGENT-POSTCALL] (sip) ✅ Finalized call {agent_call_id}")
+            except Exception as analyze_err:
+                logger.error(f"[AGENT-POSTCALL] (sip) analyze failed: {analyze_err}", exc_info=True)
+                db.rollback()
+                db.query(AgentCall).filter(AgentCall.id == agent_call_id).update(
+                    {"status": "answered" if call_status == "answered" else "no_answer",
+                     "transcript": transcript or None,
+                     "completed_at": datetime.utcnow()},
+                    synchronize_session=False,
+                )
+                db.commit()
+        except Exception as e:
+            logger.error(f"[AGENT-POSTCALL] (sip) Fatal error: {e}", exc_info=True)
+        finally:
+            db.close()
+
     def _build_postcall_input(self, agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction: str = "outbound") -> str:
         # Вся предыстория (звонки + SMS + Telegram) — единой хронологией, исключая
         # текущее событие (оно ниже отдельным блоком «ТЕКУЩИЙ …»).

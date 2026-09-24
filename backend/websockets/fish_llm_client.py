@@ -83,7 +83,8 @@ class FishLLMClient:
 
         self.ws = None
         self.is_connected = False
-        self.session_id = str(uuid.uuid4())
+        # Телефонный звонок (sip_media) задаёт session_id = id звонка, чтобы реплики точно связались со звонком
+        self.session_id = getattr(assistant_config, "sip_session_id", None) or str(uuid.uuid4())
         self.conversation_record_id: Optional[str] = None
         self.enabled_functions: List[str] = []
         self.vad_settings = TELEPHONY_VAD if telephony else get_device_vad_settings(self.user_agent)

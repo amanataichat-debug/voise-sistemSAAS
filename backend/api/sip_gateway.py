@@ -49,10 +49,12 @@ from backend.models.sip_gateway import (
 from backend.models.agent_config import AgentConfig
 from backend.models.task import Task, TaskStatus
 from backend.services.sip_gateway_service import SipGatewayService
+from backend.services.call_transcript import CallTranscript
+from backend.services.agent_call_finalizer import AgentCallFinalizer
 from backend.websockets.sip_media_adapter import HandlerSocket
 from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
-from backend.websockets.handler_fish import handle_fish_websocket_connection
+from backend.websockets.handler_fish import handle_fish_websocket_connection, DEFAULT_GREETING as FISH_DEFAULT_GREETING
 from backend.websockets.handler_eleven import handle_eleven_websocket_connection
 
 # Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
@@ -96,12 +98,29 @@ def _ensure_tables() -> None:
         return
     try:
         # Колонки, добавленные после создания таблиц (create_all их не дописывает).
-        # Дублирует alembic/versions/add_sip_number_agent_binding.py.
-        with engine.begin() as conn:
-            conn.execute(text(
+        # ALTER берёт эксклюзивную блокировку даже с IF NOT EXISTS, а медиа-сокеты держат
+        # транзакции по sip_calls весь звонок — поэтому ALTER только для отсутствующих колонок и с
+        # lock_timeout: не дождались блокировки — повторим при следующем подключении (_tables_ready = False).
+        missing_sql = {
+            # дублирует alembic/versions/add_sip_number_agent_binding.py
+            ("sip_phone_numbers", "agent_config_id"):
                 "ALTER TABLE sip_phone_numbers ADD COLUMN IF NOT EXISTS agent_config_id UUID "
-                "REFERENCES agent_configs(id) ON DELETE SET NULL"
-            ))
+                "REFERENCES agent_configs(id) ON DELETE SET NULL",
+            # стенограмма звонка (services/call_transcript.py); отдельной ревизии Alembic нет
+            ("sip_calls", "transcript"): "ALTER TABLE sip_calls ADD COLUMN IF NOT EXISTS transcript JSON",
+        }
+        with engine.begin() as conn:
+            existing = {
+                (row[0], row[1]) for row in conn.execute(text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_name IN ('sip_phone_numbers', 'sip_calls')"
+                ))
+            }
+            todo = [sql for key, sql in missing_sql.items() if key not in existing]
+            if todo:
+                conn.execute(text("SET LOCAL lock_timeout = '3s'"))
+                for sql in todo:
+                    conn.execute(text(sql))
     except Exception as exc:
         logger.error(f"[SIP] ensure columns failed: {exc}")
         return
@@ -349,6 +368,16 @@ async def sip_media(
     base_prompt = getattr(assistant, "system_prompt", None) or ""
     set_committed_value(assistant, "system_prompt", f"{base_prompt}\n\n[Контекст звонка] {context}".strip())
     assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
+    # Не колонка: Fish/Eleven пишут диалог под session_id = id звонка — точная связь звонок ↔ реплики.
+    assistant.sip_session_id = str(call.id)
+    if call.assistant_type in ("fish", "eleven"):
+        call.conversation_session_id = str(call.id)
+        db.commit()
+
+    # Стенограмма звонка целиком. Приветствие Fish/Eleven озвучивается без текстовых событий.
+    transcript = CallTranscript()
+    if call.assistant_type in ("fish", "eleven"):
+        transcript.add_greeting(getattr(assistant, "greeting_message", None) or FISH_DEFAULT_GREETING)
 
     logger.info(
         f"[SIP-MEDIA] call {call_id} {direction}: did={call.did} caller={call.caller} to={call.to_number} "
@@ -356,7 +385,7 @@ async def sip_media(
     )
 
     # 5. Запуск браузерного хендлера через адаптер
-    socket = HandlerSocket(websocket, call.assistant_type, call_id)
+    socket = HandlerSocket(websocket, call.assistant_type, call_id, on_event=transcript.on_event)
     socket.start()
     started_at = datetime.utcnow()
     handler = SIP_HANDLERS[call.assistant_type]
@@ -371,6 +400,8 @@ async def sip_media(
             db.rollback()
             fresh = db.get(SipCall, call_uuid)
             if fresh is not None:
+                fresh.transcript = transcript.finish()
+                db.commit()
                 tagged = SipGatewayService.tag_conversations(db, fresh, started_at)
                 if fresh.status == SipCallStatus.ANSWERED and not socket.ended_by_bridge:
                     # Мост ещё пришлёт событие ended; если нет — закроем здесь
@@ -381,7 +412,10 @@ async def sip_media(
                     f"reply_latencies={socket.reply_latencies} "
                     f"reason={socket.end_reason} tagged_conversations={tagged}"
                     + (f" handler_error={socket.handler_error}" if socket.handler_error else "")
+                    + f" transcript_turns={len(fresh.transcript or [])}"
                 )
+                # Звонок агента обзвона (исходящий по задаче или входящий на номер агента) → PostCall
+                AgentCallFinalizer.on_media_finished(db, fresh, number, transcript.has_user_speech)
         except Exception as exc:
             logger.warning(f"[SIP-MEDIA] call {call_id}: post-processing failed: {exc}")
 

@@ -342,6 +342,12 @@ class SipGatewayService:
                 call.ended_at = now
                 call.end_reason = reason
                 SipGatewayService._finish_task(db, call, success=False)
+                db.commit()
+                try:
+                    from backend.services.agent_call_finalizer import AgentCallFinalizer
+                    AgentCallFinalizer.on_call_failed(db, call)
+                except Exception as exc:
+                    logger.warning(f"[SIP] agent finalization for failed call {call.id} failed: {exc}")
         db.commit()
         return call
 
@@ -387,16 +393,24 @@ class SipGatewayService:
             return 0
         model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
             call.assistant_type, Conversation)
-        rows = (
-            db.query(model)
-            .filter(
+        if call.conversation_session_id:
+            # Хендлер писал диалог под session_id = id звонка (Fish/Eleven) — привязка точная.
+            rows = db.query(model).filter(
                 model.assistant_id == call.assistant_id,
-                model.created_at >= started_at - timedelta(seconds=10),
-                model.created_at <= _utcnow() + timedelta(seconds=5),
-                or_(model.caller_number.is_(None), model.caller_number == "", model.caller_number == "unknown"),
+                model.session_id == call.conversation_session_id,
+            ).all()
+        else:
+            # Остальные хендлеры: по ассистенту и окну времени звонка.
+            rows = (
+                db.query(model)
+                .filter(
+                    model.assistant_id == call.assistant_id,
+                    model.created_at >= started_at - timedelta(seconds=10),
+                    model.created_at <= _utcnow() + timedelta(seconds=5),
+                    or_(model.caller_number.is_(None), model.caller_number == "", model.caller_number == "unknown"),
+                )
+                .all()
             )
-            .all()
-        )
         for conv in rows:
             conv.caller_number = phone
             if hasattr(conv, "call_direction"):
