@@ -473,8 +473,13 @@ class FishVoiceSession:
         finally:
             self.closed = True
             llm_task.cancel()
-            for task in list(self._tasks):
-                task.cancel()
+            # Сохранение последней реплики (и прочие фоновые задачи) успевают закончиться:
+            # раньше их отменяли сразу, и при сбросе звонка последний ход терялся.
+            pending = list(self._tasks)
+            if pending:
+                _, still = await asyncio.wait(pending, timeout=TRANSCRIPT_WAIT_SEC + 1.5)
+                for task in still:
+                    task.cancel()
             await asyncio.gather(llm_task, *self._tasks, return_exceptions=True)
             await self.tts.close()
             await self.llm.close()

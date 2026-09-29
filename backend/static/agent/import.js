@@ -89,7 +89,7 @@ async function handleImportFile(file){
     if(resp.status === 402){ await handle402(resp); }
     if(!resp.ok){
       const err = await resp.json().catch(()=>({}));
-      document.getElementById('import-preview-summary').innerHTML = `<div class="empty">${esc(errText(err.detail))}</div>`;
+      document.getElementById('import-preview-summary').innerHTML = `<div class="empty">${esc(errText(err.detail ?? err.message))}</div>`;
       return;
     }
     const data = await resp.json();
@@ -181,7 +181,7 @@ async function executeImport(){
     const r = await apiFetch(API + '/contacts/import/execute', { method:'POST', body:JSON.stringify({ preview_token: importState.token, agent_id: currentAgentId || undefined, create_tasks: createTasks }) });
     if(!r || (r.status !== 200)){
       const err = await r?.json().catch(()=>({}));
-      document.getElementById('import-progress-text').textContent = errText(err.detail);
+      document.getElementById('import-progress-text').textContent = errText(err.detail ?? err.message);
       return;
     }
     const data = await r.json();

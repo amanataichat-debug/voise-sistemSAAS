@@ -117,7 +117,7 @@ body.vf {
 }
 .vf-sidebar-head { height: var(--vf-topbar-h); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
 .vf-logo { display: flex; align-items: center; gap: 10px; color: var(--vf-text); font-family: var(--vf-font-display); font-weight: 800; font-size: 19px; letter-spacing: -0.03em; }
-.vf-logo img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; display: block; }
+.vf-logo img { width: 30px; height: 30px; object-fit: contain; display: block; flex-shrink: 0; }
 .vf-logo .wordmark { background: linear-gradient(135deg, #2a5ce8, #4a7cf3); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .vf-logo .mark { width: 30px; height: 30px; border-radius: 9px; background: var(--vf-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
 .vf-logo .mark .ic { width: 16px; height: 16px; }

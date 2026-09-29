@@ -23,7 +23,8 @@ class AgentConfig(Base):
     is_active = Column(Boolean, default=False, nullable=False)
 
     # ── Тип голосового ассистента — выбирается при создании, можно менять ──
-    assistant_type = Column(String(20), nullable=True)  # gemini | openai | cartesia | yandex | cascade | fish
+    # gemini | openai | cartesia | yandex | cascade | fish | eleven (новые агенты — только eleven)
+    assistant_type = Column(String(20), nullable=True)
 
     # ── FK на голосового ассистента (заполняется ровно один из шести) ──
     gemini_assistant_id = Column(
@@ -55,6 +56,12 @@ class AgentConfig(Base):
     fish_assistant_id = Column(
         UUID(as_uuid=True),
         ForeignKey("fish_assistant_configs.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    # ElevenLabs: OpenAI Realtime текстом + синтез ElevenLabs (handler_eleven.py), серверные ключи.
+    eleven_assistant_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("eleven_assistant_configs.id", ondelete="SET NULL"),
         nullable=True
     )
 
@@ -155,6 +162,9 @@ class AgentConfig(Base):
     fish_assistant = relationship(
         "FishAssistantConfig", foreign_keys=[fish_assistant_id]
     )
+    eleven_assistant = relationship(
+        "ElevenAssistantConfig", foreign_keys=[eleven_assistant_id]
+    )
 
     def get_voice_assistant(self):
         """Универсальный геттер — вернёт активного голосового ассистента."""
@@ -170,6 +180,8 @@ class AgentConfig(Base):
             return self.cascade_assistant
         if self.assistant_type == "fish":
             return self.fish_assistant
+        if self.assistant_type == "eleven":
+            return self.eleven_assistant
         return None
 
     def get_voice_assistant_id(self):
@@ -185,6 +197,8 @@ class AgentConfig(Base):
             return self.cascade_assistant_id
         if self.assistant_type == "fish":
             return self.fish_assistant_id
+        if self.assistant_type == "eleven":
+            return self.eleven_assistant_id
         return None
 
     def has_knowledge_base(self) -> bool:

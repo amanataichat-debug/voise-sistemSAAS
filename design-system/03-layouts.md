@@ -18,7 +18,7 @@
   <aside class="sidebar vf-sidebar" id="sidebar">
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
-        <img src="/static/images/logo.png" alt="VoksiAI" onerror="this.style.display='none'">
+        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
         <span class="wordmark">VoksiAI</span>
       </a>
       <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню">

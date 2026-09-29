@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, case, or_, text, select, union_all, null, cast, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from collections import defaultdict
 
@@ -74,9 +74,10 @@ class _MessageView:
 def _find_session_record(db: Session, conversation_id: str):
     """
     Найти запись сессии по session_id или id сообщения: сначала в conversations,
-    затем в gemini_conversations и fish_conversations. Возвращает (record, model) или (None, None).
+    затем в gemini_conversations, fish_conversations и eleven_conversations.
+    Возвращает (record, model) или (None, None).
     """
-    for model in (Conversation, GeminiConversation, FishConversation):
+    for model in (Conversation, GeminiConversation, FishConversation, ElevenConversation):
         record = db.query(model).filter(model.session_id == conversation_id).first()
         if not record:
             try:
@@ -87,6 +88,41 @@ def _find_session_record(db: Session, conversation_id: str):
         if record:
             return record, model
     return None, None
+
+
+def _sip_call_transcript(db: Session, session_id: str) -> List[dict]:
+    """Сообщения из sip_calls.transcript, если session_id — id звонка SIP-шлюза (Fish/Eleven)."""
+    try:
+        call_uuid = UUID(str(session_id))
+    except (ValueError, TypeError):
+        return []
+    try:
+        from backend.models.sip_gateway import SipCall
+        call = db.get(SipCall, call_uuid)
+    except Exception:
+        db.rollback()
+        return []
+    if call is None or not call.transcript:
+        return []
+    base = call.answered_at or call.created_at
+    messages = []
+    for i, turn in enumerate(call.transcript):
+        text_value = (turn.get("text") or "").strip()
+        if not text_value:
+            continue
+        ts = None
+        if base is not None:
+            try:
+                ts = (base + timedelta(seconds=float(turn.get("t") or 0))).isoformat()
+            except (TypeError, ValueError):
+                ts = base.isoformat()
+        messages.append({
+            "id": f"{call.id}:{i}",
+            "type": "user" if turn.get("role") == "user" else "assistant",
+            "text": text_value,
+            "timestamp": ts,
+        })
+    return messages
 
 
 def _preview_sql(table_name: str):
@@ -106,6 +142,8 @@ def _preview_sql(table_name: str):
             ) as preview
         FROM {table_name}
         WHERE session_id = ANY(:session_ids)
+          -- пустая запись-заглушка сессии (Fish/Eleven) не должна становиться превью
+          AND (COALESCE(TRIM(user_message), '') <> '' OR COALESCE(TRIM(assistant_message), '') <> '')
         ORDER BY session_id, created_at ASC
     """)
 
@@ -123,7 +161,10 @@ def _sessions_select(model, user_assistant_ids, assistant_uuid, caller_number, d
             model.session_id.label("session_id"),
             model.assistant_id.label("assistant_id"),
             func.max(model.caller_number).label("caller_number"),
-            func.count(model.id).label("messages_count"),
+            # заглушку сессии (обе реплики пустые) в число сообщений не считаем
+            func.count(case(
+                (or_(func.coalesce(model.user_message, "") != "", func.coalesce(model.assistant_message, "") != ""), model.id)
+            )).label("messages_count"),
             func.min(created).label("created_at"),
             func.max(created).label("updated_at"),
             func.sum(model.tokens_used).label("total_tokens"),
@@ -1056,6 +1097,13 @@ async def get_conversation_detail(
                 # Лог — вспомогательная информация, не ломаем детальный просмотр
                 logger.warning(f"   ⚠️ Failed to fetch log_url from Voximplant: {log_fetch_error}")
         
+        # Телефонный звонок через SIP-шлюз: полная стенограмма лежит в sip_calls.transcript
+        # (с приветствием и последней репликой, которых нет в построчных записях).
+        sip_turns = _sip_call_transcript(db, session_id)
+        if sip_turns:
+            messages = sip_turns
+            logger.info(f"   📞 Using SIP call transcript: {len(messages)} turns")
+
         # Загружаем function calls
         function_calls = []
         if include_functions:

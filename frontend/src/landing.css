@@ -470,10 +470,8 @@ html[lang="ky"] .lp { --vf-font-display: 'Inter', -apple-system, 'Segoe UI', san
 html[lang="ky"] .vf .lp h1, html[lang="ky"] .vf .lp h2 { font-weight: 800; letter-spacing: -0.025em; }
 html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-title { font-weight: 800; }
 .lp .vf-logo, .frame-logo { font-family: 'Unbounded', 'Inter', sans-serif; }
-.lp .vf-logo .mark { width: 30px; height: 30px; border-radius: 9px; }
-.lp .lp-auth-logo .mark { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); }
-.frame-mark { width: 20px; height: 20px; border-radius: 6px; background: var(--vf-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-.frame-mark .ic { width: 12px; height: 12px; }
+/* На тёмной панели модалки знак ставим на белую плашку, иначе синий тонет в градиенте */
+.lp .lp-auth-logo .mark-img { width: 34px; height: 34px; padding: 4px; border-radius: 10px; background: #fff; box-shadow: 0 4px 14px rgba(15,23,42,.25); }
 
 /* Логотипы моделей без картинки (Grok, ElevenLabs): иконка из спрайта */
 .logo-ic { display: inline-flex; align-items: center; justify-content: center; color: var(--vf-text); flex: 0 0 auto; }

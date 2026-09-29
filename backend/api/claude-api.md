@@ -27,7 +27,7 @@
 - `translate_ws.py` — `/ws/translate/{id}` — перевод. Регистрируется ДО websocket.py.
 
 ### Voksy AI Agent v5.0 (автономный обзвон)
-- `agent.py` — `/api/agent` — CRUD конфига агента, `/chat` (диалог владельца с оркестратором), `/stats`, `/orchestrator-models`, `/tasks`, `/contacts` (CRUD), `/calls`, `/phone-numbers`.
+- `agent.py` — `/api/agent` — CRUD конфига агента, `/chat` (диалог владельца с оркестратором), `/stats`, `/orchestrator-models`, `/tasks`, `/contacts` (CRUD), `/calls`. Новые агенты — только голос **ElevenLabs** (`NEW_AGENT_ASSISTANT_TYPES`; поля `eleven_voice_id/_voice_name/_tts_model/_language/_stability`, агент создаёт себе скрытого `ElevenAssistantConfig`, `AgentConfig.eleven_assistant_id`, `Task.eleven_assistant_id`); старые типы остаются у уже созданных агентов. Номер агента — из собственной телефонии: `GET /phone-numbers` (номера `sip_phone_numbers`, `has_numbers`, `selected_number_id`; агента можно создать без номера) и `PUT /phone-number` `{number_id|null}` (привязка номера к агенту для входящих + `default_caller_id` для исходящих).
 - `agent_telegram.py` — `/api/agent/telegram` — интеграция Telegram-бота агента (webhook, настройки).
 - `credits.py` — `/api/credits` (префикс встроен) — `/balance`, `/packages`, `/transactions`, `/purchase`, `/subscribe`. Кредиты оркестратора.
 - `llm_streaming.py` — префикс встроен (`/api/llm/...`) — `/stream`, `/models`, `/status`, CRUD `/agent-config`. Текстовый LLM + конфиг агента.

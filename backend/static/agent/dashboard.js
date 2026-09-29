@@ -22,7 +22,8 @@ function _collectMigrations(){
     make(document.querySelector('.toggle-wrap'), 'drawer-toggle-slot'),
     make(document.getElementById('sub-badge'), 'drawer-badge-slot'),
     make(document.getElementById('delete-agent-btn'), 'drawer-actions'),
-    make(document.getElementById('profile-btn'), 'drawer-actions'),
+    make(document.getElementById('guide-btn'), 'drawer-actions'),
+    make(document.getElementById('logout-btn'), 'drawer-actions'),
     make(document.querySelector('.col-left'), 'drawer-body'),
     make(document.querySelector('.col-right'), 'drawer-body'),
   ].filter(Boolean);
@@ -58,9 +59,8 @@ function closeDrawer(){
 function showDashboard(){
   document.getElementById('loading-screen').classList.add('hidden');
   document.getElementById('wizard-overlay').classList.add('hidden');
-  document.getElementById('top-nav').style.display='flex';
-  document.getElementById('main-layout').style.display='flex';
-  document.getElementById('app-footer').style.display='flex';
+  document.getElementById('top-nav').style.display='grid';
+  document.getElementById('main-layout').style.display='grid';
 
   renderAgentHeader();
   renderDocsGrid();
@@ -86,6 +86,8 @@ function showDashboard(){
 function renderAgentHeader(){
   const active = !!agentData.is_active;
   document.getElementById('nav-agent-name').textContent = agentData.name || 'Агент';
+  const navAva = document.getElementById('nav-agent-avatar');
+  if(navAva) navAva.textContent = (agentData.name||'А').trim().charAt(0).toUpperCase();
   const ns = document.getElementById('nav-agent-status');
   ns.classList.toggle('off', !active);
   ns.querySelector('span').textContent = active ? 'Агент активен' : 'Агент неактивен';
@@ -100,8 +102,9 @@ function renderAgentHeader(){
   const cs = document.getElementById('agent-card-status');
   cs.classList.toggle('off', !active);
   cs.querySelector('span').textContent = active ? 'Активен' : 'Неактивен';
-  const typeNames = { gemini:'Gemini', openai:'OpenAI', cartesia:'Cartesia', yandex:'Yandex', cascade:'Cascade', fish:'Fish' };
-  document.getElementById('agent-type-badge').textContent = typeNames[agentData.assistant_type] || 'Voice';
+  const typeName = AGENT_TYPE_NAMES[agentData.assistant_type] || 'Голос';
+  const voiceName = agentData.assistant_type === 'eleven' && agentData.eleven_voice_name ? ' · ' + agentData.eleven_voice_name : '';
+  document.getElementById('agent-type-badge').innerHTML = '<i class="fas fa-microphone-lines"></i> ' + esc(typeName + voiceName);
   const id = agentData.id || '';
   document.getElementById('agent-id').textContent = 'ID агента: ' + (id.length>16 ? id.slice(-16) : id);
 }
@@ -148,7 +151,7 @@ async function loadRecentCalls(){
         <div class="avatar">${esc((c.contact_name||'?').trim().charAt(0).toUpperCase())}</div>
         <div class="call-info">
           <div class="call-name">${esc(c.contact_name||'—')}</div>
-          <div class="call-meta"><span class="call-dot ${c.status==='answered'?'answered':'no_answer'}"></span> <i class="fas ${c.direction==='inbound'?'fa-arrow-down':'fa-arrow-up'}" title="${directionRu(c.direction)}" style="color:${c.direction==='inbound'?'#0891B2':'#7C3AED'}"></i> ${decisionRu(c.post_call_decision)} · ${fmtDate(c.started_at)}</div>
+          <div class="call-meta"><span class="call-dot ${c.outcome ? 'o-' + c.outcome.kind : (c.status==='answered'?'answered':'no_answer')}"></span> <i class="fas ${c.direction==='inbound'?'fa-arrow-down':'fa-arrow-up'}" title="${directionRu(c.direction)}" style="color:${c.direction==='inbound'?'#0891B2':'#7C3AED'}"></i> <span title="${esc(c.outcome && c.outcome.detail || '')}">${c.outcome && c.outcome.kind !== 'ok' ? esc(c.outcome.label) : decisionRu(c.post_call_decision)}</span> · ${fmtDate(c.started_at || c.created_at)}</div>
         </div>
         <div class="call-phone-ic"><i class="fas ${c.direction==='inbound'?'fa-phone-volume':'fa-phone'}"></i></div>
       </div>`).join('');
