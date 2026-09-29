@@ -162,8 +162,12 @@ systemctl daemon-reload
 say "restarting services"
 systemctl enable asterisk >/dev/null 2>&1 || true
 systemctl restart asterisk
+# All Asterisk CLI calls go through ast(): stdin from /dev/null (under "curl | bash"
+# stdin is the script itself), output captured into a variable, no pipes (pipefail +
+# an early-exiting grep made loaded modules look missing).
+ast() { asterisk -rx "$1" </dev/null 2>/dev/null || true; }
 for _ in $(seq 1 30); do
-  asterisk -rx "core waitfullybooted" >/dev/null 2>&1 && break
+  asterisk -rx "core waitfullybooted" </dev/null >/dev/null 2>&1 && break
   sleep 1
 done
 systemctl enable voksy-bridge >/dev/null 2>&1
@@ -173,15 +177,19 @@ sleep 2
 # ---------------------------------------------------------------- checks
 say "checking"
 ok=1
-# grep -c, not grep -q: with pipefail an early-exiting grep -q kills asterisk -rx with
-# SIGPIPE on long outputs (res_pjsip lists ~40 modules) and a loaded module reads as missing.
-module_loaded() { [ "$(asterisk -rx "module show like $1" 2>/dev/null | grep -c "^$1\.so")" -gt 0 ]; }
-# Ubuntu keeps modules under /usr/lib/x86_64-linux-gnu/asterisk/modules, not /usr/lib/asterisk/modules.
-module_on_disk() { find /usr/lib -path '*asterisk/modules/*' -name "$1.so" 2>/dev/null | grep -c . >/dev/null; }
+module_loaded() { case "$(ast "module show like $1")" in *"$1.so "*) return 0 ;; esac; return 1; }
+# Ubuntu keeps modules under /usr/lib/<arch>-linux-gnu/asterisk/modules.
+module_on_disk() {
+  local d
+  for d in /usr/lib/x86_64-linux-gnu/asterisk/modules /usr/lib/aarch64-linux-gnu/asterisk/modules /usr/lib/asterisk/modules; do
+    [ -f "$d/$1.so" ] && return 0
+  done
+  return 1
+}
 for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
   # autoload can skip a module whose dependency was not ready at boot; one explicit
   # load settles whether it is really missing from disk.
-  module_loaded "$mod" || asterisk -rx "module load ${mod}.so" >/dev/null 2>&1 || true
+  module_loaded "$mod" || ast "module load ${mod}.so" >/dev/null
   if module_loaded "$mod"; then
     echo "  [ok] Asterisk module $mod"
   else
@@ -195,7 +203,7 @@ for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
     [ "$mod" = app_mixmonitor ] && echo "       without app_mixmonitor calls are NOT recorded"
   fi
 done
-if asterisk -rx "pjsip show endpoints" | grep -q "o-trunk"; then
+if case "$(ast "pjsip show endpoints")" in *o-trunk*) true ;; *) false ;; esac; then
   echo "  [ok] trunk endpoint o-trunk configured"
 else
   echo "  [!!] trunk endpoint missing"; ok=0
