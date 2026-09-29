@@ -85,9 +85,19 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 ## Страница «Телефония» (`backend/static/telephony.html`)
 Целиком на `/api/sip/*`, Voximplant-логики (верификация, баланс, покупка номеров) на ней нет. Номера пользователя → привязка к ассистенту OpenAI/Gemini/Fish/Eleven **или к агенту обзвона** (`PATCH /api/sip/numbers/{id}` с `agent_config_id`: в `sip_phone_numbers` пишется `agent_config_id`, а `assistant_type`/`assistant_id` копируются из голосового ассистента агента; `backend/api/agent.py` при смене типа агента переводит номера на нового ассистента через `SipGatewayService.sync_agent_numbers`, при удалении агента отвязывает через `unbind_agent_numbers`). Исходящий звонок: `POST /api/sip/calls` с `to`, `caller_id`, `assistant_type`, `assistant_id`; номер абонента проверяется на префиксы O! (`O_MOBILE_PREFIXES` в `backend/models/sip_gateway.py`, на странице тот же список) — транк пропускает только O!. Статус звонка страница опрашивает через `GET /api/sip/calls/{id}` раз в 2 с; отбой — `POST /api/sip/calls/{id}/hangup` (работает, если control-сокет на этом воркере, иначе 409 и повтор). Журнал — `GET /api/sip/calls`.
 
+## Запись звонков (MixMonitor → R2)
+Пишется каждый отвеченный звонок, входящий и исходящий.
+- **VPS:** `extensions.conf` → `[voksy-record]` (вызывается `Gosub` перед `AudioSocket` в `[voksy-inbound]` и `[outbound-answered]`): `MixMonitor` пишет `/var/spool/voksy-rec/<call_id>.wav` — ровно то, что слышал и говорил абонент, моно 8 кГц. После закрытия файла post-command делает `chmod 0640` и дёргает `GET 127.0.0.1:9091/asterisk/recording/<call_id>`.
+- **Мост** (`RecordingUploader` в `bridge.py`): `lame` → MP3 моно 32 кбит/с 16 кГц (~0,24 МБ/мин) → `POST {BACKEND_HTTP_URL}/api/sip/recordings/<call_id>` с заголовком `X-Gateway-Token`. Файл удаляется только после `200` (или `404 call_not_found`); иначе остаётся, и раз в минуту sweep повторяет файлы старше 2 мин. Через `RECORDING_KEEP_DAYS` (7) невыгруженный файл удаляется. Записи короче ~1 с выбрасываются. Без `lame` грузится WAV. `/health` показывает `recordings_pending`.
+- **Каталог** `/var/spool/voksy-rec`: `asterisk:voksy`, `2770` (setgid), в юните моста `ReadWritePaths`.
+- **Бэкенд:** `POST /api/sip/recordings/{call_id}` (`backend/api/sip_gateway.py`) → `R2StorageService.upload_call_recording` → ключ `recordings/sip/ГГГГ/ММ/ДД/<call_id>.mp3` (детерминированный, повтор перезаписывает) → `sip_calls.recording_url` (публичная ссылка `R2_PUBLIC_URL`). Для OpenAI/Gemini там же `SipGatewayService.link_conversation_session` находит `session_id` диалога и пишет его в `sip_calls.conversation_session_id` (Fish/Eleven связаны со старта звонка).
+- **UI:** «Диалоги» (`/api/conversations`, список и детальный просмотр) берут `record_url` через `SipGatewayService.recording_urls_for_sessions`; история агента (`/api/agent/calls`, `/calls/{id}`, карточка контакта) — `record_url` из `sip_calls_for`; плеер в `backend/static/agent/calls.js`.
+- **Хранение:** 90 дней — правило Object Lifecycle бакета R2 на префикс `recordings/` (настраивается в Cloudflare, не в коде).
+- Telegram/webhook-уведомления уходят в конце звонка, до готовности записи, поэтому ссылки на запись в них пока нет.
+
 ## Что не сделано
 - Форма добавления номера в UI (сейчас номер заводит админ через `POST /api/sip/numbers`).
-- Запись разговоров (MixMonitor + R2).
+- Ссылка на запись в Telegram/webhook-уведомлениях (запись готова позже уведомления).
 - Передача номера звонящего в хендлер во время звонка (сейчас диалог помечается номером после звонка через `tag_conversations`).
 - Gemini-диалоги без длительности/стоимости на странице «Диалоги».
 - Тест исходящего звонка на реальный номер после включения транка.

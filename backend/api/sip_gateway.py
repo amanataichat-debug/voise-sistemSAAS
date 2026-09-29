@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -108,6 +108,8 @@ def _ensure_tables() -> None:
                 "REFERENCES agent_configs(id) ON DELETE SET NULL",
             # стенограмма звонка (services/call_transcript.py); отдельной ревизии Alembic нет
             ("sip_calls", "transcript"): "ALTER TABLE sip_calls ADD COLUMN IF NOT EXISTS transcript JSON",
+            # запись звонка (MixMonitor → мост → R2), см. upload_recording
+            ("sip_calls", "recording_url"): "ALTER TABLE sip_calls ADD COLUMN IF NOT EXISTS recording_url VARCHAR(500)",
         }
         with engine.begin() as conn:
             existing = {
@@ -594,6 +596,58 @@ async def delete_number(
     db.delete(number)
     db.commit()
     return {"success": True}
+
+
+# =============================================================================
+# Записи звонков от моста VPS
+# =============================================================================
+
+MAX_RECORDING_BYTES = 100 * 1024 * 1024  # ~7 ч MP3 32 кбит/с: больше не бывает, защита от мусора
+
+
+@router.post("/api/sip/recordings/{call_id}")
+async def upload_recording(call_id: str, request: Request, db: Session = Depends(get_db)):
+    """
+    Запись звонка от моста: тело — MP3 (или WAV, если на VPS нет lame).
+    Авторизация — заголовок X-Gateway-Token = SIP_GATEWAY_TOKEN.
+
+    Мост удаляет файл только после 200 или 404 с detail="call_not_found", остальные
+    ответы (R2 не настроен, ошибка R2, 401) он повторяет позже — файл не теряется.
+    Повторная загрузка того же звонка перезаписывает тот же ключ в R2.
+    """
+    if not _token_ok(request.headers.get("x-gateway-token")):
+        raise HTTPException(status_code=401, detail="bad_token")
+    try:
+        call_uuid = uuid.UUID(call_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="call_not_found")
+    _ensure_tables()
+    call = db.get(SipCall, call_uuid)
+    if call is None:
+        raise HTTPException(status_code=404, detail="call_not_found")
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty_body")
+    if len(data) > MAX_RECORDING_BYTES:
+        raise HTTPException(status_code=413, detail="too_large")
+
+    from backend.services.r2_storage import R2StorageService
+    if not R2StorageService.is_configured():
+        logger.error(f"[SIP] recording {call_id}: R2 is not configured, the bridge will retry")
+        raise HTTPException(status_code=503, detail="r2_not_configured")
+    url = await R2StorageService.upload_call_recording(
+        str(call.id), data, request.headers.get("content-type") or "audio/mpeg", when=call.created_at)
+    if not url:
+        raise HTTPException(status_code=502, detail="r2_upload_failed")
+
+    call.recording_url = url
+    # OpenAI/Gemini пишут диалог под своим session_id — связываем его со звонком,
+    # чтобы запись нашлась в карточке диалога (Fish/Eleven связаны с самого начала).
+    SipGatewayService.link_conversation_session(db, call)
+    db.commit()
+    logger.info(f"[SIP] recording {call_id}: {len(data) // 1024} KB saved")
+    return {"ok": True, "url": url}
 
 
 @router.get("/api/sip/calls")

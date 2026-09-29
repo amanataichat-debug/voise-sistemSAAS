@@ -9,12 +9,13 @@
 # the generated secrets in /etc/voksy-bridge/bridge.env.
 #
 # What it does
-#   1. apt: asterisk, python3-venv, curl
+#   1. apt: asterisk, python3-venv, curl, lame (MP3 for call recordings)
 #   2. writes /etc/asterisk/{pjsip,extensions,rtp,manager,modules}.conf
 #      (original directory is preserved once as /etc/asterisk.orig)
 #   3. installs the bridge into /opt/voksy-bridge (own venv, own system user)
 #   4. generates secrets: AMI password, softphone test password, GATEWAY_TOKEN
-#   5. enables systemd units and restarts Asterisk
+#   5. creates /var/spool/voksy-rec (call recordings waiting for upload)
+#   6. enables systemd units and restarts Asterisk
 # =============================================================================
 set -euo pipefail
 
@@ -56,7 +57,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 # asterisk-modules carries func_curl/res_curl, which the dialplan needs to register
 # inbound calls with the bridge. It is only a Recommends of "asterisk", so name it.
-apt-get install -y -qq asterisk asterisk-modules python3-venv python3-pip curl >/dev/null
+# lame compresses call recordings (MixMonitor WAV) to MP3 before upload.
+apt-get install -y -qq asterisk asterisk-modules python3-venv python3-pip curl lame >/dev/null
 
 say "downloading gateway files from $BASE"
 TMP="$(mktemp -d)"
@@ -147,6 +149,12 @@ mkdir -p "$APP_DIR"
 "$APP_DIR/venv/bin/pip" install -q -r "$TMP/bridge/requirements.txt"
 install -m 644 "$TMP/bridge/bridge.py" "$APP_DIR/bridge.py"
 chown -R voksy:voksy "$APP_DIR"
+# Call recordings: Asterisk (MixMonitor) writes here, the bridge (group voksy) reads,
+# converts and deletes after upload. setgid keeps new files in group voksy.
+REC_DIR=/var/spool/voksy-rec
+install -d -o asterisk -g voksy -m 2770 "$REC_DIR"
+chown asterisk:voksy "$REC_DIR"
+chmod 2770 "$REC_DIR"
 install -m 644 "$TMP/bridge/voksy-bridge.service" /etc/systemd/system/voksy-bridge.service
 systemctl daemon-reload
 
@@ -163,7 +171,7 @@ sleep 2
 say "checking"
 ok=1
 module_loaded() { asterisk -rx "module show like $1" | grep -q "^$1"; }
-for mod in app_audiosocket res_pjsip func_curl; do
+for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
   # autoload can skip a module whose dependency was not ready at boot; one explicit
   # load settles whether it is really missing from disk.
   module_loaded "$mod" || asterisk -rx "module load ${mod}.so" >/dev/null 2>&1 || true
@@ -177,6 +185,7 @@ for mod in app_audiosocket res_pjsip func_curl; do
       echo "       the file exists but refuses to load, see: grep -i ${mod} /var/log/asterisk/full"
     fi
     [ "$mod" = func_curl ] && echo "       without func_curl every INBOUND call gets congestion"
+    [ "$mod" = app_mixmonitor ] && echo "       without app_mixmonitor calls are NOT recorded"
   fi
 done
 if asterisk -rx "pjsip show endpoints" | grep -q "o-trunk"; then
@@ -188,6 +197,11 @@ if systemctl is-active --quiet voksy-bridge; then
   echo "  [ok] voksy-bridge running"
 else
   echo "  [!!] voksy-bridge not running: journalctl -u voksy-bridge -n 50"; ok=0
+fi
+if command -v lame >/dev/null 2>&1 && [ -d /var/spool/voksy-rec ]; then
+  echo "  [ok] call recording: lame installed, /var/spool/voksy-rec ready"
+else
+  echo "  [!!] call recording: lame or /var/spool/voksy-rec missing"; ok=0
 fi
 if curl -fsS http://127.0.0.1:9091/health >/dev/null 2>&1; then
   echo "  [ok] bridge HTTP answers"
@@ -213,6 +227,7 @@ Voksy SIP gateway installed.
   GATEWAY_TOKEN (set it on Render as SIP_GATEWAY_TOKEN):
       $GATEWAY_TOKEN
 
+  Recordings waiting for upload     : ls /var/spool/voksy-rec   (empty = all uploaded)
   Logs: journalctl -u voksy-bridge -f      Asterisk CLI: asterisk -rvvv
 =============================================================================
 EOF

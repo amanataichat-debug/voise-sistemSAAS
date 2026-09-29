@@ -717,6 +717,10 @@ async def get_conversation_sessions(
         # Форматируем результат
         # 🆕 v3.5: Используем preview_map и нормализуем caller_number
         # =============================================================================
+        # Записи телефонных звонков SIP-шлюза (sip_calls.recording_url) по session_id диалога
+        from backend.services.sip_gateway_service import SipGatewayService
+        sip_recordings = SipGatewayService.recording_urls_for_sessions(db, [s.session_id for s in sessions])
+
         conversations = []
         for s in sessions:
             # Определяем тип по ID ассистента
@@ -760,7 +764,7 @@ async def get_conversation_sessions(
                 "tokens_used": s.total_tokens or 0,
                 "duration_seconds": s.total_duration or 0,
                 "call_cost": call_cost,
-                "record_url": s.record_url,
+                "record_url": s.record_url or sip_recordings.get(s.session_id),
                 "log_url": s.log_url,
                 "client_info": {"assistant_type": assistant_type},
                 "function_calls": logs_by_session.get(s.session_id, [])
@@ -1100,6 +1104,9 @@ async def get_conversation_detail(
         # Телефонный звонок через SIP-шлюз: полная стенограмма лежит в sip_calls.transcript
         # (с приветствием и последней репликой, которых нет в построчных записях).
         sip_turns = _sip_call_transcript(db, session_id)
+        if not record_url:
+            from backend.services.sip_gateway_service import SipGatewayService
+            record_url = SipGatewayService.recording_urls_for_sessions(db, [session_id]).get(session_id)
         if sip_turns:
             messages = sip_turns
             logger.info(f"   📞 Using SIP call transcript: {len(messages)} turns")

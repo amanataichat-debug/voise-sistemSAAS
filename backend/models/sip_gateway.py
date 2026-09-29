@@ -123,6 +123,10 @@ class SipCall(Base):
     # Стенограмма звонка целиком: [{"role": "user"|"assistant", "text": str, "t": сек}],
     # собирается по событиям хендлера (services/call_transcript.py), включая приветствие.
     transcript = Column(JSON, nullable=True)
+    # Запись звонка: MixMonitor на VPS → мост (MP3) → POST /api/sip/recordings/{id} → R2.
+    # Публичная ссылка R2_PUBLIC_URL/recordings/sip/ГГГГ/ММ/ДД/<id>.mp3; появляется
+    # через несколько секунд после конца звонка (или позже, если бэкенд был недоступен).
+    recording_url = Column(String(500), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False, index=True)
     dialed_at = Column(DateTime(timezone=True), nullable=True)
@@ -158,6 +162,7 @@ class SipCall(Base):
             "duration_sec": self.duration_sec,
             "end_reason": self.end_reason,
             "error": self.error,
+            "recording_url": self.recording_url,
         }
 
 

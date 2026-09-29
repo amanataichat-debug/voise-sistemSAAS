@@ -2660,7 +2660,14 @@ async def get_agent_contact_details(
     )
 
     contact_data = contact.to_dict()
-    contact_data["calls"] = [c.to_dict() for c in calls]
+    from backend.services.agent_call_finalizer import sip_calls_for
+    contact_sip = sip_calls_for(db, calls)
+    contact_data["calls"] = []
+    for c in calls:
+        cd = c.to_dict()
+        sip_call = contact_sip.get(str(c.call_session_id))
+        cd["record_url"] = sip_call.recording_url if sip_call is not None else None
+        contact_data["calls"].append(cd)
     contact_data["tasks"] = [_agent_task_dict(t) for t in tasks]
 
     # SMS-переписка с контактом (входящие + исходящие), резолв по номеру.
@@ -2934,7 +2941,9 @@ async def list_agent_calls(
     for c in calls:
         d = c.to_dict()
         # Что случилось со звонком: ответил / не взял / занято / проблема со связью / идёт
-        d["outcome"] = call_outcome(c, sip_map.get(str(c.call_session_id)))
+        sip_call = sip_map.get(str(c.call_session_id))
+        d["outcome"] = call_outcome(c, sip_call)
+        d["record_url"] = sip_call.recording_url if sip_call is not None else None
         # Add contact info
         if c.contact:
             d["contact_name"] = c.contact.name
@@ -2963,7 +2972,9 @@ async def get_agent_call(
 
     d = call.to_dict()
     from backend.services.agent_call_finalizer import call_outcome, sip_calls_for
-    d["outcome"] = call_outcome(call, sip_calls_for(db, [call]).get(str(call.call_session_id)))
+    sip_call = sip_calls_for(db, [call]).get(str(call.call_session_id))
+    d["outcome"] = call_outcome(call, sip_call)
+    d["record_url"] = sip_call.recording_url if sip_call is not None else None
     if call.contact:
         d["contact_name"] = call.contact.name
         d["contact_phone"] = call.contact.phone

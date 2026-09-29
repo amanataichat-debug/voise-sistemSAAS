@@ -13,6 +13,8 @@ Restart=always
 RestartSec=2
 NoNewPrivileges=yes
 ProtectSystem=strict
+# call recordings: read the MixMonitor WAV, write the MP3, delete after upload
+ReadWritePaths=/var/spool/voksy-rec
 ProtectHome=yes
 PrivateTmp=yes
 

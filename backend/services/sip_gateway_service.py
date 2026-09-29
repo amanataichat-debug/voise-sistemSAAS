@@ -433,6 +433,60 @@ class SipGatewayService:
         return len(rows)
 
     @staticmethod
+    def link_conversation_session(db: Session, call: SipCall) -> None:
+        """
+        Найти session_id диалога, записанного хендлером за время звонка, и сохранить его в
+        call.conversation_session_id (без commit). Fish/Eleven проставляют его при старте
+        звонка; OpenAI/Gemini — нет, их диалог ищем по ассистенту, номеру и окну звонка
+        (tag_conversations к этому моменту уже проставил номер).
+        """
+        if call.conversation_session_id or not call.assistant_id:
+            return
+        phone = call.caller if call.direction == "inbound" else call.to_number
+        if not phone:
+            return
+        model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
+            call.assistant_type, Conversation)
+        start = call.answered_at or call.created_at
+        end = call.ended_at or _utcnow()
+        try:
+            row = (
+                db.query(model.session_id)
+                .filter(
+                    model.assistant_id == call.assistant_id,
+                    model.caller_number == phone,
+                    model.created_at >= start - timedelta(seconds=10),
+                    model.created_at <= end + timedelta(seconds=60),
+                )
+                .order_by(model.created_at.asc())
+                .first()
+            )
+        except Exception as exc:
+            logger.warning(f"[SIP] call {call.id}: conversation lookup failed: {exc}")
+            db.rollback()
+            return
+        if row and row.session_id:
+            call.conversation_session_id = row.session_id
+
+    @staticmethod
+    def recording_urls_for_sessions(db: Session, session_ids) -> Dict[str, str]:
+        """{session_id диалога: ссылка на запись звонка} для пачки диалогов одним запросом."""
+        ids = [str(s) for s in session_ids if s]
+        if not ids:
+            return {}
+        try:
+            rows = (
+                db.query(SipCall.conversation_session_id, SipCall.recording_url)
+                .filter(SipCall.conversation_session_id.in_(ids), SipCall.recording_url.isnot(None))
+                .all()
+            )
+        except Exception as exc:
+            logger.warning(f"[SIP] recording lookup failed: {exc}")
+            db.rollback()
+            return {}
+        return {r.conversation_session_id: r.recording_url for r in rows}
+
+    @staticmethod
     def call_context_text(call: SipCall) -> str:
         """Текст контекста звонка, который дописывается к системному промпту."""
         meta = call.call_metadata or {}

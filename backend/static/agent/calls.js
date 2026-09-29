@@ -175,7 +175,15 @@ function renderCallExpanded(call, uid){
     </div>
   ` : '';
 
-  const details = preBlock + transcriptBlock + postBlock;
+  // Запись звонка (sip_calls.recording_url, R2): появляется через несколько секунд после конца звонка.
+  const recordBlock = (!isMsg && call.record_url) ? `
+    <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:0.04em;margin:10px 0 4px">
+      <i class="fas fa-headphones"></i> Запись звонка
+    </div>
+    <audio controls preload="none" src="${esc(call.record_url).replace(/"/g, '&quot;')}" style="width:100%;height:36px;margin:0 0 6px" onclick="event.stopPropagation()"></audio>
+  ` : '';
+
+  const details = recordBlock + preBlock + transcriptBlock + postBlock;
   const hasDetails = !!details.trim();
 
   return `
@@ -186,6 +194,7 @@ function renderCallExpanded(call, uid){
         ${channelBadge}
         ${statusHtml}
         ${decisionBadgeHtml}
+        ${recordBlock ? '<span class="status-badge" style="background:#EEF2FF;color:#2a5ce8" title="Есть запись звонка"><i class="fas fa-headphones"></i> Запись</span>' : ''}
         ${hasDetails ? `<span style="margin-left:auto;font-size:11px;color:var(--blue);font-weight:600"><i class="fas fa-chevron-down" id="${uid}-chevron" style="transition:transform .2s"></i> Размышления</span>` : ''}
       </div>
       ${isMsg ? '' : outcomeLine(call.outcome)}
