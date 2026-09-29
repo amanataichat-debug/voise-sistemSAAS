@@ -271,6 +271,7 @@ Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assi
 - `OPENAI_API_KEY` — OpenAI API key (server-level, users can also set their own; Fish assistants always use the server key)
 - `FISH_API_KEY` — Fish Audio API key (server-level; Fish assistants never use user keys)
 - `ELEVENLABS_API_KEY` — ElevenLabs API key (server-level; all Eleven assistants synthesize on this key, the account's voice library is shared by all users)
+- `PINECONE_API_KEY` / `PINECONE_INDEX` — Pinecone key and index name (default `voicufi`; dense, dimension 1536 for `text-embedding-3-small`, metric cosine). One index for everyone, one namespace per assistant knowledge base
 - `JWT_SECRET_KEY` — JWT signing secret
 - `HOST_URL` — Public URL (e.g., https://voksyai.online)
 - `PRODUCTION` — "true" in production (disables docs, enables optimizations)

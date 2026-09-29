@@ -50,6 +50,10 @@
     kb_delete_title: 'Удалить базу знаний?', kb_delete_msg: 'База «{name}» будет удалена, ассистент перестанет находить в ней ответы.',
     kb_load_failed: 'Не удалось загрузить базу знаний', kb_saving: 'Строим базу… Это может занять до минуты.',
     kb_search_off: 'Функция «Поиск по базе знаний» выключена — ассистент не будет искать в базе.', kb_search_on: 'Включить поиск',
+    kb_namespace: 'Namespace базы', kb_namespace_hint: 'Ассистент находит свою базу сам. Инструкция в промпте подскажет ему, когда искать в ней ответы.',
+    kb_copy_ns: 'Копировать', kb_ns_copied: 'Namespace скопирован',
+    kb_to_prompt: 'Добавить в промпт', kb_prompt_added: 'Инструкция добавлена в промпт — сохраните ассистента', kb_prompt_exists: 'Этот namespace уже есть в промпте',
+    kb_prompt_block: '## База знаний\nPinecone namespace: {ns}\nКогда клиент спрашивает об услугах, ценах, условиях, адресах, графике работы или других фактах о компании, сначала вызови функцию search_pinecone с коротким запросом по сути вопроса и отвечай только на основе найденного. Если в базе ответа нет, не выдумывай: скажи, что уточнишь эту информацию.',
     save_first: 'Сначала сохраните ассистента', save_first_text: 'База знаний, тестирование и код для сайта появятся после сохранения.',
     widget_title: 'Виджет запущен в правом нижнем углу', widget_text: 'Нажмите на кнопку виджета и говорите.',
     widget_loading: 'Загружаем виджет…', widget_loaded: 'Виджет загружен', widget_failed: 'Не удалось загрузить виджет',
@@ -691,11 +695,17 @@
       esc(t('kb_chars', { n: Number(kb.char_count || 0).toLocaleString('ru-RU') })) + ' · ' + esc(t('kb_updated', { date: fmtDate(kb.updated_at) })) + '</div></div>' +
       '<button class="btn btn-sm" type="button" id="kb-edit">' + VF.icon('pen', 'ic-sm') + esc(t('kb_edit')) + '</button>' +
       '<button class="btn btn-sm btn-danger" type="button" id="kb-del">' + VF.icon('trash-2', 'ic-sm') + esc(t('kb_delete')) + '</button></div>' +
+      '<div class="kb-ns"><span class="faint small">' + esc(t('kb_namespace')) + '</span><code class="mono">' + esc(kb.namespace) + '</code>' +
+      '<button class="btn btn-sm" type="button" id="kb-ns-copy">' + VF.icon('copy', 'ic-sm') + esc(t('kb_copy_ns')) + '</button>' +
+      '<button class="btn btn-sm btn-primary" type="button" id="kb-to-prompt">' + VF.icon('wand-2', 'ic-sm') + esc(t('kb_to_prompt')) + '</button></div>' +
+      '<div class="faint small">' + esc(t('kb_namespace_hint')) + '</div>' +
       (kb.content_preview ? '<div class="kb-preview"></div>' : '') +
       (searchOff ? '<div class="note note-warning">' + VF.icon('triangle-alert') + '<span class="grow">' + esc(t('kb_search_off')) +
         '</span><button class="btn btn-sm" type="button" id="kb-search-on">' + esc(t('kb_search_on')) + '</button></div>' : '') + '</div>';
     if (kb.content_preview) box.querySelector('.kb-preview').textContent = kb.content_preview;
     $('kb-edit').addEventListener('click', function () { openKbModal(kb); });
+    $('kb-ns-copy').addEventListener('click', function () { copyText(kb.namespace, t('kb_ns_copied')); });
+    $('kb-to-prompt').addEventListener('click', function () { addKbToPrompt(kb.namespace); });
     $('kb-del').addEventListener('click', deleteKb);
     var on = $('kb-search-on');
     if (on) on.addEventListener('click', function () {
@@ -703,6 +713,18 @@
       var names = fnNames(state.current.functions); if (names.indexOf(SEARCH_FN) === -1) names.push(SEARCH_FN);
       saveFunctionsOnly(names).then(drawKb, function (e) { on.disabled = false; VF.toast(e.message, { type: 'error' }); });
     });
+  }
+  // Дописывает в системный промпт блок с namespace и правилом, когда искать в базе.
+  // Поиск находит базу по id ассистента и без этого блока; блок нужен модели,
+  // чтобы она знала, когда вызывать search_pinecone.
+  function addKbToPrompt(ns) {
+    var el = $('f-prompt'), cur = el.value;
+    if (cur.indexOf(ns) !== -1) { VF.toast(t('kb_prompt_exists'), { type: 'info' }); return; }
+    el.value = (cur.trim() ? cur.replace(/\s+$/, '') + '\n\n' : '') + t('kb_prompt_block', { ns: ns });
+    readForm(); updatePromptCount(); renderDirty();
+    switchTab('settings');
+    el.focus(); el.scrollTop = el.scrollHeight;
+    VF.toast(t('kb_prompt_added'), { type: 'success' });
   }
   function openKbModal(kb) {
     $('kb-modal-title').textContent = kb ? t('kb_edit_title') : t('kb_new_title');
