@@ -162,7 +162,10 @@ systemctl daemon-reload
 say "restarting services"
 systemctl enable asterisk >/dev/null 2>&1 || true
 systemctl restart asterisk
-asterisk -rx "core waitfullybooted" >/dev/null 2>&1 || sleep 5
+for _ in $(seq 1 30); do
+  asterisk -rx "core waitfullybooted" >/dev/null 2>&1 && break
+  sleep 1
+done
 systemctl enable voksy-bridge >/dev/null 2>&1
 systemctl restart voksy-bridge
 sleep 2
@@ -170,7 +173,11 @@ sleep 2
 # ---------------------------------------------------------------- checks
 say "checking"
 ok=1
-module_loaded() { asterisk -rx "module show like $1" | grep -q "^$1"; }
+# grep -c, not grep -q: with pipefail an early-exiting grep -q kills asterisk -rx with
+# SIGPIPE on long outputs (res_pjsip lists ~40 modules) and a loaded module reads as missing.
+module_loaded() { [ "$(asterisk -rx "module show like $1" 2>/dev/null | grep -c "^$1\.so")" -gt 0 ]; }
+# Ubuntu keeps modules under /usr/lib/x86_64-linux-gnu/asterisk/modules, not /usr/lib/asterisk/modules.
+module_on_disk() { find /usr/lib -path '*asterisk/modules/*' -name "$1.so" 2>/dev/null | grep -c . >/dev/null; }
 for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
   # autoload can skip a module whose dependency was not ready at boot; one explicit
   # load settles whether it is really missing from disk.
@@ -179,7 +186,7 @@ for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
     echo "  [ok] Asterisk module $mod"
   else
     echo "  [!!] Asterisk module $mod is NOT loaded"; ok=0
-    if [ ! -f "/usr/lib/asterisk/modules/${mod}.so" ]; then
+    if ! module_on_disk "$mod"; then
       echo "       ${mod}.so is missing on disk: apt-get install --reinstall asterisk-modules"
     else
       echo "       the file exists but refuses to load, see: grep -i ${mod} /var/log/asterisk/full"
