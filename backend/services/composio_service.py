@@ -711,6 +711,7 @@ def _resolve_owner_agent(db, assistant_config):
         AgentConfig.yandex_assistant_id == aid,
         AgentConfig.cascade_assistant_id == aid,
         AgentConfig.fish_assistant_id == aid,
+        AgentConfig.eleven_assistant_id == aid,
     )).first()
 
 

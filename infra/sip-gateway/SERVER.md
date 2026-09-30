@@ -138,8 +138,24 @@ curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS
 
 Скрипт идемпотентный: перекачивает конфиги Asterisk и `bridge.py`, ставит
 зависимости, перезапускает службы, в конце печатает сводку с проверками
-`[ok]`. Секреты не меняются. Другую ветку можно указать так:
-`VOKSY_BRANCH=main curl … | bash`.
+`[ok]`. Секреты не меняются. Другую ветку можно указать так (переменная
+ставится перед `bash`, не перед `curl`, и ветка меняется в адресе тоже):
+```bash
+curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/2309-design/infra/sip-gateway/install.sh | VOKSY_BRANCH=2309-design bash
+```
+
+## Записи звонков
+
+Asterisk пишет каждый отвеченный звонок в `/var/spool/voksy-rec/<id звонка>.wav`,
+мост сжимает его в MP3 и отправляет на бэкенд, тот кладёт в R2. После успешной
+отправки файл с сервера удаляется, так что папка обычно пустая.
+```bash
+ls -la /var/spool/voksy-rec                      # что ждёт отправки (пусто = всё отправлено)
+journalctl -u voksy-bridge | grep recording      # как прошла отправка записей
+curl -s http://127.0.0.1:9091/health             # recordings_pending — сколько файлов ждёт
+```
+Если бэкенд недоступен (деплой), файлы копятся и уходят сами, когда он поднимется.
+Файл, который не удалось отправить за 7 дней, удаляется.
 
 ## Связка с Render
 

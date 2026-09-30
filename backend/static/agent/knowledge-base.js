@@ -101,7 +101,7 @@ async function saveKnowledgeBase(){
       showToast('База знаний сохранена', 'success');
     } else {
       const err = await r?.json().catch(()=>({}));
-      showToast(errText(err.detail) || 'Ошибка сохранения', 'error');
+      showToast(errText(err.detail ?? err.message) || 'Ошибка сохранения', 'error');
     }
   }catch(e){ showToast('Ошибка сети', 'error'); }
 
@@ -124,7 +124,7 @@ async function deleteKnowledgeBase(){
       showToast('База знаний удалена', 'success');
     } else {
       const err = await r?.json().catch(()=>({}));
-      showToast(errText(err.detail) || 'Ошибка удаления', 'error');
+      showToast(errText(err.detail ?? err.message) || 'Ошибка удаления', 'error');
     }
   }catch(e){ showToast('Ошибка сети', 'error'); }
 

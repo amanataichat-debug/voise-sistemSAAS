@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, case, or_, text, select, union_all, null, cast, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from collections import defaultdict
 
@@ -92,6 +92,41 @@ def _find_session_record(db: Session, conversation_id: str):
     return None, None
 
 
+def _sip_call_transcript(db: Session, session_id: str) -> List[dict]:
+    """Сообщения из sip_calls.transcript, если session_id — id звонка SIP-шлюза (Fish/Eleven)."""
+    try:
+        call_uuid = UUID(str(session_id))
+    except (ValueError, TypeError):
+        return []
+    try:
+        from backend.models.sip_gateway import SipCall
+        call = db.get(SipCall, call_uuid)
+    except Exception:
+        db.rollback()
+        return []
+    if call is None or not call.transcript:
+        return []
+    base = call.answered_at or call.created_at
+    messages = []
+    for i, turn in enumerate(call.transcript):
+        text_value = (turn.get("text") or "").strip()
+        if not text_value:
+            continue
+        ts = None
+        if base is not None:
+            try:
+                ts = (base + timedelta(seconds=float(turn.get("t") or 0))).isoformat()
+            except (TypeError, ValueError):
+                ts = base.isoformat()
+        messages.append({
+            "id": f"{call.id}:{i}",
+            "type": "user" if turn.get("role") == "user" else "assistant",
+            "text": text_value,
+            "timestamp": ts,
+        })
+    return messages
+
+
 def _preview_sql(table_name: str):
     return text(f"""
         SELECT DISTINCT ON (session_id)
@@ -109,6 +144,8 @@ def _preview_sql(table_name: str):
             ) as preview
         FROM {table_name}
         WHERE session_id = ANY(:session_ids)
+          -- пустая запись-заглушка сессии (Fish/Eleven) не должна становиться превью
+          AND (COALESCE(TRIM(user_message), '') <> '' OR COALESCE(TRIM(assistant_message), '') <> '')
         ORDER BY session_id, created_at ASC
     """)
 
@@ -126,7 +163,10 @@ def _sessions_select(model, user_assistant_ids, assistant_uuid, caller_number, d
             model.session_id.label("session_id"),
             model.assistant_id.label("assistant_id"),
             func.max(model.caller_number).label("caller_number"),
-            func.count(model.id).label("messages_count"),
+            # заглушку сессии (обе реплики пустые) в число сообщений не считаем
+            func.count(case(
+                (or_(func.coalesce(model.user_message, "") != "", func.coalesce(model.assistant_message, "") != ""), model.id)
+            )).label("messages_count"),
             func.min(created).label("created_at"),
             func.max(created).label("updated_at"),
             func.sum(model.tokens_used).label("total_tokens"),
@@ -679,6 +719,10 @@ async def get_conversation_sessions(
         # Форматируем результат
         # 🆕 v3.5: Используем preview_map и нормализуем caller_number
         # =============================================================================
+        # Записи телефонных звонков SIP-шлюза (sip_calls.recording_url) по session_id диалога
+        from backend.services.sip_gateway_service import SipGatewayService
+        sip_recordings = SipGatewayService.recording_urls_for_sessions(db, [s.session_id for s in sessions])
+
         conversations = []
         for s in sessions:
             # Определяем тип по ID ассистента
@@ -722,7 +766,7 @@ async def get_conversation_sessions(
                 "tokens_used": s.total_tokens or 0,
                 "duration_seconds": s.total_duration or 0,
                 "call_cost": call_cost,
-                "record_url": s.record_url,
+                "record_url": s.record_url or sip_recordings.get(s.session_id),
                 "log_url": s.log_url,
                 "client_info": {"assistant_type": assistant_type},
                 "function_calls": logs_by_session.get(s.session_id, [])
@@ -1059,6 +1103,16 @@ async def get_conversation_detail(
                 # Лог — вспомогательная информация, не ломаем детальный просмотр
                 logger.warning(f"   ⚠️ Failed to fetch log_url from Voximplant: {log_fetch_error}")
         
+        # Телефонный звонок через SIP-шлюз: полная стенограмма лежит в sip_calls.transcript
+        # (с приветствием и последней репликой, которых нет в построчных записях).
+        sip_turns = _sip_call_transcript(db, session_id)
+        if not record_url:
+            from backend.services.sip_gateway_service import SipGatewayService
+            record_url = SipGatewayService.recording_urls_for_sessions(db, [session_id]).get(session_id)
+        if sip_turns:
+            messages = sip_turns
+            logger.info(f"   📞 Using SIP call transcript: {len(messages)} turns")
+
         # Загружаем function calls
         function_calls = []
         if include_functions:

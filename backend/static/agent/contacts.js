@@ -16,7 +16,7 @@ async function saveContact(){
   try{
     const r = await apiFetch(API + '/contacts', { method:'POST', body:JSON.stringify(body) });
     if(r && r.status===200){ closeContactModal(); loadStats(); loadTasks(); showToast('Контакт добавлен. Первый звонок через 1 час.','success'); }
-    else { const err=await r?.json().catch(()=>({})); showToast(errText(err.detail),'error'); }
+    else { const err=await r?.json().catch(()=>({})); showToast(errText(err.detail ?? err.message),'error'); }
   }catch(e){ showToast('Ошибка сети','error'); }
 }
 
@@ -330,7 +330,7 @@ async function saveContactInfo(){
       if(search) loadContactsList(search.value);
     } else {
       const err = await r?.json().catch(()=>({}));
-      showToast(errText(err.detail), 'error');
+      showToast(errText(err.detail ?? err.message), 'error');
     }
   }catch(e){ showToast('Ошибка сети', 'error'); }
 }

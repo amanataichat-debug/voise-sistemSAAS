@@ -9,6 +9,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Голосовые ассистенты | VoksiAI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2a5ce8">
@@ -73,6 +74,8 @@
     /* База знаний ассистента */
     .kb-card { border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
     .kb-card .kb-head { display: flex; align-items: center; gap: 12px; }
+    .kb-card .kb-ns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .kb-card .kb-ns code { background: var(--vf-surface-2); border-radius: var(--vf-r-sm); padding: 4px 8px; word-break: break-all; }
     .kb-card .kb-preview { font-size: 13px; color: var(--vf-text-3); white-space: pre-wrap; max-height: 7.5em; overflow: hidden; background: var(--vf-surface-2); border-radius: var(--vf-r-sm); padding: 10px 12px; }
 
     /* Библиотека голосов ElevenLabs */
@@ -120,7 +123,7 @@
   <aside class="sidebar vf-sidebar" id="sidebar">
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
-        <span class="mark"><svg class="ic" aria-hidden="true"><use href="/static/icons/ui.svg#i-audio-lines"></use></svg></span>
+        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
         <span class="wordmark">VoksiAI</span>
       </a>
       <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">

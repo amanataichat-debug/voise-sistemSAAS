@@ -269,9 +269,9 @@ Inter 700/800.
 arrow-down, audio-lines, badge-check, bell, book, book-open, bookmark, bot, brain, briefcase,
 building, building-2, banknote, calendar, calendar-plus, chart-bar, chart-column, check, chevron-down,
 chevron-left, chevron-right, circle, circle-alert, circle-check, circle-help, circle-minus, circle-x,
-clock, code, coins, columns-2, contact-round, copy, cpu, credit-card, crown, download, external-link,
+clock, code, coins, columns-2, database, contact-round, copy, cpu, credit-card, crown, download, external-link,
 eye, eye-off, file, file-text, filter, fish, flame, folder, gem, globe, globe-2, handshake, headphones,
-headset, history, hourglass, house, image, inbox, infinity, info, key, layers, layout-grid, link, link-2,
+headset, history, hourglass, house, image, inbox, infinity, info, instagram, key, layers, layout-grid, link, link-2,
 list, loader-circle, lock, log-out, mail, map-pin, menu, message-circle, message-square,
 messages-square, mic, pen, pencil, phone, phone-call, phone-incoming, phone-off, phone-outgoing,
 piggy-bank, play, plug, plus, puzzle, receipt, refresh-cw, rocket, rotate-ccw, route, russian-ruble,
@@ -311,8 +311,8 @@ upload, user, user-check, user-round, users, volume-2, wallet, wand-2, x, zap, a
 
 | Ассет | Voicyfy | Что сделать для VoksiAI |
 |---|---|---|
-| Wordmark | текст «Voicyfy» Syne 800 с градиентом акцента | текст «VoksiAI» тем же стилем; в `.vf-logo` перед ним `<img>` 30×30 радиус 8px (логотип-картинка) либо `.mark` (квадрат акцента с иконкой `audio-lines`) |
-| Favicon | `favicon.ico`, `favicon-16/32/48/64/96/192/512.png`, `android-chrome-192/512.png`, `apple-touch-icon.png`, `site.webmanifest`, `manifest.json` | нарисовать свои; `theme-color` `#2a5ce8` |
+| Wordmark | текст «Voicyfy» Syne 800 с градиентом акцента | текст «VoksiAI» тем же стилем; в `.vf-logo` перед ним знак `<img class="mark-img" src="/static/brand/logo.svg">` 30×30 (прозрачный фон, синяя V `#2563EB` + фиолетовые полоски `#4F46E5`); на тёмной панели модалки входа лендинга — на белой плашке |
+| Favicon | `favicon.svg`, `favicon.ico` (16–64), `favicon-16/32/48/64/96/192/512.png` (прозрачные), `apple-touch-icon.png` 180 и `android-chrome-192/512.png` (белый фон, отступ под маску), `manifest.json` | все сгенерированы из `brand/logo.svg`; `theme-color` `#2a5ce8` |
 | OG-картинка | `og-image.png` 1200×630 | своя |
 | Загрузчик | «волна» из 5 полос акцента + wordmark + подпись «Загружаем кабинет…» | оставить, заменить текст |
 
@@ -329,6 +329,7 @@ upload, user, user-check, user-round, users, volume-2, wallet, wand-2, x, zap, a
   <meta name="robots" content="noindex, nofollow">    <!-- все страницы кабинета -->
   <title>Голосовые ассистенты | VoksiAI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2a5ce8">

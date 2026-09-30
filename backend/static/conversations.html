@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Диалоги — VoksiAI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
@@ -506,6 +507,10 @@
 
     .assistant-avatar.fish {
       background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    }
+
+    .assistant-avatar.eleven {
+      background: linear-gradient(135deg, #2a5ce8, #4f46e5);
     }
 
     .card-info {
@@ -1013,10 +1018,15 @@
       background: linear-gradient(135deg, #0ea5e9, #2563eb);
     }
 
+    .message.assistant.eleven .message-avatar {
+      background: linear-gradient(135deg, #2a5ce8, #4f46e5);
+    }
+
     .message-bubble {
       padding: 0.75rem 1rem;
       border-radius: 1rem;
       word-wrap: break-word;
+      white-space: pre-wrap;
       line-height: 1.5;
       font-size: 0.9rem;
     }
@@ -1880,7 +1890,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
-        <span class="mark"><svg class="ic" aria-hidden="true"><use href="/static/icons/ui.svg#i-audio-lines"></use></svg></span>
+        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
         <span class="wordmark">VoksiAI</span>
       </a>
       <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
@@ -3025,7 +3035,8 @@
           : assistantType === 'cartesia' ? 'assistant-avatar cartesia'
           : assistantType === 'yandex' ? 'assistant-avatar yandex'
           : assistantType === 'cascade' ? 'assistant-avatar cascade'
-          : assistantType === 'fish' ? 'assistant-avatar fish' : 'assistant-avatar';
+          : assistantType === 'fish' ? 'assistant-avatar fish'
+          : assistantType === 'eleven' ? 'assistant-avatar eleven' : 'assistant-avatar';
         const typeBadge = assistantType === 'gemini'
           ? '<span class="assistant-type-badge gemini">Gemini</span>'
           : assistantType === 'cartesia'
@@ -3090,7 +3101,7 @@
             <div class="${avatarClass}">${assistantInitial}</div>
             <div class="card-info">
               <div class="assistant-name">
-                ${assistantName}
+                ${escapeHtmlForModal(assistantName || '')}
                 ${typeBadge}
               </div>
               <div class="conversation-date">${formatDate(conversation.created_at)}</div>
@@ -3102,7 +3113,7 @@
           
           ${callerDisplay}
           
-          <div class="conversation-preview">${preview}</div>
+          <div class="conversation-preview">${escapeHtmlForModal(preview)}</div>
           
           <div class="card-footer">
             <div class="card-meta">
@@ -3197,6 +3208,18 @@
           }
 
           try {
+            const elevenData = await api.get('/eleven-assistants');
+            const elevenList = Array.isArray(elevenData)
+              ? elevenData
+              : (elevenData.assistants || []);
+            elevenList.forEach(a => {
+              assistants.push({ id: a.id, name: a.name, type: 'eleven' });
+            });
+          } catch (e) {
+            console.warn('[ASSISTANTS] ⚠️ Error loading ElevenLabs assistants:', e.message);
+          }
+
+          try {
             // Голоса агентов обзвона: диалоги пишутся под id голосового
             // ассистента, а в списках провайдеров этот ассистент скрыт —
             // поэтому в фильтр кладём именно его id под именем агента.
@@ -3212,6 +3235,10 @@
               if (a.assistant_type === 'fish' && a.fish_assistant_id) {
                 assistants.push({ id: a.fish_assistant_id, name: a.name, type: 'fish' });
                 fishAgentCount++;
+              }
+              if (a.assistant_type === 'eleven' && a.eleven_assistant_id
+                  && !assistants.some(x => x.id === a.eleven_assistant_id)) {
+                assistants.push({ id: a.eleven_assistant_id, name: a.name, type: 'eleven' });
               }
             });
             console.log(`[ASSISTANTS] ✅ Loaded ${cascadeCount} Cascade and ${fishAgentCount} Fish agent voices`);
@@ -3243,6 +3270,19 @@
         const yandexAssistants = assistants.filter(a => a.type === 'yandex');
         const cascadeAssistants = assistants.filter(a => a.type === 'cascade');
         const fishAssistants = assistants.filter(a => a.type === 'fish');
+        const elevenAssistants = assistants.filter(a => a.type === 'eleven');
+
+        if (elevenAssistants.length > 0) {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = 'ElevenLabs';
+          elevenAssistants.forEach(assistant => {
+            const option = document.createElement('option');
+            option.value = assistant.id;
+            option.textContent = assistant.name;
+            optgroup.appendChild(option);
+          });
+          assistantFilter.appendChild(optgroup);
+        }
 
         if (openaiAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
@@ -3416,7 +3456,7 @@
             ? '<span class="assistant-type-badge eleven" style="margin-left: 0.5rem;">ElevenLabs</span>'
             : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">OpenAI</span>';
           
-          modalTitle.innerHTML = `${dialog.assistant_name} ${typeBadge}`;
+          modalTitle.innerHTML = `${escapeHtmlForModal(dialog.assistant_name || '')} ${typeBadge}`;
           
           // 🆕 v3.6: Используем улучшенную проверку caller_number
           const callerBadge = hasRealCallerNumber(dialog.caller_number)
@@ -3459,7 +3499,8 @@
                 : type === 'cartesia' ? 'message assistant cartesia'
                 : type === 'yandex' ? 'message assistant yandex'
                 : type === 'cascade' ? 'message assistant cascade'
-                : type === 'fish' ? 'message assistant fish' : 'message assistant';
+                : type === 'fish' ? 'message assistant fish'
+                : type === 'eleven' ? 'message assistant eleven' : 'message assistant';
               messageDiv.className = msg.type === 'user' ? 'message user' : assistantClass;
 
               const avatarIcon = msg.type === 'user' ? '👤' : (type === 'gemini' ? '✨' : type === 'yandex' ? '🔴' : type === 'cascade' ? '🌊' : type === 'fish' ? '🐟' : '🤖');
@@ -3515,9 +3556,7 @@
               messageDiv.innerHTML = `
                 <div class="message-avatar">${avatarIcon}</div>
                 <div>
-                  <div class="message-bubble">
-                    ${msg.text}
-                  </div>
+                  <div class="message-bubble">${escapeHtmlForModal(msg.text || '')}</div>
                   ${functionCallsHtml}
                   <div class="message-time">${msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
                 </div>

@@ -4,6 +4,7 @@
 """
 import os
 import json
+import asyncio
 import re
 import requests
 from typing import Dict, Any, Optional, List
@@ -207,6 +208,7 @@ class PineconeSearchFunction(FunctionBase):
                                 AgentConfig.yandex_assistant_id == a_id,
                                 AgentConfig.cascade_assistant_id == a_id,
                                 AgentConfig.fish_assistant_id == a_id,
+                                AgentConfig.eleven_assistant_id == a_id,
                             )
                         ).first()
                         if agent and agent.kb_namespace:
@@ -291,41 +293,39 @@ class PineconeSearchFunction(FunctionBase):
             if not embedding:
                 return {"error": "Failed to generate embedding for query"}
             
-            # Создаем запрос к Pinecone
-            pinecone_url = "https://voicufi-gpr1sqd.svc.aped-4627-b74a.pinecone.io/query"
-            
-            pinecone_request = {
-                "vector": embedding,
-                "namespace": namespace,
-                "topK": top_k,
-                "includeMetadata": True
-            }
-            
-            # Отправляем запрос к Pinecone
-            pinecone_response = requests.post(
-                pinecone_url,
-                headers={
-                    "Api-Key": pinecone_api_key,
-                    "Content-Type": "application/json"
-                },
-                json=pinecone_request
-            )
-            
-            if pinecone_response.status_code != 200:
-                logger.error(f"Error from Pinecone: {pinecone_response.text}")
-                return {"error": f"Pinecone query failed: {pinecone_response.status_code}"}
-            
-            # Обрабатываем результаты
-            results = pinecone_response.json()
-            
+            # Запрос к Pinecone через SDK: хост индекса SDK получает по имени,
+            # поэтому смена аккаунта/индекса не требует правки кода.
+            from backend.services.pinecone_service import PineconeService, PINECONE_INDEX_NAME
+            pc = await PineconeService.initialize()
+            index = pc.Index(PINECONE_INDEX_NAME)
+            try:
+                results = await asyncio.to_thread(
+                    index.query,
+                    vector=embedding,
+                    namespace=namespace,
+                    top_k=top_k,
+                    include_metadata=True,
+                )
+            except Exception as e:
+                logger.error(f"Error from Pinecone: {e}")
+                return {"error": f"Pinecone query failed: {e}"}
+
             # Форматируем результаты в более читаемый вид
+            matches = results.get("matches", []) if isinstance(results, dict) else (results.matches or [])
             formatted_results = []
-            for match in results.get("matches", []):
-                formatted_match = {
-                    "id": match.get("id"),
-                    "score": match.get("score"),
-                    "metadata": match.get("metadata", {})
-                }
+            for match in matches:
+                if isinstance(match, dict):
+                    formatted_match = {
+                        "id": match.get("id"),
+                        "score": match.get("score"),
+                        "metadata": match.get("metadata", {})
+                    }
+                else:
+                    formatted_match = {
+                        "id": match.id,
+                        "score": match.score,
+                        "metadata": match.metadata or {}
+                    }
                 formatted_results.append(formatted_match)
             
             return {

@@ -11,6 +11,7 @@
     чтобы CRM-контакт и PostCall-оркестратор нашли транскрипт.
 """
 
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,6 +28,8 @@ from backend.models.sip_gateway import (
     SipCallStatus,
     SIP_SUPPORTED_ASSISTANT_TYPES,
     normalize_sip_number,
+    is_o_number,
+    O_MOBILE_PREFIXES,
 )
 from backend.models.assistant import AssistantConfig
 from backend.models.gemini_assistant import GeminiAssistantConfig, GeminiConversation
@@ -36,6 +39,7 @@ from backend.models.agent_config import AgentConfig
 from backend.models.conversation import Conversation
 from backend.models.task import Task, TaskStatus
 from backend.models.agent_call import AgentCall
+from backend.models.agent_contact import AgentContact
 
 logger = get_logger(__name__)
 
@@ -170,7 +174,16 @@ class SipGatewayService:
         task_id: Optional[uuid.UUID] = None,
         gateway_id: Optional[str] = None,
     ) -> SipCall:
-        """Поставить исходящий звонок в очередь. Отправит его на шлюз воркер с управляющим сокетом."""
+        """Поставить исходящий звонок в очередь. Отправит его на шлюз воркер с управляющим сокетом.
+
+        Транк оператора пропускает только номера O!, поэтому остальные отклоняются сразу
+        (ValueError), а не падают на транке: так же для ручного звонка, CRM и агента.
+        """
+        to_digits = normalize_sip_number(to_number)
+        if not is_o_number(to_digits):
+            raise ValueError(
+                "Исходящие возможны только на номера O! (префиксы " + ", ".join(O_MOBILE_PREFIXES) + ")"
+            )
         call = SipCall(
             id=uuid.uuid4(),
             gateway_id=gateway_id or caller_number.gateway_id or settings.SIP_GATEWAY_DEFAULT_ID,
@@ -182,7 +195,7 @@ class SipGatewayService:
             assistant_type=assistant_type,
             assistant_id=_parse_uuid(assistant_id),
             did=caller_number.phone_number,
-            to_number=normalize_sip_number(to_number),
+            to_number=to_digits,
             call_metadata=metadata or {},
         )
         db.add(call)
@@ -342,6 +355,12 @@ class SipGatewayService:
                 call.ended_at = now
                 call.end_reason = reason
                 SipGatewayService._finish_task(db, call, success=False)
+                db.commit()
+                try:
+                    from backend.services.agent_call_finalizer import AgentCallFinalizer
+                    AgentCallFinalizer.on_call_failed(db, call)
+                except Exception as exc:
+                    logger.warning(f"[SIP] agent finalization for failed call {call.id} failed: {exc}")
         db.commit()
         return call
 
@@ -387,16 +406,24 @@ class SipGatewayService:
             return 0
         model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
             call.assistant_type, Conversation)
-        rows = (
-            db.query(model)
-            .filter(
+        if call.conversation_session_id:
+            # Хендлер писал диалог под session_id = id звонка (Fish/Eleven) — привязка точная.
+            rows = db.query(model).filter(
                 model.assistant_id == call.assistant_id,
-                model.created_at >= started_at - timedelta(seconds=10),
-                model.created_at <= _utcnow() + timedelta(seconds=5),
-                or_(model.caller_number.is_(None), model.caller_number == "", model.caller_number == "unknown"),
+                model.session_id == call.conversation_session_id,
+            ).all()
+        else:
+            # Остальные хендлеры: по ассистенту и окну времени звонка.
+            rows = (
+                db.query(model)
+                .filter(
+                    model.assistant_id == call.assistant_id,
+                    model.created_at >= started_at - timedelta(seconds=10),
+                    model.created_at <= _utcnow() + timedelta(seconds=5),
+                    or_(model.caller_number.is_(None), model.caller_number == "", model.caller_number == "unknown"),
+                )
+                .all()
             )
-            .all()
-        )
         for conv in rows:
             conv.caller_number = phone
             if hasattr(conv, "call_direction"):
@@ -404,6 +431,60 @@ class SipGatewayService:
         if rows:
             db.commit()
         return len(rows)
+
+    @staticmethod
+    def link_conversation_session(db: Session, call: SipCall) -> None:
+        """
+        Найти session_id диалога, записанного хендлером за время звонка, и сохранить его в
+        call.conversation_session_id (без commit). Fish/Eleven проставляют его при старте
+        звонка; OpenAI/Gemini — нет, их диалог ищем по ассистенту, номеру и окну звонка
+        (tag_conversations к этому моменту уже проставил номер).
+        """
+        if call.conversation_session_id or not call.assistant_id:
+            return
+        phone = call.caller if call.direction == "inbound" else call.to_number
+        if not phone:
+            return
+        model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
+            call.assistant_type, Conversation)
+        start = call.answered_at or call.created_at
+        end = call.ended_at or _utcnow()
+        try:
+            row = (
+                db.query(model.session_id)
+                .filter(
+                    model.assistant_id == call.assistant_id,
+                    model.caller_number == phone,
+                    model.created_at >= start - timedelta(seconds=10),
+                    model.created_at <= end + timedelta(seconds=60),
+                )
+                .order_by(model.created_at.asc())
+                .first()
+            )
+        except Exception as exc:
+            logger.warning(f"[SIP] call {call.id}: conversation lookup failed: {exc}")
+            db.rollback()
+            return
+        if row and row.session_id:
+            call.conversation_session_id = row.session_id
+
+    @staticmethod
+    def recording_urls_for_sessions(db: Session, session_ids) -> Dict[str, str]:
+        """{session_id диалога: ссылка на запись звонка} для пачки диалогов одним запросом."""
+        ids = [str(s) for s in session_ids if s]
+        if not ids:
+            return {}
+        try:
+            rows = (
+                db.query(SipCall.conversation_session_id, SipCall.recording_url)
+                .filter(SipCall.conversation_session_id.in_(ids), SipCall.recording_url.isnot(None))
+                .all()
+            )
+        except Exception as exc:
+            logger.warning(f"[SIP] recording lookup failed: {exc}")
+            db.rollback()
+            return {}
+        return {r.conversation_session_id: r.recording_url for r in rows}
 
     @staticmethod
     def call_context_text(call: SipCall) -> str:
@@ -418,6 +499,8 @@ class SipGatewayService:
                 parts.append(f"Цель звонка: {meta['task_title']}.")
             if meta.get("task_description"):
                 parts.append(f"Подробности: {meta['task_description']}")
+            if meta.get("call_strategy"):
+                parts.append(f"Стратегия разговора: {meta['call_strategy']}")
         else:
             parts.append("Это входящий телефонный звонок.")
             if call.caller:
@@ -426,15 +509,42 @@ class SipGatewayService:
         return " ".join(parts)
 
     @staticmethod
-    def resolve_greeting(call: SipCall, number: Optional[SipPhoneNumber], assistant) -> Optional[str]:
+    def resolve_greeting(call: SipCall, number: Optional[SipPhoneNumber], assistant,
+                         db: Optional[Session] = None) -> Optional[str]:
+        """
+        Первая фраза звонка. Исходящий: custom_greeting задачи (PreCall агента) →
+        first_phrase номера → приветствие ассистента. Входящий на номер агента:
+        first_phrase номера → inbound_first_phrase агента → приветствие ассистента;
+        {name} — имя из метаданных звонка или из контакта агента с этим номером.
+        """
         meta = call.call_metadata or {}
+        contact_name = meta.get("contact_name") or ""
         greeting = None
         if call.direction == "outbound":
             greeting = meta.get("custom_greeting") or None
         if not greeting and number is not None and number.first_phrase:
             greeting = number.first_phrase
+        agent = None
+        if call.direction == "inbound" and db is not None and number is not None and number.agent_config_id:
+            agent = db.get(AgentConfig, number.agent_config_id)
+            if not greeting and agent is not None and agent.inbound_first_phrase:
+                greeting = agent.inbound_first_phrase
         if not greeting:
             greeting = getattr(assistant, "greeting_message", None)
         if greeting and "{name}" in greeting:
-            greeting = greeting.replace("{name}", meta.get("contact_name") or "").replace("  ", " ").strip()
+            if not contact_name and agent is not None and call.caller:
+                contact = (
+                    db.query(AgentContact)
+                    .filter(AgentContact.agent_config_id == agent.id,
+                            AgentContact.phone.like(f"%{call.caller[-9:]}"))
+                    .order_by(AgentContact.created_at.desc())
+                    .first()
+                )
+                contact_name = (contact.name or "") if contact else ""
+            if contact_name:
+                greeting = greeting.replace("{name}", contact_name)
+            else:
+                # «Салам, {name}!» без имени → «Салам!», а не «Салам, !»
+                greeting = re.sub(r",?\s*\{name\}", "", greeting)
+            greeting = " ".join(greeting.split())
         return greeting

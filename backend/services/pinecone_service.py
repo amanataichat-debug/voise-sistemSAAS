@@ -15,6 +15,10 @@ from backend.models.pinecone_config import PineconeConfig
 
 logger = get_logger(__name__)
 
+# Индекс Pinecone: dense, dimension 1536 (text-embedding-3-small), metric cosine.
+# Хост индекса SDK узнаёт сам по имени — адрес индекса в коде не хранить.
+PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX", "voicufi")
+
 class PineconeService:
     @staticmethod
     async def initialize():
@@ -78,7 +82,7 @@ class PineconeService:
             logger.info(f"Processed content into {len(chunks)} chunks")
             
             # Get index
-            index_name = "voicufi"  # Используем ваш существующий индекс
+            index_name = PINECONE_INDEX_NAME
             try:
                 index = pc.Index(index_name)
             except Exception as e:
@@ -189,7 +193,7 @@ class PineconeService:
             return []
 
         pc = await PineconeService.initialize()
-        index = pc.Index("voicufi")
+        index = pc.Index(PINECONE_INDEX_NAME)
 
         embedding = await PineconeService.create_embeddings(query, api_key, model=model)
 
@@ -219,7 +223,7 @@ class PineconeService:
             pc = await PineconeService.initialize()
             
             # Get the index
-            index_name = "voicufi"
+            index_name = PINECONE_INDEX_NAME
             try:
                 index = pc.Index(index_name)
             except Exception as e:

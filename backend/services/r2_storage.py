@@ -23,6 +23,7 @@ Cloudflare R2 Storage Service для сохранения записей зво�
         )
 """
 
+import asyncio
 import boto3
 import httpx
 import jwt
@@ -327,6 +328,44 @@ class R2StorageService:
             logger.error(f"[R2] Traceback: {traceback.format_exc()}")
             return None
     
+    @classmethod
+    async def upload_call_recording(
+        cls,
+        call_id: str,
+        data: bytes,
+        content_type: str = "audio/mpeg",
+        when: Optional[datetime] = None,
+    ) -> Optional[str]:
+        """
+        Сохранить запись звонка SIP-шлюза (файл уже у нас, от моста VPS).
+
+        Ключ детерминированный: recordings/sip/ГГГГ/ММ/ДД/<call_id>.<ext> по дате звонка,
+        поэтому повторная загрузка того же звонка перезаписывает файл, а не плодит копии.
+        Префикс recordings/ — под правило Object Lifecycle бакета (удаление через 90 дней).
+        Возвращает публичный URL или None.
+        """
+        client = cls._get_client()
+        if client is None or not cls.is_configured():
+            return None
+        ext = "wav" if "wav" in (content_type or "") else "mp3"
+        day = when or datetime.utcnow()
+        safe_call_id = "".join(c for c in call_id if c.isalnum() or c == "-")
+        key = f"recordings/sip/{day.year}/{day.month:02d}/{day.day:02d}/{safe_call_id}.{ext}"
+        try:
+            await asyncio.to_thread(
+                client.put_object,
+                Bucket=settings.R2_BUCKET,
+                Key=key,
+                Body=data,
+                ContentType="audio/wav" if ext == "wav" else "audio/mpeg",
+            )
+        except Exception as e:
+            logger.error(f"[R2] ❌ call recording {call_id} upload failed: {e}")
+            return None
+        url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{key}"
+        logger.info(f"[R2] ✅ call recording {call_id}: {len(data) // 1024} KB → {key}")
+        return url
+
     @classmethod
     def is_configured(cls) -> bool:
         """Проверяет, настроен ли R2"""

@@ -16,7 +16,12 @@ Responsibilities
   * AMI client (127.0.0.1:5038): originates outbound calls through the operator
     trunk, failing over from the first operator server to the second.
   * Tiny HTTP server (127.0.0.1:9091) used by the Asterisk dialplan to register
-    inbound calls before AudioSocket connects.
+    inbound calls before AudioSocket connects, and to report finished recordings.
+  * Call recordings: Asterisk MixMonitor writes RECORDINGS_DIR/<call_id>.wav;
+    the bridge converts it to MP3 (lame) and POSTs it to the backend
+    ({BACKEND_HTTP_URL}/api/sip/recordings/<call_id>, header X-Gateway-Token),
+    which stores it in R2. Files are deleted only after the backend accepted them;
+    a sweep retries the rest, so a backend deploy loses nothing.
 
 Wire protocol (bridge <-> backend media socket)
   bridge -> backend, first message (text/JSON):
@@ -50,6 +55,7 @@ Number formats
 """
 
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -62,10 +68,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
+import aiohttp
 import websockets
 from aiohttp import web
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -108,6 +115,16 @@ ORIGINATE_TIMEOUT_MS = int(_env("ORIGINATE_TIMEOUT_MS", "45000"))
 OUTBOUND_CONTEXT = _env("OUTBOUND_CONTEXT", "outbound-answered")
 BACKEND_CONNECT_TIMEOUT = float(_env("BACKEND_CONNECT_TIMEOUT", "6"))
 MAX_CALL_SECONDS = int(_env("MAX_CALL_SECONDS", "3600"))
+
+# Call recordings (MixMonitor -> MP3 -> backend -> R2)
+BACKEND_HTTP_URL = (_env("BACKEND_HTTP_URL", "") or
+                    BACKEND_WS_URL.replace("wss://", "https://", 1).replace("ws://", "http://", 1)).rstrip("/")
+RECORDINGS_DIR = _env("RECORDINGS_DIR", "/var/spool/voksy-rec")
+RECORDING_BITRATE_KBPS = _env("RECORDING_BITRATE_KBPS", "32")
+RECORDING_MIN_BYTES = 44 + 16000  # WAV header + 1 s of 8 kHz PCM16: shorter is nothing to keep
+RECORDING_KEEP_DAYS = int(_env("RECORDING_KEEP_DAYS", "7"))  # give up on files the backend never accepted
+RECORDING_SWEEP_SECONDS = 60
+RECORDING_SETTLE_SECONDS = 120  # a file untouched this long is finished even if the poke was lost
 
 LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 
@@ -212,12 +229,177 @@ class Call:
         }
 
 
+# ----------------------------------------------------------------------------
+# Call recordings
+# ----------------------------------------------------------------------------
+
+
+class RecordingUploader:
+    """WAV from MixMonitor -> MP3 -> backend. A file is removed only once the
+    backend has stored it (or rejected the call id for good); otherwise it stays
+    on disk and the sweep retries it."""
+
+    def __init__(self) -> None:
+        self.busy: set = set()
+        self.sem = asyncio.Semaphore(2)
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.lame_missing_logged = False
+
+    @staticmethod
+    def _call_id(value: str) -> Optional[str]:
+        try:
+            return str(uuid.UUID(value))
+        except (ValueError, TypeError):
+            return None
+
+    def pending(self) -> int:
+        return len(glob.glob(os.path.join(RECORDINGS_DIR, "*.wav")) + glob.glob(os.path.join(RECORDINGS_DIR, "*.mp3")))
+
+    def submit(self, call_id: str) -> bool:
+        call_id = self._call_id(call_id)
+        if not call_id:
+            return False
+        asyncio.create_task(self.process(call_id))
+        return True
+
+    async def process(self, call_id: str) -> None:
+        if call_id in self.busy:
+            return
+        self.busy.add(call_id)
+        try:
+            async with self.sem:
+                await self._process(call_id)
+        except Exception:
+            log.exception("recording %s: processing failed", call_id)
+        finally:
+            self.busy.discard(call_id)
+
+    async def _process(self, call_id: str) -> None:
+        wav = os.path.join(RECORDINGS_DIR, f"{call_id}.wav")
+        mp3 = os.path.join(RECORDINGS_DIR, f"{call_id}.mp3")
+        if os.path.exists(wav):
+            size = os.path.getsize(wav)
+            if size < RECORDING_MIN_BYTES:
+                log.info("recording %s: empty (%d bytes), dropped", call_id, size)
+                self._remove(wav, mp3)
+                return
+            if not os.path.exists(mp3) and await self._encode(wav, mp3):
+                self._remove(wav)
+        if os.path.exists(mp3):
+            path, content_type = mp3, "audio/mpeg"
+        elif os.path.exists(wav):
+            path, content_type = wav, "audio/wav"  # no lame: upload as is
+        else:
+            return
+        status, detail = await self._upload(call_id, path, content_type)
+        if status == 200:
+            log.info("recording %s: uploaded (%d KB)", call_id, os.path.getsize(path) // 1024)
+            self._remove(wav, mp3)
+        elif status == 404 and detail == "call_not_found":
+            log.warning("recording %s: backend does not know this call, dropped", call_id)
+            self._remove(wav, mp3)
+        else:
+            log.warning("recording %s: upload failed (%s %s), will retry", call_id, status, detail)
+
+    async def _encode(self, wav: str, mp3: str) -> bool:
+        tmp = mp3 + ".tmp"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "lame", "--quiet", "-m", "m", "--resample", "16", "-b", RECORDING_BITRATE_KBPS, wav, tmp,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            if not self.lame_missing_logged:
+                log.warning("lame is not installed: recordings are uploaded as WAV (apt-get install lame)")
+                self.lame_missing_logged = True
+            return False
+        try:
+            _, err = await asyncio.wait_for(proc.communicate(), timeout=300)
+        except asyncio.TimeoutError:
+            proc.kill()
+            log.error("lame timed out on %s", wav)
+            self._remove(tmp)
+            return False
+        if proc.returncode != 0 or not os.path.exists(tmp):
+            log.error("lame failed on %s: %s", wav, (err or b"").decode(errors="ignore").strip()[:300])
+            self._remove(tmp)
+            return False
+        os.replace(tmp, mp3)
+        return True
+
+    async def _upload(self, call_id: str, path: str, content_type: str):
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180))
+        with open(path, "rb") as f:
+            data = f.read()
+        url = f"{BACKEND_HTTP_URL}/api/sip/recordings/{call_id}"
+        try:
+            async with self.session.post(url, data=data, headers={
+                "X-Gateway-Token": GATEWAY_TOKEN,
+                "X-Gateway-Id": GATEWAY_ID,
+                "Content-Type": content_type,
+            }) as resp:
+                detail = ""
+                try:
+                    body = await resp.json(content_type=None)
+                    detail = str((body or {}).get("detail", "")) if isinstance(body, dict) else ""
+                except Exception:
+                    pass
+                return resp.status, detail
+        except Exception as exc:
+            return None, str(exc)
+
+    @staticmethod
+    def _remove(*paths: str) -> None:
+        for p in paths:
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log.warning("cannot remove %s: %s", p, exc)
+
+    async def sweep_loop(self, active_ids) -> None:
+        """Retry files whose poke was lost or whose upload failed; drop very old ones."""
+        while True:
+            try:
+                now = time.time()
+                for path in glob.glob(os.path.join(RECORDINGS_DIR, "*")):
+                    name = os.path.basename(path)
+                    call_id = self._call_id(name.split(".", 1)[0])
+                    try:
+                        age = now - os.path.getmtime(path)
+                    except OSError:
+                        continue
+                    if age > RECORDING_KEEP_DAYS * 86400:
+                        log.warning("recording %s: not uploaded for %d days, deleted", name, RECORDING_KEEP_DAYS)
+                        self._remove(path)
+                        continue
+                    if name.endswith(".tmp"):
+                        if age > 600:
+                            self._remove(path)
+                        continue
+                    if not call_id or call_id in active_ids() or age < RECORDING_SETTLE_SECONDS:
+                        continue
+                    await self.process(call_id)
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                log.exception("recording sweep error")
+            await asyncio.sleep(RECORDING_SWEEP_SECONDS)
+
+    async def close(self) -> None:
+        if self.session is not None and not self.session.closed:
+            await self.session.close()
+
+
 class Bridge:
     def __init__(self) -> None:
         self.calls: Dict[str, Call] = {}
         self.control_out: asyncio.Queue = asyncio.Queue(maxsize=2000)
         self.control_ws: Optional[Any] = None
         self.ami: Optional["AmiClient"] = None
+        self.recordings = RecordingUploader()
         self.stopping = False
 
     # ------------------------------------------------------------------ calls
@@ -609,6 +791,7 @@ class Bridge:
     async def http_server(self) -> None:
         app = web.Application()
         app.router.add_get("/asterisk/inbound", self._http_inbound)
+        app.router.add_get("/asterisk/recording/{call_id}", self._http_recording)
         app.router.add_get("/health", self._http_health)
         app.router.add_get("/calls", self._http_calls)
         runner = web.AppRunner(app, access_log=None)
@@ -635,6 +818,13 @@ class Bridge:
         self.emit("started", call)
         return web.Response(text=call.call_id)
 
+    async def _http_recording(self, request: web.Request) -> web.Response:
+        # MixMonitor post-command: the WAV of this call is closed and ready.
+        call_id = request.match_info.get("call_id", "")
+        if not self.recordings.submit(call_id):
+            return web.Response(text="bad_call_id", status=400)
+        return web.Response(text="ok")
+
     async def _http_health(self, request: web.Request) -> web.Response:
         return web.json_response({
             "ok": True,
@@ -647,6 +837,7 @@ class Bridge:
             "max_outbound": MAX_OUTBOUND,
             "active_inbound": self.active_inbound(),
             "max_inbound": MAX_INBOUND,
+            "recordings_pending": self.recordings.pending(),
         })
 
     async def _http_calls(self, request: web.Request) -> web.Response:
@@ -660,6 +851,8 @@ class Bridge:
             asyncio.create_task(self.audiosocket_server()),
             asyncio.create_task(self.control_client()),
             asyncio.create_task(self.ami.run()),
+            asyncio.create_task(self.recordings.sweep_loop(
+                lambda: {c.call_id for c in self.calls.values() if not c.ended})),
         ]
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -675,6 +868,7 @@ class Bridge:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.recordings.close()
 
 
 # ----------------------------------------------------------------------------

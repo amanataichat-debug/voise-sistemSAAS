@@ -53,6 +53,18 @@ const POSTCALL_TOOL_LABELS = {
   instagram_get_thread: { label: 'Прочитал Instagram-переписку', icon: 'fa-comments', color: '#E1306C' },
 };
 
+// Итог SIP-звонка (backend: call_outcome в services/agent_call_finalizer.py):
+// kind ok | warn | error | progress, label — коротко, detail — что именно случилось.
+const OUTCOME_ICONS = { ok:'fa-circle-check', warn:'fa-phone-slash', error:'fa-triangle-exclamation', progress:'fa-phone-volume' };
+function outcomeBadge(o){
+  if(!o) return '';
+  return `<span class="status-badge o-${esc(o.kind)}">${o.kind==='progress' ? '<span class="o-pulse"></span>' : `<i class="fas ${OUTCOME_ICONS[o.kind]||'fa-circle-info'}"></i>`} ${esc(o.label)}</span>`;
+}
+function outcomeLine(o){
+  if(!o || !o.detail) return '';
+  return `<div class="outcome-line o-${esc(o.kind)}">${esc(o.detail)}</div>`;
+}
+
 function renderCallExpanded(call, uid){
   const isSms = call.channel === 'sms';
   const isTg = call.channel === 'telegram';
@@ -62,7 +74,9 @@ function renderCallExpanded(call, uid){
   // инициатива агента, «транскрипт» — инструкция, а не текст клиента.
   const isTgOut = isTg && (call.postcall_log || {}).call_direction === 'telegram_outbound';
   const dur = (!isMsg && call.duration_seconds) ? Math.floor(call.duration_seconds)+'с' : '—';
-  const decisionBadgeHtml = decisionBadge(call.post_call_decision);
+  // Пока звонок идёт, решения PostCall ещё нет — бейдж решения не показываем
+  // и при недозвоне: итог звонка («Занято», «Проблема со связью») уже всё говорит
+  const decisionBadgeHtml = (call.outcome && call.outcome.kind !== 'ok') || !call.post_call_decision ? '' : decisionBadge(call.post_call_decision);
   let statusHtml;
   if(isTgOut){
     statusHtml = (call.postcall_log || {}).message_sent
@@ -70,6 +84,8 @@ function renderCallExpanded(call, uid){
       : '<span class="status-badge badge-no-answer">Без отправки</span>';
   } else if(isMsg){
     statusHtml = '<span class="status-badge badge-answered">Обработано</span>';
+  } else if(call.outcome){
+    statusHtml = outcomeBadge(call.outcome);
   } else {
     statusHtml = call.status==='answered'
       ? '<span class="status-badge badge-answered">Ответил</span>'
@@ -159,7 +175,15 @@ function renderCallExpanded(call, uid){
     </div>
   ` : '';
 
-  const details = preBlock + transcriptBlock + postBlock;
+  // Запись звонка (sip_calls.recording_url, R2): появляется через несколько секунд после конца звонка.
+  const recordBlock = (!isMsg && call.record_url) ? `
+    <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:0.04em;margin:10px 0 4px">
+      <i class="fas fa-headphones"></i> Запись звонка
+    </div>
+    <audio controls preload="none" src="${esc(call.record_url).replace(/"/g, '&quot;')}" style="width:100%;height:36px;margin:0 0 6px" onclick="event.stopPropagation()"></audio>
+  ` : '';
+
+  const details = recordBlock + preBlock + transcriptBlock + postBlock;
   const hasDetails = !!details.trim();
 
   return `
@@ -170,8 +194,10 @@ function renderCallExpanded(call, uid){
         ${channelBadge}
         ${statusHtml}
         ${decisionBadgeHtml}
+        ${recordBlock ? '<span class="status-badge" style="background:#EEF2FF;color:#2a5ce8" title="Есть запись звонка"><i class="fas fa-headphones"></i> Запись</span>' : ''}
         ${hasDetails ? `<span style="margin-left:auto;font-size:11px;color:var(--blue);font-weight:600"><i class="fas fa-chevron-down" id="${uid}-chevron" style="transition:transform .2s"></i> Размышления</span>` : ''}
       </div>
+      ${isMsg ? '' : outcomeLine(call.outcome)}
       ${hasDetails ? `<div id="${uid}-details" style="display:none">${details}</div>` : ''}
     </div>`;
 }

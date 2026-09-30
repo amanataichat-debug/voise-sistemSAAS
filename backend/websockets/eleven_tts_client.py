@@ -109,6 +109,7 @@ class ElevenTTSClient:
         self.context_id: Optional[str] = None   # контекст текущей реплики, ещё принимает текст
         self._live: Set[str] = set()            # контексты, чей звук отдаём клиенту
         self._finishing: Optional[str] = None   # закрыт end_of_response(), его is_final = конец реплики
+        self._close_requested: Set[str] = set() # close_context уже отправлен: повторный рвёт сокет
         self._new_turn = True
         self.pending_text: List[str] = []
         self._close_after_pending = False      # end_of_response() пришёл, пока текст ждал переподключения
@@ -159,6 +160,7 @@ class ElevenTTSClient:
         self.context_id = None
         self._live = set()
         self._finishing = None
+        self._close_requested = set()
         self._last_sent_at = time.monotonic()
         generation = self.generation
         self._reader_task = asyncio.create_task(self._read(ws, generation))
@@ -242,6 +244,7 @@ class ElevenTTSClient:
                 self.ws = None  # следующий say() переподключится
                 self.context_id = None
                 self._live = set()
+                self._close_requested = set()
                 if self._finishing is not None or self.speaking:
                     await self._utterance_ended("socket closed")
 
@@ -317,13 +320,14 @@ class ElevenTTSClient:
                 "voice_settings": {"stability": self.stability},
             })
             self._new_turn = True
+        ctx = self.context_id
         await self._send(ws, {
-            "context_id": self.context_id,
+            "context_id": ctx,
             "inputs": [{"text": text, "voice_id": self.voice_id, "new_turn": self._new_turn}],
         })
         self._new_turn = False
         # Сервер буферизует ~40 символов — без flush короткая фраза не озвучится
-        await self._send(ws, {"context_id": self.context_id, "flush": True})
+        await self._send(ws, {"context_id": ctx, "flush": True})
 
     async def say(self, text: str) -> None:
         """Озвучить кусок текста (обычно предложение)."""
@@ -352,10 +356,18 @@ class ElevenTTSClient:
             self._close_after_pending = bool(self.pending_text)
             return
         self._finishing = ctx
+        self._close_requested.add(ctx)
         self._spawn(self._close_context(ctx))
 
     async def clear(self) -> None:
-        """Перебивание: закрыть все живые контексты, дальше их звук игнорируется."""
+        """Перебивание: закрыть все живые контексты, дальше их звук игнорируется.
+
+        Состояние сбрасывается сразу (звук старых контекстов перестаёт играть в ту же
+        миллисекунду), а close_context уходит под self._lock: иначе он может вклиниться
+        между inputs и flush идущего say(), и flush в закрывающийся контекст сервер
+        отвергнет с context_closing, закрыв весь сокет. Контексты, которым close_context
+        уже отправил end_of_response(), повторно не закрываем по той же причине.
+        """
         self.generation += 1
         self.pending_text.clear()
         self._close_after_pending = False
@@ -363,17 +375,25 @@ class ElevenTTSClient:
         self.response_complete = False
         ws = self.ws
         ctxs, self._live = list(self._live), set()
+        to_close = [c for c in ctxs if c not in self._close_requested]
+        self._close_requested.update(to_close)
         self.context_id = None
         self._finishing = None
-        if ws is not None:
-            for ctx in ctxs:
-                try:
-                    await self._send(ws, {"context_id": ctx, "close_context": True})
-                except Exception as exc:
-                    logger.warning(f"[ELEVEN-TTS {self.label}] close_context failed: {exc}")
-                    self.ws = None
-                    break
-        logger.info(f"[ELEVEN-TTS {self.label}] barge-in: contexts {ctxs} closed (gen={self.generation})")
+        if ws is not None and to_close:
+            async with self._lock:
+                if self.ws is ws:  # сокет не пересоздан, пока ждали идущий say()
+                    for ctx in to_close:
+                        try:
+                            await self._send(ws, {"context_id": ctx, "close_context": True})
+                        except Exception as exc:
+                            logger.warning(f"[ELEVEN-TTS {self.label}] close_context failed: {exc}")
+                            self.ws = None
+                            break
+        skipped = len(ctxs) - len(to_close)
+        logger.info(
+            f"[ELEVEN-TTS {self.label}] barge-in: contexts {ctxs} closed (gen={self.generation})"
+            + (f", {skipped} already closing" if skipped else "")
+        )
 
     async def close(self) -> None:
         self.closing = True
