@@ -311,12 +311,28 @@ class FishVoiceSession:
             if await self.stt.connect():
                 self.call_log.add("asr", "Scribe переподключён")
                 return
-        _log(f"ASR unavailable ({self.stt.fatal_error or 'connection lost'}): "
-             f"falling back to audio input in OpenAI", "WARNING")
-        self.stt = None
-        self.asr_fallback = True
-        self.call_log.meta["asr"] = "openai audio (fallback)"
-        await self.llm.switch_to_audio_input()
+        if not fatal and not getattr(self.llm, "supports_audio_input", True):
+            # у текстовой модели нет запасного «звука в модель» — ещё пара попыток вернуть Scribe
+            for attempt in range(2):
+                await asyncio.sleep(1.0 + attempt)
+                if self.closed:
+                    return
+                if await self.stt.connect():
+                    self.call_log.add("asr", f"Scribe переподключён (попытка {attempt + 2})")
+                    return
+        if getattr(self.llm, "supports_audio_input", True):
+            _log(f"ASR unavailable ({self.stt.fatal_error or 'connection lost'}): "
+                 f"falling back to audio input in OpenAI", "WARNING")
+            self.stt = None
+            self.asr_fallback = True
+            self.call_log.meta["asr"] = "openai audio (fallback)"
+            await self.llm.switch_to_audio_input()
+        else:
+            _log(f"ASR unavailable ({self.stt.fatal_error or 'connection lost'}): "
+                 f"the assistant can no longer hear the caller", "ERROR")
+            self.stt = None
+            self.asr_fallback = True
+            self.call_log.meta["asr"] = "Scribe недоступен — клиент не слышен"
 
     async def _send_user_turn(self, text: str) -> None:
         """Реплика абонента текстом → новый ответ модели. Реплики идут строго по одной."""
@@ -370,6 +386,18 @@ class FishVoiceSession:
 
     # ------------------------------------------------------------------ OpenAI events
     async def handle_llm_events(self) -> None:
+        if hasattr(self.llm, "events"):
+            # ChatLLMClient (Chat Completions): те же события, но из очереди, а не из сокета
+            try:
+                async for event in self.llm.events():
+                    await self._on_llm_event(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log(f"LLM event loop error: {exc}\n{traceback.format_exc()}", "ERROR")
+            finally:
+                self.llm.is_connected = False
+            return
         try:
             while self.llm.is_connected and self.llm.ws is not None:
                 raw = await self.llm.ws.recv()

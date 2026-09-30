@@ -154,6 +154,11 @@ class Settings(BaseSettings):
     ELEVEN_ASR_ENABLED: bool = os.getenv("ELEVEN_ASR_ENABLED", "true").lower() in ("1", "true", "yes")
     # Пауза конца фразы для VAD Scribe, мс
     ELEVEN_ASR_SILENCE_MS: int = int(os.getenv("ELEVEN_ASR_SILENCE_MS", "500"))
+    # «Мозг» Eleven-ассистента в режиме «ASR → текст»: обычная текстовая модель OpenAI через
+    # Chat Completions (backend/websockets/chat_llm_client.py). По замеру 30.09 gpt-5.6-luna
+    # отвечает в ~2 раза быстрее gpt-realtime-2 и лучше других держит кыргызский в голосе.
+    # Имя с "realtime" (например gpt-realtime-2) — вернуться к OpenAI Realtime в текстовом режиме.
+    ELEVEN_TEXT_LLM_MODEL: str = os.getenv("ELEVEN_TEXT_LLM_MODEL", "gpt-5.6-luna")
 
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.

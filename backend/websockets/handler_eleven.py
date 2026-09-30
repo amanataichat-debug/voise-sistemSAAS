@@ -37,6 +37,7 @@ from backend.models.user import User
 from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.eleven_tts_client import ElevenTTSClient
 from backend.websockets.scribe_stt_client import ScribeSTTClient
+from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
 
@@ -149,9 +150,16 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                      f"session {client_id} uses audio input in OpenAI", "WARNING")
                 stt = None
 
-        llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
-                            conversation_model=ElevenConversation, label="ELEVEN-LLM",
-                            text_input=stt is not None)
+        # «Мозг»: при работающем Scribe — текстовая модель через Chat Completions (ELEVEN_TEXT_LLM_MODEL,
+        # по умолчанию gpt-5.6-luna); без Scribe — прежний OpenAI Realtime со звуком на входе.
+        use_chat = stt is not None and "realtime" not in (settings.ELEVEN_TEXT_LLM_MODEL or "")
+        if use_chat:
+            llm = ChatLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
+                                conversation_model=ElevenConversation, label="ELEVEN-LLM")
+        else:
+            llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
+                                conversation_model=ElevenConversation, label="ELEVEN-LLM",
+                                text_input=stt is not None)
         if not await llm.connect():
             if stt is not None:
                 await stt.close()
