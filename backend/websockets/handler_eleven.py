@@ -12,6 +12,11 @@ SIP_HANDLERS["eleven"]. Протокол клиента — виджета (widg
 data-ws-path="/ws/eleven/"). Ключи серверные: OPENAI_API_KEY и ELEVENLABS_API_KEY.
 Язык ответа берётся из карточки (по умолчанию кыргызский): ElevenLabs получает
 language_code, диалоговой модели дописывается инструкция отвечать на этом языке.
+
+По умолчанию (settings.ELEVEN_ASR_ENABLED) работает режим «ASR → текст»:
+    звук абонента → Scribe Realtime (ASR + VAD, пауза ELEVEN_ASR_SILENCE_MS)
+    → готовая фраза текстом → OpenAI Realtime (текст → текст) → ElevenLabs TTS.
+Если Scribe не подключился, звонок идёт по прежней схеме (звук напрямую в OpenAI).
 """
 
 import traceback
@@ -30,7 +35,8 @@ from backend.models.eleven_assistant import (
 )
 from backend.models.user import User
 from backend.websockets.eleven_tts_client import ElevenTTSClient
-from backend.websockets.fish_llm_client import FishLLMClient
+from backend.websockets.scribe_stt_client import ScribeSTTClient
+from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
 
 logger = get_logger(__name__)
@@ -124,13 +130,34 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         except Exception:
             pass
 
+        # ASR → текст: Scribe поднимаем первым — от него зависит, в каком режиме открыть OpenAI.
+        # Виджет и SIP-адаптер (HANDLER_IN_RATE["eleven"]) шлют PCM16 24 кГц.
+        stt = None
+        if settings.ELEVEN_ASR_ENABLED:
+            stt = ScribeSTTClient(
+                settings.ELEVENLABS_API_KEY,
+                language=(assistant.language or "").strip().lower(),
+                sample_rate=LLM_INPUT_RATE,
+                silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                label=client_id[:8],
+            )
+            if not await stt.connect():
+                _log(f"Scribe unavailable ({stt.fatal_error or 'connect failed'}), "
+                     f"session {client_id} uses audio input in OpenAI", "WARNING")
+                stt = None
+
         llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
-                            conversation_model=ElevenConversation, label="ELEVEN-LLM")
+                            conversation_model=ElevenConversation, label="ELEVEN-LLM",
+                            text_input=stt is not None)
         if not await llm.connect():
+            if stt is not None:
+                await stt.close()
             await fail("openai_connection_failed", "Failed to connect to OpenAI", 1011)
             return
 
         session = FishVoiceSession(websocket, assistant, llm, None, db, client_id, provider="eleven")
+        if stt is not None:
+            session.attach_stt(stt)
         tts = ElevenTTSClient(
             settings.ELEVENLABS_API_KEY, assistant, ELEVEN_SAMPLE_RATE,
             on_audio=session.on_tts_audio,
@@ -143,6 +170,8 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             await tts.connect()
         except Exception as exc:
             _log(f"ElevenLabs connect failed: {exc}", "ERROR")
+            if stt is not None:
+                await stt.close()
             await llm.close()
             await fail("elevenlabs_connection_failed", f"Failed to connect to ElevenLabs: {exc}", 1011)
             return
@@ -151,7 +180,8 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             "type": "connection_status",
             "status": "connected",
             "provider": "eleven",
-            "message": f"Connected: OpenAI {llm.model} (text) + ElevenLabs {tts.model}",
+            "message": f"Connected: {'Scribe ASR + ' if stt else ''}OpenAI {llm.model} (text) + ElevenLabs {tts.model}",
+            "asr": "scribe" if stt else None,
             "model": llm.model,
             "tts_model": tts.model,
             "voice_id": tts.voice_id,
@@ -162,7 +192,8 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             "greeting_message": assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
         })
         _log(f"session {client_id} started: assistant={assistant.id} '{assistant.name}' voice={tts.voice_id} "
-             f"model={tts.model} lang={tts.language} telephony={telephony}")
+             f"model={tts.model} lang={tts.language} telephony={telephony} "
+             f"input={'scribe asr' if stt else 'openai audio'}")
 
         await session.run()
 

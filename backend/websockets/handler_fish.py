@@ -31,6 +31,14 @@ execute_and_send_function_result (function_calls.py), что у OpenAI-хенд�
 адаптер SIP по событию function_call.executing.
 
 Ключи серверные: settings.OPENAI_API_KEY и settings.FISH_API_KEY.
+
+Режим «ASR → текст» (только Eleven, handler_eleven.py): к сессии подключён
+ScribeSTTClient (attach_stt). Звук абонента идёт в Scribe, а не в OpenAI;
+промежуточный текст Scribe = speech.started (+ перебивание), окончательный =
+speech.stopped + input.transcription + conversation.item.create (текст) +
+response.create. VAD и whisper OpenAI в этом режиме выключены. Если Scribe
+отвалился и не переподключился, сессия возвращается к прежней схеме
+(llm.switch_to_audio_input()).
 """
 
 import asyncio
@@ -65,6 +73,7 @@ logger = get_logger(__name__)
 TTS_RATE = 24000               # частота выхода всех браузерных хендлеров
 FIRST_SENTENCE_MIN_CHARS = 25  # ранняя отправка первого предложения — быстрее первый звук
 TRANSCRIPT_WAIT_SEC = 1.5      # сколько ждать стенограмму абонента перед сохранением хода
+CANCEL_WAIT_SEC = 2.0          # ASR: сколько ждать, пока OpenAI закроет отменённый ответ, перед новой репликой
 DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помочь?"
 
 # Ошибки OpenAI, которые не надо показывать клиенту: отмена без активного ответа
@@ -153,6 +162,14 @@ class FishVoiceSession:
         self.tokens_in = 0
         self.tokens_out = 0
         self._tasks: list = []
+        # Режим «ASR → текст»: распознавание на стороне (ScribeSTTClient), OpenAI получает текст
+        self.stt = None
+        self.asr_fallback = False
+        self.user_speaking = False
+        self.asr_turns = 0
+        self._llm_idle = asyncio.Event()  # у OpenAI нет активного ответа (по событиям сервера)
+        self._llm_idle.set()
+        self._turn_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ helpers
     def _new_detector(self) -> StreamingSentenceDetector:
@@ -187,6 +204,70 @@ class FishVoiceSession:
     async def on_tts_speech_ended(self) -> None:
         self.assistant_speaking = False
         await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
+
+    # ------------------------------------------------------------------ ASR (режим «ASR → текст»)
+    def attach_stt(self, stt) -> None:
+        """Подключить распознавание: звук абонента пойдёт в stt, реплики — в OpenAI текстом."""
+        self.stt = stt
+        stt.on_partial = self.on_asr_partial
+        stt.on_committed = self.on_asr_committed
+        stt.on_closed = self.on_asr_closed
+
+    async def on_asr_partial(self, text: str) -> None:
+        """Первые распознанные слова реплики: абонент заговорил."""
+        if self.user_speaking:
+            return
+        self.user_speaking = True
+        await self.emit({"type": "speech.started", "timestamp": time.time()})
+        if self.assistant_speaking or self.response_active or self.tts.speaking:
+            await self.barge_in("asr_partial")
+
+    async def on_asr_committed(self, text: str) -> None:
+        """Фраза закончена (пауза ELEVEN_ASR_SILENCE_MS): отправить её модели текстом."""
+        self.user_speaking = False
+        await self.emit({"type": "speech.stopped", "timestamp": time.time()})
+        if not text:
+            return
+        _log(f"user (asr): {text}")
+        await self.emit({"type": "input.transcription", "transcript": text})
+        self._track(self._send_user_turn(text))
+
+    async def on_asr_closed(self, fatal: bool) -> None:
+        """Scribe отвалился посреди разговора: одна попытка переподключения, иначе прежняя схема."""
+        if self.closed or self.stt is None:
+            return
+        self.user_speaking = False
+        if not fatal:
+            _log("ASR connection lost, reconnecting", "WARNING")
+            if await self.stt.connect():
+                return
+        _log(f"ASR unavailable ({self.stt.fatal_error or 'connection lost'}): "
+             f"falling back to audio input in OpenAI", "WARNING")
+        self.stt = None
+        self.asr_fallback = True
+        await self.llm.switch_to_audio_input()
+
+    async def _send_user_turn(self, text: str) -> None:
+        """Реплика абонента текстом → новый ответ модели. Реплики идут строго по одной."""
+        async with self._turn_lock:
+            if self.closed:
+                return
+            # Реплика пришла без промежуточного текста, а ассистент ещё говорит — перебиваем здесь.
+            if self.assistant_speaking or self.response_active or self.tts.speaking:
+                await self.barge_in("asr_commit")
+            # Ответ, отменённый при перебивании, должен закрыться на стороне OpenAI,
+            # иначе response.create вернёт conversation_already_has_active_response.
+            if not self._llm_idle.is_set():
+                await self.llm.cancel_response()
+                try:
+                    await asyncio.wait_for(self._llm_idle.wait(), timeout=CANCEL_WAIT_SEC)
+                except asyncio.TimeoutError:
+                    _log("previous response did not finish in time", "WARNING")
+            # Если прошлую фразу перебили до ответа, в сохранение хода идут обе.
+            self.user_transcript = f"{self.user_transcript} {text}".strip() if self.user_transcript else text
+            self.asr_turns += 1
+            await self.llm.add_user_text(text)
+            await self.llm.create_response()
 
     # ------------------------------------------------------------------ greeting
     async def greet(self) -> None:
@@ -253,6 +334,7 @@ class FishVoiceSession:
             return
 
         if etype == "response.created":
+            self._llm_idle.clear()
             self.response_active = True
             self.response_id = (event.get("response") or {}).get("id")
             self.response_text = ""
@@ -302,6 +384,7 @@ class FishVoiceSession:
             return
 
         if etype == "response.done":
+            self._llm_idle.set()
             await self._on_response_done(event)
             return
 
@@ -431,7 +514,13 @@ class FishVoiceSession:
 
             if mtype == "input_audio_buffer.append":
                 audio = data.get("audio")
-                if audio and self.llm.is_connected:
+                if not audio:
+                    continue
+                if self.stt is not None:
+                    # ASR-режим; пока Scribe переподключается, звук теряется (доли секунды)
+                    if self.stt.is_connected:
+                        await self.stt.send_audio(audio)
+                elif self.llm.is_connected:
                     await self.llm.process_audio(audio)
                 continue
             if mtype == "ping":
@@ -455,9 +544,12 @@ class FishVoiceSession:
             elif mtype == "input_text":
                 text_in = (data.get("text") or "").strip()
                 if text_in:
-                    self.user_transcript = text_in
-                    await self.llm.add_user_text(text_in)
-                    await self.llm.create_response()
+                    if self.llm.text_input:
+                        self._track(self._send_user_turn(text_in))
+                    else:
+                        self.user_transcript = text_in
+                        await self.llm.add_user_text(text_in)
+                        await self.llm.create_response()
 
     # ------------------------------------------------------------------ run
     async def run(self) -> None:
@@ -476,6 +568,12 @@ class FishVoiceSession:
             for task in list(self._tasks):
                 task.cancel()
             await asyncio.gather(llm_task, *self._tasks, return_exceptions=True)
+            stt, self.stt = self.stt, None
+            if stt is not None:
+                await stt.close()
+                _log(f"ASR: {stt.audio_seconds:.1f}s audio, {stt.commits} phrases, {self.asr_turns} turns")
+            elif self.asr_fallback:
+                _log("ASR: fell back to audio input during the session")
             await self.tts.close()
             await self.llm.close()
             _log(

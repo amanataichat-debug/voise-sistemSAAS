@@ -64,6 +64,7 @@ class FishLLMClient:
         telephony: bool = False,
         conversation_model=None,
         label: str = "FISH-LLM",
+        text_input: bool = False,
     ) -> None:
         self.api_key = api_key
         self.assistant_config = assistant_config
@@ -73,6 +74,9 @@ class FishLLMClient:
         self.telephony = telephony
         self.conversation_model = conversation_model  # None → FishConversation
         self.label = label
+        # Режим «ASR → текст»: звук сюда не идёт, реплики абонента приходят готовым текстом
+        # (add_user_text + create_response), VAD и whisper OpenAI выключены.
+        self.text_input = text_input
 
         model = getattr(assistant_config, "llm_model", None) or DEFAULT_FISH_LLM_MODEL
         if model not in FISH_LLM_MODELS:
@@ -117,7 +121,8 @@ class FishLLMClient:
             await self.close()
             return False
         self._create_conversation_record()
-        logger.info(f"[FISH-LLM] session ready: model={self.model} tools={self.enabled_functions} vad={self.vad_settings}")
+        logger.info(f"[{self.label}] session ready: model={self.model} tools={self.enabled_functions} "
+                    f"input={'text (ASR)' if self.text_input else f'audio vad={self.vad_settings}'}")
         return True
 
     def _build_tools(self) -> List[Dict[str, Any]]:
@@ -145,20 +150,7 @@ class FishLLMClient:
                 "type": "realtime",
                 "model": self.model,
                 "output_modalities": ["text"],
-                "audio": {
-                    "input": {
-                        "format": {"type": "audio/pcm", "rate": INPUT_RATE},
-                        "turn_detection": {
-                            "type": "server_vad",
-                            "threshold": self.vad_settings["threshold"],
-                            "prefix_padding_ms": self.vad_settings["prefix_padding_ms"],
-                            "silence_duration_ms": self.vad_settings["silence_duration_ms"],
-                            "create_response": True,
-                            "interrupt_response": True,
-                        },
-                        "transcription": {"model": "whisper-1"},
-                    },
-                },
+                "audio": {"input": self._audio_input_config()},
                 "instructions": instructions,
                 "tools": tools,
                 "tool_choice": "auto" if tools else "none",
@@ -171,6 +163,34 @@ class FishLLMClient:
         except Exception as exc:
             logger.error(f"[FISH-LLM] session.update failed: {exc}")
             return False
+
+    def _audio_input_config(self) -> Dict[str, Any]:
+        if self.text_input:
+            return {"format": {"type": "audio/pcm", "rate": INPUT_RATE}, "turn_detection": None}
+        return {
+            "format": {"type": "audio/pcm", "rate": INPUT_RATE},
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": self.vad_settings["threshold"],
+                "prefix_padding_ms": self.vad_settings["prefix_padding_ms"],
+                "silence_duration_ms": self.vad_settings["silence_duration_ms"],
+                "create_response": True,
+                "interrupt_response": True,
+            },
+            "transcription": {"model": "whisper-1"},
+        }
+
+    async def switch_to_audio_input(self) -> bool:
+        """ASR отвалился посреди звонка: вернуть прежнюю схему (звук + server VAD + whisper)."""
+        if not self.text_input:
+            return True
+        self.text_input = False
+        ok = await self._send({
+            "type": "session.update",
+            "session": {"type": "realtime", "audio": {"input": self._audio_input_config()}},
+        })
+        logger.warning(f"[{self.label}] switched to audio input (ASR fallback): {'ok' if ok else 'failed'}")
+        return ok
 
     def _create_conversation_record(self) -> None:
         """Пустая запись сессии в fish_conversations — к ней привязываются function_logs."""

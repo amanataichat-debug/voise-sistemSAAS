@@ -30,11 +30,14 @@
     <h1>Тест <span>ElevenLabs</span>-агента в браузере</h1>
     <p>Это тот же виджет, что встраивается на сайт, но с сокетом <code>/ws/eleven/</code>.
        Разрешите доступ к микрофону, нажмите на кружок виджета в углу и говорите.
-       Диалог ведёт OpenAI Realtime, озвучивает ElevenLabs (Eleven v3) на ключах Voksy AI. По умолчанию агент говорит по-кыргызски.</p>
+       Речь распознаёт ElevenLabs Scribe (пауза конца фразы 500 мс), готовую фразу текстом получает OpenAI Realtime,
+       озвучивает ElevenLabs (Eleven v3) на ключах Voksy AI. По умолчанию агент говорит по-кыргызски.
+       Режим распознавания виден в консоли браузера (connection_status → <code>asr: "scribe"</code>).</p>
     <div class="id" id="agent-id">—</div>
     <ol class="steps">
       <li>Нажмите на виджет в правом нижнем углу.</li>
       <li>Агент скажет приветствие — перебивайте его, чтобы проверить barge-in.</li>
+      <li>Ваши реплики (стенограммы Scribe) видны в консоли как <code>input.transcription</code>.</li>
       <li>Диалог появится на странице <a href="/static/conversations.html">«Диалоги»</a>.</li>
     </ol>
     <div class="err" id="err"></div>

@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # (backend/websockets/handler_eleven.py). Как у Fish: диалог ведёт OpenAI Realtime на
     # OPENAI_API_KEY, озвучивает ElevenLabs (Eleven v3, кыргызский по умолчанию) на этом ключе.
     ELEVENLABS_API_KEY: Optional[str] = os.getenv("ELEVENLABS_API_KEY")
+    # Режим «ASR → текст» у Eleven-ассистентов (backend/websockets/scribe_stt_client.py): звук абонента
+    # распознаёт ElevenLabs Scribe Realtime (на том же ELEVENLABS_API_KEY), в OpenAI уходит готовая
+    # фраза текстом. "false" — прежняя схема (звук напрямую в OpenAI, server VAD + whisper).
+    ELEVEN_ASR_ENABLED: bool = os.getenv("ELEVEN_ASR_ENABLED", "true").lower() in ("1", "true", "yes")
+    # Пауза конца фразы для VAD Scribe, мс
+    ELEVEN_ASR_SILENCE_MS: int = int(os.getenv("ELEVEN_ASR_SILENCE_MS", "500"))
 
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.
