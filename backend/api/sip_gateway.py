@@ -54,6 +54,7 @@ from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
 from backend.websockets.handler_fish import handle_fish_websocket_connection
 from backend.websockets.handler_eleven import handle_eleven_websocket_connection
+from backend.websockets.call_log import CallLogRecorder
 
 # Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
 # Новый провайдер подключается сюда + в SIP_SUPPORTED_ASSISTANT_TYPES + HANDLER_IN_RATE адаптера.
@@ -355,7 +356,20 @@ async def sip_media(
         f"assistant={call.assistant_type}/{assistant.id} greeting={'yes' if greeting else 'no'}"
     )
 
-    # 5. Запуск браузерного хендлера через адаптер
+    # 5. Журнал звонка (страница «Диалоги»): заводим до хендлера, чтобы его унаследовали все задачи
+    #    звонка; сохраняем сами после хендлера, дописав итог звонка со стороны моста.
+    call_log = CallLogRecorder(channel="phone")
+    call_log.activate()
+    call_log.sip_call_id = str(call_uuid)
+    call_log.assistant_type = call.assistant_type
+    call_log.assistant_id = str(assistant.id)
+    phone = call.caller if direction == "inbound" else call.to_number
+    call_log.meta.update({"phone": phone, "direction": direction, "did": call.did, "gateway": gateway_id})
+    call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
+                        f"наш номер {call.did or '—'}, шлюз {gateway_id}",
+                 greeting="своё" if greeting else None)
+
+    # 6. Запуск браузерного хендлера через адаптер
     socket = HandlerSocket(websocket, call.assistant_type, call_id)
     socket.start()
     started_at = datetime.utcnow()
@@ -366,7 +380,21 @@ async def sip_media(
         logger.error(f"[SIP-MEDIA] call {call_id}: handler crashed: {exc}", exc_info=True)
     finally:
         await socket.finish()
-        # 6. Пост-обработка
+        lat = socket.reply_latencies
+        call_log.add(
+            "sip",
+            f"Звонок завершён: {'положил трубку абонент/мост' if socket.ended_by_bridge else 'завершил бэкенд'}"
+            f", причина {socket.end_reason or '—'}; вход {socket.frames_in} кадров, "
+            f"выход {socket.audio_bytes_out / 16000:.1f} с звука, сбросов очереди {socket.barge_ins}",
+            level="error" if socket.handler_error else "info",
+            handler_error=str(socket.handler_error) if socket.handler_error else None,
+            reply_latencies_s=", ".join(str(x) for x in lat[:30]) if lat else None,
+        )
+        if not call_log.session_id:
+            # хендлер без журнала сессии (OpenAI / Gemini): привязываем к звонку
+            call_log.session_id = f"sip:{call_uuid}"
+        await call_log.save()
+        # 7. Пост-обработка
         try:
             db.rollback()
             fresh = db.get(SipCall, call_uuid)

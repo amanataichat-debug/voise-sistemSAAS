@@ -34,6 +34,7 @@ from backend.models.eleven_assistant import (
     ElevenConversation,
 )
 from backend.models.user import User
+from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.eleven_tts_client import ElevenTTSClient
 from backend.websockets.scribe_stt_client import ScribeSTTClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
@@ -72,6 +73,8 @@ def _ensure_tables() -> None:
 async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id: str, db: Session) -> None:
     """Точка входа для /ws/eleven/{assistant_id} и для SIP-адаптера."""
     LOG_TAG.set("ELEVEN")  # логи FishVoiceSession в этой задаче помечаются как Eleven
+    if CallLogRecorder.current() is None:  # виджет; у звонка журнал заводит SIP-роут
+        CallLogRecorder(channel="widget").activate()
     client_id = str(uuid.uuid4())
     await websocket.accept()
     _ensure_tables()
@@ -191,6 +194,16 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             "telephony": telephony,
             "greeting_message": assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
         })
+        session.call_log.meta.update({
+            "asr": f"Scribe Realtime ({stt.language or 'auto'}, пауза {stt.silence_ms} мс)" if stt
+                   else "OpenAI audio (VAD + whisper)",
+            "tts_model": tts.model,
+            "voice_id": tts.voice_id,
+            "language": tts.language,
+            "telephony_profile": telephony,
+        })
+        session.call_log.add("session", f"Сессия начата: {'Scribe → ' if stt else ''}OpenAI {llm.model} → "
+                                        f"ElevenLabs {tts.model}, язык {tts.language}")
         _log(f"session {client_id} started: assistant={assistant.id} '{assistant.name}' voice={tts.voice_id} "
              f"model={tts.model} lang={tts.language} telephony={telephony} "
              f"input={'scribe asr' if stt else 'openai audio'}")

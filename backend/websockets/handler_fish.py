@@ -60,6 +60,7 @@ from backend.functions import normalize_function_name
 from backend.models.fish_assistant import FishAssistantConfig
 from backend.models.user import User
 from backend.services.conversation_service import ConversationService
+from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.fish_llm_client import FishLLMClient
 from backend.websockets.fish_tts_client import FishTTSClient
 from backend.websockets.function_calls import (
@@ -119,6 +120,24 @@ async def _save_dialog(assistant_id: str, user_message: str, assistant_message: 
             db.close()
 
 
+class _EventTap:
+    """Прокси сокета клиента для исполнителя функций: результат функции попадает и в журнал звонка."""
+
+    def __init__(self, ws, on_event) -> None:
+        self._ws = ws
+        self._on_event = on_event
+
+    async def send_json(self, data: Dict[str, Any]) -> None:
+        try:
+            self._on_event(data)
+        except Exception:
+            pass
+        await self._ws.send_json(data)
+
+    def __getattr__(self, name):
+        return getattr(self._ws, name)
+
+
 class FishVoiceSession:
     """
     Один диалог: сокет клиента + OpenAI (текст) + синтез (Fish или ElevenLabs).
@@ -170,6 +189,21 @@ class FishVoiceSession:
         self._llm_idle = asyncio.Event()  # у OpenAI нет активного ответа (по событиям сервера)
         self._llm_idle.set()
         self._turn_lock = asyncio.Lock()
+        # Журнал звонка: у звонка его заводит SIP-роут, у виджета — сессия (и сама же сохраняет)
+        self.call_log = CallLogRecorder.current()
+        if self.call_log is None:
+            self.call_log = CallLogRecorder(channel="widget")
+            self.call_log.activate()
+        self._owns_call_log = self.call_log.channel != "phone"  # журнал звонка сохраняет SIP-роут
+        self.call_log.session_id = llm.session_id
+        self.call_log.assistant_type = provider
+        self.call_log.assistant_id = str(getattr(assistant, "id", "") or "") or None
+        self.call_log.meta.update({
+            "assistant_name": getattr(assistant, "name", None),
+            "llm_model": getattr(llm, "model", None),
+            "language": getattr(assistant, "language", None),
+        })
+        self._first_text_logged = False
 
     # ------------------------------------------------------------------ helpers
     def _new_detector(self) -> StreamingSentenceDetector:
@@ -199,10 +233,17 @@ class FishVoiceSession:
 
     async def on_tts_speech_started(self) -> None:
         self.assistant_speaking = True
+        latency = self.call_log.reply_audio_started()
+        if latency is not None:
+            self.call_log.add("latency", f"Первый звук ответа через {latency} мс после конца фразы клиента",
+                              level="warning" if latency >= 2500 else "info", ms=latency)
+        else:
+            self.call_log.add("tts", "Ассистент начал говорить")
         await self.emit({"type": "assistant.speech.started", "response_id": self.response_id, "timestamp": time.time()})
 
     async def on_tts_speech_ended(self) -> None:
         self.assistant_speaking = False
+        self.call_log.add("tts", "Ассистент закончил говорить")
         await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
 
     # ------------------------------------------------------------------ ASR (режим «ASR → текст»)
@@ -218,6 +259,7 @@ class FishVoiceSession:
         if self.user_speaking:
             return
         self.user_speaking = True
+        self.call_log.add("asr", f"Клиент заговорил: «{text}»")
         await self.emit({"type": "speech.started", "timestamp": time.time()})
         if self.assistant_speaking or self.response_active or self.tts.speaking:
             await self.barge_in("asr_partial")
@@ -227,8 +269,12 @@ class FishVoiceSession:
         self.user_speaking = False
         await self.emit({"type": "speech.stopped", "timestamp": time.time()})
         if not text:
+            self.call_log.add("asr", "Фраза закончена, но текст пустой (шум?)")
             return
         _log(f"user (asr): {text}")
+        self.call_log.user_turns += 1
+        self.call_log.user_done()
+        self.call_log.add("user", f"Клиент: «{text}»")
         await self.emit({"type": "input.transcription", "transcript": text})
         self._track(self._send_user_turn(text))
 
@@ -240,11 +286,13 @@ class FishVoiceSession:
         if not fatal:
             _log("ASR connection lost, reconnecting", "WARNING")
             if await self.stt.connect():
+                self.call_log.add("asr", "Scribe переподключён")
                 return
         _log(f"ASR unavailable ({self.stt.fatal_error or 'connection lost'}): "
              f"falling back to audio input in OpenAI", "WARNING")
         self.stt = None
         self.asr_fallback = True
+        self.call_log.meta["asr"] = "openai audio (fallback)"
         await self.llm.switch_to_audio_input()
 
     async def _send_user_turn(self, text: str) -> None:
@@ -268,12 +316,14 @@ class FishVoiceSession:
             self.asr_turns += 1
             await self.llm.add_user_text(text)
             await self.llm.create_response()
+            self.call_log.add("llm", "Фраза отправлена модели, запрошен ответ")
 
     # ------------------------------------------------------------------ greeting
     async def greet(self) -> None:
         greeting = (getattr(self.assistant, "greeting_message", None) or DEFAULT_GREETING).strip()
         if not greeting:
             return
+        self.call_log.add("assistant", f"Приветствие: «{greeting}»")
         await self.llm.add_assistant_message(greeting)
         await self.tts.say(greeting)
         self.tts.end_of_response()
@@ -284,6 +334,8 @@ class FishVoiceSession:
         """Абонент заговорил поверх ассистента: остановить модель и синтез, сообщить клиенту."""
         self.interruptions += 1
         _log(f"barge-in #{self.interruptions} ({reason}); response_active={self.response_active}")
+        self.call_log.interruptions += 1
+        self.call_log.add("barge_in", f"Перебивание #{self.interruptions}", reason=reason)
         if self.response_active:
             await self.llm.cancel_response()
         await self.tts.clear()
@@ -316,12 +368,16 @@ class FishVoiceSession:
         etype = event.get("type", "")
 
         if etype == "input_audio_buffer.speech_started":
+            self.call_log.add("vad", "Клиент заговорил (VAD OpenAI)")
             await self.emit({"type": "speech.started", "timestamp": time.time()})
             if self.assistant_speaking or self.response_active or self.tts.speaking:
                 await self.barge_in("speech_started")
             return
 
         if etype == "input_audio_buffer.speech_stopped":
+            self.call_log.user_turns += 1
+            self.call_log.user_done()
+            self.call_log.add("vad", "Клиент замолчал (VAD OpenAI)")
             await self.emit({"type": "speech.stopped", "timestamp": time.time()})
             return
 
@@ -330,6 +386,7 @@ class FishVoiceSession:
             if transcript:
                 self.user_transcript = transcript
                 _log(f"user: {transcript}")
+                self.call_log.add("user", f"Клиент (whisper): «{transcript}»")
                 await self.emit({"type": "input.transcription", "transcript": transcript})
             return
 
@@ -340,6 +397,7 @@ class FishVoiceSession:
             self.response_text = ""
             self.response_had_function_call = False
             self.detector = self._new_detector()
+            self._first_text_logged = False
             return
 
         if etype == "response.output_text.delta":
@@ -347,6 +405,10 @@ class FishVoiceSession:
             if not delta or not self.response_active:
                 return
             self.response_text += delta
+            if not self._first_text_logged:
+                self._first_text_logged = True
+                since = self.call_log.since_user_done_ms()
+                self.call_log.add("llm", "Первый текст ответа модели" + (f" через {since} мс" if since is not None else ""))
             await self.emit({"type": "response.text.delta", "delta": delta})
             for sentence in self.detector.add_chunk(delta):
                 await self.tts.say(sentence)
@@ -426,10 +488,13 @@ class FishVoiceSession:
         await self.emit({"type": "function_call.executing", "function": normalized, "function_call_id": call_id,
                          "arguments": arguments, "async_execution": True})
         _log(f"function {normalized}({json.dumps(arguments, ensure_ascii=False)[:200]})")
+        self.call_log.functions += 1
+        self.call_log.add("function", f"Вызов функции {normalized}",
+                          arguments=json.dumps(arguments, ensure_ascii=False)[:500])
 
         self._track(execute_and_send_function_result(
             openai_client=self.llm,
-            websocket=self.ws,
+            websocket=_EventTap(self.ws, self._on_function_event),
             function_call_id=call_id,
             function_name=normalized,
             arguments=arguments,
@@ -443,6 +508,23 @@ class FishVoiceSession:
             user_transcript=self.user_transcript or self.last_user_transcript,
         ))
 
+    def _on_function_event(self, data: Dict[str, Any]) -> None:
+        mtype = data.get("type")
+        name = data.get("function")
+        if mtype == "function_call.completed":
+            result = data.get("result")
+            text = json.dumps(result, ensure_ascii=False, default=str) if result is not None else ""
+            failed = isinstance(result, dict) and bool(result.get("error"))
+            if failed:
+                self.call_log.function_errors += 1
+            secs = data.get("execution_time")
+            self.call_log.add("function", f"Функция {name} {'вернула ошибку' if failed else 'выполнена'}"
+                              + (f" за {secs:.2f} с" if isinstance(secs, (int, float)) else ""),
+                              level="warning" if failed else "info", result=text[:500] or None)
+        elif mtype in ("function_call.error", "function_call.delivery_error"):
+            self.call_log.function_errors += 1
+            self.call_log.add("function", f"Функция {name or ''} — ошибка: {data.get('error')}", level="error")
+
     async def _on_response_done(self, event: Dict[str, Any]) -> None:
         response = event.get("response") or {}
         status = response.get("status")
@@ -452,8 +534,13 @@ class FishVoiceSession:
         self.response_active = False
 
         if status == "cancelled":
+            self.call_log.add("llm", "Ответ модели отменён (перебивание)")
             self.response_text = ""
             return
+        if status and status not in ("completed", "cancelled"):
+            details = response.get("status_details") or {}
+            self.call_log.add("llm", f"Ответ модели завершился со статусом {status}",
+                              level="warning", details=json.dumps(details, ensure_ascii=False)[:300])
 
         # Текст ответа мог прийти только в response.done (без дельт) — дошлём в Fish.
         if not self.response_text:
@@ -468,6 +555,9 @@ class FishVoiceSession:
         if self.response_text:
             self.tts.end_of_response()
             _log(f"assistant: {self.response_text[:120]}")
+            self.call_log.assistant_turns += 1
+            self.call_log.add("assistant", f"Ассистент: «{self.response_text}»",
+                              tokens_in=usage.get("input_tokens"), tokens_out=usage.get("output_tokens"))
 
         assistant_text = self.response_text
         if assistant_text:
@@ -560,6 +650,7 @@ class FishVoiceSession:
             await self.handle_client_messages()
         except (WebSocketDisconnect, ConnectionClosed):
             _log(f"client disconnected: {self.client_id}")
+            self.call_log.add("session", "Клиент отключился")
         except Exception as exc:
             _log(f"client loop error: {exc}\n{traceback.format_exc()}", "ERROR")
         finally:
@@ -582,6 +673,13 @@ class FishVoiceSession:
                 f"tokens_in={self.tokens_in} tokens_out={self.tokens_out} "
                 f"tts_audio={self.tts.audio_bytes / (TTS_RATE * 2):.1f}s in {self.tts.chunks} chunks"
             )
+            self.call_log.add(
+                "session",
+                f"Сессия завершена: {time.time() - started:.1f} с, озвучено {self.tts.audio_bytes / (TTS_RATE * 2):.1f} с, "
+                f"токенов вход/выход {self.tokens_in}/{self.tokens_out}",
+            )
+            if self._owns_call_log:
+                await self.call_log.save()
 
 
 _tables_ready = False

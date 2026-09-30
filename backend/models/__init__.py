@@ -50,6 +50,7 @@ from .fish_assistant import FishAssistantConfig, FishConversation
 
 # Eleven-ассистент (OpenAI Realtime текстом + озвучка ElevenLabs) и его журнал
 from .eleven_assistant import ElevenAssistantConfig, ElevenConversation
+from .call_log import CallLog
 
 # ✅ НОВОЕ: Импортируем Contact и ContactNote для CRM
 from .contact import Contact, ContactNote

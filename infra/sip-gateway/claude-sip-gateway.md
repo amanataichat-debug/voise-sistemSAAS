@@ -83,6 +83,9 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 ## Страница «Телефония» (`backend/static/telephony.html`)
 Целиком на `/api/sip/*`, Voximplant-логики (верификация, баланс, покупка номеров) на ней нет. Номера пользователя → привязка к ассистенту OpenAI/Gemini/Fish/Eleven **или к агенту обзвона** (`PATCH /api/sip/numbers/{id}` с `agent_config_id`: в `sip_phone_numbers` пишется `agent_config_id`, а `assistant_type`/`assistant_id` копируются из голосового ассистента агента; `backend/api/agent.py` при смене типа агента переводит номера на нового ассистента через `SipGatewayService.sync_agent_numbers`, при удалении агента отвязывает через `unbind_agent_numbers`). Исходящий звонок: `POST /api/sip/calls` с `to`, `caller_id`, `assistant_type`, `assistant_id`; номер абонента проверяется на префиксы O! (`O_MOBILE_PREFIXES` в `backend/models/sip_gateway.py`, на странице тот же список) — транк пропускает только O!. Статус звонка страница опрашивает через `GET /api/sip/calls/{id}` раз в 2 с; отбой — `POST /api/sip/calls/{id}/hangup` (работает, если control-сокет на этом воркере, иначе 409 и повтор). Журнал — `GET /api/sip/calls`.
 
+## Журнал звонка
+`ws_sip_media` заводит `CallLogRecorder(channel="phone")` до запуска хендлера (все задачи звонка его наследуют), пишет начало/конец звонка, hangup и DTMF из `HandlerSocket`, после `socket.finish()` сохраняет в `call_logs`. Хендлер Eleven/Fish дописывает в тот же журнал реплики, задержки, перебивания, функции и ошибки провайдеров. Смотреть: «Диалоги» → диалог → «Логи звонка» (или `.txt`).
+
 ## Что не сделано
 - Форма добавления номера в UI (сейчас номер заводит админ через `POST /api/sip/numbers`).
 - Запись разговоров (MixMonitor + R2).

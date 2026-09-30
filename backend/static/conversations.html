@@ -565,6 +565,83 @@
       color: #0ea5e9;
     }
 
+    .assistant-type-badge.eleven {
+      background-color: rgba(42, 92, 232, 0.1);
+      color: #2a5ce8;
+    }
+
+    /* Журнал звонка (GET /api/conversations/{id}/log) */
+    .call-log-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+    .call-log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.625rem;
+    }
+    .call-log-head .audio-player-title { margin-bottom: 0; }
+    .call-log-head .audio-player-title i { color: var(--primary-blue); }
+    .call-log-actions { display: flex; gap: 0.375rem; }
+    .call-log-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      background: var(--white);
+      color: var(--text-dark);
+      cursor: pointer;
+    }
+    .call-log-btn:hover { border-color: var(--primary-blue); color: var(--primary-blue); }
+    .call-log-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.5rem; }
+    .call-log-chip {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      background: var(--bg-light);
+      border: 1px solid var(--border-color);
+      color: var(--text-gray);
+      white-space: nowrap;
+    }
+    .call-log-chip.warn { color: #b45309; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); }
+    .call-log-chip.err { color: #b91c1c; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08); }
+    .call-log-list {
+      display: none;
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background: var(--bg-light);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+    .call-log-list.open { display: block; }
+    .call-log-row {
+      display: grid;
+      grid-template-columns: 4.75rem 1fr;
+      gap: 0.5rem;
+      padding: 0.25rem 0.625rem;
+      border-bottom: 1px solid var(--border-color);
+      word-break: break-word;
+    }
+    .call-log-row:last-child { border-bottom: none; }
+    .call-log-row .t { color: var(--text-light); }
+    .call-log-row .k { color: var(--text-gray); margin-right: 0.375rem; }
+    .call-log-row .d { color: var(--text-light); }
+    .call-log-row.warning { background: rgba(245, 158, 11, 0.08); }
+    .call-log-row.warning .x { color: #b45309; }
+    .call-log-row.error { background: rgba(239, 68, 68, 0.08); }
+    .call-log-row.error .x { color: #b91c1c; }
+
     .conversation-date {
       font-size: 0.8rem;
       color: var(--text-light);
@@ -2959,6 +3036,8 @@
           ? '<span class="assistant-type-badge cascade">Cascade</span>'
           : assistantType === 'fish'
           ? '<span class="assistant-type-badge fish">Fish</span>'
+          : assistantType === 'eleven'
+          ? '<span class="assistant-type-badge eleven">ElevenLabs</span>'
           : '<span class="assistant-type-badge openai">OpenAI</span>';
         
         let metaItems = '';
@@ -3333,6 +3412,8 @@
             ? '<span class="assistant-type-badge cascade" style="margin-left: 0.5rem;">Cascade</span>'
             : type === 'fish'
             ? '<span class="assistant-type-badge fish" style="margin-left: 0.5rem;">Fish</span>'
+            : type === 'eleven'
+            ? '<span class="assistant-type-badge eleven" style="margin-left: 0.5rem;">ElevenLabs</span>'
             : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">OpenAI</span>';
           
           modalTitle.innerHTML = `${dialog.assistant_name} ${typeBadge}`;
@@ -3465,7 +3546,7 @@
               </div>
               <div class="footer-item">
                 <i class="${type === 'gemini' ? 'fas fa-gem' : type === 'cartesia' ? 'fas fa-microphone-alt' : type === 'yandex' ? 'fas fa-microphone' : 'fas fa-robot'}"></i>
-                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : 'OpenAI'}</span>
+                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : type === 'eleven' ? 'ElevenLabs' : type === 'fish' ? 'Fish Audio' : 'OpenAI'}</span>
               </div>
               ${costFormatted ? `
                 <div class="footer-item cost">
@@ -3521,7 +3602,11 @@
             `;
           }
           
+          // Журнал звонка подгружается отдельно; нет журнала — блок не показывается
+          footerHtml += '<div class="call-log-section" id="call-log-section" style="display: none;"></div>';
+
           modalFooter.innerHTML = footerHtml;
+          loadCallLog(conversationId);
           
           modalOverlay.classList.add('show');
           
@@ -3532,6 +3617,101 @@
         }
       }
       
+      // ============================================================================
+      // ЖУРНАЛ ЗВОНКА (GET /api/conversations/{id}/log)
+      // ============================================================================
+
+      const CALL_LOG_KIND = {
+        session: 'сессия', sip: 'телефон', asr: 'распознавание', vad: 'VAD', user: 'клиент',
+        llm: 'модель', assistant: 'ассистент', tts: 'озвучка', latency: 'задержка',
+        barge_in: 'перебивание', function: 'функция', log: 'лог'
+      };
+
+      function formatLogTime(seconds) {
+        const total = Math.max(0, Number(seconds) || 0);
+        const m = Math.floor(total / 60);
+        const s = (total - m * 60).toFixed(1).padStart(4, '0');
+        return `${String(m).padStart(2, '0')}:${s}`;
+      }
+
+      async function loadCallLog(conversationId) {
+        const section = document.getElementById('call-log-section');
+        if (!section) return;
+        let log;
+        try {
+          const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/log`, {
+            headers: { 'Authorization': `Bearer ${api.getToken()}` }
+          });
+          if (!response.ok) return;  // журнала нет (старый диалог или другой провайдер)
+          log = await response.json();
+        } catch (e) {
+          return;
+        }
+        if (document.getElementById('call-log-section') !== section) return;  // модалку уже переоткрыли
+
+        const sm = log.summary || {};
+        const meta = log.meta || {};
+        const chips = [];
+        chips.push(`<span class="call-log-chip">${log.channel === 'phone' ? '📞 Телефон' : '🌐 Виджет'}</span>`);
+        if (log.duration_sec != null) chips.push(`<span class="call-log-chip">${Number(log.duration_sec).toFixed(1)} с</span>`);
+        if (meta.asr) chips.push(`<span class="call-log-chip">${escapeHtmlForModal(meta.asr)}</span>`);
+        if (sm.latency_avg_ms != null) {
+          const slow = sm.latency_max_ms >= 2500;
+          chips.push(`<span class="call-log-chip ${slow ? 'warn' : ''}">Задержка ответа: ср. ${sm.latency_avg_ms} мс, макс. ${sm.latency_max_ms} мс</span>`);
+        }
+        chips.push(`<span class="call-log-chip">Реплик: ${sm.user_turns || 0} / ${sm.assistant_turns || 0}</span>`);
+        if (sm.interruptions) chips.push(`<span class="call-log-chip">Перебиваний: ${sm.interruptions}</span>`);
+        if (sm.functions) chips.push(`<span class="call-log-chip ${sm.function_errors ? 'err' : ''}">Функций: ${sm.functions}${sm.function_errors ? `, ошибок ${sm.function_errors}` : ''}</span>`);
+        if (sm.warnings) chips.push(`<span class="call-log-chip warn">Предупреждений: ${sm.warnings}</span>`);
+        if (sm.errors) chips.push(`<span class="call-log-chip err">Ошибок: ${sm.errors}</span>`);
+
+        const rows = (log.events || []).map(e => {
+          const data = e.data ? Object.entries(e.data).map(([k, v]) => `${k}=${v}`).join(', ') : '';
+          return `
+            <div class="call-log-row ${e.level === 'warning' || e.level === 'error' ? e.level : ''}">
+              <span class="t">${formatLogTime(e.t)}</span>
+              <span class="x"><span class="k">${escapeHtmlForModal(CALL_LOG_KIND[e.kind] || e.kind || '')}</span>${escapeHtmlForModal(e.text || '')}${data ? ` <span class="d">${escapeHtmlForModal(data)}</span>` : ''}</span>
+            </div>`;
+        }).join('');
+
+        const hasProblems = (sm.errors || 0) > 0 || (sm.function_errors || 0) > 0;
+        section.innerHTML = `
+          <div class="call-log-head">
+            <div class="audio-player-title"><i class="fas fa-list-ul"></i> Логи звонка</div>
+            <div class="call-log-actions">
+              <button type="button" class="call-log-btn" id="call-log-toggle"><i class="fas fa-eye"></i> <span>Показать</span></button>
+              <button type="button" class="call-log-btn" id="call-log-download"><i class="fas fa-download"></i> Скачать .txt</button>
+            </div>
+          </div>
+          <div class="call-log-chips">${chips.join('')}</div>
+          <div class="call-log-list" id="call-log-list">${rows || '<div class="call-log-row"><span></span><span>Событий нет</span></div>'}</div>
+        `;
+        section.style.display = 'block';
+
+        const list = section.querySelector('#call-log-list');
+        const toggle = section.querySelector('#call-log-toggle');
+        const setOpen = (open) => {
+          list.classList.toggle('open', open);
+          toggle.querySelector('span').textContent = open ? 'Скрыть' : 'Показать';
+          toggle.querySelector('i').className = open ? 'fas fa-eye-slash' : 'fas fa-eye';
+        };
+        toggle.addEventListener('click', () => setOpen(!list.classList.contains('open')));
+        if (hasProblems) setOpen(true);
+
+        section.querySelector('#call-log-download').addEventListener('click', () => {
+          const blob = new Blob([log.text || ''], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const stamp = (log.started_at || '').replace(/[-:]/g, '').replace('T', '-').slice(0, 15) || 'log';
+          a.href = url;
+          a.download = `call-log-${stamp}-${String(log.session_id || '').slice(0, 8)}.txt`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+      }
+
       function closeModal() {
         const audioPlayer = modalFooter.querySelector('audio');
         if (audioPlayer) {

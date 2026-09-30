@@ -19,6 +19,7 @@ Version: 3.6 - Yandex assistants + call log/record links in session cards
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, case, or_, text, select, union_all, null, cast, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
@@ -41,6 +42,7 @@ from backend.models.grok_assistant import GrokAssistantConfig  # 🆕 cascade
 from backend.models.fish_assistant import FishAssistantConfig, FishConversation  # 🆕 fish
 from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation  # eleven
 from backend.models.function_log import FunctionLog
+from backend.models.call_log import CallLog
 
 logger = get_logger(__name__)
 
@@ -74,9 +76,10 @@ class _MessageView:
 def _find_session_record(db: Session, conversation_id: str):
     """
     Найти запись сессии по session_id или id сообщения: сначала в conversations,
-    затем в gemini_conversations и fish_conversations. Возвращает (record, model) или (None, None).
+    затем в gemini_conversations, fish_conversations и eleven_conversations.
+    Возвращает (record, model) или (None, None).
     """
-    for model in (Conversation, GeminiConversation, FishConversation):
+    for model in (Conversation, GeminiConversation, FishConversation, ElevenConversation):
         record = db.query(model).filter(model.session_id == conversation_id).first()
         if not record:
             try:
@@ -1144,6 +1147,58 @@ async def get_conversation_detail(
         )
 
 
+@router.get("/{conversation_id}/log")
+async def get_conversation_call_log(
+    conversation_id: str,
+    format: str = Query("json", description="json | txt (файл для скачивания)"),
+    current_user: User = Depends(AuthService.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Журнал событий разговора (call_logs): реплики, задержки ответа, перебивания,
+    функции, предупреждения и ошибки провайдеров. Пишется для Eleven/Fish-сессий
+    (виджет и телефон). format=txt — тот же журнал файлом .txt.
+    """
+    from backend.websockets.call_log import render_text
+
+    record, _ = _find_session_record(db, conversation_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    assistant, _ = find_assistant_by_id(db, record.assistant_id)
+    if not assistant or str(assistant.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied: this conversation doesn't belong to you")
+    try:
+        row = (db.query(CallLog).filter(CallLog.session_id == record.session_id)
+               .order_by(CallLog.created_at.desc()).first())
+    except Exception as exc:  # таблицы ещё нет — журналов тоже
+        logger.warning(f"[CALL-LOG] query failed: {exc}")
+        db.rollback()
+        row = None
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call log not found")
+
+    text_log = render_text(row)
+    if format == "txt":
+        stamp = row.started_at.strftime("%Y%m%d-%H%M%S") if row.started_at else "log"
+        return PlainTextResponse(
+            text_log,
+            headers={"Content-Disposition": f'attachment; filename="call-log-{stamp}-{str(row.session_id)[:8]}.txt"'},
+        )
+    return {
+        "session_id": row.session_id,
+        "assistant_type": row.assistant_type,
+        "channel": row.channel,
+        "sip_call_id": str(row.sip_call_id) if row.sip_call_id else None,
+        "started_at": row.started_at.isoformat() + "Z" if row.started_at else None,
+        "duration_sec": row.duration_sec,
+        "meta": row.meta or {},
+        "summary": row.summary or {},
+        "events": row.events or [],
+        "text": text_log,
+    }
+
+
 @router.delete("/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
@@ -1227,6 +1282,14 @@ async def delete_conversation(
         ).delete(synchronize_session=False)
         
         db.commit()
+
+        # Журнал разговора — отдельно: таблицы call_logs может ещё не быть
+        try:
+            db.query(CallLog).filter(CallLog.session_id == session_id).delete(synchronize_session=False)
+            db.commit()
+        except Exception as log_exc:
+            db.rollback()
+            logger.warning(f"   Call log cleanup skipped: {log_exc}")
         
         logger.info(f"✅ Successfully deleted conversation session {session_id}")
         logger.info(f"   Deleted {deleted_messages} messages and {deleted_functions} function logs")

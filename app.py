@@ -622,7 +622,9 @@ def create_eleven_tables():
     try:
         from backend.models.base import Base
         from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation
-        Base.metadata.create_all(engine, tables=[ElevenAssistantConfig.__table__, ElevenConversation.__table__], checkfirst=True)
+        from backend.models.call_log import CallLog  # журналы разговоров (страница «Диалоги»)
+        Base.metadata.create_all(engine, tables=[ElevenAssistantConfig.__table__, ElevenConversation.__table__,
+                                                 CallLog.__table__], checkfirst=True)
         logger.info("✅ Eleven tables ready")
     except Exception as e:
         logger.error(f"❌ Error creating Eleven tables: {str(e)}")

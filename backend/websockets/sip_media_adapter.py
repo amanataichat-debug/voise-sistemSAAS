@@ -34,6 +34,7 @@ from typing import Any, Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.core.logging import get_logger
+from backend.websockets.call_log import CallLogRecorder
 
 logger = get_logger(__name__)
 
@@ -218,6 +219,9 @@ class HandlerSocket:
                     self._mark_hangup.set()
                 elif mtype == "dtmf":
                     logger.info(f"[SIP-MEDIA] call {self.call_id}: DTMF {data.get('digit')}")
+                    call_log = CallLogRecorder.current()
+                    if call_log is not None:
+                        call_log.add("sip", f"DTMF {data.get('digit')}")
                 elif mtype == "ping":
                     await self._send_text({"type": "pong"})
         except (WebSocketDisconnect, RuntimeError):
@@ -242,6 +246,9 @@ class HandlerSocket:
             return
         self.hangup_sent = True
         self.end_reason = self.end_reason or reason
+        call_log = CallLogRecorder.current()
+        if call_log is not None:
+            call_log.add("sip", "Бэкенд кладёт трубку", reason=reason)
         await self._send_text({"type": "hangup", "reason": reason})
 
     async def finish(self) -> None:
