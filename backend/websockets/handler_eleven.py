@@ -19,8 +19,12 @@ language_code, диалоговой модели дописывается инс
 Если Scribe не подключился, звонок идёт по прежней схеме (звук напрямую в OpenAI).
 """
 
+import asyncio
+import time
 import traceback
 import uuid
+from collections import OrderedDict
+from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
@@ -51,6 +55,51 @@ def _log(message: str, level: str = "INFO") -> None:
         logger.warning(f"[ELEVEN] {message}")
     else:
         logger.info(f"[ELEVEN] {message}")
+
+
+# Кэш синтезированного приветствия (PCM 24 кГц) по голосу, модели, языку, стабильности и тексту:
+# со второго звонка приветствие звучит сразу при подъёме трубки, без ожидания ElevenLabs.
+# Свой в каждом воркере Gunicorn; при смене текста/голоса ключ другой — запись пересоздаётся.
+_GREETING_CACHE: "OrderedDict[tuple, bytes]" = OrderedDict()
+_GREETING_CACHE_MAX = 200
+
+
+def _greeting_cache_key(assistant, tts, text: str) -> tuple:
+    return (tts.voice_id, tts.model, tts.language, round(float(tts.stability or 0), 2), text)
+
+
+def _greeting_cache_put(key: tuple, pcm: bytes) -> None:
+    if len(pcm) < ELEVEN_SAMPLE_RATE:  # меньше 0,5 с — что-то пошло не так, не кэшируем
+        return
+    _GREETING_CACHE[key] = pcm
+    _GREETING_CACHE.move_to_end(key)
+    while len(_GREETING_CACHE) > _GREETING_CACHE_MAX:
+        _GREETING_CACHE.popitem(last=False)
+
+
+async def _check_subscription(assistant) -> Optional[dict]:
+    """Статус подписки владельца (None — проверка не нужна). Синхронная БД — в отдельном потоке,
+    своей сессией, параллельно с подключениями к провайдерам."""
+    if not assistant.user_id:
+        return None
+
+    def run() -> Optional[dict]:
+        from backend.db.session import SessionLocal
+        from backend.services.user_service import UserService
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == assistant.user_id).first()
+            if not user or user.is_admin or user.email == "amanat.aichat@gmail.com":
+                return None
+            return asyncio.run(UserService.check_subscription_status(db, str(user.id)))
+        finally:
+            db.close()
+
+    try:
+        return await asyncio.to_thread(run)
+    except Exception as exc:
+        _log(f"subscription check failed: {exc}", "WARNING")
+        return None  # звонок важнее: при сбое проверки не обрываем
 
 
 _tables_ready = False
@@ -105,21 +154,6 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             await fail("voice_not_set", "У агента не выбран голос ElevenLabs")
             return
 
-        user = db.query(User).filter(User.id == assistant.user_id).first() if assistant.user_id else None
-        if user and not user.is_admin and user.email != "amanat.aichat@gmail.com":
-            from backend.services.user_service import UserService
-            sub = await UserService.check_subscription_status(db, str(user.id))
-            if not sub.get("active"):
-                code = "TRIAL_EXPIRED" if sub.get("is_trial") else "SUBSCRIPTION_EXPIRED"
-                msg = "Ваш пробный период истек" if sub.get("is_trial") else "Ваша подписка истекла"
-                try:
-                    await websocket.send_json({"type": "error", "error": {
-                        "code": code, "message": msg, "subscription_status": sub, "requires_payment": True}})
-                    await websocket.close(code=1008)
-                except Exception:
-                    pass
-                return
-
         if not settings.OPENAI_API_KEY:
             await fail("openai_not_configured", "OPENAI_API_KEY is not configured on the server", 1011)
             return
@@ -133,42 +167,20 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             user_agent = websocket.headers.get("user-agent", "")
         except Exception:
             pass
+        t_start = time.monotonic()
 
-        # ASR → текст: Scribe поднимаем первым — от него зависит, в каком режиме открыть OpenAI.
-        # Виджет и SIP-адаптер (HANDLER_IN_RATE["eleven"]) шлют PCM16 24 кГц.
-        stt = None
-        if settings.ELEVEN_ASR_ENABLED:
-            stt = ScribeSTTClient(
-                settings.ELEVENLABS_API_KEY,
-                language=(assistant.language or "").strip().lower(),
-                sample_rate=LLM_INPUT_RATE,
-                silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
-                label=client_id[:8],
-            )
-            if not await stt.connect():
-                _log(f"Scribe unavailable ({stt.fatal_error or 'connect failed'}), "
-                     f"session {client_id} uses audio input in OpenAI", "WARNING")
-                stt = None
-
-        # «Мозг»: при работающем Scribe — текстовая модель через Chat Completions (ELEVEN_TEXT_LLM_MODEL,
-        # по умолчанию gpt-5.6-luna); без Scribe — прежний OpenAI Realtime со звуком на входе.
-        use_chat = stt is not None and "realtime" not in (settings.ELEVEN_TEXT_LLM_MODEL or "")
+        # Клиенты создаются без сети, подключаются параллельно (раньше — по очереди, ~3,5 с до
+        # приветствия). Приветствие звучит, как только готов ElevenLabs (или сразу — из кэша),
+        # не дожидаясь Scribe и OpenAI.
+        use_asr = settings.ELEVEN_ASR_ENABLED
+        use_chat = use_asr and "realtime" not in (settings.ELEVEN_TEXT_LLM_MODEL or "")
         if use_chat:
             llm = ChatLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
                                 conversation_model=ElevenConversation, label="ELEVEN-LLM")
         else:
             llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
-                                conversation_model=ElevenConversation, label="ELEVEN-LLM",
-                                text_input=stt is not None)
-        if not await llm.connect():
-            if stt is not None:
-                await stt.close()
-            await fail("openai_connection_failed", "Failed to connect to OpenAI", 1011)
-            return
-
+                                conversation_model=ElevenConversation, label="ELEVEN-LLM", text_input=use_asr)
         session = FishVoiceSession(websocket, assistant, llm, None, db, client_id, provider="eleven")
-        if stt is not None:
-            session.attach_stt(stt)
         tts = ElevenTTSClient(
             settings.ELEVENLABS_API_KEY, assistant, ELEVEN_SAMPLE_RATE,
             on_audio=session.on_tts_audio,
@@ -177,15 +189,116 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             label=client_id[:8],
         )
         session.tts = tts
-        try:
-            await tts.connect()
-        except Exception as exc:
-            _log(f"ElevenLabs connect failed: {exc}", "ERROR")
-            if stt is not None:
-                await stt.close()
-            await llm.close()
-            await fail("elevenlabs_connection_failed", f"Failed to connect to ElevenLabs: {exc}", 1011)
+        stt = None
+        if use_asr:
+            # Телефон: Scribe получает родные 8 кГц (SIP-адаптер отдаёт 24 кГц — сессия пересчитает обратно)
+            stt_rate = 8000 if (telephony and settings.ELEVEN_ASR_PHONE_8K) else LLM_INPUT_RATE
+            stt = ScribeSTTClient(
+                settings.ELEVENLABS_API_KEY,
+                language=(assistant.language or "").strip().lower(),
+                sample_rate=stt_rate,
+                silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                label=client_id[:8],
+                secondary_languages=[x.strip().lower() for x in (settings.ELEVEN_ASR_SECONDARY_LANGUAGES or "").split(",")
+                                     if x.strip()],
+            )
+
+        timings: dict = {}
+
+        async def timed(name, coro):
+            t0 = time.monotonic()
+            try:
+                return await coro
+            finally:
+                timings[name] = int((time.monotonic() - t0) * 1000)
+
+        async def tts_connect() -> bool:
+            try:
+                await tts.connect()
+                return True
+            except Exception as exc:
+                _log(f"ElevenLabs connect failed: {exc}", "ERROR")
+                return False
+
+        tts_task = asyncio.create_task(timed("ElevenLabs", tts_connect()))
+        stt_task = asyncio.create_task(timed("Scribe", stt.connect())) if stt else None
+        llm_task = asyncio.create_task(timed("OpenAI", llm.connect())) if use_chat else None
+        sub_task = asyncio.create_task(timed("подписка", _check_subscription(assistant)))
+
+        async def abort(code: str, message: str, ws_code: int = 1011, payload: Optional[dict] = None) -> None:
+            for t in (tts_task, stt_task, llm_task, sub_task):
+                if t and not t.done():
+                    t.cancel()
+            for c in (tts, stt, llm):
+                if c is not None:
+                    try:
+                        await c.close()
+                    except Exception:
+                        pass
+            if payload:
+                try:
+                    await websocket.send_json(payload)
+                    await websocket.close(code=1008)
+                except Exception:
+                    pass
+            else:
+                await fail(code, message, ws_code)
+
+        # Приветствие: готовая запись из кэша звучит сразу (подписка проверяется параллельно и
+        # оборвёт звонок, если истекла); иначе — как только подключён ElevenLabs
+        greeting_text = (assistant.greeting_message or DEFAULT_ELEVEN_GREETING).strip()
+        cache_key = _greeting_cache_key(assistant, tts, greeting_text)
+        session.on_greeting_audio = lambda pcm: _greeting_cache_put(cache_key, pcm)
+        cached = _GREETING_CACHE.get(cache_key)
+        greet_task = None
+        if cached and greeting_text:
+            greet_task = asyncio.create_task(session.play_cached_greeting(cached))
+
+        sub = await sub_task
+        if sub is not None and not sub.get("active"):
+            if greet_task is not None:
+                greet_task.cancel()
+            code = "TRIAL_EXPIRED" if sub.get("is_trial") else "SUBSCRIPTION_EXPIRED"
+            msg = "Ваш пробный период истек" if sub.get("is_trial") else "Ваша подписка истекла"
+            await abort(code, msg, payload={"type": "error", "error": {
+                "code": code, "message": msg, "subscription_status": sub, "requires_payment": True}})
             return
+
+        if not await tts_task:
+            await abort("elevenlabs_connection_failed", "Failed to connect to ElevenLabs")
+            return
+        if greet_task is None and use_chat and greeting_text:
+            await session.greet()  # история чат-модели локальная — приветствие можно положить до подключения
+        greeting_at = int((time.monotonic() - t_start) * 1000)
+
+        if stt is not None and not await stt_task:
+            _log(f"Scribe unavailable ({stt.fatal_error or 'connect failed'}), "
+                 f"session {client_id} uses audio input in OpenAI Realtime", "WARNING")
+            stt = None
+        if use_chat and stt is None:
+            # Без распознавания текстовой модели нечего слушать — прежняя схема: звук в OpenAI Realtime
+            if llm_task is not None:
+                llm_task.cancel()
+            await llm.close()
+            llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
+                                conversation_model=ElevenConversation, label="ELEVEN-LLM", text_input=False)
+            session.llm = llm
+            session.call_log.session_id = llm.session_id
+            llm_task = None
+            use_chat = False
+        if llm_task is not None:
+            ok = await llm_task
+        else:
+            ok = await timed("OpenAI", llm.connect())
+            if ok and session.greeting_started:
+                await llm.add_assistant_message(greeting_text)  # приветствие уже прозвучало — в контекст
+        if not ok:
+            await abort("openai_connection_failed", "Failed to connect to OpenAI")
+            return
+        if stt is not None:
+            if not use_chat:
+                llm.text_input = True
+            session.attach_stt(stt)
 
         await websocket.send_json({
             "type": "connection_status",
@@ -203,18 +316,25 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             "greeting_message": assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
         })
         session.call_log.meta.update({
-            "asr": f"Scribe Realtime ({stt.language or 'auto'}, пауза {stt.silence_ms} мс)" if stt
+            "llm_model": llm.model,
+            "asr": (f"Scribe Realtime ({stt.language or 'auto'}"
+                    f"{'+' + ','.join(stt.secondary_languages) if stt.secondary_languages else ''}, "
+                    f"{stt.sample_rate // 1000} кГц, пауза {stt.silence_ms} мс)") if stt
                    else "OpenAI audio (VAD + whisper)",
             "tts_model": tts.model,
             "voice_id": tts.voice_id,
             "language": tts.language,
             "telephony_profile": telephony,
         })
-        session.call_log.add("session", f"Сессия начата: {'Scribe → ' if stt else ''}OpenAI {llm.model} → "
-                                        f"ElevenLabs {tts.model}, язык {tts.language}")
+        session.call_log.add(
+            "session",
+            f"Сессия начата: {'Scribe → ' if stt else ''}OpenAI {llm.model} → ElevenLabs {tts.model}, язык {tts.language}. "
+            f"Приветствие через {greeting_at} мс от начала сессии{' (из кэша)' if greet_task else ''}; подключения: "
+            + ", ".join(f"{k} {v} мс" for k, v in timings.items()),
+        )
         _log(f"session {client_id} started: assistant={assistant.id} '{assistant.name}' voice={tts.voice_id} "
              f"model={tts.model} lang={tts.language} telephony={telephony} "
-             f"input={'scribe asr' if stt else 'openai audio'}")
+             f"input={'scribe asr' if stt else 'openai audio'} greeting_at={greeting_at}ms timings={timings}")
 
         await session.run()
 

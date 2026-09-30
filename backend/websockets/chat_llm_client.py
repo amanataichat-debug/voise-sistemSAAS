@@ -80,6 +80,17 @@ class ChatLLMClient(FishLLMClient):
         self._last_request_at = time.monotonic()
         self._keepalive_task: Optional[asyncio.Task] = None
 
+        # Промпт и функции — сразу, без сети: приветствие можно класть в историю до connect()
+        instructions = getattr(self.assistant_config, "system_prompt", None) or "Ты вежливый голосовой помощник."
+        language = (getattr(self.assistant_config, "language", None) or "").strip().lower()[:2]
+        if language in LANGUAGE_INSTRUCTIONS:
+            instructions = f"{instructions}\n\n{LANGUAGE_INSTRUCTIONS[language]}"
+        instructions = f"{instructions}\n\n{VOICE_RULES}"
+        self._messages = [{"role": "system", "content": instructions}]
+        # _build_tools отдаёт формат Realtime ({type,name,description,parameters})
+        self._tools = [{"type": "function", "function": {k: t[k] for k in ("name", "description", "parameters")}}
+                       for t in self._build_tools()]
+
     # ------------------------------------------------------------------ соединение
     async def connect(self) -> bool:
         if not self.api_key:
@@ -103,20 +114,11 @@ class ChatLLMClient(FishLLMClient):
             await self.close()
             return False
 
-        instructions = getattr(self.assistant_config, "system_prompt", None) or "Ты вежливый голосовой помощник."
-        language = (getattr(self.assistant_config, "language", None) or "").strip().lower()[:2]
-        if language in LANGUAGE_INSTRUCTIONS:
-            instructions = f"{instructions}\n\n{LANGUAGE_INSTRUCTIONS[language]}"
-        instructions = f"{instructions}\n\n{VOICE_RULES}"
-        self._messages = [{"role": "system", "content": instructions}]
-        # _build_tools отдаёт формат Realtime ({type,name,description,parameters})
-        self._tools = [{"type": "function", "function": {k: t[k] for k in ("name", "description", "parameters")}}
-                       for t in self._build_tools()]
-
         self.is_connected = True
         self._last_request_at = time.monotonic()
         self._keepalive_task = asyncio.create_task(self._keepalive())
-        self._create_conversation_record()
+        # запись сессии в БД — синхронная; в отдельном потоке, чтобы не останавливать звонок
+        await asyncio.to_thread(self._create_conversation_record)
         logger.info(f"[{self.label}] chat session ready: model={self.model} tools={self.enabled_functions} input=text (ASR)")
         return True
 

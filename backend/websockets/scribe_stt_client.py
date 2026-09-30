@@ -27,7 +27,7 @@ import asyncio
 import base64
 import json
 import time
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, List, Optional
 from urllib.parse import urlencode
 
 import websockets
@@ -66,11 +66,13 @@ class ScribeSTTClient:
         on_committed: Optional[TextCallback] = None,
         on_closed: Optional[Callable[[bool], Awaitable[None]]] = None,
         label: str = "",
+        secondary_languages: Optional[List[str]] = None,
     ) -> None:
         if sample_rate not in SUPPORTED_RATES:
             raise ValueError(f"Scribe does not accept pcm_{sample_rate}")
         self.api_key = api_key
         self.language = (language or "").strip().lower()
+        self.secondary_languages = [l for l in (secondary_languages or []) if l and l != self.language]
         self.sample_rate = sample_rate
         self.silence_ms = max(100, int(silence_ms))
         self.on_partial = on_partial
@@ -108,11 +110,25 @@ class ScribeSTTClient:
         }
         if self.language:
             params["language_code"] = self.language
-        return f"{SCRIBE_URL}?{urlencode(params)}"
+        query = urlencode(params)
+        if self.secondary_languages:
+            query += "&" + urlencode([("secondary_languages", l) for l in self.secondary_languages])
+        return f"{SCRIBE_URL}?{query}"
 
     # ------------------------------------------------------------------ соединение
     async def connect(self) -> bool:
-        """Открыть сокет и дождаться session_started. False — Scribe недоступен."""
+        """Открыть сокет и дождаться session_started. False — Scribe недоступен.
+        Если Scribe не принял secondary_languages — одна попытка без них."""
+        if await self._connect_once():
+            return True
+        if self.secondary_languages and not self._closing and self.fatal_error not in ("auth_error", "quota_exceeded"):
+            self._log(f"retrying without secondary_languages={self.secondary_languages}", "WARNING")
+            self.secondary_languages = []
+            self.fatal_error = None
+            return await self._connect_once()
+        return False
+
+    async def _connect_once(self) -> bool:
         if not self.api_key:
             self._log("ELEVENLABS_API_KEY is not configured", "ERROR")
             return False
@@ -148,7 +164,8 @@ class ScribeSTTClient:
         self._last_audio_at = time.monotonic()
         self._reader_task = asyncio.create_task(self._reader())
         self._filler_task = asyncio.create_task(self._filler())
-        self._log(f"session {self.session_id} started: lang={self.language or 'auto'} "
+        self._log(f"session {self.session_id} started: lang={self.language or 'auto'}"
+                  f"{'+' + ','.join(self.secondary_languages) if self.secondary_languages else ''} "
                   f"rate={self.sample_rate} silence={self.silence_ms}ms")
         return True
 

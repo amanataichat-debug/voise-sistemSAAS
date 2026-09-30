@@ -84,7 +84,19 @@ async def async_save_function_log(function_name: str, arguments: dict, result: d
                                   execution_time_ms: float, user_id: Optional[str] = None,
                                   assistant_id: Optional[str] = None, conversation_id: Optional[str] = None,
                                   error_message: Optional[str] = None) -> None:
-    """Запись в function_logs отдельной сессией БД."""
+    """Запись в function_logs отдельной сессией БД — в отдельном потоке: синхронная работа
+    с удалённой БД иначе останавливает event loop (звук звонка) на секунду и больше."""
+    await asyncio.to_thread(
+        asyncio.run,
+        _save_function_log(function_name, arguments, result, status, execution_time_ms,
+                           user_id, assistant_id, conversation_id, error_message),
+    )
+
+
+async def _save_function_log(function_name: str, arguments: dict, result: dict, status: str,
+                             execution_time_ms: float, user_id: Optional[str] = None,
+                             assistant_id: Optional[str] = None, conversation_id: Optional[str] = None,
+                             error_message: Optional[str] = None) -> None:
     from backend.db.session import SessionLocal
 
     db = None

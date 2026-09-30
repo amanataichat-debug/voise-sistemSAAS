@@ -154,6 +154,11 @@ class Settings(BaseSettings):
     ELEVEN_ASR_ENABLED: bool = os.getenv("ELEVEN_ASR_ENABLED", "true").lower() in ("1", "true", "yes")
     # Пауза конца фразы для VAD Scribe, мс
     ELEVEN_ASR_SILENCE_MS: int = int(os.getenv("ELEVEN_ASR_SILENCE_MS", "500"))
+    # Дополнительные языки распознавания (через запятую): люди в Кыргызстане часто переходят на
+    # русский посреди фразы, а жёсткий language_code=ky «натягивает» русские слова на кыргызский.
+    ELEVEN_ASR_SECONDARY_LANGUAGES: str = os.getenv("ELEVEN_ASR_SECONDARY_LANGUAGES", "ru")
+    # Телефон: слать в Scribe родные 8 кГц (pcm_8000), а не пересчитанные в 24 кГц
+    ELEVEN_ASR_PHONE_8K: bool = os.getenv("ELEVEN_ASR_PHONE_8K", "true").lower() in ("1", "true", "yes")
     # «Мозг» Eleven-ассистента в режиме «ASR → текст»: обычная текстовая модель OpenAI через
     # Chat Completions (backend/websockets/chat_llm_client.py). По замеру 30.09 gpt-5.6-luna
     # отвечает в ~2 раза быстрее gpt-realtime-2 и лучше других держит кыргызский в голосе.
