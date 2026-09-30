@@ -41,6 +41,7 @@ from backend.models.user import User
 from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.eleven_tts_client import ElevenTTSClient
 from backend.websockets.scribe_stt_client import ScribeSTTClient
+from backend.websockets.openai_stt_client import OpenAISTTClient
 from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
@@ -189,19 +190,35 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             label=client_id[:8],
         )
         session.tts = tts
-        stt = None
-        if use_asr:
+        asr_language = (assistant.language or "").strip().lower()
+        asr_secondary = [x.strip().lower() for x in (settings.ELEVEN_ASR_SECONDARY_LANGUAGES or "").split(",")
+                         if x.strip()]
+
+        def make_scribe():
             # Телефон: Scribe получает родные 8 кГц (SIP-адаптер отдаёт 24 кГц — сессия пересчитает обратно)
-            stt_rate = 8000 if (telephony and settings.ELEVEN_ASR_PHONE_8K) else LLM_INPUT_RATE
-            stt = ScribeSTTClient(
-                settings.ELEVENLABS_API_KEY,
-                language=(assistant.language or "").strip().lower(),
-                sample_rate=stt_rate,
-                silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
-                label=client_id[:8],
-                secondary_languages=[x.strip().lower() for x in (settings.ELEVEN_ASR_SECONDARY_LANGUAGES or "").split(",")
-                                     if x.strip()],
+            return ScribeSTTClient(
+                settings.ELEVENLABS_API_KEY, language=asr_language,
+                sample_rate=8000 if (telephony and settings.ELEVEN_ASR_PHONE_8K) else LLM_INPUT_RATE,
+                silence_ms=settings.ELEVEN_ASR_SILENCE_MS, label=client_id[:8], secondary_languages=asr_secondary,
             )
+
+        def make_openai_stt():
+            return OpenAISTTClient(
+                settings.OPENAI_API_KEY, language=asr_language, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                label=client_id[:8], secondary_languages=asr_secondary,
+                model=settings.ELEVEN_ASR_OPENAI_MODEL, delay=settings.ELEVEN_ASR_OPENAI_DELAY,
+            )
+
+        async def connect_stt():
+            """Основной движок распознавания, при сбое — запасной (OpenAI ↔ Scribe). None — ни один."""
+            order = [make_openai_stt, make_scribe] if settings.ELEVEN_ASR_PROVIDER == "openai" \
+                else [make_scribe, make_openai_stt]
+            for make in order:
+                client = make()
+                if await client.connect():
+                    return client
+                _log(f"ASR {type(client).__name__} unavailable ({client.fatal_error or 'connect failed'})", "WARNING")
+            return None
 
         timings: dict = {}
 
@@ -221,7 +238,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                 return False
 
         tts_task = asyncio.create_task(timed("ElevenLabs", tts_connect()))
-        stt_task = asyncio.create_task(timed("Scribe", stt.connect())) if stt else None
+        stt_task = asyncio.create_task(timed("распознавание", connect_stt())) if use_asr else None
         llm_task = asyncio.create_task(timed("OpenAI", llm.connect())) if use_chat else None
         sub_task = asyncio.create_task(timed("подписка", _check_subscription(assistant)))
 
@@ -229,7 +246,12 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             for t in (tts_task, stt_task, llm_task, sub_task):
                 if t and not t.done():
                     t.cancel()
-            for c in (tts, stt, llm):
+            if stt_task is not None and stt_task.done() and not stt_task.cancelled() and stt_task.result():
+                try:
+                    await stt_task.result().close()
+                except Exception:
+                    pass
+            for c in (tts, llm):
                 if c is not None:
                     try:
                         await c.close()
@@ -271,10 +293,9 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             await session.greet()  # история чат-модели локальная — приветствие можно положить до подключения
         greeting_at = int((time.monotonic() - t_start) * 1000)
 
-        if stt is not None and not await stt_task:
-            _log(f"Scribe unavailable ({stt.fatal_error or 'connect failed'}), "
-                 f"session {client_id} uses audio input in OpenAI Realtime", "WARNING")
-            stt = None
+        stt = await stt_task if stt_task is not None else None
+        if use_asr and stt is None:
+            _log(f"ASR unavailable, session {client_id} uses audio input in OpenAI Realtime", "WARNING")
         if use_chat and stt is None:
             # Без распознавания текстовой модели нечего слушать — прежняя схема: звук в OpenAI Realtime
             if llm_task is not None:
@@ -317,9 +338,10 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         })
         session.call_log.meta.update({
             "llm_model": llm.model,
-            "asr": (f"Scribe Realtime ({stt.language or 'auto'}"
-                    f"{'+' + ','.join(stt.secondary_languages) if stt.secondary_languages else ''}, "
-                    f"{stt.sample_rate // 1000} кГц, пауза {stt.silence_ms} мс)") if stt
+            "asr": (getattr(stt, "provider_label", None)
+                    or f"Scribe Realtime ({stt.language or 'auto'}"
+                       f"{'+' + ','.join(stt.secondary_languages) if stt.secondary_languages else ''}, "
+                       f"{stt.sample_rate // 1000} кГц, пауза {stt.silence_ms} мс)") if stt
                    else "OpenAI audio (VAD + whisper)",
             "tts_model": tts.model,
             "voice_id": tts.voice_id,
@@ -328,13 +350,13 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         })
         session.call_log.add(
             "session",
-            f"Сессия начата: {'Scribe → ' if stt else ''}OpenAI {llm.model} → ElevenLabs {tts.model}, язык {tts.language}. "
+            f"Сессия начата: {(type(stt).__name__.replace('STTClient', '') + ' → ') if stt else ''}OpenAI {llm.model} → ElevenLabs {tts.model}, язык {tts.language}. "
             f"Приветствие через {greeting_at} мс от начала сессии{' (из кэша)' if greet_task else ''}; подключения: "
             + ", ".join(f"{k} {v} мс" for k, v in timings.items()),
         )
         _log(f"session {client_id} started: assistant={assistant.id} '{assistant.name}' voice={tts.voice_id} "
              f"model={tts.model} lang={tts.language} telephony={telephony} "
-             f"input={'scribe asr' if stt else 'openai audio'} greeting_at={greeting_at}ms timings={timings}")
+             f"input={(getattr(stt, 'provider_label', None) or 'scribe asr') if stt else 'openai audio'} greeting_at={greeting_at}ms timings={timings}")
 
         await session.run()
 

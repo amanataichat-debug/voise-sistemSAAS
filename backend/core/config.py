@@ -158,6 +158,11 @@ class Settings(BaseSettings):
     # русский посреди фразы, а жёсткий language_code=ky «натягивает» русские слова на кыргызский.
     ELEVEN_ASR_SECONDARY_LANGUAGES: str = os.getenv("ELEVEN_ASR_SECONDARY_LANGUAGES", "ru")
     # Телефон: слать в Scribe родные 8 кГц (pcm_8000), а не пересчитанные в 24 кГц
+    # Движок распознавания: "openai" (gpt-live-transcribe, при сбое — Scribe) или "scribe"
+    ELEVEN_ASR_PROVIDER: str = os.getenv("ELEVEN_ASR_PROVIDER", "openai").strip().lower()
+    ELEVEN_ASR_OPENAI_MODEL: str = os.getenv("ELEVEN_ASR_OPENAI_MODEL", "gpt-live-transcribe")
+    # Задержка gpt-live-transcribe: minimal | low | medium | high | xhigh (быстрее ↔ точнее)
+    ELEVEN_ASR_OPENAI_DELAY: str = os.getenv("ELEVEN_ASR_OPENAI_DELAY", "low")
     ELEVEN_ASR_PHONE_8K: bool = os.getenv("ELEVEN_ASR_PHONE_8K", "true").lower() in ("1", "true", "yes")
     # «Мозг» Eleven-ассистента в режиме «ASR → текст»: обычная текстовая модель OpenAI через
     # Chat Completions (backend/websockets/chat_llm_client.py). По замеру 30.09 gpt-5.6-luna

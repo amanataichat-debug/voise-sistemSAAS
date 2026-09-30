@@ -417,7 +417,8 @@ class FishVoiceSession:
         _log(f"user (asr): {text}")
         self.call_log.user_turns += 1
         self.call_log.user_done(back_ms=getattr(self.stt, "silence_ms", 0) if self.stt else 0)
-        self.call_log.add("user", f"Клиент: «{text}»")
+        took = (getattr(self.stt, "transcribe_ms", None) or [None])[-1] if self.stt else None
+        self.call_log.add("user", f"Клиент: «{text}»", transcribe_ms=took)
         await self.emit({"type": "input.transcription", "transcript": text})
         self._track(self._send_user_turn(text))
 
