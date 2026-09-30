@@ -617,6 +617,30 @@ def create_cartesia_tables():
             raise
 
 
+def ensure_dialog_indexes():
+    """
+    Индексы для страницы «Диалоги»: function_logs.conversation_id (подгрузка функций по
+    сессиям), sip_calls.conversation_session_id (записи звонков), eleven_conversations
+    (группировка сессий ассистента). CONCURRENTLY — без блокировки записи в таблицы.
+    """
+    statements = [
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_function_logs_conversation_id ON function_logs (conversation_id)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_sip_calls_conversation_session_id ON sip_calls (conversation_session_id)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_eleven_conversations_assistant_session "
+        "ON eleven_conversations (assistant_id, session_id, created_at)",
+    ]
+    from sqlalchemy import text
+    if engine.dialect.name != 'postgresql':
+        return
+    for ddl in statements:
+        try:
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text(ddl))
+        except Exception as e:
+            logger.warning(f"⚠️ Dialog index skipped ({ddl.split(' ON ')[0].split()[-1]}): {e}")
+    logger.info("✅ Dialog indexes ready")
+
+
 def create_eleven_tables():
     """Таблицы Eleven-ассистентов (OpenAI Realtime текстом + ElevenLabs TTS)."""
     try:
@@ -2389,6 +2413,7 @@ async def startup_event():
                 # 🐟 Создаем таблицы Fish
                 create_fish_tables()
                 create_eleven_tables()
+                ensure_dialog_indexes()
 
                 # 🆕 Шаг 11: Сидинг данных системы кредитов (план agent + пакеты)
                 seed_credits_data()

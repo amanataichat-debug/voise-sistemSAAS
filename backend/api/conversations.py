@@ -533,253 +533,112 @@ async def get_conversation_sessions(
                 "page_size": limit
             }
         
-        logger.info(f"   User has {len(user_assistant_ids)} assistants (OpenAI + Gemini + Cartesia)")
-
-        # Создаём sets ID для быстрого определения типа
-        gemini_ids = db.query(GeminiAssistantConfig.id).filter(
-            GeminiAssistantConfig.user_id == current_user.id
-        ).all()
-        gemini_id_set = {str(g.id) for g in gemini_ids}
-
-        cartesia_ids = db.query(CartesiaAssistantConfig.id).filter(
-            CartesiaAssistantConfig.user_id == current_user.id
-        ).all()
-        cartesia_id_set = {str(c.id) for c in cartesia_ids}
-
-        yandex_ids = db.query(YandexAssistantConfig.id).filter(
-            YandexAssistantConfig.user_id == current_user.id
-        ).all()
-        yandex_id_set = {str(y.id) for y in yandex_ids}
-
-        cascade_ids = db.query(GrokAssistantConfig.id).filter(
-            GrokAssistantConfig.user_id == current_user.id,
-            GrokAssistantConfig.assistant_type == "cascade"
-        ).all()
-        cascade_id_set = {str(c.id) for c in cascade_ids}
-
-        fish_ids = db.query(FishAssistantConfig.id).filter(
-            FishAssistantConfig.user_id == current_user.id
-        ).all()
-        fish_id_set = {str(f.id) for f in fish_ids}
-        eleven_ids = db.query(ElevenAssistantConfig.id).filter(
-            ElevenAssistantConfig.user_id == current_user.id
-        ).all()
-        eleven_id_set = {str(e.id) for e in eleven_ids}
-
-        # =============================================================================
-        # 🆕 v3.6: Сессии из conversations (OpenAI и др.) + gemini_conversations одним
-        # UNION ALL — честная сортировка и пагинация по обеим таблицам.
-        # =============================================================================
+        # Все сессии — из eleven_conversations: диалоги других провайдеров в кабинете не показываются,
+        # и ID Eleven-ассистентов не встречаются в их таблицах. Одна таблица вместо UNION из четырёх.
         assistant_uuid = None
         if assistant_id:
             try:
                 assistant_uuid = UUID(assistant_id)
             except ValueError:
                 logger.warning(f"Invalid assistant_id format: {assistant_id}")
-                return {
-                    "conversations": [],
-                    "total": 0,
-                    "page": 0,
-                    "page_size": limit
-                }
+                return {"conversations": [], "total": 0, "page": 0, "page_size": limit}
 
-        union_query = union_all(
-            _sessions_select(Conversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
-            _sessions_select(GeminiConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
-            _sessions_select(FishConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
-            _sessions_select(ElevenConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed),
+        sessions_sq = _sessions_select(
+            ElevenConversation, user_assistant_ids, assistant_uuid, caller_number, date_from_parsed, date_to_parsed,
         ).subquery("sessions")
 
-        # Подсчет общего количества
-        total = db.execute(select(func.count()).select_from(union_query)).scalar()
-
-        # Сортировка и пагинация
-        sessions = db.execute(
-            select(union_query)
-            .order_by(desc(union_query.c.updated_at))
+        # Страница и общее число сессий одним проходом (оконный count поверх группировки)
+        rows = db.execute(
+            select(sessions_sq, func.count().over().label("total_count"))
+            .order_by(desc(sessions_sq.c.updated_at))
             .limit(limit)
             .offset(offset)
         ).all()
+        if rows:
+            total = rows[0].total_count
+        else:
+            # пустая страница: при offset>0 общее число всё равно нужно пагинации
+            total = (db.execute(select(func.count()).select_from(sessions_sq)).scalar() or 0) if offset else 0
+        sessions = rows
 
         logger.info(f"✅ Found {len(sessions)} sessions (total: {total})")
-        
-        # =============================================================================
-        # 🆕 v3.5: Загружаем правильные preview - ПЕРВОЕ сообщение по времени
-        # Используем PostgreSQL DISTINCT ON для эффективности
-        # =============================================================================
+
         session_ids = [s.session_id for s in sessions]
         preview_map = {}
-        
-        if session_ids:
-            # PostgreSQL DISTINCT ON - берём первую запись для каждой сессии по времени,
-            # из обеих таблиц (conversations и gemini_conversations)
-            try:
-                for table_name in ("conversations", "gemini_conversations", "fish_conversations", "eleven_conversations"):
-                    preview_results = db.execute(_preview_sql(table_name), {"session_ids": session_ids}).fetchall()
-                    for row in preview_results:
-                        if row.preview and row.session_id not in preview_map:
-                            preview_map[row.session_id] = row.preview
-                logger.info(f"   📝 Loaded {len(preview_map)} previews via DISTINCT ON")
-            except Exception as e:
-                logger.warning(f"   ⚠️ DISTINCT ON failed, using fallback: {e}")
-                db.rollback()
-                # Fallback - загружаем по одному (медленнее, но работает везде)
-                for session_id in session_ids:
-                    first_msg = None
-                    for model in (Conversation, GeminiConversation, FishConversation, ElevenConversation):
-                        first_msg = db.query(model).filter(
-                            model.session_id == session_id
-                        ).order_by(model.created_at.asc()).first()
-                        if first_msg:
-                            break
-                    
-                    if first_msg:
-                        preview = get_clean_text(first_msg.user_message) or get_clean_text(first_msg.assistant_message)
-                        if preview:
-                            preview_map[session_id] = preview
-        
-        # =============================================================================
-        # 🆕 v3.2: Загружаем function_calls для всех сессий одним запросом
-        # =============================================================================
-        
-        # Получаем все conversation_id для этих сессий (OpenAI)
-        conv_ids_query = db.query(Conversation.id, Conversation.session_id).filter(
-            Conversation.session_id.in_(session_ids)
-        ).all()
-        
-        # Маппинг conversation_id -> session_id
-        conv_to_session = {str(c.id): c.session_id for c in conv_ids_query}
-        conv_ids = [c.id for c in conv_ids_query]
-        
-        # 🆕 v3.3 FIX: Также получаем conversation_id из gemini_conversations
-        gemini_conv_query = db.query(GeminiConversation.id, GeminiConversation.session_id).filter(
-            GeminiConversation.session_id.in_(session_ids)
-        ).all()
-        
-        for gc in gemini_conv_query:
-            conv_to_session[str(gc.id)] = gc.session_id
-            conv_ids.append(gc.id)
-
-        # Fish: журнал в fish_conversations, function_logs привязаны к его id
-        fish_conv_query = db.query(FishConversation.id, FishConversation.session_id).filter(
-            FishConversation.session_id.in_(session_ids)
-        ).all()
-        for fc in fish_conv_query:
-            conv_to_session[str(fc.id)] = fc.session_id
-            conv_ids.append(fc.id)
-        eleven_conv_query = db.query(ElevenConversation.id, ElevenConversation.session_id).filter(
-            ElevenConversation.session_id.in_(session_ids)
-        ).all()
-        for ec in eleven_conv_query:
-            conv_to_session[str(ec.id)] = ec.session_id
-            conv_ids.append(ec.id)
-        
-        logger.info(f"   🔧 Total conversation IDs for function lookup: {len(conv_ids)} (OpenAI: {len(conv_ids_query)}, Gemini: {len(gemini_conv_query)})")
-        
-        # Загружаем все function_logs для этих conversations
-        function_logs = []
-        if conv_ids:
-            function_logs = db.query(FunctionLog).filter(
-                FunctionLog.conversation_id.in_(conv_ids)
-            ).order_by(FunctionLog.created_at).all()
-        
-        # Группируем function_logs по session_id
         logs_by_session = defaultdict(list)
-        for log in function_logs:
-            session_id = conv_to_session.get(str(log.conversation_id))
-            if session_id:
-                logs_by_session[session_id].append({
-                    "id": str(log.id),
-                    "function_name": log.function_name,
-                    "arguments": log.arguments,
-                    "result": log.result,
-                    "status": log.status,
-                    "execution_time_ms": log.execution_time_ms,
-                    "error_message": log.error_message,
-                    "created_at": log.created_at.isoformat() if log.created_at else None
-                })
-        
-        logger.info(f"   Loaded {len(function_logs)} function logs for {len(logs_by_session)} sessions")
-
-        # =============================================================================
-        # Резолвим имена ассистентов по assistant_id (все типы, включая cascade).
-        # Возвращаем имя прямо из бэкенда, чтобы фронт не зависел от клиентского
-        # поиска (у cascade он не срабатывал → "Неизвестный ассистент").
-        # =============================================================================
-        unique_assistant_ids = list({s.assistant_id for s in sessions})
         name_map = {}
-        if unique_assistant_ids:
-            for model in (
-                AssistantConfig,
-                GeminiAssistantConfig,
-                CartesiaAssistantConfig,
-                YandexAssistantConfig,
-                GrokAssistantConfig,
-                FishAssistantConfig,
-            ):
-                rows = db.query(model.id, model.name).filter(
-                    model.id.in_(unique_assistant_ids)
-                ).all()
-                for row in rows:
-                    name_map[str(row.id)] = row.name
+        sip_recordings = {}
 
-        # =============================================================================
-        # Форматируем результат
-        # 🆕 v3.5: Используем preview_map и нормализуем caller_number
-        # =============================================================================
-        # Записи телефонных звонков SIP-шлюза (sip_calls.recording_url) по session_id диалога
-        from backend.services.sip_gateway_service import SipGatewayService
-        sip_recordings = SipGatewayService.recording_urls_for_sessions(db, [s.session_id for s in sessions])
+        if session_ids:
+            # Превью — первая непустая реплика сессии (DISTINCT ON)
+            try:
+                for row in db.execute(_preview_sql("eleven_conversations"), {"session_ids": session_ids}).fetchall():
+                    if row.preview:
+                        preview_map[row.session_id] = row.preview
+            except Exception as e:
+                logger.warning(f"   ⚠️ Preview query failed: {e}")
+                db.rollback()
+
+            # Вызовы функций: function_logs привязаны к id записей eleven_conversations.
+            # Для карточки списка нужны только имя и статус — аргументы и результаты
+            # отдаёт детальный просмотр.
+            conv_rows = db.query(ElevenConversation.id, ElevenConversation.session_id).filter(
+                ElevenConversation.session_id.in_(session_ids)
+            ).all()
+            conv_to_session = {str(c.id): c.session_id for c in conv_rows}
+            if conv_rows:
+                function_logs = db.query(
+                    FunctionLog.id, FunctionLog.conversation_id, FunctionLog.function_name,
+                    FunctionLog.status, FunctionLog.created_at,
+                ).filter(
+                    FunctionLog.conversation_id.in_([c.id for c in conv_rows])
+                ).order_by(FunctionLog.created_at).all()
+                for log in function_logs:
+                    sid = conv_to_session.get(str(log.conversation_id))
+                    if sid:
+                        logs_by_session[sid].append({
+                            "id": str(log.id),
+                            "function_name": log.function_name,
+                            "status": log.status,
+                            "created_at": log.created_at.isoformat() if log.created_at else None,
+                        })
+
+            unique_assistant_ids = list({s.assistant_id for s in sessions})
+            for row in db.query(ElevenAssistantConfig.id, ElevenAssistantConfig.name).filter(
+                ElevenAssistantConfig.id.in_(unique_assistant_ids)
+            ).all():
+                name_map[str(row.id)] = row.name
+
+            # Записи телефонных звонков SIP-шлюза (sip_calls.recording_url) по session_id диалога
+            from backend.services.sip_gateway_service import SipGatewayService
+            sip_recordings = SipGatewayService.recording_urls_for_sessions(db, session_ids)
 
         conversations = []
         for s in sessions:
-            # Определяем тип по ID ассистента
-            if str(s.assistant_id) in gemini_id_set:
-                assistant_type = 'gemini'
-            elif str(s.assistant_id) in cartesia_id_set:
-                assistant_type = 'cartesia'
-            elif str(s.assistant_id) in yandex_id_set:
-                assistant_type = 'yandex'
-            elif str(s.assistant_id) in cascade_id_set:
-                assistant_type = 'cascade'
-            elif str(s.assistant_id) in fish_id_set:
-                assistant_type = 'fish'
-            elif str(s.assistant_id) in eleven_id_set:
-                assistant_type = 'eleven'
-            else:
-                assistant_type = 'openai'
-            
-            # 🆕 v3.0: Форматируем стоимость
             call_cost = None
             if s.total_cost is not None and s.total_cost > 0:
                 call_cost = round(float(s.total_cost), 2)
-            
-            # 🆕 v3.5: Нормализуем caller_number
-            normalized_caller = normalize_caller_number(s.caller_number)
-            
-            # 🆕 v3.5: Берём preview из предзагруженного словаря
             preview_text = preview_map.get(s.session_id, "")
-            
             conversations.append({
                 "id": s.session_id,
                 "session_id": s.session_id,
                 "assistant_id": str(s.assistant_id),
                 "assistant_name": name_map.get(str(s.assistant_id)),
-                "caller_number": normalized_caller,  # 🆕 v3.5: Нормализованный
+                "caller_number": normalize_caller_number(s.caller_number),
                 "messages_count": s.messages_count,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
                 "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-                "user_message": (preview_text or "")[:200],  # 🆕 v3.5: Правильный preview
+                "user_message": (preview_text or "")[:200],
                 "assistant_message": "",
                 "tokens_used": s.total_tokens or 0,
                 "duration_seconds": s.total_duration or 0,
                 "call_cost": call_cost,
                 "record_url": s.record_url or sip_recordings.get(s.session_id),
                 "log_url": s.log_url,
-                "client_info": {"assistant_type": assistant_type},
-                "function_calls": logs_by_session.get(s.session_id, [])
+                "client_info": {"assistant_type": "eleven"},
+                "function_calls": logs_by_session.get(s.session_id, []),
             })
-        
+
         return {
             "conversations": conversations,
             "total": total,

@@ -3808,9 +3808,9 @@
       loadSubscriptionInfo().then(() => {
         applyFeatureAccessToSidebar();
       });
-      loadAssistants().then(() => {
-        loadConversations();
-      });
+      // Список не ждёт фильтр ассистентов: имя ассистента приходит в самой сессии (assistant_name)
+      loadAssistants();
+      loadConversations();
       
       // Загружаем статус Telegram при старте
       loadTelegramSettings();
