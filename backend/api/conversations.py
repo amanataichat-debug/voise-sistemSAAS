@@ -206,6 +206,13 @@ SYSTEM_MESSAGE_PATTERNS = [
 # 🆕 v2.0: Helper functions for OpenAI + Gemini support
 # =============================================================================
 
+def get_user_eleven_assistant_ids(db: Session, user_id: UUID) -> List[UUID]:
+    """ID Eleven-ассистентов пользователя (включая голоса агентов обзвона)."""
+    return [row.id for row in db.query(ElevenAssistantConfig.id).filter(
+        ElevenAssistantConfig.user_id == user_id
+    ).all()]
+
+
 def get_user_assistant_ids(db: Session, user_id: UUID) -> List[UUID]:
     """
     Получить все ID ассистентов пользователя (OpenAI + Gemini + Cartesia + Yandex + cascade).
@@ -513,8 +520,9 @@ async def get_conversation_sessions(
                     detail=f"Invalid date_to format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
                 )
         
-        # 🆕 v2.0: Получаем ВСЕ assistant_id пользователя (OpenAI + Gemini)
-        user_assistant_ids = get_user_assistant_ids(db, current_user.id)
+        # Кабинет работает только с ElevenLabs-ассистентами: диалоги OpenAI / Gemini / Fish и
+        # прочих остаются в базе, но в списке не показываются.
+        user_assistant_ids = get_user_eleven_assistant_ids(db, current_user.id)
         
         if not user_assistant_ids:
             logger.info("   User has no assistants")

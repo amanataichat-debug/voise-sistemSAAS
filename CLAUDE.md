@@ -266,7 +266,7 @@ PostgreSQL with SQLAlchemy ORM. Migrations managed by Alembic (`alembic/versions
 
 Key tables: `users`, `assistant_configs`, `gemini_assistant_configs`, `grok_assistant_configs`, `fish_assistant_configs`, `eleven_assistant_configs`, `conversations`, `gemini_conversations`, `fish_conversations`, `eleven_conversations`, `contacts`, `tasks`, `subscription_plans`, `user_subscriptions`, `embed_configs`, `partners`, `sip_phone_numbers`, `sip_calls`.
 
-`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations`, Fish dialogs to `fish_conversations` and Eleven dialogs to `eleven_conversations`; the "Диалоги" page unions all four tables (`backend/api/conversations.py`), and `SipGatewayService.tag_conversations` picks the table by `assistant_type`.
+`conversations.assistant_id` is a FK to `assistant_configs` (OpenAI), so Gemini dialogs go to `gemini_conversations`, Fish dialogs to `fish_conversations` and Eleven dialogs to `eleven_conversations`; the "Диалоги" page unions all four tables (`backend/api/conversations.py`) but lists **only the user's Eleven assistants** (`get_user_eleven_assistant_ids` in `/sessions`, filter dropdown = `/eleven-assistants` + Eleven voices of call agents); other providers' dialogs stay in the DB, hidden, and `SipGatewayService.tag_conversations` picks the table by `assistant_type`.
 
 ## Environment Variables (Key)
 

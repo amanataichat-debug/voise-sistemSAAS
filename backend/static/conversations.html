@@ -3142,120 +3142,31 @@
       // ============================================================================
       
       async function loadAssistants() {
+        // В кабинете только ElevenLabs-ассистенты: в фильтре — они и голоса агентов обзвона
+        // (агент говорит через своего Eleven-ассистента, в /eleven-assistants он может быть скрыт).
+        assistants = [];
         try {
-          assistants = [];
-          console.log('[ASSISTANTS] Loading assistants for filter...');
-          
-          try {
-            const openaiData = await api.get('/assistants');
-            const openaiList = Array.isArray(openaiData) ? openaiData : [];
-            openaiList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'openai' });
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${openaiList.length} OpenAI assistants`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading OpenAI assistants:', e.message);
-          }
-          
-          try {
-            const geminiData = await api.get('/gemini-assistants');
-            const geminiList = Array.isArray(geminiData) ? geminiData : [];
-            geminiList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'gemini' });
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${geminiList.length} Gemini assistants`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading Gemini assistants:', e.message);
-          }
-
-          try {
-            const cartesiaData = await api.get('/cartesia-assistants');
-            const cartesiaList = Array.isArray(cartesiaData)
-              ? cartesiaData
-              : (cartesiaData.assistants || []);
-            cartesiaList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'cartesia' });
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${cartesiaList.length} Cartesia assistants`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading Cartesia assistants:', e.message);
-          }
-
-          try {
-            const yandexData = await api.get('/yandex-assistants');
-            const yandexList = Array.isArray(yandexData)
-              ? yandexData
-              : (yandexData.assistants || []);
-            yandexList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'yandex' });
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${yandexList.length} Yandex assistants`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading Yandex assistants:', e.message);
-          }
-
-          try {
-            const fishData = await api.get('/fish-assistants');
-            const fishList = Array.isArray(fishData)
-              ? fishData
-              : (fishData.assistants || []);
-            fishList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'fish' });
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${fishList.length} Fish assistants`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading Fish assistants:', e.message);
-          }
-
-          try {
-            const elevenData = await api.get('/eleven-assistants');
-            const elevenList = Array.isArray(elevenData)
-              ? elevenData
-              : (elevenData.assistants || []);
-            elevenList.forEach(a => {
-              assistants.push({ id: a.id, name: a.name, type: 'eleven' });
-            });
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading ElevenLabs assistants:', e.message);
-          }
-
-          try {
-            // Голоса агентов обзвона: диалоги пишутся под id голосового
-            // ассистента, а в списках провайдеров этот ассистент скрыт —
-            // поэтому в фильтр кладём именно его id под именем агента.
-            const agentData = await api.get('/agent/list');
-            const agentList = Array.isArray(agentData?.agents) ? agentData.agents : [];
-            let cascadeCount = 0;
-            let fishAgentCount = 0;
-            agentList.forEach(a => {
-              if (a.assistant_type === 'cascade' && a.cascade_assistant_id) {
-                assistants.push({ id: a.cascade_assistant_id, name: a.name, type: 'cascade' });
-                cascadeCount++;
-              }
-              if (a.assistant_type === 'fish' && a.fish_assistant_id) {
-                assistants.push({ id: a.fish_assistant_id, name: a.name, type: 'fish' });
-                fishAgentCount++;
-              }
-              if (a.assistant_type === 'eleven' && a.eleven_assistant_id
-                  && !assistants.some(x => x.id === a.eleven_assistant_id)) {
-                assistants.push({ id: a.eleven_assistant_id, name: a.name, type: 'eleven' });
-              }
-            });
-            console.log(`[ASSISTANTS] ✅ Loaded ${cascadeCount} Cascade and ${fishAgentCount} Fish agent voices`);
-          } catch (e) {
-            console.warn('[ASSISTANTS] ⚠️ Error loading agent voices:', e.message);
-          }
-
-          console.log(`[ASSISTANTS] 🎯 Total: ${assistants.length} assistants`);
-          renderAssistantFilter();
-          
-        } catch (error) {
-          console.error('[ASSISTANTS] ❌ Fatal error loading assistants:', error);
-          assistants = [];
-          renderAssistantFilter();
+          const elevenData = await api.get('/eleven-assistants');
+          const elevenList = Array.isArray(elevenData) ? elevenData : (elevenData.assistants || []);
+          elevenList.forEach(a => assistants.push({ id: a.id, name: a.name, type: 'eleven' }));
+        } catch (e) {
+          console.warn('[ASSISTANTS] ⚠️ Error loading ElevenLabs assistants:', e.message);
         }
+        try {
+          const agentData = await api.get('/agent/list');
+          const agentList = Array.isArray(agentData?.agents) ? agentData.agents : [];
+          agentList.forEach(a => {
+            if (a.assistant_type === 'eleven' && a.eleven_assistant_id
+                && !assistants.some(x => x.id === a.eleven_assistant_id)) {
+              assistants.push({ id: a.eleven_assistant_id, name: a.name, type: 'eleven' });
+            }
+          });
+        } catch (e) {
+          console.warn('[ASSISTANTS] ⚠️ Error loading agent voices:', e.message);
+        }
+        renderAssistantFilter();
       }
-      
+
       function renderAssistantFilter() {
         assistantFilter.innerHTML = '<option value="">Все ассистенты</option>';
         
