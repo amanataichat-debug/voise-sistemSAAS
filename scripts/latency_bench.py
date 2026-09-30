@@ -55,6 +55,7 @@ DEFAULT_LLMS = [
     "openai:gpt-5.4-mini",
     "openrouter:openai/gpt-oss-120b",
     "openrouter:openai/gpt-oss-20b",
+    "openrouter:google/gemini-3.8-flash",
 ]
 DEFAULT_TTS = ["eleven_v3_conversational", "eleven_v4_turbo", "eleven_v4"]
 FALLBACK_PHRASES = [
@@ -208,6 +209,9 @@ def chat_variants(provider: str, model: str) -> List[Dict[str, Any]]:
         base = {"max_tokens": MAX_TOKENS, "provider": {"sort": "latency"}}
         if "gpt-oss" in model or "gpt-5" in model:
             return [{**base, "reasoning": {"effort": "low"}}, base]
+        if "gemini" in model:
+            # Flash по умолчанию «думает» — для голоса выключаем или ставим минимум
+            return [{**base, "reasoning": {"enabled": False}}, {**base, "reasoning": {"effort": "minimal"}}, base]
         return [base]
     if model.startswith(("gpt-5", "o")):
         base = {"max_completion_tokens": MAX_TOKENS}
@@ -291,10 +295,14 @@ async def discover(client: httpx.AsyncClient) -> List[str]:
         try:
             r = await client.get("https://openrouter.ai/api/v1/models", timeout=20)
             models = r.json().get("data", [])
+            skip = ("image", "tts", "audio", "live", "transcribe", "embedding", ":")  # ":" — :free, :batch
             flash = sorted((m for m in models if "gemini" in m["id"] and "flash" in m["id"]
-                            and "image" not in m["id"] and ":free" not in m["id"]),
+                            and not any(x in m["id"] for x in skip)),
                            key=lambda m: m.get("created") or 0, reverse=True)
-            found += [f"openrouter:{m['id']}" for m in flash[:2]]
+            # самая свежая Flash и самая свежая Flash-Lite
+            picked = [next((m for m in flash if "lite" not in m["id"]), None),
+                      next((m for m in flash if "lite" in m["id"]), None)]
+            found += [f"openrouter:{m['id']}" for m in picked if m]
         except Exception as exc:
             log(f"  (список моделей OpenRouter недоступен: {exc})")
     return found
