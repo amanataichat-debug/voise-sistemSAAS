@@ -162,31 +162,18 @@ class HangupCallFunction(FunctionBase):
     @staticmethod
     async def execute(arguments: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Заглушка для выполнения функции.
-        
-        ВАЖНО: Реальное завершение звонка происходит в VoxEngine скрипте.
-        Этот метод вызываться НЕ должен при работе через Voximplant.
-        
-        Args:
-            arguments: Аргументы функции
-            context: Контекст выполнения
-            
-        Returns:
-            Информационное сообщение
+        Подтверждение для модели. Звонок кладёт не эта функция, а SIP-адаптер
+        (HandlerSocket в sip_media_adapter.py) по событию function_call.executing:
+        дожидается конца прощальной фразы и просит мост положить трубку.
+        В виджете звонка нет — результат просто сообщает модели, что разговор окончен.
         """
         reason = arguments.get("reason", "unknown")
         farewell_message = arguments.get("farewell_message", "")
-        
-        logger.warning(f"[HANGUP] Backend execute() вызван для hangup_call. Это не должно происходить при работе через Voximplant!")
-        logger.info(f"[HANGUP] Reason: {reason}, Farewell: {farewell_message}")
-        
-        # Возвращаем информационное сообщение
-        # Этот результат не должен использоваться, так как функция выполняется в VoxEngine
+        logger.info(f"[HANGUP] reason={reason}, farewell={farewell_message[:80]}")
         return {
             "success": True,
-            "message": "Функция hangup_call предназначена для выполнения в VoxEngine",
+            "status": "call_ending",
+            "message": "Скажи прощальную фразу (farewell_message) и больше ничего: звонок завершится сразу после неё.",
             "reason": reason,
             "farewell_message": farewell_message,
-            "note": "Если вы видите это сообщение, значит функция была вызвана не через Voximplant",
-            "timestamp": context.get("timestamp") if context else None
         }

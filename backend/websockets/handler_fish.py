@@ -74,6 +74,18 @@ logger = get_logger(__name__)
 TTS_RATE = 24000               # частота выхода всех браузерных хендлеров
 FIRST_SENTENCE_MIN_CHARS = 25  # ранняя отправка первого предложения — быстрее первый звук
 TRANSCRIPT_WAIT_SEC = 1.5      # сколько ждать стенограмму абонента перед сохранением хода
+# Фраза-заполнитель: функция выполняется дольше FILLER_DELAY_SEC, а ассистент молчит —
+# коротко говорим «секунду», чтобы абонент не слушал тишину. Не для hangup_call (там прощание).
+FILLER_DELAY_SEC = 0.7
+NO_FILLER_FUNCTIONS = {"hangup_call"}
+FILLER_PHRASES = {
+    "ky": "Бир секунд, азыр карап көрөйүн.",
+    "ru": "Одну секунду, сейчас проверю.",
+    "kk": "Бір сәт, қазір қарап көрейін.",
+    "uz": "Bir soniya, hozir tekshirib ko'raman.",
+    "en": "One moment, let me check.",
+    "tr": "Bir saniye, hemen bakıyorum.",
+}
 CANCEL_WAIT_SEC = 2.0          # ASR: сколько ждать, пока OpenAI закроет отменённый ответ, перед новой репликой
 DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помочь?"
 
@@ -204,6 +216,11 @@ class FishVoiceSession:
             "language": getattr(assistant, "language", None),
         })
         self._first_text_logged = False
+        # Фраза-заполнитель на время долгой функции
+        self._pending_function_calls: set = set()
+        self._filler_response_id: Optional[str] = None
+        self._filler_next_speech = False
+        self._hangup_requested = False
 
     # ------------------------------------------------------------------ helpers
     def _new_detector(self) -> StreamingSentenceDetector:
@@ -233,10 +250,16 @@ class FishVoiceSession:
 
     async def on_tts_speech_started(self) -> None:
         self.assistant_speaking = True
+        filler, self._filler_next_speech = self._filler_next_speech, False
+        pause_ms = self.call_log.pause_ms
         latency = self.call_log.reply_audio_started()
         if latency is not None:
-            self.call_log.add("latency", f"Первый звук ответа через {latency} мс после конца фразы клиента",
-                              level="warning" if latency >= 2500 else "info", ms=latency)
+            self.call_log.add(
+                "latency",
+                f"Первый звук {'(заполнитель) ' if filler else 'ответа '}через {latency} мс после конца речи клиента"
+                + (f" (из них {pause_ms} мс — пауза, по которой распознавание определяет конец фразы)" if pause_ms else ""),
+                level="warning" if latency >= 3000 else "info", ms=latency,
+            )
         else:
             self.call_log.add("tts", "Ассистент начал говорить")
         await self.emit({"type": "assistant.speech.started", "response_id": self.response_id, "timestamp": time.time()})
@@ -273,7 +296,7 @@ class FishVoiceSession:
             return
         _log(f"user (asr): {text}")
         self.call_log.user_turns += 1
-        self.call_log.user_done()
+        self.call_log.user_done(back_ms=getattr(self.stt, "silence_ms", 0) if self.stt else 0)
         self.call_log.add("user", f"Клиент: «{text}»")
         await self.emit({"type": "input.transcription", "transcript": text})
         self._track(self._send_user_turn(text))
@@ -376,7 +399,7 @@ class FishVoiceSession:
 
         if etype == "input_audio_buffer.speech_stopped":
             self.call_log.user_turns += 1
-            self.call_log.user_done()
+            self.call_log.user_done(back_ms=int((getattr(self.llm, "vad_settings", None) or {}).get("silence_duration_ms") or 0))
             self.call_log.add("vad", "Клиент замолчал (VAD OpenAI)")
             await self.emit({"type": "speech.stopped", "timestamp": time.time()})
             return
@@ -491,6 +514,14 @@ class FishVoiceSession:
         self.call_log.functions += 1
         self.call_log.add("function", f"Вызов функции {normalized}",
                           arguments=json.dumps(arguments, ensure_ascii=False)[:500])
+        if normalized == "hangup_call":
+            self._hangup_requested = True
+        else:
+            self._pending_function_calls.add(call_id)
+            # один заполнитель на ответ модели и только если модель сама ничего не сказала перед вызовом
+            if not self.response_text.strip() and self._filler_response_id != (self.response_id or call_id):
+                self._filler_response_id = self.response_id or call_id
+                self._track(self._filler_after_delay(call_id))
 
         self._track(execute_and_send_function_result(
             openai_client=self.llm,
@@ -508,8 +539,23 @@ class FishVoiceSession:
             user_transcript=self.user_transcript or self.last_user_transcript,
         ))
 
+    async def _filler_after_delay(self, call_id: str) -> None:
+        """Функция ещё выполняется через FILLER_DELAY_SEC, а в линии тишина — сказать «секунду»."""
+        await asyncio.sleep(FILLER_DELAY_SEC)
+        if (self.closed or call_id not in self._pending_function_calls or self._hangup_requested
+                or self.assistant_speaking or self.tts.speaking or self.user_speaking):
+            return
+        language = (getattr(self.assistant, "language", None) or "ru")[:2].lower()
+        phrase = FILLER_PHRASES.get(language, FILLER_PHRASES["ru"])
+        self._filler_next_speech = True
+        self.call_log.add("assistant", f"Заполнитель, пока выполняется функция: «{phrase}»")
+        await self.tts.say(phrase)
+        self.tts.end_of_response()
+
     def _on_function_event(self, data: Dict[str, Any]) -> None:
         mtype = data.get("type")
+        if mtype in ("function_call.completed", "function_call.error", "function_call.delivery_error"):
+            self._pending_function_calls.discard(data.get("function_call_id"))
         name = data.get("function")
         if mtype == "function_call.completed":
             result = data.get("result")

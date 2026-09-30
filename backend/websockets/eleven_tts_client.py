@@ -10,7 +10,9 @@
     → {"context_id": C, "inputs": [{"text": "...", "voice_id": V, "new_turn": bool}]}
     → {"context_id": C, "flush": true}          синтезировать накопленное сейчас
     → {"context_id": C, "close_context": true}  дозвучить накопленное, прислать is_final и закрыть
-    → {"keep_alive": true}                      сервер закрывает сокет после 20 с тишины
+    (сервер закрывает сокет после 20 с тишины; keep_alive требует context_id живой
+     реплики, которой между ответами нет, — поэтому простаивающий сокет заменяется
+     новым заранее, см. _keepalive)
     → {"close_socket": true}
     ← {"audio": "<base64 PCM16>", "context_id": C}
     ← {"is_final_audio_for_turn": true, "context_id": C}
@@ -47,7 +49,7 @@ import base64
 import json
 import time
 import uuid
-from typing import Awaitable, Callable, List, Optional, Set
+from typing import Any, Awaitable, Callable, List, Optional, Set
 from urllib.parse import urlencode
 
 import websockets
@@ -68,8 +70,10 @@ ELEVEN_TTD_WS_URL = "wss://api.elevenlabs.io/v1/text-to-dialogue/multi-stream-in
 # Страховка: is_final после close_context не пришёл столько мс после последнего звука.
 FINAL_TIMEOUT_MS = 5000
 IDLE_POLL_SEC = 0.1
-# Сервер рвёт сокет через 20 с без сообщений — шлём keep_alive заранее.
-KEEPALIVE_SEC = 12
+# Сервер рвёт сокет через 20 с без сообщений. keep_alive без context_id он отвергает
+# (missing_context_id) и сам закрывает сокет, а между репликами живого контекста нет.
+# Поэтому простаивающий сокет заранее меняем на свежий: следующий ответ не ждёт переподключения.
+KEEPALIVE_SEC = 14
 
 AsyncBytesCallback = Callable[[bytes], Awaitable[None]]
 AsyncCallback = Callable[[], Awaitable[None]]
@@ -119,6 +123,7 @@ class ElevenTTSClient:
         self._keepalive_task: Optional[asyncio.Task] = None
         self._bg_tasks: Set[asyncio.Task] = set()
         self._last_sent_at = 0.0
+        self._retired: Set[Any] = set()          # сокеты, закрытые нами при замене (не ошибка)
 
         self.speaking = False
         self.response_complete = False
@@ -137,7 +142,7 @@ class ElevenTTSClient:
             params["language_code"] = self.language
         return f"{ELEVEN_TTD_WS_URL}?{urlencode(params)}"
 
-    async def connect(self) -> None:
+    async def connect(self, quiet: bool = False) -> None:
         """Открыть сокет к ElevenLabs и запустить читателя. Бросает при ошибке."""
         if not self.voice_id:
             raise RuntimeError("voice_id is not set for the Eleven assistant")
@@ -168,10 +173,11 @@ class ElevenTTSClient:
             self._idle_task = asyncio.create_task(self._idle_watch())
         if self._keepalive_task is None:
             self._keepalive_task = asyncio.create_task(self._keepalive())
-        logger.info(
-            f"[ELEVEN-TTS {self.label}] connected (gen={generation}) model={self.model} voice={self.voice_id} "
-            f"lang={self.language} rate={self.sample_rate} stability={self.stability}"
-        )
+        if not quiet:
+            logger.info(
+                f"[ELEVEN-TTS {self.label}] connected (gen={generation}) model={self.model} voice={self.voice_id} "
+                f"lang={self.language} rate={self.sample_rate} stability={self.stability}"
+            )
         pending, self.pending_text = self.pending_text, []
         for text in pending:
             await self._send_text(ws, text)
@@ -235,11 +241,12 @@ class ElevenTTSClient:
                     self.errors += 1
                     logger.error(f"[ELEVEN-TTS {self.label}] error: {json.dumps(message, ensure_ascii=False)[:300]}")
         except ConnectionClosed as exc:
-            if not self.closing:
+            if not self.closing and ws not in self._retired:
                 logger.warning(f"[ELEVEN-TTS {self.label}] connection closed: code={exc.code} reason={exc.reason}")
         except Exception as exc:
             logger.error(f"[ELEVEN-TTS {self.label}] reader error: {exc}")
         finally:
+            self._retired.discard(ws)
             if self.ws is ws:
                 self.ws = None  # следующий say() переподключится
                 self.context_id = None
@@ -278,18 +285,41 @@ class ElevenTTSClient:
         except Exception as exc:
             logger.warning(f"[ELEVEN-TTS {self.label}] idle watcher stopped: {exc}")
 
+    def _idle(self) -> bool:
+        """Сокет свободен: нет реплики, которая принимает текст или ещё звучит."""
+        return (self.context_id is None and not self._live and self._finishing is None
+                and not self.speaking and not self.pending_text)
+
     async def _keepalive(self) -> None:
+        """Простаивающий сокет (≥ KEEPALIVE_SEC без сообщений) заменяем свежим до того, как сервер его закроет."""
         try:
             while not self.closing:
                 await asyncio.sleep(1.0)
                 ws = self.ws
-                if ws is None or time.monotonic() - self._last_sent_at < KEEPALIVE_SEC:
+                if ws is None or time.monotonic() - self._last_sent_at < KEEPALIVE_SEC or not self._idle():
                     continue
-                try:
-                    await self._send(ws, {"keep_alive": True})
-                except Exception:
-                    pass
+                await self._rotate(ws)
         except asyncio.CancelledError:
+            pass
+
+    async def _rotate(self, old) -> None:
+        async with self._lock:
+            if self.closing or self.ws is not old or not self._idle():
+                return
+            self._retired.add(old)
+            self.ws = None
+            try:
+                await self.connect(quiet=True)
+            except Exception as exc:
+                # не вышло — следующий say() подключится сам
+                logger.warning(f"[ELEVEN-TTS {self.label}] idle reconnect failed: {exc}")
+        try:
+            await old.send(json.dumps({"close_socket": True}))
+        except Exception:
+            pass
+        try:
+            await old.close()
+        except Exception:
             pass
 
     async def _close_context(self, ctx: str) -> None:

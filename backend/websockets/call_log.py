@@ -87,6 +87,7 @@ class CallLogRecorder:
         self.function_errors = 0
         self.latencies_ms: List[int] = []
         self._user_done_at: Optional[float] = None
+        self.pause_ms = 0
 
     # ------------------------------------------------------------------ контекст
     def activate(self) -> contextvars.Token:
@@ -117,9 +118,14 @@ class CallLogRecorder:
             event["data"] = data
         self.events.append(event)
 
-    def user_done(self) -> None:
-        """Клиент закончил фразу — от этой точки считается задержка ответа."""
-        self._user_done_at = time.monotonic()
+    def user_done(self, back_ms: int = 0) -> None:
+        """
+        Клиент закончил фразу — от этой точки считается задержка ответа.
+        back_ms — сколько тишины распознавание ждало, прежде чем объявить конец фразы
+        (пауза VAD): задержка считается от реального конца речи, а не от решения VAD.
+        """
+        self._user_done_at = time.monotonic() - max(0, back_ms) / 1000.0
+        self.pause_ms = max(0, back_ms)
 
     def reply_audio_started(self) -> Optional[int]:
         """Первый звук ответа ассистента. Возвращает задержку от конца фразы клиента, мс."""
