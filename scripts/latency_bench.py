@@ -75,6 +75,9 @@ def log(msg: str) -> None:
 
 # ============================================================================ контекст ассистента
 def load_context(assistant_id: Optional[str], n_phrases: int) -> Dict[str, Any]:
+    # Пакет backend.core первым: иначе цикл импорта config → core/__init__ → scheduler → db.session
+    # (в приложении этот порядок задаёт app.py).
+    import backend.core  # noqa: F401
     from backend.db.session import SessionLocal
     from backend.models.eleven_assistant import (
         DEFAULT_ELEVEN_GREETING, ElevenAssistantConfig, ElevenConversation,
