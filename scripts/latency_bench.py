@@ -211,9 +211,11 @@ def chat_variants(provider: str, model: str) -> List[Dict[str, Any]]:
             return [{**base, "reasoning": {"effort": "low"}}, base]
         if "gemini" in model:
             # Flash по умолчанию «думает» — для голоса выключаем или ставим минимум
-            return [{**base, "reasoning": {"enabled": False}}, {**base, "reasoning": {"effort": "minimal"}}, base]
+            # {"enabled": false} OpenRouter принял, но модель всё равно думала и съела лимит токенов
+            return [{**base, "max_tokens": 1200, "reasoning": {"effort": "minimal"}},
+                    {**base, "max_tokens": 1200, "reasoning": {"max_tokens": 0}}, {**base, "max_tokens": 1200}]
         return [base]
-    if model.startswith(("gpt-5", "o")):
+    if model.startswith(("gpt-5", "gpt-6", "gpt-7", "o")):
         base = {"max_completion_tokens": MAX_TOKENS}
         return [{**base, "reasoning_effort": e} for e in ("none", "minimal", "low")] + [base]
     return [{"max_completion_tokens": MAX_TOKENS}, {"max_tokens": MAX_TOKENS}]
