@@ -40,6 +40,11 @@ logger = get_logger(__name__)
 
 CHAT_URL = "https://api.openai.com/v1/chat/completions"
 MAX_COMPLETION_TOKENS = 1000
+# Ждать первый байт ответа не дольше READ — иначе соединение считаем мёртвым и повторяем запрос
+STREAM_TIMEOUT = httpx.Timeout(30.0, connect=5.0, read=6.0, pool=5.0)
+KEEPALIVE_IDLE_SEC = 15      # простой, после которого пингуем OpenAI, чтобы не остывало соединение
+SLOW_HEADERS_SEC = 1.5       # медленнее — предупреждение в журнале звонка
+SLOW_FIRST_SEC = 2.0
 PENDING_RESULT = {"status": "in_progress", "message": "Функция ещё выполняется, результат придёт позже."}
 
 # Голосовой канал: ответ слушают, а не читают
@@ -47,7 +52,9 @@ VOICE_RULES = (
     "Это голосовой разговор (телефон или голосовой виджет). Отвечай коротко и разговорно: "
     "обычно 1–2 предложения, максимум 3. Без списков, нумерации, markdown, эмодзи и ссылок. "
     "Числа, время и суммы пиши так, как их произносят. Если не понял собеседника — "
-    "переспроси одним коротким вопросом."
+    "переспроси одним коротким вопросом. Никогда не завершай звонок (hangup_call) из-за того, что "
+    "не понял собеседника или плохо слышно, — переспроси. Завершай звонок, только когда разговор "
+    "окончен или собеседник прощается."
 )
 
 
@@ -70,6 +77,8 @@ class ChatLLMClient(FishLLMClient):
         self._followup = False           # результат функции пришёл, пока шёл другой ответ
         self._extra: Optional[Dict[str, Any]] = None  # параметры, которые принял API (reasoning_effort)
         self._pending_results: Dict[str, Dict[str, Any]] = {}  # call_id → сообщение-заглушка в истории
+        self._last_request_at = time.monotonic()
+        self._keepalive_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------ соединение
     async def connect(self) -> bool:
@@ -79,6 +88,8 @@ class ChatLLMClient(FishLLMClient):
         self._http = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=httpx.Timeout(60.0, connect=10.0),
+            # по умолчанию httpx закрывает простаивающее соединение через 5 с — а паузы в разговоре длиннее
+            limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=300.0),
         )
         # Проверка ключа и модели + прогрев TLS-соединения: первый ответ не ждёт рукопожатия
         try:
@@ -103,6 +114,8 @@ class ChatLLMClient(FishLLMClient):
                        for t in self._build_tools()]
 
         self.is_connected = True
+        self._last_request_at = time.monotonic()
+        self._keepalive_task = asyncio.create_task(self._keepalive())
         self._create_conversation_record()
         logger.info(f"[{self.label}] chat session ready: model={self.model} tools={self.enabled_functions} input=text (ASR)")
         return True
@@ -111,6 +124,8 @@ class ChatLLMClient(FishLLMClient):
         self.is_connected = False
         if self._task and not self._task.done():
             self._task.cancel()
+        if self._keepalive_task and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
         http, self._http = self._http, None
         if http is not None:
             try:
@@ -195,69 +210,126 @@ class ChatLLMClient(FishLLMClient):
         # Для голоса рассуждения не нужны: пробуем выключить, принимаем то, что примет API
         return [{"reasoning_effort": "none"}, {"reasoning_effort": "minimal"}, {}]
 
+    async def _stream_response(self, timing: Dict[str, Any], t0: float):
+        """Один запрос со стримингом. Возвращает (text, calls, usage); события уходят в очередь по ходу."""
+        text, calls, usage = "", {}, {}
+        for extra in self._request_variants():
+            body = {
+                "model": self.model,
+                "messages": self._messages,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+                "max_completion_tokens": MAX_COMPLETION_TOKENS,
+                **extra,
+            }
+            if self._tools:
+                body["tools"] = self._tools
+                body["tool_choice"] = "auto"
+            self._last_request_at = time.monotonic()
+            async with self._http.stream("POST", CHAT_URL, json=body, timeout=STREAM_TIMEOUT) as resp:
+                timing.setdefault("headers", time.monotonic() - t0)
+                if resp.status_code == 400 and self._extra is None and extra:
+                    err = (await resp.aread()).decode("utf-8", "replace")
+                    if "reasoning" in err:
+                        continue  # параметр не поддерживается — следующий вариант
+                    raise RuntimeError(f"HTTP 400: {err[:300]}")
+                if resp.status_code != 200:
+                    err = (await resp.aread()).decode("utf-8", "replace")
+                    raise RuntimeError(f"HTTP {resp.status_code}: {err[:300]}")
+                if self._extra is None:
+                    self._extra = extra
+                    logger.info(f"[{self.label}] {self.model}: request params {extra or '{}'}")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        continue
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+                    for choice in chunk.get("choices") or []:
+                        delta = choice.get("delta") or {}
+                        if delta.get("content"):
+                            timing.setdefault("first", time.monotonic() - t0)
+                            text += delta["content"]
+                            self._emit({"type": "response.output_text.delta", "delta": delta["content"]})
+                        for tc in delta.get("tool_calls") or []:
+                            timing.setdefault("first", time.monotonic() - t0)
+                            slot = calls.setdefault(tc.get("index", 0), {"id": None, "name": "", "arguments": ""})
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function") or {}
+                            if fn.get("name"):
+                                slot["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                slot["arguments"] += fn["arguments"]
+            return text, calls, usage
+        return text, calls, usage
+
+    def _log_timing(self, timing: Dict[str, Any], t0: float, status: str) -> None:
+        """Время запроса — в журнал звонка: ответ сервера, первый текст, всего."""
+        from backend.websockets.call_log import CallLogRecorder
+        rec = CallLogRecorder.current()
+        if rec is None:
+            return
+        ms = lambda v: f"{int(v * 1000)} мс" if v is not None else "—"
+        headers, first = timing.get("headers"), timing.get("first")
+        slow = (headers or 0) > SLOW_HEADERS_SEC or (first or 0) > SLOW_FIRST_SEC
+        rec.add(
+            "llm",
+            f"Запрос к {self.model}: ответ сервера через {ms(headers)}, первый текст через {ms(first)}, "
+            f"всего {ms(time.monotonic() - t0)}"
+            + (", с повтором" if timing.get("retried") else "")
+            + ("" if status == "completed" else f" ({'отменён' if status == 'cancelled' else 'ошибка'})"),
+            level="warning" if slow and status == "completed" else "info",
+        )
+
+    async def _keepalive(self) -> None:
+        """Держим HTTPS-соединение с OpenAI тёплым: без этого каждая реплика после паузы > 5 с
+        открывала новое соединение (в звонке 30.09 ответ сервера ждали 5–6 с вместо 0,6)."""
+        try:
+            while self.is_connected and self._http is not None:
+                await asyncio.sleep(5)
+                if time.monotonic() - self._last_request_at < KEEPALIVE_IDLE_SEC:
+                    continue
+                self._last_request_at = time.monotonic()
+                try:
+                    await self._http.get(f"https://api.openai.com/v1/models/{self.model}", timeout=10)
+                except Exception as exc:
+                    logger.info(f"[{self.label}] keepalive ping failed: {exc}")
+        except asyncio.CancelledError:
+            pass
+
     async def _run_response(self) -> None:
         response_id = f"resp_{uuid.uuid4().hex[:16]}"
         self._emit({"type": "response.created", "response": {"id": response_id}})
         text, calls, usage = "", {}, {}
         status = "completed"
+        timing: Dict[str, Any] = {"retried": False}
+        t0 = time.monotonic()
         try:
-            for extra in self._request_variants():
-                body = {
-                    "model": self.model,
-                    "messages": self._messages,
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
-                    "max_completion_tokens": MAX_COMPLETION_TOKENS,
-                    **extra,
-                }
-                if self._tools:
-                    body["tools"] = self._tools
-                    body["tool_choice"] = "auto"
-                async with self._http.stream("POST", CHAT_URL, json=body) as resp:
-                    if resp.status_code == 400 and self._extra is None and extra:
-                        err = (await resp.aread()).decode("utf-8", "replace")
-                        if "reasoning" in err:
-                            continue  # параметр не поддерживается — следующий вариант
-                        raise RuntimeError(f"HTTP 400: {err[:300]}")
-                    if resp.status_code != 200:
-                        err = (await resp.aread()).decode("utf-8", "replace")
-                        raise RuntimeError(f"HTTP {resp.status_code}: {err[:300]}")
-                    if self._extra is None:
-                        self._extra = extra
-                        logger.info(f"[{self.label}] {self.model}: request params {extra or '{}'}")
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                        except ValueError:
-                            continue
-                        if chunk.get("usage"):
-                            usage = chunk["usage"]
-                        for choice in chunk.get("choices") or []:
-                            delta = choice.get("delta") or {}
-                            if delta.get("content"):
-                                text += delta["content"]
-                                self._emit({"type": "response.output_text.delta", "delta": delta["content"]})
-                            for tc in delta.get("tool_calls") or []:
-                                slot = calls.setdefault(tc.get("index", 0), {"id": None, "name": "", "arguments": ""})
-                                if tc.get("id"):
-                                    slot["id"] = tc["id"]
-                                fn = tc.get("function") or {}
-                                if fn.get("name"):
-                                    slot["name"] += fn["name"]
-                                if fn.get("arguments"):
-                                    slot["arguments"] += fn["arguments"]
-                break
+            for attempt in range(2):
+                try:
+                    text, calls, usage = await self._stream_response(timing, t0)
+                    break
+                except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+                    # Сервер не ответил / соединение умерло, а текста ещё не было — один повтор
+                    if attempt == 0 and not timing.get("first"):
+                        timing["retried"] = True
+                        logger.warning(f"[{self.label}] no response in time ({type(exc).__name__}), retrying")
+                        continue
+                    raise
         except asyncio.CancelledError:
             status = "cancelled"
         except Exception as exc:
             status = "failed"
-            logger.error(f"[{self.label}] response failed: {exc}")
+            logger.error(f"[{self.label}] response failed: {type(exc).__name__}: {exc}")
             self._emit({"type": "error", "error": {"code": "llm_request_failed", "message": str(exc)[:300]}})
+        self._log_timing(timing, t0, status)
 
         # История: что модель успела сказать (при перебивании — начало фразы, как в Realtime)
         tool_calls = [c for c in (calls[i] for i in sorted(calls)) if c["id"] and c["name"]]

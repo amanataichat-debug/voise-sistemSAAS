@@ -45,6 +45,7 @@ import asyncio
 import base64
 import contextvars
 import json
+import re
 import time
 import traceback
 import uuid
@@ -86,6 +87,14 @@ FILLER_PHRASES = {
     "en": "One moment, let me check.",
     "tr": "Bir saniye, hemen bakıyorum.",
 }
+# Перебивание по распознаванию (ASR-режим).
+# Эхо: по телефону голос ассистента возвращается в линию, и Scribe распознаёт его как речь
+# клиента. Черновик без букв («.») или повторяющий то, что ассистент сейчас говорит, — не перебивание.
+ECHO_WORD_SHARE = 0.6          # доля слов черновика, найденных в речи ассистента, начиная с которой это эхо
+ECHO_TAIL_SEC = 1.5            # сколько после конца речи ассистента ещё ждать его эхо
+GREETING_MIN_WORDS = 2         # приветствие перебивает только фраза от 2 слов (не «алло», «да»)
+REGREET_AFTER_SEC = 2.5        # приветствие оборвали, а клиент молчит — повторить его
+LOOP_LAG_WARN_MS = 400         # event loop был занят дольше — предупреждение в журнал звонка
 CANCEL_WAIT_SEC = 2.0          # ASR: сколько ждать, пока OpenAI закроет отменённый ответ, перед новой репликой
 DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помочь?"
 
@@ -107,6 +116,22 @@ def _log(message: str, level: str = "INFO") -> None:
         logger.warning(f"[{tag}] {message}")
     else:
         logger.info(f"[{tag}] {message}")
+
+
+_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def _words(text: str) -> list:
+    return [w.lower() for w in _WORD_RE.findall(text or "")]
+
+
+def _has_letters(text: str) -> bool:
+    return bool(_WORD_RE.search(text or ""))
+
+
+def _word_count(text: str) -> int:
+    """Слова из 2+ букв: «А-а-а, мо» — одно слово, а не четыре."""
+    return sum(1 for w in _words(text) if len(w) > 1)
 
 
 async def _save_dialog(assistant_id: str, user_message: str, assistant_message: str,
@@ -221,6 +246,13 @@ class FishVoiceSession:
         self._filler_response_id: Optional[str] = None
         self._filler_next_speech = False
         self._hangup_requested = False
+        # Эхо и приветствие
+        self._speaking_text = ""        # что ассистент говорит сейчас (для фильтра эха)
+        self._speech_ended_at = 0.0
+        self._greeting_playing = False
+        self._greeting_interrupted = False
+        self._regreeted = False
+        self._deferred_turn: Optional[str] = None  # «алло» во время приветствия — отправим после него
 
     # ------------------------------------------------------------------ helpers
     def _new_detector(self) -> StreamingSentenceDetector:
@@ -266,7 +298,14 @@ class FishVoiceSession:
 
     async def on_tts_speech_ended(self) -> None:
         self.assistant_speaking = False
+        self._speech_ended_at = time.monotonic()
+        greeting_done = self._greeting_playing
+        self._greeting_playing = False
         self.call_log.add("tts", "Ассистент закончил говорить")
+        if greeting_done and self._deferred_turn:
+            text, self._deferred_turn = self._deferred_turn, None
+            self.call_log.user_done()
+            self._track(self._send_user_turn(text))
         await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
 
     # ------------------------------------------------------------------ ASR (режим «ASR → текст»)
@@ -281,18 +320,48 @@ class FishVoiceSession:
         """Первые распознанные слова реплики: абонент заговорил."""
         if self.user_speaking:
             return
+        assistant_busy = self.assistant_speaking or self.response_active or self.tts.speaking
+        if not _has_letters(text):
+            self.call_log.add("asr", f"Черновик без слов «{text}» — не считаем речью (шум или эхо)")
+            return
+        if self._is_echo(text):
+            self.call_log.add("asr", f"Эхо речи ассистента «{text}» — не перебиваем")
+            return
+        if self._greeting_playing and _word_count(text) < GREETING_MIN_WORDS:
+            return  # короткое «алло» не обрывает приветствие; реплика придёт окончательным текстом
         self.user_speaking = True
         self.call_log.add("asr", f"Клиент заговорил: «{text}»")
         await self.emit({"type": "speech.started", "timestamp": time.time()})
-        if self.assistant_speaking or self.response_active or self.tts.speaking:
+        if assistant_busy:
             await self.barge_in("asr_partial")
+
+    def _is_echo(self, text: str) -> bool:
+        """Черновик повторяет то, что ассистент говорит (или только что сказал), — это эхо линии."""
+        if not self._speaking_text:
+            return False
+        speaking = self.assistant_speaking or self.tts.speaking
+        if not speaking and time.monotonic() - self._speech_ended_at > ECHO_TAIL_SEC:
+            return False
+        words = [w for w in _words(text) if len(w) > 1]
+        if not words:
+            return False
+        said = set(_words(self._speaking_text))
+        return sum(1 for w in words if w in said) / len(words) >= ECHO_WORD_SHARE
 
     async def on_asr_committed(self, text: str) -> None:
         """Фраза закончена (пауза ELEVEN_ASR_SILENCE_MS): отправить её модели текстом."""
         self.user_speaking = False
         await self.emit({"type": "speech.stopped", "timestamp": time.time()})
-        if not text:
-            self.call_log.add("asr", "Фраза закончена, но текст пустой (шум?)")
+        if not text or not _has_letters(text):
+            self.call_log.add("asr", f"Фраза без слов «{text}» — пропускаем (шум?)")
+            return
+        if self._is_echo(text):
+            self.call_log.add("asr", f"Эхо речи ассистента «{text}» — пропускаем")
+            return
+        if self._greeting_playing and _word_count(text) < GREETING_MIN_WORDS:
+            # «Алло» поверх приветствия: пусть договорит, реплику отправим сразу после
+            self._deferred_turn = f"{self._deferred_turn} {text}".strip() if self._deferred_turn else text
+            self.call_log.add("user", f"Клиент (во время приветствия): «{text}» — ответим после приветствия")
             return
         _log(f"user (asr): {text}")
         self.call_log.user_turns += 1
@@ -339,6 +408,8 @@ class FishVoiceSession:
         async with self._turn_lock:
             if self.closed:
                 return
+            if self._deferred_turn:  # «алло» из-под приветствия, которое потом всё же перебили
+                text, self._deferred_turn = f"{self._deferred_turn} {text}".strip(), None
             # Реплика пришла без промежуточного текста, а ассистент ещё говорит — перебиваем здесь.
             if self.assistant_speaking or self.response_active or self.tts.speaking:
                 await self.barge_in("asr_commit")
@@ -363,10 +434,39 @@ class FishVoiceSession:
         if not greeting:
             return
         self.call_log.add("assistant", f"Приветствие: «{greeting}»")
+        self._speaking_text = greeting
+        self._greeting_playing = True
         await self.llm.add_assistant_message(greeting)
         await self.tts.say(greeting)
         self.tts.end_of_response()
         _log(f"greeting sent to Fish: {greeting[:60]}")
+
+    async def _regreet_if_silent(self, turns_before: int) -> None:
+        """Приветствие оборвали, а клиент так ничего и не сказал — повторить его (один раз)."""
+        await asyncio.sleep(REGREET_AFTER_SEC)
+        if (self.closed or self._regreeted or self.asr_turns != turns_before or self.user_speaking
+                or self.assistant_speaking or self.response_active or self.tts.speaking):
+            return
+        self._regreeted = True
+        self.call_log.add("assistant", "Приветствие оборвали, клиент молчит — повторяем")
+        greeting = (getattr(self.assistant, "greeting_message", None) or DEFAULT_GREETING).strip()
+        self._speaking_text = greeting
+        self._greeting_playing = True
+        await self.tts.say(greeting)
+        self.tts.end_of_response()
+
+    async def _watch_loop_lag(self) -> None:
+        """Event loop заблокирован (синхронная работа в async-коде) — в журнал звонка: это прямая задержка ответа."""
+        tick = 0.2
+        try:
+            while not self.closed:
+                t0 = time.monotonic()
+                await asyncio.sleep(tick)
+                lag_ms = int((time.monotonic() - t0 - tick) * 1000)
+                if lag_ms >= LOOP_LAG_WARN_MS:
+                    _log(f"event loop blocked for {lag_ms} ms", "WARNING")
+        except asyncio.CancelledError:
+            pass
 
     # ------------------------------------------------------------------ barge-in
     async def barge_in(self, reason: str) -> None:
@@ -375,6 +475,11 @@ class FishVoiceSession:
         _log(f"barge-in #{self.interruptions} ({reason}); response_active={self.response_active}")
         self.call_log.interruptions += 1
         self.call_log.add("barge_in", f"Перебивание #{self.interruptions}", reason=reason)
+        if self._greeting_playing:
+            self._greeting_playing = False
+            self._greeting_interrupted = True
+            if not self._regreeted:
+                self._track(self._regreet_if_silent(self.asr_turns))
         if self.response_active:
             await self.llm.cancel_response()
         await self.tts.clear()
@@ -456,6 +561,7 @@ class FishVoiceSession:
             if not delta or not self.response_active:
                 return
             self.response_text += delta
+            self._speaking_text = self.response_text
             if not self._first_text_logged:
                 self._first_text_logged = True
                 since = self.call_log.since_user_done_ms()
@@ -576,6 +682,7 @@ class FishVoiceSession:
         language = (getattr(self.assistant, "language", None) or "ru")[:2].lower()
         phrase = FILLER_PHRASES.get(language, FILLER_PHRASES["ru"])
         self._filler_next_speech = True
+        self._speaking_text = phrase
         self.call_log.add("assistant", f"Заполнитель, пока выполняется функция: «{phrase}»")
         await self.tts.say(phrase)
         self.tts.end_of_response()
@@ -719,6 +826,7 @@ class FishVoiceSession:
     async def run(self) -> None:
         started = time.time()
         llm_task = asyncio.create_task(self.handle_llm_events())
+        self._track(self._watch_loop_lag())
         try:
             await self.greet()
             await self.handle_client_messages()
