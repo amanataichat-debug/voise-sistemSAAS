@@ -158,17 +158,26 @@ class Settings(BaseSettings):
     # русский посреди фразы, а жёсткий language_code=ky «натягивает» русские слова на кыргызский.
     ELEVEN_ASR_SECONDARY_LANGUAGES: str = os.getenv("ELEVEN_ASR_SECONDARY_LANGUAGES", "ru")
     # Телефон: слать в Scribe родные 8 кГц (pcm_8000), а не пересчитанные в 24 кГц
-    # Движок распознавания: "openai" (gpt-live-transcribe, при сбое — Scribe) или "scribe"
-    ELEVEN_ASR_PROVIDER: str = os.getenv("ELEVEN_ASR_PROVIDER", "openai").strip().lower()
+    # Движок распознавания: "yandex" (SpeechKit v3), "openai" (gpt-live-transcribe) или "scribe";
+    # при сбое подключения — следующий по списку
+    YANDEX_SPEECHKIT_API_KEY: Optional[str] = os.getenv("YANDEX_SPEECHKIT_API_KEY") or os.getenv("YANDEX_API_KEY")
+    YANDEX_FOLDER_ID: Optional[str] = os.getenv("YANDEX_FOLDER_ID")
+    YANDEX_STT_LANGUAGES: str = os.getenv("YANDEX_STT_LANGUAGES", "ky-KG,ru-RU")
+    YANDEX_STT_MODEL: str = os.getenv("YANDEX_STT_MODEL", "general")
+    ELEVEN_ASR_PROVIDER: str = os.getenv("ELEVEN_ASR_PROVIDER", "yandex").strip().lower()
     ELEVEN_ASR_OPENAI_MODEL: str = os.getenv("ELEVEN_ASR_OPENAI_MODEL", "gpt-live-transcribe")
     # Задержка gpt-live-transcribe: minimal | low | medium | high | xhigh (быстрее ↔ точнее)
     ELEVEN_ASR_OPENAI_DELAY: str = os.getenv("ELEVEN_ASR_OPENAI_DELAY", "low")
     ELEVEN_ASR_PHONE_8K: bool = os.getenv("ELEVEN_ASR_PHONE_8K", "true").lower() in ("1", "true", "yes")
-    # «Мозг» Eleven-ассистента в режиме «ASR → текст»: обычная текстовая модель OpenAI через
-    # Chat Completions (backend/websockets/chat_llm_client.py). По замеру 30.09 gpt-5.6-luna
-    # отвечает в ~2 раза быстрее gpt-realtime-2 и лучше других держит кыргызский в голосе.
+    # «Мозг» Eleven-ассистента в режиме «ASR → текст»: текстовая модель через Chat Completions
+    # (backend/websockets/chat_llm_client.py). С 01.10 — DeepSeek V4.1 Flash на OpenRouter (Together);
+    # прежний вариант — ELEVEN_TEXT_LLM_PROVIDER=openai + ELEVEN_TEXT_LLM_MODEL=gpt-5.6-luna.
     # Имя с "realtime" (например gpt-realtime-2) — вернуться к OpenAI Realtime в текстовом режиме.
-    ELEVEN_TEXT_LLM_MODEL: str = os.getenv("ELEVEN_TEXT_LLM_MODEL", "gpt-5.6-luna")
+    ELEVEN_TEXT_LLM_MODEL: str = os.getenv("ELEVEN_TEXT_LLM_MODEL", "deepseek/deepseek-v4.1-flash")
+    # Где брать «мозг»: openrouter (OPENROUTER_API_KEY, провайдеры по порядку из ELEVEN_TEXT_LLM_ROUTE)
+    # или openai (OPENAI_API_KEY, например gpt-5.6-luna). Без OPENROUTER_API_KEY — openai gpt-5.6-luna.
+    ELEVEN_TEXT_LLM_PROVIDER: str = os.getenv("ELEVEN_TEXT_LLM_PROVIDER", "openrouter").strip().lower()
+    ELEVEN_TEXT_LLM_ROUTE: str = os.getenv("ELEVEN_TEXT_LLM_ROUTE", "together")
 
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.

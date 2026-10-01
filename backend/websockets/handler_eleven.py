@@ -42,6 +42,7 @@ from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.eleven_tts_client import ElevenTTSClient
 from backend.websockets.scribe_stt_client import ScribeSTTClient
 from backend.websockets.openai_stt_client import OpenAISTTClient
+from backend.websockets.yandex_stt_client import YandexSTTClient
 from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
@@ -176,8 +177,15 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         use_asr = settings.ELEVEN_ASR_ENABLED
         use_chat = use_asr and "realtime" not in (settings.ELEVEN_TEXT_LLM_MODEL or "")
         if use_chat:
-            llm = ChatLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
-                                conversation_model=ElevenConversation, label="ELEVEN-LLM")
+            if settings.ELEVEN_TEXT_LLM_PROVIDER == "openrouter" and settings.OPENROUTER_API_KEY:
+                llm = ChatLLMClient(settings.OPENROUTER_API_KEY, assistant, client_id, db, user_agent,
+                                    telephony=telephony, conversation_model=ElevenConversation, label="ELEVEN-LLM",
+                                    provider="openrouter", model=settings.ELEVEN_TEXT_LLM_MODEL,
+                                    route=[x.strip() for x in (settings.ELEVEN_TEXT_LLM_ROUTE or "").split(",")])
+            else:
+                model = settings.ELEVEN_TEXT_LLM_MODEL if settings.ELEVEN_TEXT_LLM_PROVIDER == "openai" else "gpt-5.6-luna"
+                llm = ChatLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
+                                    conversation_model=ElevenConversation, label="ELEVEN-LLM", model=model)
         else:
             llm = FishLLMClient(settings.OPENAI_API_KEY, assistant, client_id, db, user_agent, telephony=telephony,
                                 conversation_model=ElevenConversation, label="ELEVEN-LLM", text_input=use_asr)
@@ -209,10 +217,20 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                 model=settings.ELEVEN_ASR_OPENAI_MODEL, delay=settings.ELEVEN_ASR_OPENAI_DELAY,
             )
 
+        def make_yandex():
+            return YandexSTTClient(
+                settings.YANDEX_SPEECHKIT_API_KEY, settings.YANDEX_FOLDER_ID,
+                languages=[x.strip() for x in (settings.YANDEX_STT_LANGUAGES or "").split(",") if x.strip()],
+                sample_rate=8000 if telephony else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                model=settings.YANDEX_STT_MODEL, label=client_id[:8],
+            )
+
         async def connect_stt():
-            """Основной движок распознавания, при сбое — запасной (OpenAI ↔ Scribe). None — ни один."""
-            order = [make_openai_stt, make_scribe] if settings.ELEVEN_ASR_PROVIDER == "openai" \
-                else [make_scribe, make_openai_stt]
+            """Основной движок распознавания, при сбое — следующий. None — ни один не подключился."""
+            order = {
+                "yandex": [make_yandex, make_scribe],
+                "openai": [make_openai_stt, make_scribe],
+            }.get(settings.ELEVEN_ASR_PROVIDER, [make_scribe, make_openai_stt])
             for make in order:
                 client = make()
                 if await client.connect():
@@ -239,7 +257,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
 
         tts_task = asyncio.create_task(timed("ElevenLabs", tts_connect()))
         stt_task = asyncio.create_task(timed("распознавание", connect_stt())) if use_asr else None
-        llm_task = asyncio.create_task(timed("OpenAI", llm.connect())) if use_chat else None
+        llm_task = asyncio.create_task(timed("LLM", llm.connect())) if use_chat else None
         sub_task = asyncio.create_task(timed("подписка", _check_subscription(assistant)))
 
         async def abort(code: str, message: str, ws_code: int = 1011, payload: Optional[dict] = None) -> None:
@@ -310,7 +328,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         if llm_task is not None:
             ok = await llm_task
         else:
-            ok = await timed("OpenAI", llm.connect())
+            ok = await timed("LLM", llm.connect())
             if ok and session.greeting_started:
                 await llm.add_assistant_message(greeting_text)  # приветствие уже прозвучало — в контекст
         if not ok:
