@@ -1500,6 +1500,31 @@ def ensure_agent_eleven_voice_columns():
         logger.error(f"❌ ensure_agent_eleven_voice_columns error: {e}")
 
 
+def ensure_agent_attachment_columns():
+    """
+    Колонки вложений агента обзвона (ветка 0410-golos): attachment_id в
+    agent_telegram_messages / agent_instagram_messages и таблица agent_files.
+    Запускается СРАЗУ после create_tables: поллеры Telegram/Instagram пишут в
+    эти таблицы с первых секунд, а универсальный ensure_all_model_columns
+    стоит в самом конце длинной цепочки (и не выполняется вовсе, если любой
+    шаг до него упал) — без этого шага каждое входящее падало на
+    «column attachment_id does not exist».
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.models.base import Base
+        from backend.models.agent_file import AgentFile
+        Base.metadata.create_all(engine, tables=[AgentFile.__table__])
+        inspector = inspect(engine)
+        with engine.begin() as conn:
+            for table in ("agent_telegram_messages", "agent_instagram_messages"):
+                if inspector.has_table(table):
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS attachment_id UUID'))
+        logger.info("✅ ensure_agent_attachment_columns: agent_files + attachment_id ready")
+    except Exception as e:
+        logger.error(f"❌ ensure_agent_attachment_columns error: {e}")
+
+
 def ensure_task_model_columns():
     """
     Идемпотентно досоздаёт в tasks колонки, появившиеся позже старых
@@ -2378,6 +2403,9 @@ async def startup_event():
 
                 # Шаг 2.1: tasks — сразу, до долгих шагов (NOT NULL на contact_id ломал задачи агента)
                 ensure_task_model_columns()
+
+                # Шаг 2.1.1: вложения агента — до долгих шагов (поллеры пишут сразу)
+                ensure_agent_attachment_columns()
 
                 # Шаг 2.2: лишние NOT NULL / CHECK / короткие VARCHAR / ENUM из старой
                 #    схемы — сразу, до долгих шагов (check_assistant_type ломал задачи агента)
