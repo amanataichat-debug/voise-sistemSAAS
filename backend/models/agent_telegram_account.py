@@ -178,6 +178,9 @@ class AgentTelegramMessage(Base):
     tg_message_id = Column(BigInteger, nullable=True)
     direction = Column(String(10), default="inbound", nullable=False)
     body = Column(Text, nullable=False)
+    # Вложение сообщения (agent_files.id): голосовое/фото/документ клиента или
+    # файл, отправленный агентом. Без FK — колонку досоздаёт ensure_all_model_columns.
+    attachment_id = Column(UUID(as_uuid=True), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -186,5 +189,6 @@ class AgentTelegramMessage(Base):
             "id": str(self.id),
             "direction": self.direction or "inbound",
             "body": self.body,
+            "attachment_id": str(self.attachment_id) if self.attachment_id else None,
             "ts": self.created_at.isoformat() if self.created_at else None,
         }

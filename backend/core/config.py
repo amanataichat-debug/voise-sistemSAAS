@@ -69,6 +69,25 @@ class Settings(BaseSettings):
     STT_OPENAI_MODEL: str = os.getenv("STT_OPENAI_MODEL", "gpt-4o-mini-transcribe")
     STT_OPENROUTER_MODEL: str = os.getenv("STT_OPENROUTER_MODEL", "openai/gpt-4o-mini-transcribe")
     STT_LANGUAGE: str = os.getenv("STT_LANGUAGE", "ru")
+
+    # Вложения в переписке агента с клиентами (личный Telegram, Instagram):
+    # голосовые/аудио → Whisper (ru + ky), картинки и сканы → OCR/vision-модель
+    # OpenRouter, документы → извлечение текста. Обработка списывает кредиты.
+    # Whisper не знает кыргызский как язык: язык не фиксируем (автоопределение),
+    # подсказка — в AGENT_STT_PROMPT; если Whisper определил язык не из
+    # AGENT_STT_LANGUAGES и задан ELEVENLABS_API_KEY — повтор через Scribe (ky есть).
+    AGENT_STT_MODEL: str = os.getenv("AGENT_STT_MODEL", "whisper-1")
+    AGENT_STT_LANGUAGES: str = os.getenv("AGENT_STT_LANGUAGES", "russian,kyrgyz,ru,ky")
+    AGENT_STT_PROMPT: str = os.getenv(
+        "AGENT_STT_PROMPT",
+        "Голосовое сообщение клиента на русском или кыргызском языке. "
+        "Кардарлын кыргыз же орус тилиндеги үн билдирүүсү.",
+    )
+    AGENT_STT_SCRIBE_FALLBACK: bool = os.getenv("AGENT_STT_SCRIBE_FALLBACK", "true").lower() == "true"
+    AGENT_STT_CREDITS_PER_MINUTE: int = int(os.getenv("AGENT_STT_CREDITS_PER_MINUTE", "15"))
+    AGENT_VISION_MODEL: str = os.getenv("AGENT_VISION_MODEL", "google/gemini-3.5-flash")
+    AGENT_MEDIA_MAX_MB: int = int(os.getenv("AGENT_MEDIA_MAX_MB", "20"))
+    AGENT_VOICE_MAX_SECONDS: int = int(os.getenv("AGENT_VOICE_MAX_SECONDS", "600"))
     REALTIME_WS_URL: str = os.getenv(
         "REALTIME_WS_URL", 
         "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"

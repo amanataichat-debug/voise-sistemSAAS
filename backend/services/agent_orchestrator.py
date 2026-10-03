@@ -1038,7 +1038,11 @@ class PostCallOrchestrator:
                 "   договорились о следующем шаге) — запланируй его через\n"
                 "   create_agent_task. Если договорились списаться позже — запланируй\n"
                 "   отложенное сообщение через schedule_telegram_message (инструкция,\n"
-                "   не готовый текст). Сам факт сообщения НЕ требует звонка."
+                "   не готовый текст). Сам факт сообщения НЕ требует звонка.\n"
+                "   Голосовые и вложения клиента уже распознаны (см. текст ниже).\n"
+                "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
+                "   отправь через telegram_send_file; нужен свой документ —\n"
+                "   create_document, затем telegram_send_file."
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ TELEGRAM"
             status_label = "СТАТУС"
@@ -1056,7 +1060,11 @@ class PostCallOrchestrator:
                 "   после сообщения клиента и не позволяет писать первым — отвечай\n"
                 "   сейчас, откладывать ответ нельзя. Если по сути сообщения нужен\n"
                 "   звонок (клиент просит позвонить и есть его номер) — запланируй\n"
-                "   через create_agent_task. Сам факт сообщения НЕ требует звонка."
+                "   через create_agent_task. Сам факт сообщения НЕ требует звонка.\n"
+                "   Голосовые и вложения клиента уже распознаны (см. текст ниже).\n"
+                "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
+                "   отправь через instagram_send_file; нужен свой документ —\n"
+                "   create_document, затем instagram_send_file."
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ INSTAGRAM"
             status_label = "СТАТУС"
@@ -1397,7 +1405,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                         except Exception:
                             pass
 
-                    if tool_name == "telegram_send_message":
+                    if tool_name in ("telegram_send_message", "telegram_send_file"):
                         try:
                             if json.loads(result_str).get("ok"):
                                 message_sent = True

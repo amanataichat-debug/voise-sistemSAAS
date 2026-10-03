@@ -21,6 +21,7 @@
 - `agent_config.py` — `AgentConfig` (`agent_configs`), конфиг автономного «Voksy AI Agent» (оркестратор + голосовой движок).
 - `agent_contact.py` — `AgentContact` (`agent_contacts`), контакты конкретного агента с памятью и счётчиком попыток.
 - `agent_call.py` — `AgentCall` (`agent_calls`), запись о звонке агента (pre/post-call логи, транскрипт, решение).
+- `agent_file.py` — `AgentFile` (`agent_files`): файлы агента обзвона — `source` library (библиотека владельца, `title`/`description` «когда отправлять»), inbound (вложение клиента из `channel` telegram/instagram), generated (`create_document`); `kind` voice/audio/video/image/document/other, `storage_key` в R2, `extracted_text` (расшифровка/OCR/текст), `status` processing/ready/failed/skipped, `credits_charged`. У `agent_telegram_messages` и `agent_instagram_messages` есть `attachment_id` (без FK) — ссылка на файл сообщения.
 - `agent_telegram_chat_history.py` — `AgentTelegramChatHistory` (`agent_telegram_chat_histories`), история Telegram-чатов агента.
 - `browser_task.py` — `BrowserTask` (`browser_tasks`) + enum `BrowserTaskStatus`, задачи браузерной автоматизации (план, шаги, DOM-снапшоты).
 - `subscription.py` — `SubscriptionPlan` (`subscription_plans`), `SubscriptionLog` (`subscription_logs`), `PaymentTransaction` (`payment_transactions`).

@@ -99,6 +99,8 @@ class AgentInstagramMessage(Base):
     ig_message_id = Column(String(255), nullable=True)
     direction = Column(String(10), default="inbound", nullable=False)
     body = Column(Text, nullable=False)
+    # Вложение сообщения (agent_files.id), без FK — как у agent_telegram_messages.
+    attachment_id = Column(UUID(as_uuid=True), nullable=True)
 
     # Время сообщения по данным Instagram (naive UTC); created_at — время записи.
     sent_at = Column(DateTime, nullable=True)
@@ -110,5 +112,6 @@ class AgentInstagramMessage(Base):
             "id": str(self.id),
             "direction": self.direction or "inbound",
             "body": self.body,
+            "attachment_id": str(self.attachment_id) if self.attachment_id else None,
             "ts": ts.isoformat() if ts else None,
         }

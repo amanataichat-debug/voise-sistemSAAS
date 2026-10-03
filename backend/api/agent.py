@@ -1558,6 +1558,191 @@ async def agent_chat_stream(
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ФАЙЛЫ АГЕНТА (agent_files): библиотека владельца, вложения клиентов,
+# документы, созданные агентом. Логика — services/agent_media_service.py.
+# ═══════════════════════════════════════════════════════════════════════════
+
+AGENT_LIBRARY_MAX_FILES = 100
+
+
+class AgentFileUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+
+
+def _agent_file_or_404(db: Session, agent: AgentConfig, file_id: str):
+    from backend.models.agent_file import AgentFile
+    try:
+        fid = uuid.UUID(str(file_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="file_not_found")
+    row = db.query(AgentFile).filter(
+        AgentFile.id == fid, AgentFile.agent_config_id == agent.id
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="file_not_found")
+    return row
+
+
+@router.get("/files")
+async def list_agent_files(
+    agent_id: Optional[str] = Query(None),
+    source: str = Query("library"),
+    contact_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Файлы агента: source = library | generated | inbound | all."""
+    from backend.models.agent_file import AgentFile
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent.id)
+    if source in ("library", "generated", "inbound"):
+        q = q.filter(AgentFile.source == source)
+    if contact_id:
+        q = q.filter(AgentFile.agent_contact_id == contact_id)
+    rows = q.order_by(AgentFile.created_at.desc()).limit(limit).all()
+    from backend.services.r2_storage import R2StorageService
+    return {
+        "files": [r.to_dict() for r in rows],
+        "storage_configured": R2StorageService.objects_available(),
+        "max_mb": settings.AGENT_MEDIA_MAX_MB,
+    }
+
+
+@router.post("/files")
+async def upload_agent_file(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Загрузить файл в библиотеку агента. Текст извлекается сразу (документы —
+    бесплатно, картинки и PDF-сканы — OCR за кредиты), чтобы агент знал, что
+    внутри, и мог отвечать по содержимому.
+    """
+    from backend.models.agent_file import AgentFile
+    from backend.services import agent_media_service
+    from backend.services.r2_storage import R2StorageService
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not R2StorageService.objects_available():
+        raise HTTPException(status_code=503, detail="storage_not_configured")
+    count = db.query(AgentFile).filter(
+        AgentFile.agent_config_id == agent.id, AgentFile.source == "library"
+    ).count()
+    if count >= AGENT_LIBRARY_MAX_FILES:
+        raise HTTPException(status_code=400, detail="library_limit_reached")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty_file")
+    if len(data) > settings.AGENT_MEDIA_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="file_too_large")
+
+    row = await agent_media_service.store_file(
+        db,
+        user_id=current_user.id,
+        agent_config_id=agent.id,
+        data=data,
+        filename=file.filename or "file",
+        mime=file.content_type,
+        source="library",
+        title=(title or "").strip() or None,
+        description=(description or "").strip() or None,
+    )
+    if not row.storage_key:
+        db.delete(row)
+        db.commit()
+        raise HTTPException(status_code=502, detail="storage_upload_failed")
+    await agent_media_service.analyze_file(db, row, data)
+    if row.status == "skipped" and row.error == "unsupported_format":
+        # Файл без текста (архив, аудио и т.п.) — отправлять его можно и так.
+        row.status, row.error = "ready", None
+        db.commit()
+    db.refresh(row)
+    logger.info(f"[AGENT-FILES] library upload {row.filename} ({row.size_bytes} B) → {row.status}, agent {agent.id}")
+    return {"success": True, "file": row.to_dict()}
+
+
+@router.get("/files/{file_id}")
+async def get_agent_file(
+    file_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Файл с извлечённым текстом (расшифровка голосового, OCR, текст документа)."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    return _agent_file_or_404(db, agent, file_id).to_dict(with_text=True)
+
+
+@router.get("/files/{file_id}/link")
+async def get_agent_file_link(
+    file_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Временная ссылка на скачивание (1 час)."""
+    from backend.services import agent_media_service
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    url = agent_media_service.file_link(_agent_file_or_404(db, agent, file_id), expires_seconds=3600)
+    if not url:
+        raise HTTPException(status_code=404, detail="file_not_stored")
+    return {"url": url}
+
+
+@router.patch("/files/{file_id}")
+async def update_agent_file(
+    file_id: str,
+    body: AgentFileUpdateRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Переименовать файл библиотеки / поменять описание «когда отправлять»."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = _agent_file_or_404(db, agent, file_id)
+    if body.title is not None:
+        row.title = body.title.strip() or None
+    if body.description is not None:
+        row.description = body.description.strip() or None
+    db.commit()
+    db.refresh(row)
+    return {"success": True, "file": row.to_dict()}
+
+
+@router.delete("/files/{file_id}")
+async def delete_agent_file(
+    file_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Удалить файл (из R2 и из базы)."""
+    from backend.services import agent_media_service
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    await agent_media_service.delete_file(db, _agent_file_or_404(db, agent, file_id))
+    return {"success": True}
+
+
 @router.post("/transcribe")
 async def agent_transcribe(
     file: UploadFile = File(...),

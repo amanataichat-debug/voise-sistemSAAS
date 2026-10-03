@@ -366,6 +366,78 @@ class R2StorageService:
         logger.info(f"[R2] ✅ call recording {call_id}: {len(data) // 1024} KB → {key}")
         return url
 
+    # ------------------------------------------------------------------
+    # Произвольные файлы (файлы агента: agent-files/...). В отличие от записей
+    # звонков, публичный URL не нужен: ссылку наружу (Instagram SEND_IMAGE,
+    # ссылка на документ) даёт presigned_url.
+    # ------------------------------------------------------------------
+    @classmethod
+    def objects_available(cls) -> bool:
+        """Есть ли креды R2 для put/get (R2_PUBLIC_URL не обязателен)."""
+        return bool(settings.R2_ACCESS_KEY and settings.R2_SECRET_KEY and settings.R2_ENDPOINT and settings.R2_BUCKET)
+
+    @classmethod
+    async def put_object(cls, key: str, data: bytes, content_type: str = "application/octet-stream") -> bool:
+        client = cls._get_client()
+        if client is None or not cls.objects_available():
+            return False
+        try:
+            await asyncio.to_thread(
+                client.put_object,
+                Bucket=settings.R2_BUCKET,
+                Key=key,
+                Body=data,
+                ContentType=content_type or "application/octet-stream",
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[R2] ❌ put_object {key} failed: {e}")
+            return False
+
+    @classmethod
+    async def get_object(cls, key: str) -> Optional[bytes]:
+        client = cls._get_client()
+        if client is None or not key:
+            return None
+        try:
+            def _get():
+                resp = client.get_object(Bucket=settings.R2_BUCKET, Key=key)
+                return resp["Body"].read()
+            return await asyncio.to_thread(_get)
+        except Exception as e:
+            logger.error(f"[R2] ❌ get_object {key} failed: {e}")
+            return None
+
+    @classmethod
+    async def delete_object(cls, key: str) -> bool:
+        client = cls._get_client()
+        if client is None or not key:
+            return False
+        try:
+            await asyncio.to_thread(client.delete_object, Bucket=settings.R2_BUCKET, Key=key)
+            return True
+        except Exception as e:
+            logger.error(f"[R2] ❌ delete_object {key} failed: {e}")
+            return False
+
+    @classmethod
+    def presigned_url(cls, key: str, expires_seconds: int = 3600, filename: Optional[str] = None) -> Optional[str]:
+        """Временная ссылка на скачивание (S3 SigV4: максимум 7 дней)."""
+        client = cls._get_client()
+        if client is None or not key:
+            return None
+        params = {"Bucket": settings.R2_BUCKET, "Key": key}
+        if filename:
+            from urllib.parse import quote
+            params["ResponseContentDisposition"] = f"inline; filename*=UTF-8''{quote(filename)}"
+        try:
+            return client.generate_presigned_url(
+                "get_object", Params=params, ExpiresIn=min(int(expires_seconds), 7 * 24 * 3600)
+            )
+        except Exception as e:
+            logger.error(f"[R2] ❌ presigned_url {key} failed: {e}")
+            return None
+
     @classmethod
     def is_configured(cls) -> bool:
         """Проверяет, настроен ли R2"""

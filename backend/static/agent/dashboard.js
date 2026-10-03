@@ -72,6 +72,7 @@ function showDashboard(){
   loadPhoneNumbers();
   loadTelegramStatus();
   loadKnowledgeBaseStatus();
+  loadAgentFiles();
   loadConnectors();
   loadTgAccount();
   loadCredits();

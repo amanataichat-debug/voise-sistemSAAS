@@ -200,6 +200,59 @@ class CreditService:
         )
         return tx
 
+    @classmethod
+    def charge_amount(
+        cls,
+        db: Session,
+        user_id: UUID,
+        amount: int,
+        ref_type: str,
+        ref_id: Optional[UUID] = None,
+        model_slug: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Optional[CreditTransaction]:
+        """
+        Списать заранее посчитанную сумму (не по токенам): распознавание
+        голосовых, OCR вложений агента. Как charge — в ноль, не в минус, без
+        исключения при нехватке. amount <= 0 → ничего не делает.
+        """
+        amount = int(amount or 0)
+        if amount <= 0:
+            return None
+        user = db.execute(
+            select(User).where(User.id == user_id).with_for_update()
+        ).scalar_one_or_none()
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        current = max(0, user.credits_balance or 0)
+        actual_charge = min(amount, current)
+        user.credits_balance = current - actual_charge
+
+        note_parts = []
+        if actual_charge < amount:
+            note_parts.append(f"partial: charged {actual_charge}/{amount}")
+        if notes:
+            note_parts.append(notes)
+
+        tx = CreditTransaction(
+            user_id=user_id,
+            type=CreditTransactionType.SPEND.value,
+            amount=-amount,
+            balance_after=user.credits_balance,
+            model_slug=model_slug,
+            ref_type=ref_type,
+            ref_id=ref_id,
+            notes=" | ".join(note_parts) if note_parts else None,
+        )
+        db.add(tx)
+        db.commit()
+        logger.info(
+            f"[CREDITS] Charged user {user_id}: -{amount} (actual -{actual_charge}, "
+            f"balance {user.credits_balance}, ref {ref_type})"
+        )
+        return tx
+
     # ------------------------------------------------------------------
     # GRANTS
     # ------------------------------------------------------------------

@@ -840,3 +840,21 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .card:hover, .stat-card:hover, .chat-tile:hover { transform: none !important; }
 }
+
+/* ── Файлы агента (agent/files.js) ── */
+.files-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.files-tab { height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--vf-border, #e5e7eb); background: transparent; color: var(--vf-text-2, inherit); font-size: 12.5px; cursor: pointer; }
+.files-tab.active { background: var(--vf-accent-soft, #eef2ff); border-color: var(--vf-accent, #2a5ce8); color: var(--vf-accent, #2a5ce8); font-weight: 600; }
+.files-upload { padding: 12px; border: 1px dashed var(--vf-border, #e5e7eb); border-radius: 10px; margin-bottom: 14px; }
+.files-list { display: flex; flex-direction: column; gap: 8px; }
+.files-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--vf-border, #e5e7eb); border-radius: 10px; }
+.files-item-icon { width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--vf-accent-soft, #eef2ff); color: var(--vf-accent, #2a5ce8); }
+.files-item-main { flex: 1; min-width: 0; }
+.files-item-name { font-size: 13.5px; font-weight: 600; word-break: break-word; }
+.files-item-meta { font-size: 12px; color: var(--vf-text-4, #6b7280); margin-top: 2px; }
+.files-item-descr { font-size: 12.5px; margin-top: 4px; }
+.files-item-warn { font-size: 12px; color: var(--red, #dc2626); margin-top: 4px; }
+.files-item-text { font-size: 12.5px; margin-top: 8px; padding: 8px; border-radius: 8px; background: var(--vf-surface-2, #f6f7f9); white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.files-item-text.hidden { display: none; }
+.files-item-actions { display: flex; gap: 4px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 560px) { .files-item { flex-wrap: wrap; } .files-item-actions { width: 100%; justify-content: flex-start; } }

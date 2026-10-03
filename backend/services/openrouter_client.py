@@ -91,10 +91,12 @@ class OpenRouterClient:
         temperature: float = 0.7,
         max_tokens: int = 4000,
         timeout: float = 90.0,
+        extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Returns full response dict from OpenRouter.
         Raises Exception on error.
+        extra_payload — дополнительные поля запроса (например plugins для PDF).
         """
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not configured")
@@ -121,6 +123,8 @@ class OpenRouterClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+        if extra_payload:
+            payload.update(extra_payload)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(

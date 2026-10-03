@@ -194,9 +194,15 @@ function _cdSmsBubble(m){
   const out = (m.direction === 'outbound');
   const who = out ? 'Агент' : 'Клиент';
   const tm = m.ts ? fmtDate(m.ts) : '';
+  // Вложения (голосовые, фото, документы, отправленные файлы): служебный
+  // [file_id=…] нужен оркестратору, человеку показываем кнопку «Файл».
+  const body = (m.body || '').replace(/\s*\[file_id=[0-9a-f-]+\]/g, '');
+  const file = m.attachment_id
+    ? `<div style="margin-top:4px"><span class="card-link" onclick="downloadAgentFile('${esc(m.attachment_id)}')"><i class="fas fa-download"></i> Файл</span></div>`
+    : '';
   return `<div class="cd-sms ${out ? 'cd-sms-out' : 'cd-sms-in'}">
     <div class="cd-sms-meta">${who}${tm ? ' · ' + tm : ''}</div>
-    <div class="cd-sms-body">${esc(m.body || '')}</div>
+    <div class="cd-sms-body">${esc(body)}</div>${file}
   </div>`;
 }
 

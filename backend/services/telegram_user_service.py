@@ -213,18 +213,23 @@ async def send_message(
     username: Optional[str] = None,
     phone: Optional[str] = None,
     contact_name: Optional[str] = None,
+    file_bytes: Optional[bytes] = None,
+    file_name: Optional[str] = None,
+    force_document: bool = True,
 ) -> Dict[str, Any]:
     """
-    Отправить сообщение. Резолв получателя (по мере предпочтительности):
+    Отправить сообщение (или файл с подписью text, если передан file_bytes).
+    Резолв получателя (по мере предпочтительности):
       1) username — самый надёжный и безопасный;
       2) peer_id — скан get_dialogs (работает, если диалог уже есть);
       3) phone — ImportContacts (рискованно, вызывающий обязан лимитировать).
 
+    force_document=False — картинка уйдёт как фото, а не файлом.
     Возвращает {ok, tg_message_id, peer_id, username, name, resolved_via}
     или {ok: False, error}.
     """
     text = (text or "").strip()
-    if not text:
+    if not text and not file_bytes:
         return {"ok": False, "error": "empty_text"}
 
     client = _new_client(session_str)
@@ -272,7 +277,15 @@ async def send_message(
         if getattr(entity, "bot", False) or getattr(entity, "is_self", False):
             return {"ok": False, "error": "recipient_not_allowed"}
 
-        msg = await client.send_message(entity, text)
+        if file_bytes:
+            import io
+            bio = io.BytesIO(file_bytes)
+            bio.name = file_name or "file"
+            msg = await client.send_file(
+                entity, bio, caption=(text or None), force_document=force_document,
+            )
+        else:
+            msg = await client.send_message(entity, text)
 
         # Импортированный контакт убираем из адресной книги владельца —
         # доступ к диалогу уже установлен, мусорить в контактах не нужно.
@@ -305,6 +318,67 @@ async def send_message(
 # ПОЛЛИНГ ВХОДЯЩИХ
 # ============================================================================
 
+# Размер, больше которого вложения не скачиваем (байты не держим в памяти зря).
+def _media_max_bytes() -> int:
+    return int(getattr(settings, "AGENT_MEDIA_MAX_MB", 20) or 20) * 1024 * 1024
+
+
+def _media_info(m) -> Optional[Dict[str, Any]]:
+    """
+    Описание вложения сообщения Telethon или None (нет медиа / ссылка-превью /
+    гео, контакт, опрос — такие сообщения обрабатываются только по тексту).
+    """
+    if getattr(m, "media", None) is None or getattr(m, "web_preview", None) is not None:
+        return None
+    f = getattr(m, "file", None)
+    mime = getattr(f, "mime_type", None) if f else None
+    name = getattr(f, "name", None) if f else None
+    size = getattr(f, "size", None) if f else None
+    duration = getattr(f, "duration", None) if f else None
+    if getattr(m, "sticker", None) is not None:
+        return {"kind": "sticker", "emoji": getattr(f, "emoji", None) if f else None}
+    if getattr(m, "gif", None) is not None:
+        return {"kind": "gif"}
+    if getattr(m, "voice", None) is not None:
+        return {"kind": "voice", "filename": "voice.ogg", "mime": mime or "audio/ogg", "size": size, "duration": duration}
+    if getattr(m, "video_note", None) is not None:
+        return {"kind": "video", "filename": "video_note.mp4", "mime": mime or "video/mp4", "size": size, "duration": duration}
+    if getattr(m, "audio", None) is not None:
+        return {"kind": "audio", "filename": name or f"audio{getattr(f, 'ext', '') or '.mp3'}", "mime": mime, "size": size, "duration": duration}
+    if getattr(m, "video", None) is not None:
+        return {"kind": "video", "filename": name or "video.mp4", "mime": mime or "video/mp4", "size": size, "duration": duration}
+    if getattr(m, "photo", None) is not None:
+        return {"kind": "image", "filename": "photo.jpg", "mime": "image/jpeg", "size": size}
+    if getattr(m, "document", None) is not None:
+        return {"kind": None, "filename": name or f"file{getattr(f, 'ext', '') or ''}", "mime": mime, "size": size}
+    return None
+
+
+async def _message_item(client, m) -> Optional[Dict[str, Any]]:
+    """Входящее сообщение → {id, text, media?} для поллера (None — пропустить)."""
+    body = (getattr(m, "message", None) or "").strip()
+    media = _media_info(m)
+    if media is None:
+        return {"id": m.id, "text": body} if body else None
+    kind = media["kind"]
+    if kind == "sticker":
+        label = f"[стикер {media.get('emoji') or ''}]".replace(" ]", "]")
+        return {"id": m.id, "text": (body + "\n" + label).strip()}
+    if kind == "gif":
+        return {"id": m.id, "text": (body + "\n[GIF-анимация]").strip()}
+    item = {"id": m.id, "text": body, "media": dict(media, data=None, error=None)}
+    size = media.get("size") or 0
+    if size and size > _media_max_bytes():
+        item["media"]["error"] = "file_too_large"
+        return item
+    try:
+        item["media"]["data"] = await client.download_media(m, file=bytes)
+    except Exception as e:
+        logger.warning(f"[TG-USER] download_media failed for msg {m.id}: {type(e).__name__}: {e}")
+        item["media"]["error"] = "download_failed"
+    return item
+
+
 async def poll_dialogs(
     session_str: str,
     known_last_ids: Dict[int, int],
@@ -318,7 +392,10 @@ async def poll_dialogs(
     больше POLL_MAX_MESSAGES_PER_DIALOG).
 
     Возвращает {ok, dialogs: [{peer_id, username, name, phone, top_id, is_known,
-    new_messages: [{id, text}] (старые → новые)}]} или {ok: False, error}.
+    new_messages: [{id, text, media?}] (старые → новые)}]} или {ok: False, error}.
+    media (голосовое/фото/документ/видео) скачивается здесь же, пока клиент
+    подключён: {kind, filename, mime, duration, data|None, error|None} — см.
+    _message_item. Обрабатывает его поллер через agent_media_service.
     Только личные диалоги: не боты, не группы/каналы, не Saved Messages.
     """
     client = _new_client(session_str)
@@ -347,9 +424,9 @@ async def poll_dialogs(
                     for m in reversed(list(msgs or [])):
                         if getattr(m, "out", False):
                             continue
-                        body = (getattr(m, "message", None) or "").strip()
-                        if body:
-                            new_messages.append({"id": m.id, "text": body})
+                        item = await _message_item(client, m)
+                        if item:
+                            new_messages.append(item)
             else:
                 unread = int(getattr(d, "unread_count", 0) or 0)
                 if unread > 0:
@@ -359,9 +436,9 @@ async def poll_dialogs(
                     for m in reversed(list(msgs or [])):
                         if getattr(m, "out", False):
                             continue
-                        body = (getattr(m, "message", None) or "").strip()
-                        if body:
-                            new_messages.append({"id": m.id, "text": body})
+                        item = await _message_item(client, m)
+                        if item:
+                            new_messages.append(item)
 
             out.append({
                 "peer_id": peer_id,
@@ -419,6 +496,7 @@ def store_message(
     agent_contact_id=None,
     tg_peer_id=None,
     tg_message_id=None,
+    attachment_id=None,
 ):
     """Сохранить сообщение переписки (best-effort, без commit)."""
     from backend.models.agent_telegram_account import AgentTelegramMessage
@@ -430,6 +508,7 @@ def store_message(
             tg_message_id=tg_message_id,
             direction=direction,
             body=body or "",
+            attachment_id=attachment_id,
         )
         db.add(row)
         return row

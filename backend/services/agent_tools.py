@@ -304,15 +304,17 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_CHAT_TOOLS), agent_config, db
     )
+    tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
     return _augment_with_instagram(tools, agent_config, db)
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
-    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + личный Telegram + Instagram."""
+    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + файлы + личный Telegram + Instagram."""
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_POSTCALL_TOOLS), agent_config, db
     )
+    tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
     return _augment_with_instagram(tools, agent_config, db)
 
@@ -416,8 +418,32 @@ SCHEDULE_TELEGRAM_MESSAGE_TOOL = {
     },
 }
 
+TELEGRAM_SEND_FILE_TOOL = {
+    "type": "function",
+    "name": "telegram_send_file",
+    "description": (
+        "Отправить клиенту ФАЙЛ в Telegram с личного аккаунта владельца: файл из "
+        "библиотеки агента (прайс, презентация, договор — list_agent_files), "
+        "созданный тобой документ (create_document) или вложение клиента. "
+        "Картинки уходят как фото, остальное — документом. caption — короткая "
+        "подпись к файлу (необязательно). Получатель резолвится так же, как в "
+        "telegram_send_message."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "username": {"type": "string", "description": "Telegram @username получателя (если известен)"},
+            "file_id": {"type": "string", "description": "id файла из list_agent_files / create_document"},
+            "caption": {"type": "string", "description": "Подпись к файлу"},
+        },
+        "required": ["file_id"],
+    },
+}
+
 TELEGRAM_USER_TOOLS = [
     TELEGRAM_SEND_MESSAGE_TOOL,
+    TELEGRAM_SEND_FILE_TOOL,
     TELEGRAM_GET_THREAD_TOOL,
     SCHEDULE_TELEGRAM_MESSAGE_TOOL,
 ]
@@ -481,10 +507,251 @@ INSTAGRAM_GET_THREAD_TOOL = {
     },
 }
 
+INSTAGRAM_SEND_FILE_TOOL = {
+    "type": "function",
+    "name": "instagram_send_file",
+    "description": (
+        "Отправить клиенту ФАЙЛ в Instagram Direct (файл из list_agent_files, "
+        "документ из create_document или вложение клиента). Картинки уходят "
+        "фото; PDF, документы, таблицы и аудио Instagram напрямую не принимает — "
+        "они уйдут ссылкой на скачивание (действует 7 дней). Те же ограничения, "
+        "что у instagram_send_message: только ответ клиенту в течение 24 часов."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "file_id": {"type": "string", "description": "id файла из list_agent_files / create_document"},
+            "caption": {"type": "string", "description": "Подпись / сопроводительный текст"},
+        },
+        "required": ["agent_contact_id", "file_id"],
+    },
+}
+
 INSTAGRAM_TOOLS = [
     INSTAGRAM_SEND_MESSAGE_TOOL,
+    INSTAGRAM_SEND_FILE_TOOL,
     INSTAGRAM_GET_THREAD_TOOL,
 ]
+
+
+# ============================================================================
+# FILE TOOLS — файлы агента (agent_files): библиотека владельца, вложения
+# клиентов (уже распознанные: голос → текст, фото → OCR) и документы, которые
+# агент собирает сам. Доступны всегда; отправка клиенту — telegram_send_file /
+# instagram_send_file (домешиваются вместе с тулзами своего канала).
+# ============================================================================
+
+LIST_AGENT_FILES_TOOL = {
+    "type": "function",
+    "name": "list_agent_files",
+    "description": (
+        "Список файлов агента: библиотека владельца (прайсы, презентации, "
+        "договоры — с описанием, когда их отправлять), документы, созданные "
+        "тобой, и вложения от клиентов (голосовые, фото, документы). Вызывай, "
+        "когда клиент просит прайс/каталог/договор или нужно найти присланный "
+        "клиентом файл."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source": {
+                "type": "string",
+                "enum": ["library", "generated", "inbound", "all"],
+                "description": "library — библиотека владельца (по умолчанию), generated — созданные агентом, inbound — от клиентов, all — все",
+            },
+            "agent_contact_id": {"type": "string", "description": "Только файлы этого контакта (для inbound/generated)"},
+            "limit": {"type": "integer", "description": "Сколько файлов (по умолчанию 30)"},
+        },
+    },
+}
+
+READ_AGENT_FILE_TOOL = {
+    "type": "function",
+    "name": "read_agent_file",
+    "description": (
+        "Прочитать содержимое файла: полный текст документа, расшифровку "
+        "голосового, распознанный текст и описание картинки. Для длинных "
+        "документов читай частями через offset."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "id файла"},
+            "offset": {"type": "integer", "description": "С какого символа читать (по умолчанию 0)"},
+            "max_chars": {"type": "integer", "description": "Сколько символов (по умолчанию 8000, максимум 20000)"},
+        },
+        "required": ["file_id"],
+    },
+}
+
+CREATE_DOCUMENT_TOOL = {
+    "type": "function",
+    "name": "create_document",
+    "description": (
+        "Создать документ для клиента или владельца: коммерческое предложение, "
+        "счёт, расчёт, памятку, таблицу. Форматы: pdf (по умолчанию), docx, "
+        "xlsx, csv, txt. content — текст: строки с # — заголовки, с «- » — "
+        "пункты списка. table — таблица (первая строка — заголовки), обязательна "
+        "для xlsx/csv. Возвращает file_id — отправь его клиенту через "
+        "telegram_send_file / instagram_send_file. Не выдумывай цены и условия — "
+        "бери их из базы знаний и библиотеки файлов."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Заголовок и имя файла"},
+            "content": {"type": "string", "description": "Текст документа"},
+            "format": {"type": "string", "enum": ["pdf", "docx", "xlsx", "csv", "txt"]},
+            "table": {
+                "type": "array",
+                "description": "Таблица: массив строк, каждая — массив ячеек; первая строка — заголовки",
+                "items": {"type": "array", "items": {"type": "string"}},
+            },
+            "agent_contact_id": {"type": "string", "description": "UUID контакта, для которого документ (если есть)"},
+        },
+        "required": ["title"],
+    },
+}
+
+AGENT_FILE_TOOLS = [
+    LIST_AGENT_FILES_TOOL,
+    READ_AGENT_FILE_TOOL,
+    CREATE_DOCUMENT_TOOL,
+]
+
+
+def _augment_with_files(base_tools: list, agent_config) -> list:
+    """Дописать тулзы файлов агента (не зависят от коннекторов)."""
+    if agent_config is None:
+        return base_tools
+    return base_tools + to_chat_completions_tools(AGENT_FILE_TOOLS)
+
+
+def _get_agent_file(db: Session, agent_config_id, file_id):
+    """Файл агента по id (только свой агент) или None."""
+    from backend.models.agent_file import AgentFile
+    try:
+        import uuid as _uuid
+        fid = _uuid.UUID(str(file_id))
+    except (ValueError, TypeError):
+        return None
+    return db.query(AgentFile).filter(
+        AgentFile.id == fid,
+        AgentFile.agent_config_id == agent_config_id,
+    ).first()
+
+
+async def fn_list_agent_files(args: dict, agent_config_id: str, db: Session) -> dict:
+    from backend.models.agent_file import AgentFile
+    source = (args.get("source") or "library").lower()
+    q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent_config_id)
+    if source in ("library", "generated", "inbound"):
+        q = q.filter(AgentFile.source == source)
+    if args.get("agent_contact_id"):
+        q = q.filter(AgentFile.agent_contact_id == args["agent_contact_id"])
+    limit = min(int(args.get("limit") or 30), 100)
+    rows = q.order_by(AgentFile.created_at.desc()).limit(limit).all()
+    files = []
+    for r in rows:
+        item = {
+            "file_id": str(r.id),
+            "source": r.source,
+            "kind": r.kind,
+            "filename": r.filename,
+            "title": r.title,
+            "description": r.description,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        if r.agent_contact_id:
+            item["agent_contact_id"] = str(r.agent_contact_id)
+        if r.extracted_text:
+            item["text_preview"] = r.extracted_text[:200]
+        files.append(item)
+    return {"ok": True, "count": len(files), "files": files}
+
+
+async def fn_read_agent_file(args: dict, agent_config_id: str, db: Session) -> dict:
+    row = _get_agent_file(db, agent_config_id, args.get("file_id"))
+    if row is None:
+        return {"ok": False, "error": "Файл не найден"}
+    text = row.extracted_text or ""
+    offset = max(0, int(args.get("offset") or 0))
+    max_chars = min(max(500, int(args.get("max_chars") or 8000)), 20000)
+    chunk = text[offset:offset + max_chars]
+    out = {
+        "ok": True,
+        "file_id": str(row.id),
+        "filename": row.filename,
+        "kind": row.kind,
+        "status": row.status,
+        "total_chars": len(text),
+        "offset": offset,
+        "text": chunk,
+    }
+    if offset + max_chars < len(text):
+        out["next_offset"] = offset + max_chars
+    if not text:
+        out["note"] = f"Текста нет ({row.error or row.status})"
+    return out
+
+
+async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    from backend.services import agent_media_service
+    contact_id = args.get("agent_contact_id") or None
+    if contact_id:
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == contact_id,
+            AgentContact.agent_config_id == agent_config_id,
+        ).first()
+        if contact is None:
+            contact_id = None
+    table = args.get("table")
+    if table is not None and not isinstance(table, list):
+        table = None
+    try:
+        row = await agent_media_service.create_document(
+            db,
+            user_id=user_id,
+            agent_config_id=agent_config_id,
+            title=(args.get("title") or "Документ").strip(),
+            content=args.get("content") or "",
+            fmt=args.get("format") or "pdf",
+            table=table,
+            agent_contact_id=contact_id,
+        )
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if not row.storage_key:
+        return {"ok": False, "error": "Хранилище файлов (R2) не настроено — документ не сохранён"}
+    return {"ok": True, "file_id": str(row.id), "filename": row.filename, "size_bytes": row.size_bytes}
+
+
+async def fn_telegram_send_file(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    from backend.services import agent_media_service
+    if agent_config is None:
+        return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
+    row = _get_agent_file(db, agent_config.id, args.get("file_id"))
+    if row is None:
+        return {"ok": False, "error": "Файл не найден"}
+    data = await agent_media_service.load_bytes(row)
+    if not data:
+        return {"ok": False, "error": "Файл недоступен в хранилище"}
+    send_args = dict(args, text=(args.get("caption") or "").strip())
+    return await fn_telegram_send_message(send_args, user_id, agent_config, db, file_row=row, file_bytes=data)
+
+
+async def fn_instagram_send_file(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    if agent_config is None:
+        return {"ok": False, "error": "Коннектор Instagram не подключён"}
+    row = _get_agent_file(db, agent_config.id, args.get("file_id"))
+    if row is None:
+        return {"ok": False, "error": "Файл не найден"}
+    if not row.storage_key:
+        return {"ok": False, "error": "Файл недоступен в хранилище"}
+    send_args = dict(args, text=(args.get("caption") or "").strip())
+    return await fn_instagram_send_message(send_args, user_id, agent_config, db, file_row=row)
 
 
 def _augment_with_instagram(base_tools: list, agent_config, db: Session) -> list:
@@ -500,11 +767,15 @@ def _augment_with_instagram(base_tools: list, agent_config, db: Session) -> list
     return base_tools + to_chat_completions_tools(INSTAGRAM_TOOLS)
 
 
-async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session) -> dict:
+async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
+                                    file_row=None) -> dict:
     """
     Отправка DM с бизнес-аккаунта Instagram владельца (через Composio).
     Только ответ в существующем треде (IGSID резолвится из
     agent_instagram_conversations); почасовой анти-спам лимит.
+    С file_row отправляет файл (instagram_send_file): картинку — как фото,
+    остальное — ссылкой на скачивание (Composio-тулкит шлёт только текст и
+    изображения); text — подпись.
     """
     from backend.models.agent_instagram import AgentInstagramMessage
 
@@ -515,7 +786,7 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         return {"ok": False, "error": "Коннектор Instagram не подключён"}
 
     text = (args.get("text") or "").strip()
-    if not text:
+    if not text and file_row is None:
         return {"ok": False, "error": "Пустой текст сообщения"}
 
     contact = db.query(AgentContact).filter(
@@ -544,22 +815,49 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         return {"ok": False, "error": "Достигнут почасовой лимит исходящих Instagram-сообщений"}
 
     composio_user_id = connector.composio_user_id or composio_service.composio_user_id_for_agent(agent_config.id)
-    result = await instagram_service.send_text(composio_user_id, conversation.igsid, text)
+    body = text
+    sent_as = None
+    if file_row is None:
+        result = await instagram_service.send_text(composio_user_id, conversation.igsid, text)
+    else:
+        from backend.services import agent_media_service
+        if file_row.kind == "image":
+            link = agent_media_service.file_link(file_row, expires_seconds=3600)
+            if not link:
+                return {"ok": False, "error": "Файл недоступен в хранилище"}
+            result = await instagram_service.send_image(composio_user_id, conversation.igsid, link)
+            if result.get("ok") and text:
+                await instagram_service.send_text(composio_user_id, conversation.igsid, text)
+            sent_as = "image"
+        else:
+            link = agent_media_service.file_link(file_row)
+            if not link:
+                return {"ok": False, "error": "Файл недоступен в хранилище"}
+            msg_text = (text + "\n\n" if text else "") + f"{file_row.filename}: {link}"
+            result = await instagram_service.send_text(composio_user_id, conversation.igsid, msg_text)
+            sent_as = "link"
+        body = (f"📎 Отправлен файл «{file_row.filename}» [file_id={file_row.id}]"
+                + (" (ссылкой)" if sent_as == "link" else "")
+                + (f"\n{text}" if text else ""))
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error")}
 
     instagram_service.store_message(
-        db, agent_config.id, "outbound", text,
+        db, agent_config.id, "outbound", body,
         agent_contact_id=contact.id,
         ig_conversation_id=conversation.ig_conversation_id,
         ig_message_id=result.get("message_id"),
         sent_at=datetime.utcnow(),
+        attachment_id=(file_row.id if file_row is not None else None),
     )
     db.commit()
 
     to_label = ("@" + conversation.ig_username) if conversation.ig_username else conversation.igsid
-    logger.info(f"[AGENT-TOOLS] instagram_send_message → {to_label}")
-    return {"ok": True, "to": to_label}
+    logger.info(f"[AGENT-TOOLS] instagram_send_{'file' if file_row is not None else 'message'} → {to_label}")
+    out = {"ok": True, "to": to_label}
+    if sent_as:
+        out["sent_as"] = sent_as
+    return out
 
 
 async def fn_instagram_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
@@ -576,12 +874,15 @@ async def fn_instagram_get_thread(args: dict, user_id: str, agent_config_id: str
     return {"ok": True, "messages": [m.to_dict() for m in rows]}
 
 
-async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: Session) -> dict:
+async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: Session,
+                                   file_row=None, file_bytes: Optional[bytes] = None) -> dict:
     """
     Отправка сообщения с личного Telegram владельца. Анти-бан меры:
     - почасовой лимит исходящих (TG_SEND_HOURLY_LIMIT);
     - резолв по номеру телефона (ImportContacts) — только когда нет диалога и
       username, и не чаще TG_PHONE_RESOLVE_HOURLY_LIMIT новых диалогов в час.
+    С file_row/file_bytes отправляет файл (text — подпись); так работает
+    telegram_send_file.
     """
     from backend.models.agent_telegram_account import (
         AgentTelegramDialog, AgentTelegramMessage,
@@ -597,7 +898,7 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
 
     text = (args.get("text") or "").strip()
-    if not text:
+    if not text and file_bytes is None:
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
@@ -650,6 +951,9 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         username=username,
         phone=phone if allow_phone else None,
         contact_name=(contact.name if contact else None),
+        file_bytes=file_bytes,
+        file_name=(file_row.filename if file_row is not None else None),
+        force_document=(file_row is None or file_row.kind != "image"),
     )
     if not result.get("ok"):
         err = result.get("error") or "telegram_error"
@@ -683,16 +987,22 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         if result.get("name"):
             dialog.tg_name = result["name"]
 
+    body = text
+    if file_row is not None:
+        body = (f"📎 Отправлен файл «{file_row.filename}» [file_id={file_row.id}]"
+                + (f"\n{text}" if text else ""))
     telegram_user_service.store_message(
-        db, account, "outbound", text,
+        db, account, "outbound", body,
         agent_contact_id=(contact.id if contact else (dialog.agent_contact_id if dialog else None)),
         tg_peer_id=res_peer,
         tg_message_id=result.get("tg_message_id"),
+        attachment_id=(file_row.id if file_row is not None else None),
     )
     db.commit()
 
     to_label = result.get("name") or (f"@{result['username']}" if result.get("username") else str(res_peer))
-    logger.info(f"[AGENT-TOOLS] telegram_send_message → {to_label} via {result.get('resolved_via')}")
+    what = f"file {file_row.filename}" if file_row is not None else "message"
+    logger.info(f"[AGENT-TOOLS] telegram_send_{'file' if file_row is not None else 'message'} ({what}) → {to_label} via {result.get('resolved_via')}")
     return {"ok": True, "to": to_label, "resolved_via": result.get("resolved_via")}
 
 
@@ -2664,6 +2974,18 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_instagram_send_message(tool_args, user_id, agent_config, db)
         elif tool_name == "instagram_get_thread":
             result = await fn_instagram_get_thread(tool_args, user_id, agent_config_id, db)
+        elif tool_name in ("telegram_send_file", "instagram_send_file"):
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            fn = fn_telegram_send_file if tool_name == "telegram_send_file" else fn_instagram_send_file
+            result = await fn(tool_args, user_id, agent_config, db)
+        elif tool_name == "list_agent_files":
+            result = await fn_list_agent_files(tool_args, agent_config_id, db)
+        elif tool_name == "read_agent_file":
+            result = await fn_read_agent_file(tool_args, agent_config_id, db)
+        elif tool_name == "create_document":
+            result = await fn_create_document(tool_args, user_id, agent_config_id, db)
         elif composio_service.is_composio_tool(tool_name):
             result = await fn_execute_connector(tool_name, tool_args, agent_config_id, db)
         else:

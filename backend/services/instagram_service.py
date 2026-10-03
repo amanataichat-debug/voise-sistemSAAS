@@ -125,14 +125,75 @@ async def list_messages(composio_user_id: str, conversation_id: str, limit: int 
     Сообщения треда (новые первыми у Graph): {ok, messages: [...]}.
     Каждый элемент best-effort: {id, created_time, from:{id,username}, message}.
     """
-    res = await composio_service.execute(
-        "INSTAGRAM_LIST_ALL_MESSAGES",
-        {"conversation_id": conversation_id, "limit": limit},
-        composio_user_id,
-    )
+    args = {"conversation_id": conversation_id, "limit": limit, "fields": MESSAGE_FIELDS}
+    res = await composio_service.execute("INSTAGRAM_LIST_ALL_MESSAGES", args, composio_user_id)
+    if not res.get("ok"):
+        # Старые версии тулза могут не принимать fields — повтор без вложений.
+        args.pop("fields", None)
+        res = await composio_service.execute("INSTAGRAM_LIST_ALL_MESSAGES", args, composio_user_id)
     if not res.get("ok"):
         return {"ok": False, "error": res.get("error"), "messages": []}
     return {"ok": True, "messages": _inner_list(_data_dict(res))}
+
+
+# Поля сообщения Graph API: attachments нужны для голосовых/фото/файлов клиента.
+MESSAGE_FIELDS = "id,created_time,from,to,message,attachments,is_unsupported"
+
+
+def parse_attachments(message: dict) -> List[Dict[str, Any]]:
+    """
+    Вложения сообщения Graph API → [{url, mime, filename, kind_hint}].
+    Instagram отдаёт их как attachments.data[] с image_data / video_data /
+    audio_data / file_url (CDN-ссылки, живут ограниченное время — качаем сразу).
+    """
+    att = message.get("attachments")
+    if isinstance(att, dict):
+        att = att.get("data")
+    out = []
+    for a in att or []:
+        if not isinstance(a, dict):
+            continue
+        mime = a.get("mime_type")
+        name = a.get("name")
+        url, hint = None, None
+        for key, kind in (("audio_data", "voice"), ("video_data", "video"), ("image_data", "image")):
+            block = a.get(key)
+            if isinstance(block, dict) and block.get("url"):
+                url, hint = block["url"], kind
+                break
+        if not url:
+            payload = a.get("payload") if isinstance(a.get("payload"), dict) else {}
+            url = a.get("file_url") or payload.get("url")
+            t = (a.get("type") or "").lower()
+            hint = {"audio": "voice", "image": "image", "video": "video", "file": None}.get(t)
+        if not url:
+            continue
+        if hint == "voice" and mime and mime.startswith("video/"):
+            mime = "audio/mp4"  # голосовые IG приходят mp4-контейнером
+        out.append({"url": url, "mime": mime, "filename": name, "kind_hint": hint})
+    return out
+
+
+async def download_attachment(url: str, max_bytes: int) -> Dict[str, Any]:
+    """Скачать вложение по CDN-ссылке: {ok, data, mime} или {ok: False, error}."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            async with client.stream("GET", url) as resp:
+                if resp.status_code != 200:
+                    return {"ok": False, "error": "download_failed"}
+                length = int(resp.headers.get("content-length") or 0)
+                if length and length > max_bytes:
+                    return {"ok": False, "error": "file_too_large"}
+                buf = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > max_bytes:
+                        return {"ok": False, "error": "file_too_large"}
+                return {"ok": True, "data": bytes(buf), "mime": resp.headers.get("content-type")}
+    except Exception as e:
+        logger.warning(f"[IG] attachment download failed: {type(e).__name__}: {e}")
+        return {"ok": False, "error": "download_failed"}
 
 
 async def send_text(composio_user_id: str, recipient_igsid: str, text: str) -> Dict[str, Any]:
@@ -143,6 +204,24 @@ async def send_text(composio_user_id: str, recipient_igsid: str, text: str) -> D
     res = await composio_service.execute(
         "INSTAGRAM_SEND_TEXT_MESSAGE",
         {"recipient_id": str(recipient_igsid), "text": text},
+        composio_user_id,
+    )
+    if not res.get("ok"):
+        return {"ok": False, "error": _human_send_error(res.get("error"))}
+    d = _data_dict(res)
+    body = d.get("data") if isinstance(d.get("data"), dict) else d
+    return {"ok": True, "message_id": body.get("message_id") or body.get("mid")}
+
+
+async def send_image(composio_user_id: str, recipient_igsid: str, image_url: str) -> Dict[str, Any]:
+    """
+    Отправить картинку DM по публичной ссылке (Instagram сам её скачивает).
+    Документы и аудио Composio-тулкит отправлять не умеет — для них агент
+    шлёт ссылку текстом (agent_tools.fn_instagram_send_file).
+    """
+    res = await composio_service.execute(
+        "INSTAGRAM_SEND_IMAGE",
+        {"recipient_id": str(recipient_igsid), "image_url": image_url},
         composio_user_id,
     )
     if not res.get("ok"):
@@ -169,7 +248,8 @@ def _human_send_error(error) -> str:
 
 def store_message(db, agent_config_id, direction: str, body: str,
                   agent_contact_id=None, ig_conversation_id: Optional[str] = None,
-                  ig_message_id: Optional[str] = None, sent_at: Optional[datetime] = None):
+                  ig_message_id: Optional[str] = None, sent_at: Optional[datetime] = None,
+                  attachment_id=None):
     """Сохранить сообщение в тред (без commit — коммитит вызывающий)."""
     from backend.models.agent_instagram import AgentInstagramMessage
     msg = AgentInstagramMessage(
@@ -180,6 +260,7 @@ def store_message(db, agent_config_id, direction: str, body: str,
         direction=direction,
         body=body or "",
         sent_at=sent_at,
+        attachment_id=attachment_id,
     )
     db.add(msg)
     return msg

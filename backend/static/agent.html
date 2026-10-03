@@ -250,6 +250,15 @@
           <div id="kb-status-block"><div class="empty">Загрузка...</div></div>
         </div>
 
+        <div class="card" id="files-card">
+          <div class="card-head">
+            <div class="card-head-title"><i class="fas fa-folder-open"></i> Файлы агента</div>
+            <span class="hint hint-l" tabindex="0" data-hint="Прайсы, каталоги, презентации, договоры. Агент отправляет их клиентам в Telegram и Instagram, когда клиент просит, и сам собирает документы (КП, расчёты). Голосовые и файлы клиентов агент распознаёт сам."><i class="far fa-circle-question"></i></span>
+            <span class="card-link" onclick="openAgentFilesModal()">Управлять →</span>
+          </div>
+          <div id="files-block"><div class="empty">Загрузка...</div></div>
+        </div>
+
         <div class="card" id="connectors-card">
           <div class="card-head">
             <div class="card-head-title"><i class="fas fa-plug"></i> Коннекторы</div>
@@ -651,6 +660,43 @@
   </div>
 </div>
 
+<!-- MODAL: Файлы агента -->
+<div class="modal-overlay hidden" id="files-modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-folder-open"></i> Файлы агента</div>
+      <button class="modal-close" onclick="closeAgentFilesModal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="files-tabs">
+        <button class="files-tab active" data-source="library" onclick="switchAgentFilesTab('library')">Библиотека</button>
+        <button class="files-tab" data-source="generated" onclick="switchAgentFilesTab('generated')">Создал агент</button>
+        <button class="files-tab" data-source="inbound" onclick="switchAgentFilesTab('inbound')">От клиентов</button>
+      </div>
+      <div id="files-upload-form" class="files-upload">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Агент отправит файл клиенту, когда тот попросит. Опишите, что внутри и когда его отправлять — по описанию агент выбирает нужный файл.</div>
+        <div class="form-group">
+          <label class="form-label">Файл (до <span id="files-max-mb">20</span> МБ)</label>
+          <input type="file" class="form-input" id="files-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.webp,.mp3,.ogg,.m4a,.mp4,.zip,.pptx">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Название для агента</label>
+          <input type="text" class="form-input" id="files-title" maxlength="255" placeholder="Например: Прайс-лист на октябрь">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Когда отправлять</label>
+          <textarea class="form-textarea" id="files-description" rows="2" maxlength="2000" placeholder="Например: когда клиент спрашивает цены или просит прайс"></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" id="files-upload-btn" onclick="uploadAgentFile()"><i class="fas fa-upload"></i> Загрузить</button>
+      </div>
+      <div id="files-list" class="files-list"><div class="empty">Загрузка...</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAgentFilesModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Коннекторы -->
 <div class="modal-overlay hidden" id="connectors-modal-overlay">
   <div class="modal" style="max-width:520px">
@@ -699,6 +745,7 @@
 <script src="/static/agent/import.js"></script>
 <script src="/static/agent/pipeline.js"></script>
 <script src="/static/agent/knowledge-base.js"></script>
+<script src="/static/agent/files.js"></script>
 <script src="/static/agent/connectors.js"></script>
 <script src="/static/agent/onboarding.js"></script>
 <script src="/static/agent/wizard.js"></script>

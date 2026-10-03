@@ -210,6 +210,7 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
             "from_id": str(frm.get("id") or ""),
             "from_username": frm.get("username"),
             "text": (m.get("message") or "").strip(),
+            "attachments": ig.parse_attachments(m),
         })
     parsed = [m for m in parsed if m["mid"] and m["ts"]]
     parsed.sort(key=lambda m: m["ts"])
@@ -247,8 +248,8 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
         m for m in parsed
         if m["ts"] > threshold and not_seen(db, connector.agent_config_id, m["mid"])
     ]
-    inbound = [m for m in fresh if m["from_id"] != own_id and m["text"]]
-    outbound = [m for m in fresh if m["from_id"] == own_id and m["text"]]
+    inbound = [m for m in fresh if m["from_id"] != own_id and (m["text"] or m["attachments"])]
+    outbound = [m for m in fresh if m["from_id"] == own_id and (m["text"] or m["attachments"])]
 
     # Watermark двигаем в любом случае — тред просмотрен.
     row.last_processed_at = newest_ts
@@ -286,30 +287,135 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
     # тред был полным) ДО запуска оркестратора.
     for m in outbound:
         ig.store_message(
-            db, connector.agent_config_id, "outbound", m["text"],
+            db, connector.agent_config_id, "outbound", _placeholder(m, processing=False),
             agent_contact_id=(contact.id if contact else None),
             ig_conversation_id=conv_id, ig_message_id=m["mid"], sent_at=m["ts"],
         )
+    stored = []
     for m in inbound:
-        ig.store_message(
-            db, connector.agent_config_id, "inbound", m["text"],
+        msg_row = ig.store_message(
+            db, connector.agent_config_id, "inbound", _placeholder(m),
             agent_contact_id=(contact.id if contact else None),
             ig_conversation_id=conv_id, ig_message_id=m["mid"], sent_at=m["ts"],
         )
+        stored.append((m, msg_row))
     db.commit()
 
     if not inbound or contact is None:
         return False
 
-    text_joined = "\n".join(m["text"] for m in inbound)
     logger.info(
         f"[IG-POLLER] {len(inbound)} new message(s) in conv {conv_id} "
         f"(connector {connector.id}) → orchestrator"
     )
-    asyncio.create_task(handle_inbound_instagram(
-        str(connector.agent_config_id), str(contact.id), text_joined
-    ))
+    if any(m["attachments"] for m in inbound):
+        items = [(m, r.id) for m, r in stored]
+        asyncio.create_task(_process_media_and_dispatch(
+            str(connector.agent_config_id), str(contact.id), items
+        ))
+    else:
+        text_joined = "\n".join(m["text"] for m in inbound)
+        asyncio.create_task(handle_inbound_instagram(
+            str(connector.agent_config_id), str(contact.id), text_joined
+        ))
     return True
+
+
+def _placeholder(m, processing: bool = True) -> str:
+    """Тело сообщения до обработки вложений (текст + виды вложений)."""
+    from backend.services.agent_media_service import KIND_LABELS
+    parts = [m["text"]] if m["text"] else []
+    for a in m.get("attachments") or []:
+        label = KIND_LABELS.get(a.get("kind_hint") or "other", KIND_LABELS["other"])
+        parts.append(label + (" (обрабатывается…)" if processing else ""))
+    return "\n".join(parts)
+
+
+async def _process_media_and_dispatch(agent_config_id: str, contact_id: str, items) -> None:
+    """
+    Фоном: скачать вложения входящих DM (CDN-ссылки Instagram), распознать
+    (голос → Whisper, фото → OCR, документы → текст), подставить результат в
+    сохранённые сообщения и отдать оркестратору. Как у Telegram-поллера: при
+    неактивном агенте или без доступа кредиты не тратим.
+    """
+    from backend.core.config import settings
+    from backend.models.agent_config import AgentConfig
+    from backend.models.agent_instagram import AgentInstagramMessage
+    from backend.models.user import User
+    from backend.services import agent_media_service as media_svc
+    from backend.services.agent_orchestrator import handle_inbound_instagram
+
+    db = SessionLocal()
+    parts = []
+    try:
+        agent = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+        user = db.query(User).filter(User.id == agent.user_id).first() if agent else None
+        allowed = bool(agent and agent.is_active and user)
+        if allowed:
+            try:
+                allowed = user.has_active_agent_subscription()
+            except Exception:
+                pass
+        max_bytes = settings.AGENT_MEDIA_MAX_MB * 1024 * 1024
+
+        for m, msg_row_id in items:
+            if not m["attachments"]:
+                parts.append(m["text"])
+                continue
+            if not allowed:
+                plain = _placeholder(m, processing=False)
+                parts.append(plain)
+                db.query(AgentInstagramMessage).filter(
+                    AgentInstagramMessage.id == msg_row_id
+                ).update({"body": plain}, synchronize_session=False)
+                db.commit()
+                continue
+            descr_prompt, descr_thread, first_file = [], [], None
+            for a in m["attachments"]:
+                try:
+                    dl = await ig.download_attachment(a["url"], max_bytes)
+                    file_row = await media_svc.process_inbound(
+                        db,
+                        user_id=user.id,
+                        agent_config_id=agent.id,
+                        agent_contact_id=contact_id,
+                        channel="instagram",
+                        external_message_id=m["mid"],
+                        data=dl.get("data"),
+                        filename=a.get("filename") or f"{a.get('kind_hint') or 'file'}",
+                        mime=a.get("mime") or dl.get("mime"),
+                        kind_hint=a.get("kind_hint"),
+                        error=(None if dl.get("ok") else dl.get("error")),
+                    )
+                    first_file = first_file or file_row
+                    descr_prompt.append(media_svc.describe_for_prompt(file_row))
+                    descr_thread.append(media_svc.describe_for_prompt(file_row, preview_chars=500))
+                except Exception as e:
+                    logger.error(f"[IG-POLLER] attachment processing failed (mid {m['mid']}): {e}", exc_info=True)
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    descr_prompt.append("📎 Вложение — не удалось обработать")
+                    descr_thread.append("📎 Вложение — не удалось обработать")
+            caption = f"\nПодпись клиента: {m['text']}" if m["text"] else ""
+            parts.append("\n".join(descr_prompt) + caption)
+            msg_row = db.query(AgentInstagramMessage).filter(AgentInstagramMessage.id == msg_row_id).first()
+            if msg_row is not None:
+                msg_row.body = "\n".join(descr_thread) + caption
+                if first_file is not None:
+                    msg_row.attachment_id = first_file.id
+                db.commit()
+    except Exception as e:
+        logger.error(f"[IG-POLLER] media dispatch failed for agent {agent_config_id}: {e}", exc_info=True)
+        if not parts:
+            parts = [_placeholder(m, processing=False) for m, _ in items]
+    finally:
+        db.close()
+
+    text_joined = "\n".join(p for p in parts if p)
+    if text_joined:
+        await handle_inbound_instagram(agent_config_id, contact_id, text_joined)
 
 
 def not_seen(db, agent_config_id, mid) -> bool:

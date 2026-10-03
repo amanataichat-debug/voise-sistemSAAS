@@ -82,6 +82,9 @@ from .agent_instagram import (
     AgentInstagramMessage,
 )
 
+# ✅ НОВОЕ: файлы агента (библиотека, вложения клиентов, созданные документы)
+from .agent_file import AgentFile
+
 # ✅ НОВОЕ v3.0: Импортируем Voximplant Partner модели
 from .voximplant_child import (
     VoximplantChildAccount,
