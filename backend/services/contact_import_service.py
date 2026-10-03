@@ -24,7 +24,6 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 
-import phonenumbers
 from openpyxl import Workbook, load_workbook
 
 from backend.core.logging import get_logger
@@ -117,30 +116,13 @@ def normalize_phone(raw: Any) -> Tuple[Optional[str], Optional[str]]:
     if not s:
         return None, "Телефон обязателен"
 
-    # Убрать пробелы, скобки, дефисы, точки
-    cleaned = re.sub(r"[\s\(\)\-\.]", "", s)
-    if not cleaned:
-        return None, "Телефон обязателен"
-
-    if cleaned.startswith("+"):
-        candidate = cleaned
-    elif cleaned.startswith("8") and len(cleaned) == 11:
-        candidate = "+7" + cleaned[1:]
-    elif cleaned.startswith("7"):
-        candidate = "+" + cleaned
-    else:
-        # Остальное пытаемся распарсить с регионом RU
-        candidate = cleaned
-
-    try:
-        num = phonenumbers.parse(candidate, "RU")
-        if not phonenumbers.is_valid_number(num):
-            return None, f"Невалидный телефон: '{s}'"
-        return phonenumbers.format_number(
-            num, phonenumbers.PhoneNumberFormat.E164
-        ), None
-    except phonenumbers.NumberParseException:
+    # Кыргызские местные форматы (0700…, 700…, 996…) и российские (8…, 7…):
+    # правила — в backend/utils/phone.py.
+    from backend.utils.phone import normalize_phone_e164
+    e164 = normalize_phone_e164(s)
+    if not e164:
         return None, f"Невалидный телефон: '{s}'"
+    return e164, None
 
 
 # ============================================================================

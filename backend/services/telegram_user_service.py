@@ -260,7 +260,8 @@ async def send_message(
         if entity is None and phone:
             from telethon.tl.functions.contacts import ImportContactsRequest, DeleteContactsRequest
             from telethon.tl.types import InputPhoneContact
-            digits = "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+            from backend.utils.phone import normalize_phone_e164
+            digits = normalize_phone_e164(phone) or "".join(ch for ch in phone if ch.isdigit() or ch == "+")
             res = await client(ImportContactsRequest([
                 InputPhoneContact(client_id=0, phone=digits, first_name=contact_name or "Клиент", last_name="")
             ]))

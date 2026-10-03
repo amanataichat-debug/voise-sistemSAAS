@@ -106,8 +106,8 @@ function renderTgAccountModal(){
     el.innerHTML = `
       ${st === 'error' ? `<div style="background:#FEE2E2;border-left:3px solid #DC2626;padding:10px 12px;border-radius:8px;font-size:12px;color:#7F1D1D;margin-bottom:14px">Сессия недействительна (${esc(s.last_error || 'отозвана')}). Подключите аккаунт заново.</div>` : warn}
       <label class="form-label">Номер телефона аккаунта Telegram</label>
-      <input type="tel" class="form-input" id="tgacc-phone" placeholder="+79991234567" value="">
-      <div style="font-size:12px;color:#64748b;margin:6px 0 14px">Telegram пришлёт код подтверждения в приложение (не по SMS).</div>
+      <input type="tel" class="form-input" id="tgacc-phone" placeholder="+996 700 123 456" value="">
+      <div style="font-size:12px;color:#64748b;margin:6px 0 14px">Можно в любом формате: +996 700 123 456, 0700 123 456 или другой страны с кодом (+7…). Telegram пришлёт код подтверждения в приложение (не по SMS).</div>
       <button class="btn btn-primary" id="tgacc-submit" onclick="tgAccStart()"><i class="fas fa-paper-plane"></i> Получить код</button>`;
   } else if(st === 'pending_code'){
     el.innerHTML = `
@@ -260,7 +260,7 @@ function tgAccErr(detail){
     password_not_expected: 'Пароль сейчас не требуется',
     invalid_reply_scope: 'Неверное значение охвата',
     not_connected: 'Telegram не подключён',
-    phone_invalid: 'Неверный номер телефона',
+    phone_invalid: 'Неверный номер телефона. Пример: +996 700 123 456 или 0700 123 456',
     phone_banned: 'Этот номер заблокирован Telegram',
     code_invalid: 'Неверный код подтверждения',
     code_expired: 'Код истёк — начните заново',

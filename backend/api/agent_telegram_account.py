@@ -192,7 +192,12 @@ async def start_auth(
     if row and row.status == "connected":
         raise HTTPException(status_code=400, detail="already_connected")
 
-    phone = body.phone.strip()
+    # Кыргызские номера вводят по-местному («0700 123 456», «700123456») —
+    # Telegram принимает только международный формат.
+    from backend.utils.phone import normalize_phone_e164
+    phone = normalize_phone_e164(body.phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_invalid")
     result = await tg_user.start_login(phone)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error") or "telegram_error")
