@@ -191,14 +191,9 @@ async def sip_gateway_control(
             elif mtype == "call.event":
                 state["events"] += 1
                 data.setdefault("gateway_id", gateway_id)
-                db = SessionLocal()
-                try:
-                    SipGatewayService.apply_bridge_event(db, data)
-                except Exception as exc:
-                    db.rollback()
-                    logger.error(f"[SIP] failed to apply event {data.get('event')} for {data.get('call_id')}: {exc}", exc_info=True)
-                finally:
-                    db.close()
+                # Синхронная запись в БД — в потоке: в этом же воркере идут звонки,
+                # а каждый запрос к удалённой БД держал event loop сотни мс.
+                await asyncio.to_thread(_apply_bridge_event_sync, data)
             elif mtype in ("pong", "status"):
                 pass
             else:
@@ -213,6 +208,41 @@ async def sip_gateway_control(
             GATEWAYS.pop(gateway_id, None)
 
 
+def _apply_bridge_event_sync(data: Dict[str, Any]) -> None:
+    """Событие моста → БД (вызывается в потоке, см. control-сокет)."""
+    db = SessionLocal()
+    try:
+        SipGatewayService.apply_bridge_event(db, data)
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"[SIP] failed to apply event {data.get('event')} for {data.get('call_id')}: {exc}", exc_info=True)
+    finally:
+        db.close()
+
+
+def _claim_outbound_sync(gateway_id: str, max_outbound: int, sweep: bool) -> list:
+    """
+    Забрать исходящие из очереди (+ уборка зависших) — синхронно, в потоке.
+    Возвращает [(payload, строка для лога)]. Раньше это шло прямо в event loop
+    раз в секунду: 3 запроса к удалённой БД ≈ 0.5 с блокировки каждые ~1.5 с
+    во всех звонках этого воркера (рваный звук в распознавание, задержки ответа).
+    """
+    db = SessionLocal()
+    try:
+        active = SipGatewayService.active_outbound_count(db, gateway_id)
+        free = max_outbound - active
+        calls = SipGatewayService.claim_queued_calls(db, gateway_id, free) if free > 0 else []
+        out = [
+            (SipGatewayService.originate_payload(call), f"{call.did} -> {call.to_number} (call {call.id})")
+            for call in calls
+        ]
+        if sweep:
+            _sweep_stale_calls(db, gateway_id)
+        return out
+    finally:
+        db.close()
+
+
 async def _originate_loop(websocket: WebSocket, state: Dict[str, Any]) -> None:
     """Раз в секунду забирает исходящие из очереди и отправляет на шлюз. Раз в 30 с — ping и уборка зависших."""
     gateway_id = state["gateway_id"]
@@ -221,20 +251,15 @@ async def _originate_loop(websocket: WebSocket, state: Dict[str, Any]) -> None:
     while True:
         try:
             await asyncio.sleep(POLL_INTERVAL)
-            db = SessionLocal()
-            try:
-                active = SipGatewayService.active_outbound_count(db, gateway_id)
-                free = int(state.get("max_outbound") or 4) - active
-                calls = SipGatewayService.claim_queued_calls(db, gateway_id, free) if free > 0 else []
-                for call in calls:
-                    payload = SipGatewayService.originate_payload(call)
-                    await websocket.send_text(json.dumps(payload))
-                    logger.info(f"[SIP] originate sent to '{gateway_id}': {call.did} -> {call.to_number} (call {call.id})")
-                if time.time() - last_sweep > 30:
-                    last_sweep = time.time()
-                    _sweep_stale_calls(db, gateway_id)
-            finally:
-                db.close()
+            sweep = time.time() - last_sweep > 30
+            if sweep:
+                last_sweep = time.time()
+            claimed = await asyncio.to_thread(
+                _claim_outbound_sync, gateway_id, int(state.get("max_outbound") or 4), sweep
+            )
+            for payload, label in claimed:
+                await websocket.send_text(json.dumps(payload))
+                logger.info(f"[SIP] originate sent to '{gateway_id}': {label}")
             if time.time() - last_ping > 30:
                 last_ping = time.time()
                 await websocket.send_text(json.dumps({"type": "ping"}))
