@@ -2555,27 +2555,19 @@ async def startup_event():
         try:
             logger.info("🔄 Starting background schedulers...")
             
-            # Запуск Subscription Checker
-            asyncio.create_task(start_subscription_checker())
-            logger.info("✅ Subscription checker started")
-            
-            # ✅ Запуск Task Scheduler
-            asyncio.create_task(start_task_scheduler(check_interval=30))
-            logger.info("✅ Task Scheduler started (check every 30s)")
-
-            # ✅ Запуск блокировщика истёкших подписок agent (каждые 5 мин)
-            asyncio.create_task(start_subscription_blocker())
-            logger.info("✅ Agent subscription blocker started (check every 5 min)")
-
-            # ✅ Поллер личного Telegram агента (каждые 60 сек; no-op без
-            #    TELEGRAM_API_ID/HASH/SESSION_KEY; мультиворкер — claim по БД)
-            asyncio.create_task(start_telegram_user_poller(check_interval=60))
-            logger.info("✅ Telegram user poller started (check every 60s)")
-
-            # ✅ Поллер Instagram DM агента (каждые 90 сек; no-op без
-            #    COMPOSIO_API_KEY/COMPOSIO_AUTH_CONFIG_INSTAGRAM; claim по БД)
-            asyncio.create_task(start_instagram_poller())
-            logger.info("✅ Instagram poller started (check every 90s)")
+            # Все фоновые циклы — в отдельном потоке со своим event loop
+            # (backend/core/background_loop.py): их синхронные запросы к БД
+            # больше не останавливают звук звонков в основном loop'е воркера.
+            from backend.core.background_loop import start_background_jobs
+            start_background_jobs([
+                start_subscription_checker,                                  # раз в час
+                lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
+                start_subscription_blocker,                                  # каждые 5 мин
+                lambda: start_telegram_user_poller(check_interval=60),       # личный Telegram агента
+                start_instagram_poller,                                      # Instagram DM агента
+            ])
+            logger.info("✅ Background jobs started in a separate thread: subscription checker, "
+                        "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s)")
 
         except Exception as e:
             logger.error(f"❌ Error starting schedulers: {str(e)}")

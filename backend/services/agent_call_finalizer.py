@@ -13,7 +13,6 @@ PostCallOrchestrator.finalize_sip_call забирает звонок атома�
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, Tuple
@@ -48,13 +47,12 @@ def _call_duration(call: SipCall) -> int:
 
 
 def _schedule(agent_call_id: str, transcript: str, call_status: str, duration: int, direction: str) -> None:
+    # В фоновый loop (core/background_loop.py): вызывается и из основного loop'а
+    # (конец звонка), и из потока событий моста (asyncio.to_thread — своего loop'а
+    # там нет), а анализ LLM не должен делить loop со звуком звонков.
+    from backend.core.background_loop import submit
     from backend.services.agent_orchestrator import PostCallOrchestrator
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        logger.warning(f"[AGENT-FINALIZER] no running loop, PostCall for {agent_call_id} not scheduled")
-        return
-    asyncio.create_task(PostCallOrchestrator.finalize_sip_call(
+    submit(PostCallOrchestrator.finalize_sip_call(
         agent_call_id, transcript, call_status, duration, call_direction=direction,
     ))
 
