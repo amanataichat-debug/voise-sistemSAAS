@@ -199,8 +199,9 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         )
         session.tts = tts
         asr_language = (assistant.language or "").strip().lower()
+        # «none» — без второго языка (в Render пустое значение переменной задать нельзя)
         asr_secondary = [x.strip().lower() for x in (settings.ELEVEN_ASR_SECONDARY_LANGUAGES or "").split(",")
-                         if x.strip()]
+                         if x.strip() and x.strip().lower() not in ("none", "-", "off")]
 
         def make_scribe():
             # Телефон: Scribe получает родные 8 кГц (SIP-адаптер отдаёт 24 кГц — сессия пересчитает обратно)
