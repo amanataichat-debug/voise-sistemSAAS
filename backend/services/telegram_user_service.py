@@ -126,6 +126,13 @@ async def start_login(phone: str) -> Dict[str, Any]:
     try:
         await client.connect()
         sent = await client.send_code_request(phone)
+        # Куда Telegram отправил код (App = в приложение, Sms, Call, FirebaseSms…) —
+        # главный ответ на вопрос «код не приходит».
+        logger.info(
+            f"[TG-USER] code sent to •••{(phone or '')[-4:]}: "
+            f"type={type(sent.type).__name__}, next={type(sent.next_type).__name__ if sent.next_type else None}, "
+            f"timeout={sent.timeout}, dc={client.session.dc_id}"
+        )
         return {
             "ok": True,
             "session": client.session.save(),
