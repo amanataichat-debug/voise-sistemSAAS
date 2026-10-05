@@ -11,7 +11,12 @@ silence_ms, language, secondary_languages, provider_label, fatal_error.
       interim_results, voice activity events, endpointing_sensitivity SHORT) → audio …
     ← промежуточные результаты (partial → barge-in) / is_final (конец фразы → on_committed)
 
-Конец фразы определяет сам Google (endpointing_sensitivity: standard | short | supershort).
+Конец фразы определяет сам Google (endpointing_sensitivity: standard | short | supershort), но
+финал он отдаёт на каждой паузе между предложениями. Поэтому финалы копятся и уходят одной
+репликой: через COMMIT_HOLD_MS после финала, если клиент молчит; если Google сообщил о начале
+речи (SPEECH_ACTIVITY_BEGIN) — ждём следующий финал (не дольше MAX_DEFER_MS).
+Chirp 3 в потоке может не присылать промежуточных результатов — тогда перебивание срабатывает
+на готовой фразе (FishVoiceSession._send_user_turn), а не на первых словах.
 
 Ключ: сервисный аккаунт (GOOGLE_SPEECH_CREDENTIALS_JSON, иначе GOOGLE_SERVICE_ACCOUNT_JSON —
 тот же, что у Google Sheets; нужна роль Cloud Speech Client и включённый Speech-to-Text API в
@@ -43,6 +48,9 @@ FILLER_TICK_SEC = 0.2
 FILLER_AFTER_SEC = 0.4
 CONNECT_CHECK_SEC = 1.0        # столько ждём ошибку настроек (ключ, язык, модель) после открытия
 MAX_DEGRADE_STEPS = 6
+COMMIT_HOLD_MS = 250           # после финала: вдруг клиент продолжит (Google режет реплику по предложениям)
+MAX_DEFER_MS = 2500            # клиент снова заговорил после финала — ждём следующий финал не дольше
+END_FLUSH_MS = 1000            # речь кончилась, а нового финала нет (шум) — отдать накопленное
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 TextCallback = Callable[[str], Awaitable[None]]
@@ -86,6 +94,8 @@ class GoogleSTTClient:
         endpointing: str = "short",
         denoise: bool = True,
         phrases: Optional[List[str]] = None,
+        commit_hold_ms: int = COMMIT_HOLD_MS,
+        debug: bool = False,
         on_partial: Optional[TextCallback] = None,
         on_committed: Optional[TextCallback] = None,
         on_closed: Optional[Callable[[bool], Awaitable[None]]] = None,
@@ -105,6 +115,10 @@ class GoogleSTTClient:
         self.endpointing = (endpointing or "").strip().lower()
         self.denoise = bool(denoise)
         self.phrases = [p.strip() for p in (phrases or []) if p and p.strip()][:1000]
+        self.commit_hold_ms = max(0, int(commit_hold_ms))
+        self.debug = debug
+        self.partials = 0
+        self.vad_events = 0
         self.on_partial = on_partial
         self.on_committed = on_committed
         self.on_closed = on_closed
@@ -132,6 +146,8 @@ class GoogleSTTClient:
         self._last_word_at = 0.0
         self._speech_end_at = 0.0
         self._rotating = False
+        self._vad_speaking = False
+        self._commit_task: Optional[asyncio.Task] = None
 
     @property
     def provider_label(self) -> str:
@@ -417,16 +433,49 @@ class GoogleSTTClient:
         asyncio.create_task(self._restart())
 
     def _flush_finals_on_close(self) -> None:
-        self._finals, self._partial, self._in_phrase = [], "", False
+        self._cancel_commit()
+        self._finals, self._partial, self._in_phrase, self._vad_speaking = [], "", False, False
+
+    # ------------------------------------------------------------------ сборка реплики из финалов
+    def _cancel_commit(self) -> None:
+        if self._commit_task is not None and not self._commit_task.done() \
+                and self._commit_task is not asyncio.current_task():
+            self._commit_task.cancel()
+        self._commit_task = None
+
+    def _schedule_commit(self, delay_ms: int) -> None:
+        self._cancel_commit()
+        self._commit_task = asyncio.create_task(self._delayed_commit(delay_ms / 1000))
+
+    async def _delayed_commit(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        self._commit_task = None
+        await self._commit(time.monotonic())
 
     async def _handle(self, resp) -> None:
         from google.cloud.speech_v2.types import cloud_speech as c
         now = time.monotonic()
         event = resp.speech_event_type
-        if event == c.StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_END:
+        E = c.StreamingRecognizeResponse.SpeechEventType
+        if self.debug:
+            items = [f"{'FINAL' if r.is_final else 'interim'}({r.stability:.2f},{r.language_code}) "
+                     f"«{r.alternatives[0].transcript if r.alternatives else ''}»" for r in resp.results]
+            self._log(f"resp event={E(event).name if event else '-'} {' | '.join(items)}")
+        if event == E.SPEECH_ACTIVITY_END:
+            self.vad_events += 1
+            self._vad_speaking = False
             self._speech_end_at = now
-        elif event == c.StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_BEGIN:
-            self._speech_end_at = 0.0
+            if self._finals:
+                self._schedule_commit(END_FLUSH_MS)
+        elif event == E.SPEECH_ACTIVITY_BEGIN:
+            self.vad_events += 1
+            self._vad_speaking = True
+            self._in_phrase = True
+            if self._finals:
+                self._schedule_commit(MAX_DEFER_MS)  # продолжение реплики — ждём следующий финал
 
         interim: List[str] = []
         got_final = False
@@ -445,12 +494,15 @@ class GoogleSTTClient:
             partial = " ".join(self._finals + interim).strip()
             if partial != self._partial:
                 self._partial = partial
+                self.partials += 1
                 self._last_word_at = now
                 self._in_phrase = True
+                if self._finals:
+                    self._schedule_commit(MAX_DEFER_MS)
                 if self.on_partial:
                     await self.on_partial(partial)
-        if got_final:
-            await self._commit(now)
+        if got_final and self._finals:
+            self._schedule_commit(MAX_DEFER_MS if self._vad_speaking else self.commit_hold_ms)
 
     async def _commit(self, now: float) -> None:
         text = " ".join(self._finals).strip()
@@ -458,10 +510,15 @@ class GoogleSTTClient:
         self._finals, self._partial, self._in_phrase = [], "", False
         if not text:
             return
-        # Сколько прошло от последнего услышанного слова до готовой фразы — пауза endpointing'а
-        self.silence_ms = int(min(3000, (now - last_word_at) * 1000)) if last_word_at else self.default_silence_ms
-        if self._speech_end_at:
-            self.transcribe_ms.append(int((now - self._speech_end_at) * 1000))
+        # Сколько прошло от конца речи до готовой фразы: по событию Google о конце речи,
+        # иначе от последнего промежуточного текста, иначе — настроенная пауза
+        if self._speech_end_at and not self._vad_speaking:
+            self.silence_ms = int(min(3000, (now - self._speech_end_at) * 1000))
+            self.transcribe_ms.append(self.silence_ms)
+        elif last_word_at:
+            self.silence_ms = int(min(3000, (now - last_word_at) * 1000))
+        else:
+            self.silence_ms = self.default_silence_ms
         self.commits += 1
         self._log(f"final [{self.detected_language or '?'}] after {self.silence_ms} ms: {text}")
         if self.on_committed:
@@ -470,6 +527,7 @@ class GoogleSTTClient:
     async def close(self) -> None:
         self._closing = True
         self.is_connected = False
+        self._cancel_commit()
         try:
             self._queue.put_nowait(None)
         except Exception:

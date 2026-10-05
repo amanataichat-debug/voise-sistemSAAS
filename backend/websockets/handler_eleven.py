@@ -237,7 +237,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                 model=settings.GOOGLE_STT_MODEL, endpointing=settings.GOOGLE_STT_ENDPOINTING,
                 denoise=settings.GOOGLE_STT_DENOISE,
                 phrases=[x.strip() for x in (settings.GOOGLE_STT_PHRASES or "").split(",") if x.strip()],
-                label=client_id[:8],
+                commit_hold_ms=settings.GOOGLE_STT_COMMIT_HOLD_MS, label=client_id[:8],
             )
 
         async def connect_stt():

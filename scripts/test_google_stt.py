@@ -8,12 +8,15 @@
     python scripts/test_google_stt.py --rate 16000         # как в виджете
     python scripts/test_google_stt.py --text "Саламатсызбы, баасы канча?" --text "Сколько стоит доставка?"
     python scripts/test_google_stt.py --wav call.wav       # свой файл (WAV PCM16 моно)
+    python scripts/test_google_stt.py --debug              # каждый ответ Google (события речи, черновики)
+    python scripts/test_google_stt.py --no-denoise --languages ky-KG   # сравнить настройки
 
 Что делает:
   1. показывает, какой ключ Google найден (сервисный аккаунт / API-ключ, проект, регион);
   2. синтезирует фразы голосом ElevenLabs (eleven_v3, ELEVENLABS_API_KEY) или берёт --wav;
   3. стримит звук в Chirp 3 в реальном темпе (кусками по 20 мс, между фразами тишина)
-     и печатает черновики, готовые фразы и задержку от конца речи до готового текста.
+     и печатает черновики, готовые реплики и задержку от конца речи до реплики
+     (конец речи — последний громкий кусок звука перед репликой).
 
 Ключи из окружения: GOOGLE_SPEECH_CREDENTIALS_JSON (или GOOGLE_SERVICE_ACCOUNT_JSON) либо
 GOOGLE_SPEECH_API_KEY + GOOGLE_SPEECH_PROJECT_ID; ELEVENLABS_API_KEY для синтеза фраз.
@@ -92,6 +95,9 @@ async def main() -> None:
     ap.add_argument("--endpointing", default=settings.GOOGLE_STT_ENDPOINTING)
     ap.add_argument("--location", default=settings.GOOGLE_SPEECH_LOCATION)
     ap.add_argument("--languages", default=settings.GOOGLE_STT_LANGUAGES)
+    ap.add_argument("--hold", type=int, default=settings.GOOGLE_STT_COMMIT_HOLD_MS, help="мс ожидания после финала")
+    ap.add_argument("--no-denoise", action="store_true")
+    ap.add_argument("--debug", action="store_true", help="печатать каждый ответ Google")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 
@@ -119,7 +125,7 @@ async def main() -> None:
             clips.append((text, pcm))
 
     t_start = time.monotonic()
-    speech_end = {"at": 0.0}
+    speech_end = {"at": 0.0}   # время отправки последнего громкого куска
     results = []
 
     def ts() -> str:
@@ -130,8 +136,10 @@ async def main() -> None:
 
     async def on_committed(text: str) -> None:
         lag = int((time.monotonic() - speech_end["at"]) * 1000) if speech_end["at"] else None
+        speech_end["at"] = 0.0
         results.append((text, lag, client.detected_language))
         print(f"  {ts()}  ✔ [{client.detected_language or '?'}] {text}   (от конца речи {lag} мс)")
+
 
     async def on_closed(fatal: bool) -> None:
         print(f"  {ts()}  поток закрыт (fatal={fatal}, {client.fatal_error})")
@@ -141,7 +149,8 @@ async def main() -> None:
         project_id=settings.GOOGLE_SPEECH_PROJECT_ID, location=args.location,
         languages=[x.strip() for x in args.languages.split(",") if x.strip()],
         sample_rate=args.rate, model=settings.GOOGLE_STT_MODEL, endpointing=args.endpointing,
-        denoise=settings.GOOGLE_STT_DENOISE,
+        denoise=settings.GOOGLE_STT_DENOISE and not args.no_denoise,
+        commit_hold_ms=args.hold, debug=args.debug,
         phrases=[x.strip() for x in (settings.GOOGLE_STT_PHRASES or "").split(",") if x.strip()],
         on_partial=on_partial, on_committed=on_committed, on_closed=on_closed, label="test",
     )
@@ -157,9 +166,11 @@ async def main() -> None:
     silence = b"\x00" * step
     for _, pcm in clips:
         for i in range(0, len(pcm), step):
-            await client.send_audio(base64.b64encode(pcm[i:i + step]).decode())
+            chunk = pcm[i:i + step]
+            await client.send_audio(base64.b64encode(chunk).decode())
+            if audioop.rms(chunk, 2) > 300:
+                speech_end["at"] = time.monotonic()
             await asyncio.sleep(CHUNK_MS / 1000)
-        speech_end["at"] = time.monotonic()
         for _ in range(int(PAUSE_SEC * 1000 / CHUNK_MS)):
             await client.send_audio(base64.b64encode(silence).decode())
             await asyncio.sleep(CHUNK_MS / 1000)
@@ -167,7 +178,8 @@ async def main() -> None:
 
     print("— Итог —")
     print(f"  {client.provider_label}")
-    print(f"  фраз отправлено: {len(clips)}, распознано: {len(results)}")
+    print(f"  фраз отправлено: {len(clips)}, реплик получено: {len(results)} "
+          f"(черновиков: {client.partials}, событий начала/конца речи: {client.vad_events})")
     for text, lag, lang in results:
         print(f"  [{lang or '?'}] {lag} мс  {text}")
     if not results:
