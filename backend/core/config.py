@@ -177,12 +177,29 @@ class Settings(BaseSettings):
     # русский посреди фразы, а жёсткий language_code=ky «натягивает» русские слова на кыргызский.
     ELEVEN_ASR_SECONDARY_LANGUAGES: str = os.getenv("ELEVEN_ASR_SECONDARY_LANGUAGES", "ru")
     # Телефон: слать в Scribe родные 8 кГц (pcm_8000), а не пересчитанные в 24 кГц
-    # Движок распознавания: "yandex" (SpeechKit v3), "openai" (gpt-live-transcribe) или "scribe";
+    # Движок распознавания: "yandex" (SpeechKit v3), "google" (Chirp 3), "openai" (gpt-live-transcribe) или "scribe";
     # при сбое подключения — следующий по списку
     YANDEX_SPEECHKIT_API_KEY: Optional[str] = os.getenv("YANDEX_SPEECHKIT_API_KEY") or os.getenv("YANDEX_API_KEY")
     YANDEX_FOLDER_ID: Optional[str] = os.getenv("YANDEX_FOLDER_ID")
     YANDEX_STT_LANGUAGES: str = os.getenv("YANDEX_STT_LANGUAGES", "ky-KG,ru-RU")
     YANDEX_STT_MODEL: str = os.getenv("YANDEX_STT_MODEL", "general")
+    # Google Cloud Speech-to-Text V2, модель Chirp 3 (backend/websockets/google_stt_client.py):
+    # ELEVEN_ASR_PROVIDER=google. Ключ — JSON сервисного аккаунта (по умолчанию тот же
+    # GOOGLE_SERVICE_ACCOUNT_JSON, что у Google Sheets; нужен включённый Speech-to-Text API и роль
+    # Cloud Speech Client) или API-ключ + GOOGLE_SPEECH_PROJECT_ID.
+    GOOGLE_SPEECH_CREDENTIALS_JSON: Optional[str] = (os.getenv("GOOGLE_SPEECH_CREDENTIALS_JSON")
+                                                     or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
+    GOOGLE_SPEECH_API_KEY: Optional[str] = os.getenv("GOOGLE_SPEECH_API_KEY")
+    GOOGLE_SPEECH_PROJECT_ID: Optional[str] = os.getenv("GOOGLE_SPEECH_PROJECT_ID")
+    # Регион Chirp 3: eu (ближе к Render Frankfurt) или us; если eu отверг настройки — пробуем us
+    GOOGLE_SPEECH_LOCATION: str = os.getenv("GOOGLE_SPEECH_LOCATION", "eu").strip().lower()
+    GOOGLE_STT_MODEL: str = os.getenv("GOOGLE_STT_MODEL", "chirp_3")
+    GOOGLE_STT_LANGUAGES: str = os.getenv("GOOGLE_STT_LANGUAGES", "ky-KG,ru-RU")
+    # Конец фразы: standard | short | supershort (быстрее, но может «обрезать» на паузе)
+    GOOGLE_STT_ENDPOINTING: str = os.getenv("GOOGLE_STT_ENDPOINTING", "short").strip().lower()
+    GOOGLE_STT_DENOISE: bool = os.getenv("GOOGLE_STT_DENOISE", "true").lower() in ("1", "true", "yes")
+    # Словарь (biasing) через запятую: название компании, товары, тарифы — чем короче, тем лучше
+    GOOGLE_STT_PHRASES: str = os.getenv("GOOGLE_STT_PHRASES", "")
     ELEVEN_ASR_PROVIDER: str = os.getenv("ELEVEN_ASR_PROVIDER", "yandex").strip().lower()
     ELEVEN_ASR_OPENAI_MODEL: str = os.getenv("ELEVEN_ASR_OPENAI_MODEL", "gpt-live-transcribe")
     # Задержка gpt-live-transcribe: minimal | low | medium | high | xhigh (быстрее ↔ точнее)

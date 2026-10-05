@@ -73,3 +73,6 @@ audioop-lts>=0.2.1
 
 # Yandex SpeechKit v3 (gRPC) — распознавание речи Eleven-ассистентов (backend/websockets/yandex_stt_client.py)
 yandexcloud>=0.409.0
+
+# Google Cloud Speech-to-Text V2 (Chirp 3, gRPC) — ELEVEN_ASR_PROVIDER=google (backend/websockets/google_stt_client.py)
+google-cloud-speech>=2.33.0,<3.0.0

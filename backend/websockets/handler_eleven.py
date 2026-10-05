@@ -43,6 +43,7 @@ from backend.websockets.eleven_tts_client import ElevenTTSClient
 from backend.websockets.scribe_stt_client import ScribeSTTClient
 from backend.websockets.openai_stt_client import OpenAISTTClient
 from backend.websockets.yandex_stt_client import YandexSTTClient
+from backend.websockets.google_stt_client import GoogleSTTClient, parse_credentials_json
 from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
@@ -226,10 +227,24 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                 model=settings.YANDEX_STT_MODEL, label=client_id[:8],
             )
 
+        def make_google():
+            return GoogleSTTClient(
+                credentials_info=parse_credentials_json(settings.GOOGLE_SPEECH_CREDENTIALS_JSON),
+                api_key=settings.GOOGLE_SPEECH_API_KEY, project_id=settings.GOOGLE_SPEECH_PROJECT_ID,
+                location=settings.GOOGLE_SPEECH_LOCATION,
+                languages=[x.strip() for x in (settings.GOOGLE_STT_LANGUAGES or "").split(",") if x.strip()],
+                sample_rate=8000 if telephony else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                model=settings.GOOGLE_STT_MODEL, endpointing=settings.GOOGLE_STT_ENDPOINTING,
+                denoise=settings.GOOGLE_STT_DENOISE,
+                phrases=[x.strip() for x in (settings.GOOGLE_STT_PHRASES or "").split(",") if x.strip()],
+                label=client_id[:8],
+            )
+
         async def connect_stt():
             """Основной движок распознавания, при сбое — следующий. None — ни один не подключился."""
             order = {
                 "yandex": [make_yandex, make_scribe],
+                "google": [make_google, make_yandex, make_scribe],
                 "openai": [make_openai_stt, make_scribe],
             }.get(settings.ELEVEN_ASR_PROVIDER, [make_scribe, make_openai_stt])
             for make in order:
