@@ -14,7 +14,7 @@ silence_ms, language, secondary_languages, provider_label, fatal_error.
 Конец фразы определяет сам Google (endpointing_sensitivity: standard | short | supershort), но
 финал он отдаёт на каждой паузе между предложениями. Поэтому финалы копятся и уходят одной
 репликой: через COMMIT_HOLD_MS после финала, если клиент молчит; если Google сообщил о начале
-речи (SPEECH_ACTIVITY_BEGIN) — ждём следующий финал (не дольше MAX_DEFER_MS).
+речи (SPEECH_ACTIVITY_BEGIN) — ждём конца речи и следующий финал (не дольше MAX_DEFER_MS).
 Chirp 3 в потоке может не присылать промежуточных результатов — тогда перебивание срабатывает
 на готовой фразе (FishVoiceSession._send_user_turn), а не на первых словах.
 
@@ -48,8 +48,8 @@ FILLER_TICK_SEC = 0.2
 FILLER_AFTER_SEC = 0.4
 CONNECT_CHECK_SEC = 1.0        # столько ждём ошибку настроек (ключ, язык, модель) после открытия
 MAX_DEGRADE_STEPS = 6
-COMMIT_HOLD_MS = 250           # после финала: вдруг клиент продолжит (Google режет реплику по предложениям)
-MAX_DEFER_MS = 2500            # клиент снова заговорил после финала — ждём следующий финал не дольше
+COMMIT_HOLD_MS = 150           # после финала: вдруг клиент продолжит (SPEECH_ACTIVITY_BEGIN приходит сразу за финалом)
+MAX_DEFER_MS = 8000            # клиент снова заговорил после финала — ждём конца речи и финал, но не дольше
 END_FLUSH_MS = 1000            # речь кончилась, а нового финала нет (шум) — отдать накопленное
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 

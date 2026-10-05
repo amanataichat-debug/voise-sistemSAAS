@@ -202,7 +202,7 @@ class Settings(BaseSettings):
     GOOGLE_STT_PHRASES: str = os.getenv("GOOGLE_STT_PHRASES", "")
     # Google отдаёт финал на каждой паузе между предложениями: ждём столько мс после финала,
     # не продолжит ли клиент, и отправляем модели одну реплику
-    GOOGLE_STT_COMMIT_HOLD_MS: int = int(os.getenv("GOOGLE_STT_COMMIT_HOLD_MS", "250"))
+    GOOGLE_STT_COMMIT_HOLD_MS: int = int(os.getenv("GOOGLE_STT_COMMIT_HOLD_MS", "150"))
     ELEVEN_ASR_PROVIDER: str = os.getenv("ELEVEN_ASR_PROVIDER", "yandex").strip().lower()
     ELEVEN_ASR_OPENAI_MODEL: str = os.getenv("ELEVEN_ASR_OPENAI_MODEL", "gpt-live-transcribe")
     # Задержка gpt-live-transcribe: minimal | low | medium | high | xhigh (быстрее ↔ точнее)
