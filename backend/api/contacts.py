@@ -12,7 +12,7 @@ Version: 4.0 - Production Ready + Full Task Delete
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, or_
+from sqlalchemy import func, desc, or_, distinct, literal_column
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -29,6 +29,9 @@ from backend.models.conversation import Conversation
 from backend.models.assistant import AssistantConfig
 from backend.models.gemini_assistant import GeminiAssistantConfig
 from backend.models.cartesia_assistant import CartesiaAssistantConfig
+from backend.models.gemini_assistant import GeminiConversation
+from backend.models.fish_assistant import FishAssistantConfig, FishConversation
+from backend.models.eleven_assistant import ElevenAssistantConfig, ElevenConversation
 from backend.models.task import Task, TaskStatus
 
 logger = get_logger(__name__)
@@ -179,6 +182,86 @@ def parse_time_string(time_str: str) -> datetime:
     return now + timedelta(hours=1)
 
 
+# ==================== Диалоги провайдеров без contact_id ====================
+# conversations.contact_id есть только у OpenAI-диалогов. Gemini / Fish / Eleven пишут
+# в свои таблицы без contact_id — их связываем с контактом по номеру (caller_number
+# нормализован, как и contacts.phone) и по ассистентам владельца контакта.
+PHONE_CONVERSATION_SOURCES = (
+    (GeminiConversation, GeminiAssistantConfig, "gemini"),
+    (FishConversation, FishAssistantConfig, "fish"),
+    (ElevenConversation, ElevenAssistantConfig, "eleven"),
+)
+
+
+def _phone_sessions_count(db: Session, user_id, phones: List[str]) -> dict:
+    """{phone: число сессий (звонков)} по таблицам Gemini / Fish / Eleven."""
+    counts: dict = {}
+    phones = [p for p in phones if p and p != "unknown"]
+    if not phones:
+        return counts
+    for conv_model, assistant_model, _ in PHONE_CONVERSATION_SOURCES:
+        try:
+            rows = (
+                db.query(conv_model.caller_number, func.count(distinct(conv_model.session_id)))
+                .join(assistant_model, assistant_model.id == conv_model.assistant_id)
+                .filter(assistant_model.user_id == user_id, conv_model.caller_number.in_(phones))
+                .group_by(conv_model.caller_number)
+                .all()
+            )
+        except Exception as e:
+            logger.warning(f"[CRM-API] phone sessions count failed for {conv_model.__tablename__}: {e}")
+            db.rollback()
+            continue
+        for phone, cnt in rows:
+            counts[phone] = counts.get(phone, 0) + int(cnt or 0)
+    return counts
+
+
+def _phone_sessions(db: Session, user_id, phone: str) -> list:
+    """Сессии (звонки) контакта из таблиц Gemini / Fish / Eleven в формате карточки CRM."""
+    result = []
+    if not phone or phone == "unknown":
+        return result
+    for conv_model, assistant_model, assistant_type in PHONE_CONVERSATION_SOURCES:
+        direction_col = getattr(conv_model, "call_direction", None)
+        cols = [
+            conv_model.session_id,
+            conv_model.assistant_id,
+            assistant_model.name.label("assistant_name"),
+            (func.max(direction_col) if direction_col is not None else literal_column("NULL")).label("call_direction"),
+            func.count(conv_model.id).label("messages_count"),
+            func.min(conv_model.created_at).label("created_at"),
+            func.max(conv_model.created_at).label("updated_at"),
+            func.sum(conv_model.tokens_used).label("total_tokens"),
+        ]
+        try:
+            rows = (
+                db.query(*cols)
+                .join(assistant_model, assistant_model.id == conv_model.assistant_id)
+                .filter(assistant_model.user_id == user_id, conv_model.caller_number == phone)
+                .group_by(conv_model.session_id, conv_model.assistant_id, assistant_model.name)
+                .all()
+            )
+        except Exception as e:
+            logger.warning(f"[CRM-API] phone sessions failed for {conv_model.__tablename__}: {e}")
+            db.rollback()
+            continue
+        for r in rows:
+            result.append({
+                "session_id": r.session_id,
+                "assistant_id": str(r.assistant_id),
+                "assistant_name": r.assistant_name or "Unknown",
+                "assistant_type": assistant_type,
+                "call_direction": r.call_direction,
+                "messages_count": r.messages_count,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                "total_tokens": r.total_tokens or 0,
+                "total_duration": 0,
+            })
+    return result
+
+
 # ==================== CONTACTS API Endpoints ====================
 
 @router.get("/")
@@ -262,11 +345,16 @@ async def get_contacts(
         
         logger.info(f"✅ Found {len(contacts_with_counts)} contacts (total: {total})")
         
+        # Звонки Gemini / Fish / Eleven (связаны по номеру, без contact_id)
+        phone_counts = _phone_sessions_count(
+            db, current_user.id, [c.phone for c, _ in contacts_with_counts]
+        )
+
         # Формируем результат
         result = []
         for contact, conversations_count in contacts_with_counts:
             contact_dict = contact.to_dict()
-            contact_dict['total_conversations'] = conversations_count
+            contact_dict['total_conversations'] = conversations_count + phone_counts.get(contact.phone, 0)
             result.append(contact_dict)
         
         return {
@@ -340,9 +428,11 @@ async def get_contact_detail(
             func.sum(Conversation.duration_seconds).label('total_duration')
         ).filter(Conversation.contact_id == contact.id).first()
         
+        phone_sessions = _phone_sessions(db, current_user.id, contact.phone)
+
         result['stats'] = {
-            'total_conversations': stats.total_conversations or 0,
-            'total_tokens': stats.total_tokens or 0,
+            'total_conversations': (stats.total_conversations or 0) + len(phone_sessions),
+            'total_tokens': (stats.total_tokens or 0) + sum(p['total_tokens'] for p in phone_sessions),
             'total_duration': stats.total_duration or 0
         }
         
@@ -385,6 +475,8 @@ async def get_contact_detail(
                     "total_duration": s.total_duration or 0
                 })
             
+            conversations.extend(phone_sessions)
+            conversations.sort(key=lambda c: c.get("updated_at") or "", reverse=True)
             result['conversations'] = conversations
             logger.info(f"   Found {len(conversations)} conversation sessions")
         

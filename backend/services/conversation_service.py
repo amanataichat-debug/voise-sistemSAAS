@@ -115,6 +115,11 @@ class ConversationService:
         # Если номер начинается с 8, заменяем на 7
         if cleaned.startswith('8') and len(cleaned) == 11:
             cleaned = '7' + cleaned[1:]
+        # Кыргызстан: 0555123456 / 555123456 -> 996555123456 (один контакт на номер)
+        elif cleaned.startswith('0') and len(cleaned) == 10:
+            cleaned = '996' + cleaned[1:]
+        elif len(cleaned) == 9 and not cleaned.startswith('0'):
+            cleaned = '996' + cleaned
         
         return cleaned if cleaned else "unknown"
     
