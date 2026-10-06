@@ -1156,8 +1156,8 @@ def seed_credits_data():
                 # сидинг её больше НЕ перезатирает. Сейчас минимальная тестовая цена.
                 if inspector.has_table('subscription_plans'):
                     conn.execute(text("""
-                        INSERT INTO subscription_plans (code, name, price, max_assistants, description, is_active)
-                        VALUES ('agent', 'Voksy AI Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
+                        INSERT INTO subscription_plans (id, code, name, price, max_assistants, description, is_active)
+                        VALUES (gen_random_uuid(), 'agent', 'Voksy AI Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
                         ON CONFLICT (code) DO UPDATE SET
                             max_assistants = EXCLUDED.max_assistants
                     """))
@@ -1165,24 +1165,24 @@ def seed_credits_data():
                 # Пакеты докупки кредитов оркестратора
                 if inspector.has_table('credit_packages'):
                     conn.execute(text("""
-                        INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                            ('credits_mini', 'orchestrator', 'Mini', 5000, 490, 1, TRUE),
-                            ('credits_standard', 'orchestrator', 'Standard', 15000, 1290, 2, TRUE),
-                            ('credits_pro', 'orchestrator', 'Pro', 50000, 3990, 3, TRUE),
-                            ('credits_business', 'orchestrator', 'Business', 150000, 9990, 4, TRUE),
-                            ('credits_enterprise', 'orchestrator', 'Enterprise', 500000, 29990, 5, TRUE)
+                        INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                            (gen_random_uuid(), 'credits_mini', 'orchestrator', 'Mini', 5000, 490, 1, TRUE),
+                            (gen_random_uuid(), 'credits_standard', 'orchestrator', 'Standard', 15000, 1290, 2, TRUE),
+                            (gen_random_uuid(), 'credits_pro', 'orchestrator', 'Pro', 50000, 3990, 3, TRUE),
+                            (gen_random_uuid(), 'credits_business', 'orchestrator', 'Business', 150000, 9990, 4, TRUE),
+                            (gen_random_uuid(), 'credits_enterprise', 'orchestrator', 'Enterprise', 500000, 29990, 5, TRUE)
                         ON CONFLICT (code) DO NOTHING
                     """))
 
                     # 🆕 Пакеты докупки кредитов каскад-ассистентов (product='cascade').
                     # Та же единица кредита (1 кредит = $0.0001 ×2), те же цены.
                     conn.execute(text("""
-                        INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                            ('cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
-                            ('cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
-                            ('cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
-                            ('cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
-                            ('cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
+                        INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                            (gen_random_uuid(), 'cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
+                            (gen_random_uuid(), 'cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
+                            (gen_random_uuid(), 'cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
+                            (gen_random_uuid(), 'cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
+                            (gen_random_uuid(), 'cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
                         ON CONFLICT (code) DO NOTHING
                     """))
 
@@ -1287,12 +1287,12 @@ def ensure_cascade_credit_packages():
             trans = conn.begin()
             try:
                 conn.execute(text("""
-                    INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                        ('cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
-                        ('cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
-                        ('cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
-                        ('cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
-                        ('cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
+                    INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                        (gen_random_uuid(), 'cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
+                        (gen_random_uuid(), 'cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
+                        (gen_random_uuid(), 'cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
+                        (gen_random_uuid(), 'cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
+                        (gen_random_uuid(), 'cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
                     ON CONFLICT (code) DO NOTHING
                 """))
                 trans.commit()
