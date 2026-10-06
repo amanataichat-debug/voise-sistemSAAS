@@ -1,0 +1,6 @@
+# HTTPS for the WhatsApp gateway. Caddy gets a Let's Encrypt certificate for
+# WA_DOMAIN by itself (needs the DNS A record and port 80 open).
+{$WA_DOMAIN} {
+	encode gzip
+	reverse_proxy evolution:8080
+}
