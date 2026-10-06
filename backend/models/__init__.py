@@ -100,7 +100,7 @@ from .credit_transaction import CreditTransaction, CreditTransactionType
 from .credit_package import CreditPackage
 
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
-from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
+from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus, SipNumberRequest
 
 # Export specific models
 __all__ = [

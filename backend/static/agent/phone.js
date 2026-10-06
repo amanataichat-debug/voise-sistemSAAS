@@ -57,7 +57,7 @@ function renderPhoneBlock(){
   }
   el.innerHTML = `<div class="phone-row">
       <span class="phone-ic off"><i class="fas fa-phone-slash"></i></span>
-      <div class="phone-note">Номера пока нет. Агент работает в чате, Telegram и Instagram, а номер можно будет подключить в настройках агента.</div>
+      <div class="phone-note">Номера пока нет. Агент работает в чате, Telegram и Instagram. <a href="/static/telephony.html">Оставить заявку на номер</a></div>
     </div>`;
 }
 
@@ -77,7 +77,7 @@ function fillPhoneSelect(selId){
   sel.disabled = !nums.length;
   if(note){
     note.innerHTML = nums.length ? '' :
-      `<div class="note"><i class="fas fa-circle-info"></i><span>Номеров в собственной телефонии пока нет. Как только номер подключат к вашему аккаунту, здесь можно будет выбрать его для агента. До этого агент работает в чате, Telegram и Instagram.</span></div>`;
+      `<div class="note"><i class="fas fa-circle-info"></i><span>Номеров в собственной телефонии пока нет. Оставьте <a href="/static/telephony.html" target="_blank">заявку на номер</a> на странице «Телефония»: как только номер подключат, здесь можно будет выбрать его для агента. До этого агент работает в чате, Telegram и Instagram.</span></div>`;
   }
 }
 

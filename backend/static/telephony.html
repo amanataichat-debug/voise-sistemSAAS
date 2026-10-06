@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!-- /static/telephony.html — телефония через собственный SIP-шлюз (дизайн-система VoksiAI, этап 3).
      Номера пользователя → привязка ассистента ElevenLabs или агента обзвона, исходящий звонок на номер O!,
-     журнал звонков. Вся логика — /static/js/telephony.js, API — /api/sip/*. -->
+     журнал звонков. Первый шаг для клиента без номера — заявка на подключение номера (ФИО, телефон,
+     новый номер или свой номер O!). Вся логика — /static/js/telephony.js, API — /api/sip/*. -->
 <html lang="ru" data-vf-loader>
 <head>
   <meta charset="UTF-8">
@@ -60,9 +61,24 @@
     .bind-opt.disabled { opacity: .5; cursor: not-allowed; }
     .bind-opt .name { font-weight: 600; font-size: 13.5px; }
     .vf-dialog-foot.split { justify-content: space-between; }
+    /* Заявка на подключение номера */
+    .req-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .req-kinds .bind-opt { align-items: flex-start; }
+    .req-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: start; }
+    .req-form .span-2 { grid-column: 1 / -1; }
+    .req-form .textarea { min-height: 72px; }
+    .hint.ok { color: var(--vf-success); }
+    .req-status { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-radius: var(--vf-r-md); background: var(--vf-surface-2); border: 1px solid var(--vf-border); }
+    .req-status .ic-lg { flex: none; color: var(--vf-warning); }
+    .req-status.rejected .ic-lg { color: var(--vf-danger); }
+    .req-status .title { font-weight: 600; }
+    .req-status dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 0; font-size: 13px; }
+    .req-status dt { color: var(--vf-text-4); }
+    .req-status dd { margin: 0; }
+    .req-steps { margin: 12px 0 0; padding-left: 18px; font-size: 13px; color: var(--vf-text-3); }
 
     @media (max-width: 720px) {
-      .call-form { grid-template-columns: 1fr; }
+      .call-form, .req-form, .req-kinds { grid-template-columns: 1fr; }
       .card-head { flex-wrap: wrap; }
     }
   </style>
@@ -102,6 +118,17 @@
     <div class="vf-content">
       <div class="stack-lg">
 
+        <!-- Подключение номера: заявка (первый шаг, пока номеров нет) -->
+        <section class="card hidden" id="request-card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="sip.req_title">Подключение номера</h2>
+              <p class="muted" data-i18n="sip.req_sub">Оставьте заявку: мы подключим номер к вашему кабинету и сообщим, когда он появится в списке.</p>
+            </div>
+          </div>
+          <div class="card-body" id="request-body"></div>
+        </section>
+
         <!-- Мои номера -->
         <section class="card">
           <div class="card-head">
@@ -109,7 +136,10 @@
               <h2 data-i18n="sip.numbers_title">Мои номера</h2>
               <p class="muted" data-i18n="sip.numbers_sub">Входящий звонок на номер отвечает привязанный ассистент или агент обзвона.</p>
             </div>
-            <button class="btn btn-sm" type="button" id="refresh-numbers"><svg class="ic"><use href="/static/icons/ui.svg#i-refresh-cw"></use></svg><span data-i18n="sip.refresh">Обновить</span></button>
+            <div class="row">
+              <button class="btn btn-sm hidden" type="button" id="req-toggle"><svg class="ic"><use href="/static/icons/ui.svg#i-plus"></use></svg><span data-i18n="sip.req_more">Подключить ещё номер</span></button>
+              <button class="btn btn-sm" type="button" id="refresh-numbers"><svg class="ic"><use href="/static/icons/ui.svg#i-refresh-cw"></use></svg><span data-i18n="sip.refresh">Обновить</span></button>
+            </div>
           </div>
           <div class="card-body" id="numbers"><div class="skeleton" style="height:96px"></div></div>
         </section>

@@ -1,7 +1,10 @@
 """
 Модели собственной SIP-телефонии (шлюз Asterisk + мост, см. infra/sip-gateway/).
 
-Две таблицы:
+Три таблицы:
+  * sip_number_requests — заявки клиентов на подключение номера (онлайн-форма на
+    «Телефонии»): ФИО + контактный телефон, новый номер или свой номер O!.
+    Номер выдаёт администратор — одобрение заявки создаёт строку sip_phone_numbers.
   * sip_phone_numbers — номера, выделенные оператором, и их привязка к ассистенту.
     Входящий звонок на номер → ассистент; исходящий от ассистента → caller ID.
   * sip_calls — журнал звонков через шлюз. Строка создаётся до начала звонка
@@ -163,6 +166,65 @@ class SipCall(Base):
             "end_reason": self.end_reason,
             "error": self.error,
             "recording_url": self.recording_url,
+        }
+
+
+class SipNumberRequestStatus:
+    PENDING = "pending"      # ждёт администратора
+    APPROVED = "approved"    # номер выдан (sip_number_id)
+    REJECTED = "rejected"    # отклонена, причина в admin_comment
+    CANCELLED = "cancelled"  # клиент отозвал сам
+
+    OPEN = (PENDING,)
+
+
+class SipNumberRequestKind:
+    NEW = "new"                  # выдать новый номер на нашем транке
+    EXISTING_O = "existing_o"    # у клиента уже есть номер O!, подключить его
+
+    ALL = (NEW, EXISTING_O)
+
+
+class SipNumberRequest(Base):
+    """Заявка клиента на подключение номера телефонии (первый шаг на «Телефонии»)."""
+
+    __tablename__ = "sip_number_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    kind = Column(String(20), nullable=False, default=SipNumberRequestKind.NEW)
+    full_name = Column(String(150), nullable=False)
+    # Контактный телефон клиента (для связи), цифры без "+"
+    contact_phone = Column(String(20), nullable=False)
+    # Номер O!, который клиент хочет подключить (kind=existing_o), 996XXXXXXXXX
+    existing_number = Column(String(20), nullable=True, index=True)
+    comment = Column(Text, nullable=True)
+
+    status = Column(String(20), nullable=False, default=SipNumberRequestStatus.PENDING, index=True)
+    admin_comment = Column(Text, nullable=True)
+    # Выданный номер (sip_phone_numbers) после одобрения
+    sip_number_id = Column(UUID(as_uuid=True), ForeignKey("sip_phone_numbers.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "kind": self.kind,
+            "full_name": self.full_name,
+            "contact_phone": self.contact_phone,
+            "existing_number": self.existing_number,
+            "comment": self.comment,
+            "status": self.status,
+            "admin_comment": self.admin_comment,
+            "sip_number_id": str(self.sip_number_id) if self.sip_number_id else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

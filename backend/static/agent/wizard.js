@@ -63,7 +63,7 @@ function drawStep0(c){
   const has = !!(wizardTele && wizardTele.has_numbers);
   const phoneBanner = has
     ? `<div class="tele-banner ok"><i class="fas fa-circle-check"></i> <span>В вашей телефонии есть номер — после создания выберите его в настройках агента («Звонки»).</span></div>`
-    : `<div class="tele-banner info"><i class="fas fa-circle-info"></i> <span>Номера пока нет — агента можно создать и без него: чат, Telegram и Instagram работают сразу. Номер подключается позже в настройках агента.</span></div>`;
+    : `<div class="tele-banner info"><i class="fas fa-circle-info"></i> <span>Номера пока нет — агента можно создать и без него: чат, Telegram и Instagram работают сразу. Номер можно заказать заявкой на странице <a href="/static/telephony.html" target="_blank">«Телефония»</a>.</span></div>`;
   c.innerHTML = `<h2>Создание агента</h2><p class="hint">Агент — это «мозг»-оркестратор, который ведёт вашу базу и планирует звонки, и голосовой ассистент, который разговаривает с клиентами.</p>
     <div class="type-card selected" style="cursor:default">
       <div class="type-radio"></div>

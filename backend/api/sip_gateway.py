@@ -13,6 +13,8 @@ HTTP (JWT пользователя):
   * /api/sip/numbers         — номера от оператора и привязка к ассистентам
   * /api/sip/calls           — журнал и ручной запуск исходящего
   * /api/sip/gateways        — состояние подключённых шлюзов (этого воркера)
+  * /api/sip/requests        — заявки клиентов на подключение номера (онлайн-форма,
+                               первый шаг на «Телефонии»); одобряет администратор
 
 Протокол моста описан в infra/sip-gateway/README.md.
 ВАЖНО: роутер должен подключаться в app.py ДО websocket.router, иначе
@@ -41,6 +43,9 @@ from backend.models.sip_gateway import (
     SipPhoneNumber,
     SipCall,
     SipCallStatus,
+    SipNumberRequest,
+    SipNumberRequestKind,
+    SipNumberRequestStatus,
     SIP_SUPPORTED_ASSISTANT_TYPES,
     O_MOBILE_PREFIXES,
     is_o_number,
@@ -83,7 +88,7 @@ _tables_ready = False
 
 def _ensure_tables() -> None:
     """
-    Создать sip_phone_numbers / sip_calls, если их нет. Идемпотентно и дёшево.
+    Создать sip_phone_numbers / sip_calls / sip_number_requests, если их нет. Идемпотентно и дёшево.
     Страховка: воркер, который делает create_all на старте, на Render иногда
     убивается по таймауту, и остальные стартуют без миграций.
     """
@@ -93,7 +98,11 @@ def _ensure_tables() -> None:
     try:
         from sqlalchemy import text
         from backend.models.base import Base, engine
-        Base.metadata.create_all(engine, tables=[SipPhoneNumber.__table__, SipCall.__table__], checkfirst=True)
+        Base.metadata.create_all(
+            engine,
+            tables=[SipPhoneNumber.__table__, SipCall.__table__, SipNumberRequest.__table__],
+            checkfirst=True,
+        )
     except Exception as exc:
         logger.error(f"[SIP] ensure tables failed: {exc}")
         return
@@ -826,3 +835,283 @@ async def list_gateways(current_user: User = Depends(get_current_user), db: Sess
         for g in GATEWAYS.values()
     ]
     return {"worker_pid": os.getpid(), "gateways_on_this_worker": gateways, "token_configured": bool(settings.SIP_GATEWAY_TOKEN), "stats": stats}
+
+
+# =============================================================================
+# Заявки на подключение номера (онлайн-форма на «Телефонии»)
+# =============================================================================
+#
+# Клиент без номера оставляет заявку: ФИО + контактный телефон и либо «выдайте
+# новый номер», либо «у меня уже есть номер O!». Свой номер проверяется сразу:
+# формат, принадлежность O! (префиксы O_MOBILE_PREFIXES) и что он ещё не
+# подключён / не заявлен другим клиентом. Номер выдаёт администратор: одобрение
+# создаёт строку sip_phone_numbers на клиента. У клиента одна открытая заявка.
+
+class SipNumberCheck(BaseModel):
+    phone_number: str = Field(..., max_length=40)
+
+
+class SipNumberRequestCreate(BaseModel):
+    kind: str = Field(SipNumberRequestKind.NEW, description="new | existing_o")
+    full_name: str = Field(..., max_length=150)
+    contact_phone: str = Field(..., max_length=40)
+    existing_number: Optional[str] = Field(None, max_length=40)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class SipNumberRequestApprove(BaseModel):
+    phone_number: Optional[str] = Field(None, description="Выдаваемый номер; по умолчанию номер O! из заявки")
+    label: Optional[str] = Field(None, max_length=100)
+    gateway_id: Optional[str] = None
+    admin_comment: Optional[str] = Field(None, max_length=1000)
+
+
+class SipNumberRequestReject(BaseModel):
+    admin_comment: Optional[str] = Field(None, max_length=1000)
+
+
+def _check_o_number(db: Session, value: str, user_id: Optional[uuid.UUID] = None) -> Dict[str, Any]:
+    """Проверить номер O!, который клиент хочет подключить. ok=False → reason для UI."""
+    digits = normalize_sip_number(value)
+    result: Dict[str, Any] = {"phone_number": digits, "ok": False, "reason": None}
+    if len(digits) != 12 or not digits.startswith("996"):
+        result["reason"] = "invalid_format"
+        return result
+    if not is_o_number(digits):
+        result["reason"] = "not_o"
+        return result
+    if db.query(SipPhoneNumber.id).filter(SipPhoneNumber.phone_number == digits).first():
+        result["reason"] = "already_connected"
+        return result
+    pending = db.query(SipNumberRequest.user_id).filter(
+        SipNumberRequest.existing_number == digits,
+        SipNumberRequest.status.in_(SipNumberRequestStatus.OPEN),
+    ).first()
+    if pending and pending[0] != user_id:
+        result["reason"] = "requested_by_other"
+        return result
+    result["ok"] = True
+    return result
+
+
+_CHECK_REASONS = {
+    "invalid_format": "Некорректный номер: нужен номер Кыргызстана, например 0700 123 456",
+    "not_o": f"Это не номер O!. Подключаются номера с префиксами {', '.join(O_MOBILE_PREFIXES)}",
+    "already_connected": "Этот номер уже подключён к VoksiAI",
+    "requested_by_other": "На этот номер уже есть заявка другого клиента",
+}
+
+
+def _describe_request(db: Session, req: SipNumberRequest, with_user: bool = False) -> Dict[str, Any]:
+    data = req.to_dict()
+    if req.sip_number_id:
+        number = db.get(SipPhoneNumber, req.sip_number_id)
+        data["issued_number"] = number.phone_number if number else None
+    if with_user:
+        user = db.get(User, req.user_id)
+        data["user_email"] = user.email if user else None
+        data["user_name"] = " ".join(p for p in ((user.first_name if user else None), (user.last_name if user else None)) if p) or None
+    return data
+
+
+async def _notify_admin_new_request(text: str) -> None:
+    token, chat_id = settings.SIP_REQUESTS_TELEGRAM_BOT_TOKEN, settings.SIP_REQUESTS_TELEGRAM_CHAT_ID
+    if not token or not chat_id:
+        return
+    try:
+        from backend.services.telegram_notification import TelegramNotificationService
+        await TelegramNotificationService.send_message(token, chat_id, text)
+    except Exception as exc:
+        logger.warning(f"[SIP] number request telegram notify failed: {exc}")
+
+
+@router.post("/api/sip/requests/check-number")
+async def check_request_number(
+    body: SipNumberCheck,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Живая проверка номера O! в форме заявки (до отправки)."""
+    _ensure_tables()
+    result = _check_o_number(db, body.phone_number, current_user.id)
+    result["message"] = _CHECK_REASONS.get(result["reason"]) if result["reason"] else None
+    return result
+
+
+@router.get("/api/sip/requests/my")
+async def my_requests(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables()
+    rows = (
+        db.query(SipNumberRequest)
+        .filter(SipNumberRequest.user_id == current_user.id)
+        .order_by(SipNumberRequest.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    return {"requests": [_describe_request(db, r) for r in rows]}
+
+
+@router.post("/api/sip/requests", status_code=201)
+async def create_request(
+    body: SipNumberRequestCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_tables()
+    full_name = " ".join((body.full_name or "").split())
+    if len(full_name) < 3:
+        raise HTTPException(status_code=400, detail="Укажите ФИО полностью")
+    contact = normalize_sip_number(body.contact_phone)
+    if not 9 <= len(contact) <= 15:
+        raise HTTPException(status_code=400, detail="Некорректный контактный телефон")
+    if body.kind not in SipNumberRequestKind.ALL:
+        raise HTTPException(status_code=400, detail=f"kind must be one of {SipNumberRequestKind.ALL}")
+
+    existing_number = None
+    if body.kind == SipNumberRequestKind.EXISTING_O:
+        if not body.existing_number:
+            raise HTTPException(status_code=400, detail="Укажите ваш номер O!")
+        check = _check_o_number(db, body.existing_number, current_user.id)
+        if not check["ok"]:
+            raise HTTPException(status_code=400, detail=_CHECK_REASONS[check["reason"]])
+        existing_number = check["phone_number"]
+
+    open_req = db.query(SipNumberRequest).filter(
+        SipNumberRequest.user_id == current_user.id,
+        SipNumberRequest.status.in_(SipNumberRequestStatus.OPEN),
+    ).first()
+    if open_req is not None:
+        raise HTTPException(status_code=409, detail="У вас уже есть заявка на рассмотрении")
+
+    req = SipNumberRequest(
+        user_id=current_user.id,
+        kind=body.kind,
+        full_name=full_name,
+        contact_phone=contact,
+        existing_number=existing_number,
+        comment=(body.comment or "").strip() or None,
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    logger.info(f"[SIP] number request {req.id} from user {current_user.id}: kind={req.kind} number={existing_number or '—'}")
+
+    from html import escape
+    lines = [
+        "📞 <b>Новая заявка на номер</b>",
+        f"Клиент: {escape(current_user.email or str(current_user.id))}",
+        f"ФИО: {escape(full_name)}",
+        f"Контакт: +{contact}",
+        "Тип: " + ("свой номер O! +" + existing_number if existing_number else "выдать новый номер"),
+    ]
+    if req.comment:
+        lines.append(f"Комментарий: {escape(req.comment)}")
+    asyncio.create_task(_notify_admin_new_request("\n".join(lines)))
+    return _describe_request(db, req)
+
+
+def _get_request(db: Session, request_id: str) -> SipNumberRequest:
+    try:
+        req_uuid = uuid.UUID(request_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректный id заявки")
+    req = db.get(SipNumberRequest, req_uuid)
+    if req is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    return req
+
+
+@router.post("/api/sip/requests/{request_id}/cancel")
+async def cancel_request(
+    request_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_tables()
+    req = _get_request(db, request_id)
+    if req.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if req.status not in SipNumberRequestStatus.OPEN:
+        raise HTTPException(status_code=409, detail="Заявка уже рассмотрена")
+    req.status = SipNumberRequestStatus.CANCELLED
+    db.commit()
+    return _describe_request(db, req)
+
+
+@router.get("/api/sip/requests")
+async def list_requests(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Все заявки — для вкладки «Заявки на номера» в админке."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    _ensure_tables()
+    query = db.query(SipNumberRequest)
+    if status_filter:
+        query = query.filter(SipNumberRequest.status == status_filter)
+    rows = query.order_by(SipNumberRequest.created_at.desc()).limit(limit).all()
+    pending = db.query(SipNumberRequest).filter(SipNumberRequest.status == SipNumberRequestStatus.PENDING).count()
+    return {"requests": [_describe_request(db, r, with_user=True) for r in rows], "pending": pending}
+
+
+@router.post("/api/sip/requests/{request_id}/approve")
+async def approve_request(
+    request_id: str,
+    body: SipNumberRequestApprove,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Одобрить: выдать клиенту номер (создаётся sip_phone_numbers на владельца заявки)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Только администратор выдаёт номера")
+    _ensure_tables()
+    req = _get_request(db, request_id)
+    if req.status not in SipNumberRequestStatus.OPEN:
+        raise HTTPException(status_code=409, detail="Заявка уже рассмотрена")
+    digits = normalize_sip_number(body.phone_number or req.existing_number or "")
+    if len(digits) < 9:
+        raise HTTPException(status_code=400, detail="Укажите номер, который выдаётся клиенту")
+    if db.query(SipPhoneNumber).filter(SipPhoneNumber.phone_number == digits).first():
+        raise HTTPException(status_code=409, detail="Номер уже добавлен")
+
+    number = SipPhoneNumber(
+        user_id=req.user_id,
+        phone_number=digits,
+        label=body.label,
+        gateway_id=body.gateway_id or settings.SIP_GATEWAY_DEFAULT_ID,
+    )
+    db.add(number)
+    db.flush()
+    req.status = SipNumberRequestStatus.APPROVED
+    req.sip_number_id = number.id
+    req.admin_comment = (body.admin_comment or "").strip() or None
+    req.reviewed_by = current_user.id
+    req.reviewed_at = datetime.utcnow()
+    db.commit()
+    logger.info(f"[SIP] number request {req.id} approved by {current_user.id}: number {digits} → user {req.user_id}")
+    return _describe_request(db, req, with_user=True)
+
+
+@router.post("/api/sip/requests/{request_id}/reject")
+async def reject_request(
+    request_id: str,
+    body: SipNumberRequestReject,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    _ensure_tables()
+    req = _get_request(db, request_id)
+    if req.status not in SipNumberRequestStatus.OPEN:
+        raise HTTPException(status_code=409, detail="Заявка уже рассмотрена")
+    req.status = SipNumberRequestStatus.REJECTED
+    req.admin_comment = (body.admin_comment or "").strip() or None
+    req.reviewed_by = current_user.id
+    req.reviewed_at = datetime.utcnow()
+    db.commit()
+    logger.info(f"[SIP] number request {req.id} rejected by {current_user.id}")
+    return _describe_request(db, req, with_user=True)

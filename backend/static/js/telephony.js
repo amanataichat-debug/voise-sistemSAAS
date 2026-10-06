@@ -7,6 +7,12 @@
  *   POST  /api/sip/calls                исходящий звонок {to, caller_id, assistant_type, assistant_id}
  *   GET   /api/sip/calls[?limit], /{id} журнал и статус звонка; POST /{id}/hangup — отбой
  *   GET   /api/eleven-assistants, /api/agent/list — кого можно привязать
+ *   GET   /api/sip/requests/my          заявки на подключение номера; POST /api/sip/requests — новая,
+ *   POST  /api/sip/requests/check-number проверка своего номера O!; POST /{id}/cancel — отозвать
+ *
+ * Пока номеров нет, первым идёт шаг «Подключение номера»: ФИО, контактный телефон и
+ * «новый номер» или «свой номер O!» (номер проверяется сразу: формат, префикс O!,
+ * не подключён ли уже). Номер выдаёт администратор (вкладка «Заявки на номера» в админке).
  *
  * В кабинете остались только ассистенты ElevenLabs; номер, уже привязанный к
  * ассистенту другого провайдера, продолжает работать и показывается как есть.
@@ -48,7 +54,23 @@
     er_no_answer: 'нет ответа', er_cancelled: 'отменён', er_channel_limit: 'все каналы заняты', er_congestion: 'сеть перегружена',
     er_rejected: 'отклонён', er_failed: 'ошибка', er_user_request: 'отбой из интерфейса', er_unknown_number: 'номер не найден',
     er_assistant_not_found: 'ассистент не найден', er_ami_unavailable: 'шлюз недоступен', er_trunk_unavailable: 'транк недоступен',
-    request_error: 'Ошибка запроса'
+    request_error: 'Ошибка запроса',
+    req_title: 'Подключение номера', req_sub: 'Оставьте заявку: мы подключим номер к вашему кабинету и сообщим, когда он появится в списке.',
+    req_more: 'Подключить ещё номер', req_close: 'Отмена', no_numbers_req: 'Номер появится здесь после одобрения заявки.',
+    req_kind_new: 'Новый номер', req_kind_new_text: 'Выдадим номер O! на нашей линии',
+    req_kind_existing: 'У меня есть номер O!', req_kind_existing_text: 'Подключим ваш действующий номер',
+    req_full_name: 'ФИО', req_full_name_ph: 'Иванов Иван Иванович', req_contact: 'Контактный телефон',
+    req_contact_hint: 'По нему свяжемся для подключения', req_existing: 'Ваш номер O!',
+    req_existing_hint: 'Номер O!: префиксы 050, 070, 099', req_checking: 'Проверяем номер…', req_number_ok: 'Номер {phone} можно подключить',
+    req_comment: 'Комментарий', req_comment_ph: 'Необязательно: удобное время звонка, сколько нужно номеров и т. п.',
+    req_submit: 'Отправить заявку', req_sent: 'Заявка отправлена', req_failed: 'Не удалось отправить заявку',
+    req_need_name: 'Укажите ФИО полностью', req_need_contact: 'Укажите контактный телефон', req_need_existing: 'Укажите ваш номер O!',
+    req_pending_title: 'Заявка на рассмотрении', req_pending_text: 'Мы свяжемся с вами по контактному телефону. Номер появится в списке «Мои номера».',
+    req_rejected_title: 'Заявка отклонена', req_rejected_text: 'Можно отправить новую заявку ниже.', req_reason: 'Причина',
+    req_dt_name: 'ФИО', req_dt_contact: 'Контакт', req_dt_kind: 'Что подключаем', req_dt_date: 'Отправлена',
+    req_cancel: 'Отозвать заявку', req_cancelled: 'Заявка отозвана', req_cancel_failed: 'Не удалось отозвать заявку',
+    req_steps_1: 'Проверим данные и свяжемся с вами', req_steps_2: 'Подключим номер к вашему кабинету',
+    req_steps_3: 'Привяжите номер к ассистенту или агенту обзвона — и он начнёт принимать звонки'
   };
   function format(s, p) { return p ? String(s).replace(/\{(\w+)\}/g, function (m, k) { return p[k] != null ? p[k] : m; }) : s; }
   function t(key, params) { return window.I18N ? window.I18N.t('sip.' + key, params, STR[key]) : format(STR[key] || key, params); }
@@ -137,6 +159,11 @@
   var bindNumber = null;
   var currentCall = null, pollTimer = null, journalTimer = null;
   var bindModal = VF.modal('bind-modal');
+  var requests = null;         // GET /sip/requests/my, новые сверху; null — ещё не загружены
+  var numbersLoaded = false;
+  var reqKind = 'new';         // new | existing_o
+  var reqFormOpen = false;     // у клиента с номерами форма раскрывается кнопкой
+  var reqCheckTimer = null, reqCheckSeq = 0, reqCheckOk = false;
 
   // ------------------------------------------------------------------
   // Номера
@@ -155,7 +182,7 @@
   }
   function renderNumbers() {
     var box = $('numbers');
-    if (!numbers.length) { box.innerHTML = emptyBox('phone', t('no_numbers'), t('no_numbers_text')); return; }
+    if (!numbers.length) { box.innerHTML = emptyBox('phone', t('no_numbers'), t('no_numbers_req')); return; }
     box.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr><th>' + esc(t('th_number')) + '</th><th>' + esc(t('th_answers')) + '</th><th>' +
       esc(t('th_outbound')) + '</th><th>' + esc(t('th_status')) + '</th><th></th></tr></thead><tbody>' + numbers.map(function (n) {
         return '<tr><td><span class="phone">' + esc(fmtPhone(n.phone_number)) + '</span>' + (n.label ? '<div class="sub">' + esc(n.label) + '</div>' : '') + '</td>' +
@@ -181,12 +208,143 @@
   function loadNumbers() {
     return api('/sip/numbers').then(function (r) {
       numbers = (r && r.numbers) || [];
+      numbersLoaded = true;
       renderNumbers();
       fillFrom();
+      renderRequest();
     }).catch(function (e) {
       if (e.message === 'unauthorized') return;
       $('numbers').innerHTML = emptyBox('circle-alert', t('numbers_failed'), e.message);
     });
+  }
+
+  // ------------------------------------------------------------------
+  // Заявка на подключение номера
+  // ------------------------------------------------------------------
+  function openRequest() { return (requests || []).filter(function (r) { return r.status === 'pending'; })[0] || null; }
+  function loadRequests() {
+    return api('/sip/requests/my').then(function (r) {
+      requests = (r && r.requests) || [];
+      renderRequest();
+    }).catch(function () { requests = []; renderRequest(); });
+  }
+  function requestSummary(r) {
+    var kind = r.kind === 'existing_o' ? t('req_kind_existing') + ' · ' + fmtPhone(r.existing_number) : t('req_kind_new');
+    return '<dl><dt>' + esc(t('req_dt_name')) + '</dt><dd>' + esc(r.full_name) + '</dd>' +
+      '<dt>' + esc(t('req_dt_contact')) + '</dt><dd class="phone">' + esc(fmtPhone(r.contact_phone)) + '</dd>' +
+      '<dt>' + esc(t('req_dt_kind')) + '</dt><dd>' + esc(kind) + '</dd>' +
+      '<dt>' + esc(t('req_dt_date')) + '</dt><dd>' + esc(fmtDate(r.created_at)) + '</dd>' +
+      (r.admin_comment ? '<dt>' + esc(t('req_reason')) + '</dt><dd>' + esc(r.admin_comment) + '</dd>' : '') + '</dl>';
+  }
+  function renderRequest() {
+    if (requests === null || !numbersLoaded) return;
+    var card = $('request-card'), body = $('request-body');
+    var open = openRequest();
+    var hasNumbers = numbers.length > 0;
+    // Без номеров заявка — первый шаг; с номерами форма раскрывается кнопкой «Подключить ещё номер»
+    $('req-toggle').classList.toggle('hidden', !hasNumbers || !!open || reqFormOpen);
+    card.classList.toggle('hidden', hasNumbers && !open && !reqFormOpen);
+    if (open) {
+      body.innerHTML = '<div class="req-status">' + VF.icon('clock', 'ic-lg') + '<div class="grow"><div class="title">' + esc(t('req_pending_title')) + '</div>' +
+        '<div class="muted small">' + esc(t('req_pending_text')) + '</div>' + requestSummary(open) +
+        '<ol class="req-steps"><li>' + esc(t('req_steps_1')) + '</li><li>' + esc(t('req_steps_2')) + '</li><li>' + esc(t('req_steps_3')) + '</li></ol>' +
+        '<div style="margin-top:12px"><button class="btn btn-sm" type="button" id="req-cancel">' + VF.icon('x', 'ic-sm') + esc(t('req_cancel')) + '</button></div></div></div>';
+      $('req-cancel').addEventListener('click', function () { cancelRequest(open.id); });
+      return;
+    }
+    if (card.classList.contains('hidden')) { body.innerHTML = ''; return; }
+    var last = requests[0];
+    var rejected = last && last.status === 'rejected'
+      ? '<div class="req-status rejected" style="margin-bottom:16px">' + VF.icon('circle-alert', 'ic-lg') + '<div class="grow"><div class="title">' + esc(t('req_rejected_title')) + '</div>' +
+        '<div class="muted small">' + esc(t('req_rejected_text')) + '</div>' + requestSummary(last) + '</div></div>'
+      : '';
+    var kindOpt = function (kind, icon, title, text) {
+      return '<div class="bind-opt' + (reqKind === kind ? ' selected' : '') + '" data-kind="' + kind + '"><span class="logo-wrap">' + VF.icon(icon) + '</span>' +
+        '<div><div class="name">' + esc(title) + '</div><div class="sub">' + esc(text) + '</div></div></div>';
+    };
+    body.innerHTML = rejected +
+      '<div class="req-kinds">' + kindOpt('new', 'sparkles', t('req_kind_new'), t('req_kind_new_text')) +
+      kindOpt('existing_o', 'phone', t('req_kind_existing'), t('req_kind_existing_text')) + '</div>' +
+      '<div class="req-form">' +
+      '<div class="field span-2"><label class="label" for="req-name">' + esc(t('req_full_name')) + '</label>' +
+      '<input class="input" id="req-name" maxlength="150" autocomplete="name" placeholder="' + esc(t('req_full_name_ph')) + '"></div>' +
+      '<div class="field"><label class="label" for="req-contact">' + esc(t('req_contact')) + '</label>' +
+      '<input class="input" type="tel" id="req-contact" autocomplete="tel" placeholder="0700 123 456"><span class="hint">' + esc(t('req_contact_hint')) + '</span></div>' +
+      '<div class="field' + (reqKind === 'existing_o' ? '' : ' hidden') + '" id="req-existing-field"><label class="label" for="req-existing">' + esc(t('req_existing')) + '</label>' +
+      '<input class="input" type="tel" id="req-existing" autocomplete="off" placeholder="0700 123 456"><span class="hint" id="req-existing-hint">' + esc(t('req_existing_hint')) + '</span></div>' +
+      '<div class="field span-2"><label class="label" for="req-comment">' + esc(t('req_comment')) + '</label>' +
+      '<textarea class="textarea" id="req-comment" rows="2" maxlength="1000" placeholder="' + esc(t('req_comment_ph')) + '"></textarea></div>' +
+      '<div class="span-2 row"><button class="btn btn-primary" type="button" id="req-submit">' + VF.icon('send') + '<span>' + esc(t('req_submit')) + '</span></button>' +
+      (numbers.length ? '<button class="btn" type="button" id="req-close">' + esc(t('req_close')) + '</button>' : '') + '</div>' +
+      '</div>';
+    reqCheckOk = false;
+    Array.prototype.forEach.call(body.querySelectorAll('.req-kinds .bind-opt'), function (el) {
+      el.addEventListener('click', function () {
+        reqKind = el.getAttribute('data-kind');
+        body.querySelectorAll('.req-kinds .bind-opt').forEach(function (o) { o.classList.toggle('selected', o === el); });
+        $('req-existing-field').classList.toggle('hidden', reqKind !== 'existing_o');
+        if (reqKind === 'existing_o') $('req-existing').focus();
+      });
+    });
+    $('req-existing').addEventListener('input', scheduleNumberCheck);
+    $('req-submit').addEventListener('click', submitRequest);
+    if ($('req-close')) $('req-close').addEventListener('click', function () { reqFormOpen = false; renderRequest(); });
+  }
+  function setExistingHint(text, cls) {
+    var h = $('req-existing-hint');
+    if (!h) return;
+    h.textContent = text;
+    h.classList.toggle('error', cls === 'error');
+    h.classList.toggle('ok', cls === 'ok');
+  }
+  // Проверка своего номера O!: формат и префикс — сразу, «не подключён ли уже» — запросом
+  function scheduleNumberCheck() {
+    clearTimeout(reqCheckTimer);
+    reqCheckOk = false;
+    var d = normalizePhone($('req-existing').value);
+    if (!d) return setExistingHint(t('req_existing_hint'));
+    if (d.length < 12) return setExistingHint(t('req_existing_hint'));
+    if (!isO(d)) return setExistingHint(t('to_not_o'), 'error');
+    setExistingHint(t('req_checking'));
+    var seq = ++reqCheckSeq;
+    reqCheckTimer = setTimeout(function () {
+      api('/sip/requests/check-number', { method: 'POST', body: { phone_number: d } }).then(function (r) {
+        if (seq !== reqCheckSeq) return;
+        reqCheckOk = !!(r && r.ok);
+        setExistingHint(reqCheckOk ? t('req_number_ok', { phone: fmtPhone(r.phone_number) }) : (r && r.message) || t('to_not_o'), reqCheckOk ? 'ok' : 'error');
+      }).catch(function (e) { if (seq === reqCheckSeq) setExistingHint(e.message, 'error'); });
+    }, 350);
+  }
+  function submitRequest() {
+    var name = $('req-name').value.replace(/\s+/g, ' ').trim();
+    var contact = normalizePhone($('req-contact').value);
+    var existing = reqKind === 'existing_o' ? normalizePhone($('req-existing').value) : null;
+    if (name.length < 3) return VF.toast(t('req_need_name'), { type: 'warning' });
+    if (contact.length < 9) return VF.toast(t('req_need_contact'), { type: 'warning' });
+    if (reqKind === 'existing_o') {
+      if (!existing) return VF.toast(t('req_need_existing'), { type: 'warning' });
+      if (!isO(existing)) return VF.toast(t('to_not_o'), { type: 'warning' });
+    }
+    var btn = $('req-submit'); btn.disabled = true;
+    api('/sip/requests', { method: 'POST', body: {
+      kind: reqKind, full_name: name, contact_phone: contact, existing_number: existing,
+      comment: $('req-comment').value.trim() || null
+    } }).then(function (r) {
+      VF.toast(t('req_sent'), { type: 'success' });
+      requests.unshift(r);
+      reqFormOpen = false;
+      renderRequest();
+    }).catch(function (e) {
+      VF.toast(e.message || t('req_failed'), { type: 'error', duration: 7000 });
+      btn.disabled = false;
+    });
+  }
+  function cancelRequest(id) {
+    var b = $('req-cancel'); if (b) b.disabled = true;
+    api('/sip/requests/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: {} }).then(function () {
+      VF.toast(t('req_cancelled'), { type: 'info' });
+      return loadRequests();
+    }).catch(function (e) { VF.toast(e.message || t('req_cancel_failed'), { type: 'error' }); if (b) b.disabled = false; });
   }
 
   // ------------------------------------------------------------------
@@ -381,7 +539,8 @@
   // ------------------------------------------------------------------
   // События и старт
   // ------------------------------------------------------------------
-  $('refresh-numbers').addEventListener('click', loadNumbers);
+  $('refresh-numbers').addEventListener('click', function () { loadNumbers(); loadRequests(); });
+  $('req-toggle').addEventListener('click', function () { reqFormOpen = true; renderRequest(); $('request-card').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   $('refresh-calls').addEventListener('click', loadCalls);
   $('call-from').addEventListener('change', fillWho);
   $('call-to').addEventListener('input', updateToHint);
@@ -395,5 +554,5 @@
     patchNumber({ assistant_type: null, assistant_id: null }, t('unbound'), t('unbind_failed'));
   });
   updateToHint();
-  Promise.all([loadNumbers(), loadCalls()]).catch(function () {}).then(function () { VF.ready(); });
+  Promise.all([loadNumbers(), loadCalls(), loadRequests()]).catch(function () {}).then(function () { VF.ready(); });
 })();

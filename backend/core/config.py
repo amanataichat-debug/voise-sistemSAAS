@@ -232,6 +232,10 @@ class Settings(BaseSettings):
     SIP_GATEWAY_TOKEN: Optional[str] = os.getenv("SIP_GATEWAY_TOKEN")
     # Имя шлюза по умолчанию для новых номеров/звонков (gateway_id моста)
     SIP_GATEWAY_DEFAULT_ID: str = os.getenv("SIP_GATEWAY_DEFAULT_ID", "sip-gw-1")
+    # Оповещение администратора о новой заявке на номер (форма на «Телефонии»).
+    # Пусто — заявки видны только во вкладке «Заявки на номера» админки.
+    SIP_REQUESTS_TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("SIP_REQUESTS_TELEGRAM_BOT_TOKEN")
+    SIP_REQUESTS_TELEGRAM_CHAT_ID: Optional[str] = os.getenv("SIP_REQUESTS_TELEGRAM_CHAT_ID")
     
     # =========================================================================
     # ✅ НОВОЕ v3.3: Cloudflare R2 Storage для записей звонков
