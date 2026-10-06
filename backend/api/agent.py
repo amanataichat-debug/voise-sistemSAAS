@@ -2886,6 +2886,15 @@ async def get_agent_contact_details(
     except Exception as e:
         logger.warning(f"[AGENT] failed to load instagram thread for contact {contact_id}: {e}")
     contact_data["instagram"] = instagram
+
+    # WhatsApp-переписка (номер владельца, Evolution API) с контактом.
+    whatsapp = []
+    try:
+        from backend.services.whatsapp_service import get_thread as wa_get_thread
+        whatsapp = [m.to_dict() for m in wa_get_thread(db, contact.id, limit=30)]
+    except Exception as e:
+        logger.warning(f"[AGENT] failed to load whatsapp thread for contact {contact_id}: {e}")
+    contact_data["whatsapp"] = whatsapp
     return contact_data
 
 

@@ -35,7 +35,8 @@ function renderConnectorsBlock(){
   const card = document.getElementById('connectors-card');
 
   // Личный Telegram (telegram-account.js) живёт в этой же карточке.
-  const tgAvailable = (typeof tgAccountAvailable === 'function') && tgAccountAvailable();
+  const tgAvailable = ((typeof tgAccountAvailable === 'function') && tgAccountAvailable())
+    || ((typeof waAccountAvailable === 'function') && waAccountAvailable());
 
   if((!s || !s.configured) && !tgAvailable){
     // Ни Composio, ни Telegram не настроены на сервере — прячем карточку целиком.
@@ -45,7 +46,8 @@ function renderConnectorsBlock(){
   if(card) card.style.display = '';
 
   const connected = (s && s.configured) ? (s.connectors || []).filter(c => c.connected) : [];
-  const tgSummary = (typeof tgAccountSummaryHtml === 'function') ? tgAccountSummaryHtml() : '';
+  const tgSummary = ((typeof tgAccountSummaryHtml === 'function') ? tgAccountSummaryHtml() : '')
+    + ((typeof waAccountSummaryHtml === 'function') ? waAccountSummaryHtml() : '');
   if(!connected.length && !tgSummary){
     el.innerHTML = '<div class="empty">Ничего не подключено</div>';
     return;
@@ -65,6 +67,7 @@ function openConnectorsModal(){
   // Подтянуть свежий статус на случай возврата из OAuth.
   loadConnectors();
   if(typeof loadTgAccount === 'function') loadTgAccount();
+  if(typeof loadWaAccount === 'function') loadWaAccount();
 }
 
 function closeConnectorsModal(){
@@ -77,7 +80,9 @@ function renderConnectorsList(){
   if(!el) return;
   const s = connectorsState;
   // Строка личного Telegram (telegram-account.js) — в общем списке коннекторов.
-  const tgRow = (typeof tgAccountConnectorRowHtml === 'function') ? tgAccountConnectorRowHtml() : '';
+  // и строка WhatsApp (whatsapp-account.js)
+  const tgRow = ((typeof tgAccountConnectorRowHtml === 'function') ? tgAccountConnectorRowHtml() : '')
+    + ((typeof waAccountConnectorRowHtml === 'function') ? waAccountConnectorRowHtml() : '');
   if(!s || !s.configured){
     el.innerHTML = tgRow || '<div class="empty">Коннекторы недоступны</div>';
     return;

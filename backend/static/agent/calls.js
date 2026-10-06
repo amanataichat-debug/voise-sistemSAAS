@@ -51,6 +51,9 @@ const POSTCALL_TOOL_LABELS = {
   schedule_telegram_message: { label: 'Запланировал сообщение в Telegram', icon: 'fa-calendar-plus', color: '#229ED9' },
   instagram_send_message: { label: 'Написал клиенту в Instagram', icon: 'fa-comment-dots', color: '#E1306C' },
   instagram_get_thread: { label: 'Прочитал Instagram-переписку', icon: 'fa-comments', color: '#E1306C' },
+  whatsapp_send_message: { label: 'Написал клиенту в WhatsApp', icon: 'fa-comment-dots', color: '#25D366' },
+  whatsapp_send_file: { label: 'Отправил файл в WhatsApp', icon: 'fa-paperclip', color: '#25D366' },
+  whatsapp_get_thread: { label: 'Прочитал WhatsApp-переписку', icon: 'fa-comments', color: '#25D366' },
 };
 
 // Итог SIP-звонка (backend: call_outcome в services/agent_call_finalizer.py):
@@ -69,7 +72,8 @@ function renderCallExpanded(call, uid){
   const isSms = call.channel === 'sms';
   const isTg = call.channel === 'telegram';
   const isIg = call.channel === 'instagram';
-  const isMsg = isSms || isTg || isIg; // текстовое событие (не звонок)
+  const isWa = call.channel === 'whatsapp';
+  const isMsg = isSms || isTg || isIg || isWa; // текстовое событие (не звонок)
   // Запланированная отправка сообщения (schedule_telegram_message):
   // инициатива агента, «транскрипт» — инструкция, а не текст клиента.
   const isTgOut = isTg && (call.postcall_log || {}).call_direction === 'telegram_outbound';
@@ -98,6 +102,8 @@ function renderCallExpanded(call, uid){
     ? '<span class="status-badge" style="background:#E0F2FE;color:#0369A1"><i class="fas fa-paper-plane"></i> Telegram</span>'
     : isIg
     ? '<span class="status-badge" style="background:#FCE7F3;color:#BE185D"><i class="fa-brands fa-instagram"></i> Instagram</span>'
+    : isWa
+    ? '<span class="status-badge" style="background:#DCFCE7;color:#166534"><i class="fa-brands fa-whatsapp"></i> WhatsApp</span>'
     : directionBadge(call.direction);
 
   const pre = call.precall_log || {};
@@ -138,7 +144,7 @@ function renderCallExpanded(call, uid){
         .filter(k => a[k]).map(k => a[k]).join(' · ');
     } else if(tc.tool === 'search_knowledge_base'){
       detail = (tc.args || {}).query || '';
-    } else if(tc.tool === 'telegram_send_message' || tc.tool === 'instagram_send_message'){
+    } else if(tc.tool === 'telegram_send_message' || tc.tool === 'instagram_send_message' || tc.tool === 'whatsapp_send_message'){
       detail = (tc.args || {}).text || '';
     } else if(tc.tool === 'schedule_telegram_message'){
       const a = tc.args || {};
@@ -168,7 +174,7 @@ function renderCallExpanded(call, uid){
 
   const transcriptBlock = (call.transcript && call.transcript !== '(Транскрипт недоступен)') ? `
     <div style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:0.04em;margin:10px 0 4px">
-      <i class="${isIg ? 'fa-brands fa-instagram' : isSms ? 'fas fa-comment-sms' : isTg ? 'fas fa-paper-plane' : 'fas fa-quote-left'}"></i> ${isSms ? 'Текст входящего SMS' : isTgOut ? 'Инструкция запланированного сообщения' : isTg ? 'Текст входящего сообщения Telegram' : isIg ? 'Текст входящего сообщения Instagram' : 'Транскрипт звонка'}
+      <i class="${isWa ? 'fa-brands fa-whatsapp' : isIg ? 'fa-brands fa-instagram' : isSms ? 'fas fa-comment-sms' : isTg ? 'fas fa-paper-plane' : 'fas fa-quote-left'}"></i> ${isSms ? 'Текст входящего SMS' : isTgOut ? 'Инструкция запланированного сообщения' : isTg ? 'Текст входящего сообщения Telegram' : isIg ? 'Текст входящего сообщения Instagram' : isWa ? 'Текст входящего сообщения WhatsApp' : 'Транскрипт звонка'}
     </div>
     <div style="background:var(--bg);padding:12px 14px;border-radius:8px;margin:0 0 10px;font-size:12px;color:var(--muted);white-space:pre-wrap;line-height:1.6;max-height:300px;overflow-y:auto">
       ${esc(call.transcript)}

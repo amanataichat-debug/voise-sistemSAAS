@@ -65,7 +65,7 @@ TIMELINE_MAX_EVENTS = 40      # сколько последних событий
 TIMELINE_DAYS_WINDOW = 30     # окно по времени (дни)
 TIMELINE_CALL_SNIPPET = 300   # длина сниппета транскрипта звонка в ленте
 
-_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷"}
+_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷", "whatsapp": "🟢"}
 
 
 def _timeline_call_events(db, agent_contact, exclude_call_id, since, limit) -> list:
@@ -169,6 +169,26 @@ def _timeline_instagram_events(db, agent_contact, since, limit) -> list:
         return []
 
 
+def _timeline_whatsapp_events(db, agent_contact, since, limit) -> list:
+    """События-WhatsApp (обе стороны) для таймлайна. Best-effort."""
+    try:
+        from backend.services.whatsapp_service import get_thread as wa_get_thread
+        rows = wa_get_thread(db, agent_contact.id, limit=limit)
+        events = []
+        for m in rows:
+            ts = m.sent_at or m.created_at
+            if not ts:
+                continue
+            if since is not None and _as_naive_utc(ts) < since:
+                continue
+            who = "агент → клиент" if (m.direction or "inbound") == "outbound" else "клиент → агент"
+            events.append((ts, "whatsapp", f"WhatsApp, {who}: {(m.body or '').strip()}"))
+        return events
+    except Exception as e:
+        logger.warning(f"[AGENT] timeline whatsapp events failed: {e}")
+        return []
+
+
 def _as_naive_utc(dt):
     """К naive-UTC для единообразного сравнения (часть колонок tz-aware, часть — нет)."""
     if dt is not None and dt.tzinfo is not None:
@@ -201,6 +221,7 @@ def build_conversation_timeline(
         events += _timeline_sms_events(db, agent_contact, since, max_events)
         events += _timeline_telegram_events(db, agent_contact, since, max_events)
         events += _timeline_instagram_events(db, agent_contact, since, max_events)
+        events += _timeline_whatsapp_events(db, agent_contact, since, max_events)
         if not events:
             return ""
         # Сортируем по времени (naive-UTC), берём последние N.
@@ -1011,6 +1032,7 @@ class PostCallOrchestrator:
         is_sms = (call_direction or "").lower() == "sms_inbound"
         is_tg = (call_direction or "").lower() == "telegram_inbound"
         is_ig = (call_direction or "").lower() == "instagram_inbound"
+        is_wa = (call_direction or "").lower() == "whatsapp_inbound"
         is_tg_out = (call_direction or "").lower() == "telegram_outbound"
         is_inbound = (call_direction or "outbound").lower() == "inbound"
 
@@ -1045,6 +1067,28 @@ class PostCallOrchestrator:
                 "   create_document, затем telegram_send_file."
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ TELEGRAM"
+            status_label = "СТАТУС"
+            analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
+        elif is_wa:
+            direction_line = (
+                "СОБЫТИЕ: ВХОДЯЩЕЕ СООБЩЕНИЕ В WHATSAPP (номер владельца) — "
+                "клиент написал в WhatsApp, это не звонок."
+            )
+            callback_rule = (
+                "3. Если уместно ответить клиенту — ответь в WhatsApp через\n"
+                "   whatsapp_send_message (тем же каналом, которым написал клиент).\n"
+                "   Пиши как живой человек, коротко и по делу, без markdown.\n"
+                "   Несколько сообщений клиента подряд пришли одним блоком —\n"
+                "   ответь на всё одним сообщением. Если по сути сообщения нужен\n"
+                "   звонок (клиент просит позвонить, договорились о следующем\n"
+                "   шаге) — запланируй его через create_agent_task. Сам факт\n"
+                "   сообщения НЕ требует звонка.\n"
+                "   Голосовые и вложения клиента уже распознаны (см. текст ниже).\n"
+                "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
+                "   отправь через whatsapp_send_file; нужен свой документ —\n"
+                "   create_document, затем whatsapp_send_file."
+            )
+            transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ WHATSAPP"
             status_label = "СТАТУС"
             analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
         elif is_ig:
@@ -1225,6 +1269,28 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             call_direction="instagram_inbound",
         )
 
+    async def run_for_whatsapp(self, agent_call, agent_contact, agent_config, user, message_body, db):
+        """
+        Прогнать входящие сообщения WhatsApp (серия склеена в whatsapp_inbound)
+        через ту же PostCall-логику, что звонки, SMS, Telegram и Instagram.
+        Ответить клиенту агент может тулзой whatsapp_send_message (домешивается
+        в build_postcall_tools, когда номер подключён).
+        """
+        transcript = f'Клиент написал в WhatsApp: "{(message_body or "").strip()}"'
+        await self._analyze(
+            agent_call=agent_call,
+            agent_contact=agent_contact,
+            agent_config=agent_config,
+            user=user,
+            task=None,
+            transcript=transcript,
+            call_status="answered",
+            duration_seconds=0,
+            openai_key=(user.openai_api_key or "") if user else "",
+            db=db,
+            call_direction="whatsapp_inbound",
+        )
+
     async def run_for_scheduled_telegram(self, agent_call, agent_contact, agent_config, user, task, db):
         """
         Исполнить запланированную задачу «написать клиенту в Telegram»
@@ -1315,7 +1381,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         # Подставляем стратегию PreCall в текст (симуляция цепочки). Для входящего
         # SMS/Telegram и запланированной отправки в Telegram PreCall не было —
         # блок стратегии не добавляем.
-        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound"):
+        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound", "whatsapp_inbound"):
             post_call_input += f"""
 
 СТРАТЕГИЯ КОТОРУЮ ТЫ ПЛАНИРОВАЛ ПЕРЕД ЗВОНКОМ:
@@ -3004,5 +3070,84 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
 
     except Exception as e:
         logger.error(f"[AGENT-IG] handle_inbound_instagram error: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, message_body: str):
+    """
+    Event-driven обработка входящих сообщений WhatsApp.
+
+    Вызывается из services/whatsapp_inbound.py ПОСЛЕ того, как сообщения
+    сохранены в agent_whatsapp_messages и чат атомарно помечен переданным
+    (last_dispatched_at), поэтому падение здесь не приводит к повторной
+    обработке. Зеркалит handle_inbound_telegram: проверка доступа →
+    AgentCall(direction="inbound") → PostCall с call_direction="whatsapp_inbound"
+    (агент отвечает тулзой whatsapp_send_message).
+
+    Открывает собственную сессию БД — безопасно для asyncio.create_task().
+    """
+    from backend.models.agent_whatsapp import AgentWhatsAppAccount
+
+    db = SessionLocal()
+    try:
+        account = db.query(AgentWhatsAppAccount).filter(
+            AgentWhatsAppAccount.id == account_id
+        ).first()
+        if not account:
+            return
+
+        agent = db.query(AgentConfig).filter(
+            AgentConfig.id == account.agent_config_id,
+        ).first()
+        if not agent or not agent.is_active:
+            logger.info(f"[AGENT-WA] agent inactive/missing for account {account_id}, skip")
+            return
+
+        user = db.query(User).filter(User.id == account.user_id).first()
+        if not user:
+            return
+
+        try:
+            if not user.has_active_agent_subscription():
+                logger.info(f"[AGENT-WA] user {user.id} has no agent access, skip wa message")
+                return
+        except Exception:
+            pass
+
+        if not getattr(agent, "uses_hardcoded_prompt", False) and not user.openai_api_key:
+            logger.info(f"[AGENT-WA] v2 agent {agent.id} without OpenAI key, skip wa message")
+            return
+
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id,
+            AgentContact.agent_config_id == agent.id,
+        ).first()
+        if not contact:
+            return
+
+        inbound_call = AgentCall(
+            agent_contact_id=contact.id,
+            agent_config_id=agent.id,
+            user_id=user.id,
+            source_task_id=None,
+            call_session_id=None,
+            status="calling",
+            direction="inbound",
+            started_at=datetime.utcnow(),
+        )
+        db.add(inbound_call)
+        db.commit()
+
+        logger.info(
+            f"[AGENT-WA] Inbound WA message -> agent {agent.id}, "
+            f"contact={contact.id}, call={inbound_call.id}"
+        )
+        await PostCallOrchestrator().run_for_whatsapp(
+            inbound_call, contact, agent, user, message_body, db
+        )
+
+    except Exception as e:
+        logger.error(f"[AGENT-WA] handle_inbound_whatsapp error: {e}", exc_info=True)
     finally:
         db.close()

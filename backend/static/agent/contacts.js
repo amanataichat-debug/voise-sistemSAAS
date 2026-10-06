@@ -182,8 +182,14 @@ function renderContactDetails(c){
     <div class="cd-sms-thread">${c.instagram.map(_cdSmsBubble).join('')}</div>
   ` : '';
 
+  // WhatsApp-переписка (номер владельца, Evolution API) — те же пузыри.
+  const waBlock = (c.whatsapp && c.whatsapp.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fa-brands fa-whatsapp" style="color:#25D366"></i> WhatsApp-переписка (${c.whatsapp.length})</div>
+    <div class="cd-sms-thread">${c.whatsapp.map(_cdSmsBubble).join('')}</div>
+  ` : '';
+
   _cdTasks = (c.tasks || []).slice().sort((a,b)=> new Date(a.scheduled_time)-new Date(b.scheduled_time));
-  document.getElementById('contact-details-body').innerHTML = infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock;
+  document.getElementById('contact-details-body').innerHTML = infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock + waBlock;
   renderContactTasksSection();
 }
 

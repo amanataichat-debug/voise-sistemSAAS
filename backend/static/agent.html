@@ -726,6 +726,17 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="wa-account-modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fa-brands fa-whatsapp" style="color:#25D366"></i> WhatsApp</div>
+      <button class="modal-close" onclick="closeWaAccountModal()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" id="wa-account-modal-body"><div class="empty">Загрузка...</div></div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeWaAccountModal()">Закрыть</button></div>
+  </div>
+</div>
+
 <!-- Скрипты агента: классические (не ES-модули), общее глобальное окружение.
      Порядок: core → фичи → panels → init. Документация: /static/agent/CLAUDE.md -->
 <script src="/static/js/sidebar.js"></script>
@@ -739,6 +750,7 @@
 <script src="/static/agent/phone.js"></script>
 <script src="/static/agent/telegram.js"></script>
 <script src="/static/agent/telegram-account.js"></script>
+<script src="/static/agent/whatsapp-account.js"></script>
 <script src="/static/agent/contacts.js"></script>
 <script src="/static/agent/calls.js"></script>
 <script src="/static/agent/history.js"></script>

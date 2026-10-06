@@ -101,7 +101,7 @@ class AgentCall(Base):
 
     def _resolve_channel(self):
         """
-        Канал события для UI: "sms", "telegram" или "call".
+        Канал события для UI: "sms", "telegram", "instagram", "whatsapp" или "call".
 
         Новые записи помечаются через postcall_log.call_direction ("sms_inbound"
         / "telegram_inbound" / "telegram_outbound" — запланированная отправка,
@@ -116,6 +116,8 @@ class AgentCall(Base):
                 return "telegram"
             if post.get("call_direction") == "instagram_inbound":
                 return "instagram"
+            if post.get("call_direction") == "whatsapp_inbound":
+                return "whatsapp"
         if self.transcript:
             t = self.transcript.strip()
             if t.startswith("Клиент прислал SMS"):
@@ -124,6 +126,8 @@ class AgentCall(Base):
                 return "telegram"
             if t.startswith("Клиент написал в Instagram"):
                 return "instagram"
+            if t.startswith("Клиент написал в WhatsApp"):
+                return "whatsapp"
         return "call"
 
     def to_dict(self):

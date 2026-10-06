@@ -33,7 +33,25 @@
 - Неофициальный способ нарушает правила WhatsApp → риск бана номера, особенно при первых
   сообщениях незнакомым. Нужны лимиты и паузы на стороне агента.
 
+## Бэкенд-коннектор (ветка `0410-golos`)
+- Модели `backend/models/agent_whatsapp.py`: аккаунт (один на агента = один instance), чаты, сообщения.
+- `backend/services/whatsapp_service.py` — клиент Evolution API + история; `backend/services/whatsapp_inbound.py` — webhook'и.
+- `backend/api/agent_whatsapp.py` — `/api/agent/whatsapp/*` (подключение по QR, настройки) и
+  `POST /api/whatsapp/webhook/{account_id}` (заголовок `X-Voksy-Token`).
+- Оркестратор: `handle_inbound_whatsapp` → `PostCallOrchestrator.run_for_whatsapp` (`call_direction="whatsapp_inbound"`),
+  WhatsApp в общей хронологии контакта, канал `whatsapp` у `AgentCall`.
+- Инструменты агента (чат владельца и PostCall, только если номер подключён): `whatsapp_send_message`
+  (ответ или **первое сообщение** по `agent_contact_id` / `phone`; контакт создаётся при необходимости),
+  `whatsapp_send_file`, `whatsapp_get_thread`.
+- Анти-бан: `WA_SEND_HOURLY_LIMIT`=40 исходящих в час, `daily_new_chats_limit` (по умолчанию 20) новых чатов в сутки,
+  проверка номера (`/chat/whatsappNumbers`), пауза «печатает…» (`typing_delay_ms`).
+- Входящие: серия сообщений склеивается (8 с тишины) в один прогон оркестратора; голосовые/фото/документы
+  распознаются `agent_media_service` (`channel="whatsapp"`).
+- UI: `backend/static/agent/whatsapp-account.js` (строка «WhatsApp» в коннекторах агента, QR-модалка),
+  тред в карточке контакта, бейдж в истории.
+
 ## Состояние (6 октября 2026)
-- [x] VPS создан, DNS настроен, файлы шлюза в репозитории.
-- [ ] `install.sh` запущен, переменные `WHATSAPP_GATEWAY_*` добавлены на Render.
-- [ ] Коннектор на бэкенде (модель номера, webhook, инструменты агента, QR в карточке агента).
+- [x] VPS создан, DNS настроен, `install.sh` запущен, шлюз отвечает на `https://wa.voksyai.online`.
+- [x] Коннектор на бэкенде и UI (код в ветке `0410-golos`).
+- [ ] `WHATSAPP_GATEWAY_URL` / `WHATSAPP_GATEWAY_API_KEY` на Render, проверка на живом номере.
+- [ ] Отложенные сообщения WhatsApp (аналог `schedule_telegram_message`) — не сделаны.

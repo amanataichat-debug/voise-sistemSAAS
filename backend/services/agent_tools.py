@@ -21,6 +21,7 @@ from backend.models.agent_connector import AgentConnector
 from backend.services import composio_service
 from backend.services import telegram_user_service
 from backend.services import instagram_service
+from backend.services import whatsapp_service
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
@@ -298,25 +299,27 @@ async def _augment_with_connectors(base_tools: list, agent_config, db: Session) 
 async def build_chat_tools(agent_config, db: Session) -> list:
     """
     Tools для чата/Telegram оркестратора (Chat Completions формат): базовый
-    AGENT_CHAT_TOOLS + коннекторы Composio + личный Telegram + Instagram
-    (последние два — только если подключены).
+    AGENT_CHAT_TOOLS + коннекторы Composio + личный Telegram + Instagram +
+    WhatsApp (последние три — только если подключены).
     """
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_CHAT_TOOLS), agent_config, db
     )
     tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
-    return _augment_with_instagram(tools, agent_config, db)
+    tools = _augment_with_instagram(tools, agent_config, db)
+    return _augment_with_whatsapp(tools, agent_config, db)
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
-    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + файлы + личный Telegram + Instagram."""
+    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + файлы + личный Telegram + Instagram + WhatsApp."""
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_POSTCALL_TOOLS), agent_config, db
     )
     tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
-    return _augment_with_instagram(tools, agent_config, db)
+    tools = _augment_with_instagram(tools, agent_config, db)
+    return _augment_with_whatsapp(tools, agent_config, db)
 
 
 async def fn_execute_connector(tool_name: str, args: dict, agent_config_id: str, db: Session) -> dict:
@@ -536,10 +539,86 @@ INSTAGRAM_TOOLS = [
 
 
 # ============================================================================
+# WHATSAPP TOOLS — номер WhatsApp владельца (Evolution API, неофициально).
+# Домешиваются в чат и PostCall, ТОЛЬКО когда номер подключён. Голосовому
+# ассистенту эти функции намеренно НЕ отдаются. В отличие от Instagram, писать
+# первым можно (по номеру телефона контакта), но с лимитами: новых чатов в
+# сутки (account.daily_new_chats_limit) и исходящих в час — защита от бана.
+# ============================================================================
+
+WHATSAPP_SEND_MESSAGE_TOOL = {
+    "type": "function",
+    "name": "whatsapp_send_message",
+    "description": (
+        "Отправить клиенту сообщение в WhatsApp с номера владельца. Можно "
+        "отвечать в существующем чате и писать ПЕРВЫМ — по номеру телефона "
+        "контакта. Укажи agent_contact_id (предпочтительно) или phone (если "
+        "контакта ещё нет — он будет создан). Новых чатов в сутки — ограниченное "
+        "число (защита номера от бана): не рассылай одинаковые сообщения по "
+        "холодной базе, пиши персонально и по делу. Пиши как живой человек, "
+        "коротко, без markdown."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "phone": {"type": "string", "description": "Номер телефона получателя (если нет agent_contact_id), например +996700123456"},
+            "text": {"type": "string", "description": "Текст сообщения"},
+        },
+        "required": ["text"],
+    },
+}
+
+WHATSAPP_SEND_FILE_TOOL = {
+    "type": "function",
+    "name": "whatsapp_send_file",
+    "description": (
+        "Отправить клиенту ФАЙЛ в WhatsApp (файл из list_agent_files, документ "
+        "из create_document или вложение клиента). Картинки и видео уходят "
+        "медиа, остальное — документом. caption — подпись (необязательно). "
+        "Получатель и лимиты — как у whatsapp_send_message."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "phone": {"type": "string", "description": "Номер телефона получателя (если нет agent_contact_id)"},
+            "file_id": {"type": "string", "description": "id файла из list_agent_files / create_document"},
+            "caption": {"type": "string", "description": "Подпись к файлу"},
+        },
+        "required": ["file_id"],
+    },
+}
+
+WHATSAPP_GET_THREAD_TOOL = {
+    "type": "function",
+    "name": "whatsapp_get_thread",
+    "description": (
+        "Получить последние сообщения WhatsApp-переписки с контактом — для "
+        "контекста перед ответом."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "limit": {"type": "integer", "description": "Сколько сообщений (по умолчанию 20)"},
+        },
+        "required": ["agent_contact_id"],
+    },
+}
+
+WHATSAPP_TOOLS = [
+    WHATSAPP_SEND_MESSAGE_TOOL,
+    WHATSAPP_SEND_FILE_TOOL,
+    WHATSAPP_GET_THREAD_TOOL,
+]
+
+
+# ============================================================================
 # FILE TOOLS — файлы агента (agent_files): библиотека владельца, вложения
 # клиентов (уже распознанные: голос → текст, фото → OCR) и документы, которые
 # агент собирает сам. Доступны всегда; отправка клиенту — telegram_send_file /
-# instagram_send_file (домешиваются вместе с тулзами своего канала).
+# instagram_send_file / whatsapp_send_file (домешиваются вместе с тулзами своего канала).
 # ============================================================================
 
 LIST_AGENT_FILES_TOOL = {
@@ -594,7 +673,7 @@ CREATE_DOCUMENT_TOOL = {
         "xlsx, csv, txt. content — текст: строки с # — заголовки, с «- » — "
         "пункты списка. table — таблица (первая строка — заголовки), обязательна "
         "для xlsx/csv. Возвращает file_id — отправь его клиенту через "
-        "telegram_send_file / instagram_send_file. Не выдумывай цены и условия — "
+        "telegram_send_file / instagram_send_file / whatsapp_send_file. Не выдумывай цены и условия — "
         "бери их из базы знаний и библиотеки файлов."
     ),
     "parameters": {
@@ -871,6 +950,180 @@ async def fn_instagram_get_thread(args: dict, user_id: str, agent_config_id: str
         return {"ok": False, "error": "Контакт не найден"}
     limit = min(int(args.get("limit") or 20), 50)
     rows = instagram_service.get_thread(db, contact.id, limit=limit)
+    return {"ok": True, "messages": [m.to_dict() for m in rows]}
+
+
+def _augment_with_whatsapp(base_tools: list, agent_config, db: Session) -> list:
+    """Дописать тулзы WhatsApp, если номер агента подключён."""
+    if agent_config is None:
+        return base_tools
+    try:
+        if not whatsapp_service.connected(db, agent_config.id):
+            return base_tools
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] whatsapp account lookup failed: {e}")
+        return base_tools
+    return base_tools + to_chat_completions_tools(WHATSAPP_TOOLS)
+
+
+async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: Session,
+                                   file_row=None) -> dict:
+    """
+    Отправка в WhatsApp с номера владельца (Evolution API). Получатель:
+    существующий чат контакта → номер телефона контакта / phone (новый чат).
+    Анти-бан: почасовой лимит исходящих (WA_SEND_HOURLY_LIMIT), лимит новых
+    чатов в сутки (account.daily_new_chats_limit), проверка, что номер есть в
+    WhatsApp, пауза «печатает…» перед отправкой. С file_row отправляет файл
+    (whatsapp_send_file), text — подпись.
+    """
+    from backend.models.agent_whatsapp import AgentWhatsAppChat, AgentWhatsAppMessage
+    from backend.utils.phone import normalize_phone_e164
+
+    err = lambda code: {"ok": False, "error": whatsapp_service.error_human(code)}  # noqa: E731
+    if not whatsapp_service.is_configured():
+        return err("not_configured")
+    if agent_config is None:
+        return err("not_connected")
+    account = whatsapp_service.get_account_for_agent(db, agent_config.id)
+    if account is None:
+        return err("not_connected")
+
+    text = (args.get("text") or "").strip()
+    if not text and file_row is None:
+        return err("empty_text")
+
+    # Контакт: по id, иначе по номеру (создаём, если такого нет)
+    contact = None
+    phone_arg = normalize_phone_e164(args.get("phone")) if args.get("phone") else None
+    if args.get("agent_contact_id"):
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == args["agent_contact_id"],
+            AgentContact.user_id == user_id,
+            AgentContact.agent_config_id == agent_config.id,
+        ).first()
+        if not contact:
+            return {"ok": False, "error": "Контакт не найден"}
+    elif phone_arg:
+        contact = whatsapp_service.match_contact_by_phone(db, agent_config.id, phone_arg)
+        if contact is None:
+            contact = AgentContact(
+                agent_config_id=agent_config.id, user_id=user_id,
+                phone=phone_arg, status="new",
+            )
+            db.add(contact)
+            db.flush()
+    else:
+        return {"ok": False, "error": "Укажи agent_contact_id или phone"}
+
+    hour_ago = datetime.utcnow() - timedelta(hours=1)
+    sent_last_hour = db.query(AgentWhatsAppMessage).filter(
+        AgentWhatsAppMessage.account_id == account.id,
+        AgentWhatsAppMessage.direction == "outbound",
+        AgentWhatsAppMessage.wa_message_id.isnot(None),
+        AgentWhatsAppMessage.created_at >= hour_ago,
+    ).count()
+    if sent_last_hour >= whatsapp_service.WA_SEND_HOURLY_LIMIT:
+        return err("send_limit_reached")
+
+    chat = whatsapp_service.chat_for_contact(db, account.id, contact.id)
+    if chat is not None:
+        to = chat.remote_jid
+    else:
+        raw_phone = phone_arg or contact.phone or ""
+        if raw_phone.startswith(("tg:", "ig:", "wa:")):
+            raw_phone = ""
+        digits = whatsapp_service.phone_digits(normalize_phone_e164(raw_phone) or raw_phone)
+        if len(digits) < 8:
+            return err("no_phone")
+        # Новый чат (агент пишет первым) — суточный лимит
+        day_ago = datetime.utcnow() - timedelta(days=1)
+        new_chats = db.query(AgentWhatsAppChat).filter(
+            AgentWhatsAppChat.account_id == account.id,
+            AgentWhatsAppChat.created_via == "send",
+            AgentWhatsAppChat.created_at >= day_ago,
+        ).count()
+        if new_chats >= int(account.daily_new_chats_limit or 0):
+            return err("new_chat_limit_reached")
+        check = await whatsapp_service.check_number(account.instance_name, digits)
+        if not check.get("ok"):
+            return err(check.get("error") or "whatsapp_error")
+        if not check.get("exists"):
+            return err("not_on_whatsapp")
+        to = check.get("jid") or f"{digits}{whatsapp_service.USER_JID_SUFFIX}"
+        chat = db.query(AgentWhatsAppChat).filter(
+            AgentWhatsAppChat.account_id == account.id,
+            AgentWhatsAppChat.remote_jid == to,
+        ).first()
+        if chat is None:
+            chat = AgentWhatsAppChat(
+                account_id=account.id, remote_jid=to, phone=digits,
+                agent_contact_id=contact.id, created_via="send",
+            )
+            db.add(chat)
+        elif chat.agent_contact_id is None:
+            chat.agent_contact_id = contact.id
+        db.flush()
+
+    if file_row is None:
+        result = await whatsapp_service.send_text(account.instance_name, to, text)
+        body = text
+    else:
+        import base64 as _b64
+        from backend.services import agent_media_service
+        data = await agent_media_service.load_bytes(file_row)
+        if not data:
+            return {"ok": False, "error": "Файл недоступен в хранилище"}
+        result = await whatsapp_service.send_media(
+            account.instance_name, to,
+            data_b64=_b64.b64encode(data).decode(), mime=file_row.mime_type or "",
+            filename=file_row.filename, kind=file_row.kind or "document", caption=text,
+        )
+        body = (f"📎 Отправлен файл «{file_row.filename}» [file_id={file_row.id}]"
+                + (f"\n{text}" if text else ""))
+    if not result.get("ok"):
+        db.rollback()
+        code = result.get("error") or "whatsapp_error"
+        if code == "not_connected":
+            account = whatsapp_service.get_account_for_agent(db, agent_config.id, require_connected=False)
+            if account is not None:
+                account.last_error = "send_failed_not_connected"
+                db.commit()
+        return err(code)
+
+    whatsapp_service.store_message(
+        db, account, "outbound", body,
+        chat=chat, agent_contact_id=contact.id,
+        wa_message_id=result.get("message_id"), sent_at=datetime.utcnow(),
+        attachment_id=(file_row.id if file_row is not None else None),
+    )
+    db.commit()
+
+    to_label = contact.name or ("+" + chat.phone if chat.phone else to)
+    logger.info(f"[AGENT-TOOLS] whatsapp_send_{'file' if file_row is not None else 'message'} → {to_label}")
+    return {"ok": True, "to": to_label, "agent_contact_id": str(contact.id)}
+
+
+async def fn_whatsapp_send_file(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    if agent_config is None:
+        return {"ok": False, "error": whatsapp_service.error_human("not_connected")}
+    row = _get_agent_file(db, agent_config.id, args.get("file_id"))
+    if row is None:
+        return {"ok": False, "error": "Файл не найден"}
+    send_args = dict(args, text=(args.get("caption") or "").strip())
+    return await fn_whatsapp_send_message(send_args, user_id, agent_config, db, file_row=row)
+
+
+async def fn_whatsapp_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Последние сообщения WhatsApp-переписки с контактом."""
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == args.get("agent_contact_id"),
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if not contact:
+        return {"ok": False, "error": "Контакт не найден"}
+    limit = min(int(args.get("limit") or 20), 50)
+    rows = whatsapp_service.get_thread(db, contact.id, limit=limit)
     return {"ok": True, "messages": [m.to_dict() for m in rows]}
 
 
@@ -2974,6 +3227,14 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_instagram_send_message(tool_args, user_id, agent_config, db)
         elif tool_name == "instagram_get_thread":
             result = await fn_instagram_get_thread(tool_args, user_id, agent_config_id, db)
+        elif tool_name in ("whatsapp_send_message", "whatsapp_send_file"):
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            fn = fn_whatsapp_send_message if tool_name == "whatsapp_send_message" else fn_whatsapp_send_file
+            result = await fn(tool_args, user_id, agent_config, db)
+        elif tool_name == "whatsapp_get_thread":
+            result = await fn_whatsapp_get_thread(tool_args, user_id, agent_config_id, db)
         elif tool_name in ("telegram_send_file", "instagram_send_file"):
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:
