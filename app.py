@@ -1465,8 +1465,6 @@ def ensure_agent_eleven_voice_columns():
     Идемпотентно добавляет FK-колонки eleven-голоса:
       • agent_configs.eleven_assistant_id  → eleven_assistant_configs
       • tasks.eleven_assistant_id          → eleven_assistant_configs
-    и колонки движка голоса карточки (eleven_assistant_configs.voice_engine / live_voice:
-    ElevenLabs или OpenAI GPT-Live).
     Позволяет агенту обзвона использовать ElevenLabs как голосовой провайдер.
     """
     try:
@@ -1475,14 +1473,6 @@ def ensure_agent_eleven_voice_columns():
         if not inspector.has_table('eleven_assistant_configs'):
             return
         stmts = []
-        cols = {c['name'] for c in inspector.get_columns('eleven_assistant_configs')}
-        if 'voice_engine' not in cols:
-            stmts.append(
-                "ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS "
-                "voice_engine VARCHAR(20) NOT NULL DEFAULT 'eleven'"
-            )
-        if 'live_voice' not in cols:
-            stmts.append("ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS live_voice VARCHAR(50)")
         if inspector.has_table('agent_configs'):
             cols = {c['name'] for c in inspector.get_columns('agent_configs')}
             if 'eleven_assistant_id' not in cols:
@@ -1511,6 +1501,38 @@ def ensure_agent_eleven_voice_columns():
                 logger.error(f"❌ Failed to add eleven voice FK columns: {e}")
     except Exception as e:
         logger.error(f"❌ ensure_agent_eleven_voice_columns error: {e}")
+
+
+def ensure_eleven_voice_engine_columns():
+    """
+    Движок голоса карточки (ветка 0910-gptlive): eleven_assistant_configs.voice_engine
+    (eleven | gpt_live) и live_voice. ORM выбирает эти колонки в КАЖДОМ запросе к
+    карточкам, поэтому шаг выполняется в начале старта, до блокировки миграций и в
+    каждом воркере: в конце длинной цепочки он не успевал (или не доходил после
+    упавшего шага), и список ассистентов / assistants-usage отдавали 500.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if not inspector.has_table('eleven_assistant_configs'):
+            return
+        cols = {c['name'] for c in inspector.get_columns('eleven_assistant_configs')}
+        stmts = []
+        if 'voice_engine' not in cols:
+            stmts.append(
+                "ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS "
+                "voice_engine VARCHAR(20) NOT NULL DEFAULT 'eleven'"
+            )
+        if 'live_voice' not in cols:
+            stmts.append("ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS live_voice VARCHAR(50)")
+        if not stmts:
+            return
+        with engine.begin() as conn:
+            for s in stmts:
+                conn.execute(text(s))
+        logger.info(f"✅ Added eleven voice engine columns ({len(stmts)})")
+    except Exception as e:
+        logger.error(f"❌ ensure_eleven_voice_engine_columns error: {e}")
 
 
 def ensure_agent_attachment_columns():
@@ -2418,6 +2440,10 @@ async def startup_event():
         # Простая проверка блокировки для Render
         lock_file_path = "/tmp/wellcome_migrations.lock"
         migration_completed = False
+
+        # Колонки, без которых падает любой запрос к карточкам ассистентов, — сразу,
+        # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
+        ensure_eleven_voice_engine_columns()
         
         try:
             # Для Render используем более простую блокировку
