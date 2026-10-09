@@ -11,9 +11,13 @@
  *   4. даёт единый выход (#logout-button, #dropdown-logout, [data-logout]);
  *   5. ставит переключатель языка RU | KY в топбар.
  *
- * Кошелёк и обязательный онбординг из пакета дизайн-системы сюда не перенесены:
- * на бэкенде нет /api/wallet/* и onboarding_completed. Исходник с ними —
- * design-system/js/sidebar.js, переносить вместе с бэкендом.
+ * 6. карточка «Кошелёк VoksiAI» (баланс в сомах, /api/wallet/balance) над подвалом сайдбара
+ *    и модалка пополнения (POST /api/wallet/topup → переход на страницу оплаты Finik).
+ *    Другие страницы обновляют баланс через window.VoksiAISidebar.refreshWallet()
+ *    и получают событие vf:wallet с ответом /balance.
+ *
+ * Обязательный онбординг из пакета дизайн-системы не перенесён (нет onboarding_completed);
+ * исходник — design-system/js/sidebar.js.
  *
  * Блокировку пунктов по тарифу (класс plan-locked-feature) применяют сами
  * страницы (дашборд, настройки) — у них актуальная матрица тарифов.
@@ -126,6 +130,134 @@
   }
 
   // ---------------------------------------------------------------------
+  // Кошелёк (сом)
+  // ---------------------------------------------------------------------
+  var WALLET_STYLE = [
+    '.vf-wallet{margin:0 12px 10px;padding:12px 14px;border:1px solid var(--vf-border,#e2e8f0);border-radius:12px;background:var(--vf-surface-2,#f8fafc)}',
+    '.vf-wallet-label{display:flex;align-items:center;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--vf-text-4,#93a2b8);font-weight:600}',
+    '.vf-wallet-label .ic{width:14px;height:14px}',
+    '.vf-wallet-balance{font-size:20px;font-weight:700;color:var(--vf-text,#0e1729);margin:4px 0 10px;font-family:"Syne",sans-serif;letter-spacing:-.02em}',
+    '.vf-wallet-balance.neg{color:var(--vf-danger,#dc2626)}',
+    '.vf-wallet-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:32px;border:none;border-radius:8px;background:var(--vf-accent,#2a5ce8);color:#fff;font-weight:600;cursor:pointer;font-size:13px}',
+    '.vf-wallet-btn:hover{background:var(--vf-accent-hover,#2149cf)}',
+    '.vf-wallet-btn .ic{width:14px;height:14px}',
+    '.vf-wallet-link{display:block;margin-top:8px;font-size:12px;color:var(--vf-text-3,#63738b);text-decoration:none;text-align:center}',
+    '.vf-wallet-link:hover{color:var(--vf-accent,#2a5ce8)}',
+    '.vf-modal-overlay{position:fixed;inset:0;background:rgba(14,23,41,.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:16px}',
+    '.vf-topup{background:var(--vf-surface,#fff);color:var(--vf-text,#0e1729);border-radius:16px;width:100%;max-width:420px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,.2)}',
+    '.vf-topup h3{margin:0 0 4px;font-size:18px}',
+    '.vf-topup p{margin:0 0 14px;color:var(--vf-text-3,#63738b);font-size:14px;line-height:1.45}',
+    '.vf-topup-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}',
+    '.vf-topup-chip{padding:7px 13px;border:1px solid var(--vf-border,#e2e8f0);border-radius:999px;background:transparent;color:inherit;cursor:pointer;font-size:13px}',
+    '.vf-topup-chip.active,.vf-topup-chip:hover{border-color:var(--vf-accent,#2a5ce8);color:var(--vf-accent,#2a5ce8)}',
+    '.vf-topup input{width:100%;height:40px;padding:0 12px;border:1px solid var(--vf-border,#e2e8f0);border-radius:8px;font-size:16px;box-sizing:border-box;background:transparent;color:inherit}',
+    '.vf-topup input.err{border-color:#ef4444}',
+    '.vf-topup-hint{font-size:12px;color:var(--vf-text-4,#93a2b8);margin-top:8px}',
+    '.vf-topup-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}',
+    '.vf-topup-actions button{height:38px;padding:0 16px;border-radius:8px;border:1px solid var(--vf-border,#e2e8f0);background:transparent;color:inherit;cursor:pointer;font-weight:600}',
+    '.vf-topup-actions .primary{background:var(--vf-accent,#2a5ce8);border-color:var(--vf-accent,#2a5ce8);color:#fff}',
+    '.vf-topup-actions button[disabled]{opacity:.6;cursor:default}'
+  ].join('');
+  var walletState = { balance: 0, min: 10, max: 100000, free: false };
+
+  function fmtSom(v) {
+    return (Number(v) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ' + T('wallet.currency', 'сом');
+  }
+
+  function renderWalletCard(nav) {
+    var aside = nav ? nav.closest('.sidebar') : document.querySelector('.sidebar');
+    if (!aside || aside.querySelector('.vf-wallet')) return;
+    if (!document.getElementById('vf-wallet-style')) {
+      var st = document.createElement('style');
+      st.id = 'vf-wallet-style';
+      st.textContent = WALLET_STYLE;
+      document.head.appendChild(st);
+    }
+    var card = document.createElement('div');
+    card.className = 'vf-wallet';
+    card.id = 'vf-wallet-card';
+    card.innerHTML =
+      '<div class="vf-wallet-label">' + icon('wallet') + ' ' + T('wallet.card_title', 'Кошелёк VoksiAI') + '</div>' +
+      '<div class="vf-wallet-balance" id="vf-wallet-balance">…</div>' +
+      '<button class="vf-wallet-btn" type="button" id="vf-wallet-topup">' + icon('plus') + ' ' + T('wallet.topup', 'Пополнить') + '</button>' +
+      '<a class="vf-wallet-link" href="/static/settings.html#wallet">' + T('wallet.history', 'История операций') + '</a>';
+    var footer = aside.querySelector('.sidebar-footer');
+    if (footer) aside.insertBefore(card, footer); else aside.appendChild(card);
+    card.querySelector('#vf-wallet-topup').addEventListener('click', openTopupModal);
+  }
+
+  function refreshWallet() {
+    var el = document.getElementById('vf-wallet-balance');
+    if (!token()) return Promise.resolve(null);
+    return apiFetch('/wallet/balance').then(function (r) {
+      if (!r.ok) throw new Error('balance ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      walletState.balance = d.balance || 0;
+      walletState.min = d.min_topup || 10;
+      walletState.max = d.max_topup || 100000;
+      walletState.free = !!d.free;
+      if (el) {
+        el.textContent = fmtSom(walletState.balance);
+        el.classList.toggle('neg', walletState.balance < 0);
+      }
+      document.dispatchEvent(new CustomEvent('vf:wallet', { detail: d }));
+      return d;
+    }).catch(function () { if (el) el.textContent = '—'; return null; });
+  }
+
+  function openTopupModal() {
+    if (document.getElementById('vf-topup-modal')) return;
+    var presets = [100, 500, 1000, 3000];
+    var overlay = document.createElement('div');
+    overlay.className = 'vf-modal-overlay';
+    overlay.id = 'vf-topup-modal';
+    overlay.innerHTML =
+      '<div class="vf-topup" role="dialog" aria-modal="true">' +
+      '<h3>' + T('wallet.topup_modal_title', 'Пополнить кошелёк') + '</h3>' +
+      '<p>' + T('wallet.topup_text', 'Баланс: {balance}. С кошелька списываются минуты разговора голосовых ассистентов и агентов.',
+        { balance: '<b>' + fmtSom(walletState.balance) + '</b>' }) + '</p>' +
+      '<div class="vf-topup-chips">' + presets.map(function (v) {
+        return '<button type="button" class="vf-topup-chip' + (v === 500 ? ' active' : '') + '" data-v="' + v + '">' + fmtSom(v) + '</button>';
+      }).join('') + '</div>' +
+      '<input id="vf-topup-amount" type="number" min="' + walletState.min + '" max="' + walletState.max + '" step="1" value="500">' +
+      '<div class="vf-topup-hint">' + T('wallet.topup_hint', 'От {min} до {max}. Оплата через платёжный шлюз.',
+        { min: fmtSom(walletState.min), max: fmtSom(walletState.max) }) + '</div>' +
+      '<div class="vf-topup-actions">' +
+      '<button type="button" id="vf-topup-cancel">' + T('wallet.topup_cancel', 'Отмена') + '</button>' +
+      '<button type="button" class="primary" id="vf-topup-pay">' + T('wallet.topup_submit', 'Перейти к оплате') + '</button>' +
+      '</div></div>';
+    document.body.appendChild(overlay);
+    var input = overlay.querySelector('#vf-topup-amount');
+    Array.prototype.forEach.call(overlay.querySelectorAll('.vf-topup-chip'), function (c) {
+      c.addEventListener('click', function () {
+        Array.prototype.forEach.call(overlay.querySelectorAll('.vf-topup-chip'), function (x) { x.classList.remove('active'); });
+        c.classList.add('active');
+        input.value = c.getAttribute('data-v');
+      });
+    });
+    function close() { overlay.remove(); }
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    overlay.querySelector('#vf-topup-cancel').addEventListener('click', close);
+    overlay.querySelector('#vf-topup-pay').addEventListener('click', function () {
+      var amount = parseFloat(input.value);
+      if (!amount || amount < walletState.min || amount > walletState.max) { input.classList.add('err'); input.focus(); return; }
+      var btn = this; btn.disabled = true;
+      apiFetch('/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: amount }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.d.payment_url) {
+            alert(T('wallet.topup_failed', 'Не удалось создать платёж') + ': ' + (res.d.detail || res.d.message || ''));
+            btn.disabled = false;
+            return;
+          }
+          window.location.href = res.d.payment_url;
+        })
+        .catch(function (e) { alert(e.message); btn.disabled = false; });
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Переключатель языка RU | KY: в топбаре перед меню пользователя
   // ---------------------------------------------------------------------
   function renderLangSwitch() {
@@ -179,6 +311,8 @@
     } catch (e) { /* ignore */ }
 
     if (!token()) return;
+    renderWalletCard(nav);
+    refreshWallet();
     apiFetch('/users/me').then(function (r) { return r.ok ? r.json() : null; }).then(function (user) {
       if (!user) return;
       var admin = !!user.is_admin || ADMIN_EMAILS.indexOf(user.email) !== -1;
@@ -190,6 +324,8 @@
 
   window.VoksiAISidebar = {
     logout: logout,
+    refreshWallet: refreshWallet,
+    openTopup: openTopupModal,
     MENU: MENU
   };
 

@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     AGENT_STT_SCRIBE_FALLBACK: bool = os.getenv("AGENT_STT_SCRIBE_FALLBACK", "true").lower() == "true"
     AGENT_STT_CREDITS_PER_MINUTE: int = int(os.getenv("AGENT_STT_CREDITS_PER_MINUTE", "15"))
     AGENT_VISION_MODEL: str = os.getenv("AGENT_VISION_MODEL", "google/gemini-3.5-flash")
+
+    # Кошелёк в сомах (минуты голосовых моделей). Тариф минуты = себестоимость в USD × наценка / курс.
+    # WALLET_KGS_USD_RATE — сколько долларов стоит 1 сом (по данным Twelvedata 0,01143392 → 1 $ ≈ 87,46 сом).
+    WALLET_KGS_USD_RATE: float = float(os.getenv("WALLET_KGS_USD_RATE", "0.01143392"))
+    WALLET_MARKUP: float = float(os.getenv("WALLET_MARKUP", "1.25"))
+    VOICE_COST_USD_PER_MIN_GPT_LIVE: float = float(os.getenv("VOICE_COST_USD_PER_MIN_GPT_LIVE", "0.05"))
+    VOICE_COST_USD_PER_MIN_ELEVEN: float = float(os.getenv("VOICE_COST_USD_PER_MIN_ELEVEN", "0.05"))
+    WALLET_MIN_TOPUP: int = int(os.getenv("WALLET_MIN_TOPUP", "10"))
+    WALLET_MAX_TOPUP: int = int(os.getenv("WALLET_MAX_TOPUP", "100000"))
+    WALLET_WELCOME_BONUS: int = int(os.getenv("WALLET_WELCOME_BONUS", "120"))
     AGENT_MEDIA_MAX_MB: int = int(os.getenv("AGENT_MEDIA_MAX_MB", "20"))
     AGENT_VOICE_MAX_SECONDS: int = int(os.getenv("AGENT_VOICE_MAX_SECONDS", "600"))
     REALTIME_WS_URL: str = os.getenv(

@@ -39,7 +39,10 @@
     engine: 'Модель голоса', engine_eleven: 'ElevenLabs', engine_gpt_live: 'OpenAI GPT-Live',
     engine_eleven_hint: 'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.',
     engine_gpt_live_hint: 'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по промпту и собеседнику.',
-    live_voice: 'Голос GPT-Live',
+    live_voice: 'Голос GPT-Live', per_min: '{price} сом', per_min_unit: '/ мин', price_chip: '{price} сом/мин',
+    tag_recommended: 'Рекомендуем', tag_kyrgyz: 'Кыргызский', tag_s2s: 'Речь в речь', tag_widget: 'Виджет', tag_phone: 'Телефония',
+    engine_note: 'Цена модели списывается с кошелька за минуту разговора (посекундно). Минуты связи при звонках пока не списываются.',
+    voice_settings: 'Голосовые настройки',
     eleven_tts: 'Модель синтеза', eleven_voice: 'Голос', eleven_voice_empty: 'Выберите голос', eleven_stability: 'Стабильность голоса',
     eleven_group_rec: 'Рекомендованы для языка', eleven_group_other: 'Остальные голоса', eleven_missing: '(нет в аккаунте)',
     eleven_voices_failed: 'Не удалось загрузить голоса ElevenLabs', eleven_reload: 'Обновить список', eleven_library: 'Найти в библиотеке',
@@ -184,12 +187,14 @@
       var cur = state.current && state.current.id === a.id;
       var desc = a.description || (a.system_prompt ? String(a.system_prompt).slice(0, 160) : t('no_description'));
       return '<div class="a-card' + (cur ? ' active' : '') + '" data-id="' + esc(a.id) + '" tabindex="0">' +
-        '<div class="a-top">' + logo(20) +
+        '<div class="a-top">' + engineLogo(a.voice_engine, 20) +
         '<div class="a-main"><div class="a-name"><span class="truncate">' + esc(a.name || '—') + '</span>' +
         (a.is_active === false ? '<span class="dot" data-tip="' + esc(t('inactive_tip')) + '"></span>' : '') + '</div>' +
         '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'GPT-Live · ' + (a.live_voice || 'marin') : (a.voice_name || 'ElevenLabs')) + '</div></div></div>' +
         '<div class="a-desc">' + esc(desc) + '</div>' +
-        '<div class="a-meta"><span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span><span class="faint" style="margin-left:auto">' + esc(fmtDate(a.created_at)) + '</span></div></div>';
+        '<div class="a-meta"><span class="chip">' + esc(t('price_chip', { price: fmtPrice(enginePrice(a.voice_engine || 'eleven')) })) + '</span>' +
+        (a.voice_engine === 'gpt_live' ? '' : '<span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span>') +
+        '<span class="faint" style="margin-left:auto">' + esc(fmtDate(a.created_at)) + '</span></div></div>';
     }).join('');
     Array.prototype.forEach.call(body.querySelectorAll('.a-card'), function (el) {
       var open = function () { requestOpen(el.getAttribute('data-id')); };
@@ -312,7 +317,7 @@
   function fillForm() {
     var f = state.form, isNew = !state.current;
     $('editor-title').textContent = isNew ? t('new_assistant') : (f.name || '—');
-    $('editor-logo').innerHTML = logo(18);
+    $('editor-logo').innerHTML = engineLogo(f.voice_engine, 18);
     $('active-wrap').classList.toggle('hidden', isNew);
     $('btn-more').classList.toggle('hidden', isNew);
     $('f-active').checked = f.active;
@@ -353,22 +358,54 @@
     el.addEventListener('input', h); el.addEventListener('change', h);
   }
   function engineTitle(id) { return id === 'gpt_live' ? t('engine_gpt_live') : t('engine_eleven'); }
+  // Плитки движков: логотип, цена минуты из кошелька, описание, теги
+  var ENGINE_META = {
+    eleven: { logo: 'elevenlabs', hint: 'engine_eleven_hint', tags: [['tag_recommended', 1], ['tag_kyrgyz'], ['tag_widget'], ['tag_phone']] },
+    gpt_live: { logo: 'openai', hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
+  };
+  function engineLogo(id, size) { return VF.logo(ENGINE_META[id] ? ENGINE_META[id].logo : 'elevenlabs', { size: size || 20 }); }
+  function enginePrice(id) {
+    var e = (state.options.voice_engines || []).filter(function (x) { return x.id === id; })[0];
+    return e && e.som_per_minute != null ? e.som_per_minute : null;
+  }
+  function fmtPrice(v) { return v == null ? '—' : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 }); }
+  function engineTilesHtml(cur) {
+    var list = (state.options.voice_engines || [{ id: 'eleven' }, { id: 'gpt_live' }]);
+    return '<div class="eng-grid" role="radiogroup" aria-label="' + esc(t('engine')) + '">' + list.map(function (e) {
+      var m = ENGINE_META[e.id] || ENGINE_META.eleven, on = e.id === cur;
+      return '<button type="button" class="eng-tile' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-engine="' + esc(e.id) + '">' +
+        '<span class="eng-check">' + VF.icon('check') + '</span>' +
+        '<span class="eng-head">' + VF.logo(m.logo, { size: 18 }) + esc(engineTitle(e.id)) + '</span>' +
+        '<span class="eng-price">' + esc(t('per_min', { price: fmtPrice(e.som_per_minute) })) + ' <small>' + esc(t('per_min_unit')) + '</small></span>' +
+        '<span class="eng-desc">' + esc(t(m.hint)) + '</span>' +
+        '<span class="eng-tags">' + m.tags.map(function (tg) { return '<span class="eng-tag' + (tg[1] ? ' acc' : '') + '">' + esc(t(tg[0])) + '</span>'; }).join('') + '</span>' +
+        '</button>';
+    }).join('') + '</div>' +
+      '<div class="eng-note">' + VF.icon('info') + '<span>' + esc(t('engine_note')) + '</span></div>' +
+      '<div class="eng-sub">' + esc(t('voice_settings')) + ' <span>· ' + esc(engineTitle(cur)) + '</span></div>';
+  }
+  function bindEngineTiles() {
+    Array.prototype.forEach.call(document.querySelectorAll('#voice-settings .eng-tile'), function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-engine');
+        if (v === state.form.voice_engine) return;
+        state.form.voice_engine = v;
+        renderVoiceSettings(); renderServerNote(); renderDirty();
+      });
+    });
+  }
   function renderVoiceSettings() {
     var box = $('voice-settings'), d = state.form, o = state.options;
     var live = d.voice_engine === 'gpt_live';
-    $('engine-name').textContent = '· ' + engineTitle(d.voice_engine);
-    var engines = (o.voice_engines || [{ id: 'eleven' }, { id: 'gpt_live' }]).map(function (x) { return { value: x.id, label: engineTitle(x.id) }; });
     var langs = (o.languages || [{ code: 'ky', title: 'Кыргызский' }, { code: 'ru', title: 'Русский' }]).map(function (x) { return { value: x.code, label: x.title + ' (' + x.code + ')' }; });
-    var engineHtml =
-      '<div class="field"><label class="label" for="ex-engine">' + esc(t('engine')) + '</label><select class="form-control" id="ex-engine">' + selectOptions(engines, d.voice_engine) + '</select>' +
-      '<span class="hint">' + esc(t(live ? 'engine_gpt_live_hint' : 'engine_eleven_hint')) + '</span></div>';
+    var engineHtml = engineTilesHtml(d.voice_engine);
     if (live) {
       var lv = (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: x }; });
       if (lv.every(function (x) { return x.value !== d.live_voice; })) lv.unshift({ value: d.live_voice, label: d.live_voice });
       // Язык карточки GPT-Live не использует: язык ответа модель выбирает по промпту и собеседнику
       box.innerHTML = engineHtml +
         '<div class="field"><label class="label" for="ex-live-voice">' + esc(t('live_voice')) + '</label><select class="form-control" id="ex-live-voice">' + selectOptions(lv, d.live_voice) + '</select></div>';
-      bindVal('ex-engine', function (v) { d.voice_engine = v; renderVoiceSettings(); renderServerNote(); });
+      bindEngineTiles();
       bindVal('ex-live-voice', function (v) { d.live_voice = v; });
       return;
     }
@@ -390,7 +427,7 @@
       '<button class="btn" type="button" id="lib-go">' + esc(t('lib_search')) + '</button></div><div class="lib-list" id="lib-list"></div>' +
       '<button class="btn btn-sm hidden" type="button" id="lib-more" style="margin-top:8px">' + esc(t('lib_more')) + '</button></div></div>' +
       '<div class="field"><label class="label" for="ex-stab">' + esc(t('eleven_stability')) + '</label><select class="form-control" id="ex-stab">' + selectOptions(stab, d.stability) + '</select></div>';
-    bindVal('ex-engine', function (v) { d.voice_engine = v; renderVoiceSettings(); renderServerNote(); });
+    bindEngineTiles();
     bindVal('ex-lang', function (v) { d.language = v; loadVoices(true); });
     bindVal('ex-tts', function (v) {
       d.tts_model = v;

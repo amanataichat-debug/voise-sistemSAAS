@@ -40,6 +40,7 @@ from backend.models.eleven_assistant import (
     VOICE_ENGINES,
     ElevenAssistantConfig,
 )
+from backend.services.wallet_service import som_per_minute
 from backend.websockets.live_client import LIVE_DEFAULT_VOICE, LIVE_VOICE_SET, LIVE_VOICES
 from backend.models.user import User
 from backend.services.assistant_limit_service import exclude_agent_owned
@@ -267,7 +268,8 @@ async def get_eleven_options():
         "default_stability": DEFAULT_ELEVEN_STABILITY,
         "llm_models": ELEVEN_LLM_MODELS,
         "default_llm_model": DEFAULT_ELEVEN_LLM_MODEL,
-        "voice_engines": VOICE_ENGINES,
+        # цена минуты из кошелька (сом) — для плиток выбора модели
+        "voice_engines": [{**e, "som_per_minute": som_per_minute(e["id"])} for e in VOICE_ENGINES],
         "default_voice_engine": DEFAULT_VOICE_ENGINE,
         "live_voices": LIVE_VOICES,
         "default_live_voice": LIVE_DEFAULT_VOICE,

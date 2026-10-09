@@ -1309,6 +1309,32 @@
         </div>
       </div>
 
+      <!-- Кошелёк VoksiAI (сом): баланс, тарифы минут, история операций -->
+      <div class="settings-section" id="wallet">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="fas fa-wallet"></i> Кошелёк VoksiAI
+          </h2>
+        </div>
+        <p class="section-description">
+          С кошелька списываются минуты разговора голосовых ассистентов и агентов обзвона — посекундно,
+          по цене выбранной модели. Подписка остаётся доступом к кабинету.
+        </p>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem;">
+          <div id="wallet-page-balance" style="font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700;">…</div>
+          <button type="button" class="btn btn-primary" id="wallet-page-topup"><i class="fas fa-plus"></i> Пополнить</button>
+          <button type="button" class="btn btn-secondary" id="wallet-page-refresh"><i class="fas fa-sync-alt"></i> Обновить</button>
+        </div>
+        <div id="wallet-tariffs" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;"></div>
+        <div class="table-container" style="overflow-x: auto;">
+          <table class="table" style="width: 100%; font-size: 0.875rem;">
+            <thead><tr><th style="text-align:left">Дата</th><th style="text-align:left">Операция</th><th style="text-align:left">Модель</th><th style="text-align:right">Секунды</th><th style="text-align:right">Сумма</th><th style="text-align:right">Баланс</th></tr></thead>
+            <tbody id="wallet-history-body"><tr><td colspan="6">Загрузка…</td></tr></tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-secondary" id="wallet-more" style="display: none; margin-top: 0.75rem;">Показать ещё</button>
+      </div>
+
       <!-- 🆕 ПАРТНЕРСКАЯ ПРОГРАММА -->
       <div class="partner-section" id="partner-section">
         <div class="section-header">
@@ -2392,6 +2418,59 @@
       // Запускаем инициализацию
       initializePage();
     });
+  </script>
+  <script>
+    // Кошелёк: /api/wallet/balance + /api/wallet/transactions (пополнение — модалка из sidebar.js)
+    (function () {
+      var LABELS = { topup: 'Пополнение', bonus: 'Подарок на тест', admin: 'Начисление администратором', charge: 'Разговор' };
+      var ENGINES = { eleven: 'ElevenLabs', gpt_live: 'OpenAI GPT-Live' };
+      var offset = 0, LIMIT = 30;
+      function money(v, sign) { var n = Number(v) || 0; return (sign && n > 0 ? '+' : '') + n.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' сом'; }
+      function esc(v) { var d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; }
+      function get(path) {
+        return fetch('/api/wallet' + path, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') } })
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+      }
+      function loadBalance() {
+        return get('/balance').then(function (d) {
+          document.getElementById('wallet-page-balance').textContent = d.free ? money(d.balance) + ' · без списаний' : money(d.balance);
+          document.getElementById('wallet-tariffs').innerHTML = (d.tariffs || []).map(function (t) {
+            return '<span class="badge" style="padding: 4px 10px; border-radius: 999px; border: 1px solid var(--vf-border, #e2e8f0); font-size: 12.5px;">' +
+              esc(t.title) + ' · ' + esc(money(t.som_per_minute)) + '/мин</span>';
+          }).join('');
+        }).catch(function () { document.getElementById('wallet-page-balance').textContent = '—'; });
+      }
+      function loadHistory(reset) {
+        if (reset) offset = 0;
+        return get('/transactions?limit=' + LIMIT + '&offset=' + offset).then(function (d) {
+          var body = document.getElementById('wallet-history-body');
+          var rows = (d.transactions || []).map(function (t) {
+            return '<tr><td>' + esc(new Date(t.created_at).toLocaleString('ru-RU', { timeZone: 'Asia/Bishkek' })) + '</td>' +
+              '<td>' + esc((LABELS[t.type] || t.type) + (t.note && t.type !== 'bonus' ? ' · ' + t.note : '') + (t.channel === 'phone' ? ' · телефон' : '')) + '</td>' +
+              '<td>' + esc(ENGINES[t.engine] || '') + '</td>' +
+              '<td style="text-align:right">' + esc(t.seconds != null ? t.seconds : '') + '</td>' +
+              '<td style="text-align:right; color:' + (t.amount < 0 ? 'inherit' : '#16a34a') + '">' + esc(money(t.amount, true)) + '</td>' +
+              '<td style="text-align:right">' + esc(money(t.balance_after)) + '</td></tr>';
+          }).join('');
+          if (reset) body.innerHTML = rows || '<tr><td colspan="6">Операций пока нет</td></tr>';
+          else body.insertAdjacentHTML('beforeend', rows);
+          offset += (d.transactions || []).length;
+          document.getElementById('wallet-more').style.display = offset < d.total ? '' : 'none';
+        }).catch(function () { document.getElementById('wallet-history-body').innerHTML = '<tr><td colspan="6">Не удалось загрузить историю</td></tr>'; });
+      }
+      function refresh() {
+        if (window.VF_INVALIDATE_SHARED) window.VF_INVALIDATE_SHARED();
+        if (window.VoksiAISidebar && window.VoksiAISidebar.refreshWallet) window.VoksiAISidebar.refreshWallet();
+        loadBalance(); loadHistory(true);
+      }
+      document.getElementById('wallet-page-topup').addEventListener('click', function () {
+        if (window.VoksiAISidebar && window.VoksiAISidebar.openTopup) window.VoksiAISidebar.openTopup();
+      });
+      document.getElementById('wallet-page-refresh').addEventListener('click', refresh);
+      document.getElementById('wallet-more').addEventListener('click', function () { loadHistory(false); });
+      loadBalance(); loadHistory(true);
+      if (location.hash === '#wallet') setTimeout(function () { var el = document.getElementById('wallet'); if (el) el.scrollIntoView(); }, 300);
+    })();
   </script>
 </body>
 </html>

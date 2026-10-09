@@ -70,6 +70,9 @@
     "jarvis": "JARVIS AI"
   },
   "wallet": {
+    "currency": "сом",
+    "topup_text": "Баланс: {balance}. Капчыктан үн ассистенттеринин жана агенттердин сүйлөшүү мүнөттөрү алынат.",
+    "topup_failed": "Төлөмдү түзүү мүмкүн болбоду",
     "card_title": "VoksiAI капчыгы",
     "balance": "{amount} {currency}",
     "topup": "Толуктоо",
@@ -1666,6 +1669,17 @@
     "error_loading_users": "Колдонуучуларды жүктөөдө ката кетти"
   },
   "va": {
+    "block_model": "Үн модели",
+    "per_min": "{price} сом",
+    "per_min_unit": "/ мүн",
+    "price_chip": "{price} сом/мүн",
+    "tag_recommended": "Сунушталат",
+    "tag_kyrgyz": "Кыргызча",
+    "tag_s2s": "Кептен кепке",
+    "tag_widget": "Виджет",
+    "tag_phone": "Телефония",
+    "engine_note": "Моделдин баасы капчыктан сүйлөшүүнүн ар бир мүнөтү үчүн (секунда боюнча) алынат. Байланыш мүнөттөрү азырынча алынбайт.",
+    "voice_settings": "Үн жөндөөлөрү",
     "page_title": "Үн ассистенттери",
     "create": "Түзүү",
     "my_assistants": "Менин ассистенттерим",

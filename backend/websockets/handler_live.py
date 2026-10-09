@@ -230,6 +230,7 @@ class LiveVoiceSession:
         # журнал сам в конце сессии, у телефонного звонка его сохраняет SIP-роут.
         self.call_log = call_log
         self._owns_call_log = bool(call_log) and call_log.channel != "phone"
+        self.on_session_end = None  # конец разговора (кошелёк), до сохранения журнала
         self._user_spoke_at: Optional[float] = None
 
     # ------------------------------------------------------------------ helpers
@@ -549,6 +550,11 @@ class LiveVoiceSession:
             _log(f"session error: {exc}\n{traceback.format_exc()}", "ERROR")
         finally:
             self.stop_event.set()
+            if self.on_session_end is not None:
+                try:
+                    await self.on_session_end()
+                except Exception as exc:
+                    _log(f"on_session_end failed: {exc}", "ERROR")
             if self.assistant_speaking:
                 self.assistant_speaking = False
                 if reason != "client_disconnected":

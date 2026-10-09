@@ -13,6 +13,7 @@ Payment processing service for WellcomeAI application.
     {"type": "agent_subscription"}
     {"type": "credits_package", "package_code": "credits_mini"}
     {"type": "cascade_package", "package_code": "..."}
+    {"type": "wallet_topup", "amount_tyiyn": 50000}
 
 Идемпотентность обеспечивается на два уровня выше:
   1) уникальный индекс payment_transactions.finik_transaction_id;
@@ -100,9 +101,36 @@ class FinikPaymentService:
             return await cls._apply_credits_package(db, user, transaction, details)
         if payment_type == "cascade_package":
             return await cls._apply_cascade_package(db, user, transaction, details)
+        if payment_type == "wallet_topup":
+            return await cls._apply_wallet_topup(db, user, transaction, details)
         if payment_type == "agent_subscription":
             return await cls._apply_agent_subscription(db, user, transaction)
         return await cls._apply_subscription(db, user, transaction, details)
+
+    # -------------------------------------------------------------------------
+    # Пополнение кошелька в сомах
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    async def _apply_wallet_topup(
+        cls,
+        db: Session,
+        user: User,
+        transaction: PaymentTransaction,
+        details: Dict[str, Any],
+    ) -> bool:
+        from backend.models.wallet_transaction import WalletTransactionType
+        from backend.services.wallet_service import WalletService
+
+        # Зачисляем фактически оплаченную сумму (webhook уже сверил её с заказом)
+        amount_tyiyn = int(round(float(transaction.amount) * 100))
+        cls._mark_processed(transaction)
+        WalletService.credit(
+            db, user.id, amount_tyiyn, WalletTransactionType.TOPUP,
+            note="Пополнение через Finik", payment_transaction_id=transaction.id,
+        )  # коммитит вместе с отметкой о зачислении
+        logger.info(f"✅ [FINIK] Wallet top-up {amount_tyiyn / 100:.2f} KGS → user {user.id}")
+        return True
 
     # -------------------------------------------------------------------------
     # Пакеты кредитов оркестратора

@@ -106,6 +106,9 @@ from .sms_message import SmsMessage
 from .credit_transaction import CreditTransaction, CreditTransactionType
 from .credit_package import CreditPackage
 
+# Кошелёк в сомах (минуты голосовых моделей)
+from .wallet_transaction import WalletTransaction, WalletTransactionType
+
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 
@@ -180,6 +183,8 @@ __all__ = [
     # ✅ НОВОЕ: Система кредитов оркестратора
     "CreditTransaction",
     "CreditTransactionType",
+    "WalletTransaction",
+    "WalletTransactionType",
     "CreditPackage",
     "SipPhoneNumber",
     "SipCall",

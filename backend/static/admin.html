@@ -1106,6 +1106,7 @@
                   <th>Подписка</th>
                   <th>Дней осталось</th>
                   <th>Ассистенты</th>
+                  <th>Кошелёк</th>
                   <th>Дата регистрации</th>
                   <th>Действия</th>
                 </tr>
@@ -1539,6 +1540,9 @@
               <button class="btn btn-primary" id="edit-subscription-btn">
                 <i class="fas fa-edit"></i> Изменить подписку
               </button>
+              <button class="btn btn-outline" id="wallet-btn" type="button">
+                <i class="fas fa-wallet"></i> Кошелёк
+              </button>
             </div>
           </div>
           
@@ -1760,6 +1764,37 @@
           <button class="btn btn-outline" id="password-modal-cancel">Отмена</button>
           <button class="btn btn-warning" id="password-modal-save">
             <i class="fas fa-key"></i> Сбросить пароль
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кошелёк пользователя: начисление / корректировка (сом) -->
+    <div class="modal-overlay" id="wallet-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">👛 Кошелёк</h3>
+          <button class="modal-close" type="button" onclick="closeWalletModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 0.5rem; color: var(--text-gray); font-size: 0.875rem;">
+            Пользователь: <strong id="wallet-user-email">—</strong>
+          </p>
+          <p style="margin-bottom: 1rem; font-size: 1.25rem; font-weight: 700;">Баланс: <span id="wallet-balance">…</span></p>
+          <div class="form-group">
+            <label class="form-label" for="wallet-amount">Сумма, сом</label>
+            <input type="number" step="0.01" id="wallet-amount" class="form-control" placeholder="500 — начислить, -100 — списать">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="wallet-note">Комментарий</label>
+            <input type="text" id="wallet-note" class="form-control" maxlength="300" placeholder="Например: бонус за отзыв">
+          </div>
+          <div id="wallet-history" style="max-height: 220px; overflow: auto; font-size: 0.8125rem;"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" type="button" onclick="closeWalletModal()">Закрыть</button>
+          <button class="btn btn-primary" type="button" id="wallet-save" onclick="saveWallet()">
+            <i class="fas fa-plus"></i> Применить
           </button>
         </div>
       </div>
@@ -2107,7 +2142,7 @@
           if (!users || users.length === 0) {
             usersList.innerHTML = `
               <tr>
-                <td colspan="7" style="text-align: center; padding: 2rem;">
+                <td colspan="8" style="text-align: center; padding: 2rem;">
                   Пользователи не найдены
                 </td>
               </tr>
@@ -2153,6 +2188,7 @@
               <td><span class="status-badge ${statusClass}">${statusText}</span></td>
               <td>${user.days_left || 0}</td>
               <td>${assistantsBadges}</td>
+              <td class="wallet-cell" data-wallet-user="${user.id}">${(user.wallet_balance ?? 0).toLocaleString('ru-RU', {maximumFractionDigits: 2})} сом</td>
               <td>${this.formatDate(user.created_at)}</td>
               <td>
                 <button class="table-action view-user" data-id="${user.id}" title="Просмотр">
@@ -2163,6 +2199,9 @@
                 </button>
                 <button class="table-action reset-password" data-id="${user.id}" data-email="${user.email}" title="Сбросить пароль">
                   <i class="fas fa-key"></i>
+                </button>
+                <button class="table-action" onclick="openWalletModal('${user.id}', '${user.email}')" title="Кошелёк">
+                  <i class="fas fa-wallet"></i>
                 </button>
               </td>
             `;
@@ -2438,6 +2477,8 @@
           }
           
           selectedUserId = user.id;
+          window.__adminSelectedUserId = user.id;
+          window.__adminSelectedUserEmail = user.email;
         },
         
         translateAction(action) {
@@ -3282,5 +3323,68 @@
       init();
     });
   </script>
+<script>
+  // Кошелёк пользователя в админке: GET/POST /api/admin/users/{id}/wallet
+  (function () {
+    var walletUserId = null;
+    var TYPE_LABELS = { topup: 'Пополнение', bonus: 'Подарок', admin: 'Админ', charge: 'Разговор' };
+    function money(v) { return (Number(v) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' сом'; }
+    function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+    function req(method, body) {
+      return fetch('/api/admin/users/' + encodeURIComponent(walletUserId) + '/wallet' + (method === 'GET' ? '?limit=20' : ''), {
+        method: method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') },
+        body: body ? JSON.stringify(body) : undefined
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          if (!r.ok) throw new Error(d.detail || d.message || ('Ошибка ' + r.status));
+          return d;
+        });
+      });
+    }
+    function renderHistory(list) {
+      var box = document.getElementById('wallet-history');
+      if (!list || !list.length) { box.innerHTML = '<div style="color: var(--text-light)">Операций пока нет</div>'; return; }
+      box.innerHTML = '<table class="table"><thead><tr><th>Дата</th><th>Операция</th><th>Сумма</th><th>Баланс</th></tr></thead><tbody>' +
+        list.map(function (t) {
+          var label = (TYPE_LABELS[t.type] || t.type) + (t.seconds ? ' · ' + t.seconds + ' с' : '') + (t.note ? ' · ' + t.note : '');
+          return '<tr><td>' + esc(new Date(t.created_at).toLocaleString('ru-RU')) + '</td><td>' + esc(label) + '</td><td>' +
+            esc((t.amount > 0 ? '+' : '') + money(t.amount)) + '</td><td>' + esc(money(t.balance_after)) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    function load() {
+      document.getElementById('wallet-balance').textContent = '…';
+      return req('GET').then(function (d) {
+        document.getElementById('wallet-balance').textContent = money(d.balance);
+        renderHistory(d.transactions);
+      }).catch(function (e) { document.getElementById('wallet-balance').textContent = e.message; });
+    }
+    window.openWalletModal = function (userId, email) {
+      walletUserId = userId;
+      document.getElementById('wallet-user-email').textContent = email || userId;
+      document.getElementById('wallet-amount').value = '';
+      document.getElementById('wallet-note').value = '';
+      document.getElementById('wallet-modal').classList.add('visible');
+      load();
+    };
+    window.closeWalletModal = function () { document.getElementById('wallet-modal').classList.remove('visible'); };
+    window.saveWallet = function () {
+      var amount = parseFloat(document.getElementById('wallet-amount').value);
+      if (!amount) { alert('Укажите сумму в сомах (минус — списать)'); return; }
+      var btn = document.getElementById('wallet-save');
+      btn.disabled = true;
+      req('POST', { amount: amount, note: document.getElementById('wallet-note').value.trim() || null }).then(function (d) {
+        document.getElementById('wallet-amount').value = '';
+        document.getElementById('wallet-note').value = '';
+        document.querySelectorAll('[data-wallet-user="' + walletUserId + '"]').forEach(function (el) { el.textContent = money(d.balance); });
+        return load();
+      }).catch(function (e) { alert(e.message); }).then(function () { btn.disabled = false; });
+    };
+    var detailBtn = document.getElementById('wallet-btn');
+    if (detailBtn) detailBtn.addEventListener('click', function () {
+      window.openWalletModal(window.__adminSelectedUserId, window.__adminSelectedUserEmail);
+    });
+  })();
+</script>
 </body>
 </html>

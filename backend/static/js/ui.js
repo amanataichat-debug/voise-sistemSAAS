@@ -68,6 +68,7 @@
     fish: { file: 'fishaudio-color.svg', mono: 'fishaudio.svg', name: 'Fish Audio' },
     yandex: { file: 'yandex-color.svg', mono: 'yandex.svg', name: 'Яндекс' },
     cascade: { file: 'cascade-color.svg', mono: 'cascade.svg', name: 'Каскад' },
+    elevenlabs: { file: 'elevenlabs.svg', name: 'ElevenLabs' },
   };
 
   function esc(v) {

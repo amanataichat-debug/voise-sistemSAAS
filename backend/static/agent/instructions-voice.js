@@ -238,9 +238,27 @@ const ELEVEN_STABILITY = [
 // Движок голоса (eleven_assistant_configs.voice_engine) и голоса GPT-Live — зеркала
 // VOICE_ENGINES (backend/models/eleven_assistant.py) и LIVE_VOICES (backend/websockets/live_client.py).
 const VOICE_ENGINES = [
-  { id:'eleven', title:'ElevenLabs', hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
-  { id:'gpt_live', title:'OpenAI GPT-Live', hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
+  { id:'eleven', title:'ElevenLabs', logo:'elevenlabs', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
+  { id:'gpt_live', title:'OpenAI GPT-Live', logo:'openai', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
 ];
+// Цена минуты из кошелька (сом) — /api/eleven-assistants/options, грузится один раз
+let voiceEnginePrices = null;
+async function loadVoiceEnginePrices(){
+  if(voiceEnginePrices) return voiceEnginePrices;
+  try{
+    const r = await apiFetch('/api/eleven-assistants/options');
+    if(r && r.status === 200){
+      const o = await r.json();
+      voiceEnginePrices = {};
+      (o.voice_engines || []).forEach(e => { voiceEnginePrices[e.id] = e.som_per_minute; });
+    }
+  }catch(e){}
+  document.querySelectorAll('.eng-tile [data-price-for]').forEach(el => {
+    const v = voiceEnginePrices && voiceEnginePrices[el.dataset.priceFor];
+    el.textContent = v != null ? `${Number(v).toLocaleString('ru-RU', {maximumFractionDigits:2})} сом` : '—';
+  });
+  return voiceEnginePrices;
+}
 const LIVE_VOICES = ['marin','cedar','alloy','ash','ballad','coral','echo','sage','shimmer','verse',
   'quartz','ripple','vesper','willow','stone','gleam','meridian','bossa','tempo','beacon','delta','cinder'];
 let elevenVoicesCache = {};   // language → [voices]
@@ -255,16 +273,26 @@ function elevenVoiceControlHtml(cur, ids){
   const stabOpts = ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${x.v===stab?'selected':''}>${esc(x.title)}</option>`).join('');
   const engine = cur.eleven_voice_engine === 'gpt_live' ? 'gpt_live' : 'eleven';
   const liveVoice = cur.eleven_live_voice || 'marin';
-  const engineOpts = VOICE_ENGINES.map(e => `<option value="${e.id}" ${e.id===engine?'selected':''}>${esc(e.title)}</option>`).join('');
   const liveOpts = [...(LIVE_VOICES.includes(liveVoice) ? [] : [liveVoice]), ...LIVE_VOICES]
     .map(v => `<option value="${esc(v)}" ${v===liveVoice?'selected':''}>${esc(v)}</option>`).join('');
   const isLive = engine === 'gpt_live';
   // В inline-обработчик — имя глобальной константы: esc() не экранирует кавычки, JSON ломал атрибут
   const idsRef = ids === W_VOICE_IDS ? 'W_VOICE_IDS' : 'I_VOICE_IDS';
+  const price = id => voiceEnginePrices && voiceEnginePrices[id] != null
+    ? `${Number(voiceEnginePrices[id]).toLocaleString('ru-RU', {maximumFractionDigits:2})} сом` : '…';
+  const tiles = VOICE_ENGINES.map(e => `<button type="button" class="eng-tile${e.id===engine?' on':''}" data-engine="${e.id}" onclick="voiceEngineChanged(${idsRef}, '${e.id}')">
+        <span class="eng-check"><i class="fas fa-check"></i></span>
+        <span class="eng-head">${window.VF && window.VF.logo ? window.VF.logo(e.logo, {size:16}) : ''}${esc(e.title)}</span>
+        <span class="eng-price"><span data-price-for="${e.id}">${price(e.id)}</span> <small>/ мин</small></span>
+        <span class="eng-desc">${esc(e.hint)}</span>
+        <span class="eng-tags">${e.tags.map((t, i) => `<span class="eng-tag${i===0?' acc':''}">${esc(t)}</span>`).join('')}</span>
+      </button>`).join('');
+  setTimeout(loadVoiceEnginePrices, 0);
   return `<div class="form-group">
       <label class="form-label">Модель голоса</label>
-      <select class="form-select" id="${ids.eng}" onchange="voiceEngineChanged(${idsRef})">${engineOpts}</select>
-      <div class="form-hint" id="${ids.eng}-hint">${esc((VOICE_ENGINES.find(e => e.id === engine) || {}).hint || '')}</div>
+      <input type="hidden" id="${ids.eng}" value="${engine}">
+      <div class="eng-grid" id="${ids.eng}-tiles">${tiles}</div>
+      <div class="form-hint">Цена модели списывается с кошелька за минуту разговора (посекундно).</div>
     </div>
     <div class="form-group" id="${ids.lbox}" style="${isLive ? '' : 'display:none'}">
       <label class="form-label">Голос GPT-Live</label>
@@ -288,14 +316,15 @@ function elevenVoiceControlHtml(cur, ids){
 }
 
 // Переключение движка: у GPT-Live свой список голосов, контролы ElevenLabs прячем.
-function voiceEngineChanged(ids){
-  const engine = document.getElementById(ids.eng)?.value || 'eleven';
+function voiceEngineChanged(ids, value){
+  const input = document.getElementById(ids.eng);
+  if(input && value) input.value = value;
+  document.querySelectorAll(`#${ids.eng}-tiles .eng-tile`).forEach(b => b.classList.toggle('on', b.dataset.engine === input?.value));
+  const engine = input?.value || 'eleven';
   const live = engine === 'gpt_live';
   const lbox = document.getElementById(ids.lbox), ebox = document.getElementById(ids.ebox);
   if(lbox) lbox.style.display = live ? '' : 'none';
   if(ebox) ebox.style.display = live ? 'none' : '';
-  const hint = document.getElementById(ids.eng + '-hint');
-  if(hint) hint.textContent = (VOICE_ENGINES.find(e => e.id === engine) || {}).hint || '';
 }
 
 // Загрузить голоса аккаунта ElevenLabs для выбранного языка и заполнить селект.

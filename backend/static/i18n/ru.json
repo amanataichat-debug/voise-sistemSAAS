@@ -70,6 +70,9 @@
     "jarvis": "JARVIS AI"
   },
   "wallet": {
+    "currency": "сом",
+    "topup_text": "Баланс: {balance}. С кошелька списываются минуты разговора голосовых ассистентов и агентов.",
+    "topup_failed": "Не удалось создать платёж",
     "card_title": "Кошелёк VoksiAI",
     "balance": "{amount} {currency}",
     "topup": "Пополнить",
@@ -1666,6 +1669,17 @@
     "error_loading_users": "Ошибка при загрузке пользователей"
   },
   "va": {
+    "block_model": "Голосовая модель",
+    "per_min": "{price} сом",
+    "per_min_unit": "/ мин",
+    "price_chip": "{price} сом/мин",
+    "tag_recommended": "Рекомендуем",
+    "tag_kyrgyz": "Кыргызский",
+    "tag_s2s": "Речь в речь",
+    "tag_widget": "Виджет",
+    "tag_phone": "Телефония",
+    "engine_note": "Цена модели списывается с кошелька за минуту разговора (посекундно). Минуты связи при звонках пока не списываются.",
+    "voice_settings": "Голосовые настройки",
     "page_title": "Голосовые ассистенты",
     "create": "Создать",
     "my_assistants": "Мои ассистенты",

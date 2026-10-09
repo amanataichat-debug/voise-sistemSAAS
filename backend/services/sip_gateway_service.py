@@ -184,6 +184,11 @@ class SipGatewayService:
             raise ValueError(
                 "Исходящие возможны только на номера O! (префиксы " + ", ".join(O_MOBILE_PREFIXES) + ")"
             )
+        if assistant_type == "eleven":
+            # Минуты Eleven-карточек (и агентов) платятся из кошелька: пустой — не набираем номер
+            from backend.services.wallet_service import WalletService
+            if not WalletService.can_start_call(db, user_id):
+                raise ValueError("Баланс кошелька исчерпан — пополните кошелёк, чтобы звонить")
         call = SipCall(
             id=uuid.uuid4(),
             gateway_id=gateway_id or caller_number.gateway_id or settings.SIP_GATEWAY_DEFAULT_ID,

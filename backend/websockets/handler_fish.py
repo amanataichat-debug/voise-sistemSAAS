@@ -249,6 +249,9 @@ class FishVoiceSession:
             self.call_log = CallLogRecorder(channel="widget")
             self.call_log.activate()
         self._owns_call_log = self.call_log.channel != "phone"  # журнал звонка сохраняет SIP-роут
+        # Конец разговора (списание минут из кошелька, handler_eleven): в начале завершения,
+        # до сохранения журнала — запись о списании попадает в журнал и у виджета
+        self.on_session_end = None
         self.call_log.session_id = llm.session_id
         self.call_log.assistant_type = provider
         self.call_log.assistant_id = str(getattr(assistant, "id", "") or "") or None
@@ -922,6 +925,11 @@ class FishVoiceSession:
             _log(f"client loop error: {exc}\n{traceback.format_exc()}", "ERROR")
         finally:
             self.closed = True
+            if self.on_session_end is not None:
+                try:
+                    await self.on_session_end()
+                except Exception as exc:
+                    _log(f"on_session_end failed: {exc}", "ERROR")
             llm_task.cancel()
             # Сохранение последней реплики (и прочие фоновые задачи) успевают закончиться:
             # раньше их отменяли сразу, и при сбросе звонка последний ход терялся.

@@ -245,6 +245,8 @@ app.include_router(agent_telegram.router, prefix="/api/agent/telegram", tags=["A
 app.include_router(agent_telegram_account.router, prefix="/api/agent/telegram-account", tags=["Agent Telegram Account"])  # ✅ Личный TG-аккаунт агента
 app.include_router(agent_whatsapp.router, prefix="/api/agent/whatsapp", tags=["Agent WhatsApp"])  # ✅ WhatsApp агента (QR, настройки)
 app.include_router(agent_whatsapp.webhook_router, prefix="/api/whatsapp", tags=["WhatsApp Webhook"])  # ✅ Webhook Evolution API
+from backend.api import wallet as wallet_api  # кошелёк в сомах (prefix /api/wallet встроен)
+app.include_router(wallet_api.router, tags=["Wallet"])
 app.include_router(credits.router, tags=["Credits"])  # ✅ Кредиты оркестратора (prefix /api/credits встроен)
 
 # ============================================================================
@@ -1535,6 +1537,37 @@ def ensure_eleven_voice_engine_columns():
         logger.error(f"❌ ensure_eleven_voice_engine_columns error: {e}")
 
 
+def ensure_wallet_columns():
+    """
+    Кошелёк в сомах: users.wallet_balance (тыйын) / wallet_bonus_granted и таблица
+    wallet_transactions. Колонки users ORM выбирает в каждом запросе к пользователю
+    (в т.ч. в авторизации), поэтому шаг идёт в начале старта, в каждом воркере.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.models.base import Base
+        from backend.models.wallet_transaction import WalletTransaction
+        inspector = inspect(engine)
+        if not inspector.has_table('users'):
+            return
+        cols = {c['name'] for c in inspector.get_columns('users')}
+        stmts = []
+        if 'wallet_balance' not in cols:
+            stmts.append("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance INTEGER NOT NULL DEFAULT 0")
+        if 'wallet_bonus_granted' not in cols:
+            stmts.append("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_bonus_granted BOOLEAN NOT NULL DEFAULT FALSE")
+        if stmts:
+            with engine.begin() as conn:
+                for s in stmts:
+                    conn.execute(text(s))
+            logger.info(f"✅ Added wallet columns to users ({len(stmts)})")
+        if not inspector.has_table('wallet_transactions'):
+            Base.metadata.create_all(engine, tables=[WalletTransaction.__table__], checkfirst=True)
+            logger.info("✅ Created wallet_transactions")
+    except Exception as e:
+        logger.error(f"❌ ensure_wallet_columns error: {e}")
+
+
 def ensure_agent_attachment_columns():
     """
     Колонки вложений агента обзвона (ветка 0410-golos): attachment_id в
@@ -2444,6 +2477,7 @@ async def startup_event():
         # Колонки, без которых падает любой запрос к карточкам ассистентов, — сразу,
         # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
         ensure_eleven_voice_engine_columns()
+        ensure_wallet_columns()
         
         try:
             # Для Render используем более простую блокировку

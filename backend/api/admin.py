@@ -271,7 +271,8 @@ async def get_all_users(
                 "assistant_count": total_assistants,
                 "openai_assistants": openai_count,
                 "gemini_assistants": gemini_count,
-                "grok_assistants": grok_count
+                "grok_assistants": grok_count,
+                "wallet_balance": round((user.wallet_balance or 0) / 100, 2),
             }
             
             result.append(user_data)
@@ -477,6 +478,47 @@ async def get_admin_plans(
         })
 
     return result
+
+
+class WalletAdjustRequest(BaseModel):
+    amount: float            # сом: > 0 — начислить, < 0 — списать (корректировка)
+    note: Optional[str] = None
+
+
+@router.get("/users/{user_id}/wallet", response_model=Dict[str, Any])
+async def get_user_wallet(
+    user_id: str = Path(..., description="User ID"),
+    limit: int = Query(20, ge=1, le=200),
+    current_user: User = Depends(check_admin_access),
+    db: Session = Depends(get_db)
+):
+    """Кошелёк пользователя: баланс и последние операции. Только для админа."""
+    from backend.services.wallet_service import WalletService
+    user = await UserService.get_user_by_id(db, user_id)
+    rows, total = WalletService.get_transactions(db, user.id, limit=limit)
+    return {"balance": round((user.wallet_balance or 0) / 100, 2), "total": total,
+            "transactions": [r.to_dict() for r in rows]}
+
+
+@router.post("/users/{user_id}/wallet", response_model=Dict[str, Any])
+async def adjust_user_wallet(
+    user_id: str = Path(..., description="User ID"),
+    request: WalletAdjustRequest = ...,
+    current_user: User = Depends(check_admin_access),
+    db: Session = Depends(get_db)
+):
+    """Начислить (или скорректировать минусом) кошелёк пользователя в сомах. Только для админа."""
+    from backend.models.wallet_transaction import WalletTransactionType
+    from backend.services.wallet_service import WalletService
+    amount_tyiyn = int(round(float(request.amount or 0) * 100))
+    if amount_tyiyn == 0 or abs(amount_tyiyn) > 100_000_000:
+        raise HTTPException(status_code=400, detail="Укажите сумму в сомах (не ноль, до 1 000 000)")
+    user = await UserService.get_user_by_id(db, user_id)
+    note = (request.note or "").strip()[:300] or ("Начисление администратором" if amount_tyiyn > 0 else "Корректировка администратором")
+    tx = WalletService.credit(db, user.id, amount_tyiyn, WalletTransactionType.ADMIN,
+                              note=note, admin_id=current_user.id)
+    logger.info(f"[ADMIN] wallet {amount_tyiyn / 100:+.2f} KGS for {user.email} by {current_user.email}")
+    return {"success": True, "balance": round(tx.balance_after / 100, 2), "transaction": tx.to_dict()}
 
 
 @router.post("/users/{user_id}/subscription", response_model=Dict[str, Any])

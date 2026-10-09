@@ -54,6 +54,7 @@ from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, Fis
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
 from backend.websockets.handler_live import LIVE_AUDIO_RATE, LiveVoiceSession
 from backend.websockets.live_client import LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
+from backend.websockets.wallet_meter import EMPTY_MESSAGE as WALLET_EMPTY_MESSAGE, WalletMeter
 
 logger = get_logger(__name__)
 
@@ -160,8 +161,14 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         if not assistant.is_active:
             await fail("assistant_inactive", "Assistant is inactive")
             return
-        if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE:
-            await run_gpt_live_session(websocket, assistant, db, client_id, fail)
+        # Минуты разговора оплачиваются из кошелька владельца (сом): пустой кошелёк — не начинаем
+        engine = "gpt_live" if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE else "eleven"
+        meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)))
+        if not await meter.prepare():
+            await fail("WALLET_EMPTY", WALLET_EMPTY_MESSAGE)
+            return
+        if engine == "gpt_live":
+            await run_gpt_live_session(websocket, assistant, db, client_id, fail, meter)
             return
         if not (assistant.voice_id or "").strip():
             await fail("voice_not_set", "У агента не выбран голос ElevenLabs")
@@ -402,7 +409,10 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
              f"model={tts.model} lang={tts.language} telephony={telephony} "
              f"input={(getattr(stt, 'provider_label', None) or 'scribe asr') if stt else 'openai audio'} greeting_at={greeting_at}ms timings={timings}")
 
+        meter.start(websocket)
+        session.on_session_end = lambda: meter.finish(session.call_log.session_id or llm.session_id)
         await session.run()
+        await meter.finish(session.call_log.session_id or llm.session_id)
 
     except WebSocketDisconnect:
         _log(f"client disconnected before start: {client_id}")
@@ -415,7 +425,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
 
 
 async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantConfig, db: Session,
-                               client_id: str, fail) -> None:
+                               client_id: str, fail, meter: Optional[WalletMeter] = None) -> None:
     """
     Карточка ElevenLabs с движком GPT-Live: тот же протокол виджета, но вместо каскада
     ASR → текст → ElevenLabs говорит OpenAI GPT-Live (full-duplex). Сокет уже принят,
@@ -498,4 +508,9 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
 
     session = LiveVoiceSession(websocket, assistant, client, db, client_id, telephony=telephony,
                                assistant_type="eleven", call_log=call_log, default_greeting=DEFAULT_ELEVEN_GREETING)
+    if meter is not None:
+        meter.start(websocket)
+        session.on_session_end = lambda: meter.finish(client.dialog_session_id)
     await session.run()
+    if meter is not None:
+        await meter.finish(client.dialog_session_id)

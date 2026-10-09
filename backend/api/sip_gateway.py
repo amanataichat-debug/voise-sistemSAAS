@@ -773,15 +773,18 @@ async def create_call(
             "source": "api",
         }.items() if v
     }
-    call = SipGatewayService.queue_outbound_call(
-        db,
-        user_id=current_user.id,
-        to_number=to_digits,
-        caller_number=number,
-        assistant_type=assistant_type,
-        assistant_id=assistant_id,
-        metadata=metadata,
-    )
+    try:
+        call = SipGatewayService.queue_outbound_call(
+            db,
+            user_id=current_user.id,
+            to_number=to_digits,
+            caller_number=number,
+            assistant_type=assistant_type,
+            assistant_id=assistant_id,
+            metadata=metadata,
+        )
+    except ValueError as exc:  # номер не O! или пустой кошелёк
+        raise HTTPException(status_code=400, detail=str(exc))
     return call.to_dict()
 
 

@@ -92,6 +92,12 @@ class User(Base, BaseModel):
     cascade_credits_balance = Column(Integer, default=0, nullable=False)
     cascade_trial_granted = Column(Boolean, default=False, nullable=False)
 
+    # Кошелёк в сомах: минуты голосовых моделей (backend/services/wallet_service.py).
+    # Баланс в тыйынах (1 сом = 100 тыйын), может уйти в небольшой минус после звонка.
+    # Колонки добавляет app.ensure_wallet_columns в начале старта.
+    wallet_balance = Column(Integer, default=0, server_default="0", nullable=False)
+    wallet_bonus_granted = Column(Boolean, default=False, server_default="false", nullable=False)
+
     # Отношения
     assistants = relationship("AssistantConfig", back_populates="user", cascade="all, delete-orphan")
     gemini_assistants = relationship("GeminiAssistantConfig", back_populates="user", cascade="all, delete-orphan")
