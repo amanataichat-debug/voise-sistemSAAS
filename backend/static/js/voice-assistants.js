@@ -360,10 +360,11 @@
   function engineTitle(id) { return id === 'gpt_live' ? t('engine_gpt_live') : t('engine_eleven'); }
   // Плитки движков: логотип, цена минуты из кошелька, описание, теги
   var ENGINE_META = {
-    eleven: { logo: 'elevenlabs', hint: 'engine_eleven_hint', tags: [['tag_recommended', 1], ['tag_kyrgyz'], ['tag_widget'], ['tag_phone']] },
-    gpt_live: { logo: 'openai', hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
+    eleven: { hint: 'engine_eleven_hint', tags: [['tag_recommended', 1], ['tag_kyrgyz'], ['tag_widget'], ['tag_phone']] },
+    gpt_live: { hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
   };
-  function engineLogo(id, size) { return VF.logo(ENGINE_META[id] ? ENGINE_META[id].logo : 'elevenlabs', { size: size || 20 }); }
+  // ElevenLabs — прежний значок звуковой волны (audio-lines), GPT-Live — логотип OpenAI
+  function engineLogo(id, size) { return id === 'gpt_live' ? VF.logo('openai', { size: size || 20 }) : logo(size || 20); }
   function enginePrice(id) {
     var e = (state.options.voice_engines || []).filter(function (x) { return x.id === id; })[0];
     return e && e.som_per_minute != null ? e.som_per_minute : null;
@@ -375,7 +376,7 @@
       var m = ENGINE_META[e.id] || ENGINE_META.eleven, on = e.id === cur;
       return '<button type="button" class="eng-tile' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-engine="' + esc(e.id) + '">' +
         '<span class="eng-check">' + VF.icon('check') + '</span>' +
-        '<span class="eng-head">' + VF.logo(m.logo, { size: 18 }) + esc(engineTitle(e.id)) + '</span>' +
+        '<span class="eng-head">' + engineLogo(e.id, 18) + esc(engineTitle(e.id)) + '</span>' +
         '<span class="eng-price">' + esc(t('per_min', { price: fmtPrice(e.som_per_minute) })) + ' <small>' + esc(t('per_min_unit')) + '</small></span>' +
         '<span class="eng-desc">' + esc(t(m.hint)) + '</span>' +
         '<span class="eng-tags">' + m.tags.map(function (tg) { return '<span class="eng-tag' + (tg[1] ? ' acc' : '') + '">' + esc(t(tg[0])) + '</span>'; }).join('') + '</span>' +

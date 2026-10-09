@@ -238,9 +238,15 @@ const ELEVEN_STABILITY = [
 // Движок голоса (eleven_assistant_configs.voice_engine) и голоса GPT-Live — зеркала
 // VOICE_ENGINES (backend/models/eleven_assistant.py) и LIVE_VOICES (backend/websockets/live_client.py).
 const VOICE_ENGINES = [
-  { id:'eleven', title:'ElevenLabs', logo:'elevenlabs', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
-  { id:'gpt_live', title:'OpenAI GPT-Live', logo:'openai', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
+  { id:'eleven', title:'ElevenLabs', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
+  { id:'gpt_live', title:'OpenAI GPT-Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
 ];
+// ElevenLabs — значок звуковой волны (как в кабинете), GPT-Live — логотип OpenAI
+function engineLogoHtml(id){
+  const VF = window.VF;
+  if(!VF) return '';
+  return id === 'gpt_live' ? VF.logo('openai', {size:16}) : `<span class="logo-wrap">${VF.icon('audio-lines')}</span>`;
+}
 // Цена минуты из кошелька (сом) — /api/eleven-assistants/options, грузится один раз
 let voiceEnginePrices = null;
 async function loadVoiceEnginePrices(){
@@ -282,7 +288,7 @@ function elevenVoiceControlHtml(cur, ids){
     ? `${Number(voiceEnginePrices[id]).toLocaleString('ru-RU', {maximumFractionDigits:2})} сом` : '…';
   const tiles = VOICE_ENGINES.map(e => `<button type="button" class="eng-tile${e.id===engine?' on':''}" data-engine="${e.id}" onclick="voiceEngineChanged(${idsRef}, '${e.id}')">
         <span class="eng-check"><i class="fas fa-check"></i></span>
-        <span class="eng-head">${window.VF && window.VF.logo ? window.VF.logo(e.logo, {size:16}) : ''}${esc(e.title)}</span>
+        <span class="eng-head">${engineLogoHtml(e.id)}${esc(e.title)}</span>
         <span class="eng-price"><span data-price-for="${e.id}">${price(e.id)}</span> <small>/ мин</small></span>
         <span class="eng-desc">${esc(e.hint)}</span>
         <span class="eng-tags">${e.tags.map((t, i) => `<span class="eng-tag${i===0?' acc':''}">${esc(t)}</span>`).join('')}</span>
