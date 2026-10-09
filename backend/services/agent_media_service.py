@@ -1,7 +1,8 @@
 """
 Agent Media Service — вложения в переписке агента обзвона с клиентами.
 
-Каналы: личный Telegram (telegram_user_poller) и Instagram DM (instagram_poller).
+Каналы: личный Telegram (telegram_user_poller), Instagram DM (instagram_poller)
+и WhatsApp (whatsapp_inbound, webhook Evolution API).
 Что делает:
   • голосовые / аудио / видео → распознавание речи Whisper (`AGENT_STT_MODEL`,
     русский и кыргызский). Whisper не знает кыргызский как язык, поэтому язык

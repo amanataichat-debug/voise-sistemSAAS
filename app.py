@@ -53,6 +53,7 @@ from backend.api import (
     agent,  # ✅ v5.0: Voksy AI Agent API
     agent_telegram,  # ✅ v2.2: Agent Telegram bot integration
     agent_telegram_account,  # ✅ Личный Telegram-аккаунт агента (MTProto)
+    agent_whatsapp,  # ✅ WhatsApp агента (Evolution API, wa-gateway-1)
     credits,  # ✅ Система кредитов оркестратора
 )
 from backend.models.base import create_tables
@@ -242,6 +243,8 @@ app.include_router(llm_streaming.router, tags=["LLM Streaming"])  # endpoints ha
 app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])  # ✅ v5.0: Voksy AI Agent
 app.include_router(agent_telegram.router, prefix="/api/agent/telegram", tags=["Agent Telegram"])  # ✅ v2.2
 app.include_router(agent_telegram_account.router, prefix="/api/agent/telegram-account", tags=["Agent Telegram Account"])  # ✅ Личный TG-аккаунт агента
+app.include_router(agent_whatsapp.router, prefix="/api/agent/whatsapp", tags=["Agent WhatsApp"])  # ✅ WhatsApp агента (QR, настройки)
+app.include_router(agent_whatsapp.webhook_router, prefix="/api/whatsapp", tags=["WhatsApp Webhook"])  # ✅ Webhook Evolution API
 app.include_router(credits.router, tags=["Credits"])  # ✅ Кредиты оркестратора (prefix /api/credits встроен)
 
 # ============================================================================
@@ -1156,8 +1159,8 @@ def seed_credits_data():
                 # сидинг её больше НЕ перезатирает. Сейчас минимальная тестовая цена.
                 if inspector.has_table('subscription_plans'):
                     conn.execute(text("""
-                        INSERT INTO subscription_plans (code, name, price, max_assistants, description, is_active)
-                        VALUES ('agent', 'Voksy AI Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
+                        INSERT INTO subscription_plans (id, code, name, price, max_assistants, description, is_active)
+                        VALUES (gen_random_uuid(), 'agent', 'Voksy AI Agent', 50, 3, 'AI-оркестратор автономных звонков', TRUE)
                         ON CONFLICT (code) DO UPDATE SET
                             max_assistants = EXCLUDED.max_assistants
                     """))
@@ -1165,24 +1168,24 @@ def seed_credits_data():
                 # Пакеты докупки кредитов оркестратора
                 if inspector.has_table('credit_packages'):
                     conn.execute(text("""
-                        INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                            ('credits_mini', 'orchestrator', 'Mini', 5000, 490, 1, TRUE),
-                            ('credits_standard', 'orchestrator', 'Standard', 15000, 1290, 2, TRUE),
-                            ('credits_pro', 'orchestrator', 'Pro', 50000, 3990, 3, TRUE),
-                            ('credits_business', 'orchestrator', 'Business', 150000, 9990, 4, TRUE),
-                            ('credits_enterprise', 'orchestrator', 'Enterprise', 500000, 29990, 5, TRUE)
+                        INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                            (gen_random_uuid(), 'credits_mini', 'orchestrator', 'Mini', 5000, 490, 1, TRUE),
+                            (gen_random_uuid(), 'credits_standard', 'orchestrator', 'Standard', 15000, 1290, 2, TRUE),
+                            (gen_random_uuid(), 'credits_pro', 'orchestrator', 'Pro', 50000, 3990, 3, TRUE),
+                            (gen_random_uuid(), 'credits_business', 'orchestrator', 'Business', 150000, 9990, 4, TRUE),
+                            (gen_random_uuid(), 'credits_enterprise', 'orchestrator', 'Enterprise', 500000, 29990, 5, TRUE)
                         ON CONFLICT (code) DO NOTHING
                     """))
 
                     # 🆕 Пакеты докупки кредитов каскад-ассистентов (product='cascade').
                     # Та же единица кредита (1 кредит = $0.0001 ×2), те же цены.
                     conn.execute(text("""
-                        INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                            ('cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
-                            ('cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
-                            ('cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
-                            ('cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
-                            ('cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
+                        INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                            (gen_random_uuid(), 'cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
+                            (gen_random_uuid(), 'cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
+                            (gen_random_uuid(), 'cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
+                            (gen_random_uuid(), 'cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
+                            (gen_random_uuid(), 'cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
                         ON CONFLICT (code) DO NOTHING
                     """))
 
@@ -1287,12 +1290,12 @@ def ensure_cascade_credit_packages():
             trans = conn.begin()
             try:
                 conn.execute(text("""
-                    INSERT INTO credit_packages (code, product, name, credits, price_rub, sort_order, is_active) VALUES
-                        ('cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
-                        ('cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
-                        ('cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
-                        ('cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
-                        ('cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
+                    INSERT INTO credit_packages (id, code, product, name, credits, price_rub, sort_order, is_active) VALUES
+                        (gen_random_uuid(), 'cascade_mini', 'cascade', 'Mini', 5000, 490, 1, TRUE),
+                        (gen_random_uuid(), 'cascade_standard', 'cascade', 'Standard', 15000, 1290, 2, TRUE),
+                        (gen_random_uuid(), 'cascade_pro', 'cascade', 'Pro', 50000, 3990, 3, TRUE),
+                        (gen_random_uuid(), 'cascade_business', 'cascade', 'Business', 150000, 9990, 4, TRUE),
+                        (gen_random_uuid(), 'cascade_enterprise', 'cascade', 'Enterprise', 500000, 29990, 5, TRUE)
                     ON CONFLICT (code) DO NOTHING
                 """))
                 trans.commit()
@@ -2351,6 +2354,26 @@ def ensure_agent_telegram_account_tables():
         logger.error(f"❌ ensure_agent_telegram_account_tables error: {e}")
 
 
+def ensure_agent_whatsapp_tables():
+    """
+    Идемпотентно создаёт таблицы WhatsApp агента (Evolution API):
+    agent_whatsapp_accounts, agent_whatsapp_chats, agent_whatsapp_messages.
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.agent_whatsapp import (
+            AgentWhatsAppAccount, AgentWhatsAppChat, AgentWhatsAppMessage,
+        )
+
+        inspector = inspect(engine)
+        for model in (AgentWhatsAppAccount, AgentWhatsAppChat, AgentWhatsAppMessage):
+            if not inspector.has_table(model.__tablename__):
+                model.__table__.create(bind=engine, checkfirst=True)
+                logger.info(f"✅ Created table {model.__tablename__}")
+    except Exception as e:
+        logger.error(f"❌ ensure_agent_whatsapp_tables error: {e}")
+
+
 def ensure_connectors_agent_identity_migration():
     """
     Однократный сброс старых (пользовательских) подключений коннекторов в pending.
@@ -2516,6 +2539,9 @@ async def startup_event():
                 # 🆕 Шаг 21.5: Схема Instagram-коннектора (колонки поллера в
                 #    agent_connectors + таблицы agent_instagram_*)
                 ensure_agent_instagram_schema()
+
+                # 🆕 Шаг 21.6: Таблицы WhatsApp агента (Evolution API)
+                ensure_agent_whatsapp_tables()
 
                 # 🆕 Шаг 22: FK-колонки yandex_assistant_id (агент + задачи)
                 ensure_yandex_agent_columns()

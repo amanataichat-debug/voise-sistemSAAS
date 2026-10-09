@@ -82,6 +82,13 @@ from .agent_instagram import (
     AgentInstagramMessage,
 )
 
+# ✅ НОВОЕ: WhatsApp агента (Evolution API, infra/whatsapp-gateway/)
+from .agent_whatsapp import (
+    AgentWhatsAppAccount,
+    AgentWhatsAppChat,
+    AgentWhatsAppMessage,
+)
+
 # ✅ НОВОЕ: файлы агента (библиотека, вложения клиентов, созданные документы)
 from .agent_file import AgentFile
 

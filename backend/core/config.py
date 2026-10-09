@@ -232,7 +232,12 @@ class Settings(BaseSettings):
     SIP_GATEWAY_TOKEN: Optional[str] = os.getenv("SIP_GATEWAY_TOKEN")
     # Имя шлюза по умолчанию для новых номеров/звонков (gateway_id моста)
     SIP_GATEWAY_DEFAULT_ID: str = os.getenv("SIP_GATEWAY_DEFAULT_ID", "sip-gw-1")
-    
+
+    # WhatsApp-шлюз агента обзвона (Evolution API на VPS wa-gateway-1, infra/whatsapp-gateway/)
+    # URL вида https://wa.voksyai.online и AUTHENTICATION_API_KEY из /opt/voksy-wa/.env
+    WHATSAPP_GATEWAY_URL: Optional[str] = os.getenv("WHATSAPP_GATEWAY_URL")
+    WHATSAPP_GATEWAY_API_KEY: Optional[str] = os.getenv("WHATSAPP_GATEWAY_API_KEY")
+
     # =========================================================================
     # ✅ НОВОЕ v3.3: Cloudflare R2 Storage для записей звонков
     # =========================================================================

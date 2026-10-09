@@ -1,0 +1,69 @@
+# Voksy AI WhatsApp gateway: Evolution API (unofficial WhatsApp Web protocol,
+# Baileys inside) + Postgres + Redis behind Caddy (automatic HTTPS).
+# Lives in /opt/voksy-wa on the VPS wa-gateway-1; installed by install.sh.
+# Only Caddy publishes ports (80, 443). Values come from /opt/voksy-wa/.env.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  evolution:
+    # Pinned: 2.4.x requires a license key before it serves API traffic.
+    image: evoapicloud/evolution-api:${EVOLUTION_VERSION:-v2.3.7}
+    restart: always
+    env_file: .env
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - evolution_instances:/evolution/instances
+    mem_limit: 1536m
+    logging: *logging
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 512m
+    logging: *logging
+
+  redis:
+    image: redis:7
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 200mb --maxmemory-policy volatile-lru
+    volumes:
+      - redis_data:/data
+    mem_limit: 256m
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WA_DOMAIN: ${WA_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - evolution
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  evolution_instances:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

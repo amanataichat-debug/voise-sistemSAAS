@@ -55,7 +55,7 @@ class AgentFile(Base):
     )
 
     source = Column(String(16), default="library", nullable=False)
-    channel = Column(String(16), nullable=True)          # telegram / instagram
+    channel = Column(String(16), nullable=True)          # telegram / instagram / whatsapp
     external_message_id = Column(String(255), nullable=True)
 
     kind = Column(String(16), default="document", nullable=False)

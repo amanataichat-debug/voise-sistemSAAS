@@ -424,13 +424,39 @@ class SipGatewayService:
                 )
                 .all()
             )
+        from backend.services.conversation_service import ConversationService
+        phone = ConversationService._normalize_phone(phone)
+        if phone == "unknown":
+            return 0
+        # Контакт CRM: хендлеры сохраняют диалог без номера, поэтому создаём
+        # (или обновляем) карточку здесь, когда номер звонка уже известен.
+        contact_id = SipGatewayService._ensure_crm_contact(db, call, phone)
         for conv in rows:
             conv.caller_number = phone
             if hasattr(conv, "call_direction"):
                 conv.call_direction = direction
-        if rows:
+            if contact_id and hasattr(conv, "contact_id") and not conv.contact_id:
+                conv.contact_id = contact_id
+        if rows or contact_id:
             db.commit()
         return len(rows)
+
+    @staticmethod
+    def _ensure_crm_contact(db: Session, call: SipCall, phone: str):
+        """Найти/создать контакт CRM владельца ассистента по номеру звонка (без commit)."""
+        from backend.services.conversation_service import ConversationService
+        owner_id = call.user_id
+        if not owner_id and call.assistant_id:
+            assistant, _ = ConversationService._find_assistant_by_id(db, str(call.assistant_id))
+            owner_id = getattr(assistant, "user_id", None)
+        if not owner_id:
+            return None
+        try:
+            with db.begin_nested():
+                return ConversationService._get_or_create_contact(db, owner_id, phone)
+        except Exception as exc:
+            logger.warning(f"[SIP] call {call.id}: CRM contact upsert failed: {exc}")
+            return None
 
     @staticmethod
     def link_conversation_session(db: Session, call: SipCall) -> None:
@@ -445,6 +471,8 @@ class SipGatewayService:
         phone = call.caller if call.direction == "inbound" else call.to_number
         if not phone:
             return
+        from backend.services.conversation_service import ConversationService
+        phone = ConversationService._normalize_phone(phone)
         model = {"gemini": GeminiConversation, "fish": FishConversation, "eleven": ElevenConversation}.get(
             call.assistant_type, Conversation)
         start = call.answered_at or call.created_at
