@@ -188,6 +188,8 @@ function readVoiceBody(type, ids){
       eleven_language: document.getElementById(ids.elang)?.value || null,
       eleven_tts_model: document.getElementById(ids.emodel)?.value || null,
       eleven_stability: parseFloat(document.getElementById(ids.estab)?.value),
+      eleven_voice_engine: document.getElementById(ids.eng)?.value || null,
+      eleven_live_voice: document.getElementById(ids.lvoice)?.value || null,
     };
     if(isNaN(body.eleven_stability)) delete body.eleven_stability;
     // Голос отправляем, только когда список загрузился (иначе не затираем текущий)
@@ -216,8 +218,8 @@ function readVoiceBody(type, ids){
   return { voice: vEl ? vEl.value : null };
 }
 
-const I_VOICE_IDS = { voice:'i-voice', vid:'i-cartesia-voice-id', spd:'i-voice-speed', spdv:'i-voice-speed-val', desc:'i-voice-desc', fvid:'i-fish-voice-id', flat:'i-fish-latency', elang:'i-eleven-lang', emodel:'i-eleven-model', estab:'i-eleven-stab' };
-const W_VOICE_IDS = { voice:'w-voice', vid:'w-cartesia-voice-id', spd:'w-voice-speed', spdv:'w-voice-speed-val', desc:'w-voice-desc', fvid:'w-fish-voice-id', flat:'w-fish-latency', elang:'w-eleven-lang', emodel:'w-eleven-model', estab:'w-eleven-stab' };
+const I_VOICE_IDS = { voice:'i-voice', vid:'i-cartesia-voice-id', spd:'i-voice-speed', spdv:'i-voice-speed-val', desc:'i-voice-desc', fvid:'i-fish-voice-id', flat:'i-fish-latency', elang:'i-eleven-lang', emodel:'i-eleven-model', estab:'i-eleven-stab', eng:'i-voice-engine', lvoice:'i-live-voice', ebox:'i-eleven-box', lbox:'i-live-box' };
+const W_VOICE_IDS = { voice:'w-voice', vid:'w-cartesia-voice-id', spd:'w-voice-speed', spdv:'w-voice-speed-val', desc:'w-voice-desc', fvid:'w-fish-voice-id', flat:'w-fish-latency', elang:'w-eleven-lang', emodel:'w-eleven-model', estab:'w-eleven-stab', eng:'w-voice-engine', lvoice:'w-live-voice', ebox:'w-eleven-box', lbox:'w-live-box' };
 
 // ════════════════ ELEVENLABS VOICE (единственный голос новых агентов) ════════════════
 // Зеркала справочников backend/models/eleven_assistant.py (ELEVEN_TTS_MODELS, ELEVEN_LANGUAGES,
@@ -233,6 +235,14 @@ const ELEVEN_LANGUAGES = [
 const ELEVEN_STABILITY = [
   { v:0, title:'Creative — эмоциональнее' }, { v:0.5, title:'Natural — естественно' }, { v:1, title:'Robust — ровно' },
 ];
+// Движок голоса (eleven_assistant_configs.voice_engine) и голоса GPT-Live — зеркала
+// VOICE_ENGINES (backend/models/eleven_assistant.py) и LIVE_VOICES (backend/websockets/live_client.py).
+const VOICE_ENGINES = [
+  { id:'eleven', title:'ElevenLabs', hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
+  { id:'gpt_live', title:'OpenAI GPT-Live', hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
+];
+const LIVE_VOICES = ['marin','cedar','alloy','ash','ballad','coral','echo','sage','shimmer','verse',
+  'quartz','ripple','vesper','willow','stone','gleam','meridian','bossa','tempo','beacon','delta','cinder'];
 let elevenVoicesCache = {};   // language → [voices]
 let elevenPreviewAudio = null;
 
@@ -243,9 +253,27 @@ function elevenVoiceControlHtml(cur, ids){
   const langOpts = ELEVEN_LANGUAGES.map(l => `<option value="${l.code}" ${l.code===lang?'selected':''}>${l.title}</option>`).join('');
   const modelOpts = ELEVEN_TTS_MODELS.map(m => `<option value="${m.id}" ${m.id===model?'selected':''}>${esc(m.title)}</option>`).join('');
   const stabOpts = ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${x.v===stab?'selected':''}>${esc(x.title)}</option>`).join('');
+  const engine = cur.eleven_voice_engine === 'gpt_live' ? 'gpt_live' : 'eleven';
+  const liveVoice = cur.eleven_live_voice || 'marin';
+  const engineOpts = VOICE_ENGINES.map(e => `<option value="${e.id}" ${e.id===engine?'selected':''}>${esc(e.title)}</option>`).join('');
+  const liveOpts = [...(LIVE_VOICES.includes(liveVoice) ? [] : [liveVoice]), ...LIVE_VOICES]
+    .map(v => `<option value="${esc(v)}" ${v===liveVoice?'selected':''}>${esc(v)}</option>`).join('');
+  const isLive = engine === 'gpt_live';
+  // В inline-обработчик — имя глобальной константы: esc() не экранирует кавычки, JSON ломал атрибут
+  const idsRef = ids === W_VOICE_IDS ? 'W_VOICE_IDS' : 'I_VOICE_IDS';
   return `<div class="form-group">
+      <label class="form-label">Модель голоса</label>
+      <select class="form-select" id="${ids.eng}" onchange="voiceEngineChanged(${idsRef})">${engineOpts}</select>
+      <div class="form-hint" id="${ids.eng}-hint">${esc((VOICE_ENGINES.find(e => e.id === engine) || {}).hint || '')}</div>
+    </div>
+    <div class="form-group" id="${ids.lbox}" style="${isLive ? '' : 'display:none'}">
+      <label class="form-label">Голос GPT-Live</label>
+      <select class="form-select" id="${ids.lvoice}">${liveOpts}</select>
+    </div>
+    <div id="${ids.ebox}" style="${isLive ? 'display:none' : ''}">
+    <div class="form-group">
       <label class="form-label">Язык разговора <span class="hint" tabindex="0" data-hint="На этом языке агент говорит в звонке. Для кыргызского лучше голоса, отмеченные как рекомендуемые."><i class="far fa-circle-question"></i></span></label>
-      <select class="form-select" id="${ids.elang}" onchange="elevenLoadVoices(${esc(JSON.stringify(ids))}, null)">${langOpts}</select>
+      <select class="form-select" id="${ids.elang}" onchange="elevenLoadVoices(${idsRef}, null)">${langOpts}</select>
     </div>
     <div class="form-group">
       <label class="form-label">Голос ElevenLabs</label>
@@ -255,7 +283,19 @@ function elevenVoiceControlHtml(cur, ids){
     <div class="form-row">
       <div class="form-group"><label class="form-label">Модель синтеза</label><select class="form-select" id="${ids.emodel}">${modelOpts}</select></div>
       <div class="form-group"><label class="form-label">Подача</label><select class="form-select" id="${ids.estab}">${stabOpts}</select></div>
+    </div>
     </div>`;
+}
+
+// Переключение движка: у GPT-Live свой список голосов, контролы ElevenLabs прячем.
+function voiceEngineChanged(ids){
+  const engine = document.getElementById(ids.eng)?.value || 'eleven';
+  const live = engine === 'gpt_live';
+  const lbox = document.getElementById(ids.lbox), ebox = document.getElementById(ids.ebox);
+  if(lbox) lbox.style.display = live ? '' : 'none';
+  if(ebox) ebox.style.display = live ? 'none' : '';
+  const hint = document.getElementById(ids.eng + '-hint');
+  if(hint) hint.textContent = (VOICE_ENGINES.find(e => e.id === engine) || {}).hint || '';
 }
 
 // Загрузить голоса аккаунта ElevenLabs для выбранного языка и заполнить селект.
@@ -345,6 +385,8 @@ function openInstructionsModal(section){
       eleven_language: agentData.eleven_language,
       eleven_tts_model: agentData.eleven_tts_model,
       eleven_stability: agentData.eleven_stability,
+      eleven_voice_engine: agentData.eleven_voice_engine,
+      eleven_live_voice: agentData.eleven_live_voice,
     },
     I_VOICE_IDS
   );

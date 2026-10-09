@@ -122,7 +122,7 @@ async function renderModelStep(c){
   if(!wizardData.orchestrator_model && orchestratorModels.length){ const def=orchestratorModels.find(m=>m.is_default); wizardData.orchestrator_model = def?def.slug:orchestratorModels[0].slug; }
   c.innerHTML = `<h2>Модель и голос</h2><p class="hint">Модель оркестратора управляет агентом: планирует звонки, анализирует результаты, отвечает в чате. Голос — то, чем агент говорит в звонке. Работа оркестратора оплачивается кредитами агента.</p>
     <div class="form-group"><label class="form-label">Модель</label><select class="form-select" id="w-model">${modelOptionsHtml(orchestratorModels, wizardData.orchestrator_model)}</select><div class="form-hint" id="w-model-desc"></div></div>
-    ${voiceControlHtml('eleven', { eleven_voice_id: wizardData.eleven_voice_id, eleven_voice_name: wizardData.eleven_voice_name, eleven_language: wizardData.eleven_language, eleven_tts_model: wizardData.eleven_tts_model, eleven_stability: wizardData.eleven_stability }, W_VOICE_IDS)}
+    ${voiceControlHtml('eleven', { eleven_voice_id: wizardData.eleven_voice_id, eleven_voice_name: wizardData.eleven_voice_name, eleven_language: wizardData.eleven_language, eleven_tts_model: wizardData.eleven_tts_model, eleven_stability: wizardData.eleven_stability, eleven_voice_engine: wizardData.eleven_voice_engine, eleven_live_voice: wizardData.eleven_live_voice }, W_VOICE_IDS)}
     <div class="form-group"><label class="form-label">Инструкции для голосового агента</label><textarea class="form-textarea" id="w-voice-instr" rows="4" placeholder="Например: «говори коротко, не дави», «если спросят про цену — назови диапазон».">${esc(wizardData.voice_additional_instructions||'')}</textarea><div class="form-hint">Правила поведения именно в живом разговоре по телефону. Опционально.</div></div>
     <div class="wizard-actions"><button class="btn btn-secondary" onclick="wizardBack()"><i class="fas fa-arrow-left"></i> Назад</button><button class="btn btn-primary" onclick="submitCreate()"><i class="fas fa-rocket"></i> Создать агента</button></div>`;
   elevenLoadVoices(W_VOICE_IDS, wizardData.eleven_voice_id || '');
@@ -161,6 +161,8 @@ async function renderCreation(c){
     eleven_language: wizardData.eleven_language||null,
     eleven_tts_model: wizardData.eleven_tts_model||null,
     eleven_stability: (wizardData.eleven_stability!=null && !isNaN(wizardData.eleven_stability)) ? wizardData.eleven_stability : null,
+    eleven_voice_engine: wizardData.eleven_voice_engine||null,
+    eleven_live_voice: wizardData.eleven_live_voice||null,
   };
   try{
     const r = await apiFetch(API + '/create', { method:'POST', body:JSON.stringify(body) });

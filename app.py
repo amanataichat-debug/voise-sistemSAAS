@@ -1462,6 +1462,8 @@ def ensure_agent_eleven_voice_columns():
     Идемпотентно добавляет FK-колонки eleven-голоса:
       • agent_configs.eleven_assistant_id  → eleven_assistant_configs
       • tasks.eleven_assistant_id          → eleven_assistant_configs
+    и колонки движка голоса карточки (eleven_assistant_configs.voice_engine / live_voice:
+    ElevenLabs или OpenAI GPT-Live).
     Позволяет агенту обзвона использовать ElevenLabs как голосовой провайдер.
     """
     try:
@@ -1470,6 +1472,14 @@ def ensure_agent_eleven_voice_columns():
         if not inspector.has_table('eleven_assistant_configs'):
             return
         stmts = []
+        cols = {c['name'] for c in inspector.get_columns('eleven_assistant_configs')}
+        if 'voice_engine' not in cols:
+            stmts.append(
+                "ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS "
+                "voice_engine VARCHAR(20) NOT NULL DEFAULT 'eleven'"
+            )
+        if 'live_voice' not in cols:
+            stmts.append("ALTER TABLE eleven_assistant_configs ADD COLUMN IF NOT EXISTS live_voice VARCHAR(50)")
         if inspector.has_table('agent_configs'):
             cols = {c['name'] for c in inspector.get_columns('agent_configs')}
             if 'eleven_assistant_id' not in cols:

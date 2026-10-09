@@ -64,7 +64,7 @@ SIP_HANDLERS = {
     "openai": handle_live_websocket_connection,  # GPT-Live (gpt-live-1), full-duplex
     "gemini": handle_gemini_websocket_connection,
     "fish": handle_fish_websocket_connection,
-    "eleven": handle_eleven_websocket_connection,  # OpenAI Realtime текст + ElevenLabs TTS
+    "eleven": handle_eleven_websocket_connection,  # каскад с ElevenLabs TTS или GPT-Live (voice_engine карточки)
 }
 
 logger = get_logger(__name__)
@@ -402,14 +402,20 @@ async def sip_media(
         call.conversation_session_id = str(call.id)
         db.commit()
 
+    # Карточка ElevenLabs на движке GPT-Live: звук идёт в реальном темпе, как у OpenAI —
+    # адаптеру нужен тот же профиль (запас OUTBOUND_CUSHION_MS), приветствие приходит транскриптом.
+    gpt_live = call.assistant_type == "eleven" and getattr(assistant, "voice_engine", None) == "gpt_live"
+    adapter_profile = "openai" if gpt_live else call.assistant_type
+
     # Стенограмма звонка целиком. Приветствие Fish/Eleven озвучивается без текстовых событий.
     transcript = CallTranscript()
-    if call.assistant_type in ("fish", "eleven"):
+    if call.assistant_type in ("fish", "eleven") and not gpt_live:
         transcript.add_greeting(getattr(assistant, "greeting_message", None) or FISH_DEFAULT_GREETING)
 
     logger.info(
         f"[SIP-MEDIA] call {call_id} {direction}: did={call.did} caller={call.caller} to={call.to_number} "
-        f"assistant={call.assistant_type}/{assistant.id} greeting={'yes' if greeting else 'no'}"
+        f"assistant={call.assistant_type}/{assistant.id}{' (gpt-live)' if gpt_live else ''} "
+        f"greeting={'yes' if greeting else 'no'}"
     )
 
     # 5. Журнал звонка (страница «Диалоги»): заводим до хендлера, чтобы его унаследовали все задачи
@@ -426,7 +432,7 @@ async def sip_media(
                  greeting="своё" if greeting else None)
 
     # 6. Запуск браузерного хендлера через адаптер
-    socket = HandlerSocket(websocket, call.assistant_type, call_id, on_event=transcript.on_event)
+    socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)
     socket.start()
     started_at = datetime.utcnow()
     handler = SIP_HANDLERS[call.assistant_type]

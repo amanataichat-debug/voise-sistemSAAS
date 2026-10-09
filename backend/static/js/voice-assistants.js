@@ -34,7 +34,12 @@
     default_greeting: 'Здравствуйте! Чем я могу вам помочь?',
     block_voice: 'Голос',
     server_not_ready: 'На сервере не настроены ключи ElevenLabs: ассистент пока не сможет отвечать. Сообщите администратору.',
-    llm_model: 'Диалоговая модель', language: 'Язык',
+    server_not_ready_live: 'На сервере не настроен ключ OpenAI: ассистент на GPT-Live пока не сможет отвечать. Сообщите администратору.',
+    language: 'Язык',
+    engine: 'Модель голоса', engine_eleven: 'ElevenLabs', engine_gpt_live: 'OpenAI GPT-Live',
+    engine_eleven_hint: 'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.',
+    engine_gpt_live_hint: 'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по промпту и собеседнику.',
+    live_voice: 'Голос GPT-Live',
     eleven_tts: 'Модель синтеза', eleven_voice: 'Голос', eleven_voice_empty: 'Выберите голос', eleven_stability: 'Стабильность голоса',
     eleven_group_rec: 'Рекомендованы для языка', eleven_group_other: 'Остальные голоса', eleven_missing: '(нет в аккаунте)',
     eleven_voices_failed: 'Не удалось загрузить голоса ElevenLabs', eleven_reload: 'Обновить список', eleven_library: 'Найти в библиотеке',
@@ -182,7 +187,7 @@
         '<div class="a-top">' + logo(20) +
         '<div class="a-main"><div class="a-name"><span class="truncate">' + esc(a.name || '—') + '</span>' +
         (a.is_active === false ? '<span class="dot" data-tip="' + esc(t('inactive_tip')) + '"></span>' : '') + '</div>' +
-        '<div class="faint small truncate">' + esc(a.voice_name || 'ElevenLabs') + '</div></div></div>' +
+        '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'GPT-Live · ' + (a.live_voice || 'marin') : (a.voice_name || 'ElevenLabs')) + '</div></div></div>' +
         '<div class="a-desc">' + esc(desc) + '</div>' +
         '<div class="a-meta"><span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span><span class="faint" style="margin-left:auto">' + esc(fmtDate(a.created_at)) + '</span></div></div>';
     }).join('');
@@ -224,12 +229,13 @@
       voice_id: (a && a.voice_id) || '',
       voice_name: (a && a.voice_name) || '',
       stability: a && a.stability != null ? a.stability : (o.default_stability != null ? o.default_stability : 0.5),
-      llm_model: (a && a.llm_model) || o.default_llm_model || 'gpt-realtime-2'
+      voice_engine: (a && a.voice_engine) || o.default_voice_engine || 'eleven',
+      live_voice: (a && a.live_voice) || o.default_live_voice || 'marin'
     };
   }
   function snapshotOf() {
     var f = state.form;
-    return JSON.stringify([f.name, f.description, f.greeting, f.prompt, f.functions.slice().sort(), f.sheet, f.active, f.language, f.tts_model, f.voice_id, f.stability, f.llm_model]);
+    return JSON.stringify([f.name, f.description, f.greeting, f.prompt, f.functions.slice().sort(), f.sheet, f.active, f.language, f.tts_model, f.voice_id, f.stability, f.voice_engine, f.live_voice]);
   }
   function isDirty() { return editorOpen && state.form && snapshotOf() !== state.snapshot; }
   function markClean() { state.snapshot = snapshotOf(); renderDirty(); }
@@ -329,8 +335,10 @@
     b.innerHTML = busy ? '<span class="spin"></span> ' + esc(t('saving')) : VF.icon('check') + esc(t('save'));
   }
   function renderServerNote() {
-    $('model-extra').innerHTML = state.status && state.status.ready === false
-      ? '<div class="note note-warning" style="margin-bottom:14px">' + VF.icon('triangle-alert') + '<span>' + esc(t('server_not_ready')) + '</span></div>' : '';
+    var st = state.status, live = state.form && state.form.voice_engine === 'gpt_live';
+    var bad = st && (live ? st.openai_key === false : st.ready === false);
+    $('model-extra').innerHTML = bad
+      ? '<div class="note note-warning" style="margin-bottom:14px">' + VF.icon('triangle-alert') + '<span>' + esc(t(live ? 'server_not_ready_live' : 'server_not_ready')) + '</span></div>' : '';
   }
 
   // ------------------------------------------------------------------
@@ -344,17 +352,32 @@
     var h = function () { fn(el.value); renderDirty(); };
     el.addEventListener('input', h); el.addEventListener('change', h);
   }
+  function engineTitle(id) { return id === 'gpt_live' ? t('engine_gpt_live') : t('engine_eleven'); }
   function renderVoiceSettings() {
     var box = $('voice-settings'), d = state.form, o = state.options;
+    var live = d.voice_engine === 'gpt_live';
+    $('engine-name').textContent = '· ' + engineTitle(d.voice_engine);
+    var engines = (o.voice_engines || [{ id: 'eleven' }, { id: 'gpt_live' }]).map(function (x) { return { value: x.id, label: engineTitle(x.id) }; });
+    var langs = (o.languages || [{ code: 'ky', title: 'Кыргызский' }, { code: 'ru', title: 'Русский' }]).map(function (x) { return { value: x.code, label: x.title + ' (' + x.code + ')' }; });
+    var engineHtml =
+      '<div class="field"><label class="label" for="ex-engine">' + esc(t('engine')) + '</label><select class="form-control" id="ex-engine">' + selectOptions(engines, d.voice_engine) + '</select>' +
+      '<span class="hint">' + esc(t(live ? 'engine_gpt_live_hint' : 'engine_eleven_hint')) + '</span></div>';
+    if (live) {
+      var lv = (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: x }; });
+      if (lv.every(function (x) { return x.value !== d.live_voice; })) lv.unshift({ value: d.live_voice, label: d.live_voice });
+      // Язык карточки GPT-Live не использует: язык ответа модель выбирает по промпту и собеседнику
+      box.innerHTML = engineHtml +
+        '<div class="field"><label class="label" for="ex-live-voice">' + esc(t('live_voice')) + '</label><select class="form-control" id="ex-live-voice">' + selectOptions(lv, d.live_voice) + '</select></div>';
+      bindVal('ex-engine', function (v) { d.voice_engine = v; renderVoiceSettings(); renderServerNote(); });
+      bindVal('ex-live-voice', function (v) { d.live_voice = v; });
+      return;
+    }
     var tts = (o.tts_models || []).map(function (x) { return { value: x.id, label: x.title + (x.price ? ' — ' + x.price : '') }; });
     if (tts.every(function (x) { return x.value !== d.tts_model; })) tts.unshift({ value: d.tts_model, label: d.tts_model });
-    var langs = (o.languages || [{ code: 'ky', title: 'Кыргызский' }, { code: 'ru', title: 'Русский' }]).map(function (x) { return { value: x.code, label: x.title + ' (' + x.code + ')' }; });
     var stab = (o.stability_levels || [{ value: 0, title: 'Creative' }, { value: 0.5, title: 'Natural' }, { value: 1, title: 'Robust' }]).map(function (x) { return { value: x.value, label: x.title }; });
     if (stab.every(function (x) { return Number(x.value) !== Number(d.stability); })) stab.push({ value: d.stability, label: String(d.stability) });
-    var llms = (o.llm_models || ['gpt-realtime-2', 'gpt-realtime-2.1-mini']).map(function (x) { return { value: x, label: x }; });
-    if (llms.every(function (x) { return x.value !== d.llm_model; })) llms.unshift({ value: d.llm_model, label: d.llm_model });
     var ttsInfo = (o.tts_models || []).filter(function (x) { return x.id === d.tts_model; })[0];
-    box.innerHTML =
+    box.innerHTML = engineHtml +
       '<div class="form-row"><div class="field"><label class="label" for="ex-lang">' + esc(t('language')) + '</label><select class="form-control" id="ex-lang">' + selectOptions(langs, d.language) + '</select></div>' +
       '<div class="field"><label class="label" for="ex-tts">' + esc(t('eleven_tts')) + '</label><select class="form-control" id="ex-tts">' + selectOptions(tts, d.tts_model) + '</select>' +
       '<span class="hint" id="ex-tts-hint">' + esc(ttsInfo && ttsInfo.description || '') + '</span></div></div>' +
@@ -366,8 +389,8 @@
       '<select class="form-control" id="lib-gender" style="max-width:170px"><option value="">' + esc(t('lib_any_gender')) + '</option><option value="female">' + esc(t('lib_female')) + '</option><option value="male">' + esc(t('lib_male')) + '</option></select>' +
       '<button class="btn" type="button" id="lib-go">' + esc(t('lib_search')) + '</button></div><div class="lib-list" id="lib-list"></div>' +
       '<button class="btn btn-sm hidden" type="button" id="lib-more" style="margin-top:8px">' + esc(t('lib_more')) + '</button></div></div>' +
-      '<div class="form-row"><div class="field"><label class="label" for="ex-stab">' + esc(t('eleven_stability')) + '</label><select class="form-control" id="ex-stab">' + selectOptions(stab, d.stability) + '</select></div>' +
-      '<div class="field"><label class="label" for="ex-llm">' + esc(t('llm_model')) + '</label><select class="form-control" id="ex-llm">' + selectOptions(llms, d.llm_model) + '</select></div></div>';
+      '<div class="field"><label class="label" for="ex-stab">' + esc(t('eleven_stability')) + '</label><select class="form-control" id="ex-stab">' + selectOptions(stab, d.stability) + '</select></div>';
+    bindVal('ex-engine', function (v) { d.voice_engine = v; renderVoiceSettings(); renderServerNote(); });
     bindVal('ex-lang', function (v) { d.language = v; loadVoices(true); });
     bindVal('ex-tts', function (v) {
       d.tts_model = v;
@@ -375,7 +398,6 @@
       $('ex-tts-hint').textContent = info && info.description || '';
     });
     bindVal('ex-stab', function (v) { d.stability = parseFloat(v); });
-    bindVal('ex-llm', function (v) { d.llm_model = v; });
     $('ex-reload').addEventListener('click', function () { loadVoices(true); });
     $('ex-lib-toggle').addEventListener('click', function () {
       $('ex-lib').classList.toggle('hidden');
@@ -519,7 +541,8 @@
       voice_name: f.voice_name || null,
       tts_model: f.tts_model,
       stability: Number(f.stability),
-      llm_model: f.llm_model,
+      voice_engine: f.voice_engine || 'eleven',
+      live_voice: f.live_voice || null,
       language: f.language || 'ky'
     };
     if (isUpdate) body.is_active = !!f.active;
@@ -528,7 +551,7 @@
   function validate() {
     var f = state.form;
     if (!f.name.trim()) { VF.toast(t('need_name'), { type: 'warning' }); switchTab('settings'); $('f-name').focus(); return false; }
-    if (!f.voice_id) { VF.toast(t('eleven_voice_required'), { type: 'warning' }); switchTab('settings'); return false; }
+    if (f.voice_engine !== 'gpt_live' && !f.voice_id) { VF.toast(t('eleven_voice_required'), { type: 'warning' }); switchTab('settings'); return false; }
     return true;
   }
   function save() {

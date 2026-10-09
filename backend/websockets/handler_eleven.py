@@ -17,6 +17,10 @@ language_code, диалоговой модели дописывается инс
     звук абонента → Scribe Realtime (ASR + VAD, пауза ELEVEN_ASR_SILENCE_MS)
     → готовая фраза текстом → OpenAI Realtime (текст → текст) → ElevenLabs TTS.
 Если Scribe не подключился, звонок идёт по прежней схеме (звук напрямую в OpenAI).
+
+Карточка с voice_engine="gpt_live" обслуживается OpenAI GPT-Live (run_gpt_live_session →
+LiveVoiceSession из handler_live.py): речь в речь, голос live_voice, серверный OPENAI_API_KEY,
+модель функций LIVE_DELEGATION_MODEL; диалоги — в eleven_conversations, журнал звонка — как у Eleven.
 """
 
 import asyncio
@@ -34,6 +38,7 @@ from backend.core.logging import get_logger
 from backend.models.eleven_assistant import (
     DEFAULT_ELEVEN_GREETING,
     ELEVEN_SAMPLE_RATE,
+    VOICE_ENGINE_GPT_LIVE,
     ElevenAssistantConfig,
     ElevenConversation,
 )
@@ -47,6 +52,8 @@ from backend.websockets.google_stt_client import GoogleSTTClient, parse_credenti
 from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
+from backend.websockets.handler_live import LIVE_AUDIO_RATE, LiveVoiceSession
+from backend.websockets.live_client import LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
 
 logger = get_logger(__name__)
 
@@ -152,6 +159,9 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             return
         if not assistant.is_active:
             await fail("assistant_inactive", "Assistant is inactive")
+            return
+        if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE:
+            await run_gpt_live_session(websocket, assistant, db, client_id, fail)
             return
         if not (assistant.voice_id or "").strip():
             await fail("voice_not_set", "У агента не выбран голос ElevenLabs")
@@ -402,3 +412,90 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             await websocket.send_json({"type": "error", "error": {"code": "server_error", "message": "Internal server error"}})
         except Exception:
             pass
+
+
+async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantConfig, db: Session,
+                               client_id: str, fail) -> None:
+    """
+    Карточка ElevenLabs с движком GPT-Live: тот же протокол виджета, но вместо каскада
+    ASR → текст → ElevenLabs говорит OpenAI GPT-Live (full-duplex). Сокет уже принят,
+    журнал звонка заведён (виджет) или унаследован от SIP-роута.
+    """
+    if not settings.OPENAI_API_KEY:
+        await fail("openai_not_configured", "OPENAI_API_KEY is not configured on the server", 1011)
+        return
+    telephony = bool(getattr(assistant, "telephony_mode", False))
+    t_start = time.monotonic()
+
+    sub_task = asyncio.create_task(_check_subscription(assistant))
+    client = OpenAILiveClient(
+        settings.OPENAI_API_KEY, assistant, client_id, db, audio_rate=LIVE_AUDIO_RATE,
+        voice_override=assistant.live_voice, telephony=telephony,
+        conversation_model=ElevenConversation,
+        # у звонка диалог пишется под id звонка (SIP-роут связывает по нему звонок и реплики)
+        dialog_session_id=getattr(assistant, "sip_session_id", None),
+    )
+    connect_task = asyncio.create_task(client.connect())
+
+    sub = await sub_task
+    if sub is not None and not sub.get("active"):
+        connect_task.cancel()
+        await asyncio.gather(connect_task, return_exceptions=True)
+        await client._safe_close_ws()  # close() ждал бы session.closed, а события никто не читает
+        code = "TRIAL_EXPIRED" if sub.get("is_trial") else "SUBSCRIPTION_EXPIRED"
+        msg = "Ваш пробный период истек" if sub.get("is_trial") else "Ваша подписка истекла"
+        try:
+            await websocket.send_json({"type": "error", "error": {
+                "code": code, "message": msg, "subscription_status": sub, "requires_payment": True}})
+            await websocket.close(code=1008)
+        except Exception:
+            pass
+        return
+    if not await connect_task:
+        await fail("openai_connection_failed", f"Failed to open {LIVE_MODEL} session", 1011)
+        return
+    connect_ms = int((time.monotonic() - t_start) * 1000)
+
+    call_log = CallLogRecorder.current()
+    if call_log is not None:
+        call_log.session_id = client.dialog_session_id
+        call_log.assistant_type = "eleven"
+        call_log.assistant_id = str(assistant.id)
+        call_log.meta.update({
+            "assistant_name": assistant.name,
+            "engine": "gpt_live",
+            "llm_model": f"{LIVE_MODEL} + {client.delegation_model}",
+            "voice": client.voice,
+            "language": assistant.language,
+            "telephony_profile": telephony,
+        })
+        call_log.add("session", f"Сессия начата: OpenAI {LIVE_MODEL} (речь в речь), голос {client.voice}, "
+                                f"функции — {client.delegation_model}; подключение {connect_ms} мс",
+                     functions=", ".join(client.enabled_functions) or None)
+
+    await websocket.send_json({
+        "type": "connection_status",
+        "status": "connected",
+        "provider": "eleven",
+        "engine": "gpt_live",
+        "transport": LIVE_MODEL,
+        "model": LIVE_MODEL,
+        "backend_model": client.delegation_model,
+        "message": f"Connected to OpenAI {LIVE_MODEL} (full-duplex)",
+        "full_duplex": True,
+        "audio_rate": LIVE_AUDIO_RATE,
+        "voice": client.voice,
+        "voices": LIVE_VOICES,
+        "session_id": client.session_id,
+        "client_id": client_id,
+        "functions_enabled": len(client.enabled_functions),
+        "telephony": telephony,
+        "enable_vision": False,
+        "greeting_message": assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
+    })
+    _log(f"session {client_id} started on GPT-Live in {connect_ms}ms: assistant={assistant.id} '{assistant.name}' "
+         f"voice={client.voice} telephony={telephony} functions={client.enabled_functions}")
+
+    session = LiveVoiceSession(websocket, assistant, client, db, client_id, telephony=telephony,
+                               assistant_type="eleven", call_log=call_log, default_greeting=DEFAULT_ELEVEN_GREETING)
+    await session.run()

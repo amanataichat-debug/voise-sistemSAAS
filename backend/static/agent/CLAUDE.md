@@ -7,6 +7,10 @@ OpenAI-ассистентов, закрытой редиректом).
 диалог текстом, озвучивает ElevenLabs, серверные ключи; хендлер `backend/websockets/handler_eleven.py`).
 Мастер не предлагает выбор провайдера; голос, язык, модель синтеза и «подача» выбираются на шаге
 «Модель и голос» и в настройках (`elevenVoiceControlHtml`, голоса аккаунта — `/api/eleven-assistants/voices`).
+В том же контроле — «Модель голоса»: ElevenLabs или OpenAI GPT-Live (`eleven_voice_engine` =
+`eleven | gpt_live`, голос GPT-Live — `eleven_live_voice`, список `LIVE_VOICES` — зеркало
+`backend/websockets/live_client.py`; переключение прячет контролы ElevenLabs — `voiceEngineChanged`).
+Тип агента при этом остаётся `eleven`, меняется только движок карточки голоса.
 Старые типы (`gemini | openai | cartesia | yandex | cascade | fish`) остаются у уже созданных агентов:
 их контролы голоса сохранены, в настройках показывается предупреждение.
 

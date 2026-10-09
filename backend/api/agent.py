@@ -39,7 +39,9 @@ from backend.models.fish_assistant import (
 from backend.models.eleven_assistant import (
     ElevenAssistantConfig, ElevenConversation, ELEVEN_TTS_MODEL_IDS, DEFAULT_ELEVEN_TTS_MODEL,
     ELEVEN_LANGUAGES, DEFAULT_ELEVEN_LANGUAGE, DEFAULT_ELEVEN_STABILITY, DEFAULT_ELEVEN_LLM_MODEL,
+    VOICE_ENGINE_IDS, DEFAULT_VOICE_ENGINE,
 )
+from backend.websockets.live_client import LIVE_VOICE_SET
 from backend.models.voximplant_child import VoximplantChildAccount
 from backend.models.task import Task, TaskStatus
 from backend.models.contact import Contact
@@ -123,6 +125,16 @@ def _valid_eleven_language(language: Optional[str]) -> str:
 
 def _valid_eleven_stability(stability: Optional[float]) -> float:
     return stability if stability in (0.0, 0.5, 1.0) else DEFAULT_ELEVEN_STABILITY
+
+
+def _valid_voice_engine(engine: Optional[str]) -> str:
+    """Движок голоса агента: ElevenLabs (каскад) или OpenAI GPT-Live."""
+    return engine if engine in VOICE_ENGINE_IDS else DEFAULT_VOICE_ENGINE
+
+
+def _valid_live_voice(voice: Optional[str]) -> Optional[str]:
+    v = (voice or "").strip().lower()
+    return v if v in LIVE_VOICE_SET else None
 
 
 def _is_valid_voice(assistant_type: str, voice: str) -> bool:
@@ -254,6 +266,9 @@ class AgentCreateRequest(BaseModel):
     eleven_tts_model: Optional[str] = None
     eleven_language: Optional[str] = None
     eleven_stability: Optional[float] = None
+    # Движок голоса: "eleven" (каскад + ElevenLabs) | "gpt_live" (OpenAI GPT-Live, голос eleven_live_voice)
+    eleven_voice_engine: Optional[str] = None
+    eleven_live_voice: Optional[str] = Field(None, max_length=50)
 
 
 class AgentUpdateRequest(BaseModel):
@@ -287,6 +302,9 @@ class AgentUpdateRequest(BaseModel):
     eleven_tts_model: Optional[str] = None
     eleven_language: Optional[str] = None
     eleven_stability: Optional[float] = None
+    # Движок голоса: "eleven" (каскад + ElevenLabs) | "gpt_live" (OpenAI GPT-Live, голос eleven_live_voice)
+    eleven_voice_engine: Optional[str] = None
+    eleven_live_voice: Optional[str] = Field(None, max_length=50)
 
 
 class AgentChatRequest(BaseModel):
@@ -548,6 +566,8 @@ def _create_voice_assistant(assistant_type: str, name: str, user_id, db,
             tts_model=_valid_eleven_model(eleven.get("eleven_tts_model")),
             stability=_valid_eleven_stability(eleven.get("eleven_stability")),
             language=_valid_eleven_language(eleven.get("eleven_language")),
+            voice_engine=_valid_voice_engine(eleven.get("eleven_voice_engine")),
+            live_voice=_valid_live_voice(eleven.get("eleven_live_voice")),
             llm_model=DEFAULT_ELEVEN_LLM_MODEL,
             # send_sms без транспорта (Voximplant выключен) — голосу Eleven не даём
             functions=[f for f in _default_voice_functions() if f["name"] != "send_sms"],
@@ -815,6 +835,8 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "eleven_tts_model": getattr(voice, "tts_model", None) if agent.assistant_type == "eleven" else None,
         "eleven_language": getattr(voice, "language", None) if agent.assistant_type == "eleven" else None,
         "eleven_stability": getattr(voice, "stability", None) if agent.assistant_type == "eleven" else None,
+        "eleven_voice_engine": (getattr(voice, "voice_engine", None) or DEFAULT_VOICE_ENGINE) if agent.assistant_type == "eleven" else None,
+        "eleven_live_voice": getattr(voice, "live_voice", None) if agent.assistant_type == "eleven" else None,
         "name": agent.name,
         "is_active": agent.is_active,
         "orchestrator_model": agent.orchestrator_model,
@@ -1121,6 +1143,7 @@ async def update_agent(
         "voice", "cartesia_voice_id", "voice_speed",
         "fish_voice_id", "fish_model", "fish_latency",
         "eleven_voice_id", "eleven_tts_model", "eleven_language", "eleven_stability",
+        "eleven_voice_engine", "eleven_live_voice",
     ))
     if voice_touched:
         va = _resolve_voice_assistant(db, agent)
@@ -1162,6 +1185,10 @@ async def update_agent(
                     va.language = _valid_eleven_language(update_data["eleven_language"])
                 if update_data.get("eleven_stability") is not None:
                     va.stability = _valid_eleven_stability(update_data["eleven_stability"])
+                if update_data.get("eleven_voice_engine"):
+                    va.voice_engine = _valid_voice_engine(update_data["eleven_voice_engine"])
+                if "eleven_live_voice" in update_data:
+                    va.live_voice = _valid_live_voice(update_data["eleven_live_voice"])
 
     # ── Регенерация промпта через gpt-4o-mini — ТОЛЬКО для старых агентов ──
     if docs_changed and not agent.uses_hardcoded_prompt:

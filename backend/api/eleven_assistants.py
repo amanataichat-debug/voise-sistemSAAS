@@ -2,6 +2,9 @@
 """
 REST API Eleven-ассистентов (OpenAI Realtime текстом + озвучка ElevenLabs).
 
+Движок голоса карточки (voice_engine): "eleven" — каскад с синтезом ElevenLabs,
+"gpt_live" — OpenAI GPT-Live (речь в речь, голос live_voice); оба на серверных ключах.
+
 Ключи серверные: settings.OPENAI_API_KEY и settings.ELEVENLABS_API_KEY.
 Голоса берутся из аккаунта ElevenLabs по серверному ключу (/voices) и из
 публичной библиотеки (/voices/library, фильтр по языку); библиотечный голос
@@ -27,13 +30,17 @@ from backend.models.eleven_assistant import (
     DEFAULT_ELEVEN_LLM_MODEL,
     DEFAULT_ELEVEN_STABILITY,
     DEFAULT_ELEVEN_TTS_MODEL,
+    DEFAULT_VOICE_ENGINE,
     ELEVEN_LANGUAGES,
     ELEVEN_LLM_MODELS,
     ELEVEN_STABILITY_LEVELS,
     ELEVEN_TTS_MODEL_IDS,
     ELEVEN_TTS_MODELS,
+    VOICE_ENGINE_IDS,
+    VOICE_ENGINES,
     ElevenAssistantConfig,
 )
+from backend.websockets.live_client import LIVE_DEFAULT_VOICE, LIVE_VOICE_SET, LIVE_VOICES
 from backend.models.user import User
 from backend.services.assistant_limit_service import exclude_agent_owned
 
@@ -66,6 +73,8 @@ class ElevenAssistantCreate(BaseModel):
     tts_model: str = Field(default=DEFAULT_ELEVEN_TTS_MODEL, description=f"Модель синтеза: {ELEVEN_TTS_MODEL_IDS}")
     stability: float = Field(default=DEFAULT_ELEVEN_STABILITY, ge=0.0, le=1.0)
     llm_model: str = Field(default=DEFAULT_ELEVEN_LLM_MODEL, max_length=100)
+    voice_engine: str = Field(default=DEFAULT_VOICE_ENGINE, description=f"Движок голоса: {VOICE_ENGINE_IDS}")
+    live_voice: Optional[str] = Field(None, max_length=50, description="Голос GPT-Live (для voice_engine=gpt_live)")
     language: str = Field(default=DEFAULT_ELEVEN_LANGUAGE, max_length=10)
     greeting_message: Optional[str] = Field(default=DEFAULT_ELEVEN_GREETING, max_length=500)
     google_sheet_id: Optional[str] = Field(None, max_length=255)
@@ -81,6 +90,8 @@ class ElevenAssistantUpdate(BaseModel):
     tts_model: Optional[str] = None
     stability: Optional[float] = Field(None, ge=0.0, le=1.0)
     llm_model: Optional[str] = Field(None, max_length=100)
+    voice_engine: Optional[str] = None
+    live_voice: Optional[str] = Field(None, max_length=50)
     language: Optional[str] = Field(None, max_length=10)
     greeting_message: Optional[str] = Field(None, max_length=500)
     google_sheet_id: Optional[str] = Field(None, max_length=255)
@@ -98,6 +109,8 @@ class ElevenAssistantResponse(BaseModel):
     tts_model: str
     stability: Optional[float]
     llm_model: str
+    voice_engine: str
+    live_voice: Optional[str]
     language: str
     greeting_message: Optional[str]
     google_sheet_id: Optional[str]
@@ -133,6 +146,12 @@ def _validate(data) -> None:
     llm_model = getattr(data, "llm_model", None)
     if llm_model is not None and llm_model not in ELEVEN_LLM_MODELS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown LLM model. Available: {ELEVEN_LLM_MODELS}")
+    engine = getattr(data, "voice_engine", None)
+    if engine is not None and engine not in VOICE_ENGINE_IDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown voice engine. Available: {VOICE_ENGINE_IDS}")
+    live_voice = (getattr(data, "live_voice", None) or "").strip().lower()
+    if live_voice and live_voice not in LIVE_VOICE_SET:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown GPT-Live voice. Available: {LIVE_VOICES}")
     language = getattr(data, "language", None)
     if language is not None and language.lower() not in LANGUAGE_CODES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown language. Available: {sorted(LANGUAGE_CODES)}")
@@ -145,6 +164,8 @@ def to_response(a: ElevenAssistantConfig) -> ElevenAssistantResponse:
         tts_model=a.tts_model or DEFAULT_ELEVEN_TTS_MODEL,
         stability=a.stability if a.stability is not None else DEFAULT_ELEVEN_STABILITY,
         llm_model=a.llm_model or DEFAULT_ELEVEN_LLM_MODEL,
+        voice_engine=a.voice_engine or DEFAULT_VOICE_ENGINE,
+        live_voice=a.live_voice,
         language=a.language or DEFAULT_ELEVEN_LANGUAGE,
         greeting_message=a.greeting_message, google_sheet_id=a.google_sheet_id,
         functions=a.functions, is_active=a.is_active, created_at=a.created_at,
@@ -246,6 +267,10 @@ async def get_eleven_options():
         "default_stability": DEFAULT_ELEVEN_STABILITY,
         "llm_models": ELEVEN_LLM_MODELS,
         "default_llm_model": DEFAULT_ELEVEN_LLM_MODEL,
+        "voice_engines": VOICE_ENGINES,
+        "default_voice_engine": DEFAULT_VOICE_ENGINE,
+        "live_voices": LIVE_VOICES,
+        "default_live_voice": LIVE_DEFAULT_VOICE,
         "default_greeting": DEFAULT_ELEVEN_GREETING,
     }
 
@@ -378,6 +403,8 @@ async def create_eleven_assistant(
             tts_model=data.tts_model,
             stability=data.stability,
             llm_model=data.llm_model,
+            voice_engine=data.voice_engine,
+            live_voice=(data.live_voice or "").strip().lower() or None,
             language=data.language.lower(),
             greeting_message=data.greeting_message,
             google_sheet_id=data.google_sheet_id,
@@ -412,6 +439,10 @@ async def update_eleven_assistant(assistant_id: str, data: ElevenAssistantUpdate
             update["language"] = update["language"].lower()
         if "voice_id" in update:
             update["voice_id"] = (update["voice_id"] or "").strip() or None
+        if "voice_engine" in update and not update["voice_engine"]:
+            update.pop("voice_engine")
+        if "live_voice" in update:
+            update["live_voice"] = (update["live_voice"] or "").strip().lower() or None
         for field, value in update.items():
             setattr(assistant, field, value)
         db.commit()

@@ -73,6 +73,20 @@ DEFAULT_ELEVEN_STABILITY = 0.5
 DEFAULT_ELEVEN_LLM_MODEL = "gpt-realtime-2"
 ELEVEN_LLM_MODELS = ["gpt-realtime-2", "gpt-realtime-2.1-mini"]
 
+# Движок голоса карточки: ElevenLabs (каскад ASR → текстовая модель → синтез ElevenLabs,
+# handler_eleven.py) или OpenAI GPT-Live (gpt-live-1, full-duplex «речь → речь», handler_live.py).
+# Промпт, приветствие, функции, база знаний, номера и диалоги у обоих общие.
+VOICE_ENGINE_ELEVEN = "eleven"
+VOICE_ENGINE_GPT_LIVE = "gpt_live"
+VOICE_ENGINES = [
+    {"id": VOICE_ENGINE_ELEVEN, "title": "ElevenLabs",
+     "description": "Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос."},
+    {"id": VOICE_ENGINE_GPT_LIVE, "title": "OpenAI GPT-Live",
+     "description": "Речь в речь (gpt-live-1): слушает и говорит одновременно, сам обрабатывает перебивания."},
+]
+VOICE_ENGINE_IDS = [e["id"] for e in VOICE_ENGINES]
+DEFAULT_VOICE_ENGINE = VOICE_ENGINE_ELEVEN
+
 DEFAULT_ELEVEN_GREETING = "Саламатсызбы! Мен сизге кантип жардам бере алам?"
 ELEVEN_SAMPLE_RATE = 24000  # частота выхода браузерных хендлеров
 
@@ -97,7 +111,12 @@ class ElevenAssistantConfig(Base):
     tts_model = Column(String(50), default=DEFAULT_ELEVEN_TTS_MODEL, nullable=False)
     stability = Column(Float, default=DEFAULT_ELEVEN_STABILITY, nullable=True)
 
-    # LLM settings (OpenAI Realtime на серверном ключе)
+    # Движок голоса: "eleven" | "gpt_live"; голос GPT-Live (marin, cedar, …) — для gpt_live
+    voice_engine = Column(String(20), default=DEFAULT_VOICE_ENGINE, server_default=DEFAULT_VOICE_ENGINE, nullable=False)
+    live_voice = Column(String(50), nullable=True)
+
+    # LLM settings (OpenAI Realtime на серверном ключе). В карточке не показывается: в режиме ASR
+    # «мозг» задаётся ELEVEN_TEXT_LLM_* на сервере
     llm_model = Column(String(100), default=DEFAULT_ELEVEN_LLM_MODEL, nullable=False)
     language = Column(String(10), default=DEFAULT_ELEVEN_LANGUAGE, nullable=False)
 
@@ -128,6 +147,8 @@ class ElevenAssistantConfig(Base):
             "voice_name": self.voice_name,
             "tts_model": self.tts_model,
             "stability": self.stability,
+            "voice_engine": self.voice_engine or DEFAULT_VOICE_ENGINE,
+            "live_voice": self.live_voice,
             "llm_model": self.llm_model,
             "language": self.language,
             "greeting_message": self.greeting_message,

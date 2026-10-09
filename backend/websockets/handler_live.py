@@ -31,6 +31,10 @@ handler_fish, поэтому обслуживает и браузерный ви
   пары (user, assistant) по окончании сессии (TranscriptCollector).
 - Приветствие — session.instructions.append сразу после session.started.
 - Vision (screen.context) недоступен: у gpt-live-1 нет входа изображений.
+
+Тот же LiveVoiceSession обслуживает карточки ElevenLabs с движком GPT-Live
+(voice_engine="gpt_live", вход — handler_eleven.run_gpt_live_session): серверный
+ключ, диалоги в eleven_conversations, журнал звонка (call_logs) как у Eleven.
 """
 
 import asyncio
@@ -50,6 +54,8 @@ from backend.models.assistant import AssistantConfig
 from backend.models.conversation import Conversation
 from backend.models.user import User
 from backend.services.conversation_service import ConversationService
+from backend.websockets.call_log import CallLogRecorder
+from backend.websockets.handler_fish import _EventTap
 from backend.websockets.function_calls import (
     async_save_to_google_sheets,
     execute_and_send_function_result,
@@ -137,7 +143,8 @@ class TranscriptCollector:
 
 
 async def _save_dialog(assistant_id: str, session_id: str, pairs: List[Dict[str, str]],
-                       duration: Optional[float], record_id: Optional[str], transport: str) -> int:
+                       duration: Optional[float], record_id: Optional[str], transport: str,
+                       conversation_model: Any = Conversation) -> int:
     """
     Записать диалог отдельной сессией БД. Первая пара заполняет пустую запись,
     созданную клиентом на старте (к ней привязаны function_logs), остальные —
@@ -153,13 +160,14 @@ async def _save_dialog(assistant_id: str, session_id: str, pairs: List[Dict[str,
         rest = pairs
         if record_id:
             try:
-                conv = db.get(Conversation, uuid.UUID(record_id))
+                conv = db.get(conversation_model, uuid.UUID(record_id))
             except Exception:
                 conv = None
             if conv is not None and not (conv.user_message or conv.assistant_message):
                 conv.user_message = pairs[0]["user"] or ""
                 conv.assistant_message = pairs[0]["assistant"] or ""
-                conv.audio_duration = float(duration) if duration is not None else None
+                if hasattr(conv, "audio_duration"):
+                    conv.audio_duration = float(duration) if duration is not None else None
                 db.commit()
                 saved += 1
                 rest = pairs[1:]
@@ -187,8 +195,10 @@ async def _save_dialog(assistant_id: str, session_id: str, pairs: List[Dict[str,
 class LiveVoiceSession:
     """Один диалог: сокет клиента + сессия GPT-Live."""
 
-    def __init__(self, websocket: WebSocket, assistant: AssistantConfig, client: OpenAILiveClient,
-                 db: Optional[Session], client_id: str, telephony: bool = False) -> None:
+    def __init__(self, websocket: WebSocket, assistant: Any, client: OpenAILiveClient,
+                 db: Optional[Session], client_id: str, telephony: bool = False,
+                 assistant_type: str = "openai", call_log: Optional[CallLogRecorder] = None,
+                 default_greeting: str = DEFAULT_GREETING) -> None:
         self.ws = websocket
         self.assistant = assistant
         self.client = client
@@ -214,6 +224,13 @@ class LiveVoiceSession:
         self.errors = 0
         self.backend_text = ""
         self._tasks: list = []
+        self.assistant_type = assistant_type
+        self.default_greeting = default_greeting
+        # Журнал звонка (страница «Диалоги»): у карточек ElevenLabs на GPT-Live. Виджет сохраняет
+        # журнал сам в конце сессии, у телефонного звонка его сохраняет SIP-роут.
+        self.call_log = call_log
+        self._owns_call_log = bool(call_log) and call_log.channel != "phone"
+        self._user_spoke_at: Optional[float] = None
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -231,7 +248,7 @@ class LiveVoiceSession:
 
     # ------------------------------------------------------------------ greeting
     async def greet(self) -> None:
-        greeting = (getattr(self.assistant, "greeting_message", None) or DEFAULT_GREETING).strip()
+        greeting = (getattr(self.assistant, "greeting_message", None) or self.default_greeting).strip()
         if not greeting:
             return
         if await self.client.say_greeting(greeting):
@@ -249,6 +266,16 @@ class LiveVoiceSession:
             _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
         if not self.assistant_speaking:
             self.assistant_speaking = True
+            if self.call_log:
+                if self._user_spoke_at is not None:
+                    # Грубая задержка ответа: от последнего фрагмента речи клиента до первого звука
+                    # (у Live нет событий «клиент договорил»; фрагменты транскрипта идут с запаздыванием)
+                    ms = int((time.time() - self._user_spoke_at) * 1000)
+                    self.call_log.latencies_ms.append(ms)
+                    self.call_log.add("tts", f"Ассистент начал говорить через {ms} мс после речи клиента")
+                    self._user_spoke_at = None
+                else:
+                    self.call_log.add("tts", "Ассистент начал говорить")
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
@@ -276,6 +303,13 @@ class LiveVoiceSession:
         text = " ".join(self._log_buf.get(role, "").split())
         if text:
             _log(f"{role}: {text[:300]}")
+            if self.call_log:
+                if role == "user":
+                    self.call_log.user_turns += 1
+                    self.call_log.add("user", f"Клиент: «{text}»")
+                else:
+                    self.call_log.assistant_turns += 1
+                    self.call_log.add("assistant", f"Ассистент: «{text}»")
         self._log_buf[role] = ""
 
     # ------------------------------------------------------------------ Live events
@@ -304,6 +338,8 @@ class LiveVoiceSession:
             delta = event.get("delta") or event.get("text") or ""
             self.transcript.add(role, delta, event.get("start_ms"), event.get("end_ms"))
             self._log_transcript(role, delta)
+            if role == "user" and delta.strip():
+                self._user_spoke_at = time.time()
             await self.emit({"type": "transcript.delta", "role": role, "delta": delta,
                              "start_ms": event.get("start_ms"), "end_ms": event.get("end_ms")})
             return
@@ -316,6 +352,8 @@ class LiveVoiceSession:
             self.delegations += 1
             d = event.get("delegation") or {}
             _log(f"delegation #{self.delegations} created: id={d.get('id')} target={d.get('target')}")
+            if self.call_log:
+                self.call_log.add("llm", f"Голосовая модель передала запрос бэкенду ({self.client.delegation_model})")
             return
 
         if etype == "response.event":
@@ -337,6 +375,8 @@ class LiveVoiceSession:
 
         if etype == "session.closed":
             _log(f"session.closed reason={event.get('reason')} usage={event.get('usage')}")
+            if self.call_log:
+                self.call_log.add("session", f"GPT-Live закрыл сессию: {event.get('reason') or '—'}")
             self.stop_event.set()
             return
 
@@ -346,6 +386,9 @@ class LiveVoiceSession:
             client_event_id = str(err.get("client_event_id") or event.get("client_event_id") or "")
             if client_event_id.startswith(_QUIET_ERROR_PREFIXES):
                 return  # уже в логе клиента; пользователю показывать нечего
+            if self.call_log:
+                self.call_log.add("error", f"Ошибка GPT-Live: {err.get('code') or ''} {err.get('message') or ''}".strip(),
+                                  level="error")
             await self.emit({"type": "error", "error": {
                 "code": err.get("code") or "live_error",
                 "message": err.get("message") or json.dumps(event, ensure_ascii=False)[:300],
@@ -382,6 +425,10 @@ class LiveVoiceSession:
                 return
 
         self.function_calls += 1
+        if self.call_log:
+            self.call_log.functions += 1
+            self.call_log.add("function", f"Вызов функции {normalized}",
+                              arguments=json.dumps(arguments, ensure_ascii=False, default=str)[:500])
         await self.emit({"type": "function_call.executing", "function": normalized, "function_call_id": call_id,
                          "arguments": arguments, "async_execution": True})
 
@@ -393,7 +440,7 @@ class LiveVoiceSession:
 
         self._track(execute_and_send_function_result(
             openai_client=self.client,
-            websocket=self.ws,
+            websocket=_EventTap(self.ws, self._on_function_event) if self.call_log else self.ws,
             function_call_id=call_id,
             function_name=normalized,
             arguments=arguments,
@@ -407,6 +454,24 @@ class LiveVoiceSession:
             },
             user_transcript=user_text,
         ))
+
+    def _on_function_event(self, data: Dict[str, Any]) -> None:
+        """Результат функции → журнал звонка (те же записи, что у Eleven)."""
+        mtype = data.get("type")
+        name = data.get("function")
+        if mtype == "function_call.completed":
+            result = data.get("result")
+            text = json.dumps(result, ensure_ascii=False, default=str) if result is not None else ""
+            failed = isinstance(result, dict) and bool(result.get("error"))
+            if failed:
+                self.call_log.function_errors += 1
+            secs = data.get("execution_time")
+            self.call_log.add("function", f"Функция {name} {'вернула ошибку' if failed else 'выполнена'}"
+                              + (f" за {secs:.2f} с" if isinstance(secs, (int, float)) else ""),
+                              level="warning" if failed else "info", result=text[:500] or None)
+        elif mtype in ("function_call.error", "function_call.delivery_error"):
+            self.call_log.function_errors += 1
+            self.call_log.add("function", f"Функция {name or ''} — ошибка: {data.get('error')}", level="error")
 
     # ------------------------------------------------------------------ client loop
     async def handle_client_messages(self) -> None:
@@ -513,9 +578,10 @@ class LiveVoiceSession:
             pairs = self.transcript.pairs()
             saved = 0
             if pairs:
-                saved = await _save_dialog(str(self.assistant.id), self.client.session_id or self.client_id, pairs,
+                saved = await _save_dialog(str(self.assistant.id), self.client.dialog_session_id or self.client_id, pairs,
                                            usage_seconds if usage_seconds is not None else elapsed,
-                                           self.client.conversation_record_id, LIVE_MODEL)
+                                           self.client.conversation_record_id, LIVE_MODEL,
+                                           conversation_model=self.client.conversation_model)
                 sheet_id = getattr(self.assistant, "google_sheet_id", None)
                 if sheet_id:
                     for p in pairs:
@@ -533,6 +599,15 @@ class LiveVoiceSession:
                 f"delegations={self.delegations}, "
                 f"functions={self.function_calls}, errors={self.errors}, dialog_pairs={len(pairs)} saved={saved}"
             )
+            if self.call_log:
+                self.call_log.add(
+                    "session",
+                    f"Сессия завершена ({reason}): {elapsed:.1f} с, GPT-Live {usage_seconds if usage_seconds is not None else '—'} с, "
+                    f"озвучено {self.audio_bytes_out / (LIVE_AUDIO_RATE * 2):.1f} с, обращений к бэкенду {self.delegations}, "
+                    f"реплик в диалоге {len(pairs)}",
+                )
+                if self._owns_call_log:
+                    await self.call_log.save()
             await self._send_webhook()
 
     async def _send_webhook(self) -> None:
@@ -552,10 +627,10 @@ class LiveVoiceSession:
                         webhook_url=user.webhook_url,
                         webhook_enabled=user.webhook_enabled,
                         source="sip_call" if self.telephony else "web_chat",
-                        session_id=self.client.session_id or self.client_id,
+                        session_id=self.client.dialog_session_id or self.client_id,
                         assistant_id=str(self.assistant.id),
                         assistant_name=self.assistant.name,
-                        assistant_type="openai",
+                        assistant_type=self.assistant_type,
                         caller_number=None,
                         call_direction=None,
                         duration_seconds=None,

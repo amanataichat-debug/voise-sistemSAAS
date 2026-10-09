@@ -133,6 +133,8 @@ class OpenAILiveClient:
         delegation_model: Optional[str] = None,
         voice_override: Optional[str] = None,
         telephony: bool = False,
+        conversation_model: Any = None,
+        dialog_session_id: Optional[str] = None,
     ):
         self.api_key = api_key
         self.assistant_config = assistant_config
@@ -142,6 +144,10 @@ class OpenAILiveClient:
         self.delegation_model = delegation_model or LIVE_DELEGATION_MODEL
         self.voice_override = (voice_override or "").strip().lower() or None
         self.telephony = telephony
+        # Таблица диалогов (conversations у OpenAI-ассистентов, eleven_conversations у карточек
+        # ElevenLabs с движком GPT-Live) и session_id диалога (у звонка — id звонка, иначе id сессии Live)
+        self.conversation_model = conversation_model or Conversation
+        self._dialog_session_id = dialog_session_id
 
         self.ws = None
         self.is_connected = False
@@ -314,18 +320,24 @@ class OpenAILiveClient:
         await self._safe_close_ws()
         return False
 
+    @property
+    def dialog_session_id(self) -> Optional[str]:
+        return self._dialog_session_id or self.session_id
+
     def _create_conversation_record(self) -> None:
         """Пустая запись диалога: к ней привязываются function_logs этой сессии."""
         if not self.db_session or self.conversation_record_id:
             return
         try:
-            conv = Conversation(
+            fields = dict(
                 assistant_id=self.assistant_config.id,
-                session_id=self.session_id,
+                session_id=self.dialog_session_id,
                 user_message="",
                 assistant_message="",
-                client_info={"transport": LIVE_MODEL},
             )
+            if self.conversation_model is Conversation:
+                fields["client_info"] = {"transport": LIVE_MODEL}
+            conv = self.conversation_model(**fields)
             self.db_session.add(conv)
             self.db_session.commit()
             self.db_session.refresh(conv)
