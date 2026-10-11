@@ -194,10 +194,12 @@ async def check_number(instance_name: str, phone_digits: str) -> Dict[str, Any]:
     return {"ok": True, "exists": False, "jid": None}
 
 
-async def send_text(instance_name: str, to: str, text: str) -> Dict[str, Any]:
+async def send_text(instance_name: str, to: str, text: str,
+                    delay_ms: Optional[int] = None) -> Dict[str, Any]:
+    delay = typing_delay_ms(text) if delay_ms is None else delay_ms
     ok, _, data = await _request(
         "POST", f"/message/sendText/{instance_name}",
-        json={"number": to, "text": text, "delay": typing_delay_ms(text), "linkPreview": True},
+        json={"number": to, "text": text, "delay": delay, "linkPreview": True},
         timeout=45.0,
     )
     if not ok:

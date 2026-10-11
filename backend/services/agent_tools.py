@@ -22,6 +22,7 @@ from backend.services import composio_service
 from backend.services import telegram_user_service
 from backend.services import instagram_service
 from backend.services import whatsapp_service
+from backend.services import chat_split
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
@@ -346,7 +347,8 @@ TELEGRAM_SEND_MESSAGE_TOOL = {
         "Указывай agent_contact_id (предпочтительно) и/или username. Получатель "
         "резолвится: по уже существующему диалогу → по @username → по номеру "
         "телефона контакта (только если первых двух нет; лимитировано — Telegram "
-        "банит за спам незнакомым). Пиши как живой человек, без markdown."
+        "банит за спам незнакомым). Пиши как живой человек, без markdown. "
+        "Реплики разделяй строкой «---» — каждая уйдёт отдельным сообщением."
     ),
     "parameters": {
         "type": "object",
@@ -481,7 +483,8 @@ INSTAGRAM_SEND_MESSAGE_TOOL = {
         "владельца. Работает ТОЛЬКО как ответ в уже существующем диалоге и "
         "только в течение 24 часов после последнего сообщения клиента — писать "
         "первым Instagram не позволяет. Указывай agent_contact_id. Пиши как "
-        "живой человек, коротко, без markdown."
+        "живой человек, коротко, без markdown. Реплики разделяй строкой «---» "
+        "— каждая уйдёт отдельным сообщением."
     ),
     "parameters": {
         "type": "object",
@@ -556,7 +559,8 @@ WHATSAPP_SEND_MESSAGE_TOOL = {
         "контакта ещё нет — он будет создан). Новых чатов в сутки — ограниченное "
         "число (защита номера от бана): не рассылай одинаковые сообщения по "
         "холодной базе, пиши персонально и по делу. Пиши как живой человек, "
-        "коротко, без markdown."
+        "коротко, без markdown. Реплики разделяй строкой «---» — каждая уйдёт "
+        "отдельным сообщением."
     ),
     "parameters": {
         "type": "object",
@@ -847,7 +851,7 @@ def _augment_with_instagram(base_tools: list, agent_config, db: Session) -> list
 
 
 async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
-                                    file_row=None) -> dict:
+                                    file_row=None, skip_rate_limit: bool = False) -> dict:
     """
     Отправка DM с бизнес-аккаунта Instagram владельца (через Composio).
     Только ответ в существующем треде (IGSID резолвится из
@@ -885,7 +889,7 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         }
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = db.query(AgentInstagramMessage).filter(
+    sent_last_hour = 0 if skip_rate_limit else db.query(AgentInstagramMessage).filter(
         AgentInstagramMessage.agent_config_id == agent_config.id,
         AgentInstagramMessage.direction == "outbound",
         AgentInstagramMessage.created_at >= hour_ago,
@@ -967,7 +971,8 @@ def _augment_with_whatsapp(base_tools: list, agent_config, db: Session) -> list:
 
 
 async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: Session,
-                                   file_row=None) -> dict:
+                                   file_row=None, skip_rate_limit: bool = False,
+                                   typing_ms: Optional[int] = None) -> dict:
     """
     Отправка в WhatsApp с номера владельца (Evolution API). Получатель:
     существующий чат контакта → номер телефона контакта / phone (новый чат).
@@ -1016,7 +1021,7 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": "Укажи agent_contact_id или phone"}
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = db.query(AgentWhatsAppMessage).filter(
+    sent_last_hour = 0 if skip_rate_limit else db.query(AgentWhatsAppMessage).filter(
         AgentWhatsAppMessage.account_id == account.id,
         AgentWhatsAppMessage.direction == "outbound",
         AgentWhatsAppMessage.wa_message_id.isnot(None),
@@ -1065,7 +1070,7 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
         db.flush()
 
     if file_row is None:
-        result = await whatsapp_service.send_text(account.instance_name, to, text)
+        result = await whatsapp_service.send_text(account.instance_name, to, text, delay_ms=typing_ms)
         body = text
     else:
         import base64 as _b64
@@ -1128,7 +1133,9 @@ async def fn_whatsapp_get_thread(args: dict, user_id: str, agent_config_id: str,
 
 
 async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: Session,
-                                   file_row=None, file_bytes: Optional[bytes] = None) -> dict:
+                                   file_row=None, file_bytes: Optional[bytes] = None,
+                                   skip_rate_limit: bool = False,
+                                   typing_seconds: Optional[float] = None) -> dict:
     """
     Отправка сообщения с личного Telegram владельца. Анти-бан меры:
     - почасовой лимит исходящих (TG_SEND_HOURLY_LIMIT);
@@ -1155,7 +1162,7 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = db.query(AgentTelegramMessage).filter(
+    sent_last_hour = 0 if skip_rate_limit else db.query(AgentTelegramMessage).filter(
         AgentTelegramMessage.account_id == account.id,
         AgentTelegramMessage.direction == "outbound",
         AgentTelegramMessage.created_at >= hour_ago,
@@ -1207,6 +1214,7 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         file_bytes=file_bytes,
         file_name=(file_row.filename if file_row is not None else None),
         force_document=(file_row is None or file_row.kind != "image"),
+        typing_seconds=typing_seconds,
     )
     if not result.get("ok"):
         err = result.get("error") or "telegram_error"
@@ -3212,7 +3220,13 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
-            result = await fn_telegram_send_message(tool_args, user_id, agent_config, db)
+            result = await chat_split.send_in_parts(
+                lambda a, i, skip: fn_telegram_send_message(
+                    a, user_id, agent_config, db, skip_rate_limit=skip,
+                    typing_seconds=chat_split.typing_seconds(a.get("text")) if i else None,
+                ),
+                tool_args, pause_between=False,
+            )
         elif tool_name == "telegram_get_thread":
             result = await fn_telegram_get_thread(tool_args, user_id, agent_config_id, db)
         elif tool_name == "schedule_telegram_message":
@@ -3224,15 +3238,26 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
-            result = await fn_instagram_send_message(tool_args, user_id, agent_config, db)
+            result = await chat_split.send_in_parts(
+                lambda a, i, skip: fn_instagram_send_message(a, user_id, agent_config, db, skip_rate_limit=skip),
+                tool_args, pause_between=True,
+            )
         elif tool_name == "instagram_get_thread":
             result = await fn_instagram_get_thread(tool_args, user_id, agent_config_id, db)
         elif tool_name in ("whatsapp_send_message", "whatsapp_send_file"):
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
-            fn = fn_whatsapp_send_message if tool_name == "whatsapp_send_message" else fn_whatsapp_send_file
-            result = await fn(tool_args, user_id, agent_config, db)
+            if tool_name == "whatsapp_send_message":
+                result = await chat_split.send_in_parts(
+                    lambda a, i, skip: fn_whatsapp_send_message(
+                        a, user_id, agent_config, db, skip_rate_limit=skip,
+                        typing_ms=int(chat_split.typing_seconds(a.get("text")) * 1000) if i else None,
+                    ),
+                    tool_args, pause_between=False,
+                )
+            else:
+                result = await fn_whatsapp_send_file(tool_args, user_id, agent_config, db)
         elif tool_name == "whatsapp_get_thread":
             result = await fn_whatsapp_get_thread(tool_args, user_id, agent_config_id, db)
         elif tool_name in ("telegram_send_file", "instagram_send_file"):

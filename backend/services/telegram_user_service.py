@@ -21,6 +21,7 @@ Telegram User Service — работа с ЛИЧНЫМ Telegram-аккаунто
   маппятся на человекочитаемые сообщения в UI и тулзах.
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from backend.core.logging import get_logger
@@ -223,9 +224,11 @@ async def send_message(
     file_bytes: Optional[bytes] = None,
     file_name: Optional[str] = None,
     force_document: bool = True,
+    typing_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Отправить сообщение (или файл с подписью text, если передан file_bytes).
+    typing_seconds — перед текстом показать собеседнику «печатает…».
     Резолв получателя (по мере предпочтительности):
       1) username — самый надёжный и безопасный;
       2) peer_id — скан get_dialogs (работает, если диалог уже есть);
@@ -293,6 +296,12 @@ async def send_message(
                 entity, bio, caption=(text or None), force_document=force_document,
             )
         else:
+            if typing_seconds:
+                try:
+                    async with client.action(entity, "typing"):
+                        await asyncio.sleep(typing_seconds)
+                except Exception as e:
+                    logger.info(f"[TG-USER] typing action skipped: {type(e).__name__}")
             msg = await client.send_message(entity, text)
 
         # Импортированный контакт убираем из адресной книги владельца —

@@ -30,7 +30,7 @@ from backend.services import whatsapp_service as wa
 logger = get_logger(__name__)
 
 # Пауза перед ответом: клиент часто пишет серией коротких сообщений.
-DEBOUNCE_SECONDS = 8
+DEBOUNCE_SECONDS = 15
 
 # Причины закрытия, после которых нужен новый QR (вышли с телефона/бан).
 LOGGED_OUT_CODES = {401, 403, 402, 406}
