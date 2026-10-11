@@ -253,6 +253,7 @@ function showToast(msg,type='success'){
 // pollNote — подсказка про интервал проверки (у поллеров Telegram/Instagram).
 const OWNER_PAUSE_OPTIONS = [[10,'10 минут'],[30,'30 минут'],[60,'1 час'],[1440,'1 день'],[-1,'навсегда (до ручного возврата)']];
 const REPLY_DELAY_OPTIONS = [5,10,15,20,30,60];
+const VOICE_REPLY_OPTIONS = [['on_voice','В ответ на голосовое клиента (рекомендуется)'],['auto','Агент решает сам'],['never','Никогда — только текст']];
 
 function messengerSettingsHtml(s, saveFn, pollNote){
   const pause = (s && s.owner_pause_minutes != null) ? Number(s.owner_pause_minutes) : 30;
@@ -271,7 +272,14 @@ function messengerSettingsHtml(s, saveFn, pollNote){
           ${REPLY_DELAY_OPTIONS.map(v => `<option value="${v}" ${v === delay ? 'selected' : ''}>${v} секунд</option>`).join('')}
         </select>
         <div style="font-size:12px;color:#64748b;margin-top:6px">Столько агент ждёт после последнего сообщения клиента — чтобы ответить на всю серию сразу.${pollNote ? ' ' + pollNote : ''}</div>
-      </div>`;
+      </div>${(s && s.voice_reply_mode !== undefined) ? `
+      <div style="padding:10px 0;border-top:1px solid var(--border,#e2e8f0)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">Голосовые ответы</div>
+        <select class="form-input" data-setting="voice_reply_mode" onchange="${saveFn}({voice_reply_mode: this.value})">
+          ${VOICE_REPLY_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === s.voice_reply_mode ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:#64748b;margin-top:6px">Агент озвучивает ответ голосом из настроек агента → «Голосовые сообщения» (там же можно прослушать). Цены, адреса и ссылки он дублирует текстом.</div>
+      </div>` : ''}`;
 }
 
 // Статус паузы агента у клиента: null — работает, иначе {forever, until, reason}.

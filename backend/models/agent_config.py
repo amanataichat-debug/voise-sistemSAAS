@@ -8,7 +8,7 @@ Stores orchestrator config, onboarding documents, and chat history per user.
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Boolean, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Text, Boolean, Integer, DateTime, ForeignKey, JSON, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from backend.models.base import Base
@@ -64,6 +64,15 @@ class AgentConfig(Base):
         ForeignKey("eleven_assistant_configs.id", ondelete="SET NULL"),
         nullable=True
     )
+
+    # ── Голосовые сообщения в мессенджерах (ветка 1210-chat-v2, 3.4) ──
+    # Озвучка ElevenLabs (eleven_v3) на серверном ключе. NULL — как в
+    # Eleven-карточке звонков (voice_id / language / stability). Колонки —
+    # app.ensure_chat_v2_columns(); логика — services/agent_voice_service.py.
+    voice_msg_voice_id = Column(String(255), nullable=True)
+    voice_msg_voice_name = Column(String(255), nullable=True)
+    voice_msg_language = Column(String(10), nullable=True)
+    voice_msg_stability = Column(Float, nullable=True)
 
     # ── Оркестратор (планировщик) ──
     # Формат OpenRouter (provider/model-name) для новых агентов v3.0+

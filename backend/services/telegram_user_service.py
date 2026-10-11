@@ -227,6 +227,8 @@ async def send_message(
     file_name: Optional[str] = None,
     force_document: bool = True,
     typing_seconds: Optional[float] = None,
+    voice_note: bool = False,
+    voice_duration: int = 0,
 ) -> Dict[str, Any]:
     """
     Отправить сообщение (или файл с подписью text, если передан file_bytes).
@@ -290,7 +292,22 @@ async def send_message(
         if getattr(entity, "bot", False) or getattr(entity, "is_self", False):
             return {"ok": False, "error": "recipient_not_allowed"}
 
-        if file_bytes:
+        if file_bytes and voice_note:
+            # Голосовое агента: OGG/Opus с волной; перед ним — «записывает аудио…».
+            import io
+            from telethon.tl.types import DocumentAttributeAudio
+            bio = io.BytesIO(file_bytes)
+            bio.name = file_name or "voice.ogg"
+            try:
+                async with client.action(entity, "record-audio"):
+                    await asyncio.sleep(min(4.0, max(1.5, voice_duration * 0.3)))
+            except Exception as e:
+                logger.info(f"[TG-USER] record-audio action skipped: {type(e).__name__}")
+            msg = await client.send_file(
+                entity, bio, voice_note=True,
+                attributes=[DocumentAttributeAudio(duration=int(voice_duration or 0), voice=True)],
+            )
+        elif file_bytes:
             import io
             bio = io.BytesIO(file_bytes)
             bio.name = file_name or "file"

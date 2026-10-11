@@ -64,6 +64,7 @@ class SettingsRequest(BaseModel):
     reply_scope: Optional[str] = None
     owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
     reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
+    voice_reply_mode: Optional[str] = None      # never / on_voice / auto
 
 
 # ============================================================================

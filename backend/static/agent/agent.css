@@ -877,3 +877,9 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .eng-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; }
 .eng-tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--vf-surface-2); border: 1px solid var(--vf-border); color: var(--vf-text-2); }
 .eng-tag.acc { background: transparent; border-color: var(--vf-accent); color: var(--vf-accent); }
+
+/* Голосовые сообщения (voice-messages.js) */
+.vm-channels{display:flex;flex-direction:column;gap:6px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px}
+.vm-ch{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vm-ch i{width:16px;text-align:center}
+.vm-ch .card-link{margin-left:auto}

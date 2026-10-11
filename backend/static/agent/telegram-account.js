@@ -276,6 +276,7 @@ function tgAccErr(detail){
     invalid_reply_scope: 'Неверное значение охвата',
     invalid_owner_pause: 'Неверная длительность паузы',
     invalid_reply_delay: 'Неверная задержка ответа',
+    invalid_voice_reply_mode: 'Неверный режим голосовых ответов',
     not_connected: 'Telegram не подключён',
     phone_invalid: 'Неверный номер телефона. Пример: +996 700 123 456 или 0700 123 456',
     phone_banned: 'Этот номер заблокирован Telegram',

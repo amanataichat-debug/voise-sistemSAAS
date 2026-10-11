@@ -236,6 +236,7 @@ function waAccErr(detail){
     invalid_limit: 'Лимит — от 0 до 100',
     invalid_owner_pause: 'Неверная длительность паузы',
     invalid_reply_delay: 'Неверная задержка ответа',
+    invalid_voice_reply_mode: 'Неверный режим голосовых ответов',
     not_connected: 'WhatsApp не подключён',
     agent_not_found: 'Агент не найден',
   };

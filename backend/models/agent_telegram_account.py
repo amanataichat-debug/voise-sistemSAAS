@@ -82,6 +82,8 @@ class AgentTelegramAccount(Base):
     # клиента отвечать.
     owner_pause_minutes = Column(Integer, default=30, server_default="30", nullable=False)
     reply_delay_seconds = Column(Integer, default=15, server_default="15", nullable=False)
+    # Голосовые ответы клиентам: never | on_voice (в ответ на голосовое клиента) | auto (агент решает сам)
+    voice_reply_mode = Column(String(16), default="on_voice", server_default="on_voice", nullable=False)
 
     # Атомарный claim поллера при нескольких gunicorn-воркерах:
     # UPDATE ... SET last_poll_at=now() WHERE last_poll_at < cutoff
@@ -113,6 +115,7 @@ class AgentTelegramAccount(Base):
             "reply_scope": self.reply_scope or "contacts",
             "owner_pause_minutes": int(self.owner_pause_minutes if self.owner_pause_minutes is not None else 30),
             "reply_delay_seconds": int(self.reply_delay_seconds if self.reply_delay_seconds is not None else 15),
+            "voice_reply_mode": self.voice_reply_mode or "on_voice",
             "last_error": self.last_error,
         }
 

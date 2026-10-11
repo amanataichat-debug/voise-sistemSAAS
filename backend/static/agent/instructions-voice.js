@@ -394,6 +394,7 @@ function elevenPlayPreview(url){
 function openSettingsSection(name){
   document.querySelectorAll('#settings-nav .settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.section === name));
   document.querySelectorAll('#instructions-modal-overlay .settings-section').forEach(s => s.classList.toggle('active', s.dataset.section === name));
+  if(name === 'voice-msg' && typeof loadVoiceMessages === 'function') loadVoiceMessages();
 }
 
 function openInstructionsModal(section){

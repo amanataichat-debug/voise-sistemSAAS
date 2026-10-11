@@ -61,7 +61,8 @@ def valid_reply_delay(v) -> bool:
 def apply_messenger_settings(row, body) -> None:
     """
     PATCH настроек коннектора (WhatsApp / личный Telegram / Instagram): поля
-    owner_pause_minutes и reply_delay_seconds. Неверное значение → HTTP 400.
+    owner_pause_minutes, reply_delay_seconds и voice_reply_mode (только
+    WhatsApp и Telegram). Неверное значение → HTTP 400.
     """
     from fastapi import HTTPException
     v = getattr(body, "owner_pause_minutes", None)
@@ -74,6 +75,12 @@ def apply_messenger_settings(row, body) -> None:
         if not valid_reply_delay(v):
             raise HTTPException(status_code=400, detail="invalid_reply_delay")
         row.reply_delay_seconds = v
+    v = getattr(body, "voice_reply_mode", None)
+    if v is not None:
+        from backend.services.agent_voice_service import VOICE_REPLY_MODES
+        if v not in VOICE_REPLY_MODES or not hasattr(row, "voice_reply_mode"):
+            raise HTTPException(status_code=400, detail="invalid_voice_reply_mode")
+        row.voice_reply_mode = v
 
 
 def is_paused(contact, now: Optional[datetime] = None) -> bool:

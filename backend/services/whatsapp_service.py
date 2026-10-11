@@ -208,6 +208,15 @@ async def send_text(instance_name: str, to: str, text: str,
     return _sent_result(data)
 
 
+async def send_audio(instance_name: str, to: str, *, data_b64: str) -> Dict[str, Any]:
+    """Голосовое (PTT с волной): шлюз сам перекодирует аудио в OGG/Opus."""
+    body = {"number": to, "audio": data_b64, "delay": 1500, "encoding": True}
+    ok, _, data = await _request("POST", f"/message/sendWhatsAppAudio/{instance_name}", json=body, timeout=120.0)
+    if not ok:
+        return {"ok": False, "error": _error_code(data)}
+    return _sent_result(data)
+
+
 async def send_media(instance_name: str, to: str, *, data_b64: str, mime: str,
                      filename: str, kind: str, caption: str = "") -> Dict[str, Any]:
     """Файл: image/video — медиа, audio — аудио, остальное — документ."""

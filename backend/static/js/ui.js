@@ -639,7 +639,7 @@
     'forward': 'arrow-right', 'circle-pause': 'circle-minus', 'pause-circle': 'circle-minus', 'mug-hot': 'hourglass', 'arrows-turn-right': 'route',
     'quote-left': 'message-square', 'user-minus': 'circle-minus', 'ban': 'circle-x', 'clone': 'copy', 'person-walking': 'activity', 'shuffle': 'route',
     'venus': 'user', 'mars': 'user', 'circle-half-stroke': 'circle', 'wand-magic-sparkles': 'wand-2',
-    'database': 'database', 'instagram': 'instagram', 'circle-play': 'play', 'pause': 'circle-minus'
+    'database': 'database', 'instagram': 'instagram', 'circle-play': 'play', 'pause': 'circle-minus', 'whatsapp': 'message-circle'
   };
   function faName(el) {
     var cl = el.classList;
@@ -647,6 +647,7 @@
       if (cl[i].indexOf('fa-') === 0) {
         var n = cl[i].slice(3);
         if (n === 'spin' || n === 'fw' || n === 'lg' || n === 'sm' || n === 'xs' || /^\d?x$/.test(n) || n === 'pulse') continue;
+        if (n === 'brands' || n === 'solid' || n === 'regular') continue;  // семейство FA6, имя иконки — следующим классом
         return n;
       }
     }

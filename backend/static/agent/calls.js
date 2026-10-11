@@ -52,6 +52,7 @@ const POSTCALL_TOOL_LABELS = {
   instagram_send_message: { label: 'Написал клиенту в Instagram', icon: 'fa-comment-dots', color: '#E1306C' },
   instagram_get_thread: { label: 'Прочитал Instagram-переписку', icon: 'fa-comments', color: '#E1306C' },
   whatsapp_send_message: { label: 'Написал клиенту в WhatsApp', icon: 'fa-comment-dots', color: '#25D366' },
+  send_voice_message:    { label: 'Отправил голосовое', icon: 'fa-microphone', color: '#7c3aed' },
   whatsapp_send_file: { label: 'Отправил файл в WhatsApp', icon: 'fa-paperclip', color: '#25D366' },
   whatsapp_get_thread: { label: 'Прочитал WhatsApp-переписку', icon: 'fa-comments', color: '#25D366' },
 };
@@ -144,7 +145,7 @@ function renderCallExpanded(call, uid){
         .filter(k => a[k]).map(k => a[k]).join(' · ');
     } else if(tc.tool === 'search_knowledge_base'){
       detail = (tc.args || {}).query || '';
-    } else if(tc.tool === 'telegram_send_message' || tc.tool === 'instagram_send_message' || tc.tool === 'whatsapp_send_message'){
+    } else if(tc.tool === 'telegram_send_message' || tc.tool === 'instagram_send_message' || tc.tool === 'whatsapp_send_message' || tc.tool === 'send_voice_message'){
       detail = (tc.args || {}).text || '';
     } else if(tc.tool === 'schedule_telegram_message'){
       const a = tc.args || {};

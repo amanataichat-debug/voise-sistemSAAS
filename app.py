@@ -1570,8 +1570,8 @@ def ensure_wallet_columns():
 
 def ensure_chat_v2_columns():
     """
-    Переписка v2 (ветка 1210-chat-v2): пауза агента с клиентом и настройки
-    мессенджеров. Идёт в начале старта, в каждом воркере (как кошелёк):
+    Переписка v2 (ветка 1210-chat-v2): пауза агента с клиентом, настройки
+    мессенджеров и голосовых сообщений агента. Идёт в начале старта, в каждом воркере (как кошелёк):
     agent_contacts и строки подключений ORM выбирает в каждом запросе страницы
     агента и в поллерах, без колонок всё падает с UndefinedColumn (инцидент 11.10).
     Каждый ALTER — отдельной транзакцией: сбой одного не мешает остальным.
@@ -1585,10 +1585,18 @@ def ensure_chat_v2_columns():
         "agent_whatsapp_accounts": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
             "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
+            "ADD COLUMN IF NOT EXISTS voice_reply_mode VARCHAR(16) NOT NULL DEFAULT 'on_voice'",
         ],
         "agent_telegram_accounts": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
             "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
+            "ADD COLUMN IF NOT EXISTS voice_reply_mode VARCHAR(16) NOT NULL DEFAULT 'on_voice'",
+        ],
+        "agent_configs": [
+            "ADD COLUMN IF NOT EXISTS voice_msg_voice_id VARCHAR(255)",
+            "ADD COLUMN IF NOT EXISTS voice_msg_voice_name VARCHAR(255)",
+            "ADD COLUMN IF NOT EXISTS voice_msg_language VARCHAR(10)",
+            "ADD COLUMN IF NOT EXISTS voice_msg_stability DOUBLE PRECISION",
         ],
         "agent_connectors": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",

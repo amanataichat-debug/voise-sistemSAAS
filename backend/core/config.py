@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     AGENT_STT_SCRIBE_FALLBACK: bool = os.getenv("AGENT_STT_SCRIBE_FALLBACK", "true").lower() == "true"
     AGENT_STT_CREDITS_PER_MINUTE: int = int(os.getenv("AGENT_STT_CREDITS_PER_MINUTE", "15"))
     AGENT_VISION_MODEL: str = os.getenv("AGENT_VISION_MODEL", "google/gemini-3.5-flash")
+    # Голосовые ответы агента в мессенджерах (ElevenLabs, services/agent_voice_service.py):
+    # модель синтеза, лимит текста одного голосового, цена синтеза в USD за 1000 символов
+    # (переводится в кредиты агента по курсу оркестратора).
+    AGENT_VOICE_TTS_MODEL: str = os.getenv("AGENT_VOICE_TTS_MODEL", "eleven_v3")
+    AGENT_VOICE_MAX_CHARS: int = int(os.getenv("AGENT_VOICE_MAX_CHARS", "600"))
+    AGENT_VOICE_USD_PER_1K_CHARS: float = float(os.getenv("AGENT_VOICE_USD_PER_1K_CHARS", "0.10"))
 
     # Кошелёк в сомах (минуты голосовых моделей). Тариф минуты = себестоимость в USD × наценка / курс.
     # WALLET_KGS_USD_RATE — сколько долларов стоит 1 сом (по данным Twelvedata 0,01143392 → 1 $ ≈ 87,46 сом).

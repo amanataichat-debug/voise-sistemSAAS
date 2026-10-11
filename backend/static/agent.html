@@ -352,6 +352,7 @@
         <button class="settings-nav-item active" type="button" data-section="main"><i class="fas fa-microphone-lines"></i><span><b>Основное</b><small>Имя и голос ElevenLabs</small></span></button>
         <button class="settings-nav-item" type="button" data-section="orchestrator"><i class="fas fa-brain"></i><span><b>Оркестратор</b><small>Модель, инструкции, вебхук</small></span></button>
         <button class="settings-nav-item" type="button" data-section="calls"><i class="fas fa-phone"></i><span><b>Звонки</b><small>Номер, первая фраза, поведение</small></span></button>
+        <button class="settings-nav-item" type="button" data-section="voice-msg"><i class="fas fa-microphone"></i><span><b>Голосовые сообщения</b><small>Голос ответов в Telegram и WhatsApp</small></span></button>
         <button class="settings-nav-item" type="button" data-section="public"><i class="fas fa-plug"></i><span><b>Публичный API</b><small>Приём заявок извне</small></span></button>
       </nav>
       <div class="settings-content">
@@ -400,6 +401,11 @@
             <textarea class="form-textarea" id="i-voice_additional_instructions" rows="5" placeholder="Например: «говори коротко, не дави», «если спросят про цену — назови диапазон», «не упоминай конкурентов»."></textarea>
             <div class="form-hint">Правила поведения именно в живом разговоре. Добавляются к промпту голосового агента.</div>
           </div>
+        </section>
+
+        <section class="settings-section" data-section="voice-msg">
+          <div class="settings-section-head"><h3>Голосовые сообщения · Telegram и WhatsApp</h3><p>Агент может отвечать клиентам голосовым — озвучка ElevenLabs. Здесь выбираются голос, язык и подача; когда отвечать голосом — в окне каждого мессенджера. Сохраняется сразу.</p></div>
+          <div id="i-voice-msg"><div class="form-hint">Загрузка…</div></div>
         </section>
 
         <section class="settings-section" data-section="public">
@@ -764,6 +770,7 @@
 <script src="/static/agent/presence.js"></script>
 <script src="/static/agent/motion.js"></script>
 <script src="/static/agent/panels.js"></script>
+<script src="/static/agent/voice-messages.js"></script>
 <script src="/static/agent/init.js"></script>
 </body>
 </html>

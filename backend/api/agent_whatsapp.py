@@ -49,6 +49,7 @@ class SettingsRequest(BaseModel):
     daily_new_chats_limit: Optional[int] = None
     owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
     reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
+    voice_reply_mode: Optional[str] = None      # never / on_voice / auto
 
 
 def _get_agent(current_user: User, db: Session, agent_id: Optional[str] = None) -> AgentConfig:

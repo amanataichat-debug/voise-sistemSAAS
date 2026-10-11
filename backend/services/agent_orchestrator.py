@@ -1412,6 +1412,12 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
 СТРАТЕГИЯ КОТОРУЮ ТЫ ПЛАНИРОВАЛ ПЕРЕД ЗВОНКОМ:
 Первая фраза: {agent_call.custom_greeting or '(не задана)'}
 Тактика: {agent_call.call_strategy or '(не задана)'}"""
+        _dir = (call_direction or "").lower()
+        if _dir in ("telegram_inbound", "whatsapp_inbound"):
+            from backend.services import agent_voice_service
+            post_call_input += agent_voice_service.prompt_hint(
+                db, agent_config, _dir.split("_")[0], agent_contact.id,
+            )
         post_call_input += build_time_block(round_to_minutes=0)
 
         tools = await build_postcall_tools(agent_config, db)

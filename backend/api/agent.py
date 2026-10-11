@@ -341,6 +341,21 @@ class AgentContactPauseRequest(BaseModel):
     forever: bool = False
 
 
+class VoiceMessagesSettingsRequest(BaseModel):
+    """Голос для голосовых сообщений; null — как в звонках (Eleven-карточка)."""
+    voice_id: Optional[str] = Field(None, max_length=255)
+    voice_name: Optional[str] = Field(None, max_length=255)
+    language: Optional[str] = Field(None, max_length=10)
+    stability: Optional[float] = None
+
+
+class VoicePreviewRequest(BaseModel):
+    text: Optional[str] = Field(None, max_length=300)
+    voice_id: Optional[str] = Field(None, max_length=255)
+    language: Optional[str] = Field(None, max_length=10)
+    stability: Optional[float] = None
+
+
 class MessengerSettingsRequest(BaseModel):
     owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
     reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
@@ -2075,6 +2090,121 @@ async def _reconcile_connectors(db: Session, agent: AgentConfig) -> None:
 
     if changed:
         db.commit()
+
+
+# ============================================================================
+# ENDPOINTS — ГОЛОСОВЫЕ СООБЩЕНИЯ (ElevenLabs, services/agent_voice_service.py)
+# ============================================================================
+
+VOICE_PREVIEW_TEXTS = {
+    "ky": "Саламатсызбы! Бул менин үнүм. Суроолоруңузга кубануу менен жооп берем.",
+    "ru": "Здравствуйте! Это мой голос. С радостью отвечу на ваши вопросы.",
+    "kk": "Сәлеметсіз бе! Бұл менің дауысым. Сұрақтарыңызға қуана жауап беремін.",
+    "uz": "Assalomu alaykum! Bu mening ovozim. Savollaringizga mamnuniyat bilan javob beraman.",
+    "en": "Hello! This is my voice. I'm happy to answer your questions.",
+    "tr": "Merhaba! Bu benim sesim. Sorularınızı memnuniyetle yanıtlarım.",
+}
+
+
+def _voice_messages_state(db: Session, agent: AgentConfig) -> dict:
+    from backend.services import agent_voice_service as avs
+    from backend.services import telegram_user_service, whatsapp_service
+    from backend.models.eleven_assistant import ElevenAssistantConfig
+    card = None
+    if agent.eleven_assistant_id:
+        card = db.query(ElevenAssistantConfig).filter(ElevenAssistantConfig.id == agent.eleven_assistant_id).first()
+    channels = {}
+    tg = telegram_user_service.get_account_for_agent(db, agent.id, require_connected=False)
+    if tg is not None and tg.status == "connected":
+        channels["telegram"] = avs.voice_reply_mode(tg)
+    wa = whatsapp_service.get_account_for_agent(db, agent.id, require_connected=False)
+    if wa is not None and wa.status == "connected":
+        channels["whatsapp"] = avs.voice_reply_mode(wa)
+    voice = avs.resolve_voice(db, agent)
+    return {
+        "configured": avs.is_configured(),
+        "voice_id": agent.voice_msg_voice_id,
+        "voice_name": agent.voice_msg_voice_name,
+        "language": agent.voice_msg_language,
+        "stability": agent.voice_msg_stability,
+        "call_voice": {
+            "voice_id": card.voice_id if card else None,
+            "language": card.language if card else None,
+            "stability": card.stability if card else None,
+        },
+        "effective": voice,
+        "channels": channels,
+        "credits_per_400_chars": avs.credits_for("x" * 400),
+        "max_chars": settings.AGENT_VOICE_MAX_CHARS,
+    }
+
+
+@router.get("/voice-messages")
+async def get_voice_messages_settings(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    return _voice_messages_state(db, agent)
+
+
+@router.put("/voice-messages")
+async def update_voice_messages_settings(
+    body: VoiceMessagesSettingsRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Голос / язык / подача голосовых. Пустые значения — как в звонках."""
+    from backend.models.eleven_assistant import ELEVEN_LANGUAGES
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if body.language and body.language not in {l["code"] for l in ELEVEN_LANGUAGES}:
+        raise HTTPException(status_code=400, detail="invalid_language")
+    if body.stability is not None and body.stability not in (0.0, 0.5, 1.0):
+        raise HTTPException(status_code=400, detail="invalid_stability")
+    agent.voice_msg_voice_id = (body.voice_id or "").strip() or None
+    agent.voice_msg_voice_name = ((body.voice_name or "").strip() or None) if agent.voice_msg_voice_id else None
+    agent.voice_msg_language = body.language or None
+    agent.voice_msg_stability = body.stability
+    db.commit()
+    return _voice_messages_state(db, agent)
+
+
+@router.post("/voice-messages/preview")
+async def preview_voice_message(
+    body: VoicePreviewRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Озвучить пример текущим (или выбранным в форме) голосом — MP3. Списывает кредиты."""
+    from backend.services import agent_voice_service as avs
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    if not avs.is_configured():
+        raise HTTPException(status_code=503, detail="tts_not_configured")
+    voice = avs.resolve_voice(db, agent) or {}
+    if body.voice_id:
+        voice["voice_id"] = body.voice_id
+    if not voice.get("voice_id"):
+        raise HTTPException(status_code=400, detail="voice_not_selected")
+    voice["language"] = body.language or voice.get("language") or "ky"
+    if body.stability is not None:
+        voice["stability"] = float(body.stability)
+    voice.setdefault("stability", 0.5)
+    voice["model"] = settings.AGENT_VOICE_TTS_MODEL
+    text = (body.text or "").strip() or VOICE_PREVIEW_TEXTS.get(voice["language"], VOICE_PREVIEW_TEXTS["ru"])
+    res = await avs.synthesize_preview(text, voice)
+    if not res.get("ok"):
+        raise HTTPException(status_code=502, detail=res.get("error") or "tts_error")
+    avs.charge(db, current_user.id, text, ref_id=agent.id, notes="Прослушивание голоса для голосовых сообщений")
+    return Response(content=res["data"], media_type="audio/mpeg")
 
 
 @router.patch("/connectors/instagram/settings")

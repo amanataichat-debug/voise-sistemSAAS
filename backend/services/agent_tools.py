@@ -24,6 +24,7 @@ from backend.services import instagram_service
 from backend.services import whatsapp_service
 from backend.services import chat_split
 from backend.services import agent_pause
+from backend.services import agent_voice_service
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
@@ -310,7 +311,8 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
-    return _augment_with_whatsapp(tools, agent_config, db)
+    tools = _augment_with_whatsapp(tools, agent_config, db)
+    return _augment_with_voice(tools, agent_config, db)
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
@@ -321,7 +323,8 @@ async def build_postcall_tools(agent_config, db: Session) -> list:
     tools = _augment_with_files(tools, agent_config)
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
-    return _augment_with_whatsapp(tools, agent_config, db)
+    tools = _augment_with_whatsapp(tools, agent_config, db)
+    return _augment_with_voice(tools, agent_config, db)
 
 
 async def fn_execute_connector(tool_name: str, args: dict, agent_config_id: str, db: Session) -> dict:
@@ -453,6 +456,142 @@ TELEGRAM_USER_TOOLS = [
     TELEGRAM_GET_THREAD_TOOL,
     SCHEDULE_TELEGRAM_MESSAGE_TOOL,
 ]
+
+
+# ============================================================================
+# ГОЛОСОВЫЕ СООБЩЕНИЯ (ElevenLabs) — личный Telegram и WhatsApp.
+# Тулза домешивается в чат и PostCall, когда хотя бы в одном из этих каналов
+# режим voice_reply_mode не «never» и у агента есть голос (см.
+# agent_voice_service.resolve_voice). Instagram голосовые не поддерживает.
+# ============================================================================
+
+SEND_VOICE_MESSAGE_TOOL = {
+    "type": "function",
+    "name": "send_voice_message",
+    "description": (
+        "Отправить клиенту ГОЛОСОВОЕ сообщение (озвучка голосом агента) в личный Telegram или "
+        "WhatsApp. Текст пиши так, как его произносят: разговорно, без ссылок, эмодзи, списков и "
+        "markdown, до ~400 символов (≈30 секунд). Цены, адреса, ссылки, номера телефонов и "
+        "реквизиты ОБЯЗАТЕЛЬНО продублируй отдельным текстовым сообщением тем же каналом. "
+        "Режим канала «в ответ на голосовое» — голосом можно отвечать, только если последнее "
+        "сообщение клиента было голосовым; иначе отвечай текстом."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "text": {"type": "string", "description": "Что произнести (на языке клиента)"},
+            "channel": {"type": "string", "enum": ["telegram", "whatsapp"],
+                        "description": "Канал; по умолчанию — тот, где клиент писал последним"},
+        },
+        "required": ["agent_contact_id", "text"],
+    },
+}
+
+
+def _voice_channels(agent_config, db: Session) -> dict:
+    """{channel: account} подключённых каналов, где голосовые разрешены настройкой."""
+    out = {}
+    try:
+        if telegram_user_service.account_connected(db, agent_config.id):
+            acc = telegram_user_service.get_account_for_agent(db, agent_config.id)
+            if acc is not None and agent_voice_service.voice_reply_mode(acc) != "never":
+                out["telegram"] = acc
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] voice: telegram lookup failed: {e}")
+    try:
+        if whatsapp_service.connected(db, agent_config.id):
+            acc = whatsapp_service.get_account_for_agent(db, agent_config.id)
+            if acc is not None and agent_voice_service.voice_reply_mode(acc) != "never":
+                out["whatsapp"] = acc
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] voice: whatsapp lookup failed: {e}")
+    return out
+
+
+def _augment_with_voice(base_tools: list, agent_config, db: Session) -> list:
+    if agent_config is None or not agent_voice_service.is_configured():
+        return base_tools
+    try:
+        if not _voice_channels(agent_config, db) or agent_voice_service.resolve_voice(db, agent_config) is None:
+            return base_tools
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] voice tool check failed: {e}")
+        return base_tools
+    return base_tools + to_chat_completions_tools([SEND_VOICE_MESSAGE_TOOL])
+
+
+def _thread_for(channel: str, db: Session, contact_id) -> list:
+    if channel == "telegram":
+        return telegram_user_service.get_thread(db, contact_id, limit=10)
+    return whatsapp_service.get_thread(db, contact_id, limit=10)
+
+
+def _last_inbound_at(rows):
+    for m in reversed(list(rows or [])):
+        if (m.direction or "inbound") == "inbound":
+            return getattr(m, "sent_at", None) or m.created_at
+    return None
+
+
+async def fn_send_voice_message(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    from backend.core.config import settings as _settings
+
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+    text = (args.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "error": "Пустой текст голосового"}
+    if len(text) > _settings.AGENT_VOICE_MAX_CHARS:
+        return {"ok": False, "error": (
+            f"Слишком длинно для голосового ({len(text)} симв.). Сократи до ~400 символов, "
+            "подробности отправь текстом.")}
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == args.get("agent_contact_id"),
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config.id,
+    ).first()
+    if not contact:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    channels = _voice_channels(agent_config, db)
+    if not channels:
+        return {"ok": False, "error": "Голосовые ответы выключены в настройках Telegram и WhatsApp — ответь текстом"}
+    channel = args.get("channel")
+    if channel and channel not in ("telegram", "whatsapp"):
+        return {"ok": False, "error": "Голосовые можно отправить только в Telegram или WhatsApp"}
+    threads = {ch: _thread_for(ch, db, contact.id) for ch in channels}
+    if not channel:
+        dated = [(ch, _last_inbound_at(rows)) for ch, rows in threads.items()]
+        dated = [x for x in dated if x[1] is not None]
+        channel = max(dated, key=lambda x: x[1])[0] if dated else next(iter(channels))
+    if channel not in channels:
+        return {"ok": False, "error": f"Голосовые в {channel} выключены в настройках или канал не подключён — ответь текстом"}
+    account = channels[channel]
+    if agent_voice_service.voice_reply_mode(account) == "on_voice" \
+            and not agent_voice_service.last_inbound_is_voice(threads.get(channel)):
+        return {"ok": False, "error": (
+            "Голосом отвечаем только на голосовые клиента (настройка канала) — ответь текстом")}
+
+    voice = agent_voice_service.resolve_voice(db, agent_config)
+    if voice is None:
+        return {"ok": False, "error": "У агента не выбран голос для голосовых сообщений — ответь текстом"}
+    audio = await agent_voice_service.synthesize(text, voice)
+    if not audio.get("ok"):
+        return {"ok": False, "error": f"Не удалось озвучить ({audio.get('error')}) — ответь текстом"}
+
+    send_args = {"agent_contact_id": str(contact.id), "text": text}
+    if channel == "telegram":
+        result = await fn_telegram_send_message(send_args, user_id, agent_config, db, voice=audio)
+    else:
+        result = await fn_whatsapp_send_message(send_args, user_id, agent_config, db, voice=audio)
+    if not result.get("ok"):
+        return result
+    credits = agent_voice_service.charge(db, contact.user_id or user_id, text, ref_id=contact.id)
+    logger.info(f"[AGENT-TOOLS] send_voice_message → {channel} contact={contact.id} "
+                f"{len(text)} chars, {audio.get('duration')}s, ogg={audio.get('is_ogg')}, credits={credits}")
+    return dict(result, channel=channel, sent_as=("voice" if audio.get("is_ogg") or channel == "whatsapp" else "audio"),
+                duration_seconds=audio.get("duration") or None)
 
 
 def _augment_with_telegram_account(base_tools: list, agent_config, db: Session) -> list:
@@ -1003,7 +1142,7 @@ def _augment_with_whatsapp(base_tools: list, agent_config, db: Session) -> list:
 
 async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: Session,
                                    file_row=None, skip_rate_limit: bool = False,
-                                   typing_ms: Optional[int] = None) -> dict:
+                                   typing_ms: Optional[int] = None, voice: Optional[dict] = None) -> dict:
     """
     Отправка в WhatsApp с номера владельца (Evolution API). Получатель:
     существующий чат контакта → номер телефона контакта / phone (новый чат).
@@ -1101,7 +1240,13 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
             chat.agent_contact_id = contact.id
         db.flush()
 
-    if file_row is None:
+    if voice is not None:
+        import base64 as _b64
+        result = await whatsapp_service.send_audio(
+            account.instance_name, to, data_b64=_b64.b64encode(voice["data"]).decode(),
+        )
+        body = agent_voice_service.VOICE_BODY_PREFIX + text
+    elif file_row is None:
         result = await whatsapp_service.send_text(account.instance_name, to, text, delay_ms=typing_ms)
         body = text
     else:
@@ -1167,7 +1312,8 @@ async def fn_whatsapp_get_thread(args: dict, user_id: str, agent_config_id: str,
 async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: Session,
                                    file_row=None, file_bytes: Optional[bytes] = None,
                                    skip_rate_limit: bool = False,
-                                   typing_seconds: Optional[float] = None) -> dict:
+                                   typing_seconds: Optional[float] = None,
+                                   voice: Optional[dict] = None) -> dict:
     """
     Отправка сообщения с личного Telegram владельца. Анти-бан меры:
     - почасовой лимит (TG_SEND_HOURLY_LIMIT, ответ на свежее входящее —
@@ -1247,10 +1393,12 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         username=username,
         phone=phone if allow_phone else None,
         contact_name=(contact.name if contact else None),
-        file_bytes=file_bytes,
-        file_name=(file_row.filename if file_row is not None else None),
+        file_bytes=(voice["data"] if voice is not None else file_bytes),
+        file_name=(voice["filename"] if voice is not None else (file_row.filename if file_row is not None else None)),
         force_document=(file_row is None or file_row.kind != "image"),
         typing_seconds=typing_seconds,
+        voice_note=bool(voice is not None and voice.get("is_ogg")),
+        voice_duration=int((voice or {}).get("duration") or 0),
     )
     if not result.get("ok"):
         err = result.get("error") or "telegram_error"
@@ -1285,7 +1433,9 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
             dialog.tg_name = result["name"]
 
     body = text
-    if file_row is not None:
+    if voice is not None:
+        body = agent_voice_service.VOICE_BODY_PREFIX + text
+    elif file_row is not None:
         body = (f"📎 Отправлен файл «{file_row.filename}» [file_id={file_row.id}]"
                 + (f"\n{text}" if text else ""))
     telegram_user_service.store_message(
@@ -3413,6 +3563,11 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
                 )
             else:
                 result = await fn_whatsapp_send_file(tool_args, user_id, agent_config, db)
+        elif tool_name == "send_voice_message":
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            result = await fn_send_voice_message(tool_args, user_id, agent_config, db)
         elif tool_name == "whatsapp_get_thread":
             result = await fn_whatsapp_get_thread(tool_args, user_id, agent_config_id, db)
         elif tool_name in ("telegram_send_file", "instagram_send_file"):
