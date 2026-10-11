@@ -30,7 +30,8 @@ from backend.core.config import settings
 logger = get_logger(__name__)
 
 # Лимиты безопасности (анти-бан). Проверяются в agent_tools по данным БД.
-TG_SEND_HOURLY_LIMIT = 30        # исходящих сообщений с аккаунта в час
+TG_SEND_HOURLY_LIMIT = 30        # исходящих в час, когда агент пишет первым
+TG_REPLY_HOURLY_LIMIT = 300      # исходящих в час, когда клиент сам писал за сутки
 TG_PHONE_RESOLVE_HOURLY_LIMIT = 5  # новых диалогов через импорт номера в час
 
 # Сколько диалогов просматривает поллер за тик и сколько сообщений берёт

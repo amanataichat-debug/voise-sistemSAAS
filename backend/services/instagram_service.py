@@ -23,7 +23,7 @@ from backend.services import composio_service
 logger = get_logger(__name__)
 
 # Анти-спам: максимум исходящих Instagram-сообщений с одного агента в час.
-IG_SEND_HOURLY_LIMIT = 30
+IG_SEND_HOURLY_LIMIT = 120  # только ответы: первым в Instagram писать нельзя
 
 
 def is_configured() -> bool:

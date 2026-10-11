@@ -850,6 +850,36 @@ def _augment_with_instagram(base_tools: list, agent_config, db: Session) -> list
     return base_tools + to_chat_completions_tools(INSTAGRAM_TOOLS)
 
 
+# Ответ клиенту, который сам написал за последние сутки, банами почти не грозит —
+# для него большой лимит; «написать первым» остаётся на строгих лимитах канала.
+# Плюс предохранитель от зацикливания (например, переписки с чужим ботом).
+CHAT_REPLY_WINDOW = timedelta(hours=24)
+CHAT_PER_CONTACT_LIMIT = 30
+CHAT_PER_CONTACT_WINDOW = timedelta(minutes=10)
+CHAT_PER_CONTACT_ERROR = ("Слишком много сообщений этому клиенту за 10 минут — пауза "
+                          "(защита от спама и зацикливания)")
+
+
+def _chat_limit_hit(db: Session, model, scope: list, contact_id, first_limit: int,
+                    reply_limit: int, sent_filter=None) -> Optional[str]:
+    """None — можно слать; "hourly" — почасовой лимит; "per_contact" — предохранитель."""
+    now = datetime.utcnow()
+    is_reply = contact_id is not None and db.query(model.id).filter(
+        *scope, model.agent_contact_id == contact_id, model.direction == "inbound",
+        model.created_at >= now - CHAT_REPLY_WINDOW,
+    ).first() is not None
+    sent = db.query(model).filter(*scope, model.direction == "outbound")
+    if sent_filter is not None:
+        sent = sent.filter(sent_filter)
+    if sent.filter(model.created_at >= now - timedelta(hours=1)).count() >= (reply_limit if is_reply else first_limit):
+        return "hourly"
+    if contact_id is not None and sent.filter(
+        model.agent_contact_id == contact_id, model.created_at >= now - CHAT_PER_CONTACT_WINDOW,
+    ).count() >= CHAT_PER_CONTACT_LIMIT:
+        return "per_contact"
+    return None
+
+
 async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
                                     file_row=None, skip_rate_limit: bool = False) -> dict:
     """
@@ -888,14 +918,14 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
                       "Instagram нельзя, клиент должен написать сам."),
         }
 
-    hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = 0 if skip_rate_limit else db.query(AgentInstagramMessage).filter(
-        AgentInstagramMessage.agent_config_id == agent_config.id,
-        AgentInstagramMessage.direction == "outbound",
-        AgentInstagramMessage.created_at >= hour_ago,
-    ).count()
-    if sent_last_hour >= instagram_service.IG_SEND_HOURLY_LIMIT:
+    hit = None if skip_rate_limit else _chat_limit_hit(
+        db, AgentInstagramMessage, [AgentInstagramMessage.agent_config_id == agent_config.id], contact.id,
+        instagram_service.IG_SEND_HOURLY_LIMIT, instagram_service.IG_SEND_HOURLY_LIMIT,
+    )
+    if hit == "hourly":
         return {"ok": False, "error": "Достигнут почасовой лимит исходящих Instagram-сообщений"}
+    if hit == "per_contact":
+        return {"ok": False, "error": CHAT_PER_CONTACT_ERROR}
 
     composio_user_id = connector.composio_user_id or composio_service.composio_user_id_for_agent(agent_config.id)
     body = text
@@ -976,7 +1006,8 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
     """
     Отправка в WhatsApp с номера владельца (Evolution API). Получатель:
     существующий чат контакта → номер телефона контакта / phone (новый чат).
-    Анти-бан: почасовой лимит исходящих (WA_SEND_HOURLY_LIMIT), лимит новых
+    Анти-бан: почасовой лимит (WA_SEND_HOURLY_LIMIT, ответ на свежее входящее —
+    WA_REPLY_HOURLY_LIMIT), предохранитель на одного клиента, лимит новых
     чатов в сутки (account.daily_new_chats_limit), проверка, что номер есть в
     WhatsApp, пауза «печатает…» перед отправкой. С file_row отправляет файл
     (whatsapp_send_file), text — подпись.
@@ -1020,15 +1051,15 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
     else:
         return {"ok": False, "error": "Укажи agent_contact_id или phone"}
 
-    hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = 0 if skip_rate_limit else db.query(AgentWhatsAppMessage).filter(
-        AgentWhatsAppMessage.account_id == account.id,
-        AgentWhatsAppMessage.direction == "outbound",
-        AgentWhatsAppMessage.wa_message_id.isnot(None),
-        AgentWhatsAppMessage.created_at >= hour_ago,
-    ).count()
-    if sent_last_hour >= whatsapp_service.WA_SEND_HOURLY_LIMIT:
+    hit = None if skip_rate_limit else _chat_limit_hit(
+        db, AgentWhatsAppMessage, [AgentWhatsAppMessage.account_id == account.id], contact.id,
+        whatsapp_service.WA_SEND_HOURLY_LIMIT, whatsapp_service.WA_REPLY_HOURLY_LIMIT,
+        sent_filter=AgentWhatsAppMessage.wa_message_id.isnot(None),
+    )
+    if hit == "hourly":
         return err("send_limit_reached")
+    if hit == "per_contact":
+        return {"ok": False, "error": CHAT_PER_CONTACT_ERROR}
 
     chat = whatsapp_service.chat_for_contact(db, account.id, contact.id)
     if chat is not None:
@@ -1138,7 +1169,8 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
                                    typing_seconds: Optional[float] = None) -> dict:
     """
     Отправка сообщения с личного Telegram владельца. Анти-бан меры:
-    - почасовой лимит исходящих (TG_SEND_HOURLY_LIMIT);
+    - почасовой лимит (TG_SEND_HOURLY_LIMIT, ответ на свежее входящее —
+      TG_REPLY_HOURLY_LIMIT) и предохранитель на одного клиента;
     - резолв по номеру телефона (ImportContacts) — только когда нет диалога и
       username, и не чаще TG_PHONE_RESOLVE_HOURLY_LIMIT новых диалогов в час.
     С file_row/file_bytes отправляет файл (text — подпись); так работает
@@ -1162,13 +1194,6 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
-    sent_last_hour = 0 if skip_rate_limit else db.query(AgentTelegramMessage).filter(
-        AgentTelegramMessage.account_id == account.id,
-        AgentTelegramMessage.direction == "outbound",
-        AgentTelegramMessage.created_at >= hour_ago,
-    ).count()
-    if sent_last_hour >= telegram_user_service.TG_SEND_HOURLY_LIMIT:
-        return {"ok": False, "error": telegram_user_service.error_human("send_limit_reached")}
 
     # Резолв контакта и его диалога
     contact = None
@@ -1185,6 +1210,16 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
             AgentTelegramDialog.account_id == account.id,
             AgentTelegramDialog.agent_contact_id == contact.id,
         ).first()
+
+    hit = None if skip_rate_limit else _chat_limit_hit(
+        db, AgentTelegramMessage, [AgentTelegramMessage.account_id == account.id],
+        contact.id if contact else None,
+        telegram_user_service.TG_SEND_HOURLY_LIMIT, telegram_user_service.TG_REPLY_HOURLY_LIMIT,
+    )
+    if hit == "hourly":
+        return {"ok": False, "error": telegram_user_service.error_human("send_limit_reached")}
+    if hit == "per_contact":
+        return {"ok": False, "error": CHAT_PER_CONTACT_ERROR}
 
     peer_id = dialog.tg_peer_id if dialog else None
     username = (args.get("username") or "").strip() or (dialog.tg_username if dialog else None)

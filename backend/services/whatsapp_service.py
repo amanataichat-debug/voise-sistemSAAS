@@ -25,7 +25,8 @@ from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-WA_SEND_HOURLY_LIMIT = 40          # исходящих сообщений с номера в час
+WA_SEND_HOURLY_LIMIT = 40          # исходящих в час, когда агент пишет первым
+WA_REPLY_HOURLY_LIMIT = 300        # исходящих в час, когда клиент сам писал за сутки
 WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
 WEBHOOK_TOKEN_HEADER = "X-Voksy-Token"
 
