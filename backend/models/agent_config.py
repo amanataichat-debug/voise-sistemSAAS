@@ -121,6 +121,24 @@ class AgentConfig(Base):
     telegram_webhook_secret = Column(String(64), nullable=True, unique=True)
     telegram_enabled = Column(Boolean, default=False, nullable=False)
 
+    # ── Debounce входящих и split исходящих в чат-каналах (TG MTProto и
+    #    совместимые). Клиенты пишут мыслью из нескольких коротких сообщений
+    #    подряд — склеиваем их в одну реплику для оркестратора. Ответ модели
+    #    режем обратно на короткие сообщения (маркер `---` или двойной
+    #    перевод строки), шлём с паузой — чтобы не выглядело как «простыня».
+    chat_batching_enabled = Column(Boolean, default=True, nullable=False)
+    # Сколько секунд ждём тишины после последнего входящего, прежде чем
+    # отдать пачку в оркестратор.
+    chat_batching_window_seconds = Column(Integer, default=15, nullable=False)
+    # Жёсткий потолок: сколько максимум секунд копим пачку, даже если клиент
+    # продолжает писать без пауз.
+    chat_batching_max_window_seconds = Column(Integer, default=60, nullable=False)
+    # Разбивать ответ на несколько сообщений по маркеру/абзацам.
+    chat_split_response = Column(Boolean, default=True, nullable=False)
+    # Пауза между частями ответа (миллисекунды, случайная в диапазоне min..max).
+    chat_split_delay_min_ms = Column(Integer, default=1000, nullable=False)
+    chat_split_delay_max_ms = Column(Integer, default=2000, nullable=False)
+
     # ── Публичный HTTP-канал (приём заявок «сервер-к-серверу») ──
     # Внешний бэкенд (например форма сайта) шлёт запрос с секретным ключом,
     # запрос попадает в ChatOrchestrator (stateless), агент сам решает что делать.

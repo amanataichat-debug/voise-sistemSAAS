@@ -25,7 +25,7 @@ from sqlalchemy import (
     Column, String, Boolean, DateTime, Text, ForeignKey, BigInteger,
     UniqueConstraint, Index,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -141,6 +141,20 @@ class AgentTelegramDialog(Base):
     # написал сам) / send_username / send_phone (агент написал первым). По
     # send_phone считается почасовой лимит резолвов номеров (анти-PeerFlood).
     created_via = Column(String(16), default="baseline", nullable=False)
+
+    # Debouncing входящих: клиент часто пишет мысль несколькими сообщениями
+    # подряд. Вместо немедленного вызова оркестратора на каждое — складываем
+    # сюда и обрабатываем пачкой, когда пройдёт настроенное окно тишины.
+    # Элемент: {"text": str, "msg_id": int, "ts": iso_str}.
+    pending_messages = Column(JSONB, default=list, nullable=False)
+    # Когда flush-воркер должен «вылить» pending_messages в оркестратор.
+    # Sliding window: каждое новое входящее сдвигает это время вперёд, но не
+    # дальше жёсткого потолка (hard cap, см. flush_at_from_pending).
+    pending_flush_at = Column(DateTime, nullable=True, index=True)
+    # Первое непрочитанное сообщение в текущей пачке — для hard cap.
+    pending_first_at = Column(DateTime, nullable=True)
+    # Эпоха последней успешной отдачи пачки оркестратору (для отладки/метрик).
+    last_flushed_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
