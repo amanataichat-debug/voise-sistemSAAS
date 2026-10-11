@@ -301,6 +301,136 @@ async def send_message(
             pass
 
 
+async def send_message_parts(
+    session_str: str,
+    parts: List[str],
+    peer_id: Optional[int] = None,
+    username: Optional[str] = None,
+    phone: Optional[str] = None,
+    contact_name: Optional[str] = None,
+    inter_delay_ms_min: int = 1000,
+    inter_delay_ms_max: int = 2000,
+) -> Dict[str, Any]:
+    """
+    Отправить ответ несколькими короткими сообщениями одним Telethon-клиентом.
+
+    Имитация «живой переписки»: между частями показываем TypingAction и
+    делаем случайную паузу inter_delay_ms_min..inter_delay_ms_max. Entity
+    резолвится один раз (как в send_message), получатель определяется в том
+    же порядке приоритета: username → peer_id → phone (phone-резолв здесь
+    тоже возможен, но вызывающий обязан проверять почасовой лимит PhoneFlood
+    отдельно — эта функция лимитом не управляет).
+
+    Возвращает {ok, tg_message_id (первое), peer_id, username, name,
+    resolved_via, parts: [{tg_message_id, text}, ...]} или {ok: False, error}.
+    Если parts содержит ровно один элемент — делегирует в send_message, чтобы
+    не делать лишних действий.
+    """
+    import asyncio
+    import random
+
+    cleaned = [p for p in ((p or "").strip() for p in parts) if p]
+    if not cleaned:
+        return {"ok": False, "error": "empty_text"}
+    if len(cleaned) == 1:
+        res = await send_message(
+            session_str, cleaned[0],
+            peer_id=peer_id, username=username, phone=phone,
+            contact_name=contact_name,
+        )
+        if res.get("ok"):
+            res["parts"] = [{"tg_message_id": res.get("tg_message_id"), "text": cleaned[0]}]
+        return res
+
+    client = _new_client(session_str)
+    try:
+        await client.connect()
+        entity = None
+        resolved_via = None
+        imported_contact_id = None
+
+        if username:
+            uname = username.lstrip("@").strip()
+            if uname:
+                try:
+                    entity = await client.get_entity(uname)
+                    resolved_via = "username"
+                except Exception as e:
+                    logger.info(f"[TG-USER] resolve by username @{uname} failed: {type(e).__name__}")
+
+        if entity is None and peer_id:
+            async for d in client.iter_dialogs(limit=100):
+                ent = d.entity
+                if getattr(ent, "id", None) == int(peer_id):
+                    entity = ent
+                    resolved_via = "peer_id"
+                    break
+
+        if entity is None and phone:
+            from telethon.tl.functions.contacts import ImportContactsRequest
+            from telethon.tl.types import InputPhoneContact
+            digits = "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+            res = await client(ImportContactsRequest([
+                InputPhoneContact(client_id=0, phone=digits, first_name=contact_name or "Клиент", last_name="")
+            ]))
+            users = list(getattr(res, "users", []) or [])
+            if not users:
+                return {"ok": False, "error": "phone_not_on_telegram"}
+            entity = users[0]
+            imported_contact_id = entity.id
+            resolved_via = "phone"
+
+        if entity is None:
+            return {"ok": False, "error": "recipient_not_resolved"}
+        if getattr(entity, "bot", False) or getattr(entity, "is_self", False):
+            return {"ok": False, "error": "recipient_not_allowed"}
+
+        lo = max(0, int(inter_delay_ms_min)) / 1000.0
+        hi = max(lo, int(inter_delay_ms_max) / 1000.0)
+
+        sent_parts: List[Dict[str, Any]] = []
+        first_msg = None
+        for i, part in enumerate(cleaned):
+            if i > 0:
+                delay = random.uniform(lo, hi) if hi > 0 else 0
+                try:
+                    async with client.action(entity, "typing"):
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                except Exception:
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+            msg = await client.send_message(entity, part)
+            if first_msg is None:
+                first_msg = msg
+            sent_parts.append({"tg_message_id": getattr(msg, "id", None), "text": part})
+
+        if imported_contact_id is not None:
+            try:
+                from telethon.tl.functions.contacts import DeleteContactsRequest
+                await client(DeleteContactsRequest(id=[entity]))
+            except Exception:
+                pass
+
+        return {
+            "ok": True,
+            "tg_message_id": getattr(first_msg, "id", None),
+            "peer_id": getattr(entity, "id", None),
+            "username": getattr(entity, "username", None),
+            "name": " ".join(filter(None, [getattr(entity, "first_name", None), getattr(entity, "last_name", None)])) or None,
+            "resolved_via": resolved_via,
+            "parts": sent_parts,
+        }
+    except Exception as e:
+        logger.error(f"[TG-USER] send_message_parts failed: {type(e).__name__}: {e}")
+        return {"ok": False, "error": _error_code(e)}
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
 # ============================================================================
 # ПОЛЛИНГ ВХОДЯЩИХ
 # ============================================================================

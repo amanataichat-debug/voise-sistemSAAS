@@ -56,6 +56,7 @@ from backend.db.session import engine
 from backend.core.scheduler import start_subscription_checker
 from backend.core.task_scheduler import start_task_scheduler  # ✅ Task Scheduler
 from backend.core.telegram_user_poller import start_telegram_user_poller  # ✅ Поллер личного Telegram агента
+from backend.core.chat_batching_worker import start_chat_batching_worker  # ✅ Flush очереди pending_messages в оркестратор
 from backend.services.subscription_blocker import start_subscription_blocker  # ✅ Agent subscription blocker
 from backend.api.partners import router as partners_router
 
@@ -2129,10 +2130,18 @@ async def startup_event():
             asyncio.create_task(start_subscription_blocker())
             logger.info("✅ Agent subscription blocker started (check every 5 min)")
 
-            # ✅ Поллер личного Telegram агента (каждые 60 сек; no-op без
-            #    TELEGRAM_API_ID/HASH/SESSION_KEY; мультиворкер — claim по БД)
-            asyncio.create_task(start_telegram_user_poller(check_interval=60))
-            logger.info("✅ Telegram user poller started (check every 60s)")
+            # ✅ Поллер личного Telegram агента (каждые 10 сек; no-op без
+            #    TELEGRAM_API_ID/HASH/SESSION_KEY; мультиворкер — claim по БД).
+            #    Поллер складывает входящие в pending_messages (batching), сам
+            #    оркестратор зовёт отдельный chat_batching_worker.
+            asyncio.create_task(start_telegram_user_poller(check_interval=10))
+            logger.info("✅ Telegram user poller started (check every 10s)")
+
+            # ✅ Flush pending_messages → handle_inbound_telegram
+            #    Собирает «простыню» коротких сообщений клиента в один вызов
+            #    оркестратора после окна тишины (chat_batching_window_seconds).
+            asyncio.create_task(start_chat_batching_worker(check_interval=2))
+            logger.info("✅ Chat batching worker started (check every 2s)")
 
         except Exception as e:
             logger.error(f"❌ Error starting schedulers: {str(e)}")

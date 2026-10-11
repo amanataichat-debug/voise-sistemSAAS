@@ -496,15 +496,35 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         if phone_resolves >= telegram_user_service.TG_PHONE_RESOLVE_HOURLY_LIMIT:
             return {"ok": False, "error": telegram_user_service.error_human("phone_resolve_limit_reached")}
 
+    # Split: если включено chat_split_response — режем ответ модели на
+    # несколько сообщений (маркер `---` на отдельной строке, либо двойной
+    # перевод для длинных ответов). Иначе — одно сообщение, как было.
+    split_enabled = bool(getattr(agent_config, "chat_split_response", True))
+    parts = _split_message_for_chat(text) if split_enabled else [text]
+
     session_str = telegram_user_service.decrypt_session(account.session_encrypted)
-    result = await telegram_user_service.send_message(
-        session_str,
-        text,
-        peer_id=peer_id,
-        username=username,
-        phone=phone if allow_phone else None,
-        contact_name=(contact.name if contact else None),
-    )
+
+    if len(parts) <= 1:
+        result = await telegram_user_service.send_message(
+            session_str,
+            text,
+            peer_id=peer_id,
+            username=username,
+            phone=phone if allow_phone else None,
+            contact_name=(contact.name if contact else None),
+        )
+    else:
+        result = await telegram_user_service.send_message_parts(
+            session_str,
+            parts,
+            peer_id=peer_id,
+            username=username,
+            phone=phone if allow_phone else None,
+            contact_name=(contact.name if contact else None),
+            inter_delay_ms_min=int(getattr(agent_config, "chat_split_delay_min_ms", 1000) or 1000),
+            inter_delay_ms_max=int(getattr(agent_config, "chat_split_delay_max_ms", 2000) or 2000),
+        )
+
     if not result.get("ok"):
         err = result.get("error") or "telegram_error"
         if err == "session_revoked":
@@ -513,7 +533,7 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
             db.commit()
         return {"ok": False, "error": telegram_user_service.error_human(err)}
 
-    # Upsert диалога (peer теперь известен) и сохранение сообщения в тред
+    # Upsert диалога (peer теперь известен) и сохранение сообщений в тред
     res_peer = result.get("peer_id")
     if res_peer:
         if dialog is None:
@@ -537,17 +557,74 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         if result.get("name"):
             dialog.tg_name = result["name"]
 
-    telegram_user_service.store_message(
-        db, account, "outbound", text,
-        agent_contact_id=(contact.id if contact else (dialog.agent_contact_id if dialog else None)),
-        tg_peer_id=res_peer,
-        tg_message_id=result.get("tg_message_id"),
-    )
+    # Сохраняем все отправленные части в тред — для карточки контакта и
+    # для последующего контекста оркестратора.
+    sent_parts = result.get("parts") or [{"tg_message_id": result.get("tg_message_id"), "text": text}]
+    contact_id_for_store = contact.id if contact else (dialog.agent_contact_id if dialog else None)
+    for p in sent_parts:
+        telegram_user_service.store_message(
+            db, account, "outbound", p.get("text") or "",
+            agent_contact_id=contact_id_for_store,
+            tg_peer_id=res_peer,
+            tg_message_id=p.get("tg_message_id"),
+        )
     db.commit()
 
     to_label = result.get("name") or (f"@{result['username']}" if result.get("username") else str(res_peer))
-    logger.info(f"[AGENT-TOOLS] telegram_send_message → {to_label} via {result.get('resolved_via')}")
-    return {"ok": True, "to": to_label, "resolved_via": result.get("resolved_via")}
+    logger.info(
+        f"[AGENT-TOOLS] telegram_send_message → {to_label} via {result.get('resolved_via')} "
+        f"({len(sent_parts)} part(s))"
+    )
+    return {
+        "ok": True,
+        "to": to_label,
+        "resolved_via": result.get("resolved_via"),
+        "parts_sent": len(sent_parts),
+    }
+
+
+# ----------------------------------------------------------------------------
+# Chat split helper
+# ----------------------------------------------------------------------------
+#
+# Регулярка для маркера-разделителя: строка целиком из `---` (3+ дефиса,
+# возможно с пробелами). Модели в промпте инструктируются вставлять такой
+# разделитель между логическими сообщениями.
+import re as _re_chat_split
+
+_CHAT_SPLIT_MARKER = _re_chat_split.compile(r"(?m)^[ \t]*-{3,}[ \t]*$")
+# Жёсткий потолок частей — чтобы в случае, если модель насыпет много `---`,
+# не превратить ответ в 20 отдельных сообщений.
+_CHAT_SPLIT_MAX_PARTS = 6
+# Если явного маркера нет, но ответ длинный — режем по пустым строкам.
+_CHAT_SPLIT_SOFT_THRESHOLD = 400
+_CHAT_SPLIT_PARAGRAPH = _re_chat_split.compile(r"\n{2,}")
+
+
+def _split_message_for_chat(text: str) -> list[str]:
+    """
+    Разбить ответ модели на короткие сообщения для чат-канала.
+
+    Приоритет:
+      1) Маркер `---` на отдельной строке — явная инструкция от модели.
+      2) Длинный текст без маркера → split по двойному переводу строки.
+      3) Иначе — одно сообщение.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    if _CHAT_SPLIT_MARKER.search(raw):
+        parts = _CHAT_SPLIT_MARKER.split(raw)
+    elif len(raw) > _CHAT_SPLIT_SOFT_THRESHOLD and _CHAT_SPLIT_PARAGRAPH.search(raw):
+        parts = _CHAT_SPLIT_PARAGRAPH.split(raw)
+    else:
+        return [raw]
+
+    cleaned = [p.strip() for p in parts if p and p.strip()]
+    if not cleaned:
+        return [raw]
+    return cleaned[:_CHAT_SPLIT_MAX_PARTS]
 
 
 async def fn_telegram_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:

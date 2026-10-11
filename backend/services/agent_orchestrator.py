@@ -887,7 +887,7 @@ class PostCallOrchestrator:
         finally:
             db.close()
 
-    def _build_postcall_input(self, agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction: str = "outbound") -> str:
+    def _build_postcall_input(self, agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction: str = "outbound", agent_config=None) -> str:
         # Вся предыстория (звонки + SMS + Telegram) — единой хронологией, исключая
         # текущее событие (оно ниже отдельным блоком «ТЕКУЩИЙ …»).
         timeline = build_conversation_timeline(db, agent_contact, exclude_call_id=agent_call.id)
@@ -905,6 +905,23 @@ class PostCallOrchestrator:
         is_tg = (call_direction or "").lower() == "telegram_inbound"
         is_tg_out = (call_direction or "").lower() == "telegram_outbound"
         is_inbound = (call_direction or "outbound").lower() == "inbound"
+
+        # Хинт про разбиение ответа на короткие сообщения — активен только
+        # для Telegram-чата и при включённом chat_split_response у агента.
+        # Сервер поделит текст по маркеру `---` и отправит части с паузой
+        # и typing-эффектом (см. telegram_user_service.send_message_parts
+        # + agent_tools._split_message_for_chat).
+        _tg_split_on = bool(getattr(agent_config, "chat_split_response", True)) if agent_config else False
+        tg_split_hint = ""
+        if _tg_split_on and (is_tg or is_tg_out):
+            tg_split_hint = (
+                "\n   ЖИВАЯ ПЕРЕПИСКА: длинный ответ дроби на 2–4 коротких "
+                "реплики по 1–2 предложения, разделяя их строкой из трёх "
+                "дефисов «---» на отдельной строке. Сервер отправит их "
+                "последовательно с короткой паузой и индикатором «печатает» "
+                "— так переписка выглядит живее. Короткие ответы (1 реплика) "
+                "разделять не нужно."
+            )
 
         if is_tg_out:
             direction_line = (
@@ -925,7 +942,8 @@ class PostCallOrchestrator:
             callback_rule = (
                 "3. Если уместно ответить клиенту — ответь в Telegram через\n"
                 "   telegram_send_message (тем же каналом, которым написал клиент).\n"
-                "   Пиши как живой человек, коротко и по делу, без markdown.\n"
+                "   Пиши как живой человек, коротко и по делу, без markdown."
+                + tg_split_hint + "\n"
                 "   Если по сути сообщения нужен звонок (клиент просит позвонить,\n"
                 "   договорились о следующем шаге) — запланируй его через\n"
                 "   create_agent_task. Если договорились списаться позже — запланируй\n"
@@ -977,14 +995,14 @@ class PostCallOrchestrator:
             )
 
         if is_tg_out:
-            action_block = """Составь и отправь сообщение клиенту:
+            action_block = f"""Составь и отправь сообщение клиенту:
 1. Сверься с хронологией и памятью выше: если договорённость из инструкции уже
    закрыта (клиент сам ответил, состоялся звонок, вопрос решён) и сообщение
    потеряло смысл — НЕ отправляй его, просто обнови память update_contact_memory
    с пометкой, почему отправка не потребовалась.
 2. Если сообщение уместно — составь текст сам по инструкции и контексту:
    как живой человек, коротко и по делу, без markdown, без канцелярита. Учти
-   тон прошлых касаний. Отправь через telegram_send_message.
+   тон прошлых касаний. Отправь через telegram_send_message.{tg_split_hint}
 3. ОБЯЗАТЕЛЬНО вызови update_contact_memory — зафиксируй, что написал (или
    почему не стал) и текущее состояние договорённости.
 4. Смени стадию через move_contact_stage ТОЛЬКО если есть реальное основание.
@@ -1153,7 +1171,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         # (tools + system) байт-в-байт одинаков между звонками → кэш провайдера.
         system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
         post_call_input = self._build_postcall_input(
-            agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction
+            agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction,
+            agent_config=agent_config,
         )
         # Подставляем стратегию PreCall в текст (симуляция цепочки). Для входящего
         # SMS/Telegram и запланированной отправки в Telegram PreCall не было —
@@ -1382,7 +1401,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         client = AsyncOpenAI(api_key=openai_key)
 
         post_call_input = self._build_postcall_input(
-            agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction
+            agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction,
+            agent_config=agent_config,
         )
 
         # ✅ v2.1: Список для сбора всех tool calls
