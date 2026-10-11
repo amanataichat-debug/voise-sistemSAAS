@@ -51,6 +51,15 @@ async def start_chat_batching_worker(check_interval: int = DEFAULT_CHECK_INTERVA
     Запуск воркера. Запускается в каждом gunicorn-воркере на startup;
     конкуренция решается атомарным claim по agent_telegram_dialogs.
     """
+    # Гарантируем, что колонки, с которыми воркер работает, есть в БД.
+    # ensure_all_model_columns в startup по какой-то причине не всегда
+    # их добавляет — делаем это inline, чтобы воркер не падал на
+    # первом же SELECT.
+    try:
+        ensure_chat_batching_schema()
+    except Exception as e:
+        logger.error(f"[CHAT-BATCH] ensure_chat_batching_schema failed: {e}", exc_info=True)
+
     logger.info(f"[CHAT-BATCH] Started (check every {check_interval}s)")
     while True:
         try:
@@ -58,6 +67,87 @@ async def start_chat_batching_worker(check_interval: int = DEFAULT_CHECK_INTERVA
         except Exception as e:
             logger.error(f"[CHAT-BATCH] tick error: {e}", exc_info=True)
         await asyncio.sleep(check_interval)
+
+
+def ensure_chat_batching_schema():
+    """
+    Idempotent DDL: добавляет недостающие колонки для batching'а чат-канала.
+    Безопасно вызывать многократно и из разных gunicorn-воркеров: каждый
+    ALTER идёт с IF NOT EXISTS в своей транзакции, конкурентные вызовы
+    не мешают друг другу.
+    """
+    from sqlalchemy import text, inspect
+    from backend.db.session import engine
+
+    required = [
+        ("agent_telegram_dialogs", "pending_messages",
+         "ALTER TABLE agent_telegram_dialogs ADD COLUMN IF NOT EXISTS pending_messages JSONB NOT NULL DEFAULT '[]'::jsonb"),
+        ("agent_telegram_dialogs", "pending_flush_at",
+         "ALTER TABLE agent_telegram_dialogs ADD COLUMN IF NOT EXISTS pending_flush_at TIMESTAMP"),
+        ("agent_telegram_dialogs", "pending_first_at",
+         "ALTER TABLE agent_telegram_dialogs ADD COLUMN IF NOT EXISTS pending_first_at TIMESTAMP"),
+        ("agent_telegram_dialogs", "last_flushed_at",
+         "ALTER TABLE agent_telegram_dialogs ADD COLUMN IF NOT EXISTS last_flushed_at TIMESTAMP"),
+        ("agent_configs", "chat_batching_enabled",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_batching_enabled BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("agent_configs", "chat_batching_window_seconds",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_batching_window_seconds INTEGER NOT NULL DEFAULT 15"),
+        ("agent_configs", "chat_batching_max_window_seconds",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_batching_max_window_seconds INTEGER NOT NULL DEFAULT 60"),
+        ("agent_configs", "chat_split_response",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_split_response BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("agent_configs", "chat_split_delay_min_ms",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_split_delay_min_ms INTEGER NOT NULL DEFAULT 1000"),
+        ("agent_configs", "chat_split_delay_max_ms",
+         "ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS chat_split_delay_max_ms INTEGER NOT NULL DEFAULT 2000"),
+    ]
+    # Создание индекса на pending_flush_at — для быстрого сканирования воркером.
+    index_ddl = (
+        "CREATE INDEX IF NOT EXISTS ix_agent_telegram_dialogs_pending_flush_at "
+        "ON agent_telegram_dialogs (pending_flush_at)"
+    )
+
+    inspector = inspect(engine)
+    added = []
+    for table_name, col_name, ddl in required:
+        try:
+            if table_name not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table_name)}
+            if col_name in existing:
+                continue
+        except Exception as e:
+            logger.warning(f"[CHAT-BATCH] inspect {table_name}.{col_name} failed: {e}")
+        try:
+            with engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    conn.execute(text(ddl))
+                    trans.commit()
+                    added.append(f"{table_name}.{col_name}")
+                except Exception as ddl_err:
+                    trans.rollback()
+                    # IF NOT EXISTS должен сам отсечь конкуренцию, но на
+                    # случай race-condition — не падаем.
+                    logger.warning(f"[CHAT-BATCH] ALTER {table_name}.{col_name} skipped: {ddl_err}")
+        except Exception as e:
+            logger.error(f"[CHAT-BATCH] ALTER {table_name}.{col_name} failed: {e}")
+    # Индекс — тоже best-effort.
+    try:
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                conn.execute(text(index_ddl))
+                trans.commit()
+            except Exception:
+                trans.rollback()
+    except Exception:
+        pass
+
+    if added:
+        logger.info(f"[CHAT-BATCH] ensure_schema: added {len(added)} column(s): {added}")
+    else:
+        logger.info("[CHAT-BATCH] ensure_schema: already up to date")
 
 
 async def _tick():

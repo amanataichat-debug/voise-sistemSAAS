@@ -56,7 +56,7 @@ from backend.db.session import engine
 from backend.core.scheduler import start_subscription_checker
 from backend.core.task_scheduler import start_task_scheduler  # ✅ Task Scheduler
 from backend.core.telegram_user_poller import start_telegram_user_poller  # ✅ Поллер личного Telegram агента
-from backend.core.chat_batching_worker import start_chat_batching_worker  # ✅ Flush очереди pending_messages в оркестратор
+from backend.core.chat_batching_worker import start_chat_batching_worker, ensure_chat_batching_schema  # ✅ Flush очереди pending_messages в оркестратор
 from backend.services.subscription_blocker import start_subscription_blocker  # ✅ Agent subscription blocker
 from backend.api.partners import router as partners_router
 
@@ -2117,7 +2117,17 @@ async def startup_event():
         # ✅ УПРОЩЁННАЯ ЛОГИКА: Всегда запускаем scheduler в Render
         try:
             logger.info("🔄 Starting background schedulers...")
-            
+
+            # ⚠️ СИНХРОННО, ДО всех воркеров и первых запросов: гарантируем
+            # наличие колонок batching'а в agent_configs и agent_telegram_dialogs.
+            # Иначе первый же SELECT из AgentConfig на /api/agent/list упадёт
+            # с UndefinedColumn, а chat_batching_worker — на своём SELECT.
+            try:
+                ensure_chat_batching_schema()
+                logger.info("✅ Chat batching schema ensured")
+            except Exception as e:
+                logger.error(f"❌ ensure_chat_batching_schema failed: {e}", exc_info=True)
+
             # Запуск Subscription Checker
             asyncio.create_task(start_subscription_checker())
             logger.info("✅ Subscription checker started")
