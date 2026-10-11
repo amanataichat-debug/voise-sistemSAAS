@@ -596,49 +596,88 @@ _CHAT_SPLIT_MARKER = _re_chat_split.compile(r"(?m)^[ \t]*-{3,}[ \t]*$")
 # Жёсткий потолок частей — чтобы в случае, если модель насыпет много `---`,
 # не превратить ответ в 20 отдельных сообщений.
 _CHAT_SPLIT_MAX_PARTS = 8
-# Если нет маркера `---`, принудительно режем всё, что длиннее этого
-# порога — чтобы агент не выглядел как канцелярская простыня.
-_CHAT_SPLIT_SOFT_THRESHOLD = 160
-# Жёсткий потолок длины одной «реплики» — после split'а по абзацам ещё
-# добиваем длинные куски split'ом по предложениям.
-_CHAT_SPLIT_PART_MAX_CHARS = 220
+# Короче этого — одно сообщение, не трогаем. Длиннее — ОБЯЗАТЕЛЬНО
+# разбиваем, даже если модель забыла `---` или одинарный перенос.
+_CHAT_SPLIT_SOFT_THRESHOLD = 140
+# Целевая длина одной реплики: жадная упаковка кусков стремится, чтобы
+# каждое итоговое сообщение было ≤ этого. 180 ≈ 1-2 коротких предложения.
+_CHAT_SPLIT_PART_MAX_CHARS = 180
+# Абзацы.
 _CHAT_SPLIT_PARAGRAPH = _re_chat_split.compile(r"\n{2,}")
-# Границы предложений (русский/английский): после .!? плюс пробел и
-# заглавная буква следующего слова; переносы строк тоже считаются
-# границами для «списочных» ответов.
-_CHAT_SPLIT_SENTENCE = _re_chat_split.compile(
-    r"(?<=[.!?…])\s+(?=[A-ZА-ЯЁ\d\-])|(?<=\n)"
-)
+# Границы предложений (без требования заглавной — иначе «AI-ассистент»
+# и подобные после точки не ловятся).
+_CHAT_SPLIT_SENTENCE = _re_chat_split.compile(r"(?<=[.!?…])\s+|(?<=\n)")
+# Фразовые границы — fallback, когда одно длинное предложение через
+# запятые/двоеточия/точку с запятой. Это то, что ломало разбиение
+# ответов типа «Обычно подключение проходит так: сначала…, затем…,
+# после этого тестируем и запускаем.».
+_CHAT_SPLIT_CLAUSE = _re_chat_split.compile(r"(?<=[,:;—])\s+")
 
 
-def _split_long_part(part: str) -> list[str]:
+def _pack_chunks(chunks: list[str], max_chars: int) -> list[str]:
     """
-    Разбить один длинный «кусок» на реплики по границам предложений,
-    стараясь не превышать _CHAT_SPLIT_PART_MAX_CHARS на реплику.
-    Короткие предложения склеиваются в одну реплику.
+    Жадная упаковка: берём кусочки по порядку и склеиваем в буфер, пока
+    длина не превысит max_chars. Переполнили — буфер в out, начинаем
+    новый. Разделитель между склеенными — пробел.
+
+    Пост-обработка: если последний кусок получился короче min_tail —
+    пытаемся прилепить его к предпоследнему, пока не превышает лимит
+    1.1*max_chars (небольшой запас, чтобы не оставлять «огрызок»).
     """
-    part = part.strip()
-    if len(part) <= _CHAT_SPLIT_PART_MAX_CHARS:
-        return [part]
-    sentences = [s.strip() for s in _CHAT_SPLIT_SENTENCE.split(part) if s and s.strip()]
-    if len(sentences) <= 1:
-        return [part]
     out: list[str] = []
     buf = ""
-    for s in sentences:
+    for s in chunks:
+        s = (s or "").strip()
+        if not s:
+            continue
         if not buf:
             buf = s
             continue
-        # Склеиваем, если ещё помещается; иначе — закрываем буфер и начинаем новый.
         candidate = buf + " " + s
-        if len(candidate) <= _CHAT_SPLIT_PART_MAX_CHARS:
+        if len(candidate) <= max_chars:
             buf = candidate
         else:
             out.append(buf)
             buf = s
     if buf:
         out.append(buf)
+
+    # Склеиваем короткий хвост с предыдущим куском, если влезает.
+    # Запас: max_chars + MIN_TAIL — лучше чуть длинное сообщение, чем
+    # сиротский огрызок из 3-4 слов отдельной репликой.
+    MIN_TAIL = 50
+    TAIL_MAX = max_chars + MIN_TAIL
+    while len(out) >= 2 and len(out[-1]) < MIN_TAIL:
+        merged = out[-2] + " " + out[-1]
+        if len(merged) <= TAIL_MAX:
+            out = out[:-2] + [merged]
+        else:
+            break
     return out
+
+
+def _split_long_part(part: str) -> list[str]:
+    """
+    Разбить один длинный «кусок» на реплики. Приоритет границ:
+      1) Предложения (.!?…) и переносы строк.
+      2) Фразы (:, запятая, ;, тире) — fallback для длинных предложений.
+      3) Если даже фраз нет — отдаём как есть, не ломаем в середине слова.
+    """
+    part = part.strip()
+    if len(part) <= _CHAT_SPLIT_PART_MAX_CHARS:
+        return [part]
+
+    sentences = [s.strip() for s in _CHAT_SPLIT_SENTENCE.split(part) if s and s.strip()]
+    if len(sentences) > 1:
+        return _pack_chunks(sentences, _CHAT_SPLIT_PART_MAX_CHARS)
+
+    clauses = [c.strip() for c in _CHAT_SPLIT_CLAUSE.split(part) if c and c.strip()]
+    if len(clauses) > 1:
+        return _pack_chunks(clauses, _CHAT_SPLIT_PART_MAX_CHARS)
+
+    # Одно длинное предложение без ни одной запятой — не ломаем в середине
+    # слова, отдаём одним куском. На практике почти не встречается.
+    return [part]
 
 
 def _split_message_for_chat(text: str) -> list[str]:
@@ -648,12 +687,15 @@ def _split_message_for_chat(text: str) -> list[str]:
     Приоритет:
       1) Маркер `---` на отдельной строке — явная инструкция от модели.
       2) Иначе — split по пустым строкам (абзацам).
-      3) Если какой-то кусок (или весь текст) всё ещё длиннее
-         _CHAT_SPLIT_PART_MAX_CHARS — дробим по предложениям.
+      3) Если какой-то кусок всё ещё длиннее _CHAT_SPLIT_PART_MAX_CHARS
+         — дробим по предложениям / фразам.
       4) Если итого один короткий кусок (≤ _CHAT_SPLIT_SOFT_THRESHOLD)
          — одно сообщение, не трогаем.
     """
-    raw = (text or "").strip()
+    # Нормализуем переносы — CRLF/CR на LF, иначе regex \n{2,} не ловит
+    # «абзацы», присланные от разных LLM-провайдеров (OpenRouter иногда
+    # отдаёт CRLF).
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not raw:
         return []
 
@@ -669,12 +711,11 @@ def _split_message_for_chat(text: str) -> list[str]:
         if not parts:
             parts = [raw]
 
-    # Шаг 3: добиваем длинные куски split'ом по предложениям.
+    # Шаг 3: добиваем длинные куски split'ом по предложениям/фразам.
     final: list[str] = []
     for p in parts:
         final.extend(_split_long_part(p))
 
-    # Чистим и ограничиваем количество.
     final = [p for p in final if p]
     if not final:
         return [raw]
