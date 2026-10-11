@@ -151,6 +151,7 @@ function renderTgAccountModal(){
         </select>
         <div style="font-size:12px;color:#64748b;margin-top:6px">«Всем» — агент будет отвечать даже друзьям и родным, если они напишут. Используйте только для рабочего аккаунта.</div>
       </div>
+      ${messengerSettingsHtml(s, 'tgAccSave', 'Личный Telegram проверяется раз в минуту, поэтому ответ придёт через указанное время + до 60 секунд.')}
       <div style="padding-top:14px;border-top:1px solid var(--border,#e2e8f0)">
         <button class="btn btn-secondary" onclick="tgAccDisconnect()"><i class="fas fa-link-slash"></i> Отключить аккаунт</button>
       </div>`;
@@ -240,6 +241,20 @@ async function tgAccSetScope(scope){
   }catch(e){ showToast('Ошибка сети', 'error'); }
 }
 
+async function tgAccSave(patch){
+  try{
+    const r = await apiFetch(TG_ACC_API + '/settings', { method: 'PATCH', body: JSON.stringify(patch) });
+    if(r && r.status === 200){
+      tgAccState = await r.json();
+      showToast('Сохранено', 'success');
+    } else {
+      const err = await r?.json().catch(() => ({}));
+      showToast(tgAccErr(err.detail), 'error');
+    }
+  }catch(e){ showToast('Ошибка сети', 'error'); }
+  renderTgAccountModal();
+}
+
 async function tgAccDisconnect(){
   if(!confirm('Отключить личный Telegram? Агент перестанет писать клиентам и отвечать на входящие. Сессия будет разлогинена.')) return;
   try{
@@ -259,6 +274,8 @@ function tgAccErr(detail){
     auth_not_started: 'Авторизация не начата — введите номер телефона',
     password_not_expected: 'Пароль сейчас не требуется',
     invalid_reply_scope: 'Неверное значение охвата',
+    invalid_owner_pause: 'Неверная длительность паузы',
+    invalid_reply_delay: 'Неверная задержка ответа',
     not_connected: 'Telegram не подключён',
     phone_invalid: 'Неверный номер телефона. Пример: +996 700 123 456 или 0700 123 456',
     phone_banned: 'Этот номер заблокирован Telegram',

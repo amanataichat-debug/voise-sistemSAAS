@@ -52,7 +52,7 @@ function pipelineCard(c){
     <div class="pl-card" draggable="true" data-id="${c.id}"
          ondragstart="plDragStart(event)" ondragend="plDragEnd(event)"
          onclick="openContactDetailsModal('${c.id}')">
-      <div style="font-weight:600;font-size:12.5px">${esc(c.name || c.phone)}</div>
+      <div style="font-weight:600;font-size:12.5px">${esc(c.name || c.phone)}${aiPauseBadge(c)}</div>
       <div style="font-size:11px;color:var(--muted)">${esc(c.phone)}</div>
       ${c.company ? `<div style="font-size:11px;color:var(--muted)">${esc(c.company)}</div>` : ''}
       <div style="font-size:10.5px;color:var(--hint);margin-top:4px">Попыток: ${c.attempts_count || 0}${c.last_called_at ? ' · ' + fmtDate(c.last_called_at) : ''}</div>

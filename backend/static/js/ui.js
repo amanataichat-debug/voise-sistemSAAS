@@ -639,7 +639,7 @@
     'forward': 'arrow-right', 'circle-pause': 'circle-minus', 'pause-circle': 'circle-minus', 'mug-hot': 'hourglass', 'arrows-turn-right': 'route',
     'quote-left': 'message-square', 'user-minus': 'circle-minus', 'ban': 'circle-x', 'clone': 'copy', 'person-walking': 'activity', 'shuffle': 'route',
     'venus': 'user', 'mars': 'user', 'circle-half-stroke': 'circle', 'wand-magic-sparkles': 'wand-2',
-    'database': 'database', 'instagram': 'instagram'
+    'database': 'database', 'instagram': 'instagram', 'circle-play': 'play', 'pause': 'circle-minus'
   };
   function faName(el) {
     var cl = el.classList;

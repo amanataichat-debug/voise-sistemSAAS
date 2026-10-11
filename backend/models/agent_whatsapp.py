@@ -70,6 +70,13 @@ class AgentWhatsAppAccount(Base):
     # Анти-бан: сколько НОВЫХ чатов (агент пишет первым) в сутки
     daily_new_chats_limit = Column(Integer, default=20, nullable=False)
 
+    # Переписка v2 (ветка 1210-chat-v2), колонки — app.ensure_chat_v2_columns():
+    # сколько минут агент молчит с клиентом после сообщения владельца
+    # (-1 — навсегда) и через сколько секунд после последнего сообщения
+    # клиента отвечать.
+    owner_pause_minutes = Column(Integer, default=30, server_default="30", nullable=False)
+    reply_delay_seconds = Column(Integer, default=15, server_default="15", nullable=False)
+
     last_error = Column(Text, nullable=True)
     connected_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -94,6 +101,8 @@ class AgentWhatsAppAccount(Base):
             "auto_reply_enabled": bool(self.auto_reply_enabled),
             "reply_scope": self.reply_scope or "contacts",
             "daily_new_chats_limit": int(self.daily_new_chats_limit or 0),
+            "owner_pause_minutes": int(self.owner_pause_minutes if self.owner_pause_minutes is not None else 30),
+            "reply_delay_seconds": int(self.reply_delay_seconds if self.reply_delay_seconds is not None else 15),
             "last_error": self.last_error,
         }
 
@@ -172,6 +181,9 @@ class AgentWhatsAppMessage(Base):
     # key.id из WhatsApp — ключ дедупликации webhook'ов
     wa_message_id = Column(String(128), nullable=True)
     direction = Column(String(10), default="inbound", nullable=False)
+    # 'owner' — владелец написал сам со своего телефона/приложения (не агент).
+    # NULL — сообщение клиента или агента. Колонка — app.ensure_chat_v2_columns().
+    sent_by = Column(String(16), nullable=True)
     body = Column(Text, nullable=False)
     attachment_id = Column(UUID(as_uuid=True), nullable=True)
 
@@ -183,6 +195,7 @@ class AgentWhatsAppMessage(Base):
         return {
             "id": str(self.id),
             "direction": self.direction or "inbound",
+            "sent_by": self.sent_by,
             "body": self.body,
             "attachment_id": str(self.attachment_id) if self.attachment_id else None,
             "ts": ts.isoformat() if ts else None,

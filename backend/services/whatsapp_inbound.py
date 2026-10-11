@@ -10,8 +10,10 @@ POST /api/whatsapp/webhook/{account_id} проверяет секрет и от�
   messages.upsert   — сообщение в личном чате:
     • fromMe (написано с телефона владельца или нашей отправкой) — в тред как
       outbound, оркестратор не зовём; наши отправки отсекаются по wa_message_id;
+      сообщение владельца (sent_by='owner') ставит паузу агента с клиентом
+      (agent_pause, длительность — account.owner_pause_minutes);
     • входящее — в тред, вложение распознаётся (agent_media_service), затем
-      через DEBOUNCE_SECONDS чат отдаётся оркестратору (handle_inbound_whatsapp)
+      через account.reply_delay_seconds чат отдаётся оркестратору (handle_inbound_whatsapp)
       одним прогоном на серию сообщений: прогон запускает только задача
       последнего входящего, а атомарный claim по last_dispatched_at исключает
       двойной запуск при нескольких gunicorn-воркерах.
@@ -25,11 +27,13 @@ from typing import Any, Dict
 from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.db.session import SessionLocal
+from backend.services import agent_pause
 from backend.services import whatsapp_service as wa
 
 logger = get_logger(__name__)
 
-# Пауза перед ответом: клиент часто пишет серией коротких сообщений.
+# Пауза перед ответом: клиент часто пишет серией коротких сообщений. Значение
+# по умолчанию; у каждого номера своя настройка reply_delay_seconds.
 DEBOUNCE_SECONDS = 15
 
 # Причины закрытия, после которых нужен новый QR (вышли с телефона/бан).
@@ -90,6 +94,41 @@ def _on_connection(account_id: str, data: dict) -> None:
         db.close()
 
 
+def _new_contact(db, account, chat):
+    from backend.models.agent_contact import AgentContact
+    contact = AgentContact(
+        agent_config_id=account.agent_config_id,
+        user_id=account.user_id,
+        phone=("+" + chat.phone) if chat.phone else f"wa:{chat.remote_jid.split('@')[0]}",
+        name=chat.push_name,
+        status="new",
+    )
+    db.add(contact)
+    db.flush()
+    logger.info(f"[WA-IN] 🆕 AgentContact {contact.id} for WhatsApp {chat.phone or chat.remote_jid}")
+    return contact
+
+
+def _claim_agent_echo(db, chat, wa_message_id: str) -> bool:
+    """
+    Эхо отправки агента, у которой шлюз не вернул id сообщения: недавняя
+    outbound-строка агента без wa_message_id в этом чате. Получает id и не
+    считается сообщением владельца (иначе агент поставил бы паузу сам себе).
+    """
+    from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    row = db.query(AgentWhatsAppMessage).filter(
+        AgentWhatsAppMessage.chat_id == chat.id,
+        AgentWhatsAppMessage.direction == "outbound",
+        AgentWhatsAppMessage.wa_message_id.is_(None),
+        AgentWhatsAppMessage.sent_by.is_(None),
+        AgentWhatsAppMessage.created_at >= datetime.utcnow() - timedelta(minutes=2),
+    ).order_by(AgentWhatsAppMessage.created_at.asc()).first()
+    if row is None:
+        return False
+    row.wa_message_id = str(wa_message_id)
+    return True
+
+
 def _placeholder(msg: dict, processing: bool = True) -> str:
     from backend.services.agent_media_service import KIND_LABELS
     media = msg.get("media")
@@ -101,7 +140,6 @@ def _placeholder(msg: dict, processing: bool = True) -> str:
 
 
 async def _on_message(account_id: str, item: dict) -> None:
-    from backend.models.agent_contact import AgentContact
     from backend.models.agent_whatsapp import AgentWhatsAppAccount, AgentWhatsAppChat
 
     msg = wa.parse_incoming(item)
@@ -142,30 +180,31 @@ async def _on_message(account_id: str, item: dict) -> None:
             if contact:
                 chat.agent_contact_id = contact.id
 
-        # Сообщение владельца с телефона — только в историю.
+        # Сообщение с телефона владельца: в историю (агент увидит его после
+        # паузы) и пауза агента с этим клиентом во всех каналах.
         if msg["from_me"]:
+            if _claim_agent_echo(db, chat, msg["id"]):
+                db.commit()
+                return
+            if chat.agent_contact_id is None and (account.reply_scope or "contacts") == "all":
+                # Владелец сам начал чат: клиент заведён сразу, чтобы его ответ
+                # не подхватил агент в обход паузы.
+                chat.agent_contact_id = _new_contact(db, account, chat).id
             wa.store_message(
                 db, account, "outbound", _placeholder(msg, processing=False),
                 chat=chat, agent_contact_id=chat.agent_contact_id,
                 wa_message_id=msg["id"], sent_at=msg["ts"],
+            ).sent_by = "owner"
+            agent_pause.on_owner_message(
+                db, chat.agent_contact_id, agent_pause.owner_pause_minutes(account), msg["ts"],
             )
             db.commit()
             return
 
         contact_id = chat.agent_contact_id
         if contact_id is None and (account.reply_scope or "contacts") == "all":
-            contact = AgentContact(
-                agent_config_id=account.agent_config_id,
-                user_id=account.user_id,
-                phone=("+" + chat.phone) if chat.phone else f"wa:{chat.remote_jid.split('@')[0]}",
-                name=chat.push_name,
-                status="new",
-            )
-            db.add(contact)
-            db.flush()
-            chat.agent_contact_id = contact.id
-            contact_id = contact.id
-            logger.info(f"[WA-IN] 🆕 AgentContact {contact_id} for WhatsApp {chat.phone or chat.remote_jid}")
+            contact_id = _new_contact(db, account, chat).id
+            chat.agent_contact_id = contact_id
 
         row = wa.store_message(
             db, account, "inbound", _placeholder(msg),
@@ -186,7 +225,8 @@ async def _on_message(account_id: str, item: dict) -> None:
                 db.commit()
             return
 
-        task_args = (str(account.id), str(chat.id), str(contact_id), str(row.id), msg)
+        task_args = (str(account.id), str(chat.id), str(contact_id), str(row.id), msg,
+                     agent_pause.reply_delay_seconds(account))
     finally:
         db.close()
 
@@ -196,10 +236,11 @@ async def _on_message(account_id: str, item: dict) -> None:
 
 
 async def _process_and_dispatch(account_id: str, chat_id: str, contact_id: str,
-                                msg_row_id: str, msg: dict) -> None:
+                                msg_row_id: str, msg: dict,
+                                delay_seconds: int = DEBOUNCE_SECONDS) -> None:
     if msg.get("media"):
         await _process_media(account_id, contact_id, msg_row_id, msg)
-    await asyncio.sleep(DEBOUNCE_SECONDS)
+    await asyncio.sleep(delay_seconds)
     await _dispatch_if_latest(account_id, chat_id, contact_id, msg_row_id)
 
 

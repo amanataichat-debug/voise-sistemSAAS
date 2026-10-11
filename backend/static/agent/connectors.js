@@ -94,7 +94,11 @@ function renderConnectorsList(){
       right = `<span style="font-size:12px;color:#94a3b8">Недоступен</span>`;
     } else if(c.connected){
       const who = c.connected_email ? `<div style="font-size:12px;color:#64748b">${esc(c.connected_email)}</div>` : '';
-      right = `${who}<button class="btn btn-secondary btn-sm" onclick="disconnectConnector('${c.toolkit}')">`
+      // Instagram — переписка с клиентами: свои настройки (пауза, задержка ответа).
+      const gear = c.toolkit === 'instagram'
+        ? `<button class="btn btn-secondary btn-sm" onclick="toggleIgSettings()" style="margin-right:6px"><i class="fas fa-gear"></i> Настроить</button>`
+        : '';
+      right = `${who}${gear}<button class="btn btn-secondary btn-sm" onclick="disconnectConnector('${c.toolkit}')">`
         + `<i class="fas fa-link-slash"></i> Отключить</button>`;
     } else {
       const hint = c.status === 'pending' ? ' (ожидание…)'
@@ -114,8 +118,35 @@ function renderConnectorsList(){
       + `<i class="${m.icon}" style="color:${m.color};font-size:18px;width:22px;text-align:center"></i>`
       + `<div><div style="font-weight:600;font-size:14px">${esc(m.label)}</div>`
       + `<div style="font-size:12px;color:${subColor}">${sub}</div></div></div>`
-      + `<div style="text-align:right">${right}</div></div>`;
+      + `<div style="text-align:right">${right}</div></div>`
+      + (c.toolkit === 'instagram' && c.connected && igSettingsOpen
+        ? `<div id="ig-settings" style="padding:4px 0 12px;border-bottom:1px solid var(--border,#e2e8f0)">`
+          + messengerSettingsHtml(c, 'igSaveSettings', 'Instagram проверяется раз в 90 секунд, поэтому ответ придёт через указанное время + до 90 секунд.')
+          + `</div>`
+        : '');
   }).join('');
+}
+
+// ── Настройки переписки Instagram (раскрываются под строкой коннектора) ──
+let igSettingsOpen = false;
+
+function toggleIgSettings(){
+  igSettingsOpen = !igSettingsOpen;
+  renderConnectorsList();
+}
+
+async function igSaveSettings(patch){
+  try{
+    const r = await apiFetch(API + '/connectors/instagram/settings', { method: 'PATCH', body: JSON.stringify(patch) });
+    if(r && r.status === 200){
+      connectorsState = await r.json();
+      showToast('Сохранено', 'success');
+    } else {
+      const err = await r?.json().catch(()=>({}));
+      showToast(connectorErr(err.detail), 'error');
+    }
+  }catch(e){ showToast('Ошибка сети', 'error'); }
+  renderConnectorsList();
 }
 
 async function connectConnector(toolkit){
@@ -178,6 +209,9 @@ function connectorErr(detail){
     composio_initiate_failed: 'Composio недоступен, попробуйте позже',
     no_redirect_url: 'Composio не вернул ссылку авторизации',
     unknown_toolkit: 'Неизвестный коннектор',
+    invalid_owner_pause: 'Неверная длительность паузы',
+    invalid_reply_delay: 'Неверная задержка ответа',
+    not_connected: 'Instagram не подключён',
   };
   if(typeof errText === 'function' && !map[detail]) return errText(detail) || 'Ошибка подключения';
   return map[detail] || 'Ошибка подключения';

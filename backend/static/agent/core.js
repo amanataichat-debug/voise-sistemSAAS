@@ -246,3 +246,36 @@ function showToast(msg,type='success'){
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(20px)'; },3500);
 }
 
+
+// ── Переписка v2: настройки мессенджера (WhatsApp / личный Telegram / Instagram) ──
+// Пауза агента после сообщения владельца и задержка ответа. saveFn — имя
+// глобальной функции коннектора, принимающей patch-объект (waAccSave и т.п.).
+// pollNote — подсказка про интервал проверки (у поллеров Telegram/Instagram).
+const OWNER_PAUSE_OPTIONS = [[10,'10 минут'],[30,'30 минут'],[60,'1 час'],[1440,'1 день'],[-1,'навсегда (до ручного возврата)']];
+const REPLY_DELAY_OPTIONS = [5,10,15,20,30,60];
+
+function messengerSettingsHtml(s, saveFn, pollNote){
+  const pause = (s && s.owner_pause_minutes != null) ? Number(s.owner_pause_minutes) : 30;
+  const delay = (s && s.reply_delay_seconds != null) ? Number(s.reply_delay_seconds) : 15;
+  return `
+      <div style="padding:10px 0;border-top:1px solid var(--border,#e2e8f0)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">Если вы написали клиенту сами — агент молчит</div>
+        <select class="form-input" data-setting="owner_pause_minutes" onchange="${saveFn}({owner_pause_minutes: parseInt(this.value, 10)})">
+          ${OWNER_PAUSE_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === pause ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:#64748b;margin-top:6px">Пауза действует для этого клиента во всех мессенджерах. Каждое ваше новое сообщение продлевает её. Остановить или вернуть агента вручную — в карточке клиента.</div>
+      </div>
+      <div style="padding:10px 0;border-top:1px solid var(--border,#e2e8f0)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">Отвечать через</div>
+        <select class="form-input" data-setting="reply_delay_seconds" onchange="${saveFn}({reply_delay_seconds: parseInt(this.value, 10)})" style="max-width:160px">
+          ${REPLY_DELAY_OPTIONS.map(v => `<option value="${v}" ${v === delay ? 'selected' : ''}>${v} секунд</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:#64748b;margin-top:6px">Столько агент ждёт после последнего сообщения клиента — чтобы ответить на всю серию сразу.${pollNote ? ' ' + pollNote : ''}</div>
+      </div>`;
+}
+
+// Статус паузы агента у клиента: null — работает, иначе {forever, until, reason}.
+function contactAiPause(c){
+  if(!c || !c.ai_paused_until) return null;
+  return { forever: !!c.ai_paused_forever, until: c.ai_paused_until, reason: c.ai_pause_reason || 'manual' };
+}

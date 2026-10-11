@@ -49,6 +49,7 @@ from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
 from backend.models.agent_connector import AgentConnector, CONNECTOR_TOOLKITS
 from backend.services import composio_service
+from backend.services import agent_pause
 from backend.core.config import settings
 from backend.core.dependencies import get_current_user, get_current_user_flexible
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGES, is_valid_stage
@@ -332,6 +333,17 @@ class PublicAccessToggleRequest(BaseModel):
 
 class AgentContactStatusRequest(BaseModel):
     status: str = Field(..., min_length=1, max_length=50)
+
+
+class AgentContactPauseRequest(BaseModel):
+    """Остановить агента в переписке с клиентом: minutes или forever=true."""
+    minutes: Optional[int] = Field(None, ge=1, le=60 * 24 * 365)
+    forever: bool = False
+
+
+class MessengerSettingsRequest(BaseModel):
+    owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
+    reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
 
 
 class AgentTaskUpdateRequest(BaseModel):
@@ -1977,6 +1989,9 @@ def _connectors_status(db: Session, agent: AgentConfig) -> dict:
             "connected": bool(row and row.is_connected()),
             "connected_email": row.connected_email if row else None,
         })
+        if toolkit == "instagram":
+            items[-1]["owner_pause_minutes"] = agent_pause.owner_pause_minutes(row)
+            items[-1]["reply_delay_seconds"] = agent_pause.reply_delay_seconds(row)
     return {"configured": composio_service.is_configured(), "connectors": items}
 
 
@@ -2060,6 +2075,28 @@ async def _reconcile_connectors(db: Session, agent: AgentConfig) -> None:
 
     if changed:
         db.commit()
+
+
+@router.patch("/connectors/instagram/settings")
+async def update_instagram_settings(
+    body: MessengerSettingsRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Настройки переписки Instagram: пауза после сообщения владельца, задержка ответа."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    row = db.query(AgentConnector).filter(
+        AgentConnector.agent_config_id == agent.id,
+        AgentConnector.toolkit == "instagram",
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="not_connected")
+    agent_pause.apply_messenger_settings(row, body)
+    db.commit()
+    return _connectors_status(db, agent)
 
 
 @router.get("/connectors")
@@ -3109,6 +3146,47 @@ async def update_agent_contact_status(
     db.commit()
     db.refresh(contact)
     logger.info(f"[AGENT] Contact {contact_id} stage {old_stage} -> {body.status} (manual)")
+    return contact.to_dict()
+
+
+@router.post("/contacts/{contact_id}/ai-pause")
+async def pause_agent_for_contact(
+    contact_id: str,
+    body: AgentContactPauseRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """«Остановить агента» в переписке с клиентом (все мессенджеры; звонки не трогает)."""
+    if not body.forever and not body.minutes:
+        raise HTTPException(status_code=400, detail="minutes_or_forever_required")
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == contact_id,
+        AgentContact.user_id == current_user.id,
+    ).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="not_found")
+    agent_pause.set_pause(contact, -1 if body.forever else body.minutes, "manual")
+    db.commit()
+    db.refresh(contact)
+    return contact.to_dict()
+
+
+@router.delete("/contacts/{contact_id}/ai-pause")
+async def resume_agent_for_contact(
+    contact_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """«Вернуть агента»: снять паузу, агент ответит на следующее сообщение клиента."""
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == contact_id,
+        AgentContact.user_id == current_user.id,
+    ).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="not_found")
+    agent_pause.clear_pause(contact)
+    db.commit()
+    db.refresh(contact)
     return contact.to_dict()
 
 

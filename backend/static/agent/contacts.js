@@ -59,7 +59,7 @@ async function loadContactsList(search){
         <tbody>
           ${data.contacts.map(c => `
             <tr style="cursor:pointer" onclick="openContactDetailsModal('${c.id}')">
-              <td style="font-weight:600">${esc(c.name || '—')}</td>
+              <td style="font-weight:600">${esc(c.name || '—')}${aiPauseBadge(c)}</td>
               <td style="color:var(--muted)">${esc(c.phone)}</td>
               <td style="color:var(--muted)">${esc(c.company || '—')}</td>
               <td>${stageBadge(c.status)}</td>
@@ -189,8 +189,87 @@ function renderContactDetails(c){
   ` : '';
 
   _cdTasks = (c.tasks || []).slice().sort((a,b)=> new Date(a.scheduled_time)-new Date(b.scheduled_time));
-  document.getElementById('contact-details-body').innerHTML = infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock + waBlock;
+  document.getElementById('contact-details-body').innerHTML = '<div id="cd-ai-pause">' + aiPauseBlockHtml(c) + '</div>' + infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock + waBlock;
   renderContactTasksSection();
+}
+
+// ── Пауза агента в переписке с клиентом (все мессенджеры) ──
+// Ставится сама, когда владелец пишет клиенту, или кнопкой/командой в чате.
+function aiPauseText(c){
+  const p = contactAiPause(c);
+  if(!p) return '';
+  if(p.forever) return 'Агент отключён в этом чате навсегда';
+  const why = p.reason === 'owner_message' ? ' — вы написали сами'
+            : p.reason === 'command' ? ' — по вашей команде' : '';
+  const parts = mskParts(p.until);
+  const today = mskParts(new Date().toISOString());
+  const sameDay = parts && today && parts.day === today.day && parts.mon === today.mon;
+  const when = sameDay ? parts.time : fmtDate(p.until);
+  return `Агент на паузе до ${when}${why}`;
+}
+
+function aiPauseBlockHtml(c){
+  const p = contactAiPause(c);
+  const status = p
+    ? `<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#b45309"><i class="fas fa-circle-pause"></i> ${esc(aiPauseText(c))}</div>
+       <div style="font-size:12px;color:var(--muted);margin-top:2px">Сообщения клиента сохраняются, агент на них не отвечает. Звонки идут как обычно.</div>`
+    : `<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#166534"><i class="fas fa-circle-check"></i> Агент работает</div>
+       <div style="font-size:12px;color:var(--muted);margin-top:2px">Отвечает клиенту в Telegram, WhatsApp и Instagram.</div>`;
+  const resume = p
+    ? `<button class="btn btn-primary btn-sm" onclick="resumeContactAgent('${c.id}')"><i class="fas fa-circle-play"></i> Вернуть агента</button>`
+    : '';
+  const pauseLabel = p ? 'Изменить паузу' : 'Остановить агента';
+  return `<div class="cd-ai-pause" style="border:1px solid ${p ? '#FCD34D' : 'var(--border)'};background:${p ? '#FFFBEB' : 'transparent'};border-radius:10px;padding:12px;margin-bottom:14px">
+    ${status}
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px">
+      ${resume}
+      <select class="form-input" id="cd-ai-pause-dur" style="width:auto;padding:4px 8px;font-size:12px">
+        <option value="10">10 минут</option>
+        <option value="30">30 минут</option>
+        <option value="60" selected>1 час</option>
+        <option value="1440">1 день</option>
+        <option value="-1">навсегда</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="pauseContactAgent('${c.id}')"><i class="fas fa-circle-pause"></i> ${pauseLabel}</button>
+    </div>
+  </div>`;
+}
+
+async function pauseContactAgent(contactId){
+  const sel = document.getElementById('cd-ai-pause-dur');
+  const v = parseInt(sel ? sel.value : '60', 10);
+  const body = v < 0 ? { forever: true } : { minutes: v };
+  await _aiPauseRequest(contactId, 'POST', body, 'Агент остановлен для этого клиента');
+}
+
+async function resumeContactAgent(contactId){
+  await _aiPauseRequest(contactId, 'DELETE', null, 'Агент снова отвечает клиенту');
+}
+
+async function _aiPauseRequest(contactId, method, body, okText){
+  try{
+    const opts = { method };
+    if(body) opts.body = JSON.stringify(body);
+    const r = await apiFetch(API + '/contacts/' + contactId + '/ai-pause', opts);
+    if(r && r.status === 200){
+      const c = await r.json();
+      const wrap = document.getElementById('cd-ai-pause');
+      if(wrap) wrap.innerHTML = aiPauseBlockHtml(c);
+      showToast(okText, 'success');
+      const search = document.getElementById('contacts-search');
+      const listOpen = !document.getElementById('contacts-list-modal-overlay')?.classList.contains('hidden');
+      if(search && listOpen) loadContactsList(search.value);
+      return;
+    }
+    const err = await r?.json().catch(()=>({}));
+    showToast(errText(err.detail ?? err.message), 'error');
+  }catch(e){ showToast('Ошибка сети', 'error'); }
+}
+
+// Значок «пауза» в списке клиентов и в карточке воронки.
+function aiPauseBadge(c){
+  if(!contactAiPause(c)) return '';
+  return ` <span class="status-badge" title="${esc(aiPauseText(c))}" style="background:#FEF3C7;color:#92400E;font-size:10.5px;padding:1px 6px"><i class="fas fa-circle-pause"></i> пауза</span>`;
 }
 
 // ── SMS-переписка в карточке контакта ──
@@ -198,7 +277,7 @@ function renderContactDetails(c){
 // сервером по номеру (см. /api/agent/contacts/{id} → поле sms).
 function _cdSmsBubble(m){
   const out = (m.direction === 'outbound');
-  const who = out ? 'Агент' : 'Клиент';
+  const who = !out ? 'Клиент' : (m.sent_by === 'owner' ? 'Вы' : 'Агент');
   const tm = m.ts ? fmtDate(m.ts) : '';
   // Вложения (голосовые, фото, документы, отправленные файлы): служебный
   // [file_id=…] нужен оркестратору, человеку показываем кнопку «Файл».

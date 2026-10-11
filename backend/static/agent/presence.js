@@ -34,7 +34,7 @@ const TOOL_RIPPLE = {
   delete_agent_task:['tasks'], get_agent_tasks:['tasks'], get_upcoming_schedule:['tasks'],
   create_agent_contact:['contacts'], bulk_create_contacts:['contacts'], update_contact_info:['contacts'],
   append_contact_note:['contacts'], move_contact_stage:['contacts'], delete_agent_contact:['contacts'],
-  snooze_contact:['contacts'], search_contacts:['contacts'], get_agent_contacts:['contacts'],
+  snooze_contact:['contacts'], pause_agent_for_contact:['contacts'], resume_agent_for_contact:['contacts'], search_contacts:['contacts'], get_agent_contacts:['contacts'],
   get_contacts_by_stage:['contacts'], get_contact_details:['contacts'], update_contact_memory:['contacts'],
   get_agent_stats:['calls','contacts'],
   get_contact_call_history:['recent'], get_call_transcript:['recent'],

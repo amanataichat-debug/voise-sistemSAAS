@@ -48,6 +48,14 @@ class AgentContact(Base):
     attempts_count = Column(Integer, default=0, nullable=False)
     last_called_at = Column(DateTime, nullable=True)
 
+    # Пауза агента в переписке с этим клиентом (во всех мессенджерах сразу):
+    # NULL — агент отвечает; дата в будущем — молчит до неё; AI_PAUSE_FOREVER —
+    # навсегда. Причина: owner_message (владелец написал сам) | manual (кнопка
+    # в карточке) | command (команда владельца в чате агента). Звонков не касается.
+    # Колонки создаёт app.ensure_chat_v2_columns() в начале старта.
+    ai_paused_until = Column(DateTime, nullable=True)
+    ai_pause_reason = Column(String(16), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -67,6 +75,11 @@ class AgentContact(Base):
     def __repr__(self):
         return f"<AgentContact {self.name or self.phone} status={self.status}>"
 
+    def is_ai_paused(self, now=None) -> bool:
+        """Агент молчит в переписке с клиентом (пауза ещё не истекла)."""
+        until = self.ai_paused_until
+        return until is not None and until > (now or datetime.utcnow())
+
     def to_dict(self):
         return {
             "id": str(self.id),
@@ -83,6 +96,9 @@ class AgentContact(Base):
             # ✅ Колонки naive (UTC по факту) — сериализуем с явным UTC-маркером,
             #    чтобы фронт корректно конвертировал в МСК.
             "last_called_at": iso_utc(self.last_called_at),
+            "ai_paused_until": iso_utc(self.ai_paused_until) if self.is_ai_paused() else None,
+            "ai_pause_reason": self.ai_pause_reason if self.is_ai_paused() else None,
+            "ai_paused_forever": self.is_ai_paused() and self.ai_paused_until.year >= 9999,
             "created_at": iso_utc(self.created_at),
             "updated_at": iso_utc(self.updated_at),
         }

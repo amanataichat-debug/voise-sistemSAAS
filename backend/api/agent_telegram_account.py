@@ -21,6 +21,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from backend.services.agent_pause import apply_messenger_settings
 from sqlalchemy.orm import Session
 
 from backend.core.logging import get_logger
@@ -60,6 +62,8 @@ class PasswordRequest(BaseModel):
 class SettingsRequest(BaseModel):
     auto_reply_enabled: Optional[bool] = None
     reply_scope: Optional[str] = None
+    owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
+    reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
 
 
 # ============================================================================
@@ -298,6 +302,7 @@ async def update_settings(
         if body.auto_reply_enabled and row.status != "connected":
             raise HTTPException(status_code=400, detail="not_connected")
         row.auto_reply_enabled = bool(body.auto_reply_enabled)
+    apply_messenger_settings(row, body)
 
     db.commit()
     return _status_dict(row)

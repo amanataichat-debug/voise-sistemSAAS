@@ -98,6 +98,9 @@ class AgentInstagramMessage(Base):
     # id сообщения из Graph API (mid) — ключ дедупликации поллера.
     ig_message_id = Column(String(255), nullable=True)
     direction = Column(String(10), default="inbound", nullable=False)
+    # 'owner' — владелец написал сам со своего телефона/приложения (не агент).
+    # NULL — сообщение клиента или агента. Колонка — app.ensure_chat_v2_columns().
+    sent_by = Column(String(16), nullable=True)
     body = Column(Text, nullable=False)
     # Вложение сообщения (agent_files.id), без FK — как у agent_telegram_messages.
     attachment_id = Column(UUID(as_uuid=True), nullable=True)
@@ -111,6 +114,7 @@ class AgentInstagramMessage(Base):
         return {
             "id": str(self.id),
             "direction": self.direction or "inbound",
+            "sent_by": self.sent_by,
             "body": self.body,
             "attachment_id": str(self.attachment_id) if self.attachment_id else None,
             "ts": ts.isoformat() if ts else None,

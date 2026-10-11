@@ -22,7 +22,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Text, ForeignKey, BigInteger,
+    Column, String, Boolean, DateTime, Text, ForeignKey, BigInteger, Integer,
     UniqueConstraint, Index,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -76,6 +76,13 @@ class AgentTelegramAccount(Base):
     auto_reply_enabled = Column(Boolean, default=False, nullable=False)
     reply_scope = Column(String(16), default="contacts", nullable=False)
 
+    # Переписка v2 (ветка 1210-chat-v2), колонки — app.ensure_chat_v2_columns():
+    # сколько минут агент молчит с клиентом после сообщения владельца
+    # (-1 — навсегда) и через сколько секунд после последнего сообщения
+    # клиента отвечать.
+    owner_pause_minutes = Column(Integer, default=30, server_default="30", nullable=False)
+    reply_delay_seconds = Column(Integer, default=15, server_default="15", nullable=False)
+
     # Атомарный claim поллера при нескольких gunicorn-воркерах:
     # UPDATE ... SET last_poll_at=now() WHERE last_poll_at < cutoff
     last_poll_at = Column(DateTime, nullable=True)
@@ -104,6 +111,8 @@ class AgentTelegramAccount(Base):
             "tg_first_name": self.tg_first_name,
             "auto_reply_enabled": bool(self.auto_reply_enabled),
             "reply_scope": self.reply_scope or "contacts",
+            "owner_pause_minutes": int(self.owner_pause_minutes if self.owner_pause_minutes is not None else 30),
+            "reply_delay_seconds": int(self.reply_delay_seconds if self.reply_delay_seconds is not None else 15),
             "last_error": self.last_error,
         }
 
@@ -177,6 +186,9 @@ class AgentTelegramMessage(Base):
     tg_peer_id = Column(BigInteger, nullable=True)
     tg_message_id = Column(BigInteger, nullable=True)
     direction = Column(String(10), default="inbound", nullable=False)
+    # 'owner' — владелец написал сам со своего телефона/приложения (не агент).
+    # NULL — сообщение клиента или агента. Колонка — app.ensure_chat_v2_columns().
+    sent_by = Column(String(16), nullable=True)
     body = Column(Text, nullable=False)
     # Вложение сообщения (agent_files.id): голосовое/фото/документ клиента или
     # файл, отправленный агентом. Без FK — колонку досоздаёт ensure_all_model_columns.
@@ -188,6 +200,7 @@ class AgentTelegramMessage(Base):
         return {
             "id": str(self.id),
             "direction": self.direction or "inbound",
+            "sent_by": self.sent_by,
             "body": self.body,
             "attachment_id": str(self.attachment_id) if self.attachment_id else None,
             "ts": self.created_at.isoformat() if self.created_at else None,

@@ -23,6 +23,7 @@ from backend.services import telegram_user_service
 from backend.services import instagram_service
 from backend.services import whatsapp_service
 from backend.services import chat_split
+from backend.services import agent_pause
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
@@ -1743,6 +1744,42 @@ AGENT_CHAT_TOOLS = [
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
     SEND_TELEGRAM_NOTIFICATION_TOOL,
+    {
+        "type": "function",
+        "name": "pause_agent_for_contact",
+        "description": (
+            "Остановить агента в ПЕРЕПИСКЕ с клиентом (Telegram, WhatsApp, Instagram сразу): "
+            "агент перестаёт отвечать этому клиенту, сообщения клиента сохраняются. Звонки не "
+            "затрагиваются. Используй для «останови агента для Айбека на час», «не отвечай "
+            "Петрову, я сам с ним переписываюсь». Клиента указывай agent_contact_id или query "
+            "(имя / номер / @username). Без срока — до команды «верни агента»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+                "query": {"type": "string", "description": "Имя, номер телефона или @username клиента, если id неизвестен"},
+                "minutes": {"type": "integer", "description": "На сколько минут (60 — час, 1440 — сутки). Не указывай для паузы без срока"},
+                "forever": {"type": "boolean", "description": "true — до ручного возврата (по умолчанию, если срок не назван)"},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "resume_agent_for_contact",
+        "description": (
+            "Вернуть агента в переписку с клиентом (снять паузу): агент ответит на следующее "
+            "сообщение клиента и увидит всю переписку, включая сообщения владельца. Для «верни "
+            "агента к Айбеку», «пусть агент снова отвечает Петрову»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+                "query": {"type": "string", "description": "Имя, номер телефона или @username клиента, если id неизвестен"},
+            },
+        },
+    },
 ]
 
 
@@ -2932,6 +2969,83 @@ async def fn_snooze_contact(args: dict, user_id: str, agent_config_id: str, db: 
     }
 
 
+def _find_contact_for_pause(args: dict, user_id: str, agent_config_id: str, db: Session):
+    """Контакт по agent_contact_id или query → (contact, error_dict|None)."""
+    q = db.query(AgentContact).filter(
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    )
+    if args.get("agent_contact_id"):
+        try:
+            contact = q.filter(AgentContact.id == args["agent_contact_id"]).first()
+        except Exception:
+            db.rollback()
+            contact = None
+        if contact:
+            return contact, None
+        if not args.get("query"):
+            return None, {"ok": False, "error": "Контакт не найден"}
+    query = (args.get("query") or "").strip().lstrip("@")
+    if not query:
+        return None, {"ok": False, "error": "Укажи agent_contact_id или query (имя/номер клиента)"}
+    digits = "".join(ch for ch in query if ch.isdigit())
+    conds = [AgentContact.name.ilike(f"%{query}%")]
+    if len(digits) >= 5:
+        conds.append(AgentContact.phone.like(f"%{digits[-9:]}%"))
+    else:
+        conds.append(AgentContact.phone.ilike(f"%{query}%"))
+    found = q.filter(or_(*conds)).order_by(AgentContact.updated_at.desc()).limit(6).all()
+    if not found:
+        return None, {"ok": False, "error": f"Клиент «{query}» не найден среди контактов агента"}
+    if len(found) > 1:
+        exact = [c for c in found if (c.name or "").strip().lower() == query.lower()]
+        if len(exact) == 1:
+            return exact[0], None
+        return None, {
+            "ok": False,
+            "error": "Нашлось несколько клиентов — уточни, кого именно, и повтори с agent_contact_id",
+            "candidates": [{"agent_contact_id": str(c.id), "name": c.name, "phone": c.phone} for c in found],
+        }
+    return found[0], None
+
+
+async def fn_pause_agent_for_contact(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    contact, err = _find_contact_for_pause(args, user_id, agent_config_id, db)
+    if err:
+        return err
+    minutes = args.get("minutes")
+    try:
+        minutes = int(minutes) if minutes not in (None, "") else None
+    except (TypeError, ValueError):
+        minutes = None
+    if args.get("forever") or not minutes or minutes <= 0:
+        minutes = -1
+    agent_pause.set_pause(contact, minutes, "command")
+    db.commit()
+    return {
+        "ok": True,
+        "agent_contact_id": str(contact.id),
+        "name": contact.name or contact.phone,
+        "status": agent_pause.describe(contact),
+    }
+
+
+async def fn_resume_agent_for_contact(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    contact, err = _find_contact_for_pause(args, user_id, agent_config_id, db)
+    if err:
+        return err
+    was = agent_pause.describe(contact)
+    agent_pause.clear_pause(contact)
+    db.commit()
+    return {
+        "ok": True,
+        "agent_contact_id": str(contact.id),
+        "name": contact.name or contact.phone,
+        "was": was,
+        "status": "агент снова отвечает клиенту (ответит на его следующее сообщение)",
+    }
+
+
 async def fn_get_call_transcript(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     """Полный транскрипт конкретного звонка."""
     agent_call_id = args.get("agent_call_id")
@@ -3166,6 +3280,8 @@ _TOOL_MAP = {
     "bulk_schedule_calls": "fn_bulk_schedule_calls",
     "trigger_immediate_call": "fn_trigger_immediate_call",
     "snooze_contact": "fn_snooze_contact",
+    "pause_agent_for_contact": "fn_pause_agent_for_contact",
+    "resume_agent_for_contact": "fn_resume_agent_for_contact",
     "get_call_transcript": "fn_get_call_transcript",
     "get_period_report": "fn_get_period_report",
     "get_failed_calls": "fn_get_failed_calls",
@@ -3235,6 +3351,10 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "pause_agent_for_contact":
+            result = await fn_pause_agent_for_contact(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "resume_agent_for_contact":
+            result = await fn_resume_agent_for_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "get_call_transcript":
             result = await fn_get_call_transcript(tool_args, user_id, agent_config_id, db)
         elif tool_name == "get_period_report":

@@ -18,7 +18,7 @@ OAuth-флоу. Composio сохраняет наши query-параметры и
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -76,6 +76,13 @@ class AgentConnector(Base):
     # атомарным claim'ом в мультиворкере (см. backend/core/instagram_poller.py,
     # та же идея, что last_poll_at у agent_telegram_accounts).
     last_poll_at = Column(DateTime, nullable=True)
+
+    # Переписка v2 (ветка 1210-chat-v2), колонки — app.ensure_chat_v2_columns():
+    # сколько минут агент молчит с клиентом после сообщения владельца
+    # (-1 — навсегда) и через сколько секунд после последнего сообщения
+    # клиента отвечать.
+    owner_pause_minutes = Column(Integer, default=30, server_default="30", nullable=False)
+    reply_delay_seconds = Column(Integer, default=15, server_default="15", nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

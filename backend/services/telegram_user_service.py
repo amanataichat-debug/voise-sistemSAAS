@@ -22,6 +22,7 @@ Telegram User Service — работа с ЛИЧНЫМ Telegram-аккаунто
 """
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.core.logging import get_logger
@@ -35,9 +36,9 @@ TG_REPLY_HOURLY_LIMIT = 300      # исходящих в час, когда кл
 TG_PHONE_RESOLVE_HOURLY_LIMIT = 5  # новых диалогов через импорт номера в час
 
 # Сколько диалогов просматривает поллер за тик и сколько сообщений берёт
-# из одного диалога за раз.
+# из одного диалога за раз (вместе с исходящими: ответ агента — до 6 частей).
 POLL_DIALOGS_LIMIT = 30
-POLL_MAX_MESSAGES_PER_DIALOG = 10
+POLL_MAX_MESSAGES_PER_DIALOG = 20
 
 
 def is_configured() -> bool:
@@ -397,29 +398,66 @@ async def _message_item(client, m) -> Optional[Dict[str, Any]]:
     return item
 
 
+def _msg_date(m):
+    """Время сообщения Telethon → naive UTC (или None)."""
+    dt = getattr(m, "date", None)
+    if dt is not None and dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _outgoing_item(m) -> Optional[Dict[str, Any]]:
+    """
+    Исходящее сообщение (с аккаунта владельца: агент или сам владелец) →
+    {id, text, out: True, date}. Вложения не скачиваем — только подпись и вид.
+    """
+    body = (getattr(m, "message", None) or "").strip()
+    media = _media_info(m)
+    if media is not None:
+        from backend.services.agent_media_service import KIND_LABELS
+        if media["kind"] == "sticker":
+            label = f"[стикер {media.get('emoji') or ''}]".replace(" ]", "]")
+        elif media["kind"] == "gif":
+            label = "[GIF-анимация]"
+        else:
+            label = KIND_LABELS.get(media["kind"] or "other", KIND_LABELS["other"])
+        body = (body + "\n" + label).strip()
+    if not body:
+        return None
+    return {"id": m.id, "text": body, "out": True, "date": _msg_date(m)}
+
+
 async def poll_dialogs(
     session_str: str,
     known_last_ids: Dict[int, int],
+    reply_delay_seconds: int = 0,
 ) -> Dict[str, Any]:
     """
-    Снять срез личных диалогов и новые входящие сообщения.
+    Снять срез личных диалогов и новые сообщения.
 
     known_last_ids — {tg_peer_id: last_processed_msg_id} из БД. Для известных
-    диалогов новые сообщения = входящие с id > last_processed; для НЕизвестных
-    (появились после подключения) — последние unread_count входящих (но не
-    больше POLL_MAX_MESSAGES_PER_DIALOG).
+    диалогов новые сообщения = все с id > last_processed: входящие клиента и
+    исходящие с аккаунта (out=True — отправки агента и сообщения, которые
+    владелец написал сам; различает их поллер по tg_message_id в БД). Для
+    НЕизвестных (появились после подключения) — последние unread_count
+    входящих (но не больше POLL_MAX_MESSAGES_PER_DIALOG), без исходящих.
+
+    reply_delay_seconds — «отвечать через N секунд»: если последнее входящее
+    моложе, диалог помечается deferred=True и вложения не скачиваются — поллер
+    вернётся к нему в следующий тик (маркер не двигается).
 
     Возвращает {ok, dialogs: [{peer_id, username, name, phone, top_id, is_known,
-    new_messages: [{id, text, media?}] (старые → новые)}]} или {ok: False, error}.
-    media (голосовое/фото/документ/видео) скачивается здесь же, пока клиент
-    подключён: {kind, filename, mime, duration, data|None, error|None} — см.
-    _message_item. Обрабатывает его поллер через agent_media_service.
+    deferred, new_messages: [{id, text, date, out?, media?}] (старые → новые)}]}
+    или {ok: False, error}. media входящих (голосовое/фото/документ/видео)
+    скачивается здесь же, пока клиент подключён: {kind, filename, mime,
+    duration, data|None, error|None} — см. _message_item.
     Только личные диалоги: не боты, не группы/каналы, не Saved Messages.
     """
     client = _new_client(session_str)
     try:
         await client.connect()
         out: List[Dict[str, Any]] = []
+        now = datetime.utcnow()
         async for d in client.iter_dialogs(limit=POLL_DIALOGS_LIMIT):
             if not d.is_user:
                 continue
@@ -432,31 +470,38 @@ async def poll_dialogs(
             top_id = int(getattr(d.message, "id", 0) or 0)
             is_known = peer_id in known_last_ids
 
-            new_messages: List[Dict[str, Any]] = []
+            raw = []
             if is_known:
                 last_id = int(known_last_ids.get(peer_id) or 0)
                 if top_id > last_id:
-                    msgs = await client.get_messages(
+                    raw = list(await client.get_messages(
                         ent, min_id=last_id, limit=POLL_MAX_MESSAGES_PER_DIALOG
-                    )
-                    for m in reversed(list(msgs or [])):
-                        if getattr(m, "out", False):
-                            continue
-                        item = await _message_item(client, m)
-                        if item:
-                            new_messages.append(item)
+                    ) or [])
             else:
                 unread = int(getattr(d, "unread_count", 0) or 0)
                 if unread > 0:
-                    msgs = await client.get_messages(
+                    raw = [m for m in (await client.get_messages(
                         ent, limit=min(unread, POLL_MAX_MESSAGES_PER_DIALOG)
-                    )
-                    for m in reversed(list(msgs or [])):
-                        if getattr(m, "out", False):
-                            continue
-                        item = await _message_item(client, m)
-                        if item:
-                            new_messages.append(item)
+                    ) or []) if not getattr(m, "out", False)]
+            raw.reverse()  # старые → новые
+
+            last_in = max((_msg_date(m) for m in raw
+                           if not getattr(m, "out", False) and _msg_date(m)), default=None)
+            deferred = bool(reply_delay_seconds and last_in is not None
+                            and (now - last_in).total_seconds() < reply_delay_seconds)
+
+            new_messages: List[Dict[str, Any]] = []
+            for m in raw:
+                if getattr(m, "out", False):
+                    item = _outgoing_item(m)
+                elif deferred:
+                    item = {"id": m.id, "text": "", "date": _msg_date(m)}
+                else:
+                    item = await _message_item(client, m)
+                    if item:
+                        item["date"] = _msg_date(m)
+                if item:
+                    new_messages.append(item)
 
             out.append({
                 "peer_id": peer_id,
@@ -465,6 +510,7 @@ async def poll_dialogs(
                 "phone": getattr(ent, "phone", None),
                 "top_id": top_id,
                 "is_known": is_known,
+                "deferred": deferred,
                 "new_messages": new_messages,
             })
         return {"ok": True, "dialogs": out}
@@ -557,7 +603,12 @@ def build_thread_text(db, agent_contact_id, limit: int = 20) -> str:
     lines = []
     for m in rows:
         ts_str = utc_to_msk(m.created_at).strftime("%d.%m %H:%M") if m.created_at else "?"
-        who = "Агент → клиенту" if (m.direction or "inbound") == "outbound" else "Клиент → агенту"
+        if (m.direction or "inbound") != "outbound":
+            who = "Клиент → агенту"
+        elif getattr(m, "sent_by", None) == "owner":
+            who = "Владелец (сам) → клиенту"
+        else:
+            who = "Агент → клиенту"
         text = (m.body or "").strip().replace("\n", " ")
         lines.append(f"[{ts_str}] {who}: {text}")
     return "\n".join(lines)

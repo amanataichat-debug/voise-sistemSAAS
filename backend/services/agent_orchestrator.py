@@ -37,6 +37,7 @@ from backend.services.agent_tools import (
     build_chat_tools,
     build_postcall_tools,
 )
+from backend.services import agent_pause
 from backend.services.agent_prompts import build_orchestrator_prompt, build_time_block
 from backend.services.openrouter_client import get_openrouter_client
 from backend.core.pipeline_stages import stage_from_decision
@@ -141,7 +142,7 @@ def _timeline_telegram_events(db, agent_contact, since, limit) -> list:
                 continue
             if since is not None and _as_naive_utc(ts) < since:
                 continue
-            who = "агент → клиент" if (m.direction or "inbound") == "outbound" else "клиент → агент"
+            who = _thread_who(m)
             events.append((ts, "telegram", f"Telegram, {who}: {(m.body or '').strip()}"))
         return events
     except Exception as e:
@@ -161,7 +162,7 @@ def _timeline_instagram_events(db, agent_contact, since, limit) -> list:
                 continue
             if since is not None and _as_naive_utc(ts) < since:
                 continue
-            who = "агент → клиент" if (m.direction or "inbound") == "outbound" else "клиент → агент"
+            who = _thread_who(m)
             events.append((ts, "instagram", f"Instagram, {who}: {(m.body or '').strip()}"))
         return events
     except Exception as e:
@@ -181,12 +182,21 @@ def _timeline_whatsapp_events(db, agent_contact, since, limit) -> list:
                 continue
             if since is not None and _as_naive_utc(ts) < since:
                 continue
-            who = "агент → клиент" if (m.direction or "inbound") == "outbound" else "клиент → агент"
+            who = _thread_who(m)
             events.append((ts, "whatsapp", f"WhatsApp, {who}: {(m.body or '').strip()}"))
         return events
     except Exception as e:
         logger.warning(f"[AGENT] timeline whatsapp events failed: {e}")
         return []
+
+
+def _thread_who(m) -> str:
+    """Кто автор сообщения мессенджера — для хронологии оркестратора."""
+    if (m.direction or "inbound") != "outbound":
+        return "клиент → агент"
+    if getattr(m, "sent_by", None) == "owner":
+        return "владелец (написал сам) → клиент"
+    return "агент → клиент"
 
 
 def _as_naive_utc(dt):
@@ -319,6 +329,8 @@ CHAT_META_PROMPT = """# РОЛЬ
 - bulk_schedule_calls — запланировать звонки сразу группе контактов (по списку или стадии)
 - trigger_immediate_call — позвонить контакту прямо сейчас (только по явной просьбе)
 - snooze_contact — поставить контакт на паузу до даты (отменяет задачи; это не отказ)
+- pause_agent_for_contact — остановить агента в переписке с клиентом («останови агента для Айбека на час»)
+- resume_agent_for_contact — вернуть агента в переписку с клиентом («верни агента к Айбеку»)
 - get_call_transcript — полный текст конкретного звонка (сначала agent_call_id из истории)
 - get_period_report — сводный отчёт по звонкам за период (неделя/месяц)
 - get_failed_calls — очередь на перезвон: кому не дозвонились
@@ -2987,6 +2999,12 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
         if not contact:
             return
 
+        # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
+        # треде, агент увидит его после паузы; сейчас не отвечаем.
+        if agent_pause.is_paused(contact):
+            logger.info(f"[AGENT-TG-USER] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
+            return
+
         inbound_call = AgentCall(
             agent_contact_id=contact.id,
             agent_config_id=agent.id,
@@ -3058,6 +3076,12 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
             AgentContact.agent_config_id == agent.id,
         ).first()
         if not contact:
+            return
+
+        # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
+        # треде, агент увидит его после паузы; сейчас не отвечаем.
+        if agent_pause.is_paused(contact):
+            logger.info(f"[AGENT-IG] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
             return
 
         inbound_call = AgentCall(
@@ -3137,6 +3161,12 @@ async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, messag
             AgentContact.agent_config_id == agent.id,
         ).first()
         if not contact:
+            return
+
+        # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
+        # треде, агент увидит его после паузы; сейчас не отвечаем.
+        if agent_pause.is_paused(contact):
+            logger.info(f"[AGENT-WA] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
             return
 
         inbound_call = AgentCall(

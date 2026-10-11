@@ -23,6 +23,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+
+from backend.services.agent_pause import apply_messenger_settings
 from sqlalchemy.orm import Session
 
 from backend.core.dependencies import get_current_user
@@ -45,6 +47,8 @@ class SettingsRequest(BaseModel):
     auto_reply_enabled: Optional[bool] = None
     reply_scope: Optional[str] = None
     daily_new_chats_limit: Optional[int] = None
+    owner_pause_minutes: Optional[int] = None   # 10/30/60/1440, -1 — навсегда
+    reply_delay_seconds: Optional[int] = None   # 5/10/15/20/30/60
 
 
 def _get_agent(current_user: User, db: Session, agent_id: Optional[str] = None) -> AgentConfig:
@@ -200,6 +204,7 @@ async def update_settings(
         if not 0 <= body.daily_new_chats_limit <= 100:
             raise HTTPException(status_code=400, detail="invalid_limit")
         row.daily_new_chats_limit = body.daily_new_chats_limit
+    apply_messenger_settings(row, body)
     db.commit()
     return _status_dict(row)
 

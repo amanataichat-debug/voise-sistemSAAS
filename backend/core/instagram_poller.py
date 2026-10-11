@@ -18,6 +18,12 @@ instagram_send_message.
 (conversation.last_processed_at) продвигается ДО запуска оркестратора; дедуп —
 по ig_message_id (mid Graph API).
 
+Переписка v2: свои сообщения, которых нет среди отправок агента (по
+ig_message_id), написал владелец из приложения Instagram — они сохраняются в
+тред (sent_by='owner') и ставят паузу агента с клиентом (agent_pause). Пока
+последнее сообщение клиента моложе connector.reply_delay_seconds, тред
+откладывается до следующего тика (реальная задержка = настройка + до 90 с).
+
 Первый опрос нового треда: чтобы при подключении агент не бросился отвечать
 на всю старую переписку, для тредов без watermark обрабатываются только
 сообщения свежее NEW_CONVERSATION_LOOKBACK_MINUTES; остальное молча
@@ -31,6 +37,7 @@ from sqlalchemy import or_
 
 from backend.core.logging import get_logger
 from backend.db.session import SessionLocal
+from backend.services import agent_pause
 from backend.services import instagram_service as ig
 
 logger = get_logger(__name__)
@@ -42,6 +49,10 @@ CLAIM_CUTOFF_SECONDS = 80
 # Сколько тредов смотрим за тик и сколько сообщений берём из треда.
 POLL_CONVERSATIONS_LIMIT = 15
 POLL_MESSAGES_PER_CONVERSATION = 15
+
+# Своё сообщение, которого нет среди отправок агента, моложе этого — ещё может
+# оказаться отправкой агента, не успевшей записаться в БД; ждём тик.
+OWNER_ECHO_GRACE_SECONDS = 20
 
 # Максимум запусков оркестратора с одного коннектора за тик.
 MAX_CONVERSATION_RUNS_PER_TICK = 5
@@ -246,10 +257,27 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
 
     fresh = [
         m for m in parsed
-        if m["ts"] > threshold and not_seen(db, connector.agent_config_id, m["mid"])
+        # >=: время Graph с точностью до секунды — сообщение в ту же секунду,
+        # что и watermark, иначе терялось; дубли отсекает not_seen по mid.
+        if m["ts"] >= threshold and not_seen(db, connector.agent_config_id, m["mid"])
     ]
     inbound = [m for m in fresh if m["from_id"] != own_id and (m["text"] or m["attachments"])]
     outbound = [m for m in fresh if m["from_id"] == own_id and (m["text"] or m["attachments"])]
+    # Свои сообщения без mid в базе: эхо отправки агента (Composio не вернул
+    # mid) получает mid, остальное написал владелец сам.
+    outbound = [m for m in outbound if not _claim_agent_echo(db, connector.agent_config_id, conv_id, m)]
+
+    now = datetime.utcnow()
+    # «Отвечать через N секунд»: клиент ещё пишет — watermark не двигаем,
+    # тред разберём в следующий тик. То же для совсем свежего «чужого»
+    # исходящего: отправка агента могла ещё не записаться в базу.
+    delay = agent_pause.reply_delay_seconds(connector)
+    if inbound and (now - inbound[-1]["ts"]).total_seconds() < delay:
+        db.commit()
+        return False
+    if any((now - m["ts"]).total_seconds() < OWNER_ECHO_GRACE_SECONDS for m in outbound):
+        db.commit()
+        return False
 
     # Watermark двигаем в любом случае — тред просмотрен.
     row.last_processed_at = newest_ts
@@ -269,7 +297,7 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
             AgentContact.agent_config_id == connector.agent_config_id,
             AgentContact.phone == f"ig:{row.igsid}",
         ).first()
-    if contact is None and inbound:
+    if contact is None and (inbound or outbound):
         contact = AgentContact(
             agent_config_id=connector.agent_config_id,
             user_id=connector.user_id,
@@ -283,14 +311,20 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
     if contact is not None and row.agent_contact_id is None:
         row.agent_contact_id = contact.id
 
-    # Сохраняем сообщения (исходящие из приложения владельца — тоже, чтобы
-    # тред был полным) ДО запуска оркестратора.
+    # Сохраняем сообщения ДО запуска оркестратора. Исходящие владельца (из
+    # приложения Instagram) — в тред и пауза агента с этим клиентом.
     for m in outbound:
-        ig.store_message(
+        msg_row = ig.store_message(
             db, connector.agent_config_id, "outbound", _placeholder(m, processing=False),
             agent_contact_id=(contact.id if contact else None),
             ig_conversation_id=conv_id, ig_message_id=m["mid"], sent_at=m["ts"],
         )
+        if msg_row is not None:
+            msg_row.sent_by = "owner"
+        if contact is not None:
+            agent_pause.on_owner_message(
+                db, contact.id, agent_pause.owner_pause_minutes(connector), m["ts"],
+            )
     stored = []
     for m in inbound:
         msg_row = ig.store_message(
@@ -416,6 +450,30 @@ async def _process_media_and_dispatch(agent_config_id: str, contact_id: str, ite
     text_joined = "\n".join(p for p in parts if p)
     if text_joined:
         await handle_inbound_instagram(agent_config_id, contact_id, text_joined)
+
+
+def _claim_agent_echo(db, agent_config_id, conv_id, m) -> bool:
+    """
+    Своё сообщение, которого нет в базе по mid, — это отправка агента, если
+    рядом по времени есть outbound-строка агента без mid (Composio не всегда
+    возвращает id). Строка получает mid; True — это эхо агента, не владелец.
+    """
+    from backend.models.agent_instagram import AgentInstagramMessage
+    candidates = db.query(AgentInstagramMessage).filter(
+        AgentInstagramMessage.agent_config_id == agent_config_id,
+        AgentInstagramMessage.ig_conversation_id == conv_id,
+        AgentInstagramMessage.direction == "outbound",
+        AgentInstagramMessage.ig_message_id.is_(None),
+        AgentInstagramMessage.sent_by.is_(None),
+        AgentInstagramMessage.created_at >= m["ts"] - timedelta(minutes=5),
+        AgentInstagramMessage.created_at <= m["ts"] + timedelta(minutes=5),
+    ).order_by(AgentInstagramMessage.created_at.asc()).all()
+    if not candidates:
+        return False
+    same = [r for r in candidates if m["text"] and (r.body or "").strip() == m["text"]]
+    row = (same or candidates)[0]
+    row.ig_message_id = m["mid"]
+    return True
 
 
 def not_seen(db, agent_config_id, mid) -> bool:

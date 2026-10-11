@@ -509,6 +509,33 @@ class TaskScheduler:
             task.agent_call_id = agent_call.id
             db.commit()
 
+            # Владелец ведёт переписку с клиентом сам (или остановил агента):
+            # сообщение не отправляем, в истории агента — пометка почему.
+            from backend.services import agent_pause
+            if agent_pause.is_paused(agent_contact):
+                note = (f"Не отправлено: {agent_pause.describe(agent_contact)} "
+                        f"(владелец ведёт переписку с клиентом сам).")
+                agent_call.status = "answered"
+                agent_call.post_call_decision = "SUCCESS"
+                agent_call.transcript = (task.description or task.title or "").strip()
+                agent_call.call_result = note
+                agent_call.completed_at = datetime.utcnow()
+                agent_call.postcall_log = {
+                    "call_direction": "telegram_outbound",
+                    "message_sent": False,
+                    "skipped_reason": "ai_paused",
+                    "note": note,
+                    "tool_calls": [],
+                    "final_decision": "SUCCESS",
+                    "analyzed_at": datetime.utcnow().isoformat(),
+                }
+                task.status = TaskStatus.COMPLETED
+                task.call_result = json.dumps({"skipped": "ai_paused", "note": note}, ensure_ascii=False)
+                task.call_completed_at = datetime.utcnow()
+                db.commit()
+                logger.info(f"[TASK-SCHEDULER] ✉️ Telegram task {task.id} skipped: contact {agent_contact.id} paused")
+                return
+
             orchestrator = PostCallOrchestrator()
             await orchestrator.run_for_scheduled_telegram(
                 agent_call, agent_contact, agent_config, user, task, db

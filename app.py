@@ -1568,6 +1568,65 @@ def ensure_wallet_columns():
         logger.error(f"❌ ensure_wallet_columns error: {e}")
 
 
+def ensure_chat_v2_columns():
+    """
+    Переписка v2 (ветка 1210-chat-v2): пауза агента с клиентом и настройки
+    мессенджеров. Идёт в начале старта, в каждом воркере (как кошелёк):
+    agent_contacts и строки подключений ORM выбирает в каждом запросе страницы
+    агента и в поллерах, без колонок всё падает с UndefinedColumn (инцидент 11.10).
+    Каждый ALTER — отдельной транзакцией: сбой одного не мешает остальным.
+    """
+    from sqlalchemy import text, inspect
+    stmts = {
+        "agent_contacts": [
+            "ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMP",
+            "ADD COLUMN IF NOT EXISTS ai_pause_reason VARCHAR(16)",
+        ],
+        "agent_whatsapp_accounts": [
+            "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
+            "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
+        ],
+        "agent_telegram_accounts": [
+            "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
+            "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
+        ],
+        "agent_connectors": [
+            "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
+            "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
+        ],
+        "agent_telegram_messages": ["ADD COLUMN IF NOT EXISTS sent_by VARCHAR(16)"],
+        "agent_whatsapp_messages": ["ADD COLUMN IF NOT EXISTS sent_by VARCHAR(16)"],
+        "agent_instagram_messages": ["ADD COLUMN IF NOT EXISTS sent_by VARCHAR(16)"],
+    }
+    try:
+        inspector = inspect(engine)
+        existing = set(inspector.get_table_names())
+    except Exception as e:
+        logger.error(f"❌ ensure_chat_v2_columns: inspect failed: {e}")
+        return
+    added = 0
+    for table, alters in stmts.items():
+        if table not in existing:
+            continue  # таблицу создаст create_tables, сразу с колонками
+        try:
+            cols = {c["name"] for c in inspector.get_columns(table)}
+        except Exception:
+            cols = set()
+        for alter in alters:
+            col = alter.split("IF NOT EXISTS ", 1)[1].split()[0]
+            if col in cols:
+                continue
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+                    conn.execute(text(f'ALTER TABLE "{table}" {alter}'))
+                added += 1
+            except Exception as e:
+                logger.error(f"❌ ensure_chat_v2_columns: {table}.{col}: {e}")
+    if added:
+        logger.info(f"✅ ensure_chat_v2_columns: added {added} column(s)")
+
+
 def ensure_agent_attachment_columns():
     """
     Колонки вложений агента обзвона (ветка 0410-golos): attachment_id в
@@ -2478,6 +2537,7 @@ async def startup_event():
         # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
         ensure_eleven_voice_engine_columns()
         ensure_wallet_columns()
+        ensure_chat_v2_columns()
         
         try:
             # Для Render используем более простую блокировку

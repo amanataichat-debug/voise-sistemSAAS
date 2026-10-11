@@ -104,6 +104,7 @@ const TOOL_LABELS = {
   update_agent_task:'Переношу звонок', get_upcoming_schedule:'Смотрю расписание',
   bulk_schedule_calls:'Планирую серию звонков', trigger_immediate_call:'Звоню прямо сейчас',
   snooze_contact:'Ставлю контакт на паузу', get_call_transcript:'Открываю транскрипт',
+  pause_agent_for_contact:'Останавливаю агента в переписке', resume_agent_for_contact:'Возвращаю агента в переписку',
   get_period_report:'Готовлю отчёт за период', get_failed_calls:'Собираю недозвоны',
 };
 
@@ -121,6 +122,7 @@ const TOOL_ICONS = {
   update_agent_task:'fa-pen-to-square', get_upcoming_schedule:'fa-calendar-days',
   bulk_schedule_calls:'fa-calendar-plus', trigger_immediate_call:'fa-phone-volume',
   snooze_contact:'fa-circle-pause', get_call_transcript:'fa-file-lines',
+  pause_agent_for_contact:'fa-circle-pause', resume_agent_for_contact:'fa-circle-play',
   get_period_report:'fa-chart-line', get_failed_calls:'fa-phone-slash',
 };
 

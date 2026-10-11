@@ -129,7 +129,7 @@ function renderWaAccountModal(){
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--border,#e2e8f0)">
         <div>
           <div style="font-weight:600;font-size:13px">Автоответ на входящие</div>
-          <div style="font-size:12px;color:#64748b">Агент сам отвечает на новые сообщения (через несколько секунд после последнего)</div>
+          <div style="font-size:12px;color:#64748b">Агент сам отвечает на новые сообщения (через заданное ниже время после последнего)</div>
         </div>
         <label class="switch"><input type="checkbox" ${s.auto_reply_enabled ? 'checked' : ''} onchange="waAccSave({auto_reply_enabled: this.checked})"><span class="slider"></span></label>
       </div>
@@ -145,6 +145,7 @@ function renderWaAccountModal(){
         <input type="number" class="form-input" min="0" max="100" value="${Number(s.daily_new_chats_limit || 0)}" onchange="waAccSave({daily_new_chats_limit: parseInt(this.value || '0', 10)})" style="max-width:120px">
         <div style="font-size:12px;color:#64748b;margin-top:6px">Для нового номера начинайте с 10–20 в сутки. 0 — агент только отвечает.</div>
       </div>
+      ${messengerSettingsHtml(s, 'waAccSave', '')}
       <div style="padding-top:14px;border-top:1px solid var(--border,#e2e8f0)">
         <button class="btn btn-secondary" onclick="waAccDisconnect(false)"><i class="fas fa-link-slash"></i> Отключить номер</button>
       </div>`;
@@ -233,6 +234,8 @@ function waAccErr(detail){
     instance_not_found: 'Подключение не найдено на шлюзе — отключите и подключите заново',
     invalid_reply_scope: 'Неверное значение охвата',
     invalid_limit: 'Лимит — от 0 до 100',
+    invalid_owner_pause: 'Неверная длительность паузы',
+    invalid_reply_delay: 'Неверная задержка ответа',
     not_connected: 'WhatsApp не подключён',
     agent_not_found: 'Агент не найден',
   };

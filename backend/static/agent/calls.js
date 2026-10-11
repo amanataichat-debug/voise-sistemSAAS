@@ -168,6 +168,7 @@ function renderCallExpanded(call, uid){
         <i class="fas fa-magnifying-glass-chart"></i> Анализ PostCall ${post.model ? `· <span style="font-weight:400;color:var(--muted);text-transform:none">${esc(post.model)}</span>` : ''}
       </div>
       ${post.final_decision ? `<div style="font-size:12px;margin-bottom:8px"><b>Решение:</b> ${decisionRu(post.final_decision)}</div>` : ''}
+      ${post.note ? `<div style="font-size:12px;margin-bottom:8px;color:#92400E"><i class="fas fa-circle-pause"></i> ${esc(post.note)}</div>` : ''}
       ${toolsHtml ? `<div style="font-size:12px"><b>Действия агента:</b>${toolsHtml}</div>` : ''}
     </div>
   ` : '';
