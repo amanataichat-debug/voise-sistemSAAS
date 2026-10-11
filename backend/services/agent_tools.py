@@ -595,10 +595,50 @@ import re as _re_chat_split
 _CHAT_SPLIT_MARKER = _re_chat_split.compile(r"(?m)^[ \t]*-{3,}[ \t]*$")
 # Жёсткий потолок частей — чтобы в случае, если модель насыпет много `---`,
 # не превратить ответ в 20 отдельных сообщений.
-_CHAT_SPLIT_MAX_PARTS = 6
-# Если явного маркера нет, но ответ длинный — режем по пустым строкам.
-_CHAT_SPLIT_SOFT_THRESHOLD = 400
+_CHAT_SPLIT_MAX_PARTS = 8
+# Если нет маркера `---`, принудительно режем всё, что длиннее этого
+# порога — чтобы агент не выглядел как канцелярская простыня.
+_CHAT_SPLIT_SOFT_THRESHOLD = 160
+# Жёсткий потолок длины одной «реплики» — после split'а по абзацам ещё
+# добиваем длинные куски split'ом по предложениям.
+_CHAT_SPLIT_PART_MAX_CHARS = 220
 _CHAT_SPLIT_PARAGRAPH = _re_chat_split.compile(r"\n{2,}")
+# Границы предложений (русский/английский): после .!? плюс пробел и
+# заглавная буква следующего слова; переносы строк тоже считаются
+# границами для «списочных» ответов.
+_CHAT_SPLIT_SENTENCE = _re_chat_split.compile(
+    r"(?<=[.!?…])\s+(?=[A-ZА-ЯЁ\d\-])|(?<=\n)"
+)
+
+
+def _split_long_part(part: str) -> list[str]:
+    """
+    Разбить один длинный «кусок» на реплики по границам предложений,
+    стараясь не превышать _CHAT_SPLIT_PART_MAX_CHARS на реплику.
+    Короткие предложения склеиваются в одну реплику.
+    """
+    part = part.strip()
+    if len(part) <= _CHAT_SPLIT_PART_MAX_CHARS:
+        return [part]
+    sentences = [s.strip() for s in _CHAT_SPLIT_SENTENCE.split(part) if s and s.strip()]
+    if len(sentences) <= 1:
+        return [part]
+    out: list[str] = []
+    buf = ""
+    for s in sentences:
+        if not buf:
+            buf = s
+            continue
+        # Склеиваем, если ещё помещается; иначе — закрываем буфер и начинаем новый.
+        candidate = buf + " " + s
+        if len(candidate) <= _CHAT_SPLIT_PART_MAX_CHARS:
+            buf = candidate
+        else:
+            out.append(buf)
+            buf = s
+    if buf:
+        out.append(buf)
+    return out
 
 
 def _split_message_for_chat(text: str) -> list[str]:
@@ -607,24 +647,38 @@ def _split_message_for_chat(text: str) -> list[str]:
 
     Приоритет:
       1) Маркер `---` на отдельной строке — явная инструкция от модели.
-      2) Длинный текст без маркера → split по двойному переводу строки.
-      3) Иначе — одно сообщение.
+      2) Иначе — split по пустым строкам (абзацам).
+      3) Если какой-то кусок (или весь текст) всё ещё длиннее
+         _CHAT_SPLIT_PART_MAX_CHARS — дробим по предложениям.
+      4) Если итого один короткий кусок (≤ _CHAT_SPLIT_SOFT_THRESHOLD)
+         — одно сообщение, не трогаем.
     """
     raw = (text or "").strip()
     if not raw:
         return []
 
+    # Шаг 1: явный маркер — приоритет.
     if _CHAT_SPLIT_MARKER.search(raw):
-        parts = _CHAT_SPLIT_MARKER.split(raw)
-    elif len(raw) > _CHAT_SPLIT_SOFT_THRESHOLD and _CHAT_SPLIT_PARAGRAPH.search(raw):
-        parts = _CHAT_SPLIT_PARAGRAPH.split(raw)
+        parts = [p.strip() for p in _CHAT_SPLIT_MARKER.split(raw) if p and p.strip()]
     else:
-        return [raw]
+        # Короткий ответ без маркера — отдаём как есть.
+        if len(raw) <= _CHAT_SPLIT_SOFT_THRESHOLD:
+            return [raw]
+        # Шаг 2: режем по абзацам.
+        parts = [p.strip() for p in _CHAT_SPLIT_PARAGRAPH.split(raw) if p and p.strip()]
+        if not parts:
+            parts = [raw]
 
-    cleaned = [p.strip() for p in parts if p and p.strip()]
-    if not cleaned:
+    # Шаг 3: добиваем длинные куски split'ом по предложениям.
+    final: list[str] = []
+    for p in parts:
+        final.extend(_split_long_part(p))
+
+    # Чистим и ограничиваем количество.
+    final = [p for p in final if p]
+    if not final:
         return [raw]
-    return cleaned[:_CHAT_SPLIT_MAX_PARTS]
+    return final[:_CHAT_SPLIT_MAX_PARTS]
 
 
 async def fn_telegram_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
