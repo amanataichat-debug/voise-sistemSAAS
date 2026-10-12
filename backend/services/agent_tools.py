@@ -612,7 +612,8 @@ async def fn_send_voice_message(args: dict, user_id: str, agent_config, db: Sess
     if not result.get("ok"):
         return result
     credits = agent_voice_service.charge(db, contact.user_id or user_id, spoken, ref_id=contact.id,
-                                         engine=voice.get("engine") or "eleven")
+                                         engine=voice.get("engine") or "eleven",
+                                         seconds=audio.get("seconds"))
     logger.info(f"[AGENT-TOOLS] send_voice_message → {channel} contact={contact.id} engine={voice.get('engine')} "
                 f"{len(spoken)} chars, {audio.get('duration')}s, ogg={audio.get('is_ogg')}, credits={credits}")
     return dict(result, channel=channel, sent_as=("voice" if audio.get("is_ogg") or channel == "whatsapp" else "audio"),

@@ -11,7 +11,10 @@
            разговорно, со звуковыми метками v3 ([softly], [short pause],
            [exhales] …, белый список VOICE_TAGS) и многоточиями; неизвестные
            метки вырезаются, спокойная манера добавляется сама.
-  openai — OpenAI Speech (AGENT_VOICE_OPENAI_TTS_MODEL) голосами GPT-Live
+  openai — GPT-Live (gpt-live-1, как голосовой режим ChatGPT): сессия Live
+           без собеседника дословно наговаривает текст (_gpt_live_speak), PCM →
+           OGG/Opus через ffmpeg (imageio-ffmpeg). Не вышло — запасной вариант
+           OpenAI Speech (AGENT_VOICE_OPENAI_TTS_MODEL) голосами
            (OPENAI_TTS_VOICES — набор модели Speech, AGENT_VOICE_OPENAI_VOICES)
            с инструкцией манеры (openai_instructions: язык агента с родным
            произношением, спокойно, тихо, с паузами). Метки
@@ -130,8 +133,9 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
     if not is_configured(engine):
         return None
     if engine == ENGINE_OPENAI:
+        from backend.websockets.live_client import LIVE_VOICE_SET
         voice = (getattr(agent_config, "voice_msg_openai_voice", None) or DEFAULT_OPENAI_VOICE).lower()
-        if voice not in OPENAI_TTS_VOICES:
+        if voice not in LIVE_VOICE_SET:
             voice = DEFAULT_OPENAI_VOICE
         return {
             "engine": ENGINE_OPENAI, "voice_id": voice, "voice_name": voice,
@@ -283,8 +287,8 @@ async def _tts_eleven(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, A
 
 async def _tts_openai(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, Any]:
     body = {
-        "model": voice["model"],
-        "voice": voice["voice_id"],
+        "model": voice.get("model") or settings.AGENT_VOICE_OPENAI_TTS_MODEL,
+        "voice": voice["voice_id"] if voice["voice_id"] in OPENAI_TTS_VOICES else DEFAULT_OPENAI_VOICE,
         "input": text,
         "instructions": openai_instructions(voice.get("language")),
         "response_format": "opus" if fmt == "opus" else "mp3",
@@ -310,6 +314,142 @@ async def _tts_openai(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, A
     return {"ok": True, "data": resp.content}
 
 
+# ---------------------------------------------------------------------------
+# GPT-Live (gpt-live-1): та же модель, что в звонках и в голосовом режиме ChatGPT.
+# Сессия Live без собеседника: просим дословно произнести текст и собираем
+# выходной PCM16 24 кГц, пока звук не закончится. Модель говорит в реальном
+# темпе, поэтому 30-секундное голосовое готовится ~30 с.
+# ---------------------------------------------------------------------------
+
+LIVE_RATE = 24000
+_LIVE_SILENCE = b"\x00\x00" * (LIVE_RATE // 10)   # 100 мс тишины на вход
+
+
+def _live_prompt(language: Optional[str]) -> str:
+    return (
+        "Ты записываешь голосовое сообщение клиенту в мессенджере, как живой менеджер на "
+        "телефон. Тебе пришлют текст — произнеси его ДОСЛОВНО: не добавляй приветствий, "
+        "вопросов и комментариев, ничего не пропускай и не пересказывай. После текста сразу "
+        "замолчи. " + openai_instructions(language)
+    )
+
+
+async def _gpt_live_speak(text: str, voice: Dict[str, Any], timeout: float = 120.0) -> Dict[str, Any]:
+    """Текст → {ok, pcm (PCM16 24 кГц mono), transcript, seconds} через GPT-Live."""
+    import base64
+    import time
+    import types
+    from backend.websockets.live_client import OpenAILiveClient
+
+    cfg = types.SimpleNamespace(system_prompt=_live_prompt(voice.get("language")), functions=None,
+                                voice=voice["voice_id"])
+    client = OpenAILiveClient(settings.OPENAI_API_KEY, cfg, client_id=f"voice-msg-{int(time.time())}",
+                              db_session=None, audio_rate=LIVE_RATE, voice_override=voice["voice_id"])
+    if not await client.connect():
+        return {"ok": False, "error": "live_unavailable"}
+
+    pcm = bytearray()
+    transcript = []
+    stop = asyncio.Event()
+
+    async def feed_silence():
+        # Live — full-duplex: держим входной поток живым тишиной, как в звонке.
+        while not stop.is_set():
+            await client.send_audio(_LIVE_SILENCE)
+            await asyncio.sleep(0.1)
+
+    feeder = asyncio.create_task(feed_silence())
+    started = time.monotonic()
+    last_audio = None
+    try:
+        await client.append_instructions(
+            "Произнеси дословно этот текст голосового сообщения и замолчи:\n«" + text + "»"
+        )
+        events = client.receive_events()
+        while True:
+            now = time.monotonic()
+            if now - started > timeout:
+                break
+            if last_audio is None and now - started > 20:
+                break  # модель так и не заговорила
+            if last_audio is not None and now - last_audio > 1.6:
+                break  # звук закончился
+            try:
+                event = await asyncio.wait_for(events.__anext__(), timeout=0.4)
+            except asyncio.TimeoutError:
+                continue
+            except StopAsyncIteration:
+                break
+            etype = event.get("type")
+            if etype == "session.output_audio.delta":
+                chunk = event.get("delta") or ""
+                if chunk:
+                    pcm.extend(base64.b64decode(chunk))
+                    last_audio = time.monotonic()
+            elif etype == "session.output_transcript.delta":
+                transcript.append(event.get("delta") or event.get("text") or "")
+    except Exception as e:
+        logger.warning(f"[AGENT-VOICE] GPT-Live synthesis error: {type(e).__name__}: {e}")
+    finally:
+        stop.set()
+        feeder.cancel()
+        try:
+            await client.close(timeout=5)
+        except Exception:
+            pass
+
+    if len(pcm) < LIVE_RATE:  # меньше 0.5 с звука
+        return {"ok": False, "error": "live_no_audio"}
+    said = "".join(transcript).strip()
+    logger.info(f"[AGENT-VOICE] GPT-Live voice={voice['voice_id']} {len(pcm) / 2 / LIVE_RATE:.1f}s, said={said[:120]!r}")
+    return {"ok": True, "pcm": bytes(pcm), "transcript": said, "seconds": len(pcm) / 2 / LIVE_RATE}
+
+
+def _pcm_to_wav(pcm: bytes, rate: int = LIVE_RATE) -> bytes:
+    import io
+    import wave
+    bio = io.BytesIO()
+    with wave.open(bio, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return bio.getvalue()
+
+
+async def _pcm_to_ogg(pcm: bytes, rate: int = LIVE_RATE) -> Optional[bytes]:
+    ffmpeg = _ffmpeg_path()
+    if not ffmpeg:
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "s16le", "-ar", str(rate), "-ac", "1",
+            "-i", "pipe:0", "-c:a", "libopus", "-b:a", "48k", "-ar", "48000", "-f", "ogg", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(pcm), timeout=60)
+        if proc.returncode == 0 and out.startswith(b"OggS"):
+            return out
+        logger.warning(f"[AGENT-VOICE] ffmpeg pcm→ogg failed ({proc.returncode}): {err[:200]!r}")
+    except Exception as e:
+        logger.warning(f"[AGENT-VOICE] ffmpeg pcm→ogg error: {e}")
+    return None
+
+
+async def _synthesize_live(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
+    res = await _gpt_live_speak(text, voice)
+    if not res.get("ok"):
+        return res
+    pcm, secs = res["pcm"], res["seconds"]
+    ogg = await _pcm_to_ogg(pcm)
+    base = {"ok": True, "engine_used": "gpt_live", "seconds": secs, "spoken": res.get("transcript")}
+    if ogg:
+        return dict(base, data=ogg, mime="audio/ogg", filename="voice.ogg", is_ogg=True,
+                    duration=max(1, round(secs)))
+    return dict(base, data=_pcm_to_wav(pcm), mime="audio/wav", filename="voice.wav", is_ogg=False,
+                duration=max(1, round(secs)))
+
+
 async def _tts(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, Any]:
     """fmt: 'opus' | 'mp3'."""
     if voice.get("engine") == ENGINE_OPENAI:
@@ -328,6 +468,12 @@ async def synthesize(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
     text = prepare_text(text, engine)
     if not strip_tags(text):
         return {"ok": False, "error": "empty_text"}
+
+    if engine == ENGINE_OPENAI and settings.AGENT_VOICE_OPENAI_USE_LIVE:
+        res = await _synthesize_live(text, voice)
+        if res.get("ok"):
+            return res
+        logger.warning(f"[AGENT-VOICE] GPT-Live failed ({res.get('error')}) — falling back to OpenAI speech")
 
     res = await _tts(text, voice, "opus")
     if res.get("ok") and res["data"].startswith(b"OggS"):
@@ -350,35 +496,56 @@ async def synthesize(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def synthesize_preview(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
-    """Пример голоса для настроек (MP3 — играет в любом браузере)."""
+    """Пример голоса для настроек: {ok, data, mime[, seconds, engine_used]} (MP3 или WAV)."""
     engine = voice.get("engine") or ENGINE_ELEVEN
     if not is_configured(engine):
         return {"ok": False, "error": "tts_not_configured"}
-    return await _tts(prepare_text(text, engine), voice, "mp3")
+    text = prepare_text(text, engine)
+    if engine == ENGINE_OPENAI and settings.AGENT_VOICE_OPENAI_USE_LIVE:
+        res = await _gpt_live_speak(text, voice)
+        if res.get("ok"):
+            return {"ok": True, "data": _pcm_to_wav(res["pcm"]), "mime": "audio/wav",
+                    "seconds": res["seconds"], "engine_used": "gpt_live"}
+        logger.warning(f"[AGENT-VOICE] GPT-Live preview failed ({res.get('error')}) — falling back to OpenAI speech")
+    res = await _tts(text, voice, "mp3")
+    return dict(res, mime="audio/mpeg") if res.get("ok") else res
 
 
 # ============================================================================
 # УЧЁТ
 # ============================================================================
 
-def credits_for(text: str, engine: str = ENGINE_ELEVEN) -> int:
+def credits_for(text: str, engine: str = ENGINE_ELEVEN, seconds: Optional[float] = None) -> int:
+    """
+    Кредиты за озвучку. GPT-Live — по секундам звука (VOICE_COST_USD_PER_MIN_GPT_LIVE;
+    без длительности — оценка ≈ 14 символов в секунду), OpenAI Speech и ElevenLabs — по символам.
+    """
     from backend.services.agent_models import _CREDITS_PER_USD
     text = strip_tags(text)
     if not text:
         return 0
-    rate = (settings.AGENT_VOICE_OPENAI_USD_PER_1K_CHARS if engine == ENGINE_OPENAI
-            else settings.AGENT_VOICE_USD_PER_1K_CHARS)
-    usd = len(text) / 1000.0 * max(0.0, rate)
+    if engine == ENGINE_OPENAI and settings.AGENT_VOICE_OPENAI_USE_LIVE:
+        secs = seconds if seconds else len(text) / 14.0
+        usd = secs / 60.0 * max(0.0, settings.VOICE_COST_USD_PER_MIN_GPT_LIVE)
+    else:
+        rate = (settings.AGENT_VOICE_OPENAI_USD_PER_1K_CHARS if engine == ENGINE_OPENAI
+                else settings.AGENT_VOICE_USD_PER_1K_CHARS)
+        usd = len(text) / 1000.0 * max(0.0, rate)
     return max(1, math.ceil(usd * _CREDITS_PER_USD))
 
 
-def charge(db, user_id, text: str, ref_id=None, notes: str = "", engine: str = ENGINE_ELEVEN) -> int:
+def charge(db, user_id, text: str, ref_id=None, notes: str = "", engine: str = ENGINE_ELEVEN,
+           seconds: Optional[float] = None) -> int:
     """Списать озвучку с кредитов агента (в ноль, не в минус). Возвращает сумму."""
     from backend.services.credit_service import CreditService
-    amount = credits_for(text, engine)
+    amount = credits_for(text, engine, seconds)
     if amount <= 0:
         return 0
-    model = settings.AGENT_VOICE_OPENAI_TTS_MODEL if engine == ENGINE_OPENAI else settings.AGENT_VOICE_TTS_MODEL
+    if engine == ENGINE_OPENAI:
+        from backend.websockets.live_client import LIVE_MODEL
+        model = LIVE_MODEL if (seconds and settings.AGENT_VOICE_OPENAI_USE_LIVE) else settings.AGENT_VOICE_OPENAI_TTS_MODEL
+    else:
+        model = settings.AGENT_VOICE_TTS_MODEL
     try:
         CreditService.charge_amount(
             db, user_id, amount, ref_type="agent_voice_tts", ref_id=ref_id,

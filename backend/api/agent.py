@@ -2130,12 +2130,13 @@ def _voice_messages_state(db: Session, agent: AgentConfig) -> dict:
         channels["whatsapp"] = avs.voice_reply_mode(wa)
     voice = avs.resolve_voice(db, agent)
     engine = agent.voice_msg_engine if agent.voice_msg_engine in avs.VOICE_ENGINES else avs.ENGINE_ELEVEN
+    from backend.websockets.live_client import LIVE_VOICES
     return {
         "configured": avs.any_engine_configured(),
         "engines": {e: avs.is_configured(e) for e in avs.VOICE_ENGINES},
         "engine": engine,
         "openai_voice": agent.voice_msg_openai_voice or avs.DEFAULT_OPENAI_VOICE,
-        "openai_voices": avs.OPENAI_TTS_VOICES,
+        "openai_voices": LIVE_VOICES,
         "auto_share": avs.auto_share(agent),
         "auto_share_choices": list(avs.AUTO_SHARE_CHOICES),
         "default_stability": avs.DEFAULT_MESSAGE_STABILITY,
@@ -2186,7 +2187,7 @@ async def update_voice_messages_settings(
         raise HTTPException(status_code=400, detail="invalid_stability")
     if body.engine is not None and body.engine not in avs.VOICE_ENGINES:
         raise HTTPException(status_code=400, detail="invalid_engine")
-    if body.openai_voice is not None and body.openai_voice.lower() not in avs.OPENAI_TTS_VOICES:
+    if body.openai_voice is not None and body.openai_voice.lower() not in LIVE_VOICE_SET:
         raise HTTPException(status_code=400, detail="invalid_voice")
     if body.auto_share is not None and body.auto_share not in avs.AUTO_SHARE_CHOICES:
         raise HTTPException(status_code=400, detail="invalid_auto_share")
@@ -2227,7 +2228,7 @@ async def preview_voice_message(
         raise HTTPException(status_code=503, detail="tts_not_configured")
     if engine == avs.ENGINE_OPENAI:
         name = (body.openai_voice or agent.voice_msg_openai_voice or avs.DEFAULT_OPENAI_VOICE).lower()
-        if name not in avs.OPENAI_TTS_VOICES:
+        if name not in LIVE_VOICE_SET:
             raise HTTPException(status_code=400, detail="invalid_voice")
         lang = body.language or avs._agent_language(db, agent) or "ru"
         voice = {"engine": engine, "voice_id": name, "language": lang,
@@ -2258,9 +2259,9 @@ async def preview_voice_message(
         # Причина от провайдера — в тост пользователю (иначе «ошибка» без объяснения).
         raise HTTPException(status_code=502, detail={"code": res.get("error") or "tts_error",
                                                      "provider_message": (res.get("detail") or "")[:300]})
-    avs.charge(db, current_user.id, text, ref_id=agent.id, engine=engine,
+    avs.charge(db, current_user.id, text, ref_id=agent.id, engine=engine, seconds=res.get("seconds"),
                notes="Прослушивание голоса для голосовых сообщений")
-    return Response(content=res["data"], media_type="audio/mpeg")
+    return Response(content=res["data"], media_type=res.get("mime") or "audio/mpeg")
 
 
 @router.patch("/connectors/instagram/settings")

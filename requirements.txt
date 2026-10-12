@@ -76,3 +76,5 @@ yandexcloud>=0.409.0
 
 # Google Cloud Speech-to-Text V2 (Chirp 3, gRPC) — ELEVEN_ASR_PROVIDER=google (backend/websockets/google_stt_client.py)
 google-cloud-speech>=2.33.0,<3.0.0
+# ffmpeg для голосовых агента (PCM/MP3 → OGG/Opus для Telegram), backend/services/agent_voice_service.py
+imageio-ffmpeg>=0.5.1

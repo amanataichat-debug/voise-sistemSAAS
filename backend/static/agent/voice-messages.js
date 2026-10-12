@@ -16,7 +16,7 @@ const VOICE_MSG_API = API + '/voice-messages';
 const VOICE_MODE_LABELS = { never: 'никогда', on_voice: 'в ответ на голосовое клиента', auto: 'агент решает сам' };
 const VOICE_MSG_ENGINES = [
   { id: 'eleven', title: 'ElevenLabs', hint: 'Лучший кыргызский. Вздохи, паузы и спокойная подача — метками в тексте.' },
-  { id: 'openai', title: 'OpenAI · голоса GPT-Live', hint: 'Очень живая манера речи, лучше всего на русском. Кыргызский слабее.' },
+  { id: 'openai', title: 'GPT-Live · как голосовой режим ChatGPT', hint: 'Самый живой голос: эмоции, спокойная интонация. Лучше всего на русском, кыргызский слабее.' },
 ];
 let voiceMsgState = null;
 let voiceMsgAudio = null;
@@ -93,7 +93,7 @@ function renderVoiceMessages(){
       <div class="form-group">
         <label class="form-label">Голос GPT-Live</label>
         <select class="form-select" id="vm-oa-voice" onchange="saveVoiceMessages({openai_voice: this.value})">${oaVoices}</select>
-        <div class="form-hint">Манера задаётся сама: спокойно, негромко, с паузами — как обычное голосовое.</div>
+        <div class="form-hint">Голосовое наговаривает сама модель GPT-Live — спокойно, негромко, с паузами. Готовится в реальном времени: 20-секундное голосовое — около 20 секунд.</div>
       </div>
     </div>
     <div class="form-group">
