@@ -12,8 +12,9 @@
            [exhales] …, белый список VOICE_TAGS) и многоточиями; неизвестные
            метки вырезаются, спокойная манера добавляется сама.
   openai — OpenAI Speech (AGENT_VOICE_OPENAI_TTS_MODEL) голосами GPT-Live
-           (live_client.LIVE_VOICES) с инструкцией манеры речи
-           (OPENAI_VOICE_INSTRUCTIONS: спокойно, тихо, с паузами). Метки
+           (OPENAI_TTS_VOICES — набор модели Speech, AGENT_VOICE_OPENAI_VOICES)
+           с инструкцией манеры (openai_instructions: язык агента с родным
+           произношением, спокойно, тихо, с паузами). Метки
            превращаются в паузы «…».
 
 Формат: просим Opus. Если пришёл OGG — это голосовое Telegram (voice_note,
@@ -70,12 +71,28 @@ VOICE_TAGS = (
 )
 _TAG_RE = re.compile(r"\[([^\[\]]{1,30})\]")
 
-OPENAI_VOICE_INSTRUCTIONS = (
-    "Это обычное голосовое сообщение в мессенджере, записанное на телефон. Говори спокойно и "
-    "негромко, неторопливо, тёплым разговорным тоном, как живой человек знакомому клиенту. "
-    "Делай естественные паузы, иногда чуть задумывайся перед словом. Никакой дикторской или "
-    "рекламной интонации, не спеши и не повышай голос. Говори на языке текста."
-)
+# Голоса модели OpenAI Speech (у неё свой набор, не весь список GPT-Live звонков).
+# Можно переопределить переменной AGENT_VOICE_OPENAI_VOICES (через запятую).
+OPENAI_TTS_VOICES = [v.strip().lower() for v in (settings.AGENT_VOICE_OPENAI_VOICES or "").split(",") if v.strip()]
+
+# (на каком языке, с каким произношением)
+LANGUAGE_NAMES = {"ru": ("русском", "русским"), "ky": ("кыргызском", "кыргызским"),
+                  "kk": ("казахском", "казахским"), "uz": ("узбекском", "узбекским"),
+                  "en": ("английском", "английским"), "tr": ("турецком", "турецким")}
+
+
+def openai_instructions(language: Optional[str]) -> str:
+    lang = LANGUAGE_NAMES.get((language or "").lower())
+    accent = (f"Текст на {lang[0]} языке: произноси его как носитель, с родным {lang[1]} "
+              f"произношением, без иностранного (английского) акцента. " if lang else
+              "Произноси текст как носитель его языка, без иностранного (английского) акцента. ")
+    return (
+        accent
+        + "Это обычное голосовое сообщение в мессенджере, записанное на телефон. Говори спокойно и "
+        "негромко, неторопливо, тёплым разговорным тоном, как живой человек знакомому клиенту. "
+        "Делай естественные паузы, иногда чуть задумывайся перед словом. Никакой дикторской или "
+        "рекламной интонации, не спеши и не повышай голос."
+    )
 
 
 def is_configured(engine: str = ENGINE_ELEVEN) -> bool:
@@ -113,13 +130,12 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
     if not is_configured(engine):
         return None
     if engine == ENGINE_OPENAI:
-        from backend.websockets.live_client import LIVE_VOICE_SET
         voice = (getattr(agent_config, "voice_msg_openai_voice", None) or DEFAULT_OPENAI_VOICE).lower()
-        if voice not in LIVE_VOICE_SET:
+        if voice not in OPENAI_TTS_VOICES:
             voice = DEFAULT_OPENAI_VOICE
         return {
             "engine": ENGINE_OPENAI, "voice_id": voice, "voice_name": voice,
-            "language": None, "stability": None,
+            "language": _agent_language(db, agent_config), "stability": None,
             "model": settings.AGENT_VOICE_OPENAI_TTS_MODEL, "source": "own",
         }
 
@@ -146,6 +162,20 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
         "model": settings.AGENT_VOICE_TTS_MODEL,
         "source": "own" if own else "call_card",
     }
+
+
+def _agent_language(db, agent_config) -> Optional[str]:
+    """Язык голосовых: из настроек голосовых, иначе из Eleven-карточки звонков."""
+    if getattr(agent_config, "voice_msg_language", None):
+        return agent_config.voice_msg_language
+    if getattr(agent_config, "eleven_assistant_id", None):
+        from backend.models.eleven_assistant import ElevenAssistantConfig
+        card = db.query(ElevenAssistantConfig).filter(
+            ElevenAssistantConfig.id == agent_config.eleven_assistant_id
+        ).first()
+        if card and card.language:
+            return card.language
+    return None
 
 
 # ============================================================================
@@ -256,7 +286,7 @@ async def _tts_openai(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, A
         "model": voice["model"],
         "voice": voice["voice_id"],
         "input": text,
-        "instructions": OPENAI_VOICE_INSTRUCTIONS,
+        "instructions": openai_instructions(voice.get("language")),
         "response_format": "opus" if fmt == "opus" else "mp3",
     }
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY or ''}"}
@@ -265,6 +295,11 @@ async def _tts_openai(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, A
             resp = await client.post(OPENAI_SPEECH_URL, json=body, headers=headers)
             if resp.status_code >= 400 and "instructions" in resp.text:
                 body.pop("instructions", None)  # модель без управления манерой
+                resp = await client.post(OPENAI_SPEECH_URL, json=body, headers=headers)
+            if resp.status_code >= 400 and "voice" in resp.text.lower() and body["voice"] != DEFAULT_OPENAI_VOICE:
+                # Модель не знает этот голос — озвучиваем голосом по умолчанию, а не падаем.
+                logger.warning(f"[AGENT-VOICE] OpenAI voice {body['voice']!r} rejected: {resp.text[:200]} — using {DEFAULT_OPENAI_VOICE}")
+                body["voice"] = DEFAULT_OPENAI_VOICE
                 resp = await client.post(OPENAI_SPEECH_URL, json=body, headers=headers)
     except Exception as e:
         logger.warning(f"[AGENT-VOICE] OpenAI speech request failed: {type(e).__name__}: {e}")

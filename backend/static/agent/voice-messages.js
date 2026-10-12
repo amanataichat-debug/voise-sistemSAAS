@@ -222,8 +222,11 @@ async function previewVoiceMessage(){
       if(typeof loadCredits === 'function') loadCredits();
     } else {
       const err = await r?.json().catch(()=>({}));
-      const map = { voice_not_selected: 'Сначала выберите голос', tts_not_configured: 'Озвучка не настроена на сервере' };
-      showToast(map[err.detail] || 'Не удалось озвучить, попробуйте ещё раз', 'error');
+      const d = err.detail ?? err.message;
+      const code = (d && typeof d === 'object') ? d.code : d;
+      const map = { voice_not_selected: 'Сначала выберите голос', tts_not_configured: 'Озвучка не настроена на сервере', invalid_voice: 'Этот голос недоступен для голосовых' };
+      const provider = (d && typeof d === 'object' && d.provider_message) ? ' — ' + String(d.provider_message).slice(0, 160) : '';
+      showToast((map[code] || 'Не удалось озвучить') + provider, 'error');
     }
   }catch(e){ showToast('Ошибка сети', 'error'); }
   if(btn){ btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> Прослушать голосовое'; }
