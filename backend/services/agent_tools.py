@@ -470,11 +470,16 @@ SEND_VOICE_MESSAGE_TOOL = {
     "name": "send_voice_message",
     "description": (
         "Отправить клиенту ГОЛОСОВОЕ сообщение (озвучка голосом агента) в личный Telegram или "
-        "WhatsApp. Текст пиши так, как его произносят: разговорно, без ссылок, эмодзи, списков и "
-        "markdown, до ~400 символов (≈30 секунд). Цены, адреса, ссылки, номера телефонов и "
-        "реквизиты ОБЯЗАТЕЛЬНО продублируй отдельным текстовым сообщением тем же каналом. "
-        "Режим канала «в ответ на голосовое» — голосом можно отвечать, только если последнее "
-        "сообщение клиента было голосовым; иначе отвечай текстом."
+        "WhatsApp. Пиши так, как живой человек спокойно наговаривает голосовое на телефон: "
+        "разговорно, неторопливо, связными фразами, с паузами «…» и лёгкими раздумьями («так…», "
+        "«смотрите…», «ну вот»), без «алло», без дикторских и рекламных оборотов, без ссылок, "
+        "эмодзи, списков и markdown. До ~400 символов (≈30 секунд). Можно 1–3 звуковые метки в "
+        "квадратных скобках: [softly], [calm], [thoughtful], [warmly], [short pause], [long pause], "
+        "[exhales], [sighs], [chuckles], [hesitates] — например «[softly] Так, смотрите… [short "
+        "pause] доставка у нас завтра». Данные, которые удобно прочитать или скопировать (адрес, "
+        "цены, номера, ссылки, список вопросов), отправь ОТДЕЛЬНЫМ текстом тем же каналом — "
+        "только сами данные, НЕ пересказывая голосовое. Режим «в ответ на голосовое» — голосом "
+        "можно, только если последнее сообщение клиента было голосовым."
     ),
     "parameters": {
         "type": "object",
@@ -510,7 +515,7 @@ def _voice_channels(agent_config, db: Session) -> dict:
 
 
 def _augment_with_voice(base_tools: list, agent_config, db: Session) -> list:
-    if agent_config is None or not agent_voice_service.is_configured():
+    if agent_config is None or not agent_voice_service.any_engine_configured():
         return base_tools
     try:
         if not _voice_channels(agent_config, db) or agent_voice_service.resolve_voice(db, agent_config) is None:
@@ -519,6 +524,24 @@ def _augment_with_voice(base_tools: list, agent_config, db: Session) -> list:
         logger.warning(f"[AGENT-TOOLS] voice tool check failed: {e}")
         return base_tools
     return base_tools + to_chat_completions_tools([SEND_VOICE_MESSAGE_TOOL])
+
+
+def _repeats_voice(tool_name: str, tool_args: dict, db: Session) -> bool:
+    """Текстовое сообщение клиенту почти повторяет голосовое, только что отправленное ему."""
+    contact_id = tool_args.get("agent_contact_id")
+    text = tool_args.get("text") or ""
+    if not contact_id or not text:
+        return False
+    try:
+        channel = "telegram" if tool_name.startswith("telegram") else "whatsapp"
+        return agent_voice_service.repeats_recent_voice(_thread_for(channel, db, contact_id), text)
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] repeat check failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
 
 
 def _thread_for(channel: str, db: Session, contact_id) -> list:
@@ -540,11 +563,12 @@ async def fn_send_voice_message(args: dict, user_id: str, agent_config, db: Sess
     if agent_config is None:
         return {"ok": False, "error": "Агент не найден"}
     text = (args.get("text") or "").strip()
-    if not text:
+    spoken = agent_voice_service.strip_tags(text)
+    if not spoken:
         return {"ok": False, "error": "Пустой текст голосового"}
-    if len(text) > _settings.AGENT_VOICE_MAX_CHARS:
+    if len(spoken) > _settings.AGENT_VOICE_MAX_CHARS:
         return {"ok": False, "error": (
-            f"Слишком длинно для голосового ({len(text)} симв.). Сократи до ~400 символов, "
+            f"Слишком длинно для голосового ({len(spoken)} симв.). Сократи до ~400 символов, "
             "подробности отправь текстом.")}
     contact = db.query(AgentContact).filter(
         AgentContact.id == args.get("agent_contact_id"),
@@ -580,16 +604,17 @@ async def fn_send_voice_message(args: dict, user_id: str, agent_config, db: Sess
     if not audio.get("ok"):
         return {"ok": False, "error": f"Не удалось озвучить ({audio.get('error')}) — ответь текстом"}
 
-    send_args = {"agent_contact_id": str(contact.id), "text": text}
+    send_args = {"agent_contact_id": str(contact.id), "text": spoken}
     if channel == "telegram":
         result = await fn_telegram_send_message(send_args, user_id, agent_config, db, voice=audio)
     else:
         result = await fn_whatsapp_send_message(send_args, user_id, agent_config, db, voice=audio)
     if not result.get("ok"):
         return result
-    credits = agent_voice_service.charge(db, contact.user_id or user_id, text, ref_id=contact.id)
-    logger.info(f"[AGENT-TOOLS] send_voice_message → {channel} contact={contact.id} "
-                f"{len(text)} chars, {audio.get('duration')}s, ogg={audio.get('is_ogg')}, credits={credits}")
+    credits = agent_voice_service.charge(db, contact.user_id or user_id, spoken, ref_id=contact.id,
+                                         engine=voice.get("engine") or "eleven")
+    logger.info(f"[AGENT-TOOLS] send_voice_message → {channel} contact={contact.id} engine={voice.get('engine')} "
+                f"{len(spoken)} chars, {audio.get('duration')}s, ogg={audio.get('is_ogg')}, credits={credits}")
     return dict(result, channel=channel, sent_as=("voice" if audio.get("is_ogg") or channel == "whatsapp" else "audio"),
                 duration_seconds=audio.get("duration") or None)
 
@@ -3521,6 +3546,12 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
             result = await fn_send_webhook(tool_args, agent_config, db)
+        elif tool_name in ("telegram_send_message", "whatsapp_send_message") \
+                and _repeats_voice(tool_name, tool_args, db):
+            result = {"ok": False, "error": (
+                "Этот текст повторяет только что отправленное голосовое — не дублируй его. "
+                "Отправь текстом только дополнение: адрес, цены, номера, ссылки или короткий "
+                "список того, что нужно от клиента. Если дополнять нечего — ничего не отправляй.")}
         elif tool_name == "telegram_send_message":
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:

@@ -342,18 +342,26 @@ class AgentContactPauseRequest(BaseModel):
 
 
 class VoiceMessagesSettingsRequest(BaseModel):
-    """Голос для голосовых сообщений; null — как в звонках (Eleven-карточка)."""
+    """
+    Голосовые сообщения. ElevenLabs: voice_id / language null — как в звонках
+    (Eleven-карточка), stability null — Creative. OpenAI: голос GPT-Live.
+    """
+    engine: Optional[str] = Field(None, max_length=16)          # eleven | openai
     voice_id: Optional[str] = Field(None, max_length=255)
     voice_name: Optional[str] = Field(None, max_length=255)
     language: Optional[str] = Field(None, max_length=10)
     stability: Optional[float] = None
+    openai_voice: Optional[str] = Field(None, max_length=32)
+    auto_share: Optional[int] = None                            # 30 / 40 / 50
 
 
 class VoicePreviewRequest(BaseModel):
-    text: Optional[str] = Field(None, max_length=300)
+    text: Optional[str] = Field(None, max_length=400)
+    engine: Optional[str] = Field(None, max_length=16)
     voice_id: Optional[str] = Field(None, max_length=255)
     language: Optional[str] = Field(None, max_length=10)
     stability: Optional[float] = None
+    openai_voice: Optional[str] = Field(None, max_length=32)
 
 
 class MessengerSettingsRequest(BaseModel):
@@ -2097,12 +2105,12 @@ async def _reconcile_connectors(db: Session, agent: AgentConfig) -> None:
 # ============================================================================
 
 VOICE_PREVIEW_TEXTS = {
-    "ky": "Саламатсызбы! Бул менин үнүм. Суроолоруңузга кубануу менен жооп берем.",
-    "ru": "Здравствуйте! Это мой голос. С радостью отвечу на ваши вопросы.",
-    "kk": "Сәлеметсіз бе! Бұл менің дауысым. Сұрақтарыңызға қуана жауап беремін.",
-    "uz": "Assalomu alaykum! Bu mening ovozim. Savollaringizga mamnuniyat bilan javob beraman.",
-    "en": "Hello! This is my voice. I'm happy to answer your questions.",
-    "tr": "Merhaba! Bu benim sesim. Sorularınızı memnuniyetle yanıtlarım.",
+    "ky": "[softly] Саламатсызбы… [short pause] Ооба, суроңузду көрдүм. Азыр баарын тактап, сизге жазып жиберем, макулбу?",
+    "ru": "[softly] Здравствуйте… [short pause] Так, смотрите, я ваш вопрос посмотрел. Сейчас всё уточню и вам напишу, хорошо?",
+    "kk": "[softly] Сәлеметсіз бе… [short pause] Сұрағыңызды көрдім. Қазір бәрін нақтылап, сізге жазамын, жарай ма?",
+    "uz": "[softly] Assalomu alaykum… [short pause] Savolingizni ko'rdim. Hozir hammasini aniqlab, sizga yozaman, xo'pmi?",
+    "en": "[softly] Hi there… [short pause] So, I've looked at your question. Let me check everything and I'll text you back, okay?",
+    "tr": "[softly] Merhaba… [short pause] Sorunuza baktım. Şimdi her şeyi netleştirip size yazacağım, olur mu?",
 }
 
 
@@ -2121,8 +2129,17 @@ def _voice_messages_state(db: Session, agent: AgentConfig) -> dict:
     if wa is not None and wa.status == "connected":
         channels["whatsapp"] = avs.voice_reply_mode(wa)
     voice = avs.resolve_voice(db, agent)
+    from backend.websockets.live_client import LIVE_VOICES
+    engine = agent.voice_msg_engine if agent.voice_msg_engine in avs.VOICE_ENGINES else avs.ENGINE_ELEVEN
     return {
-        "configured": avs.is_configured(),
+        "configured": avs.any_engine_configured(),
+        "engines": {e: avs.is_configured(e) for e in avs.VOICE_ENGINES},
+        "engine": engine,
+        "openai_voice": agent.voice_msg_openai_voice or avs.DEFAULT_OPENAI_VOICE,
+        "openai_voices": LIVE_VOICES,
+        "auto_share": avs.auto_share(agent),
+        "auto_share_choices": list(avs.AUTO_SHARE_CHOICES),
+        "default_stability": avs.DEFAULT_MESSAGE_STABILITY,
         "voice_id": agent.voice_msg_voice_id,
         "voice_name": agent.voice_msg_voice_name,
         "language": agent.voice_msg_language,
@@ -2134,7 +2151,7 @@ def _voice_messages_state(db: Session, agent: AgentConfig) -> dict:
         },
         "effective": voice,
         "channels": channels,
-        "credits_per_400_chars": avs.credits_for("x" * 400),
+        "credits_per_400_chars": avs.credits_for("x" * 400, engine),
         "max_chars": settings.AGENT_VOICE_MAX_CHARS,
     }
 
@@ -2158,8 +2175,9 @@ async def update_voice_messages_settings(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Голос / язык / подача голосовых. Пустые значения — как в звонках."""
+    """Движок, голос, язык, подача и доля голосовых. Меняются только переданные поля."""
     from backend.models.eleven_assistant import ELEVEN_LANGUAGES
+    from backend.services import agent_voice_service as avs
     agent = _resolve_agent(db, current_user, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
@@ -2167,10 +2185,26 @@ async def update_voice_messages_settings(
         raise HTTPException(status_code=400, detail="invalid_language")
     if body.stability is not None and body.stability not in (0.0, 0.5, 1.0):
         raise HTTPException(status_code=400, detail="invalid_stability")
-    agent.voice_msg_voice_id = (body.voice_id or "").strip() or None
-    agent.voice_msg_voice_name = ((body.voice_name or "").strip() or None) if agent.voice_msg_voice_id else None
-    agent.voice_msg_language = body.language or None
-    agent.voice_msg_stability = body.stability
+    if body.engine is not None and body.engine not in avs.VOICE_ENGINES:
+        raise HTTPException(status_code=400, detail="invalid_engine")
+    if body.openai_voice is not None and body.openai_voice.lower() not in LIVE_VOICE_SET:
+        raise HTTPException(status_code=400, detail="invalid_voice")
+    if body.auto_share is not None and body.auto_share not in avs.AUTO_SHARE_CHOICES:
+        raise HTTPException(status_code=400, detail="invalid_auto_share")
+    fields = body.model_fields_set
+    if "engine" in fields and body.engine:
+        agent.voice_msg_engine = body.engine
+    if "openai_voice" in fields and body.openai_voice:
+        agent.voice_msg_openai_voice = body.openai_voice.lower()
+    if "auto_share" in fields and body.auto_share:
+        agent.voice_msg_auto_share = body.auto_share
+    if "voice_id" in fields:
+        agent.voice_msg_voice_id = (body.voice_id or "").strip() or None
+        agent.voice_msg_voice_name = ((body.voice_name or "").strip() or None) if agent.voice_msg_voice_id else None
+    if "language" in fields:
+        agent.voice_msg_language = body.language or None
+    if "stability" in fields:
+        agent.voice_msg_stability = body.stability
     db.commit()
     return _voice_messages_state(db, agent)
 
@@ -2187,23 +2221,43 @@ async def preview_voice_message(
     agent = _resolve_agent(db, current_user, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="agent_not_found")
-    if not avs.is_configured():
+    engine = body.engine or agent.voice_msg_engine or avs.ENGINE_ELEVEN
+    if engine not in avs.VOICE_ENGINES:
+        raise HTTPException(status_code=400, detail="invalid_engine")
+    if not avs.is_configured(engine):
         raise HTTPException(status_code=503, detail="tts_not_configured")
-    voice = avs.resolve_voice(db, agent) or {}
-    if body.voice_id:
-        voice["voice_id"] = body.voice_id
-    if not voice.get("voice_id"):
-        raise HTTPException(status_code=400, detail="voice_not_selected")
-    voice["language"] = body.language or voice.get("language") or "ky"
-    if body.stability is not None:
-        voice["stability"] = float(body.stability)
-    voice.setdefault("stability", 0.5)
-    voice["model"] = settings.AGENT_VOICE_TTS_MODEL
-    text = (body.text or "").strip() or VOICE_PREVIEW_TEXTS.get(voice["language"], VOICE_PREVIEW_TEXTS["ru"])
+    if engine == avs.ENGINE_OPENAI:
+        name = (body.openai_voice or agent.voice_msg_openai_voice or avs.DEFAULT_OPENAI_VOICE).lower()
+        if name not in LIVE_VOICE_SET:
+            raise HTTPException(status_code=400, detail="invalid_voice")
+        voice = {"engine": engine, "voice_id": name, "model": settings.AGENT_VOICE_OPENAI_TTS_MODEL}
+        lang = body.language or agent.voice_msg_language or "ru"
+    else:
+        current = avs.resolve_voice(db, agent) if (agent.voice_msg_engine or avs.ENGINE_ELEVEN) == avs.ENGINE_ELEVEN else None
+        voice = dict(current or {}, engine=avs.ENGINE_ELEVEN)
+        if body.voice_id:
+            voice["voice_id"] = body.voice_id
+        if not voice.get("voice_id"):
+            # Голос «как в звонках», а движок агента сейчас другой — берём карточку.
+            from backend.models.eleven_assistant import ElevenAssistantConfig
+            card = db.query(ElevenAssistantConfig).filter(
+                ElevenAssistantConfig.id == agent.eleven_assistant_id).first() if agent.eleven_assistant_id else None
+            if card and card.voice_id:
+                voice["voice_id"] = card.voice_id
+                voice.setdefault("language", card.language)
+        if not voice.get("voice_id"):
+            raise HTTPException(status_code=400, detail="voice_not_selected")
+        voice["language"] = body.language or voice.get("language") or "ky"
+        voice["stability"] = float(body.stability) if body.stability is not None else (
+            voice.get("stability") if voice.get("stability") is not None else avs.DEFAULT_MESSAGE_STABILITY)
+        voice["model"] = settings.AGENT_VOICE_TTS_MODEL
+        lang = voice["language"]
+    text = (body.text or "").strip() or VOICE_PREVIEW_TEXTS.get(lang, VOICE_PREVIEW_TEXTS["ru"])
     res = await avs.synthesize_preview(text, voice)
     if not res.get("ok"):
         raise HTTPException(status_code=502, detail=res.get("error") or "tts_error")
-    avs.charge(db, current_user.id, text, ref_id=agent.id, notes="Прослушивание голоса для голосовых сообщений")
+    avs.charge(db, current_user.id, text, ref_id=agent.id, engine=engine,
+               notes="Прослушивание голоса для голосовых сообщений")
     return Response(content=res["data"], media_type="audio/mpeg")
 
 

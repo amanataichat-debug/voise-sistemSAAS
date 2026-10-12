@@ -1,29 +1,39 @@
 """
 Голосовые сообщения агента в мессенджерах (ветка 1210-chat-v2, задача 3.4).
 
-Агент отвечает клиенту голосовым в личном Telegram и WhatsApp. Озвучка —
-ElevenLabs Text-to-Speech на серверном ELEVENLABS_API_KEY (модель
-AGENT_VOICE_TTS_MODEL, по умолчанию eleven_v3: единственное семейство с
-кыргызским). Голос / язык / подача — из настроек агента «Голосовые сообщения»
-(agent_configs.voice_msg_*), пустые поля берутся из Eleven-карточки звонков
-(agent_configs.eleven_assistant_id) — даже если звонки идут через GPT-Live.
-Нет voice_id ни там, ни там → голосовых нет.
+Агент отвечает клиенту голосовым в личном Telegram и WhatsApp. Два движка
+озвучки на серверных ключах (agent_configs.voice_msg_engine):
 
-Формат: просим у ElevenLabs Opus (opus_48000_64). Если пришёл OGG — это
-готовое голосовое Telegram (voice_note, длительность из последней страницы
-OGG). Иначе берём MP3 и, если на сервере есть ffmpeg, перекодируем в OGG/Opus;
-без ffmpeg Telegram получит аудиофайл. WhatsApp-шлюз (Evolution,
-sendWhatsAppAudio) перекодирует сам — ему подходит любой из форматов.
-Instagram (Composio) аудио отправлять не умеет — там голосовых нет.
+  eleven — ElevenLabs Text-to-Speech (AGENT_VOICE_TTS_MODEL, eleven_v3 —
+           единственное семейство с кыргызским). Голос / язык / подача — из
+           agent_configs.voice_msg_*, пустые поля — из Eleven-карточки звонков.
+           Подача по умолчанию Creative. «Очеловечивание»: агент пишет текст
+           разговорно, со звуковыми метками v3 ([softly], [short pause],
+           [exhales] …, белый список VOICE_TAGS) и многоточиями; неизвестные
+           метки вырезаются, спокойная манера добавляется сама.
+  openai — OpenAI Speech (AGENT_VOICE_OPENAI_TTS_MODEL) голосами GPT-Live
+           (live_client.LIVE_VOICES) с инструкцией манеры речи
+           (OPENAI_VOICE_INSTRUCTIONS: спокойно, тихо, с паузами). Метки
+           превращаются в паузы «…».
 
-Режим — настройка коннектора voice_reply_mode: never | on_voice (только в
-ответ на голосовое клиента) | auto (агент решает сам). Стоимость озвучки —
-кредиты агента (AGENT_VOICE_USD_PER_1K_CHARS по курсу оркестратора).
+Формат: просим Opus. Если пришёл OGG — это голосовое Telegram (voice_note,
+длительность из последней страницы OGG). Иначе берём MP3 и, если на сервере
+есть ffmpeg, перекодируем в OGG/Opus; без ffmpeg Telegram получит аудиофайл.
+WhatsApp-шлюз (Evolution, sendWhatsAppAudio) перекодирует сам. Instagram
+(Composio) аудио не умеет — там голосовых нет.
+
+Когда отвечать голосом — настройка коннектора voice_reply_mode: never |
+on_voice (только в ответ на голосовое клиента) | auto (агент решает сам; доля
+голосовых среди ответов — agent_configs.voice_msg_auto_share, подсказка
+prompt_hint говорит, каким видом отвечать сейчас). Текст после голосового не
+должен повторять его (repeats_recent_voice). Стоимость — кредиты агента.
 """
 
 import asyncio
 import math
+import re
 import shutil
+from difflib import SequenceMatcher
 from typing import Any, Dict, Optional
 
 import httpx
@@ -34,21 +44,58 @@ from backend.core.logging import get_logger
 logger = get_logger(__name__)
 
 ELEVEN_API = "https://api.elevenlabs.io/v1"
+OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 
 VOICE_REPLY_MODES = ("never", "on_voice", "auto")
 DEFAULT_VOICE_REPLY_MODE = "on_voice"
 
+ENGINE_ELEVEN = "eleven"
+ENGINE_OPENAI = "openai"
+VOICE_ENGINES = (ENGINE_ELEVEN, ENGINE_OPENAI)
+
+# Подача ElevenLabs по умолчанию для голосовых: Creative (живее, чем Natural в звонках).
+DEFAULT_MESSAGE_STABILITY = 0.0
+DEFAULT_OPENAI_VOICE = "marin"
+
+AUTO_SHARE_CHOICES = (30, 40, 50)
+DEFAULT_AUTO_SHARE = 40
+
 # Метка исходящего голосового в треде (агент и владелец видят содержание).
 VOICE_BODY_PREFIX = "🎤 Голосовое: "
 
+# Звуковые метки Eleven v3, которые разрешено ставить агенту (остальные вырезаются).
+VOICE_TAGS = (
+    "softly", "calm", "thoughtful", "warmly", "short pause", "long pause",
+    "exhales", "sighs", "chuckles", "hesitates",
+)
+_TAG_RE = re.compile(r"\[([^\[\]]{1,30})\]")
 
-def is_configured() -> bool:
+OPENAI_VOICE_INSTRUCTIONS = (
+    "Это обычное голосовое сообщение в мессенджере, записанное на телефон. Говори спокойно и "
+    "негромко, неторопливо, тёплым разговорным тоном, как живой человек знакомому клиенту. "
+    "Делай естественные паузы, иногда чуть задумывайся перед словом. Никакой дикторской или "
+    "рекламной интонации, не спеши и не повышай голос. Говори на языке текста."
+)
+
+
+def is_configured(engine: str = ENGINE_ELEVEN) -> bool:
+    if engine == ENGINE_OPENAI:
+        return bool(settings.OPENAI_API_KEY)
     return bool(settings.ELEVENLABS_API_KEY)
+
+
+def any_engine_configured() -> bool:
+    return is_configured(ENGINE_ELEVEN) or is_configured(ENGINE_OPENAI)
 
 
 def voice_reply_mode(row) -> str:
     mode = getattr(row, "voice_reply_mode", None) or DEFAULT_VOICE_REPLY_MODE
     return mode if mode in VOICE_REPLY_MODES else DEFAULT_VOICE_REPLY_MODE
+
+
+def auto_share(agent_config) -> int:
+    v = getattr(agent_config, "voice_msg_auto_share", None)
+    return int(v) if v in AUTO_SHARE_CHOICES else DEFAULT_AUTO_SHARE
 
 
 # ============================================================================
@@ -57,9 +104,25 @@ def voice_reply_mode(row) -> str:
 
 def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
     """
-    Голос для голосовых сообщений: {voice_id, voice_name, language, stability,
-    model, source} или None (голос не выбран нигде).
+    Голос для голосовых сообщений: {engine, voice_id, voice_name, language,
+    stability, model, source} или None (голос не выбран / движок не настроен).
     """
+    engine = getattr(agent_config, "voice_msg_engine", None) or ENGINE_ELEVEN
+    if engine not in VOICE_ENGINES:
+        engine = ENGINE_ELEVEN
+    if not is_configured(engine):
+        return None
+    if engine == ENGINE_OPENAI:
+        from backend.websockets.live_client import LIVE_VOICE_SET
+        voice = (getattr(agent_config, "voice_msg_openai_voice", None) or DEFAULT_OPENAI_VOICE).lower()
+        if voice not in LIVE_VOICE_SET:
+            voice = DEFAULT_OPENAI_VOICE
+        return {
+            "engine": ENGINE_OPENAI, "voice_id": voice, "voice_name": voice,
+            "language": None, "stability": None,
+            "model": settings.AGENT_VOICE_OPENAI_TTS_MODEL, "source": "own",
+        }
+
     card = None
     if getattr(agent_config, "eleven_assistant_id", None):
         from backend.models.eleven_assistant import ElevenAssistantConfig
@@ -73,8 +136,9 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
     language = agent_config.voice_msg_language or (card.language if card else None) or "ky"
     stability = agent_config.voice_msg_stability
     if stability is None:
-        stability = card.stability if (card and card.stability is not None) else 0.5
+        stability = DEFAULT_MESSAGE_STABILITY
     return {
+        "engine": ENGINE_ELEVEN,
         "voice_id": voice_id,
         "voice_name": (agent_config.voice_msg_voice_name if own else None) or None,
         "language": language,
@@ -85,11 +149,41 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
 
 
 # ============================================================================
+# ТЕКСТ: МЕТКИ И «ОЧЕЛОВЕЧИВАНИЕ»
+# ============================================================================
+
+def strip_tags(text: str) -> str:
+    """Текст без звуковых меток — для треда, лимитов и сравнения с текстом."""
+    out = _TAG_RE.sub(" ", text or "")
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
+def prepare_text(text: str, engine: str) -> str:
+    """
+    Текст для озвучки. ElevenLabs v3: оставить только разрешённые метки и
+    добавить спокойную манеру в начало, если агент её не задал. OpenAI: метки
+    пауз → «…», остальные метки убрать (манеру задаёт инструкция).
+    """
+    text = (text or "").strip()
+    if engine == ENGINE_OPENAI:
+        text = re.sub(r"\[(short pause|long pause|hesitates)\]", "…", text, flags=re.I)
+        return strip_tags(text)
+
+    def keep(m):
+        tag = m.group(1).strip().lower()
+        return f"[{tag}]" if tag in VOICE_TAGS else " "
+    text = re.sub(r"\s{2,}", " ", _TAG_RE.sub(keep, text)).strip()
+    if not text.startswith("["):
+        text = "[softly] " + text
+    return text
+
+
+# ============================================================================
 # СИНТЕЗ
 # ============================================================================
 
 def ogg_duration_seconds(data: bytes) -> int:
-    """Длительность OGG/Opus: granule последней страницы / 48000 (минус pre-skip не важен)."""
+    """Длительность OGG/Opus: granule последней страницы / 48000."""
     try:
         idx = data.rfind(b"OggS")
         if idx < 0:
@@ -131,7 +225,8 @@ async def _to_ogg_opus(data: bytes) -> Optional[bytes]:
     return None
 
 
-async def _tts(text: str, voice: Dict[str, Any], output_format: str) -> Dict[str, Any]:
+async def _tts_eleven(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, Any]:
+    output_format = "opus_48000_64" if fmt == "opus" else "mp3_44100_128"
     body = {
         "text": text,
         "model_id": voice["model"],
@@ -156,26 +251,58 @@ async def _tts(text: str, voice: Dict[str, Any], output_format: str) -> Dict[str
     return {"ok": True, "data": resp.content}
 
 
+async def _tts_openai(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, Any]:
+    body = {
+        "model": voice["model"],
+        "voice": voice["voice_id"],
+        "input": text,
+        "instructions": OPENAI_VOICE_INSTRUCTIONS,
+        "response_format": "opus" if fmt == "opus" else "mp3",
+    }
+    headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY or ''}"}
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(OPENAI_SPEECH_URL, json=body, headers=headers)
+            if resp.status_code >= 400 and "instructions" in resp.text:
+                body.pop("instructions", None)  # модель без управления манерой
+                resp = await client.post(OPENAI_SPEECH_URL, json=body, headers=headers)
+    except Exception as e:
+        logger.warning(f"[AGENT-VOICE] OpenAI speech request failed: {type(e).__name__}: {e}")
+        return {"ok": False, "error": "tts_unavailable"}
+    if resp.status_code >= 400:
+        logger.warning(f"[AGENT-VOICE] OpenAI speech {fmt} → {resp.status_code}: {resp.text[:300]}")
+        return {"ok": False, "error": f"tts_error_{resp.status_code}", "detail": resp.text[:200]}
+    return {"ok": True, "data": resp.content}
+
+
+async def _tts(text: str, voice: Dict[str, Any], fmt: str) -> Dict[str, Any]:
+    """fmt: 'opus' | 'mp3'."""
+    if voice.get("engine") == ENGINE_OPENAI:
+        return await _tts_openai(text, voice, fmt)
+    return await _tts_eleven(text, voice, fmt)
+
+
 async def synthesize(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
     """
     Текст → {ok, data, mime, filename, is_ogg, duration} или {ok: False, error}.
     is_ogg=True — можно слать голосовым (voice note) в Telegram.
     """
-    if not is_configured():
+    engine = voice.get("engine") or ENGINE_ELEVEN
+    if not is_configured(engine):
         return {"ok": False, "error": "tts_not_configured"}
-    text = (text or "").strip()
-    if not text:
+    text = prepare_text(text, engine)
+    if not strip_tags(text):
         return {"ok": False, "error": "empty_text"}
 
-    res = await _tts(text, voice, "opus_48000_64")
+    res = await _tts(text, voice, "opus")
     if res.get("ok") and res["data"].startswith(b"OggS"):
         data = res["data"]
         return {"ok": True, "data": data, "mime": "audio/ogg", "filename": "voice.ogg",
                 "is_ogg": True, "duration": ogg_duration_seconds(data)}
     if res.get("ok"):
-        logger.info("[AGENT-VOICE] opus output is not OGG — falling back to mp3")
+        logger.info(f"[AGENT-VOICE] {engine} opus output is not OGG — falling back to mp3")
 
-    res = await _tts(text, voice, "mp3_44100_128")
+    res = await _tts(text, voice, "mp3")
     if not res.get("ok"):
         return res
     mp3 = res["data"]
@@ -189,32 +316,39 @@ async def synthesize(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
 
 async def synthesize_preview(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
     """Пример голоса для настроек (MP3 — играет в любом браузере)."""
-    if not is_configured():
+    engine = voice.get("engine") or ENGINE_ELEVEN
+    if not is_configured(engine):
         return {"ok": False, "error": "tts_not_configured"}
-    return await _tts(text, voice, "mp3_44100_128")
+    return await _tts(prepare_text(text, engine), voice, "mp3")
 
 
 # ============================================================================
 # УЧЁТ
 # ============================================================================
 
-def credits_for(text: str) -> int:
+def credits_for(text: str, engine: str = ENGINE_ELEVEN) -> int:
     from backend.services.agent_models import _CREDITS_PER_USD
-    usd = len(text or "") / 1000.0 * max(0.0, settings.AGENT_VOICE_USD_PER_1K_CHARS)
-    return max(1, math.ceil(usd * _CREDITS_PER_USD)) if text else 0
+    text = strip_tags(text)
+    if not text:
+        return 0
+    rate = (settings.AGENT_VOICE_OPENAI_USD_PER_1K_CHARS if engine == ENGINE_OPENAI
+            else settings.AGENT_VOICE_USD_PER_1K_CHARS)
+    usd = len(text) / 1000.0 * max(0.0, rate)
+    return max(1, math.ceil(usd * _CREDITS_PER_USD))
 
 
-def charge(db, user_id, text: str, ref_id=None, notes: str = "") -> int:
+def charge(db, user_id, text: str, ref_id=None, notes: str = "", engine: str = ENGINE_ELEVEN) -> int:
     """Списать озвучку с кредитов агента (в ноль, не в минус). Возвращает сумму."""
     from backend.services.credit_service import CreditService
-    amount = credits_for(text)
+    amount = credits_for(text, engine)
     if amount <= 0:
         return 0
+    model = settings.AGENT_VOICE_OPENAI_TTS_MODEL if engine == ENGINE_OPENAI else settings.AGENT_VOICE_TTS_MODEL
     try:
         CreditService.charge_amount(
             db, user_id, amount, ref_type="agent_voice_tts", ref_id=ref_id,
-            model_slug=f"elevenlabs/{settings.AGENT_VOICE_TTS_MODEL}",
-            notes=notes or f"Голосовое сообщение, {len(text)} симв.",
+            model_slug=f"{'openai' if engine == ENGINE_OPENAI else 'elevenlabs'}/{model}",
+            notes=notes or f"Голосовое сообщение, {len(strip_tags(text))} симв.",
         )
     except Exception as e:
         logger.error(f"[AGENT-VOICE] charge failed: {e}")
@@ -226,6 +360,10 @@ def charge(db, user_id, text: str, ref_id=None, notes: str = "") -> int:
     return amount
 
 
+# ============================================================================
+# ПЕРЕПИСКА: КОГДА ГОЛОСОМ И БЕЗ ПОВТОРОВ
+# ============================================================================
+
 def last_inbound_is_voice(rows) -> bool:
     """Последнее входящее клиента в треде — голосовое (распознанное или нет)."""
     from backend.services.agent_media_service import KIND_LABELS
@@ -235,10 +373,80 @@ def last_inbound_is_voice(rows) -> bool:
     return False
 
 
+def _agent_turns(rows, limit: int = 8) -> list:
+    """
+    Последние ответы агента в треде: серия его исходящих подряд = один ответ
+    (ответ режется на несколько сообщений). True — в ответе было голосовое.
+    Сообщения владельца не считаются.
+    """
+    turns, current = [], None
+    for m in rows or []:
+        if (m.direction or "inbound") != "outbound":
+            if current is not None:
+                turns.append(current)
+                current = None
+            continue
+        if getattr(m, "sent_by", None) == "owner":
+            continue
+        is_voice = (m.body or "").startswith(VOICE_BODY_PREFIX)
+        current = (current or False) or is_voice
+    if current is not None:
+        turns.append(current)
+    return turns[-limit:]
+
+
+def should_reply_with_voice(rows, share_percent: int) -> bool:
+    """
+    Режим «агент решает сам»: держим долю голосовых ответов около share_percent
+    (по последним 10 ответам агента). Голосом — пока доля ниже заданной; два
+    голосовых подряд — только при доле от 50%. Первый ответ в чате — текстом.
+    """
+    turns = _agent_turns(rows, limit=10)
+    if not turns:
+        return False
+    if turns[-1] and share_percent < 50:
+        return False
+    return sum(1 for t in turns if t) / len(turns) * 100 < share_percent
+
+
+def _norm_words(text: str) -> list:
+    return re.findall(r"\w+", strip_tags(text).lower())
+
+
+def repeats_recent_voice(rows, text: str, window_seconds: int = 600) -> bool:
+    """
+    Текст почти повторяет последнее голосовое агента в этом треде (за 10 минут)?
+    Дополнение (адрес, список вопросов, номер) — не повтор: проверяем, что
+    большая часть слов текста уже прозвучала в голосовом.
+    """
+    from datetime import datetime, timedelta
+    words = _norm_words(text)
+    if len(words) < 4:
+        return False
+    since = datetime.utcnow() - timedelta(seconds=window_seconds)
+    for m in reversed(list(rows or [])):
+        if (m.direction or "inbound") != "outbound" or getattr(m, "sent_by", None) == "owner":
+            continue
+        body = m.body or ""
+        if not body.startswith(VOICE_BODY_PREFIX):
+            continue
+        ts = getattr(m, "sent_at", None) or m.created_at
+        if ts is not None and ts < since:
+            return False
+        spoken = _norm_words(body[len(VOICE_BODY_PREFIX):])
+        if not spoken:
+            return False
+        spoken_set = set(spoken)
+        covered = sum(1 for w in words if w in spoken_set) / len(words)
+        ratio = SequenceMatcher(None, " ".join(words), " ".join(spoken)).ratio()
+        return covered >= 0.7 or ratio >= 0.6
+    return False
+
+
 def prompt_hint(db, agent_config, channel: str, contact_id) -> str:
-    """Строка для события входящего сообщения: можно ли сейчас ответить голосом."""
+    """Строка для события входящего сообщения: каким видом отвечать сейчас."""
     try:
-        if not is_configured() or channel not in ("telegram", "whatsapp"):
+        if channel not in ("telegram", "whatsapp"):
             return ""
         if channel == "telegram":
             from backend.services import telegram_user_service as svc
@@ -250,12 +458,17 @@ def prompt_hint(db, agent_config, channel: str, contact_id) -> str:
         mode = voice_reply_mode(account)
         if mode == "never":
             return ""
-        if mode == "auto":
-            return ("\n\nГОЛОСОВЫЕ ОТВЕТЫ: на твоё усмотрение — можешь ответить голосовым "
-                    "(send_voice_message) или текстом.")
-        if last_inbound_is_voice(svc.get_thread(db, contact_id, limit=10)):
+        rows = svc.get_thread(db, contact_id, limit=30)
+        if last_inbound_is_voice(rows):
             return ("\n\nГОЛОСОВЫЕ ОТВЕТЫ: клиент прислал голосовое — ответь ему голосовым "
-                    "(send_voice_message); цены, адреса и ссылки продублируй текстом.")
+                    "(send_voice_message). Данные (адрес, цены, ссылки, номера, список вопросов) — "
+                    "отдельным текстом, не пересказывая голосовое.")
+        if mode == "auto":
+            if should_reply_with_voice(rows, auto_share(agent_config)):
+                return ("\n\nГОЛОСОВЫЕ ОТВЕТЫ: сейчас ответь голосовым (send_voice_message), если "
+                        "ответ не сводится к короткому «да / хорошо / минуту». Данные — отдельным "
+                        "текстом, не пересказывая голосовое.")
+            return "\n\nГОЛОСОВЫЕ ОТВЕТЫ: сейчас ответь текстом."
         return "\n\nГОЛОСОВЫЕ ОТВЕТЫ: клиент писал текстом — отвечай текстом."
     except Exception as e:
         logger.warning(f"[AGENT-VOICE] prompt_hint failed: {e}")

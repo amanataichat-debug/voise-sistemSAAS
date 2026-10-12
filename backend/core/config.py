@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     AGENT_VOICE_TTS_MODEL: str = os.getenv("AGENT_VOICE_TTS_MODEL", "eleven_v3")
     AGENT_VOICE_MAX_CHARS: int = int(os.getenv("AGENT_VOICE_MAX_CHARS", "600"))
     AGENT_VOICE_USD_PER_1K_CHARS: float = float(os.getenv("AGENT_VOICE_USD_PER_1K_CHARS", "0.10"))
+    # Второй движок голосовых — OpenAI Speech голосами GPT-Live (серверный OPENAI_API_KEY).
+    AGENT_VOICE_OPENAI_TTS_MODEL: str = os.getenv("AGENT_VOICE_OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+    AGENT_VOICE_OPENAI_USD_PER_1K_CHARS: float = float(os.getenv("AGENT_VOICE_OPENAI_USD_PER_1K_CHARS", "0.015"))
 
     # Кошелёк в сомах (минуты голосовых моделей). Тариф минуты = себестоимость в USD × наценка / курс.
     # WALLET_KGS_USD_RATE — сколько долларов стоит 1 сом (по данным Twelvedata 0,01143392 → 1 $ ≈ 87,46 сом).

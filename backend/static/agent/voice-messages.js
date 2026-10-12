@@ -1,15 +1,23 @@
 /* ============================================================================
  * agent/voice-messages.js — Голосовые сообщения агента в Telegram и WhatsApp
  *                            → /api/agent/voice-messages
- * Раздел «Голосовые сообщения» модалки настроек агента: голос ElevenLabs
- * (по умолчанию — как в звонках), язык, подача, прослушивание примера.
- * Сохраняется сразу при изменении. Когда отвечать голосом (никогда / в ответ
- * на голосовое / сам решает) — в окнах WhatsApp и Telegram (messengerSettingsHtml).
- * Озвучка — backend/services/agent_voice_service.py. Классический скрипт.
+ * Раздел «Голосовые сообщения» модалки настроек агента:
+ *   • движок озвучки — ElevenLabs (лучший кыргызский) или OpenAI (голоса GPT-Live);
+ *   • ElevenLabs: голос (по умолчанию как в звонках), язык, подача (по умолчанию Creative);
+ *   • OpenAI: голос GPT-Live;
+ *   • доля голосовых в режиме «агент решает сам»;
+ *   • «Прослушать» (MP3 из /preview, списывает кредиты).
+ * Сохраняется сразу. Когда отвечать голосом — в окнах WhatsApp и Telegram
+ * (messengerSettingsHtml). Озвучка — backend/services/agent_voice_service.py.
+ * Классический скрипт.
  * ========================================================================== */
 
 const VOICE_MSG_API = API + '/voice-messages';
 const VOICE_MODE_LABELS = { never: 'никогда', on_voice: 'в ответ на голосовое клиента', auto: 'агент решает сам' };
+const VOICE_MSG_ENGINES = [
+  { id: 'eleven', title: 'ElevenLabs', hint: 'Лучший кыргызский. Вздохи, паузы и спокойная подача — метками в тексте.' },
+  { id: 'openai', title: 'OpenAI · голоса GPT-Live', hint: 'Очень живая манера речи, лучше всего на русском. Кыргызский слабее.' },
+];
 let voiceMsgState = null;
 let voiceMsgAudio = null;
 
@@ -34,17 +42,25 @@ function renderVoiceMessages(){
   const s = voiceMsgState;
   if(!s){ el.innerHTML = '<div class="empty">Не удалось загрузить настройки</div>'; return; }
   if(!s.configured){
-    el.innerHTML = '<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Озвучка ElevenLabs не настроена на сервере — голосовые недоступны.</span></div>';
+    el.innerHTML = '<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Озвучка не настроена на сервере — голосовые недоступны.</span></div>';
     return;
   }
+  const engine = s.engine || 'eleven';
+  const isOpenai = engine === 'openai';
   const callLang = s.call_voice && s.call_voice.language;
-  const callStab = s.call_voice && s.call_voice.stability;
   const langTitle = c => (ELEVEN_LANGUAGES.find(l => l.code === c) || {}).title || c;
-  const stabTitle = v => (ELEVEN_STABILITY.find(x => x.v === Number(v)) || {}).title || '';
   const langOpts = `<option value="">Как в звонках${callLang ? ' (' + esc(langTitle(callLang)) + ')' : ''}</option>`
     + ELEVEN_LANGUAGES.map(l => `<option value="${l.code}" ${l.code === s.language ? 'selected' : ''}>${l.title}</option>`).join('');
-  const stabOpts = `<option value="">Как в звонках${callStab != null ? ' (' + esc(stabTitle(callStab)) + ')' : ''}</option>`
-    + ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${s.stability != null && x.v === Number(s.stability) ? 'selected' : ''}>${esc(x.title)}</option>`).join('');
+  const stabOpts = `<option value="">Creative — живее, по умолчанию для голосовых</option>`
+    + ELEVEN_STABILITY.filter(x => x.v !== 0).map(x => `<option value="${x.v}" ${s.stability != null && x.v === Number(s.stability) ? 'selected' : ''}>${esc(x.title)}</option>`).join('');
+  const oaVoices = (s.openai_voices || []).map(v => `<option value="${esc(v)}" ${v === s.openai_voice ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const shareOpts = (s.auto_share_choices || [30, 40, 50]).map(v => `<option value="${v}" ${v === s.auto_share ? 'selected' : ''}>${v}% ответов — голосом</option>`).join('');
+  const engines = s.engines || {};
+  const tiles = VOICE_MSG_ENGINES.map(e => `<button type="button" class="eng-tile${e.id === engine ? ' on' : ''}" ${engines[e.id] === false ? 'disabled title="Не настроен на сервере"' : ''} onclick="vmSetEngine('${e.id}')">
+      <span class="eng-check"><i class="fas fa-check"></i></span>
+      <span class="eng-head">${esc(e.title)}</span>
+      <span class="eng-desc">${esc(e.hint)}</span>
+    </button>`).join('');
 
   const ch = s.channels || {};
   const chRow = (key, label, icon, color, openFn) => {
@@ -57,19 +73,32 @@ function renderVoiceMessages(){
   const noVoice = !s.effective;
 
   el.innerHTML = `
-    ${noVoice ? '<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Голос не выбран ни здесь, ни для звонков — агент будет отвечать только текстом. Выберите голос ниже.</span></div>' : ''}
     <div class="form-group">
-      <label class="form-label">Голос <span class="hint" tabindex="0" data-hint="По умолчанию — тот же голос, что в звонках. Можно выбрать отдельный голос для сообщений."><i class="far fa-circle-question"></i></span></label>
-      <select class="form-select" id="vm-voice" disabled><option>Загрузка голосов…</option></select>
-      <div class="voice-preview" id="vm-voice-desc" style="display:none"></div>
+      <label class="form-label">Чем озвучивать</label>
+      <div class="eng-grid">${tiles}</div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Язык озвучки</label><select class="form-select" id="vm-lang" onchange="vmLangChanged()">${langOpts}</select></div>
-      <div class="form-group"><label class="form-label">Подача</label><select class="form-select" id="vm-stab" onchange="saveVoiceMessages()">${stabOpts}</select></div>
+    ${noVoice ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>${isOpenai ? 'OpenAI-озвучка не настроена на сервере.' : 'Голос не выбран ни здесь, ни для звонков — агент будет отвечать только текстом. Выберите голос ниже.'}</span></div>` : ''}
+    <div id="vm-eleven" style="${isOpenai ? 'display:none' : ''}">
+      <div class="form-group">
+        <label class="form-label">Голос ElevenLabs <span class="hint" tabindex="0" data-hint="По умолчанию — тот же голос, что в звонках. Можно выбрать отдельный, в том числе клон голоса живого человека из вашего аккаунта ElevenLabs."><i class="far fa-circle-question"></i></span></label>
+        <select class="form-select" id="vm-voice" disabled><option>Загрузка голосов…</option></select>
+        <div class="voice-preview" id="vm-voice-desc" style="display:none"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Язык озвучки</label><select class="form-select" id="vm-lang" onchange="vmLangChanged()">${langOpts}</select></div>
+        <div class="form-group"><label class="form-label">Подача</label><select class="form-select" id="vm-stab" onchange="saveVoiceMessages({stability: _vmStab()})">${stabOpts}</select></div>
+      </div>
+    </div>
+    <div id="vm-openai" style="${isOpenai ? '' : 'display:none'}">
+      <div class="form-group">
+        <label class="form-label">Голос GPT-Live</label>
+        <select class="form-select" id="vm-oa-voice" onchange="saveVoiceMessages({openai_voice: this.value})">${oaVoices}</select>
+        <div class="form-hint">Манера задаётся сама: спокойно, негромко, с паузами — как обычное голосовое.</div>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Прослушать</label>
-      <textarea class="form-textarea" id="vm-preview-text" rows="2" style="min-height:56px" maxlength="300" placeholder="Свой текст для примера (необязательно) — например, ответ про доставку"></textarea>
+      <textarea class="form-textarea" id="vm-preview-text" rows="2" style="min-height:56px" maxlength="400" placeholder="Свой текст для примера (необязательно). Можно метки: [softly] Так, смотрите… [short pause] доставка завтра."></textarea>
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" id="vm-preview-btn" onclick="previewVoiceMessage()" ${noVoice ? 'disabled' : ''}><i class="fas fa-play"></i> Прослушать голосовое</button>
         <span class="form-hint" style="margin:0">Так клиент услышит ответ агента. Озвучка ≈ ${Number(s.credits_per_400_chars || 0)} кредитов за 30 секунд — и в переписке, и здесь.</span>
@@ -82,9 +111,24 @@ function renderVoiceMessages(){
         ${chRow('whatsapp', 'WhatsApp', 'fa-brands fa-whatsapp', '#25D366', 'openWaAccountModal')}
         <div class="vm-ch" style="display:block"><i class="fa-brands fa-instagram" style="color:#E1306C"></i> Instagram: <span style="color:var(--muted)">голосовые недоступны — Instagram через наш коннектор принимает только текст и фото</span></div>
       </div>
-      <div class="form-hint">Голосовое — до ~30 секунд. Цены, адреса и ссылки агент дублирует текстом. Каждое голосовое считается в лимитах как одно сообщение.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Доля голосовых, когда агент решает сам</label>
+      <select class="form-select" id="vm-share" style="max-width:280px" onchange="saveVoiceMessages({auto_share: parseInt(this.value, 10)})">${shareOpts}</select>
+      <div class="form-hint">В режиме «агент решает сам» он чередует текст и голосовые примерно в этой пропорции. На голосовое клиента всегда отвечает голосом, короткие «да / минуту» — текстом. Цены, адреса и списки вопросов присылает отдельным текстом, не повторяя голосовое.</div>
     </div>`;
-  _vmLoadVoices();
+  if(!isOpenai) _vmLoadVoices();
+}
+
+async function vmSetEngine(engine){
+  if(!voiceMsgState || voiceMsgState.engine === engine) return;
+  await saveVoiceMessages({ engine });
+  renderVoiceMessages();
+}
+
+function _vmStab(){
+  const v = document.getElementById('vm-stab')?.value;
+  return v === '' || v == null ? null : Number(v);
 }
 
 async function _vmLoadVoices(){
@@ -111,7 +155,11 @@ async function _vmLoadVoices(){
   sel.innerHTML = html;
   sel.value = s.voice_id || '';
   sel.disabled = false;
-  sel.onchange = () => { _vmShowVoice(); saveVoiceMessages(); };
+  sel.onchange = () => {
+    _vmShowVoice();
+    const o = sel.selectedOptions && sel.selectedOptions[0];
+    saveVoiceMessages({ voice_id: sel.value || null, voice_name: (sel.value && o) ? (o.dataset.name || null) : null });
+  };
   _vmShowVoice();
 }
 
@@ -130,44 +178,39 @@ function _vmShowVoice(){
     <div class="voice-pv-txt"><b>${esc(v.name || '')} · ${g.label} голос${sel.value ? '' : ' · как в звонках'}</b><span>${esc(desc || (v.recommended ? 'Подтверждён для выбранного языка' : 'Голос из аккаунта ElevenLabs'))}</span></div>`;
 }
 
-function vmLangChanged(){
-  saveVoiceMessages().then(_vmLoadVoices);
+async function vmLangChanged(){
+  await saveVoiceMessages({ language: document.getElementById('vm-lang')?.value || null });
+  _vmLoadVoices();
 }
 
-function _vmFormBody(){
-  const sel = document.getElementById('vm-voice');
-  const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
-  const stab = document.getElementById('vm-stab')?.value;
-  return {
-    voice_id: sel?.value || null,
-    voice_name: (sel?.value && opt) ? (opt.dataset.name || null) : null,
-    language: document.getElementById('vm-lang')?.value || null,
-    stability: stab === '' || stab == null ? null : Number(stab),
-  };
-}
-
-async function saveVoiceMessages(){
+async function saveVoiceMessages(patch){
   try{
-    const r = await apiFetch(VOICE_MSG_API, { method: 'PUT', body: JSON.stringify(_vmFormBody()) });
+    const r = await apiFetch(VOICE_MSG_API, { method: 'PUT', body: JSON.stringify(patch || {}) });
     if(r && r.status === 200){
       voiceMsgState = await r.json();
-      showToast('Голос сохранён', 'success');
+      showToast('Сохранено', 'success');
       const btn = document.getElementById('vm-preview-btn');
       if(btn) btn.disabled = !voiceMsgState.effective;
-      return;
+      return true;
     }
     const err = await r?.json().catch(()=>({}));
     showToast(errText(err.detail ?? err.message), 'error');
   }catch(e){ showToast('Ошибка сети', 'error'); }
+  return false;
 }
 
 async function previewVoiceMessage(){
+  const s = voiceMsgState || {};
   const btn = document.getElementById('vm-preview-btn');
   if(btn){ btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Озвучиваю…'; }
-  const f = _vmFormBody();
+  const sel = document.getElementById('vm-voice');
   const body = {
     text: (document.getElementById('vm-preview-text')?.value || '').trim() || null,
-    voice_id: f.voice_id, language: f.language, stability: f.stability,
+    engine: s.engine || 'eleven',
+    voice_id: sel?.value || null,
+    language: document.getElementById('vm-lang')?.value || null,
+    stability: _vmStab(),
+    openai_voice: document.getElementById('vm-oa-voice')?.value || null,
   };
   try{
     const r = await apiFetch(VOICE_MSG_API + '/preview', { method: 'POST', body: JSON.stringify(body) });

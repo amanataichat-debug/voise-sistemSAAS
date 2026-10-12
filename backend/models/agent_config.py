@@ -73,6 +73,11 @@ class AgentConfig(Base):
     voice_msg_voice_name = Column(String(255), nullable=True)
     voice_msg_language = Column(String(10), nullable=True)
     voice_msg_stability = Column(Float, nullable=True)
+    # Движок озвучки: eleven (ElevenLabs) | openai (OpenAI Speech, голоса GPT-Live).
+    voice_msg_engine = Column(String(16), nullable=True)
+    voice_msg_openai_voice = Column(String(32), nullable=True)
+    # Режим «агент решает сам»: доля голосовых среди ответов, % (30 / 40 / 50).
+    voice_msg_auto_share = Column(Integer, nullable=True)
 
     # ── Оркестратор (планировщик) ──
     # Формат OpenRouter (provider/model-name) для новых агентов v3.0+

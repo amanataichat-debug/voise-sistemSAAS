@@ -1597,6 +1597,9 @@ def ensure_chat_v2_columns():
             "ADD COLUMN IF NOT EXISTS voice_msg_voice_name VARCHAR(255)",
             "ADD COLUMN IF NOT EXISTS voice_msg_language VARCHAR(10)",
             "ADD COLUMN IF NOT EXISTS voice_msg_stability DOUBLE PRECISION",
+            "ADD COLUMN IF NOT EXISTS voice_msg_engine VARCHAR(16)",
+            "ADD COLUMN IF NOT EXISTS voice_msg_openai_voice VARCHAR(32)",
+            "ADD COLUMN IF NOT EXISTS voice_msg_auto_share INTEGER",
         ],
         "agent_connectors": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
