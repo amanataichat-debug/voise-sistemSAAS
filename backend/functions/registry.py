@@ -22,9 +22,15 @@ class FunctionRegistry:
     def register(self, function_class: Type[FunctionBase]) -> None:
         """Регистрирует функцию в реестре"""
         name = function_class.get_name()
-        if name in self._functions:
+        existing = self._functions.get(name)
+        if existing is not None:
+            # discover_functions() вызывается и при импорте пакета, и из app.py —
+            # повторная регистрация того же класса не новость, молча пропускаем.
+            if (existing.__module__, existing.__qualname__) == (function_class.__module__, function_class.__qualname__):
+                self._functions[name] = function_class
+                return
             logger.warning(f"Функция '{name}' уже зарегистрирована и будет переопределена")
-        
+
         self._functions[name] = function_class
         logger.info(f"Функция '{name}' зарегистрирована")
         
