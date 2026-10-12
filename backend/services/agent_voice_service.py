@@ -84,11 +84,29 @@ LANGUAGE_NAMES = {"ru": ("русском", "русским"), "ky": ("кыргы
                   "en": ("английском", "английским"), "tr": ("турецком", "турецким")}
 
 
+# Чистая речь без акцента и диалекта: для каждого языка — какой нормой говорить.
+SPEECH_NORMS = {
+    "ru": ("Говори на чистом, правильном русском языке — литературная норма, как у "
+           "носителя из большого города: без акцента (английского, кыргызского или любого "
+           "другого), без диалекта, без жаргона и просторечий. Чёткая, понятная дикция, "
+           "правильные ударения."),
+    "ky": ("Сүйлө таза, туура кыргыз тилинде — адабий кыргыз тили, Бишкектеги эне тилдүү "
+           "адамдай. Говори на чистом литературном кыргызском, как носитель из Бишкека: без "
+           "русского и английского акцента, без местного диалекта, не вставляй русские слова, "
+           "где есть кыргызские. Чёткое, понятное произношение кыргызских звуков (ң, ө, ү)."),
+}
+
+
 def openai_instructions(language: Optional[str]) -> str:
     lang = LANGUAGE_NAMES.get((language or "").lower())
-    accent = (f"Текст на {lang[0]} языке: произноси его как носитель, с родным {lang[1]} "
-              f"произношением, без иностранного (английского) акцента. " if lang else
-              "Произноси текст как носитель его языка, без иностранного (английского) акцента. ")
+    norm = SPEECH_NORMS.get((language or "").lower())
+    if norm:
+        accent = norm + " "
+    elif lang:
+        accent = (f"Текст на {lang[0]} языке: произноси его как носитель, с родным {lang[1]} "
+                  f"произношением, без иностранного акцента и без диалекта. ")
+    else:
+        accent = "Произноси текст как носитель его языка, без иностранного акцента и без диалекта. "
     return (
         accent
         + "Это обычное голосовое сообщение в мессенджере, записанное на телефон. Говори спокойно и "
@@ -96,6 +114,41 @@ def openai_instructions(language: Optional[str]) -> str:
         "Делай естественные паузы, иногда чуть задумывайся перед словом. Никакой дикторской или "
         "рекламной интонации, не спеши и не повышай голос."
     )
+
+
+# Кыргызский от русского по тексту: буквы ң ө ү и частые кыргызские слова.
+_KY_LETTERS = set("ңөүҢӨҮ")
+_KY_WORDS = {
+    "саламатсызбы", "салам", "рахмат", "ооба", "жок", "жакшы", "макул", "сиз", "сизге", "сизди",
+    "менен", "керек", "бар", "эмне", "кандай", "азыр", "эртең", "бүгүн", "кийин", "үчүн", "болот",
+    "болсо", "биз", "бизде", "мен", "сен", "анан", "дагы", "абдан", "баасы", "канча", "жазып",
+    "жиберем", "айтып", "берем", "алам", "келет", "кутуп", "калам", "туура", "эмес",
+}
+
+
+def detect_language(text: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Язык текста голосового: ky (кыргызские буквы/слова), ru (кириллица), en (латиница);
+    иначе default. Озвучка берёт язык из самого текста, а не только из настроек агента:
+    агент отвечает клиенту на его языке.
+    """
+    clean = strip_tags(text or "")
+    if any(ch in _KY_LETTERS for ch in clean):
+        return "ky"
+    words = re.findall(r"[а-яёңөүa-z]+", clean.lower())
+    if not words:
+        return default
+    if sum(1 for w in words if w in _KY_WORDS) >= 1 and default == "ky":
+        return "ky"
+    if sum(1 for w in words if w in _KY_WORDS) >= 2:
+        return "ky"
+    cyr = sum(1 for w in words if re.search(r"[а-яё]", w))
+    lat = len(words) - cyr
+    if cyr > lat:
+        return "ru"
+    if lat > cyr and default not in ("ky", "ru", "kk", "uz"):
+        return "en"
+    return default
 
 
 def is_configured(engine: str = ENGINE_ELEVEN) -> bool:
@@ -468,6 +521,7 @@ async def synthesize(text: str, voice: Dict[str, Any]) -> Dict[str, Any]:
     text = prepare_text(text, engine)
     if not strip_tags(text):
         return {"ok": False, "error": "empty_text"}
+    voice = dict(voice, language=detect_language(text, voice.get("language")))
 
     if engine == ENGINE_OPENAI and settings.AGENT_VOICE_OPENAI_USE_LIVE:
         res = await _synthesize_live(text, voice)
@@ -501,6 +555,7 @@ async def synthesize_preview(text: str, voice: Dict[str, Any]) -> Dict[str, Any]
     if not is_configured(engine):
         return {"ok": False, "error": "tts_not_configured"}
     text = prepare_text(text, engine)
+    voice = dict(voice, language=detect_language(text, voice.get("language")))
     if engine == ENGINE_OPENAI and settings.AGENT_VOICE_OPENAI_USE_LIVE:
         res = await _gpt_live_speak(text, voice)
         if res.get("ok"):
