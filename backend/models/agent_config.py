@@ -154,6 +154,16 @@ class AgentConfig(Base):
     # промпта не показывается). Резолвится сервером — модель URL не передаёт.
     webhook_url = Column(String(500), nullable=True)
 
+    # ── Фирменный стиль документов агента (ветка 1310-kp-design) ──
+    # Чем заполнено — тем оформляются PDF (КП, счёт, памятка): плашка шапки
+    # красится в brand_color, в ней логотип и название, в колонтитуле —
+    # контакты. Пусто → нейтральное оформление в цвете VoksiAI без логотипа,
+    # поэтому у клиентов платформы документы всё равно выглядят прилично.
+    brand_company_name = Column(String(255), nullable=True)
+    brand_color = Column(String(16), nullable=True)          # #RRGGBB
+    brand_contacts = Column(String(500), nullable=True)      # «сайт · телефон»
+    brand_logo_file_id = Column(UUID(as_uuid=True), nullable=True)  # agent_files.id
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

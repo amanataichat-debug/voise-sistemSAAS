@@ -842,11 +842,22 @@ CREATE_DOCUMENT_TOOL = {
     "description": (
         "Создать документ для клиента или владельца: коммерческое предложение, "
         "счёт, расчёт, памятку, таблицу. Форматы: pdf (по умолчанию), docx, "
-        "xlsx, csv, txt. content — текст: строки с # — заголовки, с «- » — "
-        "пункты списка. table — таблица (первая строка — заголовки), обязательна "
-        "для xlsx/csv. Возвращает file_id — отправь его клиенту через "
-        "telegram_send_file / instagram_send_file / whatsapp_send_file. Не выдумывай цены и условия — "
-        "бери их из базы знаний и библиотеки файлов."
+        "xlsx, csv, txt. PDF собирается по фирменному стилю бизнеса (шапка с "
+        "логотипом и цветом, оформленные секции, таблица, блок призыва) — тебе "
+        "оформление задавать не нужно, только содержание.\n"
+        "content — текст: строки с «# » — заголовки секций, «- » — пункты списка, "
+        "«1. » — нумерованные шаги, **жирный** внутри строки. table — таблица "
+        "(первая строка — заголовки), для КП это прайс; обязательна для xlsx/csv.\n"
+        "Коммерческое предложение пиши ПОД КЛИЕНТА, а не шаблоном: секция о его "
+        "задаче — словами из вашего разговора (что он просил, какой объём, что "
+        "его беспокоит), затем что предлагаем именно под эту задачу, затем "
+        "стоимость (таблицей), затем секция «Следующий шаг» — она рисуется "
+        "выделенным блоком. Два разных клиента не должны получить одинаковый "
+        "текст. Не выдумывай цены и условия — бери их из базы знаний и "
+        "библиотеки файлов; если цены нет, напиши, что рассчитаете после "
+        "уточнения, и не придумывай цифру.\n"
+        "Возвращает file_id — отправь его клиенту через telegram_send_file / "
+        "instagram_send_file / whatsapp_send_file."
     ),
     "parameters": {
         "type": "object",
@@ -859,7 +870,8 @@ CREATE_DOCUMENT_TOOL = {
                 "description": "Таблица: массив строк, каждая — массив ячеек; первая строка — заголовки",
                 "items": {"type": "array", "items": {"type": "string"}},
             },
-            "agent_contact_id": {"type": "string", "description": "UUID контакта, для которого документ (если есть)"},
+            "agent_contact_id": {"type": "string", "description": "UUID контакта, для которого документ (если есть) — его имя попадёт в шапку «Для: …»"},
+            "kind_label": {"type": "string", "description": "Тип документа в углу шапки: «Коммерческое предложение», «Счёт», «Памятка»"},
         },
         "required": ["title"],
     },
@@ -948,9 +960,41 @@ async def fn_read_agent_file(args: dict, agent_config_id: str, db: Session) -> d
     return out
 
 
+async def _document_brand(agent_config_id: str, db: Session) -> dict:
+    """
+    Фирменный стиль для PDF из карточки агента: название, цвет, контакты,
+    байты логотипа. Логотип лежит обычным файлом агента (agent_files), поэтому
+    грузится и удаляется теми же ручками, что и остальная библиотека.
+    Ничего не заполнено → пустой бренд: документ оформится нейтрально.
+    """
+    from backend.models.agent_file import AgentFile
+    from backend.services import agent_media_service
+
+    cfg = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if cfg is None:
+        return {}
+    brand = {
+        "company_name": (cfg.brand_company_name or "").strip() or None,
+        "color": (cfg.brand_color or "").strip() or None,
+        "contacts": (cfg.brand_contacts or "").strip() or None,
+    }
+    if cfg.brand_logo_file_id:
+        logo = db.query(AgentFile).filter(
+            AgentFile.id == cfg.brand_logo_file_id,
+            AgentFile.agent_config_id == agent_config_id,
+        ).first()
+        if logo is not None:
+            try:
+                brand["logo_bytes"] = await agent_media_service.load_bytes(logo)
+            except Exception as e:
+                logger.warning(f"[DOC] логотип {cfg.brand_logo_file_id} не загружен: {e}")
+    return brand
+
+
 async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     from backend.services import agent_media_service
     contact_id = args.get("agent_contact_id") or None
+    client_name = None
     if contact_id:
         contact = db.query(AgentContact).filter(
             AgentContact.id == contact_id,
@@ -958,6 +1002,8 @@ async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db:
         ).first()
         if contact is None:
             contact_id = None
+        else:
+            client_name = (contact.name or "").strip() or None
     table = args.get("table")
     if table is not None and not isinstance(table, list):
         table = None
@@ -971,6 +1017,9 @@ async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db:
             fmt=args.get("format") or "pdf",
             table=table,
             agent_contact_id=contact_id,
+            brand=await _document_brand(agent_config_id, db),
+            client_name=client_name,
+            kind_label=(args.get("kind_label") or "").strip(),
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}

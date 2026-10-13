@@ -883,3 +883,18 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .vm-ch{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .vm-ch i{width:16px;text-align:center}
 .vm-ch .card-link{margin-left:auto}
+
+/* ── Фирменный стиль документов (branding.js, раздел «Документы») ───────── */
+.brand-logo-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.brand-logo-name{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2, #6b7280)}
+.brand-upload{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.brand-upload input[type=file]{font-size:13px;max-width:100%}
+.brand-swatches{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.brand-swatch{width:34px;height:34px;border-radius:9px;border:2px solid transparent;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;color:#fff;padding:0;transition:transform .12s ease}
+.brand-swatch i{opacity:0;font-size:13px}
+.brand-swatch.on{border-color:var(--text-1, #111827)}
+.brand-swatch.on i{opacity:1}
+.brand-swatch:hover{transform:translateY(-1px)}
+.brand-custom{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.brand-custom input{max-width:140px}

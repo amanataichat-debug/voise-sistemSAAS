@@ -1638,6 +1638,45 @@ def ensure_chat_v2_columns():
         logger.info(f"✅ ensure_chat_v2_columns: added {added} column(s)")
 
 
+def ensure_branding_columns():
+    """
+    Фирменный стиль документов агента (ветка 1310-kp-design): колонки
+    agent_configs.brand_*. Идёт в начале старта, в каждом воркере — строку
+    agent_configs ORM выбирает на каждой странице агента и в каждом вызове
+    create_document, без колонок всё падает с UndefinedColumn (правило после
+    инцидента 11.10). Каждый ALTER — отдельной транзакцией.
+    """
+    from sqlalchemy import text, inspect
+    alters = [
+        "ADD COLUMN IF NOT EXISTS brand_company_name VARCHAR(255)",
+        "ADD COLUMN IF NOT EXISTS brand_color VARCHAR(16)",
+        "ADD COLUMN IF NOT EXISTS brand_contacts VARCHAR(500)",
+        "ADD COLUMN IF NOT EXISTS brand_logo_file_id UUID",
+    ]
+    try:
+        inspector = inspect(engine)
+        if "agent_configs" not in set(inspector.get_table_names()):
+            return  # таблицу создаст create_tables, сразу с колонками
+        cols = {c["name"] for c in inspector.get_columns("agent_configs")}
+    except Exception as e:
+        logger.error(f"❌ ensure_branding_columns: inspect failed: {e}")
+        return
+    added = 0
+    for alter in alters:
+        col = alter.split("IF NOT EXISTS ", 1)[1].split()[0]
+        if col in cols:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+                conn.execute(text(f'ALTER TABLE "agent_configs" {alter}'))
+            added += 1
+        except Exception as e:
+            logger.error(f"❌ ensure_branding_columns: agent_configs.{col}: {e}")
+    if added:
+        logger.info(f"✅ ensure_branding_columns: added {added} column(s)")
+
+
 def ensure_agent_attachment_columns():
     """
     Колонки вложений агента обзвона (ветка 0410-golos): attachment_id в
@@ -2549,7 +2588,8 @@ async def startup_event():
         ensure_eleven_voice_engine_columns()
         ensure_wallet_columns()
         ensure_chat_v2_columns()
-        
+        ensure_branding_columns()
+
         try:
             # Для Render используем более простую блокировку
             if not os.path.exists(lock_file_path):

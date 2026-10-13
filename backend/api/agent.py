@@ -2,6 +2,7 @@
 Voksy AI Agent API v2.0 — CRUD, chat (with tools), contacts, calls, stats.
 """
 
+import re
 import json
 import uuid
 import secrets
@@ -306,6 +307,12 @@ class AgentUpdateRequest(BaseModel):
     # Движок голоса: "eleven" (каскад + ElevenLabs) | "gpt_live" (OpenAI GPT-Live, голос eleven_live_voice)
     eleven_voice_engine: Optional[str] = None
     eleven_live_voice: Optional[str] = Field(None, max_length=50)
+    # Фирменный стиль PDF-документов агента (ветка 1310-kp-design): название в
+    # шапке, цвет плашки, контакты в колонтитуле, логотип (файл из библиотеки).
+    brand_company_name: Optional[str] = Field(None, max_length=255)
+    brand_color: Optional[str] = Field(None, max_length=16)
+    brand_contacts: Optional[str] = Field(None, max_length=500)
+    brand_logo_file_id: Optional[str] = Field(None, max_length=64)
 
 
 class AgentChatRequest(BaseModel):
@@ -889,6 +896,11 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "working_hours_end": agent.working_hours_end,
         "default_caller_id": agent.default_caller_id,
         "webhook_url": agent.webhook_url,
+        # Фирменный стиль PDF-документов агента (ветка 1310-kp-design)
+        "brand_company_name": agent.brand_company_name,
+        "brand_color": agent.brand_color,
+        "brand_contacts": agent.brand_contacts,
+        "brand_logo_file_id": str(agent.brand_logo_file_id) if agent.brand_logo_file_id else None,
         "has_knowledge_base": agent.has_knowledge_base(),
         "kb_char_count": agent.kb_char_count or 0,
         "kb_name": agent.kb_name,
@@ -1163,9 +1175,40 @@ async def update_agent(
     for field in ['name', 'additional_instructions', 'voice_additional_instructions',
                   'inbound_first_phrase',
                   'working_hours_start', 'working_hours_end', 'is_active', 'default_caller_id',
-                  'webhook_url']:
+                  'webhook_url',
+                  # Фирменный стиль PDF-документов агента (ветка 1310-kp-design)
+                  'brand_company_name', 'brand_contacts']:
         if field in update_data:
             setattr(agent, field, update_data[field])
+
+    # Цвет шапки документов: принимаем «#2a5ce8» и «2a5ce8», пустую строку —
+    # как сброс к нейтральному оформлению.
+    if 'brand_color' in update_data:
+        raw = (update_data['brand_color'] or "").strip()
+        if not raw:
+            agent.brand_color = None
+        else:
+            color = raw if raw.startswith("#") else "#" + raw
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                raise HTTPException(status_code=400, detail="invalid_brand_color")
+            agent.brand_color = color.lower()
+
+    # Логотип — файл из библиотеки агента (agent_files), пустое значение снимает.
+    if 'brand_logo_file_id' in update_data:
+        raw = (update_data['brand_logo_file_id'] or "").strip() if isinstance(update_data['brand_logo_file_id'], str) else update_data['brand_logo_file_id']
+        if not raw:
+            agent.brand_logo_file_id = None
+        else:
+            from backend.models.agent_file import AgentFile
+            logo = db.query(AgentFile).filter(
+                AgentFile.id == raw,
+                AgentFile.agent_config_id == agent.id,
+            ).first()
+            if logo is None:
+                raise HTTPException(status_code=404, detail="logo_file_not_found")
+            if not (logo.mime or "").startswith("image/"):
+                raise HTTPException(status_code=400, detail="logo_must_be_image")
+            agent.brand_logo_file_id = logo.id
 
     # ── Инструкции голосового агента: пересобираем system_prompt ассистента ──
     if 'voice_additional_instructions' in update_data:

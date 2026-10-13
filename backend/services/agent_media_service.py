@@ -672,7 +672,29 @@ def _lines(content: str) -> List[str]:
     return (content or "").replace("\r\n", "\n").split("\n")
 
 
-def _render_pdf(title: str, content: str, table: Optional[List[List[Any]]]) -> bytes:
+def _render_pdf(title: str, content: str, table: Optional[List[List[Any]]],
+                brand: Optional[Dict[str, Any]] = None,
+                client_name: Optional[str] = None,
+                kind_label: str = "") -> bytes:
+    """
+    Оформленный PDF (reportlab, backend/services/document_design.py).
+
+    Старый fpdf2-рендер (`_render_pdf_legacy`) терял хвост длинного пункта при
+    автопереносе страницы — у клиента в КП пропадала цена. Остаётся только как
+    аварийный запасной путь, если reportlab почему-то недоступен.
+    """
+    from backend.services import document_design
+    try:
+        return document_design.render_pdf(
+            title, content, table, brand=brand,
+            client_name=client_name, kind_label=kind_label,
+        )
+    except Exception as e:
+        logger.error(f"[DOC] оформленный PDF не собрался, запасной рендер: {e}", exc_info=True)
+        return _render_pdf_legacy(title, content, table)
+
+
+def _render_pdf_legacy(title: str, content: str, table: Optional[List[List[Any]]]) -> bytes:
     import logging
     from fpdf import FPDF
 
@@ -805,6 +827,9 @@ async def create_document(
     table: Optional[List[List[Any]]] = None,
     agent_contact_id=None,
     description: Optional[str] = None,
+    brand: Optional[Dict[str, Any]] = None,
+    client_name: Optional[str] = None,
+    kind_label: str = "",
 ):
     """Собрать документ и сохранить как AgentFile(source=generated). Бросает ValueError."""
     fmt = (fmt or "pdf").lower().lstrip(".")
@@ -813,7 +838,10 @@ async def create_document(
     if not (content or "").strip() and not table:
         raise ValueError("Пустой документ: передай content или table")
     renderer, mime = RENDERERS[fmt]
-    data = await asyncio.to_thread(renderer, (title or "").strip(), content or "", table)
+    args = [(title or "").strip(), content or "", table]
+    # Фирменный стиль пока умеет только PDF — у docx/xlsx/csv/txt своя вёрстка.
+    kwargs = {"brand": brand, "client_name": client_name, "kind_label": kind_label} if fmt == "pdf" else {}
+    data = await asyncio.to_thread(lambda: renderer(*args, **kwargs))
     filename = _safe_filename(title or "document", fmt)
     row = await store_file(
         db,
