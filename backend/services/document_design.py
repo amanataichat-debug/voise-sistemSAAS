@@ -64,6 +64,10 @@ FONT_BOLD = "VoksiSans-Bold"
 # Фирменный цвет VoksiAI (design-system/README.md) — запасной, если бизнес свой не задал.
 DEFAULT_ACCENT = "#2a5ce8"
 
+# Пишется в свойства PDF (Creator). У старого fpdf2-рендера это поле пустое,
+# поэтому по нему сразу видно, каким кодом собран присланный клиенту файл.
+RENDERER_SIGNATURE = "VoksiAI documents v2 (document_design)"
+
 INK = colors.HexColor("#111827")        # основной текст
 MUTED = colors.HexColor("#6b7280")      # подписи, колонтитул
 HAIRLINE = colors.HexColor("#e5e7eb")   # разделители
@@ -545,6 +549,10 @@ def render_pdf(
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=band_h + 9 * mm, bottomMargin=FOOTER_H + 8 * mm,
         title=title, author=(brand.get("company_name") or "").strip() or None,
+        # Подпись в свойствах файла: сразу видно, каким рендером собран документ.
+        # У старого fpdf2-пути Producer пустой — по этому полю отличается
+        # «новый код задеплоен» от «работает прежний».
+        creator=RENDERER_SIGNATURE,
     )
     first_frame = Frame(MARGIN, FOOTER_H + 8 * mm, CONTENT_W,
                         PAGE_H - band_h - 9 * mm - FOOTER_H - 8 * mm, id="first",

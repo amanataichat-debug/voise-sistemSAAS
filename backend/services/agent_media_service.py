@@ -685,12 +685,17 @@ def _render_pdf(title: str, content: str, table: Optional[List[List[Any]]],
     """
     from backend.services import document_design
     try:
-        return document_design.render_pdf(
+        data = document_design.render_pdf(
             title, content, table, brand=brand,
             client_name=client_name, kind_label=kind_label,
         )
+        # Видно в логах Render, каким рендером собран документ: запасной путь
+        # выглядит для владельца точно как «ничего не изменилось».
+        logger.info(f"[DOC] оформленный PDF собран ({len(data)} B): {title[:60]}")
+        return data
     except Exception as e:
-        logger.error(f"[DOC] оформленный PDF не собрался, запасной рендер: {e}", exc_info=True)
+        logger.error(f"[DOC] оформленный PDF НЕ собрался, ушли в старый рендер — "
+                     f"документ будет без оформления: {e}", exc_info=True)
         return _render_pdf_legacy(title, content, table)
 
 
