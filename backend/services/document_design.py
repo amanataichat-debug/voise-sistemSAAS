@@ -25,6 +25,7 @@ WeasyPrint (нужны pango/cairo) и headless-браузера: на Render с
 """
 
 import io
+import math
 import os
 import re
 from datetime import datetime
@@ -45,6 +46,7 @@ from reportlab.platypus import (
     Image,
     KeepTogether,
     NextPageTemplate,
+    PageBreak,
     PageTemplate,
     Paragraph,
     Spacer,
@@ -272,6 +274,105 @@ class CalloutBox(Flowable):
             y -= 3
 
 
+class CardGrid(Flowable):
+    """
+    Карточки преимуществ: две в ряд, подложка фирменного цвета, галочка,
+    жирный заголовок и пояснение. Списком такие блоки читаются хуже — глаз
+    цепляется за карточку, а не за ряд одинаковых строк.
+    """
+
+    GAP = 5 * mm
+    PAD = 5 * mm
+    ICON = 4.6 * mm
+
+    def __init__(self, cards: List[Tuple[str, str]], accent: colors.Color,
+                 st: Dict[str, ParagraphStyle], width: float, columns: int = 2):
+        super().__init__()
+        self.cards = cards
+        self.accent = accent
+        self.st = st
+        self.width = width
+        self.columns = max(1, columns)
+        self._rows: List[List[Tuple[Paragraph, Optional[Paragraph], float]]] = []
+        self.height = 0.0
+
+    def _col_width(self) -> float:
+        return (self.width - self.GAP * (self.columns - 1)) / self.columns
+
+    def wrap(self, avail_w, avail_h):
+        self.width = avail_w
+        col_w = self._col_width()
+        text_w = col_w - 2 * self.PAD - self.ICON - 2 * mm
+        cells = []
+        for title, body in self.cards:
+            p_title = Paragraph(_inline(title), self.st["card_h"])
+            p_body = Paragraph(_inline(body), self.st["card_p"]) if body else None
+            h = p_title.wrap(text_w, avail_h)[1]
+            if p_body is not None:
+                h += 2 + p_body.wrap(text_w, avail_h)[1]
+            cells.append((p_title, p_body, h + 2 * self.PAD))
+        self._rows = [cells[i:i + self.columns] for i in range(0, len(cells), self.columns)]
+        self.height = sum(max(c[2] for c in row) for row in self._rows) \
+            + self.GAP * max(0, len(self._rows) - 1)
+        return avail_w, self.height
+
+    def draw(self):
+        c = self.canv
+        col_w = self._col_width()
+        text_w = col_w - 2 * self.PAD - self.ICON - 2 * mm
+        y = self.height
+        for row in self._rows:
+            row_h = max(cell[2] for cell in row)
+            y -= row_h
+            for i, (p_title, p_body, _h) in enumerate(row):
+                x = i * (col_w + self.GAP)
+                c.setFillColor(_tint(self.accent, 0.94))
+                c.roundRect(x, y, col_w, row_h, 5, stroke=0, fill=1)
+                # Галочка в кружке фирменного цвета.
+                cx = x + self.PAD + self.ICON / 2
+                cy = y + row_h - self.PAD - self.ICON / 2
+                c.setFillColor(self.accent)
+                c.circle(cx, cy, self.ICON / 2, stroke=0, fill=1)
+                c.setFillColor(colors.white)
+                c.setFont(FONT_BOLD, 7.5)
+                c.drawCentredString(cx, cy - 2.6, "✓")
+                tx = x + self.PAD + self.ICON + 2 * mm
+                ty = y + row_h - self.PAD
+                th = p_title.wrap(text_w, row_h)[1]
+                p_title.drawOn(c, tx, ty - th)
+                if p_body is not None:
+                    bh = p_body.wrap(text_w, row_h)[1]
+                    p_body.drawOn(c, tx, ty - th - 2 - bh)
+            y -= self.GAP
+
+
+def _figure(data: bytes, caption: Optional[str], st: Dict[str, ParagraphStyle],
+            width: float) -> List[Any]:
+    """Картинка по ширине колонки (или уже, если мелкая) + подпись под ней."""
+    try:
+        reader = ImageReader(io.BytesIO(data))
+        iw, ih = reader.getSize()
+        if not iw or not ih:
+            return []
+    except Exception as e:
+        logger.warning(f"[DOC] картинка не вставлена: {e}")
+        return []
+    # Не на всю ширину полосы: картинка во всю ширину выглядит как баннер,
+    # а не как иллюстрация к тексту.
+    scale = min(width * 0.8 / iw, 1.0)
+    # Очень высокие картинки ужимаем, чтобы одна не занимала всю страницу.
+    max_h = 85 * mm
+    if ih * scale > max_h:
+        scale = max_h / ih
+    img = Image(io.BytesIO(data), width=iw * scale, height=ih * scale, mask="auto")
+    img.hAlign = "CENTER"
+    out: List[Any] = [Spacer(1, 4), img]
+    if caption:
+        out += [Spacer(1, 2), Paragraph(_inline(caption), st["caption"])]
+    out.append(Spacer(1, 6))
+    return [KeepTogether(out)]
+
+
 def _styles(accent: colors.Color) -> Dict[str, ParagraphStyle]:
     base = dict(fontName=FONT_REGULAR, textColor=INK, alignment=TA_LEFT, splitLongWords=1)
     return {
@@ -290,6 +391,12 @@ def _styles(accent: colors.Color) -> Dict[str, ParagraphStyle]:
         "cta_p": ParagraphStyle("cp", fontSize=10.5, leading=15.5, textColor=INK, fontName=FONT_REGULAR),
         "th": ParagraphStyle("th", fontName=FONT_BOLD, fontSize=10, leading=13, textColor=colors.white),
         "td": ParagraphStyle("td", fontSize=10, leading=13.5, **base),
+        "card_h": ParagraphStyle("kh", fontName=FONT_BOLD, fontSize=10.5, leading=13.5, textColor=INK),
+        "card_p": ParagraphStyle("kp", fontName=FONT_REGULAR, fontSize=9.5, leading=13,
+                                 textColor=colors.HexColor("#374151")),
+        "caption": ParagraphStyle("cap", fontName=FONT_REGULAR, fontSize=9, leading=12,
+                                  textColor=MUTED, alignment=1),
+        "cta_contacts": ParagraphStyle("cc", fontName=FONT_BOLD, fontSize=10.5, leading=14, textColor=accent),
     }
 
 
@@ -399,7 +506,7 @@ def _wrap_title(title: str, size: float, max_w: float) -> List[str]:
     return lines or [""]
 
 
-def _band_layout(title: str) -> Tuple[List[str], float, float]:
+def _band_layout(title: str, has_logo: bool = False) -> Tuple[List[str], float, float]:
     """Подобрать кегль заголовка и высоту шапки: (строки, кегль, высота)."""
     lines, size = _wrap_title(title, TITLE_SIZES[0], CONTENT_W), TITLE_SIZES[0]
     for candidate in TITLE_SIZES:
@@ -409,7 +516,9 @@ def _band_layout(title: str) -> Tuple[List[str], float, float]:
             break
     lines = lines[:TITLE_MAX_LINES]
     leading = size * 1.25
-    height = 17 * mm + len(lines) * leading + 7 * mm
+    # Верхняя строка шапки (логотип + название) не должна наезжать на заголовок.
+    top_row = 30 * mm if has_logo else 19 * mm
+    height = top_row + len(lines) * leading + 7 * mm
     return lines, size, max(BAND_MIN_H, height)
 
 
@@ -510,6 +619,86 @@ def _clip(canv, text: str, font: str, size: float, max_w: float) -> str:
 # СБОРКА ДОКУМЕНТА
 # ============================================================================
 
+def _draw_cover(canv, brand: Dict[str, Any], accent: colors.Color, title: str,
+                client_name: Optional[str], kind_label: str):
+    """
+    Титульная страница: верхняя треть — фирменный цвет с крупным логотипом,
+    ниже на белом — тип документа, заголовок, кому и когда, внизу контакты.
+    """
+    canv.saveState()
+    band = PAGE_H * 0.42
+    canv.setFillColor(accent)
+    canv.rect(0, PAGE_H - band, PAGE_W, band, stroke=0, fill=1)
+
+    logo = _logo_image(brand, max_w=70 * mm, max_h=26 * mm)
+    company = (brand.get("company_name") or "").strip()
+    y = PAGE_H - band + 26 * mm
+    if logo is not None:
+        pad = 4 * mm
+        x = MARGIN
+        canv.setFillColor(colors.white)
+        canv.roundRect(x - pad, y - pad, logo.drawWidth + 2 * pad,
+                       logo.drawHeight + 2 * pad, 4, stroke=0, fill=1)
+        logo.drawOn(canv, x, y)
+        y -= 10 * mm
+    if company:
+        canv.setFillColor(colors.white)
+        canv.setFont(FONT_BOLD, 15 if logo is not None else 22)
+        canv.drawString(MARGIN, y, _clip(canv, company, FONT_BOLD,
+                                         15 if logo is not None else 22, CONTENT_W))
+
+    # Белая часть: тип документа → заголовок → кому и когда.
+    y = PAGE_H - band - 22 * mm
+    if kind_label:
+        canv.setFillColor(accent)
+        canv.setFont(FONT_BOLD, 10.5)
+        canv.drawString(MARGIN, y, kind_label.upper()[:60])
+        y -= 11 * mm
+
+    size = 26
+    lines = _wrap_title(title, size, CONTENT_W)
+    while len(lines) > 4 and size > 17:
+        size -= 2
+        lines = _wrap_title(title, size, CONTENT_W)
+    canv.setFillColor(INK)
+    canv.setFont(FONT_BOLD, size)
+    for line in lines[:4]:
+        canv.drawString(MARGIN, y, line)
+        y -= size * 1.3
+    y -= 4 * mm
+
+    canv.setStrokeColor(accent)
+    canv.setLineWidth(2.4)
+    canv.line(MARGIN, y, MARGIN + 30 * mm, y)
+    y -= 10 * mm
+
+    canv.setFont(FONT_REGULAR, 11.5)
+    canv.setFillColor(MUTED)
+    if client_name:
+        canv.drawString(MARGIN, y, _clip(canv, f"Для: {client_name}", FONT_REGULAR, 11.5, CONTENT_W))
+        y -= 7 * mm
+    canv.drawString(MARGIN, y, datetime.now().strftime("%d.%m.%Y"))
+
+    contacts = (brand.get("contacts") or "").strip()
+    if contacts:
+        canv.setFont(FONT_BOLD, 11)
+        canv.setFillColor(accent)
+        canv.drawString(MARGIN, FOOTER_H + 6 * mm,
+                        _clip(canv, contacts, FONT_BOLD, 11, CONTENT_W))
+    canv.restoreState()
+
+
+def _story_height(story: List[Any], width: float, avail_h: float) -> float:
+    """Примерная высота содержимого — чтобы решить, влезет ли оно на страницу."""
+    total = 0.0
+    for f in story:
+        try:
+            total += f.wrap(width, avail_h)[1]
+        except Exception:
+            continue
+    return total
+
+
 def _doc_meta(brand: Dict[str, Any], client_name: Optional[str]) -> str:
     parts = []
     if client_name:
@@ -518,72 +707,32 @@ def _doc_meta(brand: Dict[str, Any], client_name: Optional[str]) -> str:
     return "   ·   ".join(parts)
 
 
-def render_pdf(
-    title: str,
-    content: str,
-    table: Optional[List[List[Any]]] = None,
-    brand: Optional[Dict[str, Any]] = None,
-    client_name: Optional[str] = None,
-    kind_label: str = "",
-) -> bytes:
+# Пункт вида «**Заголовок** — пояснение» — это карточка преимущества, а не
+# строка списка. Два и больше таких подряд рисуются сеткой карточек.
+_CARD_RE = re.compile(r"^\*\*(?P<title>[^*]{2,60})\*\*\s*[—–:-]\s*(?P<body>.+)$")
+
+
+def _as_cards(items: List[str]) -> Optional[List[Tuple[str, str]]]:
+    """Список → карточки, если так оформлено большинство пунктов."""
+    pairs = []
+    for item in items:
+        m = _CARD_RE.match(item.strip())
+        if not m:
+            return None
+        pairs.append((m.group("title").strip(), m.group("body").strip()))
+    return pairs if len(pairs) >= 2 else None
+
+
+def _build_story(blocks, table, images, st, accent, brand, compress: float) -> List[Any]:
     """
-    Собрать оформленный PDF.
-
-    brand: {company_name, color, contacts, logo_bytes} — всё опционально.
-    Логотипа нет → в шапке только название компании (или ничего); цвета нет →
-    фирменный синий VoksiAI.
+    Содержимое документа. compress < 1 поджимает вертикальные отступы: так
+    хвост в пару строк не уезжает один на новую страницу (у владельца это
+    выглядело как «вторая страница пустая»).
     """
-    if not _ensure_fonts():
-        raise RuntimeError("Шрифты для PDF недоступны")
-    brand = dict(brand or {})
-    accent = _accent(brand)
-    st = _styles(accent)
-    title = (title or "Документ").strip()
-    subtitle = _doc_meta(brand, client_name)
+    def sp(h: float) -> Spacer:
+        return Spacer(1, max(1.0, h * compress))
 
-    title_lines, title_size, band_h = _band_layout(title)
-
-    buf = io.BytesIO()
-    doc = BaseDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=band_h + 9 * mm, bottomMargin=FOOTER_H + 8 * mm,
-        title=title, author=(brand.get("company_name") or "").strip() or None,
-        # Подпись в свойствах файла: сразу видно, каким рендером собран документ.
-        # У старого fpdf2-пути Producer пустой — по этому полю отличается
-        # «новый код задеплоен» от «работает прежний».
-        creator=RENDERER_SIGNATURE,
-    )
-    first_frame = Frame(MARGIN, FOOTER_H + 8 * mm, CONTENT_W,
-                        PAGE_H - band_h - 9 * mm - FOOTER_H - 8 * mm, id="first",
-                        leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
-    later_frame = Frame(MARGIN, FOOTER_H + 8 * mm, CONTENT_W,
-                        PAGE_H - SLIM_H - 6 * mm - FOOTER_H - 8 * mm, id="later",
-                        leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
-
-    def on_first(canv, _doc):
-        _draw_band(canv, brand, accent, title, subtitle, kind_label,
-                   band_h, title_lines, title_size)
-        _draw_footer(canv, brand, accent)
-
-    def on_later(canv, _doc):
-        _draw_slim(canv, brand, accent, title)
-        _draw_footer(canv, brand, accent)
-
-    doc.addPageTemplates([
-        PageTemplate(id="first", frames=[first_frame], onPage=on_first),
-        PageTemplate(id="later", frames=[later_frame], onPage=on_later),
-    ])
-
-    # Первая страница — с большой шапкой, дальше автоматически слим-шапка.
-    story: List[Any] = [NextPageTemplate("later")]
-    blocks = parse_blocks(content)
-
-    # Заголовок первой секции часто дублирует заголовок документа — убираем.
-    if blocks and blocks[0][0] == "h":
-        if blocks[0][1][1].strip().lower() == title.strip().lower():
-            blocks = blocks[1:]
-
+    story: List[Any] = []
     cta_buffer: List[Any] = []
     in_cta = False
 
@@ -598,31 +747,134 @@ def render_pdf(
                 cta_buffer.append(Paragraph(_inline(text), st["cta_h"]))
                 continue
             style = st["h1"] if level <= 1 else st["h2"]
-            head = [Spacer(1, 7 if len(story) > 1 else 0), Paragraph(_inline(text), style)]
-            if level <= 1:
-                head += [Spacer(1, 3), HeadingRule(accent), Spacer(1, 6)]
-            else:
-                head += [Spacer(1, 3)]
+            head = [sp(7 if story else 0), Paragraph(_inline(text), style)]
+            head += [sp(3), HeadingRule(accent), sp(6)] if level <= 1 else [sp(3)]
             # Заголовок не должен остаться один внизу страницы.
             emit([KeepTogether(head)] if not in_cta else head)
         elif kind == "p":
             emit([Paragraph(_inline(payload), st["cta_p"] if in_cta else st["p"])])
-        elif kind == "ul":
-            emit(_bullet_list(payload, st, accent))
-        elif kind == "ol":
-            emit(_bullet_list(payload, st, accent, numbered=True))
+        elif kind in ("ul", "ol"):
+            cards = _as_cards(payload) if kind == "ul" and not in_cta else None
+            if cards:
+                emit([CardGrid(cards, accent, st, CONTENT_W), sp(6)])
+            else:
+                emit(_bullet_list(payload, st, accent, numbered=(kind == "ol")))
 
     if table:
         story.extend(_price_table(table, st, accent))
 
-    if cta_buffer:
-        paras = [f for f in cta_buffer if isinstance(f, Paragraph)]
-        if paras:
-            story.append(Spacer(1, 10))
-            story.append(CalloutBox(paras, accent, CONTENT_W))
+    for img in (images or []):
+        data = img.get("bytes") if isinstance(img, dict) else img
+        if data:
+            story.extend(_figure(data, (img.get("caption") if isinstance(img, dict) else None),
+                                 st, CONTENT_W))
 
-    if len(story) <= 1:
-        story.append(Paragraph(" ", st["p"]))
+    paras = [f for f in cta_buffer if isinstance(f, Paragraph)]
+    if paras:
+        contacts = (brand.get("contacts") or "").strip()
+        if contacts:
+            # Контакты в самом призыве: в колонтитуле их почти не замечают.
+            paras.append(Paragraph(_inline(contacts), st["cta_contacts"]))
+        story.append(sp(10))
+        story.append(CalloutBox(paras, accent, CONTENT_W))
 
+    return story or [Paragraph(" ", st["p"])]
+
+
+def render_pdf(
+    title: str,
+    content: str,
+    table: Optional[List[List[Any]]] = None,
+    brand: Optional[Dict[str, Any]] = None,
+    client_name: Optional[str] = None,
+    kind_label: str = "",
+    images: Optional[List[Dict[str, Any]]] = None,
+    cover: Optional[bool] = None,
+) -> bytes:
+    """
+    Собрать оформленный PDF.
+
+    brand: {company_name, color, contacts, logo_bytes} — всё опционально.
+    Логотипа нет → в шапке только название компании (или ничего); цвета нет →
+    фирменный синий VoksiAI.
+    images: [{bytes, caption}] — картинки из библиотеки файлов агента.
+    cover: титульная страница. None = сама решит по объёму (короткой памятке
+    обложка не нужна, презентации и большому КП — нужна).
+    """
+    if not _ensure_fonts():
+        raise RuntimeError("Шрифты для PDF недоступны")
+    brand = dict(brand or {})
+    accent = _accent(brand)
+    st = _styles(accent)
+    title = (title or "Документ").strip()
+    subtitle = _doc_meta(brand, client_name)
+
+    blocks = parse_blocks(content)
+    # Заголовок первой секции часто дублирует заголовок документа — убираем.
+    if blocks and blocks[0][0] == "h" and blocks[0][1][1].strip().lower() == title.strip().lower():
+        blocks = blocks[1:]
+
+    title_lines, title_size, band_h = _band_layout(title, bool(brand.get("logo_bytes")))
+    first_h = PAGE_H - band_h - 9 * mm - FOOTER_H - 8 * mm
+    later_h = PAGE_H - SLIM_H - 6 * mm - FOOTER_H - 8 * mm
+
+    # Подбираем плотность: если содержимое чуть-чуть не влезает на страницу,
+    # поджимаем отступы, вместо того чтобы отправлять хвост на пустую страницу.
+    story = _build_story(blocks, table, images, st, accent, brand, 1.0)
+    page_h = later_h if cover else first_h
+    height = _story_height(story, CONTENT_W, page_h)
+    pages = max(1, math.ceil(height / page_h))
+    tail = height - (pages - 1) * page_h
+    if pages > 1 and tail < page_h * 0.5:
+        for factor in (0.8, 0.6, 0.45, 0.3):
+            candidate = _build_story(blocks, table, images, st, accent, brand, factor)
+            if _story_height(candidate, CONTENT_W, page_h) <= (pages - 1) * page_h * 0.985:
+                story = candidate
+                break
+
+    if cover is None:
+        # Обложка оправдана, когда за ней идёт полноценный документ.
+        cover = height > later_h * 0.75
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=band_h + 9 * mm, bottomMargin=FOOTER_H + 8 * mm,
+        title=title, author=(brand.get("company_name") or "").strip() or None,
+        # Подпись в свойствах файла: сразу видно, каким рендером собран документ.
+        # У старого fpdf2-пути Producer пустой — по этому полю отличается
+        # «новый код задеплоен» от «работает прежний».
+        creator=RENDERER_SIGNATURE,
+    )
+
+    def frame(height_: float, name: str) -> Frame:
+        return Frame(MARGIN, FOOTER_H + 8 * mm, CONTENT_W, height_, id=name,
+                     leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+
+    def on_cover(canv, _doc):
+        _draw_cover(canv, brand, accent, title, client_name, kind_label)
+
+    def on_first(canv, _doc):
+        _draw_band(canv, brand, accent, title, subtitle, kind_label,
+                   band_h, title_lines, title_size)
+        _draw_footer(canv, brand, accent)
+
+    def on_later(canv, _doc):
+        _draw_slim(canv, brand, accent, title)
+        _draw_footer(canv, brand, accent)
+
+    templates = [PageTemplate(id="later", frames=[frame(later_h, "later")], onPage=on_later)]
+    if cover:
+        # Обложка идёт первой: титул рисуется на канве, текст начинается дальше.
+        templates.insert(0, PageTemplate(id="cover", frames=[frame(later_h, "cover")],
+                                         onPage=on_cover))
+        story = [NextPageTemplate("later"), PageBreak()] + story
+    else:
+        templates.insert(0, PageTemplate(id="first", frames=[frame(first_h, "first")],
+                                         onPage=on_first))
+        story = [NextPageTemplate("later")] + story
+
+    doc.addPageTemplates(templates)
     doc.build(story)
     return buf.getvalue()

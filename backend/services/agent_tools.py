@@ -851,6 +851,13 @@ CREATE_DOCUMENT_TOOL = {
         "content — текст: строки с «# » — заголовки секций, «- » — пункты списка, "
         "«1. » — нумерованные шаги, **жирный** внутри строки. table — таблица "
         "(первая строка — заголовки), для КП это прайс; обязательна для xlsx/csv.\n"
+        "Преимущества оформляй карточками: пункты вида «- **Короткий заголовок** — "
+        "пояснение одной фразой» (от двух подряд) рисуются плитками с галочками, "
+        "это выглядит заметно лучше обычного списка.\n"
+        "image_file_ids — id картинок из list_agent_files (фото товара, объекта, "
+        "примеров работ), до 4 штук: они встанут в документ. cover — титульная "
+        "страница с крупным логотипом; по умолчанию решается само (у большого КП "
+        "и презентации — есть, у короткой памятки — нет).\n"
         "Коммерческое предложение пиши ПОД КЛИЕНТА, а не шаблоном: секция о его "
         "задаче — словами из вашего разговора (что он просил, какой объём, что "
         "его беспокоит), затем что предлагаем именно под эту задачу, затем "
@@ -875,6 +882,12 @@ CREATE_DOCUMENT_TOOL = {
             },
             "agent_contact_id": {"type": "string", "description": "UUID контакта, для которого документ (если есть) — его имя попадёт в шапку «Для: …»"},
             "kind_label": {"type": "string", "description": "Тип документа в углу шапки: «Коммерческое предложение», «Счёт», «Памятка»"},
+            "image_file_ids": {
+                "type": "array",
+                "description": "id картинок из list_agent_files (до 4) — фото товара, объекта, примеров работ",
+                "items": {"type": "string"},
+            },
+            "cover": {"type": "boolean", "description": "Титульная страница с логотипом. Не передавай — решится само"},
         },
         "required": ["title"],
     },
@@ -994,6 +1007,35 @@ async def _document_brand(agent_config_id: str, db: Session) -> dict:
     return brand
 
 
+async def _document_images(file_ids, agent_config_id: str, db: Session) -> list:
+    """
+    Картинки для документа: файлы библиотеки агента (фото товара, объекта).
+    Не картинки и чужие файлы молча пропускаем — документ важнее, чем ошибка
+    из-за одной неудачной ссылки. Не больше 4, чтобы КП не превратилось в альбом.
+    """
+    from backend.models.agent_file import AgentFile
+    from backend.services import agent_media_service
+
+    if not isinstance(file_ids, list):
+        return []
+    out = []
+    for fid in file_ids[:4]:
+        row = db.query(AgentFile).filter(
+            AgentFile.id == str(fid),
+            AgentFile.agent_config_id == agent_config_id,
+        ).first()
+        if row is None or not (row.mime or "").startswith("image/"):
+            continue
+        try:
+            data = await agent_media_service.load_bytes(row)
+        except Exception as e:
+            logger.warning(f"[DOC] картинка {fid} не загружена: {e}")
+            continue
+        if data:
+            out.append({"bytes": data, "caption": (row.title or "").strip() or None})
+    return out
+
+
 async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     from backend.services import agent_media_service
     contact_id = args.get("agent_contact_id") or None
@@ -1010,6 +1052,8 @@ async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db:
     table = args.get("table")
     if table is not None and not isinstance(table, list):
         table = None
+    images = await _document_images(args.get("image_file_ids"), agent_config_id, db)
+    cover = args.get("cover")
     try:
         row = await agent_media_service.create_document(
             db,
@@ -1023,6 +1067,8 @@ async def fn_create_document(args: dict, user_id: str, agent_config_id: str, db:
             brand=await _document_brand(agent_config_id, db),
             client_name=client_name,
             kind_label=(args.get("kind_label") or "").strip(),
+            images=images,
+            cover=cover if isinstance(cover, bool) else None,
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}

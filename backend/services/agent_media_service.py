@@ -675,7 +675,9 @@ def _lines(content: str) -> List[str]:
 def _render_pdf(title: str, content: str, table: Optional[List[List[Any]]],
                 brand: Optional[Dict[str, Any]] = None,
                 client_name: Optional[str] = None,
-                kind_label: str = "") -> bytes:
+                kind_label: str = "",
+                images: Optional[List[Dict[str, Any]]] = None,
+                cover: Optional[bool] = None) -> bytes:
     """
     Оформленный PDF (reportlab, backend/services/document_design.py).
 
@@ -688,6 +690,7 @@ def _render_pdf(title: str, content: str, table: Optional[List[List[Any]]],
         data = document_design.render_pdf(
             title, content, table, brand=brand,
             client_name=client_name, kind_label=kind_label,
+            images=images, cover=cover,
         )
         # Видно в логах Render, каким рендером собран документ: запасной путь
         # выглядит для владельца точно как «ничего не изменилось».
@@ -835,6 +838,8 @@ async def create_document(
     brand: Optional[Dict[str, Any]] = None,
     client_name: Optional[str] = None,
     kind_label: str = "",
+    images: Optional[List[Dict[str, Any]]] = None,
+    cover: Optional[bool] = None,
 ):
     """Собрать документ и сохранить как AgentFile(source=generated). Бросает ValueError."""
     fmt = (fmt or "pdf").lower().lstrip(".")
@@ -845,7 +850,8 @@ async def create_document(
     renderer, mime = RENDERERS[fmt]
     args = [(title or "").strip(), content or "", table]
     # Фирменный стиль пока умеет только PDF — у docx/xlsx/csv/txt своя вёрстка.
-    kwargs = {"brand": brand, "client_name": client_name, "kind_label": kind_label} if fmt == "pdf" else {}
+    kwargs = {"brand": brand, "client_name": client_name, "kind_label": kind_label,
+              "images": images, "cover": cover} if fmt == "pdf" else {}
     data = await asyncio.to_thread(lambda: renderer(*args, **kwargs))
     filename = _safe_filename(title or "document", fmt)
     row = await store_file(
