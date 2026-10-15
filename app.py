@@ -1638,6 +1638,28 @@ def ensure_chat_v2_columns():
         logger.info(f"✅ ensure_chat_v2_columns: added {added} column(s)")
 
 
+def ensure_knowledge_v2_tables():
+    """
+    База знаний v2 (ветка 1410-kb-v2): таблицы agent_knowledge_entries и
+    agent_knowledge_gaps. Идёт в начале старта, в каждом воркере — знания
+    читаются при сборке промпта на КАЖДОМ звонке и сообщении, без таблиц
+    падает любой ответ агента (правило после инцидента 11.10).
+    create_all с конкретными таблицами идемпотентен: существующие не трогает.
+    """
+    try:
+        from backend.models.agent_knowledge import AgentKnowledgeEntry, AgentKnowledgeGap
+        from backend.models.base import Base as ModelsBase
+        ModelsBase.metadata.create_all(
+            bind=engine,
+            tables=[AgentKnowledgeEntry.__table__, AgentKnowledgeGap.__table__],
+            checkfirst=True,
+        )
+    except Exception as e:
+        logger.error(f"❌ ensure_knowledge_v2_tables: {e}")
+        return
+    logger.info("✅ ensure_knowledge_v2_tables: база знаний v2 готова")
+
+
 def ensure_branding_columns():
     """
     Фирменный стиль документов агента (ветка 1310-kp-design): колонки
@@ -2589,6 +2611,7 @@ async def startup_event():
         ensure_wallet_columns()
         ensure_chat_v2_columns()
         ensure_branding_columns()
+        ensure_knowledge_v2_tables()
 
         try:
             # Для Render используем более простую блокировку

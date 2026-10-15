@@ -89,20 +89,52 @@ SEARCH_KNOWLEDGE_BASE_TOOL = {
     "type": "function",
     "name": "search_knowledge_base",
     "description": (
-        "Найти информацию в базе знаний компании (векторный поиск). Используй, "
-        "когда нужен фактический ответ по продукту, услугам, ценам, условиям или "
-        "другим деталям из материалов владельца. Не выдумывай факты — бери их из "
-        "результатов поиска. Если база пуста или ничего не найдено — скажи прямо."
+        "Найти информацию в базе знаний компании: записи владельца и документы. "
+        "ВАЖНО: сначала посмотри раздел «ЗНАНИЯ О КОМПАНИИ» в своей инструкции — "
+        "частые ответы уже там, и отвечать по ним нужно сразу, без этого "
+        "инструмента (вызов занимает время, клиент ждёт в тишине). Зови поиск "
+        "только когда ответа в инструкции нет. Не выдумывай факты: ничего не "
+        "нашлось — скажи, что уточнишь у специалиста."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Поисковый запрос на русском языке"},
-            "top_k": {"type": "integer", "description": "Сколько фрагментов вернуть (по умолчанию 3)"},
+            "query": {"type": "string", "description": "Что ищем, словами клиента"},
+            "top_k": {"type": "integer", "description": "Сколько фрагментов вернуть (по умолчанию 4)"},
         },
         "required": ["query"],
     },
 }
+
+
+# Подбор позиций каталога (kind=product в базе знаний). Быстрый поиск в
+# Postgres + фильтр по цене: векторный поиск по числам («до 3000») врёт.
+FIND_PRODUCTS_TOOL = {
+    "type": "function",
+    "name": "find_products",
+    "description": (
+        "Подобрать товары или услуги из каталога владельца: по названию, "
+        "описанию и цене. Используй, когда клиент спрашивает про модель, "
+        "наличие, цену или просит «что есть до такой-то суммы». В ответе "
+        "придут цена и id фото/видео позиции — отправь их клиенту "
+        "(whatsapp_send_file / telegram_send_file / instagram_send_file) "
+        "вместе с коротким описанием. Товары вне каталога не придумывай."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Что ищет клиент: модель, тип товара, услуга"},
+            "max_price": {"type": "number", "description": "Верхняя граница цены, если клиент её назвал"},
+            "min_price": {"type": "number", "description": "Нижняя граница цены"},
+            "limit": {"type": "integer", "description": "Сколько позиций вернуть (по умолчанию 5)"},
+        },
+        "required": [],
+    },
+}
+
+# Ниже этого совпадения результат Pinecone считаем мусором: раньше агенту
+# всегда возвращались три куска, даже нерелевантных, и он сочинял по ним ответ.
+KB_MIN_SCORE = 0.3
 
 
 # Отправка SMS клиенту с номера агента (Voximplant). Доступна в чате и в post-call.
@@ -2017,6 +2049,7 @@ AGENT_CHAT_TOOLS = [
     UPDATE_CONTACT_INFO_TOOL,
     MOVE_CONTACT_STAGE_TOOL,
     SEARCH_KNOWLEDGE_BASE_TOOL,
+    FIND_PRODUCTS_TOOL,
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
     SEND_TELEGRAM_NOTIFICATION_TOOL,
@@ -2120,6 +2153,7 @@ AGENT_POSTCALL_TOOLS = [
     UPDATE_CONTACT_INFO_TOOL,
     MOVE_CONTACT_STAGE_TOOL,
     SEARCH_KNOWLEDGE_BASE_TOOL,
+    FIND_PRODUCTS_TOOL,
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
 ]
@@ -3442,41 +3476,130 @@ async def fn_get_failed_calls(args: dict, user_id: str, agent_config_id: str, db
     return {"ok": True, "count": len(result), "contacts": result}
 
 
-async def fn_search_knowledge_base(args: dict, agent_config, db: Session) -> dict:
+async def fn_search_knowledge_base(args: dict, agent_config, db: Session,
+                                   channel: Optional[str] = None) -> dict:
     """
-    Векторный поиск по базе знаний агента.
+    Поиск по базе знаний агента — слоями, от быстрого к медленному
+    (ветка 1410-kb-v2).
 
-    Namespace берётся из agent_config.kb_namespace. Эмбеддинги считаются на
-    системном ключе OPENAI_API_KEY (оркестратор v3 работает на кредитах, а не на
-    личном ключе юзера).
+    1. Postgres по записям базы (заголовки, ключевые слова, текст) — единицы
+       миллисекунд, без сети и эмбеддингов. Закрывает большинство вопросов.
+    2. Pinecone по документам — только если в Postgres пусто. Здесь платим
+       эмбеддингом и сетью (сотни миллисекунд), поэтому и зовём в последнюю
+       очередь.
+
+    Если не нашли нигде — пишем вопрос в «пробелы базы»: владелец увидит, чего
+    клиентам не хватает, и дополнит базу по фактам, а не по догадкам.
     """
     import os
+    from backend.services import agent_knowledge_service as kb
     from backend.services.pinecone_service import PineconeService
 
     query = (args.get("query") or "").strip()
-    top_k = int(args.get("top_k") or 3)
-
+    top_k = int(args.get("top_k") or 4)
     if not query:
         return {"ok": False, "error": "Пустой поисковый запрос"}
 
+    agent_config_id = getattr(agent_config, "id", None) if agent_config else None
+
+    # ── Слой 1: быстрый поиск по записям ──
+    if agent_config_id:
+        try:
+            rows = kb.search_entries(db, agent_config_id, query, limit=top_k)
+        except Exception as e:
+            logger.warning(f"[KB] быстрый поиск не сработал: {e}")
+            rows = []
+        if rows:
+            kb.mark_hits(db, rows)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+            return {
+                "ok": True, "query": query, "source": "knowledge_base",
+                "total": len(rows),
+                "results": [kb.entry_for_agent(r) for r in rows],
+            }
+
+    # ── Слой 2: документы в Pinecone ──
     namespace = getattr(agent_config, "kb_namespace", None) if agent_config else None
-    if not namespace:
-        return {"ok": False, "error": "База знаний не создана для этого агента"}
-
     openai_api_key = os.environ.get("OPENAI_API_KEY")
-    if not openai_api_key:
-        return {"ok": False, "error": "OPENAI_API_KEY не настроен на сервере"}
+    if namespace and openai_api_key:
+        try:
+            matches = await PineconeService.search(
+                query=query, namespace=namespace, api_key=openai_api_key, top_k=top_k,
+            )
+        except Exception as e:
+            logger.error(f"[AGENT-TOOLS] knowledge base search failed: {e}", exc_info=True)
+            return {"ok": False, "error": f"Ошибка поиска: {e}"}
+        # Слабые совпадения отбрасываем: раньше агенту всегда возвращались три
+        # куска, даже нерелевантных, и он придумывал ответ по ним.
+        results = [
+            {"text": m.get("text", ""), "score": m.get("score")}
+            for m in matches
+            if (m.get("score") or 0) >= KB_MIN_SCORE
+        ]
+        if results:
+            return {"ok": True, "query": query, "source": "documents",
+                    "total": len(results), "results": results}
 
+    if agent_config_id:
+        kb.record_gap(db, agent_config_id, query, channel)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+    return {
+        "ok": True, "query": query, "total": 0, "results": [],
+        "note": "В базе знаний ответа нет. Не выдумывай: скажи клиенту, что "
+                "уточнишь у специалиста, и предложи записать его вопрос.",
+    }
+
+
+async def fn_find_products(args: dict, agent_config, db: Session) -> dict:
+    """
+    Подбор позиций каталога: название/описание + фильтр по цене.
+
+    Ищем в Postgres, а не векторами: «наушники до 3000» — это число, а по
+    числам вектора врут. Плюс быстро, что важно на звонке.
+    В ответе — id фото/видео позиции, чтобы агент сразу отправил их клиенту.
+    """
+    from backend.services import agent_knowledge_service as kb
+
+    agent_config_id = getattr(agent_config, "id", None) if agent_config else None
+    if not agent_config_id:
+        return {"ok": False, "error": "Агент не определён"}
+
+    def _num(value):
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    rows = kb.search_products(
+        db, agent_config_id,
+        query=(args.get("query") or "").strip(),
+        max_price=_num(args.get("max_price")),
+        min_price=_num(args.get("min_price")),
+        limit=min(int(args.get("limit") or 5), 10),
+    )
+    if not rows:
+        kb.record_gap(db, agent_config_id, (args.get("query") or "").strip())
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        return {"ok": True, "total": 0, "results": [],
+                "note": "Подходящих позиций в каталоге нет. Не придумывай товар — "
+                        "предложи похожее из каталога или уточни запрос у клиента."}
+
+    kb.mark_hits(db, rows)
     try:
-        matches = await PineconeService.search(
-            query=query, namespace=namespace, api_key=openai_api_key, top_k=top_k,
-        )
-    except Exception as e:
-        logger.error(f"[AGENT-TOOLS] knowledge base search failed: {e}", exc_info=True)
-        return {"ok": False, "error": f"Ошибка поиска: {e}"}
-
-    results = [{"text": m.get("text", ""), "score": m.get("score")} for m in matches]
-    return {"ok": True, "query": query, "total": len(results), "results": results}
+        db.commit()
+    except Exception:
+        db.rollback()
+    return {"ok": True, "total": len(rows),
+            "results": [kb.entry_for_agent(r) for r in rows]}
 
 
 async def fn_send_webhook(args: dict, agent_config, db: Session) -> dict:
@@ -3532,6 +3655,7 @@ async def fn_send_webhook(args: dict, agent_config, db: Session) -> dict:
 
 _TOOL_MAP = {
     "search_knowledge_base": "fn_search_knowledge_base",
+    "find_products": "fn_find_products",
     "create_agent_contact": "fn_create_agent_contact",
     "create_agent_task": "fn_create_agent_task",
     "update_contact_memory": "fn_update_contact_memory",
@@ -3641,7 +3765,13 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:
                 agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
-            result = await fn_search_knowledge_base(tool_args, agent_config, db)
+            result = await fn_search_knowledge_base(tool_args, agent_config, db,
+                                                    channel=context.get("channel"))
+        elif tool_name == "find_products":
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            result = await fn_find_products(tool_args, agent_config, db)
         elif tool_name == "send_webhook":
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:

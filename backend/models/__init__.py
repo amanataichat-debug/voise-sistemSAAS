@@ -92,6 +92,10 @@ from .agent_whatsapp import (
 # ✅ НОВОЕ: файлы агента (библиотека, вложения клиентов, созданные документы)
 from .agent_file import AgentFile
 
+# База знаний агента v2 (ветка 1410-kb-v2): вопрос-ответ, секции, каталог,
+# документы — в одной таблице; плюс пробелы (о чём спрашивают, а база молчит)
+from .agent_knowledge import AgentKnowledgeEntry, AgentKnowledgeGap
+
 # ✅ НОВОЕ v3.0: Импортируем Voximplant Partner модели
 from .voximplant_child import (
     VoximplantChildAccount,

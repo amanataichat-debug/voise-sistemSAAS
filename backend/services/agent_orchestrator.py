@@ -454,7 +454,7 @@ class PreCallOrchestrator:
 
         # Статичный system + время в user-сообщении: префикс запроса
         # (tools + system) байт-в-байт одинаков между звонками → кэш провайдера.
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
         base_input = self._build_precall_input(task, agent_contact, db)
         user_input = base_input + build_time_block(round_to_minutes=0) + """
 
@@ -1399,7 +1399,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
 
         # Статичный system + время в user-сообщении: префикс запроса
         # (tools + system) байт-в-байт одинаков между звонками → кэш провайдера.
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
         post_call_input = self._build_postcall_input(
             agent_call, agent_contact, transcript, call_status, duration_seconds, db, call_direction
         )
@@ -1897,7 +1897,7 @@ class ChatOrchestrator:
         total_prompt = 0
         total_completion = 0
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False) + TELEGRAM_RICH_FORMAT_HINT
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db) + TELEGRAM_RICH_FORMAT_HINT
         history = telegram_history_row.history or []
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -2010,7 +2010,7 @@ class ChatOrchestrator:
         total_prompt = 0
         total_completion = 0
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False) + TELEGRAM_RICH_FORMAT_HINT
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db) + TELEGRAM_RICH_FORMAT_HINT
         history = telegram_history_row.history or []
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -2252,7 +2252,7 @@ class ChatOrchestrator:
         debug_log: List[Dict[str, Any]] = []
         debug_log.append({"ts": self._now_ts(), "type": "user_message", "data": message})
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
         history = agent_config.chat_history or []
 
         # Build messages from stored chat history (role/content only)
@@ -2387,7 +2387,7 @@ class ChatOrchestrator:
         total_prompt = 0
         total_completion = 0
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message + build_time_block(round_to_minutes=0)},
@@ -2497,7 +2497,7 @@ class ChatOrchestrator:
         debug_log: List[Dict[str, Any]] = []
         debug_log.append({"ts": self._now_ts(), "type": "user_message", "data": message})
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False)
+        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
         history = agent_config.chat_history or []
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]

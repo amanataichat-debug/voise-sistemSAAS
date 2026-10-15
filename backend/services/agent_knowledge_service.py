@@ -1,0 +1,329 @@
+"""
+База знаний агента v2 (ветка 1410-kb-v2): сборка знаний в промпт и поиск.
+
+Главное правило — **самый быстрый поиск тот, которого нет**. По логу звонка
+владельца один вызов функции стоит ~4 секунды (голосовая модель идёт в
+делегирующий бэкенд), а средняя задержка ответа и без функций 6,6 с. Поэтому
+знания доходят до агента тремя слоями, от бесплатного к дорогому:
+
+  1. ПРОМПТ (0 мс). Пары «вопрос — ответ» и короткие секции вшиваются в
+     system prompt при старте сессии. Агент отвечает сразу, функция не
+     вызывается вообще. Сюда попадает то, что спрашивают постоянно: цены,
+     адрес, часы работы, условия.
+  2. POSTGRES (единицы мс). Если в промпте ответа нет — ищем по заголовкам,
+     ключевым словам и тексту записей обычным SQL. Без эмбеддингов, без
+     сети. Сюда же каталог товаров: по цене и модели точное совпадение
+     работает лучше векторов.
+  3. PINECONE (сотни мс + эмбеддинг). Только документы (PDF/DOCX/XLSX), где
+     ответ лежит внутри длинного текста. Единственный слой, который платит
+     задержкой, — и он же самый редкий.
+
+Нижние слои вызываются, только если верхние молчат, поэтому обычный вопрос
+клиента до Pinecone вообще не доходит.
+"""
+
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import or_
+
+from backend.core.logging import get_logger
+from backend.models.agent_knowledge import (
+    KB_PROMPT_CHAR_BUDGET, KB_PROMPT_MAX_QA, AgentKnowledgeEntry, AgentKnowledgeGap,
+)
+
+logger = get_logger(__name__)
+
+# Короткая секция целиком влезает в промпт; длинная идёт туда одним
+# заголовком, а тело достаётся поиском.
+SECTION_PROMPT_MAX_CHARS = 900
+
+# Слова, которые ничего не дают поиску (встречаются в любом вопросе).
+_STOP_WORDS = {
+    "и", "а", "в", "на", "с", "по", "за", "у", "к", "о", "об", "от", "до", "из",
+    "для", "же", "ли", "не", "но", "что", "как", "это", "вы", "мы", "вас", "нам",
+    "есть", "быть", "мне", "там", "тут", "ещё", "еще", "или", "да", "нет",
+    "скажите", "подскажите", "пожалуйста", "хочу", "можно", "какой", "какая",
+    "какие", "сколько", "где", "когда", "почему",
+}
+
+_WORD_RE = re.compile(r"[\w\-]{2,}", re.UNICODE)
+
+
+def normalize(text: str) -> str:
+    return " ".join((text or "").lower().split())
+
+
+def keywords_of(query: str, limit: int = 6) -> List[str]:
+    """Значимые слова запроса: по ним ищем в Postgres."""
+    words = [w.lower() for w in _WORD_RE.findall(query or "")]
+    out = [w for w in words if w not in _STOP_WORDS]
+    # Длинные слова информативнее — их вперёд.
+    out.sort(key=len, reverse=True)
+    return out[:limit]
+
+
+# ============================================================================
+# СЛОЙ 1: ЗНАНИЯ В ПРОМПТЕ
+# ============================================================================
+
+def build_prompt_block(db, agent_config_id, budget: int = KB_PROMPT_CHAR_BUDGET) -> str:
+    """
+    Блок знаний для system prompt: пары «вопрос — ответ» и короткие секции.
+
+    Укладывается в бюджет символов: сначала вопрос-ответ (их спрашивают чаще
+    всего), потом секции по порядку. Что не влезло — упоминается заголовком,
+    чтобы агент знал, что это у него есть, и мог достать поиском.
+    """
+    rows = (
+        db.query(AgentKnowledgeEntry)
+        .filter(
+            AgentKnowledgeEntry.agent_config_id == agent_config_id,
+            AgentKnowledgeEntry.is_active.is_(True),
+            AgentKnowledgeEntry.in_prompt.is_(True),
+            AgentKnowledgeEntry.kind.in_(("qa", "section")),
+        )
+        .order_by(AgentKnowledgeEntry.kind.desc(),  # qa раньше section
+                  AgentKnowledgeEntry.position.asc(),
+                  AgentKnowledgeEntry.created_at.asc())
+        .all()
+    )
+    if not rows:
+        return ""
+
+    qa_lines: List[str] = []
+    section_lines: List[str] = []
+    deferred: List[str] = []          # заголовки того, что не влезло
+    used = 0
+    qa_count = 0
+
+    for row in rows:
+        title = (row.title or "").strip()
+        body = (row.body or "").strip()
+        if not title and not body:
+            continue
+
+        if row.kind == "qa":
+            if qa_count >= KB_PROMPT_MAX_QA:
+                deferred.append(title or body[:60])
+                continue
+            piece = f"В: {title}\nО: {body}"
+        else:
+            if len(body) > SECTION_PROMPT_MAX_CHARS:
+                deferred.append(title)
+                continue
+            piece = f"## {title}\n{body}" if title else body
+
+        if used + len(piece) > budget:
+            deferred.append(title or body[:60])
+            continue
+
+        used += len(piece)
+        if row.kind == "qa":
+            qa_lines.append(piece)
+            qa_count += 1
+        else:
+            section_lines.append(piece)
+
+    if not qa_lines and not section_lines and not deferred:
+        return ""
+
+    parts = ["\n\n# ЗНАНИЯ О КОМПАНИИ (отвечай сразу, не вызывая поиск)"]
+    if qa_lines:
+        parts.append("\n## Частые вопросы и готовые ответы\n" + "\n\n".join(qa_lines))
+    if section_lines:
+        parts.append("\n" + "\n\n".join(section_lines))
+    if deferred:
+        titles = ", ".join(f"«{t}»" for t in deferred[:15] if t)
+        if titles:
+            parts.append(
+                "\n## Есть ещё в базе (достань инструментом search_knowledge_base)\n"
+                + titles
+            )
+    parts.append(
+        "\nОтвечай по этим данным сразу — это самый быстрый путь. Поиск вызывай "
+        "только если ответа здесь нет. Если его нет и в поиске — честно скажи, "
+        "что уточнишь у специалиста, и не выдумывай."
+    )
+    return "\n".join(parts)
+
+
+# ============================================================================
+# СЛОЙ 2: БЫСТРЫЙ ПОИСК В POSTGRES
+# ============================================================================
+
+def _score(row: AgentKnowledgeEntry, words: List[str], query_norm: str) -> float:
+    """
+    Насколько запись подходит запросу. Простая и предсказуемая оценка:
+    совпадение в заголовке весит больше, чем в тексте, точная фраза — больше
+    отдельных слов. Для базы в сотни записей этого достаточно, зато считается
+    мгновенно и объяснимо для владельца.
+    """
+    title = (row.title or "").lower()
+    keywords = (row.keywords or "").lower()
+    body = (row.body or "").lower()
+
+    score = 0.0
+    if query_norm and query_norm in title:
+        score += 10.0
+    if query_norm and query_norm in keywords:
+        score += 6.0
+    for w in words:
+        if w in title:
+            score += 3.0
+        if w in keywords:
+            score += 2.0
+        if w in body:
+            score += 1.0
+    # Вопрос-ответ — готовая формулировка, её выдаём охотнее.
+    if row.kind == "qa":
+        score *= 1.2
+    return score
+
+
+def search_entries(
+    db,
+    agent_config_id,
+    query: str,
+    kinds: Optional[tuple] = None,
+    limit: int = 4,
+) -> List[AgentKnowledgeEntry]:
+    """Быстрый поиск по записям базы (без эмбеддингов)."""
+    words = keywords_of(query)
+    query_norm = normalize(query)
+    if not words and not query_norm:
+        return []
+
+    q = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent_config_id,
+        AgentKnowledgeEntry.is_active.is_(True),
+    )
+    if kinds:
+        q = q.filter(AgentKnowledgeEntry.kind.in_(kinds))
+
+    # Отбираем кандидатов по любому значимому слову, ранжируем уже в Python:
+    # база одного агента — сотни строк, это дешевле и гибче, чем SQL-рейтинг.
+    patterns = []
+    for w in words[:4]:
+        like = f"%{w}%"
+        patterns += [
+            AgentKnowledgeEntry.title.ilike(like),
+            AgentKnowledgeEntry.keywords.ilike(like),
+            AgentKnowledgeEntry.body.ilike(like),
+        ]
+    if patterns:
+        q = q.filter(or_(*patterns))
+
+    rows = q.limit(60).all()
+    scored = [(r, _score(r, words, query_norm)) for r in rows]
+    scored = [(r, s) for r, s in scored if s > 0]
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return [r for r, _ in scored[:limit]]
+
+
+def search_products(
+    db,
+    agent_config_id,
+    query: str = "",
+    max_price: Optional[float] = None,
+    min_price: Optional[float] = None,
+    limit: int = 5,
+) -> List[AgentKnowledgeEntry]:
+    """
+    Каталог: подбор позиций. Цена фильтруется в SQL — по числам векторный
+    поиск врёт («до 20 000» он не понимает), а SQL отвечает точно.
+    """
+    q = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent_config_id,
+        AgentKnowledgeEntry.kind == "product",
+        AgentKnowledgeEntry.is_active.is_(True),
+    )
+    if max_price is not None:
+        q = q.filter(AgentKnowledgeEntry.price <= max_price)
+    if min_price is not None:
+        q = q.filter(AgentKnowledgeEntry.price >= min_price)
+
+    words = keywords_of(query)
+    if words:
+        patterns = []
+        for w in words[:4]:
+            like = f"%{w}%"
+            patterns += [
+                AgentKnowledgeEntry.title.ilike(like),
+                AgentKnowledgeEntry.keywords.ilike(like),
+                AgentKnowledgeEntry.body.ilike(like),
+            ]
+        q = q.filter(or_(*patterns))
+
+    rows = q.limit(60).all()
+    if not words:
+        rows.sort(key=lambda r: (r.price if r.price is not None else 0))
+        return rows[:limit]
+    query_norm = normalize(query)
+    scored = [(r, _score(r, words, query_norm)) for r in rows]
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return [r for r, _ in scored[:limit]]
+
+
+def mark_hits(db, rows: List[AgentKnowledgeEntry]) -> None:
+    """Отметить, что знание пригодилось — владелец видит, что реально работает."""
+    now = datetime.utcnow()
+    for row in rows:
+        row.hit_count = (row.hit_count or 0) + 1
+        row.last_hit_at = now
+
+
+def record_gap(db, agent_config_id, query: str, channel: Optional[str] = None) -> None:
+    """
+    Запомнить вопрос, на который ответа не нашлось. Повторы складываем в одну
+    строку: владельцу нужен список «что чаще всего спрашивают мимо базы».
+    """
+    query = (query or "").strip()[:500]
+    if not query:
+        return
+    norm = normalize(query)[:500]
+    try:
+        row = (
+            db.query(AgentKnowledgeGap)
+            .filter(AgentKnowledgeGap.agent_config_id == agent_config_id,
+                    AgentKnowledgeGap.query_norm == norm)
+            .first()
+        )
+        if row is None:
+            db.add(AgentKnowledgeGap(
+                agent_config_id=agent_config_id, query=query, query_norm=norm,
+                channel=channel,
+            ))
+        else:
+            row.ask_count = (row.ask_count or 0) + 1
+            row.last_asked_at = datetime.utcnow()
+            row.resolved = False
+            if channel:
+                row.channel = channel
+    except Exception as e:
+        # Статистика не должна ронять ответ клиенту.
+        logger.warning(f"[KB] пробел не записан: {e}")
+
+
+# ============================================================================
+# ФОРМАТ ОТВЕТА ДЛЯ АГЕНТА
+# ============================================================================
+
+def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
+    """
+    Компактное представление записи. Короче — лучше: агент быстрее
+    формулирует ответ, а на звонке это прямо влияет на задержку.
+    """
+    out: Dict[str, Any] = {"title": row.title, "text": row.body}
+    if row.kind == "product":
+        if row.price is not None:
+            out["price"] = f"{row.price:g} {row.currency or 'KGS'}"
+        if row.attributes:
+            out["attributes"] = row.attributes
+        out["in_stock"] = bool(row.in_stock)
+        media = row.media_file_ids or []
+        if media:
+            # Агент отправит это клиенту: whatsapp_send_file / telegram_send_file.
+            out["media_file_ids"] = media
+    return out

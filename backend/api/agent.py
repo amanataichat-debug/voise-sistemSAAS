@@ -1552,6 +1552,376 @@ async def delete_agent_knowledge_base(
 
 
 # ============================================================================
+# БАЗА ЗНАНИЙ v2 (ветка 1410-kb-v2): записи, каталог, документы, пробелы
+# ============================================================================
+
+class KnowledgeEntryRequest(BaseModel):
+    kind: Optional[str] = None                       # qa | section | product | document
+    title: Optional[str] = Field(None, max_length=500)
+    body: Optional[str] = None
+    keywords: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = Field(None, max_length=8)
+    attributes: Optional[dict] = None
+    in_stock: Optional[bool] = None
+    media_file_ids: Optional[List[str]] = None
+    in_prompt: Optional[bool] = None
+    is_active: Optional[bool] = None
+    position: Optional[int] = None
+
+
+class KnowledgeTestRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+def _kb_entry_or_404(db: Session, agent: AgentConfig, entry_id: str):
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+    row = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.id == entry_id,
+        AgentKnowledgeEntry.agent_config_id == agent.id,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="entry_not_found")
+    return row
+
+
+@router.get("/knowledge")
+async def list_knowledge_entries(
+    kind: Optional[str] = Query(None),
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Записи базы знаний агента. Без kind — сводка по всем разделам: сколько
+    записей в каждом и сколько знаний реально уходит в промпт (владельцу важно
+    видеть, что агент знает «наизусть», а за чем ходит в поиск).
+    """
+    from backend.models.agent_knowledge import KB_KINDS, AgentKnowledgeEntry
+    from backend.services.agent_knowledge_service import build_prompt_block
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    q = db.query(AgentKnowledgeEntry).filter(AgentKnowledgeEntry.agent_config_id == agent.id)
+    if kind:
+        if kind not in KB_KINDS:
+            raise HTTPException(status_code=400, detail="invalid_kind")
+        q = q.filter(AgentKnowledgeEntry.kind == kind)
+    rows = q.order_by(AgentKnowledgeEntry.kind.asc(),
+                      AgentKnowledgeEntry.position.asc(),
+                      AgentKnowledgeEntry.created_at.asc()).all()
+
+    counts = {k: 0 for k in KB_KINDS}
+    for r in db.query(AgentKnowledgeEntry.kind).filter(
+            AgentKnowledgeEntry.agent_config_id == agent.id).all():
+        counts[r[0]] = counts.get(r[0], 0) + 1
+
+    prompt_block = build_prompt_block(db, agent.id)
+    return {
+        "entries": [r.to_dict() for r in rows],
+        "counts": counts,
+        # Сколько символов знаний агент получает мгновенно, без поиска.
+        "prompt_chars": len(prompt_block),
+    }
+
+
+@router.post("/knowledge")
+async def create_knowledge_entry(
+    body: KnowledgeEntryRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Добавить запись: вопрос-ответ, секцию или позицию каталога."""
+    from backend.models.agent_knowledge import KB_KINDS, AgentKnowledgeEntry
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    kind = (body.kind or "section").strip()
+    if kind not in KB_KINDS:
+        raise HTTPException(status_code=400, detail="invalid_kind")
+    title = (body.title or "").strip()
+    text = (body.body or "").strip()
+    if not title and not text:
+        raise HTTPException(status_code=400, detail="empty_entry")
+
+    row = AgentKnowledgeEntry(
+        user_id=current_user.id,
+        agent_config_id=agent.id,
+        kind=kind,
+        title=title[:500],
+        body=text,
+        keywords=(body.keywords or "").strip() or None,
+        price=body.price,
+        currency=(body.currency or "KGS") if kind == "product" else None,
+        attributes=body.attributes if kind == "product" else None,
+        in_stock=True if body.in_stock is None else bool(body.in_stock),
+        media_file_ids=body.media_file_ids or None,
+        # Каталог и документы в промпт не вшиваем: их много, они съедят бюджет
+        # и замедлят каждый ответ. Они достаются поиском.
+        in_prompt=(kind in ("qa", "section")) if body.in_prompt is None else bool(body.in_prompt),
+        is_active=True if body.is_active is None else bool(body.is_active),
+        position=body.position or 0,
+        char_count=len(text),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    _voice_set_kb_function(_resolve_voice_assistant(db, agent), True)
+    db.commit()
+    return {"success": True, "entry": row.to_dict()}
+
+
+@router.put("/knowledge/{entry_id}")
+async def update_knowledge_entry(
+    entry_id: str,
+    body: KnowledgeEntryRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Изменить одну запись, не трогая остальные (раньше правка = перезалив всей базы)."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = _kb_entry_or_404(db, agent, entry_id)
+
+    data = body.dict(exclude_unset=True)
+    for field in ("title", "body", "keywords", "price", "currency", "attributes",
+                  "in_stock", "media_file_ids", "in_prompt", "is_active", "position"):
+        if field in data:
+            value = data[field]
+            if field in ("title", "keywords") and isinstance(value, str):
+                value = value.strip() or None
+                if field == "title":
+                    value = (value or "")[:500]
+            setattr(row, field, value)
+    if "body" in data:
+        row.char_count = len(row.body or "")
+    db.commit()
+    db.refresh(row)
+    return {"success": True, "entry": row.to_dict()}
+
+
+@router.delete("/knowledge/{entry_id}")
+async def delete_knowledge_entry(
+    entry_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = _kb_entry_or_404(db, agent, entry_id)
+    db.delete(row)
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/knowledge/test")
+async def test_knowledge_search(
+    body: KnowledgeTestRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    «Спросить как клиент»: владелец вводит вопрос и видит, что найдёт агент и
+    откуда — из промпта (мгновенно) или поиском. Без этого база отлаживается
+    только живыми звонками.
+    """
+    from backend.services import agent_knowledge_service as kb
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    query = body.query.strip()
+    prompt_block = kb.build_prompt_block(db, agent.id)
+    words = kb.keywords_of(query)
+    # Знание «в промпте» — агент ответит сразу, не вызывая поиск.
+    in_prompt_hit = bool(words) and any(w in prompt_block.lower() for w in words)
+
+    rows = kb.search_entries(db, agent.id, query, limit=5)
+    return {
+        "query": query,
+        "answered_from_prompt": in_prompt_hit,
+        "results": [
+            {**r.to_dict(), "kind": r.kind, "source": "промпт" if r.in_prompt else "поиск"}
+            for r in rows
+        ],
+        "note": (
+            "Агент ответит мгновенно — знание уже в его инструкции."
+            if in_prompt_hit else
+            "Агент найдёт это поиском (чуть дольше)." if rows else
+            "Ответа в базе нет — агент скажет, что уточнит у специалиста."
+        ),
+    }
+
+
+class KnowledgeDocumentRequest(BaseModel):
+    file_id: str = Field(..., max_length=64)
+    title: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/knowledge/document")
+async def add_knowledge_document(
+    body: KnowledgeDocumentRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Добавить в базу знаний уже загруженный файл агента (PDF, Word, Excel,
+    текст). Так библиотека файлов и база знаний становятся одним целым: один
+    и тот же файл агент и отправляет клиенту, и использует как источник
+    ответов.
+
+    Текст берётся из того, что уже извлёк agent_media_service при загрузке, и
+    векторизуется отдельно от остальных документов — правка одного файла не
+    перетирает всю базу.
+    """
+    import os
+    import uuid as _uuid
+    from backend.models.agent_file import AgentFile
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+    from backend.services import pinecone_service as pinecone_mod
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    file_row = db.query(AgentFile).filter(
+        AgentFile.id == body.file_id,
+        AgentFile.agent_config_id == agent.id,
+    ).first()
+    if file_row is None:
+        raise HTTPException(status_code=404, detail="file_not_found")
+
+    text = (file_row.extracted_text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="file_has_no_text")
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="openai_key_not_configured")
+
+    row = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent.id,
+        AgentKnowledgeEntry.file_id == file_row.id,
+    ).first()
+    if row is None:
+        row = AgentKnowledgeEntry(
+            user_id=current_user.id,
+            agent_config_id=agent.id,
+            kind="document",
+            title=(body.title or file_row.title or file_row.filename or "Документ")[:500],
+            body=(file_row.description or "").strip(),
+            file_id=file_row.id,
+            in_prompt=False,          # документы достаются поиском, не промптом
+        )
+        db.add(row)
+        db.flush()
+
+    namespace = agent.kb_namespace or f"kb-{_uuid.uuid4().hex[:10]}"
+    try:
+        chunks = await pinecone_mod.upsert_document(
+            namespace=namespace, entry_id=str(row.id), text=text, api_key=api_key,
+            title=row.title, old_chunk_count=row.chunk_count or 0,
+        )
+    except Exception as e:
+        row.vector_status, row.vector_error = "failed", str(e)[:500]
+        db.commit()
+        logger.error(f"[AGENT-KB] векторизация документа не удалась: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="vectorize_failed")
+
+    row.chunk_count = chunks
+    row.char_count = len(text)
+    row.vector_status = "ready" if chunks else "skipped"
+    row.vector_error = None
+    agent.kb_namespace = namespace
+    agent.kb_updated_at = datetime.utcnow()
+    _voice_set_kb_function(_resolve_voice_assistant(db, agent), True)
+    db.commit()
+    db.refresh(row)
+    logger.info(f"[AGENT-KB] документ {file_row.filename} → {chunks} кусков (агент {agent.id})")
+    return {"success": True, "entry": row.to_dict()}
+
+
+@router.delete("/knowledge/document/{entry_id}")
+async def remove_knowledge_document(
+    entry_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Убрать документ из базы знаний. Сам файл остаётся в библиотеке агента."""
+    from backend.services import pinecone_service as pinecone_mod
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = _kb_entry_or_404(db, agent, entry_id)
+    if agent.kb_namespace and row.chunk_count:
+        await pinecone_mod.delete_document(agent.kb_namespace, str(row.id), row.chunk_count)
+    db.delete(row)
+    db.commit()
+    return {"success": True}
+
+
+@router.get("/knowledge/gaps")
+async def list_knowledge_gaps(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Вопросы клиентов, на которые в базе не нашлось ответа."""
+    from backend.models.agent_knowledge import AgentKnowledgeGap
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    rows = (
+        db.query(AgentKnowledgeGap)
+        .filter(AgentKnowledgeGap.agent_config_id == agent.id,
+                AgentKnowledgeGap.resolved.is_(False))
+        .order_by(AgentKnowledgeGap.ask_count.desc(),
+                  AgentKnowledgeGap.last_asked_at.desc())
+        .limit(50).all()
+    )
+    return {"gaps": [r.to_dict() for r in rows]}
+
+
+@router.delete("/knowledge/gaps/{gap_id}")
+async def resolve_knowledge_gap(
+    gap_id: str,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Скрыть пробел: владелец добавил ответ или счёл вопрос неважным."""
+    from backend.models.agent_knowledge import AgentKnowledgeGap
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    row = db.query(AgentKnowledgeGap).filter(
+        AgentKnowledgeGap.id == gap_id,
+        AgentKnowledgeGap.agent_config_id == agent.id,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="gap_not_found")
+    row.resolved = True
+    db.commit()
+    return {"success": True}
+
+
+# ============================================================================
 # ENDPOINTS — CHAT (ChatOrchestrator with tools)
 # ============================================================================
 

@@ -3,7 +3,10 @@
 Используются только для агентов с uses_hardcoded_prompt = TRUE.
 """
 
+from backend.core.logging import get_logger
 from backend.core.timezone_utils import now_msk, now_utc
+
+logger = get_logger(__name__)
 
 _WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
@@ -268,23 +271,63 @@ def build_time_block(round_to_minutes: int = 5) -> str:
 - Никогда не показывай пользователю «сырое» UTC-время."""
 
 
-def build_knowledge_base_block(agent_config) -> str:
+def build_knowledge_base_block(agent_config, db=None) -> str:
     """
-    Блок про векторную базу знаний. Добавляется только если у агента
-    создана база (есть kb_namespace). Подсказывает оркестратору вызывать
-    search_knowledge_base для фактических вопросов.
-    """
-    if not getattr(agent_config, "kb_namespace", None):
-        return ""
-    kb_name = getattr(agent_config, "kb_name", None) or "база знаний компании"
-    return f"""
+    Знания агента в промпте (ветка 1410-kb-v2).
 
-# БАЗА ЗНАНИЙ
-У владельца загружена векторная база знаний («{kb_name}»). Когда нужен
-фактический ответ по продукту, услугам, ценам, условиям или другим деталям из
-материалов компании — вызывай инструмент search_knowledge_base с поисковым
-запросом. Не выдумывай факты: если ответа нет в результатах поиска — скажи об
-этом прямо."""
+    Частые знания (пары «вопрос — ответ», короткие секции) вшиваются прямо
+    сюда: агент отвечает на них сразу, без вызова функции. Это главный рычаг
+    скорости — по логу звонка один поход за функцией стоит ~4 с, а знание в
+    промпте бесплатно по времени и не меняет стоимость звонка (минуты
+    тарифицируются фиксированно).
+
+    Ниже — подсказка про поиск: он нужен только для документов и каталога,
+    то есть для того, что в промпт не помещается.
+    """
+    parts = []
+
+    if db is not None and getattr(agent_config, "id", None):
+        try:
+            from backend.services.agent_knowledge_service import build_prompt_block
+            block = build_prompt_block(db, agent_config.id)
+            if block:
+                parts.append(block)
+        except Exception as e:  # знания не должны ронять сборку промпта
+            logger.warning(f"[KB] блок знаний не собран: {e}")
+
+    has_catalog = False
+    if db is not None and getattr(agent_config, "id", None):
+        try:
+            from backend.models.agent_knowledge import AgentKnowledgeEntry
+            has_catalog = db.query(AgentKnowledgeEntry.id).filter(
+                AgentKnowledgeEntry.agent_config_id == agent_config.id,
+                AgentKnowledgeEntry.kind == "product",
+                AgentKnowledgeEntry.is_active.is_(True),
+            ).first() is not None
+        except Exception:
+            has_catalog = False
+
+    if has_catalog:
+        parts.append("""
+
+# КАТАЛОГ ТОВАРОВ
+У владельца есть каталог позиций с ценами и фото. Когда клиент спрашивает про
+товар, модель, наличие или цену — вызывай find_products (можно с ограничением
+по цене). В ответе придут позиции с ценой и id фото: отправь фото клиенту
+(whatsapp_send_file / telegram_send_file / instagram_send_file) вместе с
+коротким описанием. Не выдумывай товары, которых нет в каталоге.""")
+
+    if getattr(agent_config, "kb_namespace", None) or parts:
+        kb_name = getattr(agent_config, "kb_name", None) or "база знаний компании"
+        parts.append(f"""
+
+# ПОИСК ПО ДОКУМЕНТАМ
+Если ответа нет ни в знаниях выше, ни в каталоге — вызови search_knowledge_base
+(«{kb_name}»): там документы и длинные материалы компании. Это дольше, поэтому
+сначала всегда смотри, нет ли ответа прямо в промпте. Не выдумывай факты: если
+поиск ничего не дал — скажи, что уточнишь у специалиста.""")
+
+    return "".join(parts)
 
 
 def build_webhook_block(agent_config) -> str:
@@ -307,7 +350,7 @@ def build_webhook_block(agent_config) -> str:
 и не дублируй одно и то же событие."""
 
 
-def build_orchestrator_prompt(agent_config, include_time_block: bool = True) -> str:
+def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=None) -> str:
     """
     Собирает финальный промпт оркестратора из шаблона + данных агента.
     Пустые поля заменяются на "(не указано)".
@@ -327,7 +370,7 @@ def build_orchestrator_prompt(agent_config, include_time_block: bool = True) -> 
     )
     prompt = (
         base
-        + build_knowledge_base_block(agent_config)
+        + build_knowledge_base_block(agent_config, db)
         + build_webhook_block(agent_config)
     )
     if include_time_block:
