@@ -12,6 +12,7 @@ This file configures all application components: routes, middleware, logging, et
 🆕 v3.0: Added xAI Grok Voice Agent API support
 """
 import os
+import re
 import asyncio
 import fcntl
 import time
@@ -312,10 +313,39 @@ async def _legacy_assistant_redirect(request: Request) -> RedirectResponse:
 for _page in LEGACY_ASSISTANT_PAGES:
     app.add_api_route(f"/static/{_page}", _legacy_assistant_redirect, methods=["GET"], include_in_schema=False)
 
+class _CabinetStaticFiles(StaticFiles):
+    """
+    Статика кабинета с правильным кэшированием.
+
+    StaticFiles отдаёт только ETag и Last-Modified, без Cache-Control. Браузер
+    в таком случае кэширует файл эвристически и может НЕ перепроверять его —
+    после деплоя пользователь получает новый HTML и старый JS. Именно так
+    сломалась база знаний у владельца: разметка с новыми вкладками, скрипт
+    старый, вкладки не переключаются, список вечно «Загрузка…».
+
+    Поэтому: страницам и скриптам кабинета — `no-cache` (кэш остаётся, но
+    браузер каждый раз сверяет ETag и получает дешёвый 304, если файл не
+    менялся). Файлам с хешем в имени (бандл лендинга `index-<hash>.js`) —
+    длинный кэш: их имя меняется вместе с содержимым.
+    """
+
+    _HASHED = re.compile(r"-[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg)$", re.I)
+    _REVALIDATE = (".html", ".js", ".css", ".json")
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        response = super().file_response(full_path, stat_result, scope, status_code=status_code)
+        path = str(full_path)
+        if self._HASHED.search(path):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.lower().endswith(self._REVALIDATE):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Монтируем статику
 try:
-    app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
-    app.mount("/js", StaticFiles(directory=js_dir), name="js")
+    app.mount("/static", _CabinetStaticFiles(directory=static_dir, html=True), name="static")
+    app.mount("/js", _CabinetStaticFiles(directory=js_dir), name="js")
 except Exception as e:
     logger.error(f"Error mounting static files: {e}")
 

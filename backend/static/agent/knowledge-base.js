@@ -100,7 +100,14 @@ async function loadKbEntries(kind){
   list.innerHTML = '<div class="form-hint">Загрузка…</div>';
   try{
     const r = await apiFetch(KB_API + '?kind=' + encodeURIComponent(kind));
-    if(!r || r.status !== 200){ list.innerHTML = '<div class="empty">Не удалось загрузить</div>'; return; }
+    if(!r || r.status !== 200){
+      // Показываем причину: «Загрузка…» навсегда не объясняет владельцу ничего.
+      const err = r ? await r.json().catch(() => ({})) : {};
+      list.innerHTML = `<div class="empty">Не удалось загрузить базу знаний`
+        + (r ? ` (ошибка ${r.status})` : '') + `.<br><span style="font-size:12px">`
+        + esc(errText(err.detail ?? err.message ?? '')) + `</span></div>`;
+      return;
+    }
     const data = await r.json();
     kbEntries = data.entries || [];
     knowledgeBaseState = data;
@@ -111,7 +118,10 @@ async function loadKbEntries(kind){
         : '';
     }
     renderKbList();
-  }catch(e){ list.innerHTML = '<div class="empty">Не удалось загрузить</div>'; }
+  }catch(e){
+    list.innerHTML = '<div class="empty">Не удалось загрузить базу знаний: '
+      + esc(String(e && e.message || e)) + '</div>';
+  }
 }
 
 function kbEntryRow(e){
