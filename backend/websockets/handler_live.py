@@ -42,6 +42,7 @@ import audioop
 import base64
 import json
 import math
+import re
 import time
 import traceback
 import uuid
@@ -87,6 +88,30 @@ FILLER_DELAY_SEC = float(getattr(settings, "LIVE_FILLER_DELAY_SEC", 0.9) or 0.9)
 FILLER_REPEAT_SEC = 4.0
 # Слежение за бэкендом (заполнитель, «не получилось») выключено по умолчанию: LIVE_DELEGATION_WATCH=1
 DELEGATION_WATCH = bool(getattr(settings, "LIVE_DELEGATION_WATCH", False))
+# Автозавершение звонка (только телефон): прощание + тишина. Сама модель hangup_call вызывает не всегда
+# (живой звонок 17.10.2026: «Пока.» — и линия висела, пока не положил клиент).
+AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
+HANGUP_SILENCE_USER_FAREWELL_SEC = 2.5       # клиент попрощался, ассистент ответил, обе стороны молчат
+HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC = 5.0  # попрощался только ассистент
+HANGUP_WAIT_ASSISTANT_REPLY_SEC = 8.0        # клиент попрощался, а ассистент так и не ответил
+_FAREWELL_RE = re.compile(
+    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:дня|вечера)|до\s+встречи|до\s+связи|"
+    r"прощайте|счастливо\s+оставаться|"
+    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|"
+    r"\bgood\s?bye\b|\bbye\b", re.IGNORECASE)
+# «пока» — прощание только в конце короткой реплики («давай, пока»), а не «пока не знаю»
+_PAKA_RE = re.compile(r"(?:^|[\s,.!?])пока[\s.!?…]*$", re.IGNORECASE)
+
+
+def is_farewell(text: str) -> bool:
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    if _FAREWELL_RE.search(t):
+        return True
+    return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
+
+
 # GPT-Live шлёт звук непрерывно (в паузах — тишина), поэтому «ассистент заговорил» ищем по уровню звука
 OUT_VOICE_DB = -48.0
 OUT_QUIET_SEC = 0.35
@@ -142,6 +167,14 @@ class EndOfSpeechTracker:
             self._vad.loud_sec = 0.0
             return self._vad.last_voice_at
         return None
+
+    @property
+    def last_voice_at(self) -> float:
+        return self._vad.last_voice_at
+
+    @property
+    def in_speech(self) -> bool:
+        return self._vad.in_speech
 
     def take_pending_end(self, now: float) -> Optional[float]:
         """
@@ -349,6 +382,10 @@ class LiveVoiceSession:
         self._delegation_since: Optional[float] = None
         self._delegation_gen = 0
         self._round_has_calls: Dict[str, bool] = {}
+        # Прощание: когда прозвучало, кто попрощался, отправлена ли команда «положить трубку»
+        self._farewell_at: Optional[float] = None
+        self._farewell_user = False
+        self._hangup_sent = False
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -488,6 +525,47 @@ class LiveVoiceSession:
             self.call_log.add("llm", f"Бэкенд недоступен: {reason}; агент сообщает клиенту", level="error")
         await self.client.append_instructions(BACKEND_FAILED_TEXT)
 
+    # ------------------------------------------------------------------ прощание → завершение звонка
+    def _is_phone(self) -> bool:
+        return bool(self.telephony or (self.call_log is not None and self.call_log.channel == "phone"))
+
+    def _scan_farewell(self, role: str) -> None:
+        if not self._is_phone() or self._hangup_sent:
+            return
+        if is_farewell(self._log_buf.get(role, "")):
+            now = time.time()
+            if self._farewell_at is None or now - self._farewell_at > 1.0:
+                if self.call_log:
+                    self.call_log.add("session", f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): ждём тишины, чтобы завершить звонок")
+            self._farewell_at = now
+            self._farewell_user = self._farewell_user or role == "user"
+
+    def _should_auto_hangup(self, now: float) -> bool:
+        """Прощание было, после него обе стороны молчат достаточно долго."""
+        if not AUTO_HANGUP or self._hangup_sent or self._farewell_at is None or not self._is_phone():
+            return False
+        user_voice = self._eos.last_voice_at
+        if user_voice > self._farewell_at + 2.0:
+            # клиент заговорил после прощания — разговор продолжается
+            self._farewell_at = None
+            self._farewell_user = False
+            return False
+        if self._out_det.voiced or self._eos.in_speech:
+            return False
+        assistant_replied = self._last_voice_at > self._farewell_at
+        if self._farewell_user and not assistant_replied:
+            return now - self._farewell_at >= HANGUP_WAIT_ASSISTANT_REPLY_SEC
+        quiet_since = max(user_voice, self._last_voice_at, self._farewell_at)
+        need = HANGUP_SILENCE_USER_FAREWELL_SEC if self._farewell_user else HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC
+        return now - quiet_since >= need
+
+    async def _auto_hangup(self) -> None:
+        self._hangup_sent = True
+        _log("auto hangup after farewell")
+        if self.call_log:
+            self.call_log.add("session", "Автозавершение звонка: прощание и тишина (модель hangup_call не вызвала)")
+        await self.emit({"type": "call.hangup", "reason": "farewell"})
+
     async def _speech_watch(self) -> None:
         """Ассистент «договорил», если аудио не приходило OUTPUT_IDLE_SEC."""
         try:
@@ -496,6 +574,8 @@ class LiveVoiceSession:
                 ended = self._eos.poll(time.time())
                 if ended is not None:
                     self._on_user_speech_end(ended)
+                if self._should_auto_hangup(time.time()):
+                    await self._auto_hangup()
                 if self.assistant_speaking and time.time() - self._last_audio_at > OUTPUT_IDLE_SEC:
                     self.assistant_speaking = False
                     self._flush_log("assistant")
@@ -509,6 +589,8 @@ class LiveVoiceSession:
             self._flush_log(self._log_role)
         self._log_role = role
         self._log_buf[role] += delta
+        if AUTO_HANGUP and delta.strip():
+            self._scan_farewell(role)
 
     def _flush_log(self, role: str) -> None:
         text = " ".join(self._log_buf.get(role, "").split())

@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # стал хуже): style — манера речи, language — качество русского/кыргызского, policies — подсказка
     # делегирования по шаблону OpenAI вместо прежней
     LIVE_VOICE_PROMPT_EXTRAS: str = os.getenv("LIVE_VOICE_PROMPT_EXTRAS", "")
+    # Статический запас исходящего звука на телефоне для GPT-Live, мс (без пересборки; 200 как было)
+    SIP_OUTBOUND_CUSHION_MS: int = int(os.getenv("SIP_OUTBOUND_CUSHION_MS", "200") or 200)
+    # Автозавершение телефонного звонка после прощания и тишины (если модель сама не вызвала hangup_call): 0 = выключить
+    LIVE_AUTO_HANGUP: bool = os.getenv("LIVE_AUTO_HANGUP", "1").strip().lower() in ("1", "true", "yes")
     # Слежение за бэкендом (фраза «проверяю», «не получилось»): 1 = включить
     LIVE_DELEGATION_WATCH: bool = os.getenv("LIVE_DELEGATION_WATCH", "0").strip().lower() in ("1", "true", "yes")
     # Адаптивный запас звука на телефоне (растёт после разрывов, копится заново): 1 = включить

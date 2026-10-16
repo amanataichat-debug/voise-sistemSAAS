@@ -57,7 +57,10 @@ HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000, "eleven": 24
 INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20, "eleven": 20}
 # Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
 # 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
-OUTBOUND_CUSHION_MS = {"openai": 200}
+# SIP_OUTBOUND_CUSHION_MS: статический запас для GPT-Live (по умолчанию 200). Живой звонок 17.10.2026 при 200 мс:
+# 58 разрывов за 224 с речи; при 300–700 мс (адаптивный режим) — 8 за 165 с, поэтому запас можно поднять (400),
+# цена — +0,2 с к началу каждой реплики.
+OUTBOUND_CUSHION_MS = {"openai": int(getattr(settings, "SIP_OUTBOUND_CUSHION_MS", 200) or 200)}
 # Адаптивный запас выключен по умолчанию (SIP_ADAPTIVE_CUSHION=1 включает): 17.10.2026 на живом звонке он
 # делал речь хуже — после каждого разрыва звук копился заново (до 700 мс тишины), агент «останавливался».
 # Разрывы по-прежнему считаются и пишутся в журнал звонка.
@@ -330,6 +333,13 @@ class HandlerSocket:
             except Exception:
                 pass
 
+        if mtype == "call.hangup":
+            # Хендлер понял, что разговор закончен (прощание + тишина): кладём трубку, не дожидаясь клиента
+            if not self.hangup_sent:
+                logger.info(f"[SIP-MEDIA] call {self.call_id}: handler requested hangup ({data.get('reason')})")
+                asyncio.create_task(self.hangup("assistant_auto_hangup"))
+            return
+
         if mtype in USER_DONE_EVENTS:
             self._user_done_at = time.time()
             self._awaiting_reply = True
@@ -460,7 +470,6 @@ class HandlerSocket:
         logger.warning(f"[SIP-MEDIA] call {self.call_id}: audio underrun #{self.underruns}, gap {gap_sec * 1000:.0f} ms, "
                        f"cushion {old_ms} -> {new_ms} ms")
         try:
-            from backend.websockets.call_log import CallLogRecorder
             rec = CallLogRecorder.current()
             if rec is not None:
                 rec.add("audio", f"Разрыв звука {gap_sec * 1000:.0f} мс (запас {old_ms} → {new_ms} мс)",
