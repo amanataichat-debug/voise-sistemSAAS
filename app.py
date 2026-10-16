@@ -1677,8 +1677,20 @@ def ensure_knowledge_v2_tables():
     create_all с конкретными таблицами идемпотентен: существующие не трогает.
     """
     try:
+        from sqlalchemy import inspect
         from backend.models.agent_knowledge import AgentKnowledgeEntry, AgentKnowledgeGap
         from backend.models.base import Base as ModelsBase
+
+        # Совсем новая база: users и agent_configs ещё не созданы, а на них
+        # ссылаются внешние ключи знаний. Молча уходим — обе таблицы создаст
+        # общий create_all ниже по старту, сразу с правильными ключами.
+        # Без этой проверки первый деплой писал в лог красный ERROR
+        # «relation "users" does not exist», хотя всё в порядке.
+        existing = set(inspect(engine).get_table_names())
+        if not {"users", "agent_configs"} <= existing:
+            logger.info("ℹ️ ensure_knowledge_v2_tables: база пустая, таблицы создаст create_all")
+            return
+
         ModelsBase.metadata.create_all(
             bind=engine,
             tables=[AgentKnowledgeEntry.__table__, AgentKnowledgeGap.__table__],
