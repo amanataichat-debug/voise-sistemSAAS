@@ -407,21 +407,42 @@ async def sip_media(
     # секции, прайс и список материалов уходят в промпт — ответ без вызова
     # функции стоит 0 с вместо ≈4 с на поход в делегирующий бэкенд.
     # Подмена в памяти: в карточке голоса промпт остаётся общим.
-    agent_cfg = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
-    prompt, kb_stats = agent_voice_context.build_call_system_prompt(
-        db, assistant, agent_cfg, call_context=context,
-        # Голосовой слой GPT-Live видит только начало промпта — остальное
-        # доступно лишь делегирующему бэкенду, то есть снова через функцию.
-        max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
-    )
-    set_committed_value(assistant, "system_prompt", prompt)
-    # Функции знаний — ЖИВЬЁМ по текущему состоянию базы, а не из хранимой
-    # колонки functions: реактивный пересчёт в api/agent.py срабатывает только
-    # при правке базы ЧЕРЕЗ кабинет, и карточка с историей до этой ветки (или
-    # отредактированная в обход кабинета) так и остаётся со старым
-    # search_pinecone. На живом звонке 16.10.2026 это и произошло — агент ушёл
-    # на звонок со старым набором функций, хотя база уже была заполнена.
-    agent_voice_context.apply_live_kb_functions(db, assistant, agent_cfg)
+    # Знания — добавка к разговору, а не его условие: любой сбой здесь (база,
+    # схема, сеть) не должен рвать звонок сразу после «ответил». Тогда агент
+    # идёт на линию с обычным промптом карточки, а причина попадает в журнал.
+    base_prompt = (getattr(assistant, "system_prompt", None) or "").strip()
+    agent_cfg = None
+    kb_stats: Dict[str, int] = {}
+    kb_error: Optional[str] = None
+    prompt = f"{base_prompt}\n\n[Контекст звонка] {context}".strip()
+    try:
+        agent_cfg = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
+        prompt, kb_stats = agent_voice_context.build_call_system_prompt(
+            db, assistant, agent_cfg, call_context=context,
+            # Голосовой слой GPT-Live видит только начало промпта — остальное
+            # доступно лишь делегирующему бэкенду, то есть снова через функцию.
+            max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
+        )
+        set_committed_value(assistant, "system_prompt", prompt)
+        # Функции знаний — ЖИВЬЁМ по текущему состоянию базы, а не из хранимой
+        # колонки functions: реактивный пересчёт в api/agent.py срабатывает только
+        # при правке базы ЧЕРЕЗ кабинет, и карточка с историей до этой ветки (или
+        # отредактированная в обход кабинета) так и остаётся со старым
+        # search_pinecone. На живом звонке 16.10.2026 это и произошло — агент ушёл
+        # на звонок со старым набором функций, хотя база уже была заполнена.
+        agent_voice_context.apply_live_kb_functions(db, assistant, agent_cfg)
+    except Exception as exc:
+        kb_error = f"{type(exc).__name__}: {exc}"
+        logger.error(f"[SIP-MEDIA] call {call_id}: знания агента не подмешаны, звонок идёт без них: {exc}",
+                     exc_info=True)
+        # Упавший запрос оставляет транзакцию Postgres в аварийном состоянии, и
+        # следующий же коммит рвал бы звонок. Откат сбрасывает подмены в памяти
+        # (rollback истекает все объекты), поэтому приветствие и промпт ставим заново.
+        db.rollback()
+        agent_cfg, kb_stats = None, {}
+        if greeting:
+            set_committed_value(assistant, "greeting_message", greeting)
+        set_committed_value(assistant, "system_prompt", f"{base_prompt}\n\n[Контекст звонка] {context}".strip())
     assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
     # Не колонка: Fish/Eleven пишут диалог под session_id = id звонка — точная связь звонок ↔ реплики.
     assistant.sip_session_id = str(call.id)
@@ -456,7 +477,9 @@ async def sip_media(
                  greeting="своё" if greeting else None)
     # Что агент знает наизусть в этом звонке: владельцу видно, доехали ли
     # знания до модели, без чтения логов сервера.
-    if agent_cfg is not None:
+    if kb_error:
+        call_log.add("kb", f"Знания агента не подмешаны, звонок идёт без них: {kb_error}", level="error")
+    elif agent_cfg is not None:
         call_log.add(
             "kb",
             "Знания в промпте: "
