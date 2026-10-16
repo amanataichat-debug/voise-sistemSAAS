@@ -105,7 +105,17 @@
   };
 
   function t(key, vars) {
-    var s = (window.I18N && window.I18N.t) ? window.I18N.t('akb.' + key, STR[key]) : STR[key];
+    // I18N.t(key, params, def) — текст по умолчанию ТРЕТИЙ аргумент. Передав
+    // его вторым, страница при промахе показывала сам ключ («akb.tab_qa»)
+    // вместо русского текста. Плюс свой запасной путь: если словарь в браузере
+    // старый (он кэшируется в sessionStorage по DICT_VERSION) и раздела akb в
+    // нём нет — берём строку отсюда, а не показываем ключ.
+    var fallback = STR[key];
+    var s = fallback;
+    if (window.I18N && window.I18N.t) {
+      var v = window.I18N.t('akb.' + key, null, fallback);
+      if (v != null && v !== 'akb.' + key) s = v;
+    }
     s = s == null ? key : String(s);
     if (vars) {
       Object.keys(vars).forEach(function (k) { s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]); });
@@ -174,13 +184,18 @@
         var wanted = qp.get('agent_id');
         var found = state.agents.filter(function (a) { return a.id === wanted; })[0];
         state.agentId = (found || state.agents[0] || {}).id || null;
-        if (!state.agentId) { renderNoAgent(); return null; }
+        if (!state.agentId) { renderNoAgent(); return null; }   // VF.ready() ниже в .then
         renderAgentPick();
         return loadAll();
       })
       .catch(function (e) {
         if (e.message !== 'unauthorized') VF.toast(t('load_failed', { reason: e.message }), { type: 'error' });
-      });
+      })
+      // Заставка кабинета снимается ТОЛЬКО по VF.ready() (атрибут
+      // data-vf-loader без "auto"). Без этого вызова она висела до аварийного
+      // таймаута в 6 с — страница была готова за доли секунды, а выглядело
+      // это как «база знаний грузится 5–10 секунд».
+      .then(function () { VF.ready(); });
   }
 
   function loadAll() {

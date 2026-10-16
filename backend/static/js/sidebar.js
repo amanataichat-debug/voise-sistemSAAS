@@ -39,10 +39,13 @@
   var MENU = [
     { section: 'sidebar.section_main', def: 'Основное' },
     { href: '/static/dashboard.html', lucide: 'house', label: 'sidebar.dashboard', def: 'Дашборд', id: 'dashboard-nav-item' },
-    { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item' },
-    // Знания агента — отдельная страница вместо двух модалок в шторке агента
-    // (ветка 1610-kb-calls): база знаний и библиотека файлов это одно хозяйство.
-    { href: '/static/agent-knowledge.html', lucide: 'brain', label: 'sidebar.agent_knowledge', def: 'Знания агента', id: 'agent-knowledge-nav-item' },
+    // Знания агента (/static/agent-knowledge.html) — ПОДстраница агента, а не
+    // пункт кабинета: знания принадлежат конкретному агенту обзвона, а сам
+    // агент доступен только по тарифу (profi/триал, User.has_agent_access).
+    // Своего пункта в меню у неё поэтому нет — заходят из карточки «Знания и
+    // файлы» в шторке агента, а меню подсвечивает «Агент обзвона» (alias).
+    { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item',
+      aliases: ['/static/agent-knowledge.html'] },
     { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
       aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
