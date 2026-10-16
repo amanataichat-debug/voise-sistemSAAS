@@ -225,8 +225,8 @@
 
         <div class="card">
           <div class="card-head">
-            <div class="card-head-title"><i class="far fa-folder-open"></i> Документы агента</div>
-            <span class="hint hint-l" tabindex="0" data-hint="Постоянное описание бизнеса: кто вы, кому звоните, как говорите, что предлагаете. Основа всех решений агента."><i class="far fa-circle-question"></i></span>
+            <div class="card-head-title"><i class="fas fa-clipboard-list"></i> Инструкции агента</div>
+            <span class="hint hint-l" tabindex="0" data-hint="Постоянное описание бизнеса: кто вы, кому звоните, как говорите, что предлагаете. Основа всех решений агента — и на звонке, и в переписке."><i class="far fa-circle-question"></i></span>
             <span class="card-link" onclick="openEditModal('doc_who_am_i')">Все →</span>
           </div>
           <div class="docs-grid" id="docs-grid"></div>
@@ -241,22 +241,14 @@
           <div id="phone-block"><div class="empty">Загрузка...</div></div>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <div class="card-head-title"><i class="fas fa-database"></i> База знаний</div>
-            <span class="hint hint-l" tabindex="0" data-hint="Тексты о продукте, ценах и условиях. Агент ищет по ним точные ответы во время звонка и в чате с вами."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="openKnowledgeBaseModal()">Управлять →</span>
-          </div>
-          <div id="kb-status-block"><div class="empty">Загрузка...</div></div>
-        </div>
-
         <div class="card" id="files-card">
           <div class="card-head">
-            <div class="card-head-title"><i class="fas fa-folder-open"></i> Файлы агента</div>
-            <span class="hint hint-l" tabindex="0" data-hint="Прайсы, каталоги, презентации, договоры. Агент отправляет их клиентам в Telegram и Instagram, когда клиент просит, и сам собирает документы (КП, расчёты). Голосовые и файлы клиентов агент распознаёт сам."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="openAgentFilesModal()">Управлять →</span>
+            <div class="card-head-title"><i class="fas fa-brain"></i> Знания и файлы</div>
+            <span class="hint hint-l" tabindex="0" data-hint="Ответы на частые вопросы, разделы о компании, каталог с ценами и фото, прайсы и презентации. На звонке агент называет это сразу, без паузы на поиск; в переписке отправляет файлы клиенту."><i class="far fa-circle-question"></i></span>
+            <span class="card-link" onclick="openKnowledgePage()">Открыть →</span>
           </div>
-          <div id="files-block"><div class="empty">Загрузка...</div></div>
+          <div id="kb-status-block"><div class="empty">Загрузка...</div></div>
+          <div id="files-block"></div>
         </div>
 
         <div class="card" id="connectors-card">
@@ -312,11 +304,11 @@
 
 <div class="app-footer" id="app-footer" style="display:none!important"></div>
 
-<!-- MODAL: Документы агента -->
+<!-- MODAL: Инструкции агента (5 текстов про бизнес) -->
 <div class="modal-overlay hidden" id="edit-modal-overlay">
   <div class="modal modal-lg">
     <div class="modal-header">
-      <div class="modal-title"><i class="far fa-folder-open"></i> Документы агента</div>
+      <div class="modal-title"><i class="fas fa-clipboard-list"></i> Инструкции агента</div>
       <button class="modal-close" onclick="closeEditModal()"><i class="fas fa-xmark"></i></button>
     </div>
     <div class="modal-body">
@@ -353,7 +345,7 @@
         <button class="settings-nav-item" type="button" data-section="orchestrator"><i class="fas fa-brain"></i><span><b>Оркестратор</b><small>Модель, инструкции, вебхук</small></span></button>
         <button class="settings-nav-item" type="button" data-section="calls"><i class="fas fa-phone"></i><span><b>Звонки</b><small>Номер, первая фраза, поведение</small></span></button>
         <button class="settings-nav-item" type="button" data-section="voice-msg"><i class="fas fa-microphone"></i><span><b>Голосовые сообщения</b><small>Голос ответов в Telegram и WhatsApp</small></span></button>
-        <button class="settings-nav-item" type="button" data-section="branding"><i class="fas fa-file-lines"></i><span><b>Документы</b><small>Логотип и цвет в КП агента</small></span></button>
+        <button class="settings-nav-item" type="button" data-section="branding"><i class="fas fa-palette"></i><span><b>Фирменный стиль</b><small>Логотип и цвет в документах агента</small></span></button>
         <button class="settings-nav-item" type="button" data-section="public"><i class="fas fa-plug"></i><span><b>Публичный API</b><small>Приём заявок извне</small></span></button>
       </nav>
       <div class="settings-content">
@@ -410,7 +402,7 @@
         </section>
 
         <section class="settings-section" data-section="branding">
-          <div class="settings-section-head"><h3>Документы агента · фирменный стиль</h3><p>Агент сам собирает коммерческие предложения, счета и памятки в PDF и отправляет их клиенту в переписке. Здесь задаётся, как они выглядят: логотип и цвет в шапке, название компании и контакты в подвале. Ничего не заполнено — документ выйдет аккуратным, но без логотипа. Сохраняется сразу.</p></div>
+          <div class="settings-section-head"><h3>Фирменный стиль документов</h3><p>Агент сам собирает коммерческие предложения, счета и памятки в PDF и отправляет их клиенту в переписке. Здесь задаётся, как они выглядят: логотип и цвет в шапке, название компании и контакты в подвале. Ничего не заполнено — документ выйдет аккуратным, но без логотипа. Сохраняется сразу.</p></div>
           <div id="i-branding"><div class="form-hint">Загрузка…</div></div>
         </section>
 
@@ -641,75 +633,9 @@
   </div>
 </div>
 
-<!-- MODAL: База знаний -->
-<div class="modal-overlay hidden" id="kb-modal-overlay">
-  <div class="modal modal-lg">
-    <div class="modal-header">
-      <div class="modal-title"><i class="fas fa-database"></i> База знаний агента</div>
-      <button class="modal-close" onclick="closeKnowledgeBaseModal()"><i class="fas fa-xmark"></i></button>
-    </div>
-    <div class="modal-body">
-      <div class="files-tabs" id="kb-tabs">
-        <button class="files-tab active" data-kind="qa" onclick="kbSwitchTab('qa')">Вопрос — ответ</button>
-        <button class="files-tab" data-kind="section" onclick="kbSwitchTab('section')">О компании</button>
-        <button class="files-tab" data-kind="product" onclick="kbSwitchTab('product')">Каталог</button>
-        <button class="files-tab" data-kind="document" onclick="kbSwitchTab('document')">Документы</button>
-        <button class="files-tab" data-kind="gaps" onclick="kbSwitchTab('gaps')">Чего не хватает</button>
-      </div>
-      <div id="kb-hint" class="kb-hint"></div>
-      <div id="kb-test-box" class="kb-test">
-        <input type="text" class="form-input" id="kb-test-query" placeholder="Спросите как клиент: «сколько стоит доставка?»"
-               onkeydown="if(event.key==='Enter')kbRunTest()">
-        <button class="btn btn-secondary btn-sm" onclick="kbRunTest()"><i class="fas fa-magnifying-glass"></i> Проверить</button>
-      </div>
-      <div id="kb-test-result"></div>
-      <div id="kb-editor"></div>
-      <div id="kb-list"><div class="form-hint">Загрузка…</div></div>
-    </div>
-    <div class="modal-footer">
-      <span id="kb-prompt-meta" class="kb-prompt-meta"></span>
-      <button class="btn btn-secondary" onclick="closeKnowledgeBaseModal()">Закрыть</button>
-      <button class="btn btn-primary" id="kb-add-btn" onclick="kbOpenEditor()"><i class="fas fa-plus"></i> Добавить</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Файлы агента -->
-<div class="modal-overlay hidden" id="files-modal-overlay">
-  <div class="modal modal-lg">
-    <div class="modal-header">
-      <div class="modal-title"><i class="fas fa-folder-open"></i> Файлы агента</div>
-      <button class="modal-close" onclick="closeAgentFilesModal()"><i class="fas fa-xmark"></i></button>
-    </div>
-    <div class="modal-body">
-      <div class="files-tabs">
-        <button class="files-tab active" data-source="library" onclick="switchAgentFilesTab('library')">Библиотека</button>
-        <button class="files-tab" data-source="generated" onclick="switchAgentFilesTab('generated')">Создал агент</button>
-        <button class="files-tab" data-source="inbound" onclick="switchAgentFilesTab('inbound')">От клиентов</button>
-      </div>
-      <div id="files-upload-form" class="files-upload">
-        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Агент отправит файл клиенту, когда тот попросит. Опишите, что внутри и когда его отправлять — по описанию агент выбирает нужный файл.</div>
-        <div class="form-group">
-          <label class="form-label">Файл (до <span id="files-max-mb">20</span> МБ)</label>
-          <input type="file" class="form-input" id="files-input" accept=".pdf,.docx,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.webp,.mp3,.ogg,.m4a,.mp4,.zip,.pptx">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Название для агента</label>
-          <input type="text" class="form-input" id="files-title" maxlength="255" placeholder="Например: Прайс-лист на октябрь">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Когда отправлять</label>
-          <textarea class="form-textarea" id="files-description" rows="2" maxlength="2000" placeholder="Например: когда клиент спрашивает цены или просит прайс"></textarea>
-        </div>
-        <button class="btn btn-primary btn-sm" id="files-upload-btn" onclick="uploadAgentFile()"><i class="fas fa-upload"></i> Загрузить</button>
-      </div>
-      <div id="files-list" class="files-list"><div class="empty">Загрузка...</div></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeAgentFilesModal()">Закрыть</button>
-    </div>
-  </div>
-</div>
+<!-- Базы знаний и файлов здесь больше нет: оба раздела живут на
+     отдельной странице /static/agent-knowledge.html (ветка 1610-kb-calls).
+     В шторке осталась карточка-сводка «Знания и файлы» со ссылкой туда. -->
 
 <!-- MODAL: Коннекторы -->
 <div class="modal-overlay hidden" id="connectors-modal-overlay">

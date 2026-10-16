@@ -1621,6 +1621,33 @@ class KnowledgeTestRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
 
 
+def _kb_media_ids(db: Session, agent: AgentConfig, ids) -> Optional[list]:
+    """
+    Отфильтровать id фото/видео позиции: берём только файлы этого агента.
+
+    Иначе в позицию каталога можно прикрепить файл другого агента, и он уехал
+    бы клиенту вместе с ответом. Непохожие на id значения просто отбрасываем.
+    """
+    from backend.models.agent_file import AgentFile
+
+    if not ids:
+        return None
+    clean = []
+    for raw in ids[:12]:
+        try:
+            clean.append(uuid.UUID(str(raw)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    if not clean:
+        return None
+    owned = {
+        str(fid) for (fid,) in db.query(AgentFile.id).filter(
+            AgentFile.id.in_(clean), AgentFile.agent_config_id == agent.id).all()
+    }
+    out = [str(x) for x in clean if str(x) in owned]
+    return out or None
+
+
 def _kb_entry_or_404(db: Session, agent: AgentConfig, entry_id: str):
     from backend.models.agent_knowledge import AgentKnowledgeEntry
     row = db.query(AgentKnowledgeEntry).filter(
@@ -1666,12 +1693,88 @@ async def list_knowledge_entries(
         counts[r[0]] = counts.get(r[0], 0) + 1
 
     prompt_block = build_prompt_block(db, agent.id)
+    entries = _entries_with_media(db, agent, rows)
     return {
-        "entries": [r.to_dict() for r in rows],
+        "entries": entries,
         "counts": counts,
         # Сколько символов знаний агент получает мгновенно, без поиска.
         "prompt_chars": len(prompt_block),
+        # Что именно агент знает наизусть на звонке: тот же расчёт, что уходит
+        # в промпт (services/agent_voice_context.py), чтобы владелец видел
+        # реальную картину, а не только размер базы.
+        "voice": _voice_knowledge_summary(db, agent),
     }
+
+
+def _entries_with_media(db: Session, agent: AgentConfig, rows: list) -> list:
+    """
+    Записи базы вместе с картинками позиций каталога.
+
+    Каталог без фотографий бесполезен: владелец ориентируется по виду товара,
+    а не по строке с названием. Поэтому к позиции прикладываются подписанные
+    ссылки на её фото — страница рисует плитки.
+    """
+    from backend.models.agent_file import AgentFile
+    from backend.services import agent_media_service
+
+    wanted = set()
+    for row in rows:
+        if row.kind == "product":
+            for fid in (row.media_file_ids or []):
+                wanted.add(str(fid))
+
+    media: dict = {}
+    if wanted:
+        try:
+            files = db.query(AgentFile).filter(
+                AgentFile.agent_config_id == agent.id,
+                AgentFile.id.in_(list(wanted)),
+            ).all()
+            for f in files:
+                media[str(f.id)] = {
+                    "id": str(f.id),
+                    "filename": f.filename,
+                    "title": f.title,
+                    "mime_type": f.mime_type,
+                    "is_video": (f.mime_type or "").startswith("video/"),
+                    "url": agent_media_service.file_link(f, expires_seconds=FILE_PREVIEW_TTL),
+                }
+        except Exception as e:
+            logger.warning(f"[AGENT-KB] фото позиций не прочитаны: {e}")
+
+    out = []
+    for row in rows:
+        item = row.to_dict()
+        if row.kind == "product":
+            item["media"] = [media[str(f)] for f in (row.media_file_ids or [])
+                             if str(f) in media]
+        out.append(item)
+    return out
+
+
+def _voice_knowledge_summary(db: Session, agent: AgentConfig) -> dict:
+    """
+    Сводка «что агент знает наизусть на звонке»: размеры блоков промпта и
+    общий размер. Считается тем же кодом, что собирает промпт звонка, —
+    расхождения между кабинетом и трубкой исключены по построению.
+    """
+    try:
+        from backend.services import agent_voice_context
+        from backend.websockets.live_client import LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
+
+        block, stats = agent_voice_context.build_voice_knowledge_block(db, agent)
+        return {
+            "chars": stats.get("total", 0),
+            "company": stats.get("company", 0),
+            "knowledge": stats.get("knowledge", 0),
+            "price": stats.get("price", 0),
+            "files": stats.get("files", 0),
+            "budget": agent_voice_context.VOICE_KNOWLEDGE_BUDGET,
+            "voice_layer_limit": LIVE_VOICE_INSTRUCTIONS_MAX_CHARS,
+        }
+    except Exception as e:
+        logger.warning(f"[AGENT-KB] сводка знаний звонка не собрана: {e}")
+        return {}
 
 
 @router.post("/knowledge")
@@ -1707,7 +1810,7 @@ async def create_knowledge_entry(
         currency=(body.currency or "KGS") if kind == "product" else None,
         attributes=body.attributes if kind == "product" else None,
         in_stock=True if body.in_stock is None else bool(body.in_stock),
-        media_file_ids=body.media_file_ids or None,
+        media_file_ids=_kb_media_ids(db, agent, body.media_file_ids),
         # Каталог и документы в промпт не вшиваем: их много, они съедят бюджет
         # и замедлят каждый ответ. Они достаются поиском.
         in_prompt=(kind in ("qa", "section")) if body.in_prompt is None else bool(body.in_prompt),
@@ -1746,6 +1849,8 @@ async def update_knowledge_entry(
                 value = value.strip() or None
                 if field == "title":
                     value = (value or "")[:500]
+            if field == "media_file_ids":
+                value = _kb_media_ids(db, agent, value)
             setattr(row, field, value)
     if "body" in data:
         row.char_count = len(row.body or "")
@@ -2115,6 +2220,79 @@ def _agent_file_or_404(db: Session, agent: AgentConfig, file_id: str):
     return row
 
 
+# Сколько живёт подписанная ссылка на превью. Час — страница успевает
+# показать картинки и не держит ссылки дольше нужного.
+FILE_PREVIEW_TTL = 3600
+
+
+def _files_with_roles(db: Session, agent: AgentConfig, rows: list) -> list:
+    """
+    Файлы агента вместе с их ролями — для объединённой страницы знаний
+    (ветка 1610-kb-calls).
+
+    До этой ветки база знаний и библиотека файлов были двумя отдельными
+    окнами, хотя один и тот же файл нужен в двух ролях: его и отправляют
+    клиенту, и используют как источник ответов. Страница показывает эти роли
+    переключателями, поэтому к каждому файлу добавляются:
+
+      preview_url    — подписанная ссылка на картинку/видео, чтобы в каталоге
+                       и в библиотеке были видны сами фото, а не имена файлов;
+      in_knowledge   — агент ищет ответы внутри этого файла (есть запись
+                       базы знаний вида document), и id этой записи;
+      used_in_catalog— фото прикреплено к позиции каталога.
+    """
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+    from backend.services import agent_media_service
+
+    if not rows:
+        return []
+
+    # Какие файлы уже являются источниками ответов
+    docs = {}
+    try:
+        for entry_id, file_id, status in db.query(
+                AgentKnowledgeEntry.id, AgentKnowledgeEntry.file_id,
+                AgentKnowledgeEntry.vector_status).filter(
+                AgentKnowledgeEntry.agent_config_id == agent.id,
+                AgentKnowledgeEntry.kind == "document",
+                AgentKnowledgeEntry.file_id.isnot(None)).all():
+            docs[str(file_id)] = {"entry_id": str(entry_id), "vector_status": status}
+    except Exception as e:
+        logger.warning(f"[AGENT-FILES] роли источников не прочитаны: {e}")
+
+    # Какие картинки заняты позициями каталога
+    in_catalog = set()
+    try:
+        for (media,) in db.query(AgentKnowledgeEntry.media_file_ids).filter(
+                AgentKnowledgeEntry.agent_config_id == agent.id,
+                AgentKnowledgeEntry.kind == "product",
+                AgentKnowledgeEntry.media_file_ids.isnot(None)).all():
+            for fid in (media or []):
+                in_catalog.add(str(fid))
+    except Exception as e:
+        logger.warning(f"[AGENT-FILES] связи с каталогом не прочитаны: {e}")
+
+    out = []
+    for row in rows:
+        item = row.to_dict()
+        fid = str(row.id)
+        doc = docs.get(fid)
+        item["in_knowledge"] = doc is not None
+        item["knowledge_entry_id"] = doc["entry_id"] if doc else None
+        item["knowledge_status"] = doc["vector_status"] if doc else None
+        # Источником ответов может стать только файл, из которого извлёкся текст.
+        item["can_be_knowledge"] = bool(row.extracted_text)
+        item["used_in_catalog"] = fid in in_catalog
+        if (row.mime_type or "").startswith(("image/", "video/")):
+            try:
+                item["preview_url"] = agent_media_service.file_link(
+                    row, expires_seconds=FILE_PREVIEW_TTL)
+            except Exception:
+                item["preview_url"] = None
+        out.append(item)
+    return out
+
+
 @router.get("/files")
 async def list_agent_files(
     agent_id: Optional[str] = Query(None),
@@ -2137,7 +2315,7 @@ async def list_agent_files(
     rows = q.order_by(AgentFile.created_at.desc()).limit(limit).all()
     from backend.services.r2_storage import R2StorageService
     return {
-        "files": [r.to_dict() for r in rows],
+        "files": _files_with_roles(db, agent, rows),
         "storage_configured": R2StorageService.objects_available(),
         "max_mb": settings.AGENT_MEDIA_MAX_MB,
     }
