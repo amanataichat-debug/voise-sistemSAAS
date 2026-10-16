@@ -49,6 +49,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from websockets.exceptions import ConnectionClosed
 
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.functions import normalize_function_name
 from backend.models.assistant import AssistantConfig
@@ -79,6 +80,20 @@ MIN_QUIET_SEC = 0.15
 MAX_REPLY_LATENCY_SEC = 30.0
 # Ответ медленнее этого порога пишем в журнал как предупреждение
 SLOW_REPLY_MS = 3000
+# Бэкенд делегирования: через сколько тишины говорим «проверяю», и когда сдаёмся (см. _delegation_watch)
+FILLER_DELAY_SEC = float(getattr(settings, "LIVE_FILLER_DELAY_SEC", 0.9) or 0.9)
+FILLER_REPEAT_SEC = 4.0
+DELEGATION_TIMEOUT_SEC = float(getattr(settings, "LIVE_DELEGATION_TIMEOUT_SEC", 10) or 0)
+FILLER_TEXTS = (
+    "Бэкенд ещё работает. Одной короткой фразой, на языке собеседника, скажи, что проверяешь и нужна "
+    "секунда. Результат не обещай и причин не называй.",
+    "Проверка ещё идёт. Коротко, на языке собеседника, скажи, что ещё уточняешь, и поблагодари за ожидание.",
+)
+BACKEND_FAILED_TEXT = (
+    "Бэкенд не ответил или сообщил об ошибке, результата нет. Сейчас же коротко, на языке собеседника, "
+    "честно скажи, что уточнить это не получилось, извинись и предложи перезвонить позже или написать "
+    "в мессенджер. Не говори, что проверяешь, и не выдумывай ответ."
+)
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 
@@ -283,6 +298,10 @@ class LiveVoiceSession:
         self._eos = EndOfSpeechTracker()
         self._user_done_at: Optional[float] = None
         self._reply_with_function = False
+        # Обращение к бэкенду: пока оно идёт, следим за тишиной (заполнитель / «не получилось»)
+        self._delegation_since: Optional[float] = None
+        self._delegation_gen = 0
+        self._round_has_calls: Dict[str, bool] = {}
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -361,6 +380,59 @@ class LiveVoiceSession:
             level="warning" if ms >= SLOW_REPLY_MS else "info", ms=ms, with_function=with_function,
         )
 
+    # ------------------------------------------------------------------ бэкенд делегирования
+    def _delegation_started(self) -> None:
+        """Голосовая модель передала запрос бэкенду: следим, чтобы клиент не слушал тишину."""
+        self._delegation_since = time.time()
+        self._delegation_gen += 1
+        self._track(self._delegation_watch(self._delegation_gen))
+
+    def _delegation_finished(self) -> None:
+        self._delegation_since = None
+
+    async def _delegation_watch(self, gen: int) -> None:
+        """
+        Пока бэкенд работает, а звука нет дольше FILLER_DELAY_SEC — просим голосовую модель сказать
+        «проверяю» (session.commentary.append, delegation_id=null: у Responses-делегирования другого
+        не принимают). Бэкенд молчит дольше DELEGATION_TIMEOUT_SEC — просим честно сказать, что не вышло.
+        """
+        fillers = 0
+        last_filler_at = 0.0
+        try:
+            while not self.stop_event.is_set() and self._delegation_gen == gen and self._delegation_since is not None:
+                await asyncio.sleep(0.2)
+                if self._delegation_gen != gen or self._delegation_since is None:
+                    return
+                now = time.time()
+                silent_for = now - max(self._last_audio_at, self._delegation_since)
+                if self.assistant_speaking:
+                    continue
+                waited = now - self._delegation_since
+                if DELEGATION_TIMEOUT_SEC and waited >= DELEGATION_TIMEOUT_SEC and silent_for >= FILLER_DELAY_SEC:
+                    await self._backend_failed(f"бэкенд не ответил за {waited:.1f} с")
+                    return
+                if (fillers < len(FILLER_TEXTS) and silent_for >= FILLER_DELAY_SEC
+                        and now - last_filler_at >= FILLER_REPEAT_SEC):
+                    if await self.client.append_commentary(FILLER_TEXTS[fillers]):
+                        fillers += 1
+                        last_filler_at = now
+                        _log(f"filler #{fillers}: backend silent {silent_for:.1f}s (waited {waited:.1f}s)")
+                        if self.call_log:
+                            self.call_log.add("llm", f"Заполнитель #{fillers}: бэкенд работает {waited:.1f} с, "
+                                                     f"звука нет {silent_for:.1f} с")
+        except asyncio.CancelledError:
+            pass
+
+    async def _backend_failed(self, reason: str) -> None:
+        """Бэкенд упал или молчит: голосовая модель сама об этом не узнает и будет тянуть «проверяю»."""
+        if self._delegation_since is None:
+            return
+        self._delegation_finished()
+        _log(f"backend failed: {reason}", "WARNING")
+        if self.call_log:
+            self.call_log.add("llm", f"Бэкенд недоступен: {reason}; агент сообщает клиенту", level="error")
+        await self.client.append_instructions(BACKEND_FAILED_TEXT)
+
     async def _speech_watch(self) -> None:
         """Ассистент «договорил», если аудио не приходило OUTPUT_IDLE_SEC."""
         try:
@@ -427,6 +499,7 @@ class LiveVoiceSession:
             return
 
         if etype == "live.function_call":
+            self._round_has_calls[event.get("delegation_id") or ""] = True
             await self._on_function_call(event)
             return
 
@@ -434,6 +507,7 @@ class LiveVoiceSession:
             self.delegations += 1
             if self._user_done_at is not None:
                 self._reply_with_function = True
+            self._delegation_started()
             d = event.get("delegation") or {}
             _log(f"delegation #{self.delegations} created: id={d.get('id')} target={d.get('target')}")
             if self.call_log:
@@ -442,12 +516,23 @@ class LiveVoiceSession:
 
         if etype == "response.event":
             inner = event.get("event") or {}
-            if inner.get("type") == "response.output_text.delta":
+            itype = inner.get("type")
+            if itype == "response.output_text.delta":
                 self.backend_text += inner.get("delta") or ""
-            elif inner.get("type") in ("response.completed", "response.done"):
+            elif itype in ("response.completed", "response.done"):
                 if self.backend_text:
                     _log(f"backend: {self.backend_text[:200]}")
                     self.backend_text = ""
+                # Ответ бэкенда с вызовами функций — промежуточный (после результатов будет ещё один),
+                # без вызовов — финальный: дальше голосовая модель озвучивает результат
+                did = event.get("delegation_id") or ""
+                if self._round_has_calls.pop(did, False):
+                    pass
+                else:
+                    self._delegation_finished()
+            elif itype in ("response.failed", "response.incomplete"):
+                err = inner.get("response", {}).get("error") if isinstance(inner.get("response"), dict) else None
+                await self._backend_failed(f"{itype}: {json.dumps(err, ensure_ascii=False)[:200] if err else '—'}")
             return
 
         if etype == "session.usage.updated":
@@ -473,6 +558,8 @@ class LiveVoiceSession:
             if self.call_log:
                 self.call_log.add("error", f"Ошибка GPT-Live: {err.get('code') or ''} {err.get('message') or ''}".strip(),
                                   level="error")
+            if self._delegation_since is not None:
+                await self._backend_failed(f"ошибка {err.get('code') or ''}: {(err.get('message') or '')[:120]}")
             await self.emit({"type": "error", "error": {
                 "code": err.get("code") or "live_error",
                 "message": err.get("message") or json.dumps(event, ensure_ascii=False)[:300],

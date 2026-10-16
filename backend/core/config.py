@@ -59,7 +59,20 @@ class Settings(BaseSettings):
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
     # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду)
-    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "6000"))
+    # Документация gpt-live-1 (17.10.2026): instructions до 16 384 токенов. Лимит 6000 символов (~2 тыс. токенов)
+    # заставлял модель ходить за фактами к бэкенду (+≈4 с); 16000 символов ≈ 5–8 тыс. токенов, с запасом
+    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "16000"))
+    # Скорость бэкенда делегирования (delegation.responses): пусто = не передавать, поведение как раньше.
+    # reasoning.effort: none|minimal|low|medium|high|xhigh (допустимые зависят от модели);
+    # service_tier: auto|default|priority|flex... (priority = fast mode, дороже); text.verbosity: low|medium|high
+    LIVE_DELEGATION_REASONING_EFFORT: str = os.getenv("LIVE_DELEGATION_REASONING_EFFORT", "")
+    LIVE_DELEGATION_SERVICE_TIER: str = os.getenv("LIVE_DELEGATION_SERVICE_TIER", "")
+    LIVE_DELEGATION_VERBOSITY: str = os.getenv("LIVE_DELEGATION_VERBOSITY", "")
+    LIVE_DELEGATION_MAX_OUTPUT_TOKENS: int = int(os.getenv("LIVE_DELEGATION_MAX_OUTPUT_TOKENS", "0") or 0)
+    # Фраза-заполнитель (session.commentary.append), если после обращения к бэкенду нет звука дольше этого, с
+    LIVE_FILLER_DELAY_SEC: float = float(os.getenv("LIVE_FILLER_DELAY_SEC", "0.9") or 0.9)
+    # Бэкенд молчит дольше этого, с — агент честно говорит, что уточнить не получилось (0 = выключено)
+    LIVE_DELEGATION_TIMEOUT_SEC: float = float(os.getenv("LIVE_DELEGATION_TIMEOUT_SEC", "10") or 0)
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
