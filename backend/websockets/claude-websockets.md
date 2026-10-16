@@ -90,3 +90,5 @@
 - `../utils/claude-utils.md` — конвертация аудио (`audio_utils`)
 - `../models/claude-models.md` — модели диалогов и ассистентов
 - `../../claude-index.md` — корневой индекс
+
+**Откат 17.10.2026.** Первый живой звонок на изменениях 16–17.10 прозвучал хуже. По умолчанию снова как до них: запас звука 200 мс без пересборки, прежняя подсказка делегирования, лимит инструкций 6000, бюджет знаний 4000, слежение за бэкендом выключено. Включается по одному: `SIP_ADAPTIVE_CUSHION`, `LIVE_VOICE_PROMPT_EXTRAS` (`style` / `language` / `policies`), `LIVE_DELEGATION_WATCH`, `LIVE_VOICE_INSTRUCTIONS_MAX_CHARS`. Замер задержки работает всегда: выходной поток GPT-Live непрерывный (в паузах тишина), поэтому «ассистент заговорил» определяет `OutputSpeechDetector` по громкости (−48 дБ, 60 мс), а не приход `session.output_audio.delta`. Подробности: `docs/tz_1610_voice_latency.md`.

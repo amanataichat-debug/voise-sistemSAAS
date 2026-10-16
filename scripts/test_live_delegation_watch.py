@@ -15,6 +15,7 @@ from backend.websockets.call_log import CallLogRecorder  # noqa: E402
 h.FILLER_DELAY_SEC = 0.3
 h.FILLER_REPEAT_SEC = 0.5
 h.DELEGATION_TIMEOUT_SEC = 1.6
+h.DELEGATION_WATCH = True
 
 
 class FakeClient:
@@ -39,7 +40,8 @@ def make():
     s = h.LiveVoiceSession.__new__(h.LiveVoiceSession)
     s.client = FakeClient(); s.call_log = CallLogRecorder("phone")
     s.stop_event = asyncio.Event(); s._tasks = []; s.closed = True
-    s.assistant_speaking = False; s._last_audio_at = 0.0
+    s.assistant_speaking = False; s._last_audio_at = 0.0; s._last_voice_at = 0.0
+    s._out_det = h.OutputSpeechDetector()
     s._user_done_at = None; s._reply_with_function = False
     s._delegation_since = None; s._delegation_gen = 0; s._round_has_calls = {}
     s.delegations = 0; s.backend_text = ""
@@ -95,10 +97,17 @@ async def main():
     # 5. ассистент говорит → заполнитель не нужен
     s = make()
     await ev(s, type="session.delegation.created", delegation={"id": "d5"})
-    s.assistant_speaking = True
+    s._out_det.voiced = True
     await asyncio.sleep(0.6)
     check("пока ассистент говорит — молчим", not s.client.commentary)
     s.stop_event.set()
+
+    # 6. по умолчанию слежение выключено: ничего не отправляем
+    h.DELEGATION_WATCH = False
+    s = make()
+    await ev(s, type="session.delegation.created", delegation={"id": "d6"})
+    await asyncio.sleep(0.6)
+    check("слежение выключено — заполнителей и сообщений нет", not s.client.commentary and not s.client.instructions)
     print("все проверки пройдены")
 
 

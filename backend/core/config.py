@@ -59,9 +59,17 @@ class Settings(BaseSettings):
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
     # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду)
-    # Документация gpt-live-1 (17.10.2026): instructions до 16 384 токенов. Лимит 6000 символов (~2 тыс. токенов)
-    # заставлял модель ходить за фактами к бэкенду (+≈4 с); 16000 символов ≈ 5–8 тыс. токенов, с запасом
-    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "16000"))
+    # По документации gpt-live-1 допускает instructions до 16 384 токенов, так что лимит можно поднять
+    # (например, 16000), но влияние на разговор не проверено живыми звонками: по умолчанию как было (6000)
+    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "6000"))
+    # Новые блоки промпта голосовой модели, через запятую; по умолчанию выключены (после 17.10.2026 звонок
+    # стал хуже): style — манера речи, language — качество русского/кыргызского, policies — подсказка
+    # делегирования по шаблону OpenAI вместо прежней
+    LIVE_VOICE_PROMPT_EXTRAS: str = os.getenv("LIVE_VOICE_PROMPT_EXTRAS", "")
+    # Слежение за бэкендом (фраза «проверяю», «не получилось»): 1 = включить
+    LIVE_DELEGATION_WATCH: bool = os.getenv("LIVE_DELEGATION_WATCH", "0").strip().lower() in ("1", "true", "yes")
+    # Адаптивный запас звука на телефоне (растёт после разрывов, копится заново): 1 = включить
+    SIP_ADAPTIVE_CUSHION: bool = os.getenv("SIP_ADAPTIVE_CUSHION", "0").strip().lower() in ("1", "true", "yes")
     # Скорость бэкенда делегирования (delegation.responses): пусто = не передавать, поведение как раньше.
     # reasoning.effort: none|minimal|low|medium|high|xhigh (допустимые зависят от модели);
     # service_tier: auto|default|priority|flex... (priority = fast mode, дороже); text.verbosity: low|medium|high

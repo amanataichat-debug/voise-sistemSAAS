@@ -12,7 +12,7 @@ import types
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.websockets.call_log import CallLogRecorder  # noqa: E402
-from backend.websockets.handler_live import EndOfSpeechTracker, LiveVoiceSession  # noqa: E402
+from backend.websockets.handler_live import EndOfSpeechTracker, LiveVoiceSession, OutputSpeechDetector  # noqa: E402
 
 RATE = 24000
 FRAME = RATE // 50  # 20 мс
@@ -58,6 +58,7 @@ def make_session():
     s = LiveVoiceSession.__new__(LiveVoiceSession)
     s.call_log = CallLogRecorder("phone")
     s._eos = EndOfSpeechTracker()
+    s._out_det = OutputSpeechDetector()
     s._user_done_at = None
     s._reply_with_function = False
     s.assistant_speaking = False
@@ -105,6 +106,27 @@ s = make_session()
 s._on_user_speech_end(time.time() - 60)
 s._record_reply_latency()
 check("задержка > 30 с отброшена", not s.call_log.latencies_ms)
+
+# 8. выходной поток GPT-Live непрерывный: тишина — не речь ассистента, громкий звук — речь
+det = OutputSpeechDetector()
+res = [det.feed(frame(False)) for _ in range(100)]
+check("тишина в выходном потоке — ассистент не говорит", not det.voiced and not any(res))
+res = [det.feed(frame(True)) for _ in range(10)]
+check("громкий звук — начало речи ровно один раз", det.voiced and res.count("start") == 1)
+res = [det.feed(frame(False)) for _ in range(30)]
+check("0,6 с тишины — конец речи", not det.voiced and res.count("end") == 1)
+
+# 9. задержка фиксируется по началу голоса, а не по приходу первых данных
+s = make_session()
+s._on_user_speech_end(time.time() - 1.5)
+for _ in range(40):  # 0,8 с тишины от модели: данные идут, но ответа ещё нет
+    if s._out_det.feed(frame(False)) == "start":
+        s._record_reply_latency()
+check("тихие данные не считаются ответом", not s.call_log.latencies_ms)
+for _ in range(5):
+    if s._out_det.feed(frame(True)) == "start":
+        s._record_reply_latency()
+check("первый голос — задержка записана", len(s.call_log.latencies_ms) == 1 and s.call_log.latencies_ms[0] >= 1450)
 
 print("summary:", {k: v for k, v in make_session().call_log.summary().items() if k.startswith("latency")})
 print("все проверки пройдены")

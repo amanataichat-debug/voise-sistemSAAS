@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.websockets.call_log import CallLogRecorder
 
@@ -56,7 +57,11 @@ HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000, "eleven": 24
 INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20, "eleven": 20}
 # Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
 # 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
-OUTBOUND_CUSHION_MS = {"openai": 300}
+OUTBOUND_CUSHION_MS = {"openai": 200}
+# Адаптивный запас выключен по умолчанию (SIP_ADAPTIVE_CUSHION=1 включает): 17.10.2026 на живом звонке он
+# делал речь хуже — после каждого разрыва звук копился заново (до 700 мс тишины), агент «останавливался».
+# Разрывы по-прежнему считаются и пишутся в журнал звонка.
+ADAPTIVE_CUSHION = bool(getattr(settings, "SIP_ADAPTIVE_CUSHION", False))
 # Адаптивный запас: GPT-Live отдаёт звук ровно в темпе речи, запас в буфере моста = терпимость к
 # задержкам сети/цикла событий. Каждый разрыв («тык» в речи) поднимает запас на шаг, до потолка.
 OUTBOUND_CUSHION_STEP_MS = 100
@@ -401,8 +406,10 @@ class HandlerSocket:
         if self._out_streaming and self._play_end and now - self._play_end > OUTBOUND_UNDERRUN_MIN_SEC:
             if now - self._play_end <= OUTBOUND_UNDERRUN_MAX_SEC:
                 self._note_underrun(now - self._play_end)
-            else:
+            elif ADAPTIVE_CUSHION:
                 self._out_streaming = False
+                self._play_end = 0.0
+            else:
                 self._play_end = 0.0
         if self._out_streaming:
             await self._send_bytes(pcm)
@@ -434,6 +441,17 @@ class HandlerSocket:
         self.underruns += 1
         self.underrun_ms += int(gap_sec * 1000)
         old_ms = int(self._cushion_bytes * 1000 / (PHONE_RATE * 2))
+        if not ADAPTIVE_CUSHION:
+            # только замер: звук не задерживаем и запас не меняем
+            self._play_end = 0.0
+            logger.info(f"[SIP-MEDIA] call {self.call_id}: audio gap #{self.underruns}, {gap_sec * 1000:.0f} ms")
+            try:
+                rec = CallLogRecorder.current()
+                if rec is not None:
+                    rec.add("audio", f"Разрыв звука {gap_sec * 1000:.0f} мс", gap_ms=int(gap_sec * 1000))
+            except Exception:
+                pass
+            return
         new_bytes = min(self._cushion_max_bytes, self._cushion_bytes + int(PHONE_RATE * 2 * OUTBOUND_CUSHION_STEP_MS / 1000))
         self._cushion_bytes = new_bytes
         new_ms = int(new_bytes * 1000 / (PHONE_RATE * 2))

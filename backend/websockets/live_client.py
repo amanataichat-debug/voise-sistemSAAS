@@ -61,7 +61,7 @@ LIVE_DELEGATION_MODEL = getattr(settings, "LIVE_DELEGATION_MODEL", None) or "gpt
 
 # У голосовой модели ограниченный контекст: длинный промпт ассистента целиком
 # уходит бэкенд-модели, голосовой части отдаём первые N символов.
-LIVE_VOICE_INSTRUCTIONS_MAX_CHARS = int(getattr(settings, "LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", 0) or 16000)
+LIVE_VOICE_INSTRUCTIONS_MAX_CHARS = int(getattr(settings, "LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", 0) or 6000)
 
 DEFAULT_SYSTEM_MESSAGE = "Ты голосовой ассистент Voksy AI. Отвечай коротко и по делу."
 
@@ -98,7 +98,24 @@ BACKEND_SYSTEM_PROMPT = """Ты — бэкенд голосового ассис
 
 # Подсказка голосовой модели о делегировании — без неё она не знает, что у
 # бэкенда есть инструменты, и может выдумывать результат.
-VOICE_DELEGATION_HINT = (
+# Прежняя подсказка (до 17.10.2026) — по умолчанию снова она: звонок с ней работал лучше
+VOICE_DELEGATION_HINT_LEGACY = (
+    "\n\nПравила голосового слоя. Говори естественно, короткими фразами, на языке собеседника. "
+    "Если собеседник перебивает — сразу замолчи и слушай. "
+    "Всё, что требует поиска информации, обращения к базе знаний, вызова функций, действий "
+    "(запись, отправка данных, завершение звонка) или сложных рассуждений, делегируй бэкенду "
+    "и не угадывай результат: дождись ответа, а пока коротко скажи, что проверяешь. "
+    "Не выдавай результат действия за свершившийся, пока бэкенд его не подтвердил. "
+    # Исключение добавлено вместе со знаниями агента в промпте (ветка 1610-kb-calls):
+    # без него модель делегировала бэкенду даже те факты, которые уже держит в
+    # инструкции, и клиент ждал ≈4 с там, где ответ был готов.
+    "ИСКЛЮЧЕНИЕ: если ответ прямо есть в твоей инструкции выше (о компании, готовые "
+    "ответы на частые вопросы, прайс), отвечай сам и сразу — это не поиск, делегировать "
+    "такое не нужно."
+)
+
+# Вариант по шаблону OpenAI (включается LIVE_VOICE_PROMPT_EXTRAS=policies)
+VOICE_DELEGATION_HINT_POLICIES = (
     # Структура — шаблон из гайда OpenAI по промптам GPT-Live (заголовки рекомендовано сохранять).
     "\n\nInterruption policy: если собеседник перебивает — сразу замолчи и слушай, что он говорит."
     "\n\nBackchannel policy: умеренные короткие отклики («угу», «понятно») без перебивания основного ответа; "
@@ -256,7 +273,12 @@ class OpenAILiveClient:
                 f"{LIVE_VOICE_INSTRUCTIONS_MAX_CHARS}, backend gets the full prompt"
             )
             voice_instructions = voice_instructions[:LIVE_VOICE_INSTRUCTIONS_MAX_CHARS]
-        voice_instructions += VOICE_LANGUAGE_HINT + VOICE_STYLE_HINT + VOICE_DELEGATION_HINT
+        extras = {x.strip().lower() for x in (getattr(settings, "LIVE_VOICE_PROMPT_EXTRAS", "") or "").split(",") if x.strip()}
+        if "language" in extras:
+            voice_instructions += VOICE_LANGUAGE_HINT
+        if "style" in extras:
+            voice_instructions += VOICE_STYLE_HINT
+        voice_instructions += VOICE_DELEGATION_HINT_POLICIES if "policies" in extras else VOICE_DELEGATION_HINT_LEGACY
         if self.telephony:
             voice_instructions += VOICE_TELEPHONY_HINT
 

@@ -34,6 +34,7 @@ def check(name, cond):
 
 
 async def main():
+    m.ADAPTIVE_CUSHION = True
     sock = m.HandlerSocket.__new__(m.HandlerSocket)
     sock.ws = FakeWS(); sock.provider = "openai"; sock.call_id = "t"; sock.closed = False
     sock._cushion_bytes = int(8000 * 2 * m.OUTBOUND_CUSHION_MS["openai"] / 1000)
@@ -41,7 +42,8 @@ async def main():
     sock._out_hold = bytearray(); sock._out_streaming = False; sock._out_last_at = 0.0
     sock._play_end = 0.0; sock.underruns = 0; sock.underrun_ms = 0; sock._cushion_task = None
 
-    check("запас по умолчанию 300 мс", sock._cushion_bytes == 4800)
+    check("запас по умолчанию 200 мс", sock._cushion_bytes == 3200)
+    sock._cushion_bytes = 4800  # дальше проверяем адаптивный режим со стартовым запасом 300 мс
 
     # старт реплики: копим 300 мс, потом отдаём
     for _ in range(16):
@@ -76,6 +78,15 @@ async def main():
         sock._out_streaming = True; sock._play_end = time.time() - 0.1
         await sock._send_audio(chunk(20))
     check("запас не выше потолка 700 мс", sock._cushion_bytes == sock._cushion_max_bytes)
+
+    # по умолчанию адаптация выключена: разрыв только считается, запас и поток не меняются
+    m.ADAPTIVE_CUSHION = False
+    sock._cushion_bytes = 3200; sock._out_streaming = True; sock.underruns = 0; sock._out_hold.clear()
+    sock._play_end = time.time() - 0.1
+    await sock._send_audio(chunk(20))
+    check("адаптация выключена — разрыв посчитан", sock.underruns == 1)
+    check("адаптация выключена — запас не растёт", sock._cushion_bytes == 3200)
+    check("адаптация выключена — звук не задерживается", sock._out_streaming and not sock._out_hold)
     print("все проверки пройдены")
 
 

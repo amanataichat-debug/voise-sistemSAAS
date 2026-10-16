@@ -38,8 +38,10 @@ handler_fish, поэтому обслуживает и браузерный ви
 """
 
 import asyncio
+import audioop
 import base64
 import json
+import math
 import time
 import traceback
 import uuid
@@ -83,6 +85,12 @@ SLOW_REPLY_MS = 3000
 # Бэкенд делегирования: через сколько тишины говорим «проверяю», и когда сдаёмся (см. _delegation_watch)
 FILLER_DELAY_SEC = float(getattr(settings, "LIVE_FILLER_DELAY_SEC", 0.9) or 0.9)
 FILLER_REPEAT_SEC = 4.0
+# Слежение за бэкендом (заполнитель, «не получилось») выключено по умолчанию: LIVE_DELEGATION_WATCH=1
+DELEGATION_WATCH = bool(getattr(settings, "LIVE_DELEGATION_WATCH", False))
+# GPT-Live шлёт звук непрерывно (в паузах — тишина), поэтому «ассистент заговорил» ищем по уровню звука
+OUT_VOICE_DB = -48.0
+OUT_QUIET_SEC = 0.35
+OUT_MIN_VOICE_SEC = 0.06
 DELEGATION_TIMEOUT_SEC = float(getattr(settings, "LIVE_DELEGATION_TIMEOUT_SEC", 10) or 0)
 FILLER_TEXTS = (
     "Бэкенд ещё работает. Одной короткой фразой, на языке собеседника, скажи, что проверяешь и нужна "
@@ -145,6 +153,43 @@ class EndOfSpeechTracker:
             self._vad.in_speech = False
             self._vad.loud_sec = 0.0
             return self._vad.last_voice_at
+        return None
+
+
+class OutputSpeechDetector:
+    """
+    Речь ассистента в потоке выходного аудио. Поток идёт непрерывно, и приход данных ничего не
+    говорит о том, говорит ли модель: смотрим на громкость. Начало речи — OUT_MIN_VOICE_SEC громкого
+    звука подряд, конец — OUT_QUIET_SEC тишины (по длительности звука, а не по часам).
+    """
+
+    def __init__(self, rate: int = LIVE_AUDIO_RATE) -> None:
+        self.rate = rate
+        self.voiced = False
+        self._loud = 0.0
+        self._quiet = 0.0
+
+    def feed(self, pcm: bytes) -> Optional[str]:
+        n = len(pcm) // 2
+        if n == 0:
+            return None
+        rms = audioop.rms(pcm[:n * 2], 2)
+        level_db = 20 * math.log10(max(rms, 1.0) / 32768.0)
+        dur = n / self.rate
+        if level_db > OUT_VOICE_DB:
+            self._loud += dur
+            self._quiet = 0.0
+            if not self.voiced and self._loud >= OUT_MIN_VOICE_SEC:
+                self.voiced = True
+                return "start"
+        else:
+            self._loud = 0.0
+            if self.voiced:
+                self._quiet += dur
+                if self._quiet >= OUT_QUIET_SEC:
+                    self.voiced = False
+                    self._quiet = 0.0
+                    return "end"
         return None
 
 
@@ -275,6 +320,7 @@ class LiveVoiceSession:
         self.closed = False
         self.assistant_speaking = False
         self._last_audio_at = 0.0
+        self._last_voice_at = 0.0  # последний момент, когда в выходном потоке была речь, а не тишина
         self._first_audio_at: Optional[float] = None
         self.audio_bytes_out = 0
         self.audio_deltas_out = 0
@@ -296,6 +342,7 @@ class LiveVoiceSession:
         self.on_session_end = None  # конец разговора (кошелёк), до сохранения журнала
         # Замер задержки: конец речи клиента (по входящему аудио) → первый звук ответа
         self._eos = EndOfSpeechTracker()
+        self._out_det = OutputSpeechDetector()
         self._user_done_at: Optional[float] = None
         self._reply_with_function = False
         # Обращение к бэкенду: пока оно идёт, следим за тишиной (заполнитель / «не получилось»)
@@ -335,9 +382,15 @@ class LiveVoiceSession:
         if self._first_audio_at is None:
             self._first_audio_at = time.time()
             _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
+        try:
+            if self._out_det.feed(base64.b64decode(delta_b64)) == "start":
+                self._record_reply_latency()
+            if self._out_det.voiced:
+                self._last_voice_at = time.time()
+        except Exception:
+            pass
         if not self.assistant_speaking:
             self.assistant_speaking = True
-            self._record_reply_latency()
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
@@ -352,7 +405,7 @@ class LiveVoiceSession:
 
     def _on_user_speech_end(self, ended_at: float) -> None:
         """Клиент договорил. Если ассистент в этот момент говорит — это перебивание/поддакивание, не вопрос."""
-        if self.assistant_speaking:
+        if self._out_det.voiced:
             return
         self._user_done_at = ended_at
         self._reply_with_function = False
@@ -383,6 +436,8 @@ class LiveVoiceSession:
     # ------------------------------------------------------------------ бэкенд делегирования
     def _delegation_started(self) -> None:
         """Голосовая модель передала запрос бэкенду: следим, чтобы клиент не слушал тишину."""
+        if not DELEGATION_WATCH:
+            return
         self._delegation_since = time.time()
         self._delegation_gen += 1
         self._track(self._delegation_watch(self._delegation_gen))
@@ -404,8 +459,8 @@ class LiveVoiceSession:
                 if self._delegation_gen != gen or self._delegation_since is None:
                     return
                 now = time.time()
-                silent_for = now - max(self._last_audio_at, self._delegation_since)
-                if self.assistant_speaking:
+                silent_for = now - max(self._last_voice_at, self._delegation_since)
+                if self._out_det.voiced:
                     continue
                 waited = now - self._delegation_since
                 if DELEGATION_TIMEOUT_SEC and waited >= DELEGATION_TIMEOUT_SEC and silent_for >= FILLER_DELAY_SEC:
