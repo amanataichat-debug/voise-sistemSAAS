@@ -41,14 +41,27 @@ class PineconeService:
     
     @staticmethod
     async def create_embeddings(text: str, api_key: str, model: str = "text-embedding-3-small") -> List[float]:
-        """Create embeddings using OpenAI API"""
-        client = openai.OpenAI(api_key=api_key)
-        try:
+        """
+        Create embeddings using OpenAI API.
+
+        openai.OpenAI(...).embeddings.create(...) — синхронный HTTP-клиент.
+        Вызванный прямо внутри async def, он не "ждёт асинхронно": он блокирует
+        event loop процесса целиком на время сетевого запроса, то есть
+        останавливает звук ВСЕХ звонков этого воркера, а не только того, кто
+        искал. На звонке 16.10.2026 это выглядело как агент, замолчавший на
+        2+ минуты — поэтому запрос уходит в отдельный поток (asyncio.to_thread)
+        с жёстким timeout у самого клиента: зависший OpenAI теперь блокирует
+        только этот поток, а не весь процесс.
+        """
+        def _call():
+            client = openai.OpenAI(api_key=api_key, timeout=8.0, max_retries=1)
             response = client.embeddings.create(
-                model=model, 
-                input=text
+                model=model,
+                input=text,
             )
             return response.data[0].embedding
+        try:
+            return await asyncio.to_thread(_call)
         except Exception as e:
             logger.error(f"Error creating embeddings: {str(e)}")
             raise HTTPException(
@@ -193,17 +206,25 @@ class PineconeService:
         if not query or not namespace:
             return []
 
-        pc = await PineconeService.initialize()
-        index = pc.Index(PINECONE_INDEX_NAME)
-
         embedding = await PineconeService.create_embeddings(query, api_key, model=model)
 
-        response = index.query(
-            vector=embedding,
-            namespace=namespace,
-            top_k=top_k,
-            include_metadata=True,
-        )
+        # pc.Index(...) и index.query(...) — тоже синхронный HTTP-клиент (как
+        # и create_embeddings выше): без asyncio.to_thread они блокируют
+        # event loop процесса, то есть звук у всех текущих звонков этого
+        # воркера, на всё время сетевого запроса к Pinecone.
+        def _query():
+            pc = pinecone.Pinecone(
+                api_key=os.environ.get("PINECONE_API_KEY"),
+                environment=os.environ.get("PINECONE_ENVIRONMENT", "gcp-starter"),
+            )
+            index = pc.Index(PINECONE_INDEX_NAME)
+            return index.query(
+                vector=embedding,
+                namespace=namespace,
+                top_k=top_k,
+                include_metadata=True,
+            )
+        response = await asyncio.to_thread(_query)
 
         matches = []
         for match in (response.get("matches", []) if isinstance(response, dict) else response.matches):

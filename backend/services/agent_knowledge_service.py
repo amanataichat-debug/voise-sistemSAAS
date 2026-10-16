@@ -46,6 +46,15 @@ SECTION_PROMPT_MAX_CHARS = 900
 # придумывал ответ по ним.
 KB_MIN_SCORE = 0.3
 
+# Жёсткий потолок на слой Pinecone (эмбеддинг + запрос к индексу). Без него
+# повисший/медленный OpenAI или Pinecone висит неограниченно: на звонке
+# 16.10.2026 это выглядело как «агент замолчал и не ответил за 2+ минуты» —
+# function_call от GPT-Live не возвращался вообще, потому что исполнение
+# функции само не возвращалось. Таймаут не чинит причину (см. pinecone_service),
+# но гарантирует, что при сбое агент услышит «не нашлось» за разумное время,
+# а не замолчит навсегда.
+DOCS_SEARCH_TIMEOUT = 4.0
+
 # Слова, которые ничего не дают поиску (встречаются в любом вопросе).
 _STOP_WORDS = {
     "и", "а", "в", "на", "с", "по", "за", "у", "к", "о", "об", "от", "до", "из",
@@ -362,15 +371,29 @@ async def _answer_from_documents(namespace: str, query: str, top_k: int) -> Opti
     """
     Слой Pinecone: ответ по документам или None. Единственный слой, который
     платит сетью и эмбеддингом, поэтому зовётся последним.
+
+    Обёрнут в asyncio.wait_for(DOCS_SEARCH_TIMEOUT): PineconeService.search
+    теперь сам уходит в поток (см. pinecone_service.py — раньше эмбеддинг и
+    запрос к индексу были синхронными HTTP-вызовами ПРЯМО в event loop и
+    останавливали звук у всех звонков на этом воркере, а не только у этого),
+    но сеть всё равно может зависнуть или отвечать очень долго — таймаут не
+    даёт этому растянуться на минуты.
     """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not namespace or not api_key:
         return None
     from backend.services.pinecone_service import PineconeService
     try:
-        matches = await PineconeService.search(
-            query=query, namespace=namespace, api_key=api_key, top_k=top_k,
+        matches = await asyncio.wait_for(
+            PineconeService.search(
+                query=query, namespace=namespace, api_key=api_key, top_k=top_k,
+            ),
+            timeout=DOCS_SEARCH_TIMEOUT,
         )
+    except asyncio.TimeoutError:
+        logger.warning(f"[KB] поиск по документам не ответил за {DOCS_SEARCH_TIMEOUT}с "
+                       f"(namespace={namespace}) — считаем, что не нашлось")
+        return None
     except Exception as e:
         logger.error(f"[KB] поиск по документам не удался: {e}", exc_info=True)
         return {"ok": False, "error": f"Ошибка поиска: {e}"}
