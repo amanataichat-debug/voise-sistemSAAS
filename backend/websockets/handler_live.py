@@ -90,7 +90,15 @@ FILLER_REPEAT_SEC = 4.0
 DELEGATION_WATCH = bool(getattr(settings, "LIVE_DELEGATION_WATCH", False))
 # Автозавершение звонка (только телефон): прощание + тишина. Сама модель hangup_call вызывает не всегда
 # (живой звонок 17.10.2026: «Пока.» — и линия висела, пока не положил клиент).
-AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
+_AUTO_HANGUP_RAW = str(getattr(settings, "LIVE_AUTO_HANGUP", "judge") or "judge").strip().lower()
+AUTO_HANGUP_MODE = "off" if _AUTO_HANGUP_RAW in ("0", "off", "false", "no") else (
+    "keywords" if _AUTO_HANGUP_RAW == "keywords" else "judge")
+AUTO_HANGUP = AUTO_HANGUP_MODE != "off"
+JUDGE_MODEL = str(getattr(settings, "LIVE_HANGUP_JUDGE_MODEL", "gpt-5.6-luna") or "gpt-5.6-luna")
+JUDGE_SILENCE_SEC = float(getattr(settings, "LIVE_HANGUP_SILENCE_SEC", 3.0) or 3.0)
+JUDGE_MIN_CALL_SEC = 10.0   # в первые секунды разговор «закончиться» не может
+JUDGE_MAX_CALLS = 12        # потолок обращений к модели за звонок
+JUDGE_BROKEN_AFTER = 2      # столько ошибок подряд — переходим на запасной путь по словам
 HANGUP_SILENCE_USER_FAREWELL_SEC = 2.5       # клиент попрощался, ассистент ответил, обе стороны молчат
 HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC = 5.0  # попрощался только ассистент
 HANGUP_WAIT_ASSISTANT_REPLY_SEC = 8.0        # клиент попрощался, а ассистент так и не ответил
@@ -386,6 +394,13 @@ class LiveVoiceSession:
         self._farewell_at: Optional[float] = None
         self._farewell_user = False
         self._hangup_sent = False
+        # Судья «разговор закончен»: идёт ли запрос, сколько их было, на каком отрезке тишины уже спрашивали
+        self._judge_running = False
+        self._judge_calls = 0
+        self._judge_errors = 0
+        self._judged_voice_mark = -1.0
+        self._judged_sig = -1
+        self._judged_at = 0.0
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -534,7 +549,7 @@ class LiveVoiceSession:
             return
         if is_farewell(self._log_buf.get(role, "")):
             now = time.time()
-            if self._farewell_at is None or now - self._farewell_at > 1.0:
+            if (self._farewell_at is None or now - self._farewell_at > 1.0) and AUTO_HANGUP_MODE == "keywords":
                 if self.call_log:
                     self.call_log.add("session", f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): ждём тишины, чтобы завершить звонок")
             self._farewell_at = now
@@ -542,7 +557,8 @@ class LiveVoiceSession:
 
     def _should_auto_hangup(self, now: float) -> bool:
         """Прощание было, после него обе стороны молчат достаточно долго."""
-        if not AUTO_HANGUP or self._hangup_sent or self._farewell_at is None or not self._is_phone():
+        keywords_active = AUTO_HANGUP_MODE == "keywords" or self._judge_errors >= JUDGE_BROKEN_AFTER
+        if not AUTO_HANGUP or not keywords_active or self._hangup_sent or self._farewell_at is None or not self._is_phone():
             return False
         user_voice = self._eos.last_voice_at
         if user_voice > self._farewell_at + 2.0:
@@ -559,11 +575,60 @@ class LiveVoiceSession:
         need = HANGUP_SILENCE_USER_FAREWELL_SEC if self._farewell_user else HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC
         return now - quiet_since >= need
 
+    def _maybe_judge(self, now: float) -> None:
+        """Тишина после реплик: просим быструю модель оценить, закончен ли разговор (один запрос на отрезок тишины)."""
+        if (AUTO_HANGUP_MODE != "judge" or self._hangup_sent or self._judge_running or not self._is_phone()
+                or self._judge_calls >= JUDGE_MAX_CALLS or self._judge_errors >= JUDGE_BROKEN_AFTER):
+            return
+        if self._out_det.voiced or self._eos.in_speech or now - self.started_at < JUDGE_MIN_CALL_SEC:
+            return
+        last_voice = max(self._eos.last_voice_at, self._last_voice_at)
+        if last_voice <= 0 or now - last_voice < JUDGE_SILENCE_SEC:
+            return
+        turns = self.transcript.turns()
+        if len(turns) < 2:
+            return
+        # Тот же отрезок тишины второй раз спрашиваем, только если в транскрипте появился новый текст
+        # (реплики клиента приходят с запаздыванием в 1–2 с) или прошло ещё 10 с тишины
+        sig = sum(len(t.get("text") or "") for t in turns)
+        if (last_voice == self._judged_voice_mark and sig == self._judged_sig
+                and now - self._judged_at < 10.0):
+            return
+        self._judged_voice_mark = last_voice
+        self._judged_sig = sig
+        self._judged_at = now
+        self._judge_running = True
+        self._judge_calls += 1
+        self._track(self._run_judge(turns, last_voice))
+
+    async def _run_judge(self, turns, last_voice: float) -> None:
+        from backend.websockets.call_end_judge import call_is_finished
+
+        try:
+            verdict = await call_is_finished(self.client.api_key, turns, JUDGE_MODEL)
+            if verdict is None:
+                self._judge_errors += 1
+                if self.call_log:
+                    self.call_log.add("session", "Проверка «разговор закончен» не удалась"
+                                      + ("; дальше по словам прощания" if self._judge_errors >= JUDGE_BROKEN_AFTER else ""),
+                                      level="warning")
+                return
+            self._judge_errors = 0
+            if self.call_log:
+                self.call_log.add("session", f"Проверка «разговор закончен»: {'да' if verdict else 'нет'}", verdict=verdict)
+            # за время запроса кто-то мог заговорить — тогда звонок продолжается
+            still_silent = (not self._out_det.voiced and not self._eos.in_speech
+                            and max(self._eos.last_voice_at, self._last_voice_at) == last_voice)
+            if verdict and still_silent and not self._hangup_sent:
+                await self._auto_hangup()
+        finally:
+            self._judge_running = False
+
     async def _auto_hangup(self) -> None:
         self._hangup_sent = True
         _log("auto hangup after farewell")
         if self.call_log:
-            self.call_log.add("session", "Автозавершение звонка: прощание и тишина (модель hangup_call не вызвала)")
+            self.call_log.add("session", "Автозавершение звонка: разговор закончен и тишина (модель hangup_call не вызвала)")
         await self.emit({"type": "call.hangup", "reason": "farewell"})
 
     async def _speech_watch(self) -> None:
@@ -576,6 +641,8 @@ class LiveVoiceSession:
                     self._on_user_speech_end(ended)
                 if self._should_auto_hangup(time.time()):
                     await self._auto_hangup()
+                else:
+                    self._maybe_judge(time.time())
                 if self.assistant_speaking and time.time() - self._last_audio_at > OUTPUT_IDLE_SEC:
                     self.assistant_speaking = False
                     self._flush_log("assistant")

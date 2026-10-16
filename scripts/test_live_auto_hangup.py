@@ -11,6 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.websockets import handler_live as h  # noqa: E402
 from backend.websockets.call_log import CallLogRecorder  # noqa: E402
 
+h.AUTO_HANGUP_MODE = "keywords"  # этот файл проверяет запасной путь по словам прощания
+h.AUTO_HANGUP = True
+
 
 def check(name, cond):
     print(("OK   " if cond else "FAIL ") + name)
@@ -39,6 +42,7 @@ def make(phone=True):
     s._farewell_at = None
     s._farewell_user = False
     s._hangup_sent = False
+    s._judge_errors = 0
     return s
 
 

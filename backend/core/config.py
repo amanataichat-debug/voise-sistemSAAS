@@ -68,8 +68,12 @@ class Settings(BaseSettings):
     LIVE_VOICE_PROMPT_EXTRAS: str = os.getenv("LIVE_VOICE_PROMPT_EXTRAS", "")
     # Статический запас исходящего звука на телефоне для GPT-Live, мс (без пересборки; 200 как было)
     SIP_OUTBOUND_CUSHION_MS: int = int(os.getenv("SIP_OUTBOUND_CUSHION_MS", "200") or 200)
-    # Автозавершение телефонного звонка после прощания и тишины (если модель сама не вызвала hangup_call): 0 = выключить
-    LIVE_AUTO_HANGUP: bool = os.getenv("LIVE_AUTO_HANGUP", "1").strip().lower() in ("1", "true", "yes")
+    # Автозавершение телефонного звонка, если модель сама не вызвала hangup_call: judge (по умолчанию) — быстрая
+    # модель читает конец диалога в тишине и решает, закончен ли разговор; keywords — по словам прощания;
+    # 0/off — выключено
+    LIVE_AUTO_HANGUP: str = os.getenv("LIVE_AUTO_HANGUP", "judge").strip().lower()
+    LIVE_HANGUP_JUDGE_MODEL: str = os.getenv("LIVE_HANGUP_JUDGE_MODEL", "gpt-5.6-luna")
+    LIVE_HANGUP_SILENCE_SEC: float = float(os.getenv("LIVE_HANGUP_SILENCE_SEC", "3.0") or 3.0)
     # Слежение за бэкендом (фраза «проверяю», «не получилось»): 1 = включить
     LIVE_DELEGATION_WATCH: bool = os.getenv("LIVE_DELEGATION_WATCH", "0").strip().lower() in ("1", "true", "yes")
     # Адаптивный запас звука на телефоне (растёт после разрывов, копится заново): 1 = включить
