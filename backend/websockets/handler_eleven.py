@@ -79,6 +79,35 @@ def _greeting_cache_key(assistant, tts, text: str) -> tuple:
     return (tts.voice_id, tts.model, tts.language, round(float(tts.stability or 0), 2), text)
 
 
+def _apply_agent_knowledge(db: Session, assistant) -> None:
+    """
+    Дописать в промпт карточки знания агента обзвона, которому она принадлежит.
+
+    Карточка без агента (отдельный ассистент ElevenLabs) остаётся как есть.
+    Промпт читается один раз при создании клиента диалога, поэтому подмены в
+    памяти достаточно; в базе промпт карточки не меняется.
+    """
+    try:
+        from sqlalchemy.orm.attributes import set_committed_value
+        from backend.services import agent_voice_context
+        from backend.websockets.live_client import LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
+
+        agent = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
+        if agent is None:
+            return
+        gpt_live = (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE
+        prompt, stats = agent_voice_context.build_call_system_prompt(
+            db, assistant, agent,
+            max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
+        )
+        set_committed_value(assistant, "system_prompt", prompt)
+        _log(f"знания агента {agent.id} в промпте: {stats.get('total', 0)} символов "
+             f"(всего промпт {len(prompt)})")
+    except Exception as e:
+        # Знания не должны мешать разговору: без них агент просто беднее.
+        _log(f"знания агента не подмешаны: {e}", "WARNING")
+
+
 def _greeting_cache_put(key: tuple, pcm: bytes) -> None:
     if len(pcm) < ELEVEN_SAMPLE_RATE:  # меньше 0,5 с — что-то пошло не так, не кэшируем
         return
@@ -161,6 +190,14 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         if not assistant.is_active:
             await fail("assistant_inactive", "Assistant is inactive")
             return
+
+        # Знания агента в промпт (ветка 1610-kb-calls). На звонке это делает
+        # SIP-роут (api/sip_gateway.py) — там же, где дописывается контекст
+        # звонка; здесь закрыт браузерный тест, чтобы владелец проверял базу
+        # знаний кнопкой в кабинете, не набирая номер. Подмена только в памяти.
+        if not getattr(assistant, "telephony_mode", False):
+            _apply_agent_knowledge(db, assistant)
+
         # Минуты разговора оплачиваются из кошелька владельца (сом): пустой кошелёк — не начинаем
         engine = "gpt_live" if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE else "eleven"
         meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)))

@@ -51,6 +51,8 @@ from backend.models.task import Task, TaskStatus
 from backend.services.sip_gateway_service import SipGatewayService
 from backend.services.call_transcript import CallTranscript
 from backend.services.agent_call_finalizer import AgentCallFinalizer
+from backend.services import agent_voice_context
+from backend.websockets.live_client import LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
 from backend.websockets.sip_media_adapter import HandlerSocket
 from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
@@ -393,8 +395,26 @@ async def sip_media(
     if greeting:
         set_committed_value(assistant, "greeting_message", greeting)
     context = SipGatewayService.call_context_text(call)
-    base_prompt = getattr(assistant, "system_prompt", None) or ""
-    set_committed_value(assistant, "system_prompt", f"{base_prompt}\n\n[Контекст звонка] {context}".strip())
+
+    # Карточка ElevenLabs на движке GPT-Live: звук идёт в реальном темпе, как у OpenAI —
+    # адаптеру нужен тот же профиль (запас OUTBOUND_CUSHION_MS), приветствие приходит транскриптом.
+    gpt_live = call.assistant_type == "eleven" and getattr(assistant, "voice_engine", None) == "gpt_live"
+
+    # Знания агента в промпт звонка (ветка 1610-kb-calls). Раньше здесь
+    # дописывался только контекст, и голосовая модель шла в звонок, не зная ни
+    # компании, ни базы знаний, ни цен: 1535 символов против 11619 у
+    # оркестратора. Теперь инструкции агента, пары «вопрос — ответ», короткие
+    # секции, прайс и список материалов уходят в промпт — ответ без вызова
+    # функции стоит 0 с вместо ≈4 с на поход в делегирующий бэкенд.
+    # Подмена в памяти: в карточке голоса промпт остаётся общим.
+    agent_cfg = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
+    prompt, kb_stats = agent_voice_context.build_call_system_prompt(
+        db, assistant, agent_cfg, call_context=context,
+        # Голосовой слой GPT-Live видит только начало промпта — остальное
+        # доступно лишь делегирующему бэкенду, то есть снова через функцию.
+        max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
+    )
+    set_committed_value(assistant, "system_prompt", prompt)
     assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
     # Не колонка: Fish/Eleven пишут диалог под session_id = id звонка — точная связь звонок ↔ реплики.
     assistant.sip_session_id = str(call.id)
@@ -402,9 +422,6 @@ async def sip_media(
         call.conversation_session_id = str(call.id)
         db.commit()
 
-    # Карточка ElevenLabs на движке GPT-Live: звук идёт в реальном темпе, как у OpenAI —
-    # адаптеру нужен тот же профиль (запас OUTBOUND_CUSHION_MS), приветствие приходит транскриптом.
-    gpt_live = call.assistant_type == "eleven" and getattr(assistant, "voice_engine", None) == "gpt_live"
     adapter_profile = "openai" if gpt_live else call.assistant_type
 
     # Стенограмма звонка целиком. Приветствие Fish/Eleven озвучивается без текстовых событий.
@@ -430,6 +447,21 @@ async def sip_media(
     call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
                         f"наш номер {call.did or '—'}, шлюз {gateway_id}",
                  greeting="своё" if greeting else None)
+    # Что агент знает наизусть в этом звонке: владельцу видно, доехали ли
+    # знания до модели, без чтения логов сервера.
+    if agent_cfg is not None:
+        call_log.add(
+            "kb",
+            "Знания в промпте: "
+            + (", ".join(f"{name} {size} симв." for name, size in (
+                ("о компании", kb_stats.get("company", 0)),
+                ("вопрос-ответ и секции", kb_stats.get("knowledge", 0)),
+                ("прайс", kb_stats.get("price", 0)),
+                ("материалы", kb_stats.get("files", 0)),
+              ) if size) or "пусто — база знаний агента не заполнена"),
+            prompt_chars=len(prompt),
+            trimmed="да" if kb_stats.get("trimmed") else None,
+        )
 
     # 6. Запуск браузерного хендлера через адаптер
     socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)

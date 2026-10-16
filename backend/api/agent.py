@@ -174,33 +174,79 @@ def _resolve_voice_assistant(db: Session, agent: AgentConfig):
     return None
 
 
-def _voice_set_kb_function(va, enabled: bool) -> None:
+# Функции базы знаний у голосового ассистента (ветка 1610-kb-calls).
+# search_pinecone убран: он искал только по документам в Pinecone и не видел ни
+# пар «вопрос — ответ», ни секций, ни каталога, поэтому агент на звонке уходил
+# в поиск на ≈4 секунды и возвращался ни с чем. Теперь имена те же, что у
+# оркестратора, и реализация общая (agent_knowledge_service).
+_VOICE_KB_FUNCTIONS = {
+    "search_knowledge_base": "Ищет ответ в базе знаний компании: вопросы-ответы, "
+                             "разделы о компании и содержимое документов.",
+    "find_products": "Подбирает позиции каталога по названию, характеристикам и цене, "
+                     "возвращает цену, наличие и id фото.",
+}
+# Старое имя снимаем с карточек, чтобы модель не выбирала между двумя поисками.
+_VOICE_KB_LEGACY = ("search_pinecone",)
+
+
+def _voice_kb_function_names(db: Session, agent) -> set:
     """
-    Включает/выключает функцию поиска в базе знаний (search_pinecone) у
-    голосового ассистента. Namespace функция получает в runtime из
-    AgentConfig.kb_namespace (см. backend/functions/search_pinecone.py), поэтому
-    здесь достаточно управлять списком functions.
+    Какие функции знаний нужны этому агенту сейчас.
+
+    Лишний инструмент не бесплатен: на каждом ответе модель перебирает весь
+    список, и это одна из причин задержки на звонке. Поэтому каталог
+    подключаем только когда в базе есть позиции, а поиск — когда в базе есть
+    хоть что-то (записи или документы в Pinecone).
+    """
+    names = set()
+    agent_id = getattr(agent, "id", None)
+    if agent_id is None:
+        return names
+    try:
+        from backend.models.agent_knowledge import AgentKnowledgeEntry
+        kinds = {
+            row[0] for row in
+            db.query(AgentKnowledgeEntry.kind)
+            .filter(AgentKnowledgeEntry.agent_config_id == agent_id,
+                    AgentKnowledgeEntry.is_active.is_(True))
+            .distinct().all()
+        }
+    except Exception as e:
+        logger.warning(f"[AGENT-KB] состав базы не прочитан: {e}")
+        kinds = set()
+    if kinds or getattr(agent, "kb_namespace", None):
+        names.add("search_knowledge_base")
+    if "product" in kinds:
+        names.add("find_products")
+    return names
+
+
+def _voice_sync_kb_functions(db: Session, agent, va=None) -> None:
+    """
+    Привести список функций голосовой карточки в соответствие с базой знаний.
+
+    Вызывается после любой правки базы: добавили каталог — появился
+    find_products, вычистили базу — поиск снялся (раньше функция оставалась
+    навсегда и агент ходил искать в пустоту).
     """
     if va is None:
+        va = _resolve_voice_assistant(db, agent)
+    if va is None:
         return
+    wanted = _voice_kb_function_names(db, agent)
+    drop = set(_VOICE_KB_FUNCTIONS) | set(_VOICE_KB_LEGACY)
+
     funcs = va.functions
-    # Нормализуем к списку [{"name": ..., "description": ...}]
     if isinstance(funcs, dict) and "enabled_functions" in funcs:
-        names = list(funcs.get("enabled_functions", []))
-        names = [n for n in names if n != "search_pinecone"]
-        if enabled:
-            names.append("search_pinecone")
+        names = [n for n in list(funcs.get("enabled_functions", [])) if n not in drop]
+        names.extend(sorted(wanted))
         va.functions = {"enabled_functions": names}
-        flag_modified(va, "functions")
-        return
-    items = list(funcs) if isinstance(funcs, list) else []
-    items = [f for f in items if (f.get("name") if isinstance(f, dict) else f) != "search_pinecone"]
-    if enabled:
-        items.append({
-            "name": "search_pinecone",
-            "description": "Ищет информацию в базе знаний компании (векторный поиск).",
-        })
-    va.functions = items
+    else:
+        items = list(funcs) if isinstance(funcs, list) else []
+        items = [f for f in items
+                 if (f.get("name") if isinstance(f, dict) else f) not in drop]
+        items.extend({"name": n, "description": _VOICE_KB_FUNCTIONS[n]} for n in sorted(wanted))
+        va.functions = items
     flag_modified(va, "functions")
 
 
@@ -209,7 +255,7 @@ def _voice_set_connector_function(va, toolkit: str, enabled: bool) -> None:
     Включает/выключает голосовые функции коннектора (например google_calendar →
     google_calendar_create_event/find_events) у голосового ассистента.
 
-    Зеркалит _voice_set_kb_function: функции резолвятся в определения в runtime
+    Зеркалит _voice_sync_kb_functions: функции резолвятся в определения в runtime
     (build_functions_for_openai), а composio_user_id функция берёт из владельца
     ассистента — поэтому здесь достаточно управлять списком functions.
     """
@@ -507,7 +553,7 @@ def _check_assistant_keys(assistant_type: str, current_user: User):
 # Обе уже зарегистрированы в реестре (backend/functions/): отправка SMS клиенту
 # и корректное завершение звонка. Имена резолвятся в определения в runtime
 # (build_functions_for_openai). search_pinecone добавляется отдельно при
-# создании базы знаний — см. _voice_set_kb_function.
+# создании базы знаний — см. _voice_sync_kb_functions.
 def _default_voice_functions():
     return [
         {"name": "send_sms", "description": "Отправить SMS клиенту во время звонка (адрес, ссылка, код, реквизиты)."},
@@ -1127,8 +1173,7 @@ async def update_agent(
         agent.assistant_type = new_type
         # Если у агента есть база знаний — переносим функцию поиска на нового
         # голосового ассистента.
-        if agent.has_knowledge_base():
-            _voice_set_kb_function(new_voice, True)
+        _voice_sync_kb_functions(db, agent, new_voice)
         # Переносим голосовые функции подключённых коннекторов (Composio) на
         # нового голосового ассистента — иначе при смене типа они терялись бы.
         for _conn in db.query(AgentConnector).filter(
@@ -1206,7 +1251,9 @@ async def update_agent(
             ).first()
             if logo is None:
                 raise HTTPException(status_code=404, detail="logo_file_not_found")
-            if not (logo.mime or "").startswith("image/"):
+            # У модели AgentFile поле называется mime_type: обращение к .mime
+            # роняло сохранение логотипа с AttributeError → 500 (ветка 1610-kb-calls).
+            if not (logo.mime_type or "").startswith("image/"):
                 raise HTTPException(status_code=400, detail="logo_must_be_image")
             agent.brand_logo_file_id = logo.id
 
@@ -1509,8 +1556,8 @@ async def upsert_agent_knowledge_base(
     agent.kb_name = body.name or agent.kb_name
     agent.kb_updated_at = datetime.utcnow()
 
-    # Включаем функцию поиска у голосового ассистента (живой звонок).
-    _voice_set_kb_function(_resolve_voice_assistant(db, agent), True)
+    # Приводим функции знаний голосовой карточки к текущему составу базы.
+    _voice_sync_kb_functions(db, agent)
 
     db.commit()
     db.refresh(agent)
@@ -1543,7 +1590,7 @@ async def delete_agent_knowledge_base(
     agent.kb_name = None
     agent.kb_updated_at = None
 
-    _voice_set_kb_function(_resolve_voice_assistant(db, agent), False)
+    _voice_sync_kb_functions(db, agent)
 
     db.commit()
     db.refresh(agent)
@@ -1671,7 +1718,7 @@ async def create_knowledge_entry(
     db.add(row)
     db.commit()
     db.refresh(row)
-    _voice_set_kb_function(_resolve_voice_assistant(db, agent), True)
+    _voice_sync_kb_functions(db, agent)
     db.commit()
     return {"success": True, "entry": row.to_dict()}
 
@@ -1702,6 +1749,9 @@ async def update_knowledge_entry(
             setattr(row, field, value)
     if "body" in data:
         row.char_count = len(row.body or "")
+    # Запись могли выключить — тогда у карточки голоса мог стать лишним
+    # каталог или поиск целиком.
+    _voice_sync_kb_functions(db, agent)
     db.commit()
     db.refresh(row)
     return {"success": True, "entry": row.to_dict()}
@@ -1719,6 +1769,9 @@ async def delete_knowledge_entry(
         raise HTTPException(status_code=404, detail="not_found")
     row = _kb_entry_or_404(db, agent, entry_id)
     db.delete(row)
+    db.flush()
+    # Удалили последнюю позицию каталога — find_products больше не нужен.
+    _voice_sync_kb_functions(db, agent)
     db.commit()
     return {"success": True}
 
@@ -1846,7 +1899,7 @@ async def add_knowledge_document(
     row.vector_error = None
     agent.kb_namespace = namespace
     agent.kb_updated_at = datetime.utcnow()
-    _voice_set_kb_function(_resolve_voice_assistant(db, agent), True)
+    _voice_sync_kb_functions(db, agent)
     db.commit()
     db.refresh(row)
     logger.info(f"[AGENT-KB] документ {file_row.filename} → {chunks} кусков (агент {agent.id})")
@@ -1870,6 +1923,8 @@ async def remove_knowledge_document(
     if agent.kb_namespace and row.chunk_count:
         await pinecone_mod.delete_document(agent.kb_namespace, str(row.id), row.chunk_count)
     db.delete(row)
+    db.flush()
+    _voice_sync_kb_functions(db, agent)
     db.commit()
     return {"success": True}
 

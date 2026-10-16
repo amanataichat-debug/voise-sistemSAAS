@@ -22,6 +22,8 @@
 клиента до Pinecone вообще не доходит.
 """
 
+import asyncio
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -39,6 +41,11 @@ logger = get_logger(__name__)
 # заголовком, а тело достаётся поиском.
 SECTION_PROMPT_MAX_CHARS = 900
 
+# Ниже этой близости кусок документа считаем мусором и не отдаём агенту.
+# Раньше Pinecone всегда возвращал три куска, даже нерелевантных, и агент
+# придумывал ответ по ним.
+KB_MIN_SCORE = 0.3
+
 # Слова, которые ничего не дают поиску (встречаются в любом вопросе).
 _STOP_WORDS = {
     "и", "а", "в", "на", "с", "по", "за", "у", "к", "о", "об", "от", "до", "из",
@@ -51,8 +58,28 @@ _STOP_WORDS = {
 _WORD_RE = re.compile(r"[\w\-]{2,}", re.UNICODE)
 
 
+# Как произносить валюту. Код «KGS» голосовая модель читает по буквам
+# («кей-джи-эс»), поэтому в прайс и в ответы инструментов идёт слово.
+_CURRENCY_WORDS = {"KGS": "сом", "RUB": "руб.", "USD": "долл.", "EUR": "евро", "KZT": "тенге"}
+
+
 def normalize(text: str) -> str:
     return " ".join((text or "").lower().split())
+
+
+def format_price(price, currency: Optional[str] = None) -> str:
+    """
+    Цена в виде, который модель произнесёт правильно: «84 990 сом».
+
+    Разряды разделяем пробелом — иначе «84990» читается как «восемьдесят
+    четыре тысячи девятьсот девяносто» через запинку, а то и по цифрам.
+    """
+    if price is None:
+        return "цена по запросу"
+    code = (currency or "KGS").upper()
+    word = _CURRENCY_WORDS.get(code, code)
+    whole = f"{price:,.0f}".replace(",", " ") if abs(price - round(price)) < 0.005 else f"{price:,.2f}".replace(",", " ")
+    return f"{whole} {word}"
 
 
 def keywords_of(query: str, limit: int = 6) -> List[str]:
@@ -307,6 +334,157 @@ def record_gap(db, agent_config_id, query: str, channel: Optional[str] = None) -
 
 
 # ============================================================================
+# ОТВЕТ ПО БАЗЕ: СЛОИ ЦЕЛИКОМ (одна реализация на чат и на звонок)
+# ============================================================================
+
+def _answer_from_entries(db, agent_config_id, query: str, top_k: int) -> Optional[Dict[str, Any]]:
+    """
+    Слой Postgres: готовый ответ по записям базы или None, если не нашлось.
+    Синхронный — вызывается через asyncio.to_thread, чтобы на звонке не
+    задерживать звук (сетевой задержки здесь нет, но commit может ждать диск).
+    """
+    rows = search_entries(db, agent_config_id, query, limit=top_k)
+    if not rows:
+        return None
+    mark_hits(db, rows)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    return {
+        "ok": True, "query": query, "source": "knowledge_base",
+        "total": len(rows),
+        "results": [entry_for_agent(r) for r in rows],
+    }
+
+
+async def _answer_from_documents(namespace: str, query: str, top_k: int) -> Optional[Dict[str, Any]]:
+    """
+    Слой Pinecone: ответ по документам или None. Единственный слой, который
+    платит сетью и эмбеддингом, поэтому зовётся последним.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not namespace or not api_key:
+        return None
+    from backend.services.pinecone_service import PineconeService
+    try:
+        matches = await PineconeService.search(
+            query=query, namespace=namespace, api_key=api_key, top_k=top_k,
+        )
+    except Exception as e:
+        logger.error(f"[KB] поиск по документам не удался: {e}", exc_info=True)
+        return {"ok": False, "error": f"Ошибка поиска: {e}"}
+    results = [
+        {"text": m.get("text", ""), "score": m.get("score")}
+        for m in matches if (m.get("score") or 0) >= KB_MIN_SCORE
+    ]
+    if not results:
+        return None
+    return {"ok": True, "query": query, "source": "documents",
+            "total": len(results), "results": results}
+
+
+async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: str,
+                       top_k: int = 4, channel: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Ответ из базы знаний слоями: записи (Postgres) → документы (Pinecone).
+
+    Одна реализация для всех каналов: оркестратор в чате и мессенджерах
+    (services/agent_tools.py) и голосовой агент на звонке
+    (backend/functions/search_knowledge_base.py). Раньше на звонке работал
+    только search_pinecone — он искал по документам и не видел ни пар
+    «вопрос — ответ», ни секций, ни каталога, из-за чего агент на звонке
+    отправлял клиента «к специалисту» при заполненной базе.
+
+    Не нашлось нигде — пишем вопрос в пробелы базы: владелец увидит, чего
+    клиентам не хватает, и дополнит базу по фактам, а не по догадкам.
+    """
+    query = (query or "").strip()
+    if not query:
+        return {"ok": False, "error": "Пустой поисковый запрос"}
+
+    if agent_config_id:
+        try:
+            fast = await asyncio.to_thread(_answer_from_entries, db, agent_config_id, query, top_k)
+        except Exception as e:
+            logger.warning(f"[KB] быстрый поиск не сработал: {e}")
+            fast = None
+        if fast:
+            return fast
+
+    docs = await _answer_from_documents(kb_namespace or "", query, top_k)
+    if docs is not None:
+        return docs
+
+    if agent_config_id:
+        def _gap():
+            record_gap(db, agent_config_id, query, channel)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        try:
+            await asyncio.to_thread(_gap)
+        except Exception as e:
+            logger.warning(f"[KB] пробел не записан: {e}")
+    return {
+        "ok": True, "query": query, "total": 0, "results": [],
+        "note": "В базе знаний ответа нет. Не выдумывай: скажи клиенту, что "
+                "уточнишь у специалиста, и предложи записать его вопрос.",
+    }
+
+
+async def answer_products(db, agent_config_id, query: str = "",
+                          max_price: Optional[float] = None,
+                          min_price: Optional[float] = None,
+                          limit: int = 5, channel: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Подбор позиций каталога. Общая реализация для чата и звонка.
+
+    Цена фильтруется в SQL: «наушники до 3000» — это число, а по числам
+    векторный поиск врёт.
+    """
+    if not agent_config_id:
+        return {"ok": False, "error": "Агент не определён"}
+
+    def _num(value):
+        # Модель присылает цену и строкой («30000»), и числом — SQL нужно число.
+        try:
+            return float(value) if value is not None and value != "" else None
+        except (TypeError, ValueError):
+            return None
+
+    lo, hi = _num(min_price), _num(max_price)
+
+    def _work():
+        rows = search_products(db, agent_config_id, query=query,
+                               max_price=hi, min_price=lo,
+                               limit=min(int(limit or 5), 10))
+        if not rows:
+            record_gap(db, agent_config_id, query, channel)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+            return {"ok": True, "total": 0, "results": [],
+                    "note": "Подходящих позиций в каталоге нет. Не придумывай товар — "
+                            "предложи похожее из каталога или уточни запрос у клиента."}
+        mark_hits(db, rows)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        return {"ok": True, "total": len(rows),
+                "results": [entry_for_agent(r) for r in rows]}
+
+    try:
+        return await asyncio.to_thread(_work)
+    except Exception as e:
+        logger.error(f"[KB] подбор по каталогу не удался: {e}", exc_info=True)
+        return {"ok": False, "error": f"Ошибка поиска: {e}"}
+
+
+# ============================================================================
 # ФОРМАТ ОТВЕТА ДЛЯ АГЕНТА
 # ============================================================================
 
@@ -318,7 +496,7 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
     out: Dict[str, Any] = {"title": row.title, "text": row.body}
     if row.kind == "product":
         if row.price is not None:
-            out["price"] = f"{row.price:g} {row.currency or 'KGS'}"
+            out["price"] = format_price(row.price, row.currency)
         if row.attributes:
             out["attributes"] = row.attributes
         out["in_stock"] = bool(row.in_stock)

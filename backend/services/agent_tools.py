@@ -132,9 +132,9 @@ FIND_PRODUCTS_TOOL = {
     },
 }
 
-# Ниже этого совпадения результат Pinecone считаем мусором: раньше агенту
-# всегда возвращались три куска, даже нерелевантных, и он сочинял по ним ответ.
-KB_MIN_SCORE = 0.3
+# Порог близости для Pinecone живёт в сервисе базы знаний: его применяют и чат,
+# и голосовой агент на звонке (ветка 1610-kb-calls), поэтому значение одно.
+from backend.services.agent_knowledge_service import KB_MIN_SCORE  # noqa: E402
 
 
 # Отправка SMS клиенту с номера агента (Voximplant). Доступна в чате и в post-call.
@@ -1059,7 +1059,9 @@ async def _document_images(file_ids, agent_config_id: str, db: Session) -> list:
             AgentFile.id == str(fid),
             AgentFile.agent_config_id == agent_config_id,
         ).first()
-        if row is None or not (row.mime or "").startswith("image/"):
+        # mime_type, а не mime: из-за опечатки картинки в КП (image_file_ids)
+        # падали с AttributeError и в документ не попадали никогда.
+        if row is None or not (row.mime_type or "").startswith("image/"):
             continue
         try:
             data = await agent_media_service.load_bytes(row)
@@ -3482,127 +3484,45 @@ async def fn_get_failed_calls(args: dict, user_id: str, agent_config_id: str, db
 async def fn_search_knowledge_base(args: dict, agent_config, db: Session,
                                    channel: Optional[str] = None) -> dict:
     """
-    Поиск по базе знаний агента — слоями, от быстрого к медленному
-    (ветка 1410-kb-v2).
+    Поиск по базе знаний агента для оркестратора (чат, мессенджеры, разбор звонка).
 
-    1. Postgres по записям базы (заголовки, ключевые слова, текст) — единицы
-       миллисекунд, без сети и эмбеддингов. Закрывает большинство вопросов.
-    2. Pinecone по документам — только если в Postgres пусто. Здесь платим
-       эмбеддингом и сетью (сотни миллисекунд), поэтому и зовём в последнюю
-       очередь.
-
-    Если не нашли нигде — пишем вопрос в «пробелы базы»: владелец увидит, чего
-    клиентам не хватает, и дополнит базу по фактам, а не по догадкам.
+    Слои и порог близости — в agent_knowledge_service.answer_query: записи базы
+    в Postgres (единицы мс, без сети), документы в Pinecone только если в
+    записях пусто. Тот же код вызывает голосовой агент на звонке
+    (backend/functions/search_knowledge_base.py), поэтому поведение в чате и в
+    трубке одинаковое — до ветки 1610-kb-calls это были две разные реализации,
+    и на звонке работала та, что не видела ни пар «вопрос — ответ», ни каталога.
     """
-    import os
     from backend.services import agent_knowledge_service as kb
-    from backend.services.pinecone_service import PineconeService
 
-    query = (args.get("query") or "").strip()
-    top_k = int(args.get("top_k") or 4)
-    if not query:
-        return {"ok": False, "error": "Пустой поисковый запрос"}
-
-    agent_config_id = getattr(agent_config, "id", None) if agent_config else None
-
-    # ── Слой 1: быстрый поиск по записям ──
-    if agent_config_id:
-        try:
-            rows = kb.search_entries(db, agent_config_id, query, limit=top_k)
-        except Exception as e:
-            logger.warning(f"[KB] быстрый поиск не сработал: {e}")
-            rows = []
-        if rows:
-            kb.mark_hits(db, rows)
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
-            return {
-                "ok": True, "query": query, "source": "knowledge_base",
-                "total": len(rows),
-                "results": [kb.entry_for_agent(r) for r in rows],
-            }
-
-    # ── Слой 2: документы в Pinecone ──
-    namespace = getattr(agent_config, "kb_namespace", None) if agent_config else None
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
-    if namespace and openai_api_key:
-        try:
-            matches = await PineconeService.search(
-                query=query, namespace=namespace, api_key=openai_api_key, top_k=top_k,
-            )
-        except Exception as e:
-            logger.error(f"[AGENT-TOOLS] knowledge base search failed: {e}", exc_info=True)
-            return {"ok": False, "error": f"Ошибка поиска: {e}"}
-        # Слабые совпадения отбрасываем: раньше агенту всегда возвращались три
-        # куска, даже нерелевантных, и он придумывал ответ по ним.
-        results = [
-            {"text": m.get("text", ""), "score": m.get("score")}
-            for m in matches
-            if (m.get("score") or 0) >= KB_MIN_SCORE
-        ]
-        if results:
-            return {"ok": True, "query": query, "source": "documents",
-                    "total": len(results), "results": results}
-
-    if agent_config_id:
-        kb.record_gap(db, agent_config_id, query, channel)
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-    return {
-        "ok": True, "query": query, "total": 0, "results": [],
-        "note": "В базе знаний ответа нет. Не выдумывай: скажи клиенту, что "
-                "уточнишь у специалиста, и предложи записать его вопрос.",
-    }
+    return await kb.answer_query(
+        db,
+        getattr(agent_config, "id", None) if agent_config else None,
+        getattr(agent_config, "kb_namespace", None) if agent_config else None,
+        (args.get("query") or "").strip(),
+        top_k=int(args.get("top_k") or 4),
+        channel=channel,
+    )
 
 
 async def fn_find_products(args: dict, agent_config, db: Session) -> dict:
     """
-    Подбор позиций каталога: название/описание + фильтр по цене.
+    Подбор позиций каталога для оркестратора.
 
-    Ищем в Postgres, а не векторами: «наушники до 3000» — это число, а по
-    числам вектора врут. Плюс быстро, что важно на звонке.
-    В ответе — id фото/видео позиции, чтобы агент сразу отправил их клиенту.
+    Реализация общая с голосовым агентом (backend/functions/find_products.py) —
+    agent_knowledge_service.answer_products. Цена фильтруется в SQL: «наушники
+    до 3000» — это число, а по числам вектора врут.
     """
     from backend.services import agent_knowledge_service as kb
 
-    agent_config_id = getattr(agent_config, "id", None) if agent_config else None
-    if not agent_config_id:
-        return {"ok": False, "error": "Агент не определён"}
-
-    def _num(value):
-        try:
-            return float(value) if value is not None else None
-        except (TypeError, ValueError):
-            return None
-
-    rows = kb.search_products(
-        db, agent_config_id,
+    return await kb.answer_products(
+        db,
+        getattr(agent_config, "id", None) if agent_config else None,
         query=(args.get("query") or "").strip(),
-        max_price=_num(args.get("max_price")),
-        min_price=_num(args.get("min_price")),
-        limit=min(int(args.get("limit") or 5), 10),
+        max_price=args.get("max_price"),
+        min_price=args.get("min_price"),
+        limit=args.get("limit") or 5,
     )
-    if not rows:
-        kb.record_gap(db, agent_config_id, (args.get("query") or "").strip())
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-        return {"ok": True, "total": 0, "results": [],
-                "note": "Подходящих позиций в каталоге нет. Не придумывай товар — "
-                        "предложи похожее из каталога или уточни запрос у клиента."}
-
-    kb.mark_hits(db, rows)
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-    return {"ok": True, "total": len(rows),
-            "results": [kb.entry_for_agent(r) for r in rows]}
 
 
 async def fn_send_webhook(args: dict, agent_config, db: Session) -> dict:
