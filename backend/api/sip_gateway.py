@@ -415,6 +415,13 @@ async def sip_media(
         max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
     )
     set_committed_value(assistant, "system_prompt", prompt)
+    # Функции знаний — ЖИВЬЁМ по текущему состоянию базы, а не из хранимой
+    # колонки functions: реактивный пересчёт в api/agent.py срабатывает только
+    # при правке базы ЧЕРЕЗ кабинет, и карточка с историей до этой ветки (или
+    # отредактированная в обход кабинета) так и остаётся со старым
+    # search_pinecone. На живом звонке 16.10.2026 это и произошло — агент ушёл
+    # на звонок со старым набором функций, хотя база уже была заполнена.
+    agent_voice_context.apply_live_kb_functions(db, assistant, agent_cfg)
     assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
     # Не колонка: Fish/Eleven пишут диалог под session_id = id звонка — точная связь звонок ↔ реплики.
     assistant.sip_session_id = str(call.id)

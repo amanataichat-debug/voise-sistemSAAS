@@ -413,3 +413,110 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                 stats["trimmed"] = 1
 
     return f"{base}{block}{tail}".strip(), stats
+
+
+# ============================================================================
+# ФУНКЦИИ ЗНАНИЙ НА КАРТОЧКЕ ГОЛОСА — СЧИТАЕМ ЖИВЬЁМ НА КАЖДОМ ЗВОНКЕ
+# ============================================================================
+#
+# ЗАЧЕМ ЭТОТ БЛОК ПОЯВИЛСЯ. Раньше список функций (search_knowledge_base,
+# find_products) синхронизировался с составом базы только РЕАКТИВНО — при
+# каждой правке базы через кабинет (api/agent.py:_voice_sync_kb_functions).
+# Это хрупко: любая запись в agent_configs.eleven_assistant_configs.functions,
+# сделанная в обход этого кода пути — старые данные, оставшиеся с прошлых
+# версий (search_pinecone), ручная правка в БД, миграция, — так и останется
+# неисправленной до следующей правки базы владельцем. На живом звонке
+# (сессия 40049857, 16.10.2026) это проявилось ровно так: в списке функций
+# был только старый search_pinecone, хотя search_knowledge_base/find_products
+# уже существовали в коде — колонка functions этой карточки просто ни разу
+# не пересчитывалась после того, как агент обзавёлся базой знаний.
+#
+# Поэтому функции знаний считаются заново ПРЯМО ПЕРЕД звонком (там же, где
+# подменяется system_prompt — sip_gateway.py и handler_eleven.py) и
+# подставляются в память, как и промпт: хранимая колонка значения не имеет,
+# правильный список гарантирован на каждом звонке независимо от истории.
+# Реактивный пересчёт в api/agent.py при правке базы остаётся — это только
+# для того, чтобы кабинет и раздел «Функции» показывали актуальную картину
+# сразу, без ожидания следующего звонка.
+
+# Какие функции знаний вообще существуют и их описания для карточки.
+KB_VOICE_FUNCTIONS = {
+    "search_knowledge_base": "Ищет ответ в базе знаний компании: вопросы-ответы, "
+                             "разделы о компании и содержимое документов.",
+    "find_products": "Подбирает позиции каталога по названию, характеристикам и цене, "
+                     "возвращает цену, наличие и id фото.",
+}
+# Старое имя снимаем с карточек везде, где пересчитываем функции: модель не
+# должна выбирать между двумя разными инструментами поиска.
+KB_VOICE_LEGACY = ("search_pinecone",)
+
+
+def kb_function_names(db, agent) -> set:
+    """
+    Какие функции знаний нужны агенту ПРЯМО СЕЙЧАС, по текущему состоянию базы.
+
+    Лишний инструмент не бесплатен: на каждом ответе модель перебирает весь
+    список, и это одна из причин задержки на звонке. Поэтому каталог
+    подключаем только когда в базе есть позиции, а поиск — когда в базе есть
+    хоть что-то (записи или документы в Pinecone).
+    """
+    names = set()
+    agent_id = getattr(agent, "id", None)
+    if agent_id is None:
+        return names
+    try:
+        from backend.models.agent_knowledge import AgentKnowledgeEntry
+        kinds = {
+            row[0] for row in
+            db.query(AgentKnowledgeEntry.kind)
+            .filter(AgentKnowledgeEntry.agent_config_id == agent_id,
+                    AgentKnowledgeEntry.is_active.is_(True))
+            .distinct().all()
+        }
+    except Exception as e:
+        logger.warning(f"[VOICE-KB] состав базы не прочитан: {e}")
+        kinds = set()
+    if kinds or getattr(agent, "kb_namespace", None):
+        names.add("search_knowledge_base")
+    if "product" in kinds:
+        names.add("find_products")
+    return names
+
+
+def merge_kb_functions(functions, wanted: set):
+    """
+    Чистая функция: список/словарь функций карточки → тот же формат, но с
+    KB_VOICE_LEGACY и чужими KB_VOICE_FUNCTIONS выброшенными и `wanted`
+    добавленными. Общая реализация для реактивной правки кабинета
+    (api/agent.py) и живого пересчёта на звонке (ниже).
+    """
+    drop = set(KB_VOICE_FUNCTIONS) | set(KB_VOICE_LEGACY)
+    if isinstance(functions, dict) and "enabled_functions" in functions:
+        names = [n for n in list(functions.get("enabled_functions", [])) if n not in drop]
+        names.extend(sorted(wanted))
+        return {"enabled_functions": names}
+    items = list(functions) if isinstance(functions, list) else []
+    items = [f for f in items if (f.get("name") if isinstance(f, dict) else f) not in drop]
+    items.extend({"name": n, "description": KB_VOICE_FUNCTIONS[n]} for n in sorted(wanted))
+    return items
+
+
+def apply_live_kb_functions(db, assistant, agent) -> None:
+    """
+    Подставить в карточку голоса (В ПАМЯТИ, не в базу) функции знаний,
+    пересчитанные по текущему состоянию базы — вызывать прямо перед стартом
+    звонка/сессии, рядом с подменой system_prompt.
+
+    Использует set_committed_value, тот же приём, что и для system_prompt и
+    greeting_message в api/sip_gateway.py: карточка в БД не меняется, сессия
+    получает верные функции независимо от того, что хранится в колонке.
+    """
+    if agent is None:
+        return
+    try:
+        from sqlalchemy.orm.attributes import set_committed_value
+        wanted = kb_function_names(db, agent)
+        merged = merge_kb_functions(getattr(assistant, "functions", None), wanted)
+        set_committed_value(assistant, "functions", merged)
+    except Exception as e:
+        logger.warning(f"[VOICE-KB] функции знаний не пересчитаны: {e}")

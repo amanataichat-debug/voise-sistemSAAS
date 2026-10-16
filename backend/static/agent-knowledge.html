@@ -6,8 +6,20 @@
      используют как источник ответов. Здесь они на одном большом экране —
      пять разделов, каталог плитками с фотографиями, у каждого файла две роли.
 
+     НЕТ ОБЩЕГО САЙДБАРА КАБИНЕТА (ветка 1610-kb-calls, по итогам живого теста
+     владельца). Знания принадлежат конкретному агенту обзвона — платной,
+     отдельной функции (`User.has_agent_access`), а не кабинету вообще.
+     Страница agent.html НАМЕРЕННО не использует общий `<aside class="sidebar">`
+     и его пункты «Дашборд / CRM / Настройки» — у неё свой самостоятельный
+     топбар (логотип + переключатель агента + «Выйти»), без единой ссылки на
+     общий кабинет. Эта страница показывала ровно такой же сайдбар, как у
+     всех «базовых» разделов — владелец на живом тесте справедливо указал,
+     что это выглядит как шаг назад в общий кабинет, а не продолжение работы
+     с агентом. Теперь здесь тот же приём: лёгкий топбар, логотип ведёт на
+     /static/agent.html (не на /static/dashboard.html), никакого общего меню.
+
      Вёрстка — дизайн-система VoksiAI (design-system/04-pages-cabinet.md):
-     <body class="vf">, voksiai.css, иконки из /static/icons/ui.svg, меню — sidebar.js.
+     <body class="vf">, voksiai.css, иконки из /static/icons/ui.svg.
      Логика — /static/js/agent-knowledge.js. -->
 <html lang="ru" data-vf-loader>
 <head>
@@ -157,45 +169,44 @@
     .empty-box .ic { width: 34px; height: 34px; color: var(--vf-text-4); margin-bottom: 10px; }
     .empty-box h3 { font-size: 15px; color: var(--vf-text-1); margin-bottom: 6px; }
     .empty-box p { font-size: 13px; line-height: 1.5; max-width: 460px; margin: 0 auto 16px; }
+
+    /* ---------- Своя оболочка без общего сайдбара кабинета ----------
+       Страница принадлежит агенту обзвона (см. комментарий в начале файла),
+       поэтому .vf-main здесь на всю ширину (voksiai.css обычно резервирует
+       под <aside class="sidebar"> margin-left: var(--vf-sidebar-w)), а
+       топбар несёт свой логотип вместо общего меню Дашборд/CRM/Настройки. */
+    .akb-main { margin-left: 0; }
+    .akb-logo { display: flex; align-items: center; gap: 8px; flex: none; text-decoration: none; color: inherit; }
+    .akb-logo .wordmark { font-family: "Syne", sans-serif; font-weight: 700; font-size: 15px; color: var(--vf-text-1); }
+    .akb-logo:hover .wordmark { color: var(--vf-accent); }
+    .akb-sep { width: 1px; height: 20px; background: var(--vf-border); flex: none; }
+    .akb-topbar h1 { font-size: 16px; }
+    @media (max-width: 640px) { .akb-sep, .akb-logo .wordmark { display: none; } }
   </style>
 </head>
 <body class="vf">
-<div class="vf-app">
-  <aside class="sidebar vf-sidebar" id="sidebar">
-    <div class="vf-sidebar-head">
-      <a href="/static/dashboard.html" class="vf-logo">
-        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
-        <span class="wordmark">VoksiAI</span>
-      </a>
-      <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
-        <svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg>
-      </button>
-    </div>
-    <nav class="sidebar-nav" id="sidebar-nav"></nav>
-    <div class="sidebar-footer">
-      <a href="/" data-logout class="btn btn-ghost" style="width:100%;justify-content:flex-start" id="logout-button">
-        <svg class="ic"><use href="/static/icons/ui.svg#i-log-out"></use></svg> <span data-i18n="sidebar.logout">Выйти</span>
-      </a>
-    </div>
-  </aside>
-  <script src="/static/js/sidebar.js"></script>
-
-  <main class="vf-main">
-    <header class="vf-topbar">
+<div class="vf-app akb-app">
+  <main class="vf-main akb-main">
+    <header class="vf-topbar akb-topbar">
       <div class="vf-topbar-left">
-        <button class="btn btn-ghost btn-icon mobile-toggle" id="sidebar-toggle" aria-label="Меню" data-i18n-title="sidebar.open_menu">
-          <svg class="ic"><use href="/static/icons/ui.svg#i-menu"></use></svg>
-        </button>
+        <a href="/static/agent.html" class="akb-logo" title="К агенту">
+          <img class="mark-img" src="/static/brand/logo.svg" alt="" width="26" height="26">
+          <span class="wordmark">VoksiAI</span>
+        </a>
+        <span class="akb-sep"></span>
         <h1 data-i18n="akb.page_title">Знания агента</h1>
         <span id="agent-pick"></span>
       </div>
       <div class="vf-topbar-right">
         <a class="btn btn-ghost" id="btn-to-agent" href="/static/agent.html">
-          <svg class="ic"><use href="/static/icons/ui.svg#i-headset"></use></svg><span class="btn-text" data-i18n="akb.to_agent">К агенту</span>
+          <svg class="ic"><use href="/static/icons/ui.svg#i-arrow-left"></use></svg><span class="btn-text" data-i18n="akb.to_agent">К агенту</span>
         </a>
         <button class="btn btn-primary" id="btn-add" type="button">
           <svg class="ic"><use href="/static/icons/ui.svg#i-plus"></use></svg><span class="btn-text" data-i18n="akb.add">Добавить</span>
         </button>
+        <a href="/" data-logout class="btn btn-ghost btn-icon" id="logout-button" title="Выйти" data-i18n-title="sidebar.logout">
+          <svg class="ic"><use href="/static/icons/ui.svg#i-log-out"></use></svg>
+        </a>
       </div>
     </header>
 

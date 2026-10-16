@@ -51,6 +51,7 @@ from backend.models.agent_call import AgentCall
 from backend.models.agent_connector import AgentConnector, CONNECTOR_TOOLKITS
 from backend.services import composio_service
 from backend.services import agent_pause
+from backend.services import agent_voice_context
 from backend.core.config import settings
 from backend.core.dependencies import get_current_user, get_current_user_flexible
 from backend.core.pipeline_stages import AGENT_CONTACT_STAGES, is_valid_stage
@@ -177,53 +178,16 @@ def _resolve_voice_assistant(db: Session, agent: AgentConfig):
 # Функции базы знаний у голосового ассистента (ветка 1610-kb-calls).
 # search_pinecone убран: он искал только по документам в Pinecone и не видел ни
 # пар «вопрос — ответ», ни секций, ни каталога, поэтому агент на звонке уходил
-# в поиск на ≈4 секунды и возвращался ни с чем. Теперь имена те же, что у
-# оркестратора, и реализация общая (agent_knowledge_service).
-_VOICE_KB_FUNCTIONS = {
-    "search_knowledge_base": "Ищет ответ в базе знаний компании: вопросы-ответы, "
-                             "разделы о компании и содержимое документов.",
-    "find_products": "Подбирает позиции каталога по названию, характеристикам и цене, "
-                     "возвращает цену, наличие и id фото.",
-}
-# Старое имя снимаем с карточек, чтобы модель не выбирала между двумя поисками.
-_VOICE_KB_LEGACY = ("search_pinecone",)
-
-
-def _voice_kb_function_names(db: Session, agent) -> set:
-    """
-    Какие функции знаний нужны этому агенту сейчас.
-
-    Лишний инструмент не бесплатен: на каждом ответе модель перебирает весь
-    список, и это одна из причин задержки на звонке. Поэтому каталог
-    подключаем только когда в базе есть позиции, а поиск — когда в базе есть
-    хоть что-то (записи или документы в Pinecone).
-    """
-    names = set()
-    agent_id = getattr(agent, "id", None)
-    if agent_id is None:
-        return names
-    try:
-        from backend.models.agent_knowledge import AgentKnowledgeEntry
-        kinds = {
-            row[0] for row in
-            db.query(AgentKnowledgeEntry.kind)
-            .filter(AgentKnowledgeEntry.agent_config_id == agent_id,
-                    AgentKnowledgeEntry.is_active.is_(True))
-            .distinct().all()
-        }
-    except Exception as e:
-        logger.warning(f"[AGENT-KB] состав базы не прочитан: {e}")
-        kinds = set()
-    if kinds or getattr(agent, "kb_namespace", None):
-        names.add("search_knowledge_base")
-    if "product" in kinds:
-        names.add("find_products")
-    return names
-
-
+# в поиск на ≈4 секунды и возвращался ни с чем. Логика общая с agent_voice_context
+# (её же пересчитывает звонок ЖИВЬЁМ перед стартом — apply_live_kb_functions,
+# не дожидаясь, пока владелец ещё раз тронет базу через кабинет); здесь — тот
+# же пересчёт, но сохраняется в БД, чтобы кабинет сразу показывал актуальный
+# список функций в карточке ассистента.
 def _voice_sync_kb_functions(db: Session, agent, va=None) -> None:
     """
-    Привести список функций голосовой карточки в соответствие с базой знаний.
+    Привести список функций голосовой карточки в соответствие с базой знаний
+    (и записать в БД — для звонка это подстраховка: главный пересчёт живой,
+    см. agent_voice_context.apply_live_kb_functions).
 
     Вызывается после любой правки базы: добавили каталог — появился
     find_products, вычистили базу — поиск снялся (раньше функция оставалась
@@ -233,20 +197,8 @@ def _voice_sync_kb_functions(db: Session, agent, va=None) -> None:
         va = _resolve_voice_assistant(db, agent)
     if va is None:
         return
-    wanted = _voice_kb_function_names(db, agent)
-    drop = set(_VOICE_KB_FUNCTIONS) | set(_VOICE_KB_LEGACY)
-
-    funcs = va.functions
-    if isinstance(funcs, dict) and "enabled_functions" in funcs:
-        names = [n for n in list(funcs.get("enabled_functions", [])) if n not in drop]
-        names.extend(sorted(wanted))
-        va.functions = {"enabled_functions": names}
-    else:
-        items = list(funcs) if isinstance(funcs, list) else []
-        items = [f for f in items
-                 if (f.get("name") if isinstance(f, dict) else f) not in drop]
-        items.extend({"name": n, "description": _VOICE_KB_FUNCTIONS[n]} for n in sorted(wanted))
-        va.functions = items
+    wanted = agent_voice_context.kb_function_names(db, agent)
+    va.functions = agent_voice_context.merge_kb_functions(va.functions, wanted)
     flag_modified(va, "functions")
 
 
