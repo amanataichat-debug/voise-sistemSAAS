@@ -351,7 +351,8 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 
 ## Development Workflow (current)
 
-- Work happens on branch `1610-kb-calls` (знания агента на звонке + объединённая страница знаний и файлов; ответвлена от `1410-kb-v2`, которая содержит КП и базу знаний v2). Commit and push there; no pull requests unless asked.
+- Work happens on branch `1610-voice-latency` (задержка ответа голосового агента: с ~6 с до ~3 с; ответвлена 16.10.2026 от `1610-kb-calls`, где лежат знания агента на звонке и страница «Знания агента»; та ветка — `1410-kb-v2` → `1610-kb-calls`). Commit and push there; no pull requests unless asked.
+- Перед замерами задержки у звонков должен быть рабочий `OPENAI_API_KEY` с положительным балансом: 16.10.2026 на Render стоял ключ (`…h0oA`) из другой организации OpenAI с нулевым балансом, из-за чего звонки на GPT-Live сбрасывались при ответе, а функции агента отвечали ошибкой `no credits remaining`. Ключ нужно держать в организации с автопополнением.
 - The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
 - Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
 - Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.
