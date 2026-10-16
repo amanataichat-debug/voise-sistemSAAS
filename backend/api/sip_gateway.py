@@ -509,7 +509,8 @@ async def sip_media(
             "sip",
             f"Звонок завершён: {'положил трубку абонент/мост' if socket.ended_by_bridge else 'завершил бэкенд'}"
             f", причина {socket.end_reason or '—'}; вход {socket.frames_in} кадров, "
-            f"выход {socket.audio_bytes_out / 16000:.1f} с звука, сбросов очереди {socket.barge_ins}",
+            f"выход {socket.audio_bytes_out / 16000:.1f} с звука, сбросов очереди {socket.barge_ins}"
+            + (f", разрывов звука {socket.underruns} (суммарно {socket.underrun_ms} мс)" if socket.underruns else ""),
             level="error" if socket.handler_error else "info",
             handler_error=str(socket.handler_error) if socket.handler_error else None,
             reply_latencies_s=", ".join(str(x) for x in lat[:30]) if lat else None,

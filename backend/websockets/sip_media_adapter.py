@@ -56,7 +56,15 @@ HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000, "eleven": 24
 INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20, "eleven": 20}
 # Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
 # 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
-OUTBOUND_CUSHION_MS = {"openai": 200}
+OUTBOUND_CUSHION_MS = {"openai": 300}
+# Адаптивный запас: GPT-Live отдаёт звук ровно в темпе речи, запас в буфере моста = терпимость к
+# задержкам сети/цикла событий. Каждый разрыв («тык» в речи) поднимает запас на шаг, до потолка.
+OUTBOUND_CUSHION_STEP_MS = 100
+OUTBOUND_CUSHION_MAX_MS = 700
+# Разрыв короче этого не считаем (шаг планировщика)
+OUTBOUND_UNDERRUN_MIN_SEC = 0.03
+# Пауза длиннее — это не сбой, а пауза между репликами: следующая копит запас заново, разрывом не считается
+OUTBOUND_UNDERRUN_MAX_SEC = 0.5
 # Пауза в потоке аудио, после которой следующая порция считается новой репликой и снова копит запас
 OUTBOUND_IDLE_RESET_SEC = 0.6
 
@@ -153,8 +161,14 @@ class HandlerSocket:
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
         self._cushion_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
+        self._cushion_max_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MAX_MS / 1000)
         self._out_hold = bytearray()
         self._out_streaming = False
+        # Когда мост доиграет уже отданный звук (оценка по реальному времени): если новая порция
+        # приходит позже — мост успел опустеть, в речи был разрыв
+        self._play_end = 0.0
+        self.underruns = 0
+        self.underrun_ms = 0
         self._out_last_at = 0.0
         self._cushion_task: Optional[asyncio.Task] = None
         self._reader_task: Optional[asyncio.Task] = None
@@ -344,6 +358,7 @@ class HandlerSocket:
             self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
             self._out_hold.clear()
             self._out_streaming = False
+            self._play_end = 0.0
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера
             await self._queue.put({"type": "websocket.receive", "text": json.dumps({"type": "audio_playback.stopped"})})
             return
@@ -383,6 +398,12 @@ class HandlerSocket:
         if self._out_streaming and now - self._out_last_at > OUTBOUND_IDLE_RESET_SEC:
             self._out_streaming = False  # пауза в речи: следующая реплика снова копит запас
         self._out_last_at = now
+        if self._out_streaming and self._play_end and now - self._play_end > OUTBOUND_UNDERRUN_MIN_SEC:
+            if now - self._play_end <= OUTBOUND_UNDERRUN_MAX_SEC:
+                self._note_underrun(now - self._play_end)
+            else:
+                self._out_streaming = False
+                self._play_end = 0.0
         if self._out_streaming:
             await self._send_bytes(pcm)
             return
@@ -408,9 +429,33 @@ class HandlerSocket:
         if data:
             await self._send_bytes(data)
 
+    def _note_underrun(self, gap_sec: float) -> None:
+        """Мост опустел посреди реплики: фиксируем разрыв, поднимаем запас и копим его заново."""
+        self.underruns += 1
+        self.underrun_ms += int(gap_sec * 1000)
+        old_ms = int(self._cushion_bytes * 1000 / (PHONE_RATE * 2))
+        new_bytes = min(self._cushion_max_bytes, self._cushion_bytes + int(PHONE_RATE * 2 * OUTBOUND_CUSHION_STEP_MS / 1000))
+        self._cushion_bytes = new_bytes
+        new_ms = int(new_bytes * 1000 / (PHONE_RATE * 2))
+        self._out_streaming = False  # следующий звук сначала копится до запаса
+        self._play_end = 0.0
+        logger.warning(f"[SIP-MEDIA] call {self.call_id}: audio underrun #{self.underruns}, gap {gap_sec * 1000:.0f} ms, "
+                       f"cushion {old_ms} -> {new_ms} ms")
+        try:
+            from backend.websockets.call_log import CallLogRecorder
+            rec = CallLogRecorder.current()
+            if rec is not None:
+                rec.add("audio", f"Разрыв звука {gap_sec * 1000:.0f} мс (запас {old_ms} → {new_ms} мс)",
+                        level="warning", gap_ms=int(gap_sec * 1000), cushion_ms=new_ms)
+        except Exception:
+            pass
+
     async def _send_bytes(self, pcm: bytes) -> None:
         if self.closed:
             return
+        if self._cushion_bytes:
+            now = time.time()
+            self._play_end = max(self._play_end, now) + len(pcm) / (PHONE_RATE * 2)
         try:
             await self.ws.send_bytes(pcm)
         except Exception:
