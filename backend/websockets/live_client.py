@@ -114,6 +114,22 @@ VOICE_DELEGATION_HINT_LEGACY = (
     "такое не нужно."
 )
 
+# Вариант «меньше походов к бэкенду» (LIVE_VOICE_PROMPT_EXTRAS=lean): разговорные, продающие и мнения
+# модель отвечает сама, бэкенд — только за конкретными данными и действиями; «сейчас уточню» — только
+# когда реально делегирует. Прежняя подсказка велела делегировать «сложные рассуждения», и модель
+# уходила к бэкенду на любую реплику вроде «ну не знаю, что лучше».
+VOICE_DELEGATION_HINT_LEAN = (
+    "\n\nПравила голосового слоя. Ты живой собеседник, а не справочник. На обычные вопросы, мнения, "
+    "сравнения, возражения, сомнения и разговорные реплики отвечай сразу, своими словами, без "
+    "«сейчас уточню» и «сейчас проверю». Всё, что есть в твоей инструкции выше (о компании, готовые "
+    "ответы, цены), ты знаешь наизусть. Если собеседник перебивает — сразу замолчи и слушай. "
+    "Передавай бэкенду ТОЛЬКО то, чего нет в твоей инструкции и что нельзя придумать: конкретные "
+    "данные (цена или наличие позиции, статус, сроки по заказу) и действия (запись, отправка, "
+    "календарь, письмо, завершение звонка). Только тогда коротко скажи, что проверяешь, и дождись "
+    "ответа; не говори «уточню», если ничего не передаёшь. Не выдавай действие за свершившееся, "
+    "пока бэкенд его не подтвердил."
+)
+
 # Вариант по шаблону OpenAI (включается LIVE_VOICE_PROMPT_EXTRAS=policies)
 VOICE_DELEGATION_HINT_POLICIES = (
     # Структура — шаблон из гайда OpenAI по промптам GPT-Live (заголовки рекомендовано сохранять).
@@ -278,7 +294,12 @@ class OpenAILiveClient:
             voice_instructions += VOICE_LANGUAGE_HINT
         if "style" in extras:
             voice_instructions += VOICE_STYLE_HINT
-        voice_instructions += VOICE_DELEGATION_HINT_POLICIES if "policies" in extras else VOICE_DELEGATION_HINT_LEGACY
+        if "policies" in extras:
+            voice_instructions += VOICE_DELEGATION_HINT_POLICIES
+        elif "lean" in extras:
+            voice_instructions += VOICE_DELEGATION_HINT_LEAN
+        else:
+            voice_instructions += VOICE_DELEGATION_HINT_LEGACY
         if self.telephony:
             voice_instructions += VOICE_TELEPHONY_HINT
 
