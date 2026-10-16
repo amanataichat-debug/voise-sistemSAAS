@@ -63,6 +63,10 @@ def _ensure_handler() -> None:
         root.addHandler(_handler)
 
 
+def _avg(values: List[int]) -> Optional[int]:
+    return int(sum(values) / len(values)) if values else None
+
+
 class CallLogRecorder:
     def __init__(self, channel: str = "widget") -> None:
         _ensure_handler()
@@ -86,6 +90,9 @@ class CallLogRecorder:
         self.functions = 0
         self.function_errors = 0
         self.latencies_ms: List[int] = []
+        # Те же задержки, разложенные: ответ без функции / ответ после похода за функцией
+        self.latencies_plain_ms: List[int] = []
+        self.latencies_fn_ms: List[int] = []
         self._user_done_at: Optional[float] = None
         self.pause_ms = 0
 
@@ -136,6 +143,11 @@ class CallLogRecorder:
         self.latencies_ms.append(latency)
         return latency
 
+    def add_latency(self, ms: int, with_function: bool = False) -> None:
+        """Задержка, посчитанная снаружи (GPT-Live: конец речи по входящему аудио → первый звук)."""
+        self.latencies_ms.append(ms)
+        (self.latencies_fn_ms if with_function else self.latencies_plain_ms).append(ms)
+
     def since_user_done_ms(self) -> Optional[int]:
         if self._user_done_at is None:
             return None
@@ -155,6 +167,10 @@ class CallLogRecorder:
             "latency_avg_ms": int(sum(lat) / len(lat)) if lat else None,
             "latency_max_ms": max(lat) if lat else None,
             "latencies_ms": lat[:200],
+            "latency_plain_avg_ms": _avg(self.latencies_plain_ms),
+            "latency_fn_avg_ms": _avg(self.latencies_fn_ms),
+            "latency_plain_count": len(self.latencies_plain_ms),
+            "latency_fn_count": len(self.latencies_fn_ms),
             "dropped_events": self.dropped,
         }
 
@@ -244,6 +260,13 @@ def render_text(row) -> str:
     if summary.get("latency_avg_ms") is not None:
         lines.append(f"  задержка ответа: средняя {summary['latency_avg_ms']} мс, "
                      f"максимальная {summary.get('latency_max_ms')} мс")
+        if summary.get("latency_plain_avg_ms") is not None or summary.get("latency_fn_avg_ms") is not None:
+            parts = []
+            if summary.get("latency_plain_avg_ms") is not None:
+                parts.append(f"без функции — {summary['latency_plain_avg_ms']} мс ({summary.get('latency_plain_count', 0)} отв.)")
+            if summary.get("latency_fn_avg_ms") is not None:
+                parts.append(f"с функцией — {summary['latency_fn_avg_ms']} мс ({summary.get('latency_fn_count', 0)} отв.)")
+            lines.append("  из них: " + "; ".join(parts))
     if summary.get("dropped_events"):
         lines.append(f"  (журнал обрезан: пропущено {summary['dropped_events']} событий)")
     lines += ["", "Время от начала  Уровень  Тип            Событие", "-" * 60]

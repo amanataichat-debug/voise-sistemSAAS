@@ -38,6 +38,7 @@ handler_fish, поэтому обслуживает и браузерный ви
 """
 
 import asyncio
+import base64
 import json
 import time
 import traceback
@@ -61,6 +62,7 @@ from backend.websockets.function_calls import (
     execute_and_send_function_result,
 )
 from backend.websockets.live_client import LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
+from backend.websockets.openai_stt_client import _EnergyVAD
 
 logger = get_logger(__name__)
 
@@ -69,6 +71,14 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 # Пауза в потоке output-аудио, после которой считаем, что ассистент договорил
 # (у Live нет события «аудио закончилось»; паузы между фразами короче).
 OUTPUT_IDLE_SEC = 1.0
+# Тишина во входящем аудио, после которой считаем, что клиент договорил (для замера задержки)
+END_OF_SPEECH_SEC = 0.5
+# Модель заговорила, а клиент молчит уже не меньше этого — реплика закончена, ответ быстрый
+MIN_QUIET_SEC = 0.15
+# Задержка длиннее — это не ответ на реплику (клиент ушёл, пауза в разговоре): в замер не берём
+MAX_REPLY_LATENCY_SEC = 30.0
+# Ответ медленнее этого порога пишем в журнал как предупреждение
+SLOW_REPLY_MS = 3000
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 
@@ -83,6 +93,44 @@ def _log(message: str, level: str = "INFO") -> None:
         logger.warning(f"[LIVE] {message}")
     else:
         logger.info(f"[LIVE] {message}")
+
+
+class EndOfSpeechTracker:
+    """
+    Конец реплики клиента по входящему аудио. У GPT-Live нет событий VAD, а фрагменты
+    транскрипта приходят с запаздыванием (уже во время ответа), поэтому «клиент договорил»
+    ищем сами: энергетический детектор речи на потоке микрофона. Конец речи — момент
+    последнего «громкого» кадра, как только после него прошло END_OF_SPEECH_SEC тишины.
+    """
+
+    def __init__(self, rate: int = LIVE_AUDIO_RATE, silence_sec: float = END_OF_SPEECH_SEC) -> None:
+        self._vad = _EnergyVAD(rate)
+        self._silence_sec = silence_sec
+
+    def feed(self, pcm: bytes, now: float) -> Optional[float]:
+        """Кадр с микрофона. Вернуть время реального конца речи, если реплика только что закончилась."""
+        self._vad.feed(pcm, now)
+        return self.poll(now)
+
+    def poll(self, now: float) -> Optional[float]:
+        """Проверка по таймеру: кадры могли перестать приходить, пока клиент молчит."""
+        if self._vad.in_speech and now - self._vad.last_voice_at >= self._silence_sec:
+            self._vad.in_speech = False
+            self._vad.loud_sec = 0.0
+            return self._vad.last_voice_at
+        return None
+
+    def take_pending_end(self, now: float) -> Optional[float]:
+        """
+        Модель начала отвечать раньше, чем прошла пауза END_OF_SPEECH_SEC (быстрый ответ — лучший случай).
+        Если клиент уже замолчал (последний громкий кадр не свежее MIN_QUIET_SEC), забрать конец
+        его речи; если ещё говорит — это перебивание, замер не нужен.
+        """
+        if self._vad.in_speech and now - self._vad.last_voice_at >= MIN_QUIET_SEC:
+            self._vad.in_speech = False
+            self._vad.loud_sec = 0.0
+            return self._vad.last_voice_at
+        return None
 
 
 # ----------------------------------------------------------------------
@@ -231,7 +279,10 @@ class LiveVoiceSession:
         self.call_log = call_log
         self._owns_call_log = bool(call_log) and call_log.channel != "phone"
         self.on_session_end = None  # конец разговора (кошелёк), до сохранения журнала
-        self._user_spoke_at: Optional[float] = None
+        # Замер задержки: конец речи клиента (по входящему аудио) → первый звук ответа
+        self._eos = EndOfSpeechTracker()
+        self._user_done_at: Optional[float] = None
+        self._reply_with_function = False
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -267,25 +318,57 @@ class LiveVoiceSession:
             _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
         if not self.assistant_speaking:
             self.assistant_speaking = True
-            if self.call_log:
-                if self._user_spoke_at is not None:
-                    # Грубая задержка ответа: от последнего фрагмента речи клиента до первого звука
-                    # (у Live нет событий «клиент договорил»; фрагменты транскрипта идут с запаздыванием)
-                    ms = int((time.time() - self._user_spoke_at) * 1000)
-                    self.call_log.latencies_ms.append(ms)
-                    self.call_log.add("tts", f"Ассистент начал говорить через {ms} мс после речи клиента")
-                    self._user_spoke_at = None
-                else:
-                    self.call_log.add("tts", "Ассистент начал говорить")
+            self._record_reply_latency()
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
+
+    def _track_input_audio(self, audio_b64: str) -> None:
+        try:
+            ended = self._eos.feed(base64.b64decode(audio_b64), time.time())
+        except Exception:
+            return
+        if ended is not None:
+            self._on_user_speech_end(ended)
+
+    def _on_user_speech_end(self, ended_at: float) -> None:
+        """Клиент договорил. Если ассистент в этот момент говорит — это перебивание/поддакивание, не вопрос."""
+        if self.assistant_speaking:
+            return
+        self._user_done_at = ended_at
+        self._reply_with_function = False
+
+    def _record_reply_latency(self) -> None:
+        """Ассистент начал говорить: записать задержку от конца речи клиента, если ждали ответа."""
+        done_at, self._user_done_at = self._user_done_at, None
+        if done_at is None:
+            done_at = self._eos.take_pending_end(time.time())
+        if done_at is None:
+            if self.call_log:
+                self.call_log.add("tts", "Ассистент начал говорить")
+            return
+        elapsed = time.time() - done_at
+        with_function = self._reply_with_function
+        self._reply_with_function = False
+        if elapsed > MAX_REPLY_LATENCY_SEC or not self.call_log:
+            return
+        ms = int(elapsed * 1000)
+        self.call_log.add_latency(ms, with_function)
+        self.call_log.add(
+            "latency",
+            f"Первый звук ответа через {ms} мс после конца речи клиента"
+            + (" (после похода за функцией)" if with_function else " (без функции)"),
+            level="warning" if ms >= SLOW_REPLY_MS else "info", ms=ms, with_function=with_function,
+        )
 
     async def _speech_watch(self) -> None:
         """Ассистент «договорил», если аудио не приходило OUTPUT_IDLE_SEC."""
         try:
             while not self.stop_event.is_set():
                 await asyncio.sleep(0.1)
+                ended = self._eos.poll(time.time())
+                if ended is not None:
+                    self._on_user_speech_end(ended)
                 if self.assistant_speaking and time.time() - self._last_audio_at > OUTPUT_IDLE_SEC:
                     self.assistant_speaking = False
                     self._flush_log("assistant")
@@ -339,8 +422,6 @@ class LiveVoiceSession:
             delta = event.get("delta") or event.get("text") or ""
             self.transcript.add(role, delta, event.get("start_ms"), event.get("end_ms"))
             self._log_transcript(role, delta)
-            if role == "user" and delta.strip():
-                self._user_spoke_at = time.time()
             await self.emit({"type": "transcript.delta", "role": role, "delta": delta,
                              "start_ms": event.get("start_ms"), "end_ms": event.get("end_ms")})
             return
@@ -351,6 +432,8 @@ class LiveVoiceSession:
 
         if etype == "session.delegation.created":
             self.delegations += 1
+            if self._user_done_at is not None:
+                self._reply_with_function = True
             d = event.get("delegation") or {}
             _log(f"delegation #{self.delegations} created: id={d.get('id')} target={d.get('target')}")
             if self.call_log:
@@ -426,6 +509,8 @@ class LiveVoiceSession:
                 return
 
         self.function_calls += 1
+        if self._user_done_at is not None:
+            self._reply_with_function = True
         if self.call_log:
             self.call_log.functions += 1
             self.call_log.add("function", f"Вызов функции {normalized}",
@@ -497,6 +582,7 @@ class LiveVoiceSession:
                 if audio and self.client.is_connected:
                     if await self.client.send_audio_b64(audio):
                         self.audio_chunks_in += 1
+                    self._track_input_audio(audio)
                 continue
             if mtype == "ping":
                 await self.emit({"type": "pong"})

@@ -3608,6 +3608,9 @@
         if (sm.latency_avg_ms != null) {
           const slow = sm.latency_max_ms >= 2500;
           chips.push(`<span class="call-log-chip ${slow ? 'warn' : ''}">Задержка ответа: ср. ${sm.latency_avg_ms} мс, макс. ${sm.latency_max_ms} мс</span>`);
+          if (sm.latency_plain_avg_ms != null && sm.latency_fn_avg_ms != null) {
+            chips.push(`<span class="call-log-chip">Без функции: ${sm.latency_plain_avg_ms} мс · с функцией: ${sm.latency_fn_avg_ms} мс</span>`);
+          }
         }
         chips.push(`<span class="call-log-chip">Реплик: ${sm.user_turns || 0} / ${sm.assistant_turns || 0}</span>`);
         if (sm.interruptions) chips.push(`<span class="call-log-chip">Перебиваний: ${sm.interruptions}</span>`);
