@@ -73,6 +73,9 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 OUTPUT_IDLE_SEC = 1.0
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
+# Потолок всплеска для пейсинга входящего аудио (секунды). OpenAI допускает всплески
+# до 5 с на 1.2x реального темпа — держимся ниже порога.
+AUDIO_BURST_CAP = 4.0
 
 # Автозавершение звонка (только телефон): модель сама hangup_call вызывает не всегда
 # (живой звонок 17.10.2026: клиент прощается — линия висит, пока он не положит трубку).
@@ -264,11 +267,15 @@ class LiveVoiceSession:
         self._last_user_voice_at: float = 0.0
         self._farewell_at: Optional[float] = None
         self._hangup_sent = False
-        # Пейсинг входящего аудио: GPT-Live принимает не быстрее 1.2x реального темпа.
-        # Мост копит аудио в очередь, пока сессия подключается, и выгружает пачкой —
-        # без ограничения OpenAI роняет её (input_audio_rate_limit_exceeded) и портит старт.
-        self._audio_send_start: Optional[float] = None
-        self._audio_sent_sec: float = 0.0
+        # Пейсинг входящего аудио (token bucket): GPT-Live принимает не быстрее 1.2x
+        # реального темпа всплесками до ~5 с. Мост копит аудио в очередь при задержке
+        # хендлера (подключение, стопор event loop) и выгружает пачкой — без ограничения
+        # OpenAI роняет её (input_audio_rate_limit_exceeded). Разрешение копится по 1.2x
+        # реального времени, но не больше AUDIO_BURST_CAP секунд, и тратится на каждый
+        # кусок; обгон — кусок пропускаем. Предыдущая (накопительная) схема копила кредит
+        # без потолка, и на длинном звонке всплеск снова пробивал лимит.
+        self._audio_allowance: float = AUDIO_BURST_CAP
+        self._audio_last_ts: Optional[float] = None
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -580,19 +587,20 @@ class LiveVoiceSession:
             if mtype == "input_audio_buffer.append":
                 audio = data.get("audio")
                 if audio and self.client.is_connected:
-                    # Темп входящего аудио держим ≤1.2x реального (лимит GPT-Live) с запасом
-                    # на всплеск 2 с. Пока сессия подключалась, мост накопил аудио в очередь;
-                    # без ограничения оно уходит пачкой, OpenAI роняет её целиком
-                    # (input_audio_rate_limit_exceeded) и начало разговора рвётся. Опережающий
-                    # реальный темп кусок — это устаревшее аудио из очереди, его пропускаем.
+                    # Темп входящего аудио держим ≤1.2x реального (лимит GPT-Live) всплесками
+                    # до AUDIO_BURST_CAP. Устаревшее аудио из очереди (накопилось при задержке
+                    # хендлера) обгоняет темп — такой кусок пропускаем, иначе OpenAI роняет всю
+                    # пачку (input_audio_rate_limit_exceeded) и разговор рвётся.
                     dur = (len(audio) * 3 / 4) / 2 / LIVE_AUDIO_RATE
                     now = time.time()
-                    if self._audio_send_start is None:
-                        self._audio_send_start = now
-                    if self._audio_sent_sec + dur > (now - self._audio_send_start) * 1.2 + 2.0:
+                    if self._audio_last_ts is not None:
+                        self._audio_allowance = min(
+                            AUDIO_BURST_CAP, self._audio_allowance + (now - self._audio_last_ts) * 1.2)
+                    self._audio_last_ts = now
+                    if dur > self._audio_allowance:
                         continue
                     if await self.client.send_audio_b64(audio):
-                        self._audio_sent_sec += dur
+                        self._audio_allowance -= dur
                         self.audio_chunks_in += 1
                 continue
             if mtype == "ping":
