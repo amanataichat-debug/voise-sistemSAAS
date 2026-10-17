@@ -39,6 +39,7 @@ handler_fish, поэтому обслуживает и браузерный ви
 
 import asyncio
 import json
+import re
 import time
 import traceback
 import uuid
@@ -48,6 +49,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from websockets.exceptions import ConnectionClosed
 
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.functions import normalize_function_name
 from backend.models.assistant import AssistantConfig
@@ -71,6 +73,31 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 OUTPUT_IDLE_SEC = 1.0
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
+
+# Автозавершение звонка (только телефон): модель сама hangup_call вызывает не всегда
+# (живой звонок 17.10.2026: клиент прощается — линия висит, пока он не положит трубку).
+# После прощания (клиент или ассистент) и тишины хендлер сам шлёт call.hangup, SIP-адаптер
+# кладёт трубку. Клиент заговорил после прощания — отмена, разговор продолжается.
+AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
+HANGUP_SILENCE_USER_FAREWELL_SEC = 2.5       # клиент попрощался, ассистент ответил, обе стороны молчат
+HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC = 5.0  # попрощался только ассистент
+HANGUP_WAIT_ASSISTANT_REPLY_SEC = 8.0        # клиент попрощался, а ассистент так и не ответил
+_FAREWELL_RE = re.compile(
+    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:дня|вечера)|до\s+встречи|до\s+связи|"
+    r"прощайте|счастливо\s+оставаться|рахмат.*бол|"
+    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|"
+    r"\bgood\s?bye\b|\bbye\b", re.IGNORECASE)
+# «пока» — прощание только в конце короткой реплики («давай, пока»), а не «пока не знаю»
+_PAKA_RE = re.compile(r"(?:^|[\s,.!?])пока[\s.!?…]*$", re.IGNORECASE)
+
+
+def is_farewell(text: str) -> bool:
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    if _FAREWELL_RE.search(t):
+        return True
+    return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
 
 # Активные соединения по ассистенту (для статистики /ws/status)
 active_live_connections: Dict[str, List[Any]] = {}
@@ -232,6 +259,12 @@ class LiveVoiceSession:
         self._owns_call_log = bool(call_log) and call_log.channel != "phone"
         self.on_session_end = None  # конец разговора (кошелёк), до сохранения журнала
         self._user_spoke_at: Optional[float] = None
+        # Автозавершение звонка: последняя речь клиента (не обнуляется), прощание — когда и чьё,
+        # отправлена ли команда «положить трубку»
+        self._last_user_voice_at: float = 0.0
+        self._farewell_at: Optional[float] = None
+        self._farewell_user = False
+        self._hangup_sent = False
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -281,6 +314,49 @@ class LiveVoiceSession:
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
 
+    # ------------------------------------------------------------------ прощание → завершение звонка
+    def _is_phone(self) -> bool:
+        return bool(self.telephony or (self.call_log is not None and self.call_log.channel == "phone"))
+
+    def _scan_farewell(self, role: str, text: str) -> None:
+        if not self._is_phone() or self._hangup_sent:
+            return
+        if is_farewell(text):
+            now = time.time()
+            if self._farewell_at is None and self.call_log:
+                self.call_log.add("session",
+                                  f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
+                                  f"ждём тишины, чтобы завершить звонок")
+            self._farewell_at = now
+            self._farewell_user = self._farewell_user or role == "user"
+
+    def _should_auto_hangup(self, now: float) -> bool:
+        """Прощание было, после него обе стороны молчат достаточно долго."""
+        if not AUTO_HANGUP or self._hangup_sent or self._farewell_at is None or not self._is_phone():
+            return False
+        # клиент заговорил после прощания — разговор продолжается, отменяем
+        if self._last_user_voice_at > self._farewell_at + 2.0:
+            self._farewell_at = None
+            self._farewell_user = False
+            return False
+        # кто-то сейчас говорит (ассистент озвучивает / клиент только что говорил)
+        if self.assistant_speaking or (now - self._last_user_voice_at < 1.0):
+            return False
+        assistant_replied = self._last_audio_at > self._farewell_at
+        if self._farewell_user and not assistant_replied:
+            # клиент попрощался, ассистент ещё не ответил — даём время договорить
+            return now - self._farewell_at >= HANGUP_WAIT_ASSISTANT_REPLY_SEC
+        quiet_since = max(self._last_user_voice_at, self._last_audio_at, self._farewell_at)
+        need = HANGUP_SILENCE_USER_FAREWELL_SEC if self._farewell_user else HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC
+        return now - quiet_since >= need
+
+    async def _auto_hangup(self) -> None:
+        self._hangup_sent = True
+        _log("auto hangup after farewell")
+        if self.call_log:
+            self.call_log.add("session", "Автозавершение звонка: прощание и тишина (модель hangup_call не вызвала)")
+        await self.emit({"type": "call.hangup", "reason": "farewell"})
+
     async def _speech_watch(self) -> None:
         """Ассистент «договорил», если аудио не приходило OUTPUT_IDLE_SEC."""
         try:
@@ -290,6 +366,8 @@ class LiveVoiceSession:
                     self.assistant_speaking = False
                     self._flush_log("assistant")
                     await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
+                if self._should_auto_hangup(time.time()):
+                    await self._auto_hangup()
         except asyncio.CancelledError:
             pass
 
@@ -299,6 +377,8 @@ class LiveVoiceSession:
             self._flush_log(self._log_role)
         self._log_role = role
         self._log_buf[role] += delta
+        if AUTO_HANGUP and delta.strip():
+            self._scan_farewell(role, self._log_buf[role])
 
     def _flush_log(self, role: str) -> None:
         text = " ".join(self._log_buf.get(role, "").split())
@@ -341,6 +421,7 @@ class LiveVoiceSession:
             self._log_transcript(role, delta)
             if role == "user" and delta.strip():
                 self._user_spoke_at = time.time()
+                self._last_user_voice_at = time.time()
             await self.emit({"type": "transcript.delta", "role": role, "delta": delta,
                              "start_ms": event.get("start_ms"), "end_ms": event.get("end_ms")})
             return

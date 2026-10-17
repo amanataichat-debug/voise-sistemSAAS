@@ -356,6 +356,15 @@ class HandlerSocket:
             self._speech_ended.set()
             return
 
+        if mtype == "call.hangup":
+            # Хендлер понял, что разговор закончен (прощание + тишина): кладём трубку, не дожидаясь клиента.
+            # Ассистент к этому моменту уже договорил (хендлер шлёт это только после тишины), поэтому
+            # не ждём речи — сразу завершаем.
+            if not self.hangup_sent and self._hangup_task is None:
+                logger.info(f"[SIP-MEDIA] call {self.call_id}: handler requested hangup ({data.get('reason')})")
+                self._hangup_task = asyncio.create_task(self.hangup("assistant_auto_hangup"))
+            return
+
         if mtype in ("function_call.started", "function_call.executing"):
             if data.get("function") == "hangup_call" and self._hangup_task is None:
                 logger.info(f"[SIP-MEDIA] call {self.call_id}: assistant requested hangup")

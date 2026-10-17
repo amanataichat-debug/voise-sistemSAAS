@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # 16 384 токенов, поэтому лимит 6000 был занижен: на живом звонке 17.10.2026 знания агента
     # (каталог с тестовыми номерами) обрезались (trimmed=да) и не доезжали до голосового слоя.
     LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "16000"))
+    # Автозавершение телефонного звонка после прощания и тишины, если модель сама не вызвала
+    # hangup_call (живой звонок 17.10.2026: клиент прощается, а линия висит, пока он не положит трубку).
+    # 0 / false — выключить. Только телефон, в виджете не действует.
+    LIVE_AUTO_HANGUP: bool = os.getenv("LIVE_AUTO_HANGUP", "1").strip().lower() in ("1", "true", "yes")
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
