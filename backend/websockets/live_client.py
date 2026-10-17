@@ -259,6 +259,22 @@ class OpenAILiveClient:
         if self.tools:
             responses_cfg["tools"] = self.tools
             responses_cfg["tool_choice"] = "auto"
+        # Пакет скорости бэкенда (docs/openai_gpt_live_audio_reference.md 6.7/8.2): режем задержку
+        # ответа. Каждое поле передаём только если задано — пустое значение = значение по умолчанию
+        # модели. Если OpenAI отклонит значение, прилетает error responses_validation_failed, сессия
+        # не рвётся; тогда гасим переменную в Render.
+        effort = getattr(settings, "LIVE_DELEGATION_REASONING_EFFORT", "") or ""
+        if effort:
+            responses_cfg["reasoning"] = {"effort": effort}
+        tier = getattr(settings, "LIVE_DELEGATION_SERVICE_TIER", "") or ""
+        if tier:
+            responses_cfg["service_tier"] = tier
+        verbosity = getattr(settings, "LIVE_DELEGATION_VERBOSITY", "") or ""
+        if verbosity:
+            responses_cfg["text"] = {"verbosity": verbosity}
+        max_out = getattr(settings, "LIVE_DELEGATION_MAX_OUTPUT_TOKENS", "") or ""
+        if str(max_out).isdigit() and int(max_out) >= 16:
+            responses_cfg["max_output_tokens"] = int(max_out)
 
         return {
             "model": LIVE_MODEL,

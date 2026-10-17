@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     # hangup_call (живой звонок 17.10.2026: клиент прощается, а линия висит, пока он не положит трубку).
     # 0 / false — выключить. Только телефон, в виджете не действует.
     LIVE_AUTO_HANGUP: bool = os.getenv("LIVE_AUTO_HANGUP", "1").strip().lower() in ("1", "true", "yes")
+    # Пакет скорости бэкенд-делегирования (docs/openai_gpt_live_audio_reference.md, разделы 6.7/8.2):
+    # напрямую бьёт по задержке ответа 8-11 с, замеренной на живом звонке 17.10.2026.
+    # Пусто = не передавать поле (значение по умолчанию модели). Если OpenAI отклонит значение
+    # (error responses_validation_failed в журнале) — очистить соответствующую переменную в Render.
+    #   service_tier "priority" = Fast mode (до 2.5× быстрее для GPT-5.6); reasoning.effort пониже
+    #   — быстрее «думает»; text.verbosity "low" — короче ответы бэкенда (меньше «лишних слов»);
+    #   max_output_tokens — жёсткий потолок длины ответа бэкенда (пусто = без потолка; минимум 16).
+    LIVE_DELEGATION_SERVICE_TIER: str = os.getenv("LIVE_DELEGATION_SERVICE_TIER", "priority").strip()
+    LIVE_DELEGATION_REASONING_EFFORT: str = os.getenv("LIVE_DELEGATION_REASONING_EFFORT", "low").strip()
+    LIVE_DELEGATION_VERBOSITY: str = os.getenv("LIVE_DELEGATION_VERBOSITY", "low").strip()
+    LIVE_DELEGATION_MAX_OUTPUT_TOKENS: str = os.getenv("LIVE_DELEGATION_MAX_OUTPUT_TOKENS", "").strip()
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
