@@ -58,8 +58,11 @@ class Settings(BaseSettings):
     LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-terra")
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
-    # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду)
-    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "6000"))
+    # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду).
+    # По документации OpenAI (docs/gpt_live_docs_digest.md) instructions GPT-Live допускают до
+    # 16 384 токенов, поэтому лимит 6000 был занижен: на живом звонке 17.10.2026 знания агента
+    # (каталог с тестовыми номерами) обрезались (trimmed=да) и не доезжали до голосового слоя.
+    LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: int = int(os.getenv("LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", "16000"))
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
