@@ -170,10 +170,16 @@ class HangupCallFunction(FunctionBase):
         reason = arguments.get("reason", "unknown")
         farewell_message = arguments.get("farewell_message", "")
         logger.info(f"[HANGUP] reason={reason}, farewell={farewell_message[:80]}")
+        # ВАЖНО про двойное прощание (живой звонок 17.10.2026): у GPT-Live модель озвучивает всё
+        # сама. Если она уже сказала «до свидания» своим ходом, команда «повтори farewell_message»
+        # заставляла её попрощаться дважды подряд. Поэтому НЕ просим повторять прощание: говорим
+        # прощание ОДИН раз, и только если его ещё не было в этом ответе.
         return {
             "success": True,
             "status": "call_ending",
-            "message": "Скажи прощальную фразу (farewell_message) и больше ничего: звонок завершится сразу после неё.",
+            "message": ("Звонок завершается. Если в этом ответе ты ещё НЕ попрощался — скажи одно "
+                        "короткое прощание и больше ничего. Если уже попрощался — НЕ повторяй "
+                        "прощание, ничего больше не говори."),
             "reason": reason,
             "farewell_message": farewell_message,
         }
