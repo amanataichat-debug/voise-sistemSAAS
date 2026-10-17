@@ -79,9 +79,9 @@ _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 # После прощания (клиент или ассистент) и тишины хендлер сам шлёт call.hangup, SIP-адаптер
 # кладёт трубку. Клиент заговорил после прощания — отмена, разговор продолжается.
 AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
-HANGUP_SILENCE_USER_FAREWELL_SEC = 2.5       # клиент попрощался, ассистент ответил, обе стороны молчат
-HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC = 5.0  # попрощался только ассистент
-HANGUP_WAIT_ASSISTANT_REPLY_SEC = 8.0        # клиент попрощался, а ассистент так и не ответил
+# Сколько клиент должен молчать после прощания, чтобы положить трубку. С запасом на то,
+# чтобы ассистент успел договорить своё прощание (играет в реальном темпе ~3 с).
+HANGUP_SILENCE_SEC = 4.0
 _FAREWELL_RE = re.compile(
     r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:дня|вечера)|до\s+встречи|до\s+связи|"
     r"прощайте|счастливо\s+оставаться|рахмат.*бол|"
@@ -263,8 +263,12 @@ class LiveVoiceSession:
         # отправлена ли команда «положить трубку»
         self._last_user_voice_at: float = 0.0
         self._farewell_at: Optional[float] = None
-        self._farewell_user = False
         self._hangup_sent = False
+        # Пейсинг входящего аудио: GPT-Live принимает не быстрее 1.2x реального темпа.
+        # Мост копит аудио в очередь, пока сессия подключается, и выгружает пачкой —
+        # без ограничения OpenAI роняет её (input_audio_rate_limit_exceeded) и портит старт.
+        self._audio_send_start: Optional[float] = None
+        self._audio_sent_sec: float = 0.0
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -322,33 +326,33 @@ class LiveVoiceSession:
         if not self._is_phone() or self._hangup_sent:
             return
         if is_farewell(text):
-            now = time.time()
             if self._farewell_at is None and self.call_log:
                 self.call_log.add("session",
                                   f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
-                                  f"ждём тишины, чтобы завершить звонок")
-            self._farewell_at = now
-            self._farewell_user = self._farewell_user or role == "user"
+                                  f"ждём тишины клиента, чтобы завершить звонок")
+            self._farewell_at = time.time()
 
     def _should_auto_hangup(self, now: float) -> bool:
-        """Прощание было, после него обе стороны молчат достаточно долго."""
+        """
+        Прощание было, после него КЛИЕНТ молчит достаточно долго.
+
+        Тишину считаем только по клиенту (_last_user_voice_at): поток аудио от
+        GPT-Live непрерывный (в паузах — тишина-аудио), поэтому «ассистент молчит»
+        по приходу аудио определить нельзя — именно на этом автосброс не срабатывал
+        17.10.2026. Порог тишины берём с запасом, чтобы ассистент успел договорить
+        своё прощание (оно играет в реальном темпе ~3 с).
+        """
         if not AUTO_HANGUP or self._hangup_sent or self._farewell_at is None or not self._is_phone():
             return False
-        # клиент заговорил после прощания — разговор продолжается, отменяем
-        if self._last_user_voice_at > self._farewell_at + 2.0:
+        # клиент заговорил после прощания — разговор продолжается, отменяем прощание
+        if self._last_user_voice_at > self._farewell_at + 1.5:
             self._farewell_at = None
-            self._farewell_user = False
             return False
-        # кто-то сейчас говорит (ассистент озвучивает / клиент только что говорил)
-        if self.assistant_speaking or (now - self._last_user_voice_at < 1.0):
+        # клиент сейчас говорит (только что был фрагмент речи) — ждём
+        if now - self._last_user_voice_at < 1.0:
             return False
-        assistant_replied = self._last_audio_at > self._farewell_at
-        if self._farewell_user and not assistant_replied:
-            # клиент попрощался, ассистент ещё не ответил — даём время договорить
-            return now - self._farewell_at >= HANGUP_WAIT_ASSISTANT_REPLY_SEC
-        quiet_since = max(self._last_user_voice_at, self._last_audio_at, self._farewell_at)
-        need = HANGUP_SILENCE_USER_FAREWELL_SEC if self._farewell_user else HANGUP_SILENCE_ASSISTANT_FAREWELL_SEC
-        return now - quiet_since >= need
+        quiet_since = max(self._last_user_voice_at, self._farewell_at)
+        return now - quiet_since >= HANGUP_SILENCE_SEC
 
     async def _auto_hangup(self) -> None:
         self._hangup_sent = True
@@ -576,7 +580,19 @@ class LiveVoiceSession:
             if mtype == "input_audio_buffer.append":
                 audio = data.get("audio")
                 if audio and self.client.is_connected:
+                    # Темп входящего аудио держим ≤1.2x реального (лимит GPT-Live) с запасом
+                    # на всплеск 2 с. Пока сессия подключалась, мост накопил аудио в очередь;
+                    # без ограничения оно уходит пачкой, OpenAI роняет её целиком
+                    # (input_audio_rate_limit_exceeded) и начало разговора рвётся. Опережающий
+                    # реальный темп кусок — это устаревшее аудио из очереди, его пропускаем.
+                    dur = (len(audio) * 3 / 4) / 2 / LIVE_AUDIO_RATE
+                    now = time.time()
+                    if self._audio_send_start is None:
+                        self._audio_send_start = now
+                    if self._audio_sent_sec + dur > (now - self._audio_send_start) * 1.2 + 2.0:
+                        continue
                     if await self.client.send_audio_b64(audio):
+                        self._audio_sent_sec += dur
                         self.audio_chunks_in += 1
                 continue
             if mtype == "ping":
