@@ -56,8 +56,8 @@ LIVE_VOICES = [
 LIVE_VOICE_SET = set(LIVE_VOICES)
 LIVE_DEFAULT_VOICE = (getattr(settings, "LIVE_DEFAULT_VOICE", None) or "marin").lower()
 
-# Бэкенд-модель для delegation.responses: gpt-5.6-terra — качество, gpt-5.6-luna — дешевле.
-LIVE_DELEGATION_MODEL = getattr(settings, "LIVE_DELEGATION_MODEL", None) or "gpt-5.6-terra"
+# Бэкенд-модель для delegation.responses: gpt-5.6-luna — быстрая, gpt-5.6-terra — медленнее/умнее.
+LIVE_DELEGATION_MODEL = getattr(settings, "LIVE_DELEGATION_MODEL", None) or "gpt-5.6-luna"
 
 # У голосовой модели ограниченный контекст: длинный промпт ассистента целиком
 # уходит бэкенд-модели, голосовой части отдаём первые N символов.

@@ -54,8 +54,11 @@ class Settings(BaseSettings):
     # OpenAI GPT-Live — голосовой транспорт OpenAI-ассистентов (backend/websockets/live_client.py).
     # Работает на ключе владельца ассистента (user.openai_api_key), как и раньше Realtime.
     LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gpt-live-1")
-    # Бэкенд-модель делегирования (функции, рассуждения): gpt-5.6-terra — качество, gpt-5.6-luna — дешевле
-    LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-terra")
+    # Бэкенд-модель делегирования (функции, рассуждения): gpt-5.6-luna — быстрая (ответ ~в 2 раза
+    # быстрее), gpt-5.6-terra — медленнее, но «умнее». Живой звонок 17.10.2026: с terra задержка
+    # ответа доходила до 11 с и убивала ощущение живого разговора; luna выбрана ради скорости.
+    # Голос и произношение задаёт голосовая модель gpt-live-1 — смена бэкенда их НЕ меняет.
+    LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-luna")
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
     # Сколько символов промпта ассистента получает голосовой слой (полный промпт идёт бэкенду).
