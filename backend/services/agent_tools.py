@@ -234,6 +234,73 @@ CHECK_PHONE_OPERATOR_TOOL = {
 }
 
 
+# Единый инструмент «отправить коммерческое предложение» (ветка 1810-anri-sales-logic).
+# Критичная цепочка после звонка: собрать КП → отправить в тот же канал →
+# зафиксировать в CRM → поставить напоминание через 60–90 мин → уведомить
+# владельца. 4–5 отдельных шагов легко забыть по одному; эта тулза делает их
+# атомарно. Если нужны тонкие настройки (своё расписание напоминания, другой
+# канал) — Анри может перейти на пару create_document + send_file + create_agent_task.
+SEND_PROPOSAL_TOOL = {
+    "type": "function",
+    "name": "send_proposal",
+    "description": (
+        "Собрать коммерческое предложение (КП) PDF, отправить его клиенту в "
+        "последний активный канал, записать в CRM, поставить напоминание через "
+        "60–90 минут и уведомить владельца — одной командой. "
+        "ВАЖНО: вызывай эту тулзу после звонка (PostCall), когда клиент не "
+        "отказался явно, или когда в чате владелец просит отправить КП конкретному "
+        "клиенту. В поле `content` клади готовый текст КП в markdown (разделы, "
+        "выгоды, следующий шаг, контакты). Платформа сама соберёт PDF фирменного "
+        "стиля агента, выберет канал по последней активности клиента, запланирует "
+        "напоминание и напишет владельцу одной строкой."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта"},
+            "content": {
+                "type": "string",
+                "description": (
+                    "Текст КП в markdown. Пиши под нишу клиента и его запрос (ниша, "
+                    "объём, что именно его интересует — входящие/исходящие/всё). "
+                    "Не копируй весь прайс, оставь только релевантные блоки."
+                ),
+            },
+            "title": {
+                "type": "string",
+                "description": "Заголовок документа (например «Коммерческое предложение Voksy AI для [компании]»)",
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["telegram", "whatsapp", "instagram"],
+                "description": (
+                    "В какой канал отправить КП. По умолчанию — последний активный у клиента."
+                ),
+            },
+            "caption": {
+                "type": "string",
+                "description": "Короткая подпись к файлу (например «[Имя], как договаривались — коммерческое»)",
+            },
+            "reminder_text": {
+                "type": "string",
+                "description": (
+                    "Текст напоминания через 60–90 минут. По умолчанию: «[Имя], получилось глянуть "
+                    "предложение? Что скажете?»"
+                ),
+            },
+            "owner_note": {
+                "type": "string",
+                "description": (
+                    "Короткая строка владельцу в Telegram (одна фраза с итогом). По умолчанию "
+                    "соберётся из данных контакта."
+                ),
+            },
+        },
+        "required": ["agent_contact_id", "content"],
+    },
+}
+
+
 # Уведомление владельцу в Telegram-бота агента. Доступно и в чате/входящих
 # сообщениях, и в post-call — чтобы оркестратор мог сигналить о важных событиях
 # (горячий лид, жалоба, вопрос без ответа) сразу, а не только после звонка.
@@ -1773,6 +1840,220 @@ async def fn_schedule_telegram_message(args: dict, user_id: str, agent_config, d
 
 
 # ============================================================================
+# send_proposal: атомарная цепочка «собрать КП → отправить → зафиксировать →
+# напомнить → сказать владельцу». Ветка 1810-anri-sales-logic.
+# ============================================================================
+
+import random as _random
+
+
+def _detect_recent_channel(db: Session, agent_config_id: str, agent_contact_id) -> Optional[str]:
+    """Какой канал клиент использовал последним. Возвращает telegram/whatsapp/instagram или None.
+
+    Берём MAX(created_at) по каждому из трёх треходов и выбираем самый свежий.
+    Если ни одного сообщения нет (контакт заведён вручную владельцем) — None.
+    """
+    from backend.models.agent_telegram_account import AgentTelegramMessage
+    from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    from backend.models.agent_instagram import AgentInstagramMessage
+
+    best_channel = None
+    best_ts = None
+    for channel, model in (
+        ("telegram", AgentTelegramMessage),
+        ("whatsapp", AgentWhatsAppMessage),
+        ("instagram", AgentInstagramMessage),
+    ):
+        row = db.query(model.created_at).filter(
+            model.agent_contact_id == agent_contact_id,
+        ).order_by(model.created_at.desc()).first()
+        if row is None or row[0] is None:
+            continue
+        ts = row[0]
+        if best_ts is None or ts > best_ts:
+            best_ts = ts
+            best_channel = channel
+    return best_channel
+
+
+async def _send_proposal_file(channel: str, args: dict, user_id: str, agent_config, db: Session) -> dict:
+    """Отправить готовый PDF КП в выбранный канал. Прокси над *_send_file."""
+    if channel == "telegram":
+        return await fn_telegram_send_file(args, user_id, agent_config, db)
+    if channel == "whatsapp":
+        return await fn_whatsapp_send_file(args, user_id, agent_config, db)
+    if channel == "instagram":
+        return await fn_instagram_send_file(args, user_id, agent_config, db)
+    return {"ok": False, "error": f"Неподдерживаемый канал: {channel}"}
+
+
+def _proposal_reminder_delay_min() -> int:
+    """Случайный интервал 60–90 минут, чтобы напоминание выглядело живым."""
+    return _random.randint(60, 90)
+
+
+def _clamp_reminder_to_working_hours(delay_min: int) -> int:
+    """Если `сейчас + delay` вылетает за 20:00 Бишкек — ставим на завтра 10:00.
+
+    Возвращает новое число минут от текущего момента. Внутри окна — исходный delay.
+    """
+    from backend.core.timezone_utils import BISHKEK
+    now_local = datetime.now(BISHKEK)
+    target_local = now_local + timedelta(minutes=delay_min)
+    if 9 <= target_local.hour < 20:
+        return delay_min
+    # За окном: ставим на следующее 10:00 Бишкек
+    tomorrow_10 = (now_local + timedelta(days=1 if now_local.hour >= 20 else 0)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+    if tomorrow_10 <= now_local:
+        tomorrow_10 = tomorrow_10 + timedelta(days=1)
+    delta_min = int((tomorrow_10 - now_local).total_seconds() // 60)
+    return max(delta_min, 10)
+
+
+async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """
+    Атомарная цепочка после звонка: собрать КП → отправить → записать → напомнить → владельцу.
+    Пять шагов в одной тулзе, чтобы ни один не потерялся.
+    """
+    agent_contact_id = args.get("agent_contact_id")
+    content = (args.get("content") or "").strip()
+    if not agent_contact_id or not content:
+        return {"ok": False, "error": "agent_contact_id и content обязательны"}
+
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if contact is None:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    client_name = (contact.name or contact.phone or "клиент").strip()
+    niche = ""
+    if isinstance(contact.memory, dict):
+        niche = (contact.memory.get("niche") or contact.memory.get("summary") or "").strip()
+
+    # Канал — явный > автодетект > telegram как минимально болезненный fallback.
+    channel = (args.get("channel") or "").strip().lower() or None
+    if channel not in ("telegram", "whatsapp", "instagram"):
+        channel = _detect_recent_channel(db, agent_config_id, agent_contact_id) or "telegram"
+
+    # 1. Собираем КП (всё та же fn_create_document — фирстиль, обложка, таблицы).
+    title = (args.get("title") or f"Коммерческое предложение Voksy AI для {client_name}").strip()
+    doc_result = await fn_create_document(
+        {
+            "agent_contact_id": agent_contact_id,
+            "title": title,
+            "content": content,
+            "format": "pdf",
+            "kind_label": "Коммерческое предложение",
+            "cover": True,
+        },
+        user_id, agent_config_id, db,
+    )
+    if not doc_result.get("ok"):
+        return {"ok": False, "step": "create_document", "error": doc_result.get("error")}
+    file_id = doc_result["file_id"]
+
+    # 2. Отправка в выбранный канал.
+    caption = (args.get("caption") or f"{client_name}, как договаривались — коммерческое предложение.").strip()
+    send_args = {
+        "agent_contact_id": agent_contact_id,
+        "file_id": file_id,
+        "caption": caption,
+    }
+    send_result = await _send_proposal_file(channel, send_args, user_id, agent_config, db)
+    if not send_result.get("ok"):
+        return {
+            "ok": False, "step": "send_file", "channel": channel,
+            "file_id": file_id, "error": send_result.get("error"),
+            "hint": "КП собрано, но отправить в канал не удалось. Попробуй другой канал вручную.",
+        }
+
+    # 3. Записываем в memory: подстадия voronki + метки для дальнейших сценариев.
+    memory = dict(contact.memory or {})
+    memory["funnel_stage"] = "proposal_sent"
+    memory["proposal_sent_at"] = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    memory["proposal_file_id"] = file_id
+    memory["proposal_channel"] = channel
+    contact.memory = memory
+    flag_modified(contact, "memory")
+    db.commit()
+
+    # 4. Напоминание 60–90 мин, с переносом на 10:00 следующего дня, если за окно.
+    reminder_delay = _clamp_reminder_to_working_hours(_proposal_reminder_delay_min())
+    reminder_text = (args.get("reminder_text") or "").strip() or (
+        f"Напомни {client_name}: «Получилось глянуть предложение? Что скажете?» "
+        "Будь коротким, без давления. Если клиент ответил сомнениями — отработай возражение."
+    )
+    reminder_scheduled = False
+    reminder_result = None
+    reminder_note = None
+    tg_account_ok = (
+        telegram_user_service.is_configured()
+        and telegram_user_service.account_connected(db, agent_config_id)
+    )
+    if tg_account_ok and channel == "telegram":
+        reminder_result = await fn_create_agent_task(
+            {
+                "agent_contact_id": agent_contact_id,
+                "delay_minutes": reminder_delay,
+                "title": "Напоминание после КП",
+                "notes": reminder_text,
+            },
+            user_id, agent_config_id, db, channel="telegram",
+        )
+        reminder_scheduled = reminder_result.get("ok", False)
+    if not reminder_scheduled:
+        reminder_note = (
+            f"Напоминание не поставлено автоматически (канал={channel}, telegram-аккаунт "
+            f"{'подключён' if tg_account_ok else 'не подключён'}). "
+            f"Поставь вручную через {reminder_delay} мин: create_agent_task(channel='telegram', notes=...)."
+        )
+
+    # 5. Короткая строка владельцу в Telegram-бота.
+    owner_note = (args.get("owner_note") or "").strip()
+    if not owner_note:
+        parts = [client_name]
+        if niche:
+            parts.append(niche)
+        parts.append(f"КП отправлено ({channel})")
+        if reminder_scheduled:
+            parts.append(f"напомню через {reminder_delay} мин")
+        else:
+            parts.append("напоминание не запланировано")
+        owner_note = " | ".join(parts)
+    try:
+        await fn_send_telegram_notification({"message": owner_note}, agent_config, db)
+        owner_notified = True
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] send_proposal: owner notify failed: {e}")
+        owner_notified = False
+
+    logger.info(
+        f"[AGENT-TOOLS] send_proposal → contact={agent_contact_id} channel={channel} "
+        f"file={file_id} reminder_in_min={reminder_delay if reminder_scheduled else 'manual'}"
+    )
+    return {
+        "ok": True,
+        "file_id": file_id,
+        "channel": channel,
+        "memory_stage": "proposal_sent",
+        "reminder_scheduled": reminder_scheduled,
+        "reminder_delay_minutes": reminder_delay,
+        "reminder_task_id": (reminder_result or {}).get("task_id") if reminder_scheduled else None,
+        "reminder_note": reminder_note,
+        "owner_notified": owner_notified,
+    }
+
+
+# ============================================================================
 # TOOL DEFINITIONS FOR GPT-5 RESPONSES API
 # ============================================================================
 
@@ -2209,6 +2490,7 @@ AGENT_CHAT_TOOLS = [
         },
     },
     CHECK_PHONE_OPERATOR_TOOL,
+    SEND_PROPOSAL_TOOL,
 ]
 
 
@@ -2277,6 +2559,7 @@ AGENT_POSTCALL_TOOLS = [
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
     CHECK_PHONE_OPERATOR_TOOL,
+    SEND_PROPOSAL_TOOL,
 ]
 
 
@@ -4004,6 +4287,8 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
         elif tool_name == "check_phone_operator":
             result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "send_proposal":
+            result = await fn_send_proposal(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "pause_agent_for_contact":
