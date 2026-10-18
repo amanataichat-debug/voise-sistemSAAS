@@ -136,6 +136,16 @@ class TaskScheduler:
             ).all()
 
             total = len(agent_tasks) + len(regular_tasks)
+
+            # Прогрев клиентов за 25–35 мин до запланированных звонков
+            # (ветка 1810-anri-sales-logic). Делается на каждом тике, независимо
+            # от того, есть ли сейчас задачи «на выполнение».
+            try:
+                from backend.services import call_warmup
+                await call_warmup.scan_and_send(db)
+            except Exception as e:
+                logger.warning(f"[TASK-SCHEDULER] call warmup scan failed: {e}")
+
             if not total:
                 logger.debug(f"[TASK-SCHEDULER] No pending tasks at {now}")
                 return
