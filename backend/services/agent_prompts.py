@@ -274,7 +274,7 @@ def build_time_block(round_to_minutes: int = 5) -> str:
 
 def build_knowledge_base_block(agent_config, db=None) -> str:
     """
-    Знания агента в промпте (ветка 1410-kb-v2).
+    Знания агента в промпте (ветка 1410-kb-v2, прайс добавлен 1810-anri-sales-logic).
 
     Частые знания (пары «вопрос — ответ», короткие секции) вшиваются прямо
     сюда: агент отвечает на них сразу, без вызова функции. Это главный рычаг
@@ -282,8 +282,15 @@ def build_knowledge_base_block(agent_config, db=None) -> str:
     промпте бесплатно по времени и не меняет стоимость звонка (минуты
     тарифицируются фиксированно).
 
-    Ниже — подсказка про поиск: он нужен только для документов и каталога,
-    то есть для того, что в промпт не помещается.
+    Прайс каталога (название + цена, для маленьких каталогов ещё и описание)
+    тоже вшивается — чтобы оркестратор знал про товары и услуги напрямую, а не
+    только через find_products. Раньше в чате оркестратор получал только
+    подсказку «есть каталог, вызывай find_products» и часто не догадывался её
+    вызвать — клиент получал «не знаю». На звонке прайс был в промпте всегда
+    (agent_voice_context.build_price_block). Теперь чат пользуется тем же
+    блоком, и агент одинаково видит каталог в обоих контекстах.
+
+    Ниже — подсказка про поиск документов, которых в промпт не поместить.
     """
     parts = []
 
@@ -297,6 +304,7 @@ def build_knowledge_base_block(agent_config, db=None) -> str:
             logger.warning(f"[KB] блок знаний не собран: {e}")
 
     has_catalog = False
+    price_block = ""
     if db is not None and getattr(agent_config, "id", None):
         try:
             from backend.models.agent_knowledge import AgentKnowledgeEntry
@@ -307,16 +315,26 @@ def build_knowledge_base_block(agent_config, db=None) -> str:
             ).first() is not None
         except Exception:
             has_catalog = False
+        if has_catalog:
+            try:
+                from backend.services.agent_voice_context import build_price_block
+                price_block = build_price_block(db, agent_config.id) or ""
+            except Exception as e:
+                logger.warning(f"[KB] прайс для чата не собран: {e}")
+
+    if price_block:
+        parts.append(price_block)
 
     if has_catalog:
         parts.append("""
 
 # КАТАЛОГ ТОВАРОВ
-У владельца есть каталог позиций с ценами и фото. Когда клиент спрашивает про
-товар, модель, наличие или цену — вызывай find_products (можно с ограничением
-по цене). В ответе придут позиции с ценой и id фото: отправь фото клиенту
-(whatsapp_send_file / telegram_send_file / instagram_send_file) вместе с
-коротким описанием. Не выдумывай товары, которых нет в каталоге.""")
+Прайс выше ты уже знаешь — название и цену называй сразу, не ходи в поиск.
+Если клиент просит картинку, фото, подробные характеристики или вариант по
+определённой цене («что до 5000?») — вызови find_products: вернутся id фото
+и описания. Фото отправляй клиенту соответствующей тулзой
+(whatsapp_send_file / telegram_send_file / instagram_send_file) с коротким
+комментарием. Не выдумывай товары, которых нет в каталоге.""")
 
     if getattr(agent_config, "kb_namespace", None) or parts:
         kb_name = getattr(agent_config, "kb_name", None) or "база знаний компании"
