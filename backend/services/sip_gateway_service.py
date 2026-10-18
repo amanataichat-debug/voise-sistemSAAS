@@ -542,6 +542,70 @@ class SipGatewayService:
         return " ".join(parts)
 
     @staticmethod
+    def inbound_recent_contacts_hint(call: SipCall, agent, db: Session) -> str:
+        """Подсказка голосовому агенту для входящего с незнакомого номера.
+
+        Ветка 1810-anri-sales-logic. Если клиент звонит с номера, который не
+        совпадает ни с одним контактом агента, но за последний час другие
+        контакты писали или звонили — высока вероятность, что он кто-то из
+        них с другого номера. Передаём короткий список имён + ниш, чтобы
+        после «как вас зовут?» модель быстро состыковала.
+
+        Возвращает пустую строку, если непонятно, что подсказывать (нет
+        agent, нет caller, такой номер уже привязан к известному контакту).
+        """
+        if call.direction != "inbound" or agent is None or not call.caller:
+            return ""
+        phone = call.caller
+        phone_tail = phone[-9:] if len(phone) >= 9 else phone
+        try:
+            known = (
+                db.query(AgentContact.id)
+                .filter(
+                    AgentContact.agent_config_id == agent.id,
+                    AgentContact.phone.like(f"%{phone_tail}"),
+                )
+                .first()
+            )
+            if known is not None:
+                return ""
+            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            recent = (
+                db.query(AgentContact)
+                .filter(
+                    AgentContact.agent_config_id == agent.id,
+                    AgentContact.updated_at >= hour_ago,
+                )
+                .order_by(AgentContact.updated_at.desc())
+                .limit(5)
+                .all()
+            )
+        except Exception as e:
+            logger.warning(f"[SIP] inbound_recent_contacts_hint failed: {e}")
+            return ""
+        if not recent:
+            return ""
+        lines = [
+            "Клиент звонит с незнакомого номера. Поздоровайся коротко как с новым, "
+            "уточни имя и чем занимается. За последний час нам писали или звонили:"
+        ]
+        for c in recent:
+            name = (c.name or "—").strip()
+            niche = ""
+            if isinstance(c.memory, dict):
+                niche = str(c.memory.get("niche") or c.memory.get("industry") or "").strip()
+            marker = f"— {name}"
+            if niche:
+                marker += f" ({niche})"
+            lines.append(marker)
+        lines.append(
+            "Если имя или ниша совпали — найди этого контакта в CRM "
+            "(search_contact_by_phone по его прежнему номеру из списка) и продолжай "
+            "с места переписки: клиент уже знает контекст."
+        )
+        return "\n".join(lines)
+
+    @staticmethod
     def resolve_greeting(call: SipCall, number: Optional[SipPhoneNumber], assistant,
                          db: Optional[Session] = None) -> Optional[str]:
         """
