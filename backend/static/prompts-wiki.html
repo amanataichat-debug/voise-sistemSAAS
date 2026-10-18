@@ -853,7 +853,7 @@ ID ассистента для обратных звонков: 550e8400-e29b-41
 вызови create_crm_voicyfy_task:
 - phone: [номер клиента из caller_number]
 - assistant_id: 550e8400-e29b-41d4-a716-446655440000
-- scheduled_time: [время по МСК]
+- scheduled_time: [время по Бишкеку]
 - title: "Обратный звонок по запросу клиента"
 - custom_greeting: "Добрый день! Вы просили нас перезвонить."</pre></div>
             </div>
@@ -861,7 +861,7 @@ ID ассистента для обратных звонков: 550e8400-e29b-41
         </div>
 
         <div class="content-section">
-          <div class="section-header"><h2 class="section-title"><i class="fas fa-clock"></i> Форматы времени (всё МСК)</h2></div>
+          <div class="section-header"><h2 class="section-title"><i class="fas fa-clock"></i> Форматы времени (всё Бишкек)</h2></div>
           <div class="section-body" style="padding:0">
             <table class="wiki-table">
               <thead><tr><th>Формат</th><th>Пример</th></tr></thead>
@@ -1157,17 +1157,17 @@ Pinecone namespace: company_docs
           <div class="section-body">
             <div class="code-block">
               <div class="code-header"><span class="code-lang">Системный промпт</span><button class="copy-btn" onclick="copyCode(this,'code-time-prompt')"><i class="fas fa-copy"></i> Копировать</button></div>
-              <div class="code-content"><pre id="code-time-prompt">Ты — менеджер по записи. Работаешь в часовом поясе МСК.
+              <div class="code-content"><pre id="code-time-prompt">Ты — менеджер по записи. Работаешь в часовом поясе Бишкек (UTC+6).
 
 Когда нужно знать текущее время (для записи, планирования):
 Вызови get_current_time:
-- timezone: "Europe/Moscow"
+- timezone: "Asia/Bishkek"
 - format: "full"
 
 Используй время для:
 - Подтверждения записи с точной датой и временем
 - Расчёта "через X часов" от текущего момента
-- Проверки рабочих часов (9:00–18:00 МСК)</pre></div>
+- Проверки рабочих часов (9:00–18:00 Бишкек)</pre></div>
             </div>
           </div>
         </div>
@@ -1178,6 +1178,7 @@ Pinecone namespace: company_docs
             <table class="wiki-table">
               <thead><tr><th>timezone</th><th>Город</th></tr></thead>
               <tbody>
+                <tr><td><code>Asia/Bishkek</code></td><td>Бишкек (UTC+6)</td></tr>
                 <tr><td><code>Europe/Moscow</code></td><td>Москва (МСК, UTC+3)</td></tr>
                 <tr><td><code>Europe/London</code></td><td>Лондон (GMT/BST)</td></tr>
                 <tr><td><code>America/New_York</code></td><td>Нью-Йорк (EST/EDT)</td></tr>

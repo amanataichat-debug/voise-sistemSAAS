@@ -30,14 +30,19 @@ from backend.models.agent_call import AgentCall
 from backend.services.user_service import UserService
 from backend.services.subscription_service import SubscriptionService
 
-# Московская таймзона для границ "дня" в аналитике кредитов (UTC+3, без DST)
-MSK = timezone(timedelta(hours=3))
+# Бишкекская таймзона для границ "дня" в аналитике кредитов (UTC+6, без DST)
+BISHKEK = timezone(timedelta(hours=6))
+MSK = BISHKEK  # алиас для обратной совместимости (имя оставлено, семантика — Бишкек)
 
 
 def _msk_day_start_utc(now: Optional[datetime] = None) -> datetime:
-    """Начало текущего московского дня в UTC (aware)."""
-    now_msk = (now or datetime.now(timezone.utc)).astimezone(MSK)
-    return now_msk.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    """Начало текущего бишкекского дня в UTC (aware).
+
+    Имя функции оставлено для обратной совместимости; возвращает границу
+    дня в Бишкеке (ветка 1810-anri-sales-logic).
+    """
+    local_now = (now or datetime.now(timezone.utc)).astimezone(BISHKEK)
+    return local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -1054,7 +1059,7 @@ async def get_agent_usage(
 ):
     """
     Использование оркестратора по пользователям: расход кредитов за
-    сегодня (МСК) / 7 / 30 дней, баланс, агенты, контакты, звонки,
+    сегодня (Бишкек) / 7 / 30 дней, баланс, агенты, контакты, звонки,
     последняя активность. Admin only.
     """
     try:
@@ -1231,7 +1236,7 @@ async def get_user_agent_usage(
 ):
     """
     Детальная аналитика оркестратора по одному пользователю: дневная серия
-    расхода за 30 дней (МСК), разбивка по типам операций и моделям,
+    расхода за 30 дней (Бишкек), разбивка по типам операций и моделям,
     статистика по каждому агенту, воронка контактов, последние транзакции.
     Admin only.
     """
@@ -1241,7 +1246,7 @@ async def get_user_agent_usage(
         now = datetime.now(timezone.utc)
         today_start = _msk_day_start_utc(now)
         d7_start = now - timedelta(days=7)
-        # Дневная серия: 30 полных МСК-дней, включая сегодняшний
+        # Дневная серия: 30 полных бишкекских дней, включая сегодняшний
         series_start = today_start - timedelta(days=29)
         series_start_naive = series_start.replace(tzinfo=None)
 

@@ -112,7 +112,7 @@ function renderImportPreview(d){
     <div style="font-size:12.5px;line-height:1.8;margin-bottom:12px">
       ${d.errors && d.errors.length ? `<div style="color:var(--red,#dc2626)"><i class="fas fa-circle-exclamation"></i> Ошибок: <b>${d.errors.length}</b></div>` : ''}
       ${d.duplicates && d.duplicates.length ? `<div style="color:var(--amber,#d97706)"><i class="fas fa-clone"></i> Дубликатов (будут пропущены): <b>${d.duplicates.length}</b></div>` : ''}
-      ${d.shifted_to_working_hours ? `<div style="color:var(--blue)"><i class="far fa-clock"></i> Задач сдвинуто на след. рабочий день: <b>${d.shifted_to_working_hours}</b> (рабочие часы по МСК)</div>` : ''}
+      ${d.shifted_to_working_hours ? `<div style="color:var(--blue)"><i class="far fa-clock"></i> Задач сдвинуто на след. рабочий день: <b>${d.shifted_to_working_hours}</b> (рабочие часы по Бишкеку)</div>` : ''}
       <div style="${enough?'':'color:var(--red,#dc2626)'}"><i class="fas fa-coins"></i> Примерная стоимость: <b>${fmtN(d.credits_required_estimate)}</b> кредитов из ${fmtN(d.credits_available)}</div>
     </div>
     ${!enough ? `<div style="background:var(--amber-light);padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">Недостаточно кредитов. <a href="#" onclick="closeImportModal();openCreditsModal();return false" style="color:var(--blue);font-weight:600">Пополнить баланс →</a></div>` : ''}
@@ -152,7 +152,7 @@ function onImportTasksToggle(){
   const hint = document.getElementById('import-tasks-hint');
   if(!hint) return;
   hint.innerHTML = on
-    ? 'Агент запланирует звонок по каждому контакту: возьмёт «Задачу» и «Когда звонить» из файла, а если их нет — назначит время сам (в рабочие часы по МСК).'
+    ? 'Агент запланирует звонок по каждому контакту: возьмёт «Задачу» и «Когда звонить» из файла, а если их нет — назначит время сам (в рабочие часы по Бишкеку).'
     : 'Контакты просто сохранятся в базу. Задачи создадутся только для строк, где в файле заполнены «Задача» и/или «Когда звонить» — их ставим напрямую, без оркестратора. По остальным звонки не планируются, пока вы не поставите задачи вручную или через чат с оркестратором.';
 }
 

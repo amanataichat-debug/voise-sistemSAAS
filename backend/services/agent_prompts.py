@@ -4,7 +4,7 @@
 """
 
 from backend.core.logging import get_logger
-from backend.core.timezone_utils import now_msk, now_utc
+from backend.core.timezone_utils import now_bishkek, now_utc
 
 logger = get_logger(__name__)
 
@@ -192,7 +192,7 @@ ORCHESTRATOR_PROMPT_BASE = """Ты — AI-оркестратор системы 
   напоминание о встрече). Не выдумывай номер — он берётся из контакта/настроек агента.
 
 ## После действия
-- Кратко подтверди результат конкретными данными (имя, время по МСК, статус) и,
+- Кратко подтверди результат конкретными данными (имя, время по Бишкеку, статус) и,
   если уместно, предложи следующий логичный шаг.
 """
 
@@ -229,9 +229,10 @@ VOICE_AGENT_PROMPT_BASE = """Ты — голосовой AI-агент. Пере
 
 def build_time_block(round_to_minutes: int = 5) -> str:
     """
-    Динамический блок с текущим временем (МСК + UTC) и правилами работы со
-    временем. Пересобирается при каждом вызове, поэтому время всегда актуально.
-    Сервер хранит время в UTC, а пользователю показываем МСК (UTC+3).
+    Динамический блок с текущим временем (Бишкек + UTC) и правилами работы
+    со временем. Пересобирается при каждом вызове, поэтому время всегда
+    актуально. Сервер хранит время в UTC, а пользователю показываем
+    Бишкек (UTC+6).
 
     round_to_minutes > 1 — время округляется ВНИЗ с этим шагом: кэширование
     промпта у провайдеров (OpenRouter → OpenAI/DeepSeek/Anthropic/Gemini)
@@ -243,31 +244,31 @@ def build_time_block(round_to_minutes: int = 5) -> str:
     Использовать, когда блок приклеивается к user-сообщению и кэш префикса
     не страдает.
     """
-    msk = now_msk()
+    local = now_bishkek()
     utc = now_utc()
     rounding_note = ""
     if round_to_minutes and round_to_minutes > 1:
-        msk = msk.replace(minute=msk.minute - msk.minute % round_to_minutes, second=0, microsecond=0)
+        local = local.replace(minute=local.minute - local.minute % round_to_minutes, second=0, microsecond=0)
         utc = utc.replace(minute=utc.minute - utc.minute % round_to_minutes, second=0, microsecond=0)
         rounding_note = f", время округлено вниз с шагом {round_to_minutes} мин"
-    weekday = _WEEKDAYS_RU[msk.weekday()]
+    weekday = _WEEKDAYS_RU[local.weekday()]
     return f"""
 
 # ТЕКУЩЕЕ ВРЕМЯ
-- Сейчас по МСК (UTC+3): {msk.strftime('%Y-%m-%d %H:%M')} ({weekday}){rounding_note}
+- Сейчас по Бишкеку (UTC+6): {local.strftime('%Y-%m-%d %H:%M')} ({weekday}){rounding_note}
 - Сейчас по UTC: {utc.strftime('%Y-%m-%d %H:%M')}
 
 # ПРАВИЛА РАБОТЫ СО ВРЕМЕНЕМ (ОБЯЗАТЕЛЬНО)
-- Пользователю ВСЕГДА показывай дату и время по МСК и помечай «(МСК)».
+- Пользователю ВСЕГДА показывай дату и время по Бишкеку и помечай «(Бишкек)».
 - Tools и история звонков возвращают время в UTC. Перед тем как назвать его
-  пользователю — переведи в МСК (прибавь 3 часа) и укажи «(МСК)».
-- Время, которое называет пользователь, — это всегда МСК.
+  пользователю — переведи в бишкекское (прибавь 6 часов) и укажи «(Бишкек)».
+- Время, которое называет пользователь, — это всегда Бишкек (UTC+6).
 - Если просят позвонить «через N минут/часов» — передавай в create_agent_task
   параметр delay_minutes (сервер сам вычислит точное время от текущего
   момента). scheduled_at в этом случае НЕ передавай и НЕ вычисляй сам.
 - Абсолютное время («завтра в 14:00») — поле scheduled_at в UTC, в формате
-  ISO 8601 с «Z» (например 2026-06-09T12:00:00Z). Чтобы получить UTC из
-  названного пользователем времени по МСК — вычти 3 часа.
+  ISO 8601 с «Z» (например 2026-06-09T08:00:00Z для 14:00 Бишкек). Чтобы
+  получить UTC из названного пользователем времени — вычти 6 часов.
 - Никогда не показывай пользователю «сырое» UTC-время."""
 
 

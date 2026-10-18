@@ -174,7 +174,7 @@ async function loadTasks(){
       const tm = parts ? parts.time : '';
       const rel = relTime(t.scheduled_time);
       return `<div class="task-item">
-        <div class="task-date" title="${tm} МСК"><div class="d">${day}</div><div class="m">${mon}</div><div class="t">${tm}</div></div>
+        <div class="task-date" title="${tm} Бишкек"><div class="d">${day}</div><div class="m">${mon}</div><div class="t">${tm}</div></div>
         <div class="task-body">
           <div class="task-title">${esc(t.title||'Задача')} ${taskChannelBadge(t.channel)}</div>
           ${t.description?`<div class="task-desc">${esc(t.description)}</div>`:''}

@@ -215,13 +215,13 @@ def build_conversation_timeline(
 
     Сливает звонки (channel='call'), SMS и Telegram в один список, сортирует по
     времени, берёт последние max_events в окне days_window дней и форматирует с
-    метками МСК. exclude_call_id — исключить конкретный AgentCall (текущее
+    метками Бишкек. exclude_call_id — исключить конкретный AgentCall (текущее
     событие в PostCall или показанный отдельно последний звонок в PreCall).
     max_events/days_window по умолчанию — константы фаз; чат-тулза
     get_contact_timeline может запросить более широкое окно по требованию
     владельца. Пустая строка, если истории нет. Best-effort — не роняет промпт.
     """
-    from backend.core.timezone_utils import utc_to_msk
+    from backend.core.timezone_utils import utc_to_bishkek as utc_to_msk  # имя оставлено ради читаемости
     try:
         if not agent_contact:
             return ""
@@ -243,7 +243,7 @@ def build_conversation_timeline(
             icon = _CHANNEL_ICON.get(channel, "•")
             lines.append(f"[{tm}] {icon} {text}")
         return (
-            "\n\nХРОНОЛОГИЯ ОБЩЕНИЯ С КОНТАКТОМ (все каналы, время МСК, старые → новые):\n"
+            "\n\nХРОНОЛОГИЯ ОБЩЕНИЯ С КОНТАКТОМ (все каналы, время Бишкек, старые → новые):\n"
             + "\n".join(lines)
         )
     except Exception as e:

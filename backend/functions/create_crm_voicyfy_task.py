@@ -19,22 +19,23 @@ from backend.db.session import SessionLocal
 
 logger = get_logger(__name__)
 
-# МСК = UTC+3, вычитаем при сохранении
-MSK_OFFSET = timedelta(hours=3)
+# Бишкек = UTC+6, вычитаем при сохранении
+BISHKEK_OFFSET = timedelta(hours=6)
 
 
 def parse_time_string(time_str: str) -> datetime:
     """
     Умный парсинг времени из строки.
     Поддерживает: "через X часов", "завтра в 15:00", "сегодня в 18:00", ISO формат, "DD.MM.YYYY HH:MM"
-    
-    ВАЖНО: Все времена интерпретируются как МСК и конвертируются в UTC (вычитаем 3 часа).
+
+    ВАЖНО: Все времена интерпретируются как Бишкек (UTC+6) и конвертируются
+    в UTC (вычитаем 6 часов).
     """
     time_str = str(time_str).strip()
-    
+
     now_utc = datetime.utcnow()
-    now_msk = now_utc + MSK_OFFSET  # Текущее время в МСК для сравнений
-    
+    now_local = now_utc + BISHKEK_OFFSET  # Текущее время в Бишкеке для сравнений
+
     # Пытаемся как ISO формат (предполагаем уже UTC)
     try:
         scheduled_time = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
@@ -43,9 +44,9 @@ def parse_time_string(time_str: str) -> datetime:
         return scheduled_time
     except:
         pass
-    
+
     time_str_lower = time_str.lower()
-    
+
     # "через X часов/минут" — относительное время (не требует конвертации)
     if "через" in time_str_lower or "cherez" in time_str_lower:
         if "час" in time_str_lower or "hour" in time_str_lower:
@@ -58,37 +59,37 @@ def parse_time_string(time_str: str) -> datetime:
             if match:
                 minutes = int(match.group(1))
                 return now_utc + timedelta(minutes=minutes)
-    
-    # "завтра в ЧЧ:ММ" — МСК → UTC
+
+    # "завтра в ЧЧ:ММ" — Бишкек → UTC
     if "завтра" in time_str_lower or "tomorrow" in time_str_lower:
         match = re.search(r'(\d{1,2}):(\d{2})', time_str)
         if match:
             hour = int(match.group(1))
             minute = int(match.group(2))
-            tomorrow_msk = now_msk + timedelta(days=1)
-            scheduled_msk = tomorrow_msk.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            scheduled_utc = scheduled_msk - MSK_OFFSET
-            logger.info(f"[CRM_TASK] Parsed 'завтра в {hour}:{minute:02d}' МСК → UTC: {scheduled_utc}")
+            tomorrow_local = now_local + timedelta(days=1)
+            scheduled_local = tomorrow_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            scheduled_utc = scheduled_local - BISHKEK_OFFSET
+            logger.info(f"[CRM_TASK] Parsed 'завтра в {hour}:{minute:02d}' Бишкек → UTC: {scheduled_utc}")
             return scheduled_utc
         else:
-            tomorrow_msk = now_msk + timedelta(days=1)
-            scheduled_msk = tomorrow_msk.replace(hour=10, minute=0, second=0, microsecond=0)
-            return scheduled_msk - MSK_OFFSET
-    
-    # "сегодня в ЧЧ:ММ" — МСК → UTC
+            tomorrow_local = now_local + timedelta(days=1)
+            scheduled_local = tomorrow_local.replace(hour=10, minute=0, second=0, microsecond=0)
+            return scheduled_local - BISHKEK_OFFSET
+
+    # "сегодня в ЧЧ:ММ" — Бишкек → UTC
     if "сегодня" in time_str_lower or "today" in time_str_lower:
         match = re.search(r'(\d{1,2}):(\d{2})', time_str)
         if match:
             hour = int(match.group(1))
             minute = int(match.group(2))
-            scheduled_msk = now_msk.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if scheduled_msk <= now_msk:
-                scheduled_msk = scheduled_msk + timedelta(days=1)
-            scheduled_utc = scheduled_msk - MSK_OFFSET
-            logger.info(f"[CRM_TASK] Parsed 'сегодня в {hour}:{minute:02d}' МСК → UTC: {scheduled_utc}")
+            scheduled_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if scheduled_local <= now_local:
+                scheduled_local = scheduled_local + timedelta(days=1)
+            scheduled_utc = scheduled_local - BISHKEK_OFFSET
+            logger.info(f"[CRM_TASK] Parsed 'сегодня в {hour}:{minute:02d}' Бишкек → UTC: {scheduled_utc}")
             return scheduled_utc
-    
-    # Формат "DD.MM.YYYY HH:MM" — МСК → UTC
+
+    # Формат "DD.MM.YYYY HH:MM" — Бишкек → UTC
     match = re.search(r'(\d{1,2})\.(\d{1,2})\.(\d{4})\s*(?:в\s*)?(\d{1,2}):(\d{2})', time_str)
     if match:
         day = int(match.group(1))
@@ -96,24 +97,24 @@ def parse_time_string(time_str: str) -> datetime:
         year = int(match.group(3))
         hour = int(match.group(4))
         minute = int(match.group(5))
-        
-        scheduled_msk = datetime(year, month, day, hour, minute, 0, 0)
-        scheduled_utc = scheduled_msk - MSK_OFFSET
-        logger.info(f"[CRM_TASK] Parsed '{day:02d}.{month:02d}.{year} {hour}:{minute:02d}' МСК → UTC: {scheduled_utc}")
+
+        scheduled_local = datetime(year, month, day, hour, minute, 0, 0)
+        scheduled_utc = scheduled_local - BISHKEK_OFFSET
+        logger.info(f"[CRM_TASK] Parsed '{day:02d}.{month:02d}.{year} {hour}:{minute:02d}' Бишкек → UTC: {scheduled_utc}")
         return scheduled_utc
-    
-    # Просто время "15:00" — МСК → UTC
+
+    # Просто время "15:00" — Бишкек → UTC
     match = re.search(r'^(\d{1,2}):(\d{2})$', time_str.strip())
     if match:
         hour = int(match.group(1))
         minute = int(match.group(2))
-        scheduled_msk = now_msk.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if scheduled_msk <= now_msk:
-            scheduled_msk = scheduled_msk + timedelta(days=1)
-        scheduled_utc = scheduled_msk - MSK_OFFSET
-        logger.info(f"[CRM_TASK] Parsed '{hour}:{minute:02d}' МСК → UTC: {scheduled_utc}")
+        scheduled_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if scheduled_local <= now_local:
+            scheduled_local = scheduled_local + timedelta(days=1)
+        scheduled_utc = scheduled_local - BISHKEK_OFFSET
+        logger.info(f"[CRM_TASK] Parsed '{hour}:{minute:02d}' Бишкек → UTC: {scheduled_utc}")
         return scheduled_utc
-    
+
     # Fallback - через 1 час
     logger.warning(f"[CRM_TASK] Could not parse time string '{time_str}', using default: +1 hour")
     return now_utc + timedelta(hours=1)
@@ -150,7 +151,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
                 },
                 "scheduled_time": {
                     "type": "string",
-                    "description": "Время звонка по МСК. Поддерживаются форматы: 'завтра в 15:00', 'через 2 часа', 'сегодня в 18:00', '2024-12-05T15:00:00', '15:30'"
+                    "description": "Время звонка по Бишкеку. Поддерживаются форматы: 'завтра в 15:00', 'через 2 часа', 'сегодня в 18:00', '2024-12-05T15:00:00', '15:30'"
                 },
                 "title": {
                     "type": "string",
@@ -189,7 +190,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
 <ul>
     <li><code>phone</code> — номер телефона клиента (обязательно)</li>
     <li><code>assistant_id</code> — UUID ассистента для звонка (обязательно)</li>
-    <li><code>scheduled_time</code> — когда позвонить по МСК (обязательно)</li>
+    <li><code>scheduled_time</code> — когда позвонить по Бишкеку (обязательно)</li>
     <li><code>title</code> — название задачи (обязательно)</li>
     <li><code>description</code> — описание, контекст (опционально)</li>
     <li><code>custom_greeting</code> — первая фраза при звонке (опционально)</li>
@@ -223,15 +224,15 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
   "custom_greeting": "Здравствуйте! Напоминаю о нашей завтрашней встрече"
 }</pre>
 
-<p><strong>Форматы времени scheduled_time (всё по МСК):</strong></p>
+<p><strong>Форматы времени scheduled_time (всё по Бишкеку):</strong></p>
 <ul>
-    <li><code>"08.12.2025 09:40"</code> — конкретная дата и время МСК</li>
+    <li><code>"08.12.2025 09:40"</code> — конкретная дата и время Бишкек</li>
     <li><code>"08.12.2025 в 09:40"</code> — то же самое с предлогом</li>
-    <li><code>"завтра в 15:00"</code> — завтра в 15:00 МСК</li>
+    <li><code>"завтра в 15:00"</code> — завтра в 15:00 Бишкек</li>
     <li><code>"через 2 часа"</code> — через N часов от текущего момента</li>
     <li><code>"через 30 минут"</code> — через N минут</li>
-    <li><code>"сегодня в 18:00"</code> — сегодня в 18:00 МСК</li>
-    <li><code>"15:30"</code> — сегодня/завтра в 15:30 МСК</li>
+    <li><code>"сегодня в 18:00"</code> — сегодня в 18:00 Бишкек</li>
+    <li><code>"15:30"</code> — сегодня/завтра в 15:30 Бишкек</li>
     <li><code>"2024-12-05T15:00:00"</code> — точная дата и время (ISO формат, UTC)</li>
 </ul>
 
@@ -249,7 +250,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
     <li>Нормализуется номер телефона (убираются префиксы, пробелы, тире)</li>
     <li>Ищется существующий контакт по телефону</li>
     <li>Если контакт не найден — создается новый автоматически</li>
-    <li>Парсится время звонка (МСК → UTC)</li>
+    <li>Парсится время звонка (Бишкек → UTC)</li>
     <li>Создается задача в CRM с указанным ассистентом</li>
     <li>Задача отображается в UI менеджера</li>
 </ol>
@@ -273,7 +274,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
 <p><strong>⚠️ Важно:</strong></p>
 <ul>
     <li>Время должно быть в будущем (нельзя поставить задачу на прошлое время)</li>
-    <li>Все времена интерпретируются по МСК (UTC+3)</li>
+    <li>Все времена интерпретируются по Бишкеку (UTC+6)</li>
     <li>assistant_id должен существовать в системе</li>
     <li>Один номер телефона = один контакт (автоматически объединяются)</li>
     <li>Задача отображается в CRM UI для менеджера</li>
@@ -307,7 +308,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
         1. Получает user_id из ассистента
         2. Нормализует телефон
         3. Находит или создает контакт
-        4. Парсит время (МСК → UTC: вычитаем 3 часа)
+        4. Парсит время (Бишкек → UTC: вычитаем 6 часов)
         5. Создает задачу
         """
         db = SessionLocal()
@@ -393,7 +394,7 @@ class CreateCrmVoicyfyTaskFunction(FunctionBase):
                 # Обновляем время последнего взаимодействия
                 contact.last_interaction = datetime.utcnow()
             
-            # 5. Парсим время (МСК → UTC: вычитаем 3 часа)
+            # 5. Парсим время (Бишкек → UTC: вычитаем 6 часов)
             try:
                 scheduled_time = parse_time_string(scheduled_time_str)
                 logger.info(f"[CRM_TASK] ⏰ Parsed: '{scheduled_time_str}' → UTC: {scheduled_time}")

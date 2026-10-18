@@ -35,8 +35,8 @@ class GetCurrentTimeFunction(FunctionBase):
             "properties": {
                 "timezone": {
                     "type": "string",
-                    "description": "Часовой пояс (например: 'Europe/Moscow', 'America/New_York', 'UTC')",
-                    "default": "UTC"
+                    "description": "Часовой пояс (например: 'Asia/Bishkek', 'Europe/Moscow', 'America/New_York', 'UTC')",
+                    "default": "Asia/Bishkek"
                 },
                 "format": {
                     "type": "string",
@@ -67,12 +67,13 @@ class GetCurrentTimeFunction(FunctionBase):
 </ul>
 
 <p><strong>Примеры:</strong></p>
-<pre>{"timezone": "Europe/Moscow", "format": "full"}
+<pre>{"timezone": "Asia/Bishkek", "format": "full"}
 {"timezone": "America/New_York", "format": "time"}
 {"format": "date"}</pre>
 
 <p><strong>Популярные часовые пояса:</strong></p>
 <ul>
+    <li>Asia/Bishkek — Бишкек (UTC+6)</li>
     <li>Europe/Moscow — Москва (MSK)</li>
     <li>Europe/London — Лондон (GMT)</li>
     <li>America/New_York — Нью-Йорк (EST)</li>
@@ -87,7 +88,7 @@ class GetCurrentTimeFunction(FunctionBase):
         Возвращает текущее время и дату.
         """
         try:
-            timezone_str = arguments.get("timezone", "UTC")
+            timezone_str = arguments.get("timezone", "Asia/Bishkek")
             format_type = arguments.get("format", "full")
             
             # Получаем текущее время в указанном часовом поясе
@@ -96,7 +97,7 @@ class GetCurrentTimeFunction(FunctionBase):
             except pytz.exceptions.UnknownTimeZoneError:
                 return {
                     "error": f"Неизвестный часовой пояс: {timezone_str}",
-                    "suggestion": "Используйте формат 'Europe/Moscow', 'America/New_York', 'UTC'"
+                    "suggestion": "Используйте формат 'Asia/Bishkek', 'Europe/Moscow', 'America/New_York', 'UTC'"
                 }
             
             now = datetime.now(tz)

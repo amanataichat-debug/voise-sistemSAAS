@@ -2242,7 +2242,7 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
                 scheduled_at = snooze_until
                 logger.info(f"[AGENT-TOOLS] Contact {agent_contact_id} snoozed until {snooze_until}, shifting task to it")
 
-    # Унифицированная проверка рабочих часов агента (МСК) — переносим звонок
+    # Унифицированная проверка рабочих часов агента (Бишкек) — переносим звонок
     # на ближайший рабочий день, если время выпадает на нерабочие часы.
     # Telegram-сообщения рабочими часами не ограничены.
     if agent_config is not None and not is_telegram:

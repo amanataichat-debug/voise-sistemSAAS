@@ -44,7 +44,7 @@ logger = get_logger(__name__)
 VOXIMPLANT_API_URL = "https://api.voximplant.com/platform_api/StartScenarios/"
 
 # Timezone по умолчанию
-DEFAULT_TIMEZONE = "Europe/Moscow"
+DEFAULT_TIMEZONE = "Asia/Bishkek"
 
 # Провайдеры со своим исходящим сценарием. Каскаду нужна цепочка
 # vox-turn-taking + outbound_cascade, Fish — прокси синтеза (/ws/fish/tts/…);

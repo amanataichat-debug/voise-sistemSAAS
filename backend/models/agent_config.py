@@ -125,7 +125,7 @@ class AgentConfig(Base):
     # Флаг — TRUE для агентов созданных после v3.0
     uses_hardcoded_prompt = Column(Boolean, default=False, nullable=False)
 
-    # Рабочие часы (UTC+3)
+    # Рабочие часы (Бишкек, UTC+6)
     working_hours_start = Column(Integer, default=9, nullable=False)
     working_hours_end = Column(Integer, default=21, nullable=False)
 

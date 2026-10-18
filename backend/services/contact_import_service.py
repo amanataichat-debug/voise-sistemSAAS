@@ -6,11 +6,11 @@ Contact Import Service — массовый импорт контактов аг
 - Детект заголовков по словарю синонимов; fallback — парсинг по индексу колонки.
 - Нормализация и валидация телефонов (phonenumbers).
 - Распределение времени звонков параллельно по 5 (группы по 30 секунд).
-- Проверка рабочих часов агента (МСК) с переносом на следующий рабочий день.
+- Проверка рабочих часов агента (Бишкек) с переносом на следующий рабочий день.
 - Временное хранилище распарсенного превью (JSON-файл с TTL 30 минут).
 - Генерация шаблона xlsx и файла с ошибками.
 
-Время: ввод из xlsx/csv трактуется как МСК, в БД пишется UTC.
+Время: ввод из xlsx/csv трактуется как Бишкек (UTC+6), в БД пишется UTC.
 """
 
 import io
@@ -126,19 +126,19 @@ def normalize_phone(raw: Any) -> Tuple[Optional[str], Optional[str]]:
 
 
 # ============================================================================
-# ПАРСИНГ ДАТЫ (МСК)
+# ПАРСИНГ ДАТЫ (Бишкек)
 # ============================================================================
 
 def _parse_datetime_msk(raw: Any) -> Tuple[Optional[datetime], Optional[str]]:
     """
-    Парсит значение времени (трактуется как МСК) → naive datetime в МСК.
+    Парсит значение времени (трактуется как Бишкек) → naive datetime в Бишкек.
     Возвращает (datetime|None, error|None). Пустое значение → (None, None).
     """
     if raw is None:
         return None, None
 
     if isinstance(raw, datetime):
-        # openpyxl вернул datetime — трактуем как МСК (naive)
+        # openpyxl вернул datetime — трактуем как Бишкек (naive)
         return raw.replace(tzinfo=None), None
 
     s = str(raw).strip()
@@ -311,7 +311,7 @@ def parse_file(filename: str, content: bytes) -> Dict[str, Any]:
             "notes": s("notes"),
             "task_title": s("task_title"),
             "task_description": s("task_description"),
-            "scheduled_dt": scheduled_dt,  # naive(МСК) | aware | None
+            "scheduled_dt": scheduled_dt,  # naive(Бишкек) | aware | None
         })
 
     return {"rows": rows, "errors": errors, "total_rows": total}
@@ -342,9 +342,9 @@ def assign_schedule(
     """
     Проставляет каждому row 'scheduled_time_utc' (ISO-строка) и 'shifted' (bool).
 
-    - Если в строке указано время — конвертируем МСК → UTC.
+    - Если в строке указано время — конвертируем Бишкек → UTC.
     - Иначе — дефолтное распределение по группам.
-    - Затем приводим к рабочим часам агента (МСК), считаем перенесённые.
+    - Затем приводим к рабочим часам агента (Бишкек), считаем перенесённые.
 
     Возвращает количество строк, сдвинутых из-за рабочих часов.
     """
@@ -356,7 +356,7 @@ def assign_schedule(
     for idx, row in enumerate(rows):
         dt = row.get("scheduled_dt")
         if dt is not None:
-            # Явно указанное время: naive → МСК; aware → как есть в UTC
+            # Явно указанное время: naive → Бишкек; aware → как есть в UTC
             if dt.tzinfo is None:
                 target_utc = msk_to_utc(dt)
             else:
@@ -458,7 +458,7 @@ def generate_template_xlsx() -> bytes:
     headers = [
         "Имя", "Телефон", "Компания", "Должность",
         "Информация о клиенте", "Задача (заголовок)",
-        "Описание задачи", "Когда звонить (МСК)",
+        "Описание задачи", "Когда звонить (Бишкек)",
     ]
     ws.append(headers)
 
