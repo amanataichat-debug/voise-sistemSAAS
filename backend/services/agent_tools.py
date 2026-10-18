@@ -198,6 +198,42 @@ SEND_WEBHOOK_TOOL = {
 }
 
 
+# Проверка оператора по номеру клиента. Телефонный транк пропускает исходящие
+# ТОЛЬКО на номера оператора O! (национальные префиксы 050 и 070). Остальные
+# операторы (Beeline, Megacom) мы не наберём — агент должен это узнать ДО того,
+# как пообещает клиенту звонок, иначе получится «сейчас позвоню → не позвоним».
+# Доступно и в чате, и в post-call: решение «звонить/не звонить» принимается в
+# обоих контекстах.
+CHECK_PHONE_OPERATOR_TOOL = {
+    "type": "function",
+    "name": "check_phone_operator",
+    "description": (
+        "Проверить, можно ли позвонить клиенту с нашей телефонии. "
+        "Мы умеем звонить ТОЛЬКО на оператор O! (префиксы 050 и 070 в "
+        "кыргызском национальном формате; международно 996 500 и 996 700). "
+        "ОБЯЗАТЕЛЬНО зови этот инструмент ПРЕЖДЕ ЧЕМ пообещать клиенту «сейчас "
+        "позвоню» или назначить звонок: Beeline/Megacom мы не наберём. "
+        "Ответ: can_call=true (O! — можно звонить), can_call=false (другой "
+        "оператор — не звонить, предложить переписку или входящий звонок на "
+        "наш номер) с полем operator и note с объяснением."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "phone": {
+                "type": "string",
+                "description": "Номер клиента в любом формате: +996…, 996…, 0…, с пробелами или без",
+            },
+            "agent_contact_id": {
+                "type": "string",
+                "description": "UUID контакта агента, если номер нужно взять из карточки (альтернатива phone)",
+            },
+        },
+        "required": [],
+    },
+}
+
+
 # Уведомление владельцу в Telegram-бота агента. Доступно и в чате/входящих
 # сообщениях, и в post-call — чтобы оркестратор мог сигналить о важных событиях
 # (горячий лид, жалоба, вопрос без ответа) сразу, а не только после звонка.
@@ -2094,6 +2130,7 @@ AGENT_CHAT_TOOLS = [
             },
         },
     },
+    CHECK_PHONE_OPERATOR_TOOL,
 ]
 
 
@@ -2161,6 +2198,7 @@ AGENT_POSTCALL_TOOLS = [
     FIND_PRODUCTS_TOOL,
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
+    CHECK_PHONE_OPERATOR_TOOL,
 ]
 
 
@@ -2252,6 +2290,33 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
             agent_config.working_hours_end,
         )
         scheduled_at = adjusted
+
+    # Guard-ы для звонков (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек +
+    # «не больше одного звонка в день на клиента». Если время вне окна —
+    # сдвинем на ближайший момент внутри; если оператор не наш или сегодня уже
+    # есть звонок — отдадим Анри понятный отказ с hint.
+    if channel == "call":
+        guard_contact = snooze_contact if snooze_contact is not None else db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id
+        ).first()
+        if guard_contact is None:
+            return {"ok": False, "error": "Contact not found"}
+        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True)
+        if not guard.get("ok"):
+            return guard
+        scheduled_at = guard["scheduled_utc"]
+        # Второй звонок в тот же бишкекский день (помимо текущего) не ставим.
+        from backend.core.timezone_utils import BISHKEK as _BISHKEK
+        local_date = scheduled_at.astimezone(_BISHKEK).date()
+        if _already_scheduled_call_today(agent_contact_id, local_date, db):
+            return {
+                "ok": False,
+                "error": "already_scheduled_today",
+                "hint": (
+                    f"На {local_date.isoformat()} этому клиенту уже запланирован звонок "
+                    "— не ставим второй в тот же день."
+                ),
+            }
 
     # Cancel only exact-time duplicates for this contact (same contact + same
     # scheduled_time + same channel). Tasks scheduled for other dates/times are
@@ -3201,8 +3266,180 @@ async def fn_bulk_schedule_calls(args: dict, user_id: str, agent_config_id: str,
     return {"ok": True, "scheduled_count": len(scheduled), "tasks": scheduled}
 
 
+# Защиты звонков (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек + лимит
+# «один звонок в день на клиента». До этой ветки оркестратор мог обещать звонок
+# в полночь / на Beeline / повторный после «сброса» — но дотрагивался до правила
+# только через промпт. Теперь любое планирование звонка проходит через этот
+# shared-guard (чтобы в trigger_immediate_call и в create_agent_task(channel=call)
+# логика была единой).
+CALL_WINDOW_START_HOUR = 9   # 09:00 Бишкек
+CALL_WINDOW_END_HOUR = 20    # 20:00 Бишкек (включительно до :59)
+
+
+def _bishkek_now() -> datetime:
+    from backend.core.timezone_utils import now_bishkek
+    return now_bishkek()
+
+
+def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True) -> dict:
+    """
+    Проверить, можно ли ставить звонок на этот момент.
+
+    Возвращает dict:
+      - {"ok": True, "scheduled_utc": datetime}  — звонок разрешён (возможно, со сдвигом)
+      - {"ok": False, "error": "...", "hint": "..."}  — отказ с объяснением
+
+    Правила (все — Бишкек):
+      * оператор клиента — O! (050 / 070);
+      * окно 09:00–20:00 по Бишкеку;
+      * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
+      * существующая запланированная «call»-задача на этого контакта на сегодня
+        тоже считается — не создаём второй звонок.
+
+    allow_shift=True: если время вне окна, предложим ближайший момент внутри окна
+    и вернём его в scheduled_utc. False — просто ошибка «вне окна».
+    """
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number
+    from backend.core.timezone_utils import BISHKEK
+
+    # --- оператор ---
+    phone = (contact.phone or "").strip() if contact else ""
+    if not phone:
+        return {"ok": False, "error": "no_phone", "hint": "У контакта не задан номер телефона."}
+    digits = normalize_sip_number(phone)
+    if not is_o_number(digits):
+        return {
+            "ok": False,
+            "error": "other_operator",
+            "hint": (
+                "Этот номер не на операторе O! (мы звоним только на префиксы 050 и 070). "
+                "Предложи клиенту переписку или входящий звонок на наш номер."
+            ),
+            "phone": phone,
+        }
+
+    # --- окно 09–20 Бишкек ---
+    if scheduled_utc.tzinfo is None:
+        scheduled_utc = scheduled_utc.replace(tzinfo=timezone.utc)
+    local = scheduled_utc.astimezone(BISHKEK)
+    if local.hour < CALL_WINDOW_START_HOUR or local.hour >= CALL_WINDOW_END_HOUR:
+        if not allow_shift:
+            return {
+                "ok": False,
+                "error": "outside_window",
+                "hint": f"Звонки только с {CALL_WINDOW_START_HOUR:02d}:00 до {CALL_WINDOW_END_HOUR:02d}:00 Бишкек.",
+                "scheduled_local": local.strftime("%Y-%m-%d %H:%M"),
+            }
+        # Сдвигаем на ближайший момент внутри окна (сегодня 09:00 если ночь до
+        # окна, иначе завтра 09:00 если уже после окна).
+        if local.hour < CALL_WINDOW_START_HOUR:
+            shifted_local = local.replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        else:
+            shifted_local = (local + timedelta(days=1)).replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        scheduled_utc = shifted_local.astimezone(timezone.utc)
+        local = shifted_local
+
+    # --- один звонок в день ---
+    today_local = local.date()
+    last_called = contact.last_called_at
+    if last_called is not None:
+        if last_called.tzinfo is None:
+            last_called = last_called.replace(tzinfo=timezone.utc)
+        if last_called.astimezone(BISHKEK).date() == today_local:
+            return {
+                "ok": False,
+                "error": "already_called_today",
+                "hint": (
+                    "Сегодня этому клиенту уже звонили — не больше одного звонка в день. "
+                    f"Ближайший разрешённый звонок: завтра с {CALL_WINDOW_START_HOUR:02d}:00 Бишкек."
+                ),
+                "last_called_at": last_called.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M"),
+            }
+
+    # Запланированная задача-звонок на этот день уже есть?
+    # Проверяем через SQLAlchemy у вызывающего — здесь только контракт результата.
+    return {"ok": True, "scheduled_utc": scheduled_utc}
+
+
+def _already_scheduled_call_today(contact_id, local_date, db: Session) -> bool:
+    """Есть ли уже SCHEDULED call-задача для контакта на эту бишкекскую дату."""
+    from backend.core.timezone_utils import BISHKEK
+    start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=BISHKEK)
+    end_local = start_local + timedelta(days=1)
+    return db.query(Task.id).filter(
+        Task.agent_contact_id == contact_id,
+        Task.status == TaskStatus.SCHEDULED,
+        Task.is_agent_task == True,
+        Task.channel == "call",
+        Task.scheduled_time >= start_local.astimezone(timezone.utc).replace(tzinfo=None),
+        Task.scheduled_time < end_local.astimezone(timezone.utc).replace(tzinfo=None),
+    ).first() is not None
+
+
+async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Проверить номер клиента: оператор O! → можно звонить."""
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number, O_MOBILE_PREFIXES
+
+    phone = (args.get("phone") or "").strip()
+    agent_contact_id = args.get("agent_contact_id")
+    if not phone and agent_contact_id:
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id,
+            AgentContact.user_id == user_id,
+            AgentContact.agent_config_id == agent_config_id,
+        ).first()
+        if contact and contact.phone:
+            phone = contact.phone.strip()
+    if not phone:
+        return {"ok": False, "error": "phone_required", "hint": "Передай phone или agent_contact_id."}
+
+    digits = normalize_sip_number(phone)
+    if len(digits) != 12 or not digits.startswith("996"):
+        return {
+            "ok": True,
+            "can_call": False,
+            "operator": "unknown",
+            "phone": phone,
+            "note": (
+                "Номер не похож на кыргызский (ждём 12 цифр, начинающихся с 996). "
+                "Уточни у клиента полный номер; звонить не предлагай."
+            ),
+        }
+    national = "0" + digits[3:]
+    prefix = national[:3]
+    if is_o_number(digits):
+        return {
+            "ok": True,
+            "can_call": True,
+            "operator": "O!",
+            "prefix": prefix,
+            "phone": phone,
+            "note": (
+                "Номер оператора O! — можем позвонить. Если собираешься звонить сейчас, "
+                "проверь, что сейчас 09:00–20:00 по Бишкеку."
+            ),
+        }
+    return {
+        "ok": True,
+        "can_call": False,
+        "operator": "other",
+        "prefix": prefix,
+        "phone": phone,
+        "note": (
+            f"Префикс {prefix} не относится к O! (мы умеем звонить только на {', '.join(O_MOBILE_PREFIXES)}). "
+            "Скажи клиенту, что звонить мы можем только на O!, и предложи продолжить переписку "
+            "или входящий звонок на наш номер (его дай из базы знаний)."
+        ),
+    }
+
+
 async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
-    """Создать задачу на немедленный звонок (без сдвига в рабочие часы)."""
+    """Создать задачу на немедленный звонок (без сдвига в рабочие часы).
+
+    Guard-ы (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек + лимит одного
+    звонка в день на контакт. Отказ возвращает понятный hint, чтобы оркестратор
+    мог корректно ответить клиенту.
+    """
     agent_contact_id = args.get("agent_contact_id")
     if not agent_contact_id:
         return {"ok": False, "error": "agent_contact_id_required"}
@@ -3218,6 +3455,21 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
     if agent_config is not None and not agent_config.is_active:
         return {"ok": False, "error": "agent_inactive", "hint": "Активируйте агента, иначе планировщик не выполнит звонок."}
+
+    now_utc = datetime.now(timezone.utc)
+    guard = _check_call_guards(contact, now_utc, allow_shift=False)
+    if not guard.get("ok"):
+        return guard
+    # Для немедленного звонка — отдельно проверим, что уже нет запланированного
+    # звонка на сегодня (last_called_at успевает обновиться только после звонка).
+    from backend.core.timezone_utils import BISHKEK
+    today_bishkek = now_utc.astimezone(BISHKEK).date()
+    if _already_scheduled_call_today(contact.id, today_bishkek, db):
+        return {
+            "ok": False,
+            "error": "already_scheduled_today",
+            "hint": "На сегодня этому клиенту уже запланирован звонок — не ставим второй.",
+        }
 
     # Немедленно: ставим задачу на текущий момент, рабочие часы НЕ применяем —
     # пользователь явно просит позвонить сейчас. Планировщик подхватит её за ~30с.
@@ -3672,6 +3924,8 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_bulk_schedule_calls(tool_args, user_id, agent_config_id, db)
         elif tool_name == "trigger_immediate_call":
             result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "check_phone_operator":
+            result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "pause_agent_for_contact":
