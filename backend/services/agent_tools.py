@@ -1219,6 +1219,57 @@ def _chat_limit_hit(db: Session, model, scope: list, contact_id, first_limit: in
     return None
 
 
+# Streak-лимит (ветка 1810-anri-sales-logic): «не больше 2 исходящих в
+# бишкекский день подряд без ответа клиента». В ритме касаний Анри
+# день 1 допускает до 2 сообщений, день 2 — 1 сообщение + 1 звонок, и т.д.;
+# за один календарный день не нужно слать клиенту третье подряд, пока он
+# молчит. Как только клиент ответит в тот же день — лимит сбрасывается.
+# skip_rate_limit (от chat_split для многочастных сообщений) эту проверку
+# тоже пропускает, иначе части одного сообщения считались бы по отдельности.
+OUTBOUND_STREAK_LIMIT = 2
+OUTBOUND_STREAK_HINT = (
+    "Клиент сегодня не отвечает — ему уже ушло {count} сообщений подряд в этом канале. "
+    "Не отправляй третье: подожди ответа или смени канал. Если это запланированное "
+    "напоминание — перенеси на завтра через create_agent_task."
+)
+
+
+def _today_outbound_streak(db: Session, model, agent_contact_id, extra_filters=()) -> int:
+    """Сколько исходящих ушло клиенту сегодня (Бишкек) без ответа после них.
+
+    Считаем outbound за сегодняшний бишкекский день. Если в этом же дне есть
+    более поздний inbound, он сбрасывает счётчик (клиент ответил — агенту снова
+    можно до двух исходящих). Возвращает 0, если контакт не задан или ничего
+    не было.
+    """
+    if agent_contact_id is None:
+        return 0
+    from backend.core.timezone_utils import BISHKEK
+    today_start_local = datetime.now(BISHKEK).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    base = db.query(model).filter(
+        model.agent_contact_id == agent_contact_id,
+        model.created_at >= today_start_utc,
+        *extra_filters,
+    )
+    last_inbound = base.filter(model.direction == "inbound").order_by(model.created_at.desc()).first()
+    q = base.filter(model.direction == "outbound")
+    if last_inbound is not None:
+        q = q.filter(model.created_at > last_inbound.created_at)
+    return q.count()
+
+
+def _streak_block(count: int) -> Optional[dict]:
+    """None, если слать можно; dict-отказ, если streak уже достиг лимита."""
+    if count < OUTBOUND_STREAK_LIMIT:
+        return None
+    return {
+        "ok": False,
+        "error": "streak_without_reply",
+        "hint": OUTBOUND_STREAK_HINT.format(count=count),
+    }
+
+
 async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
                                     file_row=None, skip_rate_limit: bool = False) -> dict:
     """
@@ -1256,6 +1307,15 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
             "error": ("У контакта нет Instagram-диалога — написать первым в "
                       "Instagram нельзя, клиент должен написать сам."),
         }
+
+    if not skip_rate_limit:
+        streak = _today_outbound_streak(
+            db, AgentInstagramMessage, contact.id,
+            extra_filters=(AgentInstagramMessage.agent_config_id == agent_config.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
 
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentInstagramMessage, [AgentInstagramMessage.agent_config_id == agent_config.id], contact.id,
@@ -1389,6 +1449,15 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
             db.flush()
     else:
         return {"ok": False, "error": "Укажи agent_contact_id или phone"}
+
+    if not skip_rate_limit:
+        streak = _today_outbound_streak(
+            db, AgentWhatsAppMessage, contact.id,
+            extra_filters=(AgentWhatsAppMessage.account_id == account.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
 
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentWhatsAppMessage, [AgentWhatsAppMessage.account_id == account.id], contact.id,
@@ -1556,6 +1625,15 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
             AgentTelegramDialog.account_id == account.id,
             AgentTelegramDialog.agent_contact_id == contact.id,
         ).first()
+
+    if not skip_rate_limit and contact is not None:
+        streak = _today_outbound_streak(
+            db, AgentTelegramMessage, contact.id,
+            extra_filters=(AgentTelegramMessage.account_id == account.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
 
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentTelegramMessage, [AgentTelegramMessage.account_id == account.id],
