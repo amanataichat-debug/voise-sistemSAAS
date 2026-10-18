@@ -234,6 +234,54 @@ CHECK_PHONE_OPERATOR_TOOL = {
 }
 
 
+# Тёплая передача клиента админу (ветка 1810-anri-sales-logic). Отдельная
+# тулза вместо произвольного send_telegram_notification: гарантирует формат
+# карточки «Имя | ниша | нужны [входящие/исходящие] | объём | обсудили | готов
+# к [...] | контакт», тянет недостающие поля из CRM автоматически. Нужно,
+# чтобы владелец получал один и тот же читаемый дайджест и в чате, и после
+# звонка — без «а что это за клиент, где его данные».
+NOTIFY_OWNER_HANDOFF_TOOL = {
+    "type": "function",
+    "name": "notify_owner_handoff",
+    "description": (
+        "Передать клиента админу: собрать карточку из CRM и отправить в "
+        "Telegram-бот владельца. Используй, когда клиент: (1) готов "
+        "подключаться (`ready_to_connect`), (2) просит живого человека "
+        "(`requested_human`), (3) просит демонстрацию (`demo`), (4) жалоба "
+        "или нестандартный случай (`escalation`). Если по клиенту за этот "
+        "же эпизод уже отправлял `send_telegram_notification` или "
+        "`notify_owner_handoff` — не дублируй."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта"},
+            "reason": {
+                "type": "string",
+                "enum": ["ready_to_connect", "requested_human", "demo", "escalation"],
+                "description": "Код события для шапки карточки",
+            },
+            "summary": {
+                "type": "string",
+                "description": (
+                    "Короткий (1-2 строки) контекст: что обсудили, какая боль, "
+                    "что ждёт от админа. Если пусто — соберётся из memory контакта."
+                ),
+            },
+            "scheduled_at": {
+                "type": "string",
+                "description": (
+                    "ISO 8601 UTC времени встречи/звонка, если клиент назвал. "
+                    "Пойдёт в карточку. Событие в Google Календарь создаётся "
+                    "отдельно тулзой google_calendar."
+                ),
+            },
+        },
+        "required": ["agent_contact_id", "reason"],
+    },
+}
+
+
 # Единый инструмент «отправить коммерческое предложение» (ветка 1810-anri-sales-logic).
 # Критичная цепочка после звонка: собрать КП → отправить в тот же канал →
 # зафиксировать в CRM → поставить напоминание через 60–90 мин → уведомить
@@ -1912,6 +1960,81 @@ def _clamp_reminder_to_working_hours(delay_min: int) -> int:
     return max(delta_min, 10)
 
 
+_HANDOFF_REASON_LABEL = {
+    "ready_to_connect": "ГОТОВ ПОДКЛЮЧАТЬСЯ",
+    "requested_human": "ПРОСИТ ЧЕЛОВЕКА",
+    "demo": "ПРОСИТ ДЕМОНСТРАЦИЮ",
+    "escalation": "НЕСТАНДАРТНЫЙ СЛУЧАЙ / ЖАЛОБА",
+}
+
+
+async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Собрать карточку клиента из CRM и уведомить владельца о передаче."""
+    agent_contact_id = args.get("agent_contact_id")
+    reason = (args.get("reason") or "").strip()
+    if not agent_contact_id or reason not in _HANDOFF_REASON_LABEL:
+        return {"ok": False, "error": "Нужны agent_contact_id и валидный reason"}
+
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if contact is None:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    memory = contact.memory if isinstance(contact.memory, dict) else {}
+    niche = (memory.get("niche") or memory.get("industry") or "").strip()
+    volume = (memory.get("call_volume_per_day") or memory.get("volume") or "").strip() \
+        if isinstance(memory.get("call_volume_per_day") or memory.get("volume"), str) else ""
+    need = (memory.get("direction_need") or memory.get("needs") or "").strip() \
+        if isinstance(memory.get("direction_need") or memory.get("needs"), str) else ""
+    summary = (args.get("summary") or "").strip() or (memory.get("summary") or "").strip()
+
+    name = (contact.name or "—").strip()
+    phone = (contact.phone or "—").strip()
+    company = (contact.company or "").strip()
+
+    lines = [f"📌 {_HANDOFF_REASON_LABEL[reason]}"]
+    header = name
+    if company:
+        header += f" ({company})"
+    lines.append(header)
+    if niche:
+        lines.append(f"Ниша: {niche}")
+    if need:
+        lines.append(f"Нужно: {need}")
+    if volume:
+        lines.append(f"Объём: {volume}")
+    if summary:
+        lines.append(f"Контекст: {summary}")
+    if args.get("scheduled_at"):
+        lines.append(f"Назначено: {args['scheduled_at']}")
+    lines.append(f"Контакт: {phone}")
+
+    message = "\n".join(lines)
+    try:
+        await fn_send_telegram_notification({"message": message}, agent_config, db)
+        sent = True
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] notify_owner_handoff: send failed: {e}")
+        sent = False
+
+    logger.info(
+        f"[AGENT-TOOLS] notify_owner_handoff reason={reason} contact={agent_contact_id} sent={sent}"
+    )
+    return {
+        "ok": sent,
+        "reason": reason,
+        "message": message,
+        "contact_id": str(agent_contact_id),
+    }
+
+
 async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     """
     Атомарная цепочка после звонка: собрать КП → отправить → записать → напомнить → владельцу.
@@ -2491,6 +2614,7 @@ AGENT_CHAT_TOOLS = [
     },
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
+    NOTIFY_OWNER_HANDOFF_TOOL,
 ]
 
 
@@ -2560,6 +2684,7 @@ AGENT_POSTCALL_TOOLS = [
     SEND_WEBHOOK_TOOL,
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
+    NOTIFY_OWNER_HANDOFF_TOOL,
 ]
 
 
@@ -4289,6 +4414,8 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
         elif tool_name == "send_proposal":
             result = await fn_send_proposal(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "notify_owner_handoff":
+            result = await fn_notify_owner_handoff(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "pause_agent_for_contact":
