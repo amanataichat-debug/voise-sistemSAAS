@@ -1960,6 +1960,56 @@ def _clamp_reminder_to_working_hours(delay_min: int) -> int:
     return max(delta_min, 10)
 
 
+async def _auto_create_calendar_event(
+    agent_config,
+    db: Session,
+    *,
+    summary: str,
+    start_utc: datetime,
+    duration_minutes: int = 30,
+    description: str = "",
+) -> Optional[dict]:
+    """Best-effort автозапись события в Google Календарь владельца.
+
+    Используется, чтобы у владельца в календаре появлялись все действия
+    агента: запланированные звонки, встречи «клиент просит человека». Если
+    коннектор google_calendar не подключён — тихо выходим (это не ошибка,
+    просто у агента нет календаря).
+
+    Время переводим в Asia/Bishkek, Composio получает wall-time + timezone,
+    чтобы событие появилось ровно на бишкекском часе, без драмы с UTC.
+    """
+    if agent_config is None:
+        return None
+    if "google_calendar" not in _connected_toolkits(agent_config, db):
+        return None
+    from backend.core.timezone_utils import BISHKEK
+    if start_utc.tzinfo is None:
+        start_utc = start_utc.replace(tzinfo=timezone.utc)
+    local = start_utc.astimezone(BISHKEK)
+    event_args = {
+        "summary": summary,
+        "start_datetime": local.strftime("%Y-%m-%dT%H:%M:%S"),
+        "event_duration_minutes": max(10, int(duration_minutes)),
+        "timezone": "Asia/Bishkek",
+        "calendar_id": "primary",
+    }
+    if description:
+        event_args["description"] = description.strip()
+    try:
+        composio_user_id = composio_service.composio_user_id_for_agent(agent_config.id)
+        result = await composio_service.execute(
+            "GOOGLECALENDAR_CREATE_EVENT", event_args, composio_user_id
+        )
+        logger.info(
+            f"[AGENT-TOOLS] calendar event '{summary}' at {event_args['start_datetime']} Bishkek"
+        )
+        return result if isinstance(result, dict) else None
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] calendar auto-insert failed: {e}")
+        return None
+
+
 _HANDOFF_REASON_LABEL = {
     "ready_to_connect": "ГОТОВ ПОДКЛЮЧАТЬСЯ",
     "requested_human": "ПРОСИТ ЧЕЛОВЕКА",
@@ -2024,14 +2074,38 @@ async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str
         logger.warning(f"[AGENT-TOOLS] notify_owner_handoff: send failed: {e}")
         sent = False
 
+    # Автозапись встречи в Google Календарь, если клиент назвал время, а повод
+    # явно требует встречу владельца с клиентом. Best-effort — не блокирует
+    # уведомление владельцу.
+    calendar_event = None
+    scheduled_raw = args.get("scheduled_at")
+    if sent and scheduled_raw and reason in ("requested_human", "demo"):
+        scheduled_utc = _parse_iso_utc(scheduled_raw)
+        if scheduled_utc is not None:
+            cal_summary = f"👤 {_HANDOFF_REASON_LABEL[reason]}: {name}"
+            if company:
+                cal_summary += f" ({company})"
+            cal_desc_parts = [f"Контакт: {phone}"]
+            if niche:
+                cal_desc_parts.append(f"Ниша: {niche}")
+            if summary:
+                cal_desc_parts.append(f"Контекст: {summary}")
+            calendar_event = await _auto_create_calendar_event(
+                agent_config, db,
+                summary=cal_summary, start_utc=scheduled_utc, duration_minutes=60,
+                description="\n".join(cal_desc_parts),
+            )
+
     logger.info(
-        f"[AGENT-TOOLS] notify_owner_handoff reason={reason} contact={agent_contact_id} sent={sent}"
+        f"[AGENT-TOOLS] notify_owner_handoff reason={reason} contact={agent_contact_id} sent={sent} "
+        f"calendar={bool(calendar_event)}"
     )
     return {
         "ok": sent,
         "reason": reason,
         "message": message,
         "contact_id": str(agent_contact_id),
+        "calendar_event_created": bool(calendar_event),
     }
 
 
@@ -2844,6 +2918,34 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     db.refresh(task)
 
     logger.info(f"[AGENT-TOOLS] Created agent task {task.id} (channel={channel}) for contact {agent_contact_id} at {scheduled_at}")
+
+    # Автозапись в Google Календарь (ветка 1810-anri-sales-logic): владельцу
+    # нужно видеть всю работу агента в календаре. Делаем best-effort только
+    # для звонков, чтобы не захламлять календарь десятками «отложенное
+    # сообщение в Telegram».
+    calendar_event = None
+    if channel == "call":
+        cal_contact = snooze_contact if snooze_contact is not None else db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id
+        ).first()
+        cal_name = (cal_contact.name if cal_contact else None) or (cal_contact.phone if cal_contact else "") or "клиент"
+        cal_niche = ""
+        if cal_contact and isinstance(cal_contact.memory, dict):
+            cal_niche = str(cal_contact.memory.get("niche") or cal_contact.memory.get("industry") or "").strip()
+        cal_summary = f"📞 Звонок агента: {cal_name}" + (f" ({cal_niche})" if cal_niche else "")
+        cal_desc_parts = []
+        if args.get("title") and args.get("title") != "Звонок агента":
+            cal_desc_parts.append(args["title"])
+        if args.get("notes"):
+            cal_desc_parts.append(args["notes"])
+        if cal_contact and cal_contact.phone:
+            cal_desc_parts.append(f"Контакт: {cal_contact.phone}")
+        calendar_event = await _auto_create_calendar_event(
+            agent_config, db,
+            summary=cal_summary, start_utc=scheduled_at, duration_minutes=30,
+            description="\n".join(cal_desc_parts),
+        )
+
     result = {
         "ok": True,
         "task_id": str(task.id),
@@ -2853,6 +2955,8 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     }
     if clamped_to_future:
         result["note"] = "scheduled_at был в прошлом — время поднято до ближайшего будущего"
+    if calendar_event is not None:
+        result["calendar_event_created"] = True
     return result
 
 
