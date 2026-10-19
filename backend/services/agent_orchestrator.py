@@ -1082,6 +1082,22 @@ class PostCallOrchestrator:
         is_tg_out = (call_direction or "").lower() == "telegram_outbound"
         is_inbound = (call_direction or "outbound").lower() == "inbound"
 
+        # B4 (карта): передача владельцу из ПЕРЕПИСКИ. Раньше в правилах каналов
+        # (tg/wa/ig) не было ни слова про notify_owner_handoff — агент отвечал
+        # клиенту и максимум планировал звонок, а владелец не получал обращение,
+        # когда клиент в чате просил человека / дал номер и просил позвонить.
+        # Тулза в наборе есть (AGENT_POSTCALL_TOOLS), не хватало инструкции.
+        # Теперь handoff уходит владельцу в Telegram И (со scheduled_at) в
+        # «Ближайшие задачи» — см. B3.
+        handoff_rule = (
+            "\n   Если клиент готов подключиться, просит живого человека/демо, или\n"
+            "   дал номер и просит позвонить — ОБЯЗАТЕЛЬНО передай владельцу через\n"
+            "   notify_owner_handoff (reason + короткий summary; scheduled_at в ISO\n"
+            "   UTC, если клиент назвал удобное время). Обращение уйдёт владельцу в\n"
+            "   Telegram и появится у него в «Ближайшие задачи». Это НЕ заменяет\n"
+            "   ответ клиенту в том же канале."
+        )
+
         if is_tg_out:
             direction_line = (
                 "СОБЫТИЕ: ЗАПЛАНИРОВАННАЯ ОТПРАВКА СООБЩЕНИЯ В TELEGRAM (личный "
@@ -1115,6 +1131,7 @@ class PostCallOrchestrator:
                 "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
                 "   отправь через telegram_send_file; нужен свой документ —\n"
                 "   create_document, затем telegram_send_file."
+                + handoff_rule
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ TELEGRAM"
             status_label = "СТАТУС"
@@ -1141,6 +1158,7 @@ class PostCallOrchestrator:
                 "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
                 "   отправь через whatsapp_send_file; нужен свой документ —\n"
                 "   create_document, затем whatsapp_send_file."
+                + handoff_rule
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ WHATSAPP"
             status_label = "СТАТУС"
@@ -1167,6 +1185,7 @@ class PostCallOrchestrator:
                 "   Просит прайс/каталог/договор — найди в list_agent_files и\n"
                 "   отправь через instagram_send_file; нужен свой документ —\n"
                 "   create_document, затем instagram_send_file."
+                + handoff_rule
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ INSTAGRAM"
             status_label = "СТАТУС"
