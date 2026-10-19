@@ -288,9 +288,12 @@ NOTIFY_OWNER_HANDOFF_TOOL = {
             "scheduled_at": {
                 "type": "string",
                 "description": (
-                    "ISO 8601 UTC времени встречи/звонка, если клиент назвал. "
-                    "Пойдёт в карточку. Событие в Google Календарь создаётся "
-                    "отдельно тулзой google_calendar."
+                    "ISO 8601 UTC времени, когда владелец должен связаться с "
+                    "клиентом / подключить его, если клиент назвал удобное время "
+                    "или оно согласовано. Передавай ВСЕГДА, когда есть конкретное "
+                    "время: по нему создаётся задача в «Ближайшие задачи» владельца "
+                    "(напоминание ему самому), а для встречи/демо — ещё и событие "
+                    "в Google Календаре."
                 ),
             },
         },
@@ -2034,6 +2037,15 @@ _HANDOFF_REASON_LABEL = {
     "escalation": "НЕСТАНДАРТНЫЙ СЛУЧАЙ / ЖАЛОБА",
 }
 
+# Заголовок платформенной задачи-напоминания владельцу (B3). Это НЕ звонок
+# агента, а дело самого владельца: позвонить клиенту / подключить / разобрать.
+_HANDOFF_TASK_TITLE = {
+    "ready_to_connect": "Подключить клиента",
+    "requested_human": "Звонок владельца клиенту",
+    "demo": "Демонстрация клиенту",
+    "escalation": "Разобрать обращение клиента",
+}
+
 
 async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     """Собрать карточку клиента из CRM и уведомить владельца о передаче."""
@@ -2091,37 +2103,73 @@ async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str
         logger.warning(f"[AGENT-TOOLS] notify_owner_handoff: send failed: {e}")
         sent = False
 
+    # Клиент назвал время → парсим один раз: под платформенную задачу и под
+    # событие в календаре.
+    scheduled_raw = args.get("scheduled_at")
+    scheduled_utc = _parse_iso_utc(scheduled_raw) if scheduled_raw else None
+
+    # B3 (карта): платформенная задача в «Ближайшие задачи». Раньше handoff слал
+    # только Telegram + Google Календарь, а в интерфейсе платформы задача не
+    # появлялась — список «Ближайшие задачи» оставался пустым. Теперь при
+    # передаче с назначенным временем создаём Task с channel="owner": это НЕ
+    # звонок агента, планировщик такие задачи НЕ исполняет (см.
+    # task_scheduler.check_and_execute_tasks), а напоминание владельцу самому
+    # разобраться с клиентом (позвонить / подключить / провести демо).
+    owner_task_created = False
+    if sent and scheduled_utc is not None:
+        try:
+            handoff_task = Task(
+                is_agent_task=True,
+                channel="owner",
+                agent_contact_id=contact.id,
+                user_id=user_id,
+                contact_id=None,
+                status=TaskStatus.SCHEDULED,
+                scheduled_time=scheduled_utc,
+                title=_HANDOFF_TASK_TITLE.get(reason, "Передача клиента владельцу"),
+                description=message,
+            )
+            db.add(handoff_task)
+            db.commit()
+            db.refresh(handoff_task)
+            owner_task_created = True
+            logger.info(
+                f"[AGENT-TOOLS] notify_owner_handoff → owner task {handoff_task.id} "
+                f"contact={agent_contact_id} at {scheduled_utc.isoformat()}"
+            )
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[AGENT-TOOLS] notify_owner_handoff: owner task failed: {e}")
+
     # Автозапись встречи в Google Календарь, если клиент назвал время, а повод
     # явно требует встречу владельца с клиентом. Best-effort — не блокирует
     # уведомление владельцу.
     calendar_event = None
-    scheduled_raw = args.get("scheduled_at")
-    if sent and scheduled_raw and reason in ("requested_human", "demo"):
-        scheduled_utc = _parse_iso_utc(scheduled_raw)
-        if scheduled_utc is not None:
-            cal_summary = f"👤 {_HANDOFF_REASON_LABEL[reason]}: {name}"
-            if company:
-                cal_summary += f" ({company})"
-            cal_desc_parts = [f"Контакт: {phone}"]
-            if niche:
-                cal_desc_parts.append(f"Ниша: {niche}")
-            if summary:
-                cal_desc_parts.append(f"Контекст: {summary}")
-            calendar_event = await _auto_create_calendar_event(
-                agent_config, db,
-                summary=cal_summary, start_utc=scheduled_utc, duration_minutes=60,
-                description="\n".join(cal_desc_parts),
-            )
+    if sent and scheduled_utc is not None and reason in ("requested_human", "demo"):
+        cal_summary = f"👤 {_HANDOFF_REASON_LABEL[reason]}: {name}"
+        if company:
+            cal_summary += f" ({company})"
+        cal_desc_parts = [f"Контакт: {phone}"]
+        if niche:
+            cal_desc_parts.append(f"Ниша: {niche}")
+        if summary:
+            cal_desc_parts.append(f"Контекст: {summary}")
+        calendar_event = await _auto_create_calendar_event(
+            agent_config, db,
+            summary=cal_summary, start_utc=scheduled_utc, duration_minutes=60,
+            description="\n".join(cal_desc_parts),
+        )
 
     logger.info(
         f"[AGENT-TOOLS] notify_owner_handoff reason={reason} contact={agent_contact_id} sent={sent} "
-        f"calendar={bool(calendar_event)}"
+        f"task={owner_task_created} calendar={bool(calendar_event)}"
     )
     return {
         "ok": sent,
         "reason": reason,
         "message": message,
         "contact_id": str(agent_contact_id),
+        "task_created": owner_task_created,
         "calendar_event_created": bool(calendar_event),
     }
 

@@ -128,10 +128,15 @@ class TaskScheduler:
             now = datetime.utcnow()
 
             # 1. AGENT TASKS (is_agent_task=True)
+            # channel="owner" (B3) — это задача-напоминание ВЛАДЕЛЬЦУ (handoff:
+            # позвонить/подключить клиента), а не действие агента. Планировщик
+            # её НЕ исполняет: она просто висит в «Ближайшие задачи», владелец
+            # закрывает её сам. Поэтому исключаем из выборки на исполнение.
             agent_tasks = db.query(Task).filter(
                 Task.status == TaskStatus.SCHEDULED,
                 Task.scheduled_time <= now,
-                Task.is_agent_task == True
+                Task.is_agent_task == True,
+                Task.channel != "owner",
             ).all()
 
             # 2. REGULAR TASKS (is_agent_task=False or NULL)
