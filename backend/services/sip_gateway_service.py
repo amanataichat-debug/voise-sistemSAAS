@@ -642,6 +642,86 @@ class SipGatewayService:
         return "\n".join(lines)
 
     @staticmethod
+    def inbound_known_contact_block(call: SipCall, agent, db: Session) -> str:
+        """Узнавание клиента на входящем звонке с ИЗВЕСТНОГО номера (этап 3).
+
+        До этой правки входящий звонок от уже знакомого контакта шёл «вхолодную»:
+        в контекст попадал только номер звонящего, без имени, без памяти и без
+        истории переписки. Клиент, который только что консультировался в
+        WhatsApp/Telegram, звонил — и агент начинал с нуля («кто вы, чем
+        занимаетесь»). Теперь по номеру поднимаем карточку контакта и единую
+        межканальную хронологию (`build_conversation_timeline` — те же звонки +
+        WhatsApp/Telegram/Instagram/SMS, что видит оркестратор) и отдаём их
+        голосовой модели: «я вас помню, вы писали про …».
+
+        Ключ связки — номер телефона (последние 9 цифр). Возвращает пустую
+        строку, если звонок не входящий, нет agent/caller, или номер не совпал
+        ни с одним контактом (тогда отрабатывает inbound_recent_contacts_hint).
+        Best-effort — любой сбой не должен рвать звонок (ловится выше).
+        """
+        if call.direction != "inbound" or agent is None or not call.caller:
+            return ""
+        phone = call.caller
+        phone_tail = phone[-9:] if len(phone) >= 9 else phone
+        contact = (
+            db.query(AgentContact)
+            .filter(
+                AgentContact.agent_config_id == agent.id,
+                AgentContact.phone.like(f"%{phone_tail}"),
+            )
+            .order_by(AgentContact.updated_at.desc())
+            .first()
+        )
+        if contact is None:
+            return ""
+
+        name = (contact.name or "").strip()
+        company = (contact.company or "").strip()
+        memory = contact.memory if isinstance(contact.memory, dict) else {}
+
+        def _mem(*keys: str) -> str:
+            for k in keys:
+                v = memory.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            return ""
+
+        niche = _mem("niche", "industry")
+        need = _mem("direction_need", "needs")
+        summary = _mem("summary")
+        best_time = _mem("best_time")
+
+        head = "Звонит ЗНАКОМЫЙ клиент — ты уже общался с ним раньше."
+        if name:
+            head += f" Имя: {name}" + (f" ({company})" if company else "") + "."
+        elif company:
+            head += f" Компания: {company}."
+        lines = [head]
+        if niche:
+            lines.append(f"Ниша: {niche}.")
+        if need:
+            lines.append(f"Запрос клиента: {need}.")
+        if summary:
+            lines.append(f"Что знаем о клиенте: {summary}")
+        if best_time:
+            lines.append(f"Удобное время: {best_time}.")
+        lines.append(
+            "Поздоровайся как со знакомым, по имени, и продолжай с места — НЕ "
+            "спрашивай заново, кто он и чем занимается. Опирайся на хронологию ниже."
+        )
+
+        # Единая межканальная история — компактно (голосовой слой видит только
+        # начало промпта, длинная лента вытеснила бы знания о компании).
+        timeline = ""
+        try:
+            from backend.services.agent_orchestrator import build_conversation_timeline
+            timeline = build_conversation_timeline(db, contact, max_events=10)
+        except Exception as e:
+            logger.warning(f"[SIP] inbound_known_contact_block timeline failed: {e}")
+
+        return "\n".join(lines) + (timeline or "")
+
+    @staticmethod
     def resolve_greeting(call: SipCall, number: Optional[SipPhoneNumber], assistant,
                          db: Optional[Session] = None) -> Optional[str]:
         """

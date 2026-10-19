@@ -421,7 +421,14 @@ async def sip_media(
         # если номер не наш контакт, но за последний час писали / звонили похожие
         # клиенты — подсказываем модели список имён и ниш, чтобы после «как вас зовут?»
         # она состыковала собеседника с его контактом в CRM.
-        inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
+        # Этап 3 — память клиента между каналами. Входящий с ИЗВЕСТНОГО номера:
+        # поднимаем карточку + единую межканальную историю и продолжаем с места
+        # («я вас помню»). Входящий с НЕЗНАКОМОГО: прежняя подсказка со списком
+        # недавних контактов (может звонить кто-то из них с другого номера).
+        # Эти случаи взаимоисключающие по совпадению номера.
+        inbound_hint = SipGatewayService.inbound_known_contact_block(call, agent_cfg, db)
+        if not inbound_hint:
+            inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
         enriched_context = f"{context}\n\n{inbound_hint}" if inbound_hint else context
         prompt, kb_stats = agent_voice_context.build_call_system_prompt(
             db, assistant, agent_cfg, call_context=enriched_context,
