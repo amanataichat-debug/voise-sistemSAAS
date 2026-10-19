@@ -22,14 +22,14 @@ function pluralRu(n, one, few, many){
   if(m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
   return many;
 }
-// 'YYYY-MM-DD' для даты задачи в МСК
+// 'YYYY-MM-DD' для даты задачи в Бишкеке. Имя сохранено ради 1:1-совместимости.
 function mskDateKey(s){
   const d = new Date(s);
   if(isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bishkek',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 }
 function _mskTodayKey(){
-  return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bishkek',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 }
 
 async function openTasksCalendar(){
@@ -116,7 +116,7 @@ function _tcalTaskRow(t, key){
   const tm = t.scheduled_time ? (mskParts(t.scheduled_time)||{}).time || '' : '';
   const rel = relTime(t.scheduled_time);
   return `<div class="task-item" data-id="${t.id}">
-    <div class="task-date"><div class="t" style="margin-top:0;font-size:13px">${tm}</div><div class="m">МСК</div></div>
+    <div class="task-date"><div class="t" style="margin-top:0;font-size:13px">${tm}</div><div class="m">Бишкек</div></div>
     <div class="task-body">
       <div class="cd-task-clickable" onclick="_tcalToggleTask('${t.id}')">
         <div class="task-title">${esc(t.title||'Задача')} ${taskChannelBadge(t.channel)}</div>

@@ -346,7 +346,7 @@
           <li><b>Входящие SMS:</b> обрабатывает оркестратор — может ответить SMS, запланировать звонок, обновить память/стадию, уведомить владельца.</li>
           <li><b>Входящие Telegram</b> (личный аккаунт + автоответ): оркестратор отвечает клиенту как живой человек; охват — только контакты из базы или все входящие.</li>
           <li><b>Отложенные Telegram-сообщения:</b> живут в общем списке задач; перед отправкой оркестратор сверяется с контекстом — если договорённость уже закрыта, сообщение не отправляется.</li>
-          <li><b>Рабочие часы</b> (МСК): запланированные звонки сдвигаются в рабочее окно; НЕ сдвигаются <code>trigger_immediate_call</code> и Telegram-сообщения.</li>
+          <li><b>Рабочие часы</b> (Бишкек): запланированные звонки сдвигаются в рабочее окно; НЕ сдвигаются <code>trigger_immediate_call</code> и Telegram-сообщения.</li>
           <li><b>Вебхук:</b> события (заявка, лид, результат звонка) POST-запросом на URL владельца — для n8n / Make / Zapier / CRM.</li>
           <li><b>Планировщик</b> проверяет задачи каждые ~30 секунд — «позвони сейчас» стартует в пределах полуминуты.</li>
         </ul>
@@ -377,7 +377,7 @@
           <i class="fas fa-info-circle"></i>
           <div>
             <div class="title">Не дублируйте базовый промпт</div>
-            <div class="desc">Уже встроено: русский язык, проверка дублей задач, время по МСК, «сначала читай данные — потом действуй», запрет выдумывать данные, автозавершение звонка (hangup_call), обновление CRM после звонка. Объёмную фактуру (каталог, прайс) кладите в базу знаний — её ищут и оркестратор, и голосовой агент.</div>
+            <div class="desc">Уже встроено: русский язык, проверка дублей задач, время по Бишкеку, «сначала читай данные — потом действуй», запрет выдумывать данные, автозавершение звонка (hangup_call), обновление CRM после звонка. Объёмную фактуру (каталог, прайс) кладите в базу знаний — её ищут и оркестратор, и голосовой агент.</div>
           </div>
         </div>
       </div>
@@ -477,7 +477,7 @@
               <tr><td><span class="param-name">additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции оркестратора</td></tr>
               <tr><td><span class="param-name">voice_additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции голосового агента</td></tr>
               <tr><td><span class="param-name">inbound_first_phrase</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Приветствие входящих (≤500)</td></tr>
-              <tr><td><span class="param-name">working_hours_start / _end</span></td><td><span class="param-type">int 0–23</span></td><td class="opt">Нет</td><td>Рабочие часы (МСК), по умолчанию 9–21</td></tr>
+              <tr><td><span class="param-name">working_hours_start / _end</span></td><td><span class="param-type">int 0–23</span></td><td class="opt">Нет</td><td>Рабочие часы (Бишкек), по умолчанию 9–21</td></tr>
               <tr><td><span class="param-name">orchestrator_model</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Slug из /orchestrator-models</td></tr>
               <tr><td><span class="param-name">voice</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Голос для gemini/openai/yandex (см. списки ниже)</td></tr>
               <tr><td><span class="param-name">cartesia_voice_id</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>ID голоса Cartesia (только cartesia)</td></tr>

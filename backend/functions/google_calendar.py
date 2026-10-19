@@ -76,7 +76,7 @@ class GoogleCalendarCreateEventFunction(FunctionBase):
                     "items": {"type": "string"},
                     "description": "Список email участников (опционально)",
                 },
-                "timezone": {"type": "string", "description": "Таймзона IANA, например Europe/Moscow (опционально)"},
+                "timezone": {"type": "string", "description": "Таймзона IANA, например Asia/Bishkek (опционально; по умолчанию берётся таймзона календаря)"},
                 "calendar_id": {"type": "string", "description": "ID календаря (по умолчанию 'primary')"},
             },
             "required": ["summary", "start_datetime"],

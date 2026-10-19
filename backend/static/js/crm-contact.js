@@ -13,15 +13,17 @@
  * ✅ Notes feed
  * ✅ Conversations history with call direction (INBOUND/OUTBOUND)
  * ✅ Custom greeting support
- * ✅ Moscow timezone (МСК) support
+ * ✅ Bishkek timezone (UTC+6) support — ветка 1810-anri-sales-logic перевела
+ *   платформу с MSK на Бишкек; имена `mskToUtc`/`utcToMsk`/`getMskNow`/
+ *   `formatDatetimeLocalMsk` оставлены, но считают теперь +6 ч.
  */
 
 document.addEventListener('DOMContentLoaded', function() {
-  // ==================== Timezone: Moscow (UTC+3) ====================
-  const MSK_OFFSET_MS = 3 * 60 * 60 * 1000; // 3 часа в миллисекундах
+  // ==================== Timezone: Bishkek (UTC+6) ====================
+  const MSK_OFFSET_MS = 6 * 60 * 60 * 1000; // 6 часов в миллисекундах (Бишкек)
 
   /**
-   * МСК → UTC: вычитаем 3 часа
+   * Бишкек → UTC: вычитаем 6 часов
    * @param {string} dateString - "2025-12-06T15:00" из datetime-local input
    * @returns {string} ISO строка UTC
    */
@@ -29,17 +31,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const [datePart, timePart] = dateString.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
     const [hours, minutes] = timePart.split(':').map(Number);
-    
+
     const inputAsUtcMs = Date.UTC(year, month - 1, day, hours, minutes, 0, 0);
     const realUtcMs = inputAsUtcMs - MSK_OFFSET_MS;
-    
+
     return new Date(realUtcMs).toISOString();
   }
 
   /**
-   * UTC → МСК: добавляем 3 часа
+   * UTC → Бишкек: добавляем 6 часов
    * @param {string} isoString - ISO строка UTC
-   * @returns {Date} Date объект с МСК временем
+   * @returns {Date} Date объект со временем Бишкека
    */
   function utcToMsk(isoString) {
     if (!isoString) return null;
@@ -48,28 +50,28 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   /**
-   * Текущее время в МСК
-   * @returns {Date} Date объект с текущим московским временем
+   * Текущее время в Бишкеке
+   * @returns {Date} Date объект с текущим бишкекским временем
    */
   function getMskNow() {
     return new Date(Date.now() + MSK_OFFSET_MS);
   }
 
   /**
-   * Форматирование UTC даты в строку для datetime-local input (показываем МСК)
+   * Форматирование UTC даты в строку для datetime-local input (показываем Бишкек)
    * @param {string} isoString - ISO строка в UTC
    * @returns {string} "2025-12-06T15:00" для input
    */
   function formatDatetimeLocalMsk(isoString) {
     const mskDate = utcToMsk(isoString);
     if (!mskDate) return '';
-    
+
     const year = mskDate.getUTCFullYear();
     const month = String(mskDate.getUTCMonth() + 1).padStart(2, '0');
     const day = String(mskDate.getUTCDate()).padStart(2, '0');
     const hours = String(mskDate.getUTCHours()).padStart(2, '0');
     const minutes = String(mskDate.getUTCMinutes()).padStart(2, '0');
-    
+
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   }
 
@@ -290,37 +292,37 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   /**
-   * Форматирование даты и времени для задач (с указанием МСК)
+   * Форматирование даты и времени для задач (с указанием Бишкека)
    */
   function formatDateTime(dateString) {
     if (!dateString) return '';
-    
+
     const date = utcToMsk(dateString);
     const mskNow = getMskNow();
-    
+
     const tomorrow = new Date(mskNow);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    
-    const timeStr = date.toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
+
+    const timeStr = date.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
       minute: '2-digit',
       timeZone: 'UTC'
     });
-    
+
     const dateOnly = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     const todayOnly = new Date(Date.UTC(mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate()));
     const tomorrowOnly = new Date(Date.UTC(tomorrow.getUTCFullYear(), tomorrow.getUTCMonth(), tomorrow.getUTCDate()));
-    
+
     if (dateOnly.getTime() === todayOnly.getTime()) {
-      return 'Сегодня ' + timeStr + ' МСК';
+      return 'Сегодня ' + timeStr + ' Бишкек';
     } else if (dateOnly.getTime() === tomorrowOnly.getTime()) {
-      return 'Завтра ' + timeStr + ' МСК';
+      return 'Завтра ' + timeStr + ' Бишкек';
     } else {
-      return date.toLocaleDateString('ru-RU', { 
-        day: '2-digit', 
+      return date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
         month: 'long',
         timeZone: 'UTC'
-      }) + ' ' + timeStr + ' МСК';
+      }) + ' ' + timeStr + ' Бишкек';
     }
   }
   

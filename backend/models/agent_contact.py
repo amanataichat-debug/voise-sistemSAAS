@@ -94,7 +94,7 @@ class AgentContact(Base):
             "memory": self.memory or {},
             "attempts_count": self.attempts_count or 0,
             # ✅ Колонки naive (UTC по факту) — сериализуем с явным UTC-маркером,
-            #    чтобы фронт корректно конвертировал в МСК.
+            #    чтобы фронт корректно конвертировал в Бишкек.
             "last_called_at": iso_utc(self.last_called_at),
             "ai_paused_until": iso_utc(self.ai_paused_until) if self.is_ai_paused() else None,
             "ai_pause_reason": self.ai_pause_reason if self.is_ai_paused() else None,

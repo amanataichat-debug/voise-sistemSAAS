@@ -206,6 +206,40 @@ def _as_naive_utc(dt):
     return dt
 
 
+def record_during_pause(agent_contact, channel: str, message_body: str, db) -> None:
+    """Записать входящее клиента в memory контакта, пока агент на паузе.
+
+    Ветка 1810-anri-sales-logic — «умный молчун»: когда владелец сам ведёт
+    переписку, Анри не отвечает (как и было), но продолжает ПОНИМАТЬ, что
+    происходит. При следующем входе (пауза снята / новое событие вне окна
+    паузы) оркестратор прочитает memory и будет в курсе всех реплик без
+    необходимости перечитывать весь длинный тред.
+
+    Храним максимум 20 последних snippet'ов (обрезанных до 400 символов)
+    + timestamp последнего входящего во время паузы.
+    """
+    try:
+        from sqlalchemy.orm.attributes import flag_modified
+        mem = dict(agent_contact.memory or {})
+        pause_log = list(mem.get("pause_log") or [])
+        pause_log.append({
+            "channel": channel,
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "snippet": (message_body or "").strip()[:400],
+        })
+        mem["pause_log"] = pause_log[-20:]
+        mem["last_inbound_during_pause_at"] = pause_log[-1]["ts"]
+        agent_contact.memory = mem
+        flag_modified(agent_contact, "memory")
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[AGENT-PAUSE] record_during_pause failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def build_conversation_timeline(
     db, agent_contact, exclude_call_id=None,
     max_events=TIMELINE_MAX_EVENTS, days_window=TIMELINE_DAYS_WINDOW,
@@ -215,13 +249,13 @@ def build_conversation_timeline(
 
     Сливает звонки (channel='call'), SMS и Telegram в один список, сортирует по
     времени, берёт последние max_events в окне days_window дней и форматирует с
-    метками МСК. exclude_call_id — исключить конкретный AgentCall (текущее
+    метками Бишкек. exclude_call_id — исключить конкретный AgentCall (текущее
     событие в PostCall или показанный отдельно последний звонок в PreCall).
     max_events/days_window по умолчанию — константы фаз; чат-тулза
     get_contact_timeline может запросить более широкое окно по требованию
     владельца. Пустая строка, если истории нет. Best-effort — не роняет промпт.
     """
-    from backend.core.timezone_utils import utc_to_msk
+    from backend.core.timezone_utils import utc_to_bishkek as utc_to_msk  # имя оставлено ради читаемости
     try:
         if not agent_contact:
             return ""
@@ -243,7 +277,7 @@ def build_conversation_timeline(
             icon = _CHANNEL_ICON.get(channel, "•")
             lines.append(f"[{tm}] {icon} {text}")
         return (
-            "\n\nХРОНОЛОГИЯ ОБЩЕНИЯ С КОНТАКТОМ (все каналы, время МСК, старые → новые):\n"
+            "\n\nХРОНОЛОГИЯ ОБЩЕНИЯ С КОНТАКТОМ (все каналы, время Бишкек, старые → новые):\n"
             + "\n".join(lines)
         )
     except Exception as e:
@@ -3008,7 +3042,11 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
         # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
         # треде, агент увидит его после паузы; сейчас не отвечаем.
         if agent_pause.is_paused(contact):
-            logger.info(f"[AGENT-TG-USER] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
+            # «Умный молчун» — ветка 1810-anri-sales-logic: отвечать не отвечаем,
+            # но записываем входящее в memory, чтобы после снятия паузы Анри был
+            # в курсе разговора.
+            record_during_pause(contact, "telegram", message_body, db)
+            logger.info(f"[AGENT-TG-USER] contact {contact.id}: {agent_pause.describe(contact)}, skip reply (memory updated)")
             return
 
         inbound_call = AgentCall(
@@ -3087,7 +3125,9 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
         # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
         # треде, агент увидит его после паузы; сейчас не отвечаем.
         if agent_pause.is_paused(contact):
-            logger.info(f"[AGENT-IG] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
+            # «Умный молчун» — см. комментарий в handle_inbound_telegram.
+            record_during_pause(contact, "instagram", message_body, db)
+            logger.info(f"[AGENT-IG] contact {contact.id}: {agent_pause.describe(contact)}, skip reply (memory updated)")
             return
 
         inbound_call = AgentCall(
@@ -3172,7 +3212,9 @@ async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, messag
         # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
         # треде, агент увидит его после паузы; сейчас не отвечаем.
         if agent_pause.is_paused(contact):
-            logger.info(f"[AGENT-WA] contact {contact.id}: {agent_pause.describe(contact)}, skip reply")
+            # «Умный молчун» — см. комментарий в handle_inbound_telegram.
+            record_during_pause(contact, "whatsapp", message_body, db)
+            logger.info(f"[AGENT-WA] contact {contact.id}: {agent_pause.describe(contact)}, skip reply (memory updated)")
             return
 
         inbound_call = AgentCall(

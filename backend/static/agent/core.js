@@ -165,29 +165,32 @@ function directionBadge(dir){
   const color = inbound ? '#0891B2' : '#7C3AED';
   return `<span class="status-badge" style="background:${color}22;color:${color}"><i class="fas ${icon}"></i> ${directionRu(dir)}</span>`;
 }
-// Все даты с бэка приходят в UTC (ISO с маркером). Отображаем в МСК (Europe/Moscow).
+// Все даты с бэка приходят в UTC (ISO с маркером). Отображаем в Бишкеке (Asia/Bishkek).
 function fmtDate(s){
   if(!s) return '—';
   const d = new Date(s);
   if(isNaN(d.getTime())) return '—';
-  const str = new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);
-  return str + ' МСК';
+  const str = new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Bishkek',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);
+  return str + ' Бишкек';
 }
-// Разбор даты на части в МСК (для плиток задач)
+// Разбор даты на части в Бишкеке (для плиток задач). Имя оставлено ради 1:1-совместимости
+// с существующими вызовами из других agent/*.js.
 function mskParts(s){
   const d = new Date(s);
   if(isNaN(d.getTime())) return null;
-  const p = new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).formatToParts(d);
+  const p = new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Bishkek',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).formatToParts(d);
   const get = t => (p.find(x=>x.type===t)||{}).value || '';
   return { day: get('day'), mon: get('month').replace('.','').toUpperCase(), time: get('hour')+':'+get('minute') };
 }
 function relTime(s){ if(!s) return {text:'',soon:false}; const d=new Date(s), now=new Date(), diff=d-now; if(diff<=0) return {text:'сейчас',soon:true}; const min=Math.floor(diff/60000), h=Math.floor(min/60), days=Math.floor(h/24); if(min<60) return {text:`Через ${min} мин`,soon:true}; if(h<24) return {text:`Через ${h} ч ${min%60} мин`,soon:h<2}; return {text:`Через ${days} ${days===1?'день':days<5?'дня':'дней'}`,soon:false}; }
 function esc(s){ if(s===null||s===undefined) return ''; const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
 
-// МСК (UTC+3, без перехода на летнее время) для ввода/вывода datetime-local.
-// value инпута трактуется как МСК; на бэк уходит UTC ISO, и обратно.
-const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
-// 'YYYY-MM-DDTHH:mm' (МСК) → UTC ISO-строка для API
+// Бишкек (UTC+6, без перехода на летнее время) для ввода/вывода datetime-local.
+// value инпута трактуется как Бишкек; на бэк уходит UTC ISO, и обратно.
+// Константа и имена функций сохранены ради 1:1-совместимости с остальным кодом
+// (`agent/*.js` ссылаются на `mskInputToUtc`/`utcToMskInput`/`MSK_OFFSET_MS`).
+const MSK_OFFSET_MS = 6 * 60 * 60 * 1000;
+// 'YYYY-MM-DDTHH:mm' (Бишкек) → UTC ISO-строка для API
 function mskInputToUtc(v){
   if(!v) return null;
   const [datePart, timePart] = v.split('T');
@@ -197,7 +200,7 @@ function mskInputToUtc(v){
   if([y,m,d,hh,mm].some(n => Number.isNaN(n))) return null;
   return new Date(Date.UTC(y, m-1, d, hh, mm) - MSK_OFFSET_MS).toISOString();
 }
-// UTC ISO-строка → value для datetime-local в МСК ('YYYY-MM-DDTHH:mm')
+// UTC ISO-строка → value для datetime-local в Бишкеке ('YYYY-MM-DDTHH:mm')
 function utcToMskInput(s){
   if(!s) return '';
   const d = new Date(s);

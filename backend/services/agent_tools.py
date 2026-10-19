@@ -89,18 +89,26 @@ SEARCH_KNOWLEDGE_BASE_TOOL = {
     "type": "function",
     "name": "search_knowledge_base",
     "description": (
-        "Найти информацию в базе знаний компании: записи владельца и документы. "
-        "ВАЖНО: сначала посмотри раздел «ЗНАНИЯ О КОМПАНИИ» в своей инструкции — "
-        "частые ответы уже там, и отвечать по ним нужно сразу, без этого "
-        "инструмента (вызов занимает время, клиент ждёт в тишине). Зови поиск "
-        "только когда ответа в инструкции нет. Не выдумывай факты: ничего не "
-        "нашлось — скажи, что уточнишь у специалиста."
+        "Найти информацию в базе знаний компании: вопросы-ответы, секции о компании, "
+        "каталог и ЗАГРУЖЕННЫЕ ВЛАДЕЛЬЦЕМ ФАЙЛЫ (PDF, DOCX, XLSX, TXT, Markdown, "
+        "сканированные документы). Это основной инструмент поиска по всему, что "
+        "лежит в базе знаний. "
+        "КОГДА ВЫЗЫВАТЬ: ОБЯЗАТЕЛЬНО перед тем, как сказать клиенту «не знаю», "
+        "«уточню», «не могу предоставить данные» — ЛЮБОЙ фактический вопрос про "
+        "компанию (услуги, доступ, условия, документы, сроки, политика, адреса, "
+        "контакты, сертификация, партнёры и т.п.) → сначала поиск. "
+        "Отвечать сразу (без поиска) можно, только если ответ ЯВНО есть в разделе "
+        "«ЗНАНИЯ О КОМПАНИИ» в твоей системной инструкции. "
+        "Переформулируй `query` разными словами, если первый поиск пустой "
+        "(«тестовая симка» → «тестовый номер», → «демо», → «попробовать звонок»). "
+        "Не выдумывай: только после 1–2 попыток с разными формулировками и всё равно "
+        "пусто — скажи «уточню у специалиста»."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Что ищем, словами клиента"},
-            "top_k": {"type": "integer", "description": "Сколько фрагментов вернуть (по умолчанию 4)"},
+            "query": {"type": "string", "description": "Что ищем, словами клиента или переформулированное"},
+            "top_k": {"type": "integer", "description": "Сколько фрагментов вернуть (по умолчанию 4, увеличь до 8 для широких тем)"},
         },
         "required": ["query"],
     },
@@ -113,20 +121,29 @@ FIND_PRODUCTS_TOOL = {
     "type": "function",
     "name": "find_products",
     "description": (
-        "Подобрать товары или услуги из каталога владельца: по названию, "
-        "описанию и цене. Используй, когда клиент спрашивает про модель, "
-        "наличие, цену или просит «что есть до такой-то суммы». В ответе "
-        "придут цена и id фото/видео позиции — отправь их клиенту "
-        "(whatsapp_send_file / telegram_send_file / instagram_send_file) "
-        "вместе с коротким описанием. Товары вне каталога не придумывай."
+        "Поиск по каталогу товаров и услуг владельца (позиции с ценами, фото, "
+        "характеристиками). Вызывай ВСЕГДА, когда клиент спрашивает про что-то, "
+        "что мы можем предоставить: товар, услугу, модель, пакет, тариф, доступ, "
+        "наличие, цену, тестовый номер, демо, подключение. Даже если вопрос звучит "
+        "неявно («у вас есть ...?», «можете показать ...?», «что из услуг ...?», "
+        "«как попробовать?») — всё равно вызывай. "
+        "Если в системной инструкции уже есть блок «ПРАЙС» — короткие вопросы про "
+        "цену/название можно отвечать по нему сразу, без вызова. Но если клиент просит "
+        "фото, подробности, характеристики, фильтр по цене — вызывай обязательно. "
+        "В ответе: цена, описание, id фото/видео — отправь их клиенту тулзой "
+        "whatsapp_send_file / telegram_send_file / instagram_send_file. "
+        "Если первая попытка пуста — переформулируй query ещё 1–2 раза синонимами. "
+        "Товары вне каталога не придумывай: когда и переформулировки не помогли, "
+        "попробуй search_knowledge_base по общей базе; если и там пусто — скажи "
+        "«уточню у специалиста»."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Что ищет клиент: модель, тип товара, услуга"},
+            "query": {"type": "string", "description": "Что ищет клиент: услуга, модель, тип товара, сервис"},
             "max_price": {"type": "number", "description": "Верхняя граница цены, если клиент её назвал"},
             "min_price": {"type": "number", "description": "Нижняя граница цены"},
-            "limit": {"type": "integer", "description": "Сколько позиций вернуть (по умолчанию 5)"},
+            "limit": {"type": "integer", "description": "Сколько позиций вернуть (по умолчанию 5, можно 10 для широких запросов)"},
         },
         "required": [],
     },
@@ -194,6 +211,157 @@ SEND_WEBHOOK_TOOL = {
             },
         },
         "required": ["event"],
+    },
+}
+
+
+# Проверка оператора по номеру клиента. Телефонный транк пропускает исходящие
+# ТОЛЬКО на номера оператора O! (национальные префиксы 050 и 070). Остальные
+# операторы (Beeline, Megacom) мы не наберём — агент должен это узнать ДО того,
+# как пообещает клиенту звонок, иначе получится «сейчас позвоню → не позвоним».
+# Доступно и в чате, и в post-call: решение «звонить/не звонить» принимается в
+# обоих контекстах.
+CHECK_PHONE_OPERATOR_TOOL = {
+    "type": "function",
+    "name": "check_phone_operator",
+    "description": (
+        "Проверить, можно ли позвонить клиенту с нашей телефонии. "
+        "Мы умеем звонить ТОЛЬКО на оператор O! (префиксы 050 и 070 в "
+        "кыргызском национальном формате; международно 996 500 и 996 700). "
+        "ОБЯЗАТЕЛЬНО зови этот инструмент ПРЕЖДЕ ЧЕМ пообещать клиенту «сейчас "
+        "позвоню» или назначить звонок: Beeline/Megacom мы не наберём. "
+        "Ответ: can_call=true (O! — можно звонить), can_call=false (другой "
+        "оператор — не звонить, предложить переписку или входящий звонок на "
+        "наш номер) с полем operator и note с объяснением."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "phone": {
+                "type": "string",
+                "description": "Номер клиента в любом формате: +996…, 996…, 0…, с пробелами или без",
+            },
+            "agent_contact_id": {
+                "type": "string",
+                "description": "UUID контакта агента, если номер нужно взять из карточки (альтернатива phone)",
+            },
+        },
+        "required": [],
+    },
+}
+
+
+# Тёплая передача клиента админу (ветка 1810-anri-sales-logic). Отдельная
+# тулза вместо произвольного send_telegram_notification: гарантирует формат
+# карточки «Имя | ниша | нужны [входящие/исходящие] | объём | обсудили | готов
+# к [...] | контакт», тянет недостающие поля из CRM автоматически. Нужно,
+# чтобы владелец получал один и тот же читаемый дайджест и в чате, и после
+# звонка — без «а что это за клиент, где его данные».
+NOTIFY_OWNER_HANDOFF_TOOL = {
+    "type": "function",
+    "name": "notify_owner_handoff",
+    "description": (
+        "Передать клиента админу: собрать карточку из CRM и отправить в "
+        "Telegram-бот владельца. Используй, когда клиент: (1) готов "
+        "подключаться (`ready_to_connect`), (2) просит живого человека "
+        "(`requested_human`), (3) просит демонстрацию (`demo`), (4) жалоба "
+        "или нестандартный случай (`escalation`). Если по клиенту за этот "
+        "же эпизод уже отправлял `send_telegram_notification` или "
+        "`notify_owner_handoff` — не дублируй."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта"},
+            "reason": {
+                "type": "string",
+                "enum": ["ready_to_connect", "requested_human", "demo", "escalation"],
+                "description": "Код события для шапки карточки",
+            },
+            "summary": {
+                "type": "string",
+                "description": (
+                    "Короткий (1-2 строки) контекст: что обсудили, какая боль, "
+                    "что ждёт от админа. Если пусто — соберётся из memory контакта."
+                ),
+            },
+            "scheduled_at": {
+                "type": "string",
+                "description": (
+                    "ISO 8601 UTC времени встречи/звонка, если клиент назвал. "
+                    "Пойдёт в карточку. Событие в Google Календарь создаётся "
+                    "отдельно тулзой google_calendar."
+                ),
+            },
+        },
+        "required": ["agent_contact_id", "reason"],
+    },
+}
+
+
+# Единый инструмент «отправить коммерческое предложение» (ветка 1810-anri-sales-logic).
+# Критичная цепочка после звонка: собрать КП → отправить в тот же канал →
+# зафиксировать в CRM → поставить напоминание через 60–90 мин → уведомить
+# владельца. 4–5 отдельных шагов легко забыть по одному; эта тулза делает их
+# атомарно. Если нужны тонкие настройки (своё расписание напоминания, другой
+# канал) — Анри может перейти на пару create_document + send_file + create_agent_task.
+SEND_PROPOSAL_TOOL = {
+    "type": "function",
+    "name": "send_proposal",
+    "description": (
+        "Собрать коммерческое предложение (КП) PDF, отправить его клиенту в "
+        "последний активный канал, записать в CRM, поставить напоминание через "
+        "60–90 минут и уведомить владельца — одной командой. "
+        "ВАЖНО: вызывай эту тулзу после звонка (PostCall), когда клиент не "
+        "отказался явно, или когда в чате владелец просит отправить КП конкретному "
+        "клиенту. В поле `content` клади готовый текст КП в markdown (разделы, "
+        "выгоды, следующий шаг, контакты). Платформа сама соберёт PDF фирменного "
+        "стиля агента, выберет канал по последней активности клиента, запланирует "
+        "напоминание и напишет владельцу одной строкой."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта"},
+            "content": {
+                "type": "string",
+                "description": (
+                    "Текст КП в markdown. Пиши под нишу клиента и его запрос (ниша, "
+                    "объём, что именно его интересует — входящие/исходящие/всё). "
+                    "Не копируй весь прайс, оставь только релевантные блоки."
+                ),
+            },
+            "title": {
+                "type": "string",
+                "description": "Заголовок документа (например «Коммерческое предложение Voksy AI для [компании]»)",
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["telegram", "whatsapp", "instagram"],
+                "description": (
+                    "В какой канал отправить КП. По умолчанию — последний активный у клиента."
+                ),
+            },
+            "caption": {
+                "type": "string",
+                "description": "Короткая подпись к файлу (например «[Имя], как договаривались — коммерческое»)",
+            },
+            "reminder_text": {
+                "type": "string",
+                "description": (
+                    "Текст напоминания через 60–90 минут. По умолчанию: «[Имя], получилось глянуть "
+                    "предложение? Что скажете?»"
+                ),
+            },
+            "owner_note": {
+                "type": "string",
+                "description": (
+                    "Короткая строка владельцу в Telegram (одна фраза с итогом). По умолчанию "
+                    "соберётся из данных контакта."
+                ),
+            },
+        },
+        "required": ["agent_contact_id", "content"],
     },
 }
 
@@ -1183,6 +1351,57 @@ def _chat_limit_hit(db: Session, model, scope: list, contact_id, first_limit: in
     return None
 
 
+# Streak-лимит (ветка 1810-anri-sales-logic): «не больше 2 исходящих в
+# бишкекский день подряд без ответа клиента». В ритме касаний Анри
+# день 1 допускает до 2 сообщений, день 2 — 1 сообщение + 1 звонок, и т.д.;
+# за один календарный день не нужно слать клиенту третье подряд, пока он
+# молчит. Как только клиент ответит в тот же день — лимит сбрасывается.
+# skip_rate_limit (от chat_split для многочастных сообщений) эту проверку
+# тоже пропускает, иначе части одного сообщения считались бы по отдельности.
+OUTBOUND_STREAK_LIMIT = 2
+OUTBOUND_STREAK_HINT = (
+    "Клиент сегодня не отвечает — ему уже ушло {count} сообщений подряд в этом канале. "
+    "Не отправляй третье: подожди ответа или смени канал. Если это запланированное "
+    "напоминание — перенеси на завтра через create_agent_task."
+)
+
+
+def _today_outbound_streak(db: Session, model, agent_contact_id, extra_filters=()) -> int:
+    """Сколько исходящих ушло клиенту сегодня (Бишкек) без ответа после них.
+
+    Считаем outbound за сегодняшний бишкекский день. Если в этом же дне есть
+    более поздний inbound, он сбрасывает счётчик (клиент ответил — агенту снова
+    можно до двух исходящих). Возвращает 0, если контакт не задан или ничего
+    не было.
+    """
+    if agent_contact_id is None:
+        return 0
+    from backend.core.timezone_utils import BISHKEK
+    today_start_local = datetime.now(BISHKEK).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    base = db.query(model).filter(
+        model.agent_contact_id == agent_contact_id,
+        model.created_at >= today_start_utc,
+        *extra_filters,
+    )
+    last_inbound = base.filter(model.direction == "inbound").order_by(model.created_at.desc()).first()
+    q = base.filter(model.direction == "outbound")
+    if last_inbound is not None:
+        q = q.filter(model.created_at > last_inbound.created_at)
+    return q.count()
+
+
+def _streak_block(count: int) -> Optional[dict]:
+    """None, если слать можно; dict-отказ, если streak уже достиг лимита."""
+    if count < OUTBOUND_STREAK_LIMIT:
+        return None
+    return {
+        "ok": False,
+        "error": "streak_without_reply",
+        "hint": OUTBOUND_STREAK_HINT.format(count=count),
+    }
+
+
 async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
                                     file_row=None, skip_rate_limit: bool = False) -> dict:
     """
@@ -1220,6 +1439,15 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
             "error": ("У контакта нет Instagram-диалога — написать первым в "
                       "Instagram нельзя, клиент должен написать сам."),
         }
+
+    if not skip_rate_limit:
+        streak = _today_outbound_streak(
+            db, AgentInstagramMessage, contact.id,
+            extra_filters=(AgentInstagramMessage.agent_config_id == agent_config.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
 
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentInstagramMessage, [AgentInstagramMessage.agent_config_id == agent_config.id], contact.id,
@@ -1353,6 +1581,15 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
             db.flush()
     else:
         return {"ok": False, "error": "Укажи agent_contact_id или phone"}
+
+    if not skip_rate_limit:
+        streak = _today_outbound_streak(
+            db, AgentWhatsAppMessage, contact.id,
+            extra_filters=(AgentWhatsAppMessage.account_id == account.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
 
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentWhatsAppMessage, [AgentWhatsAppMessage.account_id == account.id], contact.id,
@@ -1521,6 +1758,15 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
             AgentTelegramDialog.agent_contact_id == contact.id,
         ).first()
 
+    if not skip_rate_limit and contact is not None:
+        streak = _today_outbound_streak(
+            db, AgentTelegramMessage, contact.id,
+            extra_filters=(AgentTelegramMessage.account_id == account.id,),
+        )
+        blocked = _streak_block(streak)
+        if blocked is not None:
+            return blocked
+
     hit = None if skip_rate_limit else _chat_limit_hit(
         db, AgentTelegramMessage, [AgentTelegramMessage.account_id == account.id],
         contact.id if contact else None,
@@ -1656,6 +1902,369 @@ async def fn_schedule_telegram_message(args: dict, user_id: str, agent_config, d
     return await fn_create_agent_task(
         task_args, user_id, str(agent_config.id), db, channel="telegram"
     )
+
+
+# ============================================================================
+# send_proposal: атомарная цепочка «собрать КП → отправить → зафиксировать →
+# напомнить → сказать владельцу». Ветка 1810-anri-sales-logic.
+# ============================================================================
+
+import random as _random
+
+
+def _detect_recent_channel(db: Session, agent_config_id: str, agent_contact_id) -> Optional[str]:
+    """Какой канал клиент использовал последним. Возвращает telegram/whatsapp/instagram или None.
+
+    Берём MAX(created_at) по каждому из трёх треходов и выбираем самый свежий.
+    Если ни одного сообщения нет (контакт заведён вручную владельцем) — None.
+    """
+    from backend.models.agent_telegram_account import AgentTelegramMessage
+    from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    from backend.models.agent_instagram import AgentInstagramMessage
+
+    best_channel = None
+    best_ts = None
+    for channel, model in (
+        ("telegram", AgentTelegramMessage),
+        ("whatsapp", AgentWhatsAppMessage),
+        ("instagram", AgentInstagramMessage),
+    ):
+        row = db.query(model.created_at).filter(
+            model.agent_contact_id == agent_contact_id,
+        ).order_by(model.created_at.desc()).first()
+        if row is None or row[0] is None:
+            continue
+        ts = row[0]
+        if best_ts is None or ts > best_ts:
+            best_ts = ts
+            best_channel = channel
+    return best_channel
+
+
+async def _send_proposal_file(channel: str, args: dict, user_id: str, agent_config, db: Session) -> dict:
+    """Отправить готовый PDF КП в выбранный канал. Прокси над *_send_file."""
+    if channel == "telegram":
+        return await fn_telegram_send_file(args, user_id, agent_config, db)
+    if channel == "whatsapp":
+        return await fn_whatsapp_send_file(args, user_id, agent_config, db)
+    if channel == "instagram":
+        return await fn_instagram_send_file(args, user_id, agent_config, db)
+    return {"ok": False, "error": f"Неподдерживаемый канал: {channel}"}
+
+
+def _proposal_reminder_delay_min() -> int:
+    """Случайный интервал 60–90 минут, чтобы напоминание выглядело живым."""
+    return _random.randint(60, 90)
+
+
+def _clamp_reminder_to_working_hours(delay_min: int) -> int:
+    """Если `сейчас + delay` вылетает за 20:00 Бишкек — ставим на завтра 10:00.
+
+    Возвращает новое число минут от текущего момента. Внутри окна — исходный delay.
+    """
+    from backend.core.timezone_utils import BISHKEK
+    now_local = datetime.now(BISHKEK)
+    target_local = now_local + timedelta(minutes=delay_min)
+    if 9 <= target_local.hour < 20:
+        return delay_min
+    # За окном: ставим на следующее 10:00 Бишкек
+    tomorrow_10 = (now_local + timedelta(days=1 if now_local.hour >= 20 else 0)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+    if tomorrow_10 <= now_local:
+        tomorrow_10 = tomorrow_10 + timedelta(days=1)
+    delta_min = int((tomorrow_10 - now_local).total_seconds() // 60)
+    return max(delta_min, 10)
+
+
+async def _auto_create_calendar_event(
+    agent_config,
+    db: Session,
+    *,
+    summary: str,
+    start_utc: datetime,
+    duration_minutes: int = 30,
+    description: str = "",
+) -> Optional[dict]:
+    """Best-effort автозапись события в Google Календарь владельца.
+
+    Используется, чтобы у владельца в календаре появлялись все действия
+    агента: запланированные звонки, встречи «клиент просит человека». Если
+    коннектор google_calendar не подключён — тихо выходим (это не ошибка,
+    просто у агента нет календаря).
+
+    Время переводим в Asia/Bishkek, Composio получает wall-time + timezone,
+    чтобы событие появилось ровно на бишкекском часе, без драмы с UTC.
+    """
+    if agent_config is None:
+        return None
+    if "google_calendar" not in _connected_toolkits(agent_config, db):
+        return None
+    from backend.core.timezone_utils import BISHKEK
+    if start_utc.tzinfo is None:
+        start_utc = start_utc.replace(tzinfo=timezone.utc)
+    local = start_utc.astimezone(BISHKEK)
+    event_args = {
+        "summary": summary,
+        "start_datetime": local.strftime("%Y-%m-%dT%H:%M:%S"),
+        "event_duration_minutes": max(10, int(duration_minutes)),
+        "timezone": "Asia/Bishkek",
+        "calendar_id": "primary",
+    }
+    if description:
+        event_args["description"] = description.strip()
+    try:
+        composio_user_id = composio_service.composio_user_id_for_agent(agent_config.id)
+        result = await composio_service.execute(
+            "GOOGLECALENDAR_CREATE_EVENT", event_args, composio_user_id
+        )
+        logger.info(
+            f"[AGENT-TOOLS] calendar event '{summary}' at {event_args['start_datetime']} Bishkek"
+        )
+        return result if isinstance(result, dict) else None
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] calendar auto-insert failed: {e}")
+        return None
+
+
+_HANDOFF_REASON_LABEL = {
+    "ready_to_connect": "ГОТОВ ПОДКЛЮЧАТЬСЯ",
+    "requested_human": "ПРОСИТ ЧЕЛОВЕКА",
+    "demo": "ПРОСИТ ДЕМОНСТРАЦИЮ",
+    "escalation": "НЕСТАНДАРТНЫЙ СЛУЧАЙ / ЖАЛОБА",
+}
+
+
+async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Собрать карточку клиента из CRM и уведомить владельца о передаче."""
+    agent_contact_id = args.get("agent_contact_id")
+    reason = (args.get("reason") or "").strip()
+    if not agent_contact_id or reason not in _HANDOFF_REASON_LABEL:
+        return {"ok": False, "error": "Нужны agent_contact_id и валидный reason"}
+
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if contact is None:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    memory = contact.memory if isinstance(contact.memory, dict) else {}
+    niche = (memory.get("niche") or memory.get("industry") or "").strip()
+    volume = (memory.get("call_volume_per_day") or memory.get("volume") or "").strip() \
+        if isinstance(memory.get("call_volume_per_day") or memory.get("volume"), str) else ""
+    need = (memory.get("direction_need") or memory.get("needs") or "").strip() \
+        if isinstance(memory.get("direction_need") or memory.get("needs"), str) else ""
+    summary = (args.get("summary") or "").strip() or (memory.get("summary") or "").strip()
+
+    name = (contact.name or "—").strip()
+    phone = (contact.phone or "—").strip()
+    company = (contact.company or "").strip()
+
+    lines = [f"📌 {_HANDOFF_REASON_LABEL[reason]}"]
+    header = name
+    if company:
+        header += f" ({company})"
+    lines.append(header)
+    if niche:
+        lines.append(f"Ниша: {niche}")
+    if need:
+        lines.append(f"Нужно: {need}")
+    if volume:
+        lines.append(f"Объём: {volume}")
+    if summary:
+        lines.append(f"Контекст: {summary}")
+    if args.get("scheduled_at"):
+        lines.append(f"Назначено: {args['scheduled_at']}")
+    lines.append(f"Контакт: {phone}")
+
+    message = "\n".join(lines)
+    try:
+        await fn_send_telegram_notification({"message": message}, agent_config, db)
+        sent = True
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] notify_owner_handoff: send failed: {e}")
+        sent = False
+
+    # Автозапись встречи в Google Календарь, если клиент назвал время, а повод
+    # явно требует встречу владельца с клиентом. Best-effort — не блокирует
+    # уведомление владельцу.
+    calendar_event = None
+    scheduled_raw = args.get("scheduled_at")
+    if sent and scheduled_raw and reason in ("requested_human", "demo"):
+        scheduled_utc = _parse_iso_utc(scheduled_raw)
+        if scheduled_utc is not None:
+            cal_summary = f"👤 {_HANDOFF_REASON_LABEL[reason]}: {name}"
+            if company:
+                cal_summary += f" ({company})"
+            cal_desc_parts = [f"Контакт: {phone}"]
+            if niche:
+                cal_desc_parts.append(f"Ниша: {niche}")
+            if summary:
+                cal_desc_parts.append(f"Контекст: {summary}")
+            calendar_event = await _auto_create_calendar_event(
+                agent_config, db,
+                summary=cal_summary, start_utc=scheduled_utc, duration_minutes=60,
+                description="\n".join(cal_desc_parts),
+            )
+
+    logger.info(
+        f"[AGENT-TOOLS] notify_owner_handoff reason={reason} contact={agent_contact_id} sent={sent} "
+        f"calendar={bool(calendar_event)}"
+    )
+    return {
+        "ok": sent,
+        "reason": reason,
+        "message": message,
+        "contact_id": str(agent_contact_id),
+        "calendar_event_created": bool(calendar_event),
+    }
+
+
+async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """
+    Атомарная цепочка после звонка: собрать КП → отправить → записать → напомнить → владельцу.
+    Пять шагов в одной тулзе, чтобы ни один не потерялся.
+    """
+    agent_contact_id = args.get("agent_contact_id")
+    content = (args.get("content") or "").strip()
+    if not agent_contact_id or not content:
+        return {"ok": False, "error": "agent_contact_id и content обязательны"}
+
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if contact is None:
+        return {"ok": False, "error": "Контакт не найден"}
+
+    client_name = (contact.name or contact.phone or "клиент").strip()
+    niche = ""
+    if isinstance(contact.memory, dict):
+        niche = (contact.memory.get("niche") or contact.memory.get("summary") or "").strip()
+
+    # Канал — явный > автодетект > telegram как минимально болезненный fallback.
+    channel = (args.get("channel") or "").strip().lower() or None
+    if channel not in ("telegram", "whatsapp", "instagram"):
+        channel = _detect_recent_channel(db, agent_config_id, agent_contact_id) or "telegram"
+
+    # 1. Собираем КП (всё та же fn_create_document — фирстиль, обложка, таблицы).
+    title = (args.get("title") or f"Коммерческое предложение Voksy AI для {client_name}").strip()
+    doc_result = await fn_create_document(
+        {
+            "agent_contact_id": agent_contact_id,
+            "title": title,
+            "content": content,
+            "format": "pdf",
+            "kind_label": "Коммерческое предложение",
+            "cover": True,
+        },
+        user_id, agent_config_id, db,
+    )
+    if not doc_result.get("ok"):
+        return {"ok": False, "step": "create_document", "error": doc_result.get("error")}
+    file_id = doc_result["file_id"]
+
+    # 2. Отправка в выбранный канал.
+    caption = (args.get("caption") or f"{client_name}, как договаривались — коммерческое предложение.").strip()
+    send_args = {
+        "agent_contact_id": agent_contact_id,
+        "file_id": file_id,
+        "caption": caption,
+    }
+    send_result = await _send_proposal_file(channel, send_args, user_id, agent_config, db)
+    if not send_result.get("ok"):
+        return {
+            "ok": False, "step": "send_file", "channel": channel,
+            "file_id": file_id, "error": send_result.get("error"),
+            "hint": "КП собрано, но отправить в канал не удалось. Попробуй другой канал вручную.",
+        }
+
+    # 3. Записываем в memory: подстадия voronki + метки для дальнейших сценариев.
+    memory = dict(contact.memory or {})
+    memory["funnel_stage"] = "proposal_sent"
+    memory["proposal_sent_at"] = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    memory["proposal_file_id"] = file_id
+    memory["proposal_channel"] = channel
+    contact.memory = memory
+    flag_modified(contact, "memory")
+    db.commit()
+
+    # 4. Напоминание 60–90 мин, с переносом на 10:00 следующего дня, если за окно.
+    reminder_delay = _clamp_reminder_to_working_hours(_proposal_reminder_delay_min())
+    reminder_text = (args.get("reminder_text") or "").strip() or (
+        f"Напомни {client_name}: «Получилось глянуть предложение? Что скажете?» "
+        "Будь коротким, без давления. Если клиент ответил сомнениями — отработай возражение."
+    )
+    reminder_scheduled = False
+    reminder_result = None
+    reminder_note = None
+    tg_account_ok = (
+        telegram_user_service.is_configured()
+        and telegram_user_service.account_connected(db, agent_config_id)
+    )
+    if tg_account_ok and channel == "telegram":
+        reminder_result = await fn_create_agent_task(
+            {
+                "agent_contact_id": agent_contact_id,
+                "delay_minutes": reminder_delay,
+                "title": "Напоминание после КП",
+                "notes": reminder_text,
+            },
+            user_id, agent_config_id, db, channel="telegram",
+        )
+        reminder_scheduled = reminder_result.get("ok", False)
+    if not reminder_scheduled:
+        reminder_note = (
+            f"Напоминание не поставлено автоматически (канал={channel}, telegram-аккаунт "
+            f"{'подключён' if tg_account_ok else 'не подключён'}). "
+            f"Поставь вручную через {reminder_delay} мин: create_agent_task(channel='telegram', notes=...)."
+        )
+
+    # 5. Короткая строка владельцу в Telegram-бота.
+    owner_note = (args.get("owner_note") or "").strip()
+    if not owner_note:
+        parts = [client_name]
+        if niche:
+            parts.append(niche)
+        parts.append(f"КП отправлено ({channel})")
+        if reminder_scheduled:
+            parts.append(f"напомню через {reminder_delay} мин")
+        else:
+            parts.append("напоминание не запланировано")
+        owner_note = " | ".join(parts)
+    try:
+        await fn_send_telegram_notification({"message": owner_note}, agent_config, db)
+        owner_notified = True
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] send_proposal: owner notify failed: {e}")
+        owner_notified = False
+
+    logger.info(
+        f"[AGENT-TOOLS] send_proposal → contact={agent_contact_id} channel={channel} "
+        f"file={file_id} reminder_in_min={reminder_delay if reminder_scheduled else 'manual'}"
+    )
+    return {
+        "ok": True,
+        "file_id": file_id,
+        "channel": channel,
+        "memory_stage": "proposal_sent",
+        "reminder_scheduled": reminder_scheduled,
+        "reminder_delay_minutes": reminder_delay,
+        "reminder_task_id": (reminder_result or {}).get("task_id") if reminder_scheduled else None,
+        "reminder_note": reminder_note,
+        "owner_notified": owner_notified,
+    }
 
 
 # ============================================================================
@@ -2094,6 +2703,9 @@ AGENT_CHAT_TOOLS = [
             },
         },
     },
+    CHECK_PHONE_OPERATOR_TOOL,
+    SEND_PROPOSAL_TOOL,
+    NOTIFY_OWNER_HANDOFF_TOOL,
 ]
 
 
@@ -2161,6 +2773,9 @@ AGENT_POSTCALL_TOOLS = [
     FIND_PRODUCTS_TOOL,
     SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
+    CHECK_PHONE_OPERATOR_TOOL,
+    SEND_PROPOSAL_TOOL,
+    NOTIFY_OWNER_HANDOFF_TOOL,
 ]
 
 
@@ -2242,7 +2857,7 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
                 scheduled_at = snooze_until
                 logger.info(f"[AGENT-TOOLS] Contact {agent_contact_id} snoozed until {snooze_until}, shifting task to it")
 
-    # Унифицированная проверка рабочих часов агента (МСК) — переносим звонок
+    # Унифицированная проверка рабочих часов агента (Бишкек) — переносим звонок
     # на ближайший рабочий день, если время выпадает на нерабочие часы.
     # Telegram-сообщения рабочими часами не ограничены.
     if agent_config is not None and not is_telegram:
@@ -2252,6 +2867,33 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
             agent_config.working_hours_end,
         )
         scheduled_at = adjusted
+
+    # Guard-ы для звонков (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек +
+    # «не больше одного звонка в день на клиента». Если время вне окна —
+    # сдвинем на ближайший момент внутри; если оператор не наш или сегодня уже
+    # есть звонок — отдадим Анри понятный отказ с hint.
+    if channel == "call":
+        guard_contact = snooze_contact if snooze_contact is not None else db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id
+        ).first()
+        if guard_contact is None:
+            return {"ok": False, "error": "Contact not found"}
+        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True)
+        if not guard.get("ok"):
+            return guard
+        scheduled_at = guard["scheduled_utc"]
+        # Второй звонок в тот же бишкекский день (помимо текущего) не ставим.
+        from backend.core.timezone_utils import BISHKEK as _BISHKEK
+        local_date = scheduled_at.astimezone(_BISHKEK).date()
+        if _already_scheduled_call_today(agent_contact_id, local_date, db):
+            return {
+                "ok": False,
+                "error": "already_scheduled_today",
+                "hint": (
+                    f"На {local_date.isoformat()} этому клиенту уже запланирован звонок "
+                    "— не ставим второй в тот же день."
+                ),
+            }
 
     # Cancel only exact-time duplicates for this contact (same contact + same
     # scheduled_time + same channel). Tasks scheduled for other dates/times are
@@ -2293,6 +2935,34 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     db.refresh(task)
 
     logger.info(f"[AGENT-TOOLS] Created agent task {task.id} (channel={channel}) for contact {agent_contact_id} at {scheduled_at}")
+
+    # Автозапись в Google Календарь (ветка 1810-anri-sales-logic): владельцу
+    # нужно видеть всю работу агента в календаре. Делаем best-effort только
+    # для звонков, чтобы не захламлять календарь десятками «отложенное
+    # сообщение в Telegram».
+    calendar_event = None
+    if channel == "call":
+        cal_contact = snooze_contact if snooze_contact is not None else db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id
+        ).first()
+        cal_name = (cal_contact.name if cal_contact else None) or (cal_contact.phone if cal_contact else "") or "клиент"
+        cal_niche = ""
+        if cal_contact and isinstance(cal_contact.memory, dict):
+            cal_niche = str(cal_contact.memory.get("niche") or cal_contact.memory.get("industry") or "").strip()
+        cal_summary = f"📞 Звонок агента: {cal_name}" + (f" ({cal_niche})" if cal_niche else "")
+        cal_desc_parts = []
+        if args.get("title") and args.get("title") != "Звонок агента":
+            cal_desc_parts.append(args["title"])
+        if args.get("notes"):
+            cal_desc_parts.append(args["notes"])
+        if cal_contact and cal_contact.phone:
+            cal_desc_parts.append(f"Контакт: {cal_contact.phone}")
+        calendar_event = await _auto_create_calendar_event(
+            agent_config, db,
+            summary=cal_summary, start_utc=scheduled_at, duration_minutes=30,
+            description="\n".join(cal_desc_parts),
+        )
+
     result = {
         "ok": True,
         "task_id": str(task.id),
@@ -2302,6 +2972,8 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     }
     if clamped_to_future:
         result["note"] = "scheduled_at был в прошлом — время поднято до ближайшего будущего"
+    if calendar_event is not None:
+        result["calendar_event_created"] = True
     return result
 
 
@@ -3201,8 +3873,180 @@ async def fn_bulk_schedule_calls(args: dict, user_id: str, agent_config_id: str,
     return {"ok": True, "scheduled_count": len(scheduled), "tasks": scheduled}
 
 
+# Защиты звонков (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек + лимит
+# «один звонок в день на клиента». До этой ветки оркестратор мог обещать звонок
+# в полночь / на Beeline / повторный после «сброса» — но дотрагивался до правила
+# только через промпт. Теперь любое планирование звонка проходит через этот
+# shared-guard (чтобы в trigger_immediate_call и в create_agent_task(channel=call)
+# логика была единой).
+CALL_WINDOW_START_HOUR = 9   # 09:00 Бишкек
+CALL_WINDOW_END_HOUR = 20    # 20:00 Бишкек (включительно до :59)
+
+
+def _bishkek_now() -> datetime:
+    from backend.core.timezone_utils import now_bishkek
+    return now_bishkek()
+
+
+def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True) -> dict:
+    """
+    Проверить, можно ли ставить звонок на этот момент.
+
+    Возвращает dict:
+      - {"ok": True, "scheduled_utc": datetime}  — звонок разрешён (возможно, со сдвигом)
+      - {"ok": False, "error": "...", "hint": "..."}  — отказ с объяснением
+
+    Правила (все — Бишкек):
+      * оператор клиента — O! (050 / 070);
+      * окно 09:00–20:00 по Бишкеку;
+      * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
+      * существующая запланированная «call»-задача на этого контакта на сегодня
+        тоже считается — не создаём второй звонок.
+
+    allow_shift=True: если время вне окна, предложим ближайший момент внутри окна
+    и вернём его в scheduled_utc. False — просто ошибка «вне окна».
+    """
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number
+    from backend.core.timezone_utils import BISHKEK
+
+    # --- оператор ---
+    phone = (contact.phone or "").strip() if contact else ""
+    if not phone:
+        return {"ok": False, "error": "no_phone", "hint": "У контакта не задан номер телефона."}
+    digits = normalize_sip_number(phone)
+    if not is_o_number(digits):
+        return {
+            "ok": False,
+            "error": "other_operator",
+            "hint": (
+                "Этот номер не на операторе O! (мы звоним только на префиксы 050 и 070). "
+                "Предложи клиенту переписку или входящий звонок на наш номер."
+            ),
+            "phone": phone,
+        }
+
+    # --- окно 09–20 Бишкек ---
+    if scheduled_utc.tzinfo is None:
+        scheduled_utc = scheduled_utc.replace(tzinfo=timezone.utc)
+    local = scheduled_utc.astimezone(BISHKEK)
+    if local.hour < CALL_WINDOW_START_HOUR or local.hour >= CALL_WINDOW_END_HOUR:
+        if not allow_shift:
+            return {
+                "ok": False,
+                "error": "outside_window",
+                "hint": f"Звонки только с {CALL_WINDOW_START_HOUR:02d}:00 до {CALL_WINDOW_END_HOUR:02d}:00 Бишкек.",
+                "scheduled_local": local.strftime("%Y-%m-%d %H:%M"),
+            }
+        # Сдвигаем на ближайший момент внутри окна (сегодня 09:00 если ночь до
+        # окна, иначе завтра 09:00 если уже после окна).
+        if local.hour < CALL_WINDOW_START_HOUR:
+            shifted_local = local.replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        else:
+            shifted_local = (local + timedelta(days=1)).replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        scheduled_utc = shifted_local.astimezone(timezone.utc)
+        local = shifted_local
+
+    # --- один звонок в день ---
+    today_local = local.date()
+    last_called = contact.last_called_at
+    if last_called is not None:
+        if last_called.tzinfo is None:
+            last_called = last_called.replace(tzinfo=timezone.utc)
+        if last_called.astimezone(BISHKEK).date() == today_local:
+            return {
+                "ok": False,
+                "error": "already_called_today",
+                "hint": (
+                    "Сегодня этому клиенту уже звонили — не больше одного звонка в день. "
+                    f"Ближайший разрешённый звонок: завтра с {CALL_WINDOW_START_HOUR:02d}:00 Бишкек."
+                ),
+                "last_called_at": last_called.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M"),
+            }
+
+    # Запланированная задача-звонок на этот день уже есть?
+    # Проверяем через SQLAlchemy у вызывающего — здесь только контракт результата.
+    return {"ok": True, "scheduled_utc": scheduled_utc}
+
+
+def _already_scheduled_call_today(contact_id, local_date, db: Session) -> bool:
+    """Есть ли уже SCHEDULED call-задача для контакта на эту бишкекскую дату."""
+    from backend.core.timezone_utils import BISHKEK
+    start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=BISHKEK)
+    end_local = start_local + timedelta(days=1)
+    return db.query(Task.id).filter(
+        Task.agent_contact_id == contact_id,
+        Task.status == TaskStatus.SCHEDULED,
+        Task.is_agent_task == True,
+        Task.channel == "call",
+        Task.scheduled_time >= start_local.astimezone(timezone.utc).replace(tzinfo=None),
+        Task.scheduled_time < end_local.astimezone(timezone.utc).replace(tzinfo=None),
+    ).first() is not None
+
+
+async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Проверить номер клиента: оператор O! → можно звонить."""
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number, O_MOBILE_PREFIXES
+
+    phone = (args.get("phone") or "").strip()
+    agent_contact_id = args.get("agent_contact_id")
+    if not phone and agent_contact_id:
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id,
+            AgentContact.user_id == user_id,
+            AgentContact.agent_config_id == agent_config_id,
+        ).first()
+        if contact and contact.phone:
+            phone = contact.phone.strip()
+    if not phone:
+        return {"ok": False, "error": "phone_required", "hint": "Передай phone или agent_contact_id."}
+
+    digits = normalize_sip_number(phone)
+    if len(digits) != 12 or not digits.startswith("996"):
+        return {
+            "ok": True,
+            "can_call": False,
+            "operator": "unknown",
+            "phone": phone,
+            "note": (
+                "Номер не похож на кыргызский (ждём 12 цифр, начинающихся с 996). "
+                "Уточни у клиента полный номер; звонить не предлагай."
+            ),
+        }
+    national = "0" + digits[3:]
+    prefix = national[:3]
+    if is_o_number(digits):
+        return {
+            "ok": True,
+            "can_call": True,
+            "operator": "O!",
+            "prefix": prefix,
+            "phone": phone,
+            "note": (
+                "Номер оператора O! — можем позвонить. Если собираешься звонить сейчас, "
+                "проверь, что сейчас 09:00–20:00 по Бишкеку."
+            ),
+        }
+    return {
+        "ok": True,
+        "can_call": False,
+        "operator": "other",
+        "prefix": prefix,
+        "phone": phone,
+        "note": (
+            f"Префикс {prefix} не относится к O! (мы умеем звонить только на {', '.join(O_MOBILE_PREFIXES)}). "
+            "Скажи клиенту, что звонить мы можем только на O!, и предложи продолжить переписку "
+            "или входящий звонок на наш номер (его дай из базы знаний)."
+        ),
+    }
+
+
 async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
-    """Создать задачу на немедленный звонок (без сдвига в рабочие часы)."""
+    """Создать задачу на немедленный звонок (без сдвига в рабочие часы).
+
+    Guard-ы (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек + лимит одного
+    звонка в день на контакт. Отказ возвращает понятный hint, чтобы оркестратор
+    мог корректно ответить клиенту.
+    """
     agent_contact_id = args.get("agent_contact_id")
     if not agent_contact_id:
         return {"ok": False, "error": "agent_contact_id_required"}
@@ -3218,6 +4062,21 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
     if agent_config is not None and not agent_config.is_active:
         return {"ok": False, "error": "agent_inactive", "hint": "Активируйте агента, иначе планировщик не выполнит звонок."}
+
+    now_utc = datetime.now(timezone.utc)
+    guard = _check_call_guards(contact, now_utc, allow_shift=False)
+    if not guard.get("ok"):
+        return guard
+    # Для немедленного звонка — отдельно проверим, что уже нет запланированного
+    # звонка на сегодня (last_called_at успевает обновиться только после звонка).
+    from backend.core.timezone_utils import BISHKEK
+    today_bishkek = now_utc.astimezone(BISHKEK).date()
+    if _already_scheduled_call_today(contact.id, today_bishkek, db):
+        return {
+            "ok": False,
+            "error": "already_scheduled_today",
+            "hint": "На сегодня этому клиенту уже запланирован звонок — не ставим второй.",
+        }
 
     # Немедленно: ставим задачу на текущий момент, рабочие часы НЕ применяем —
     # пользователь явно просит позвонить сейчас. Планировщик подхватит её за ~30с.
@@ -3672,6 +4531,12 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_bulk_schedule_calls(tool_args, user_id, agent_config_id, db)
         elif tool_name == "trigger_immediate_call":
             result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "check_phone_operator":
+            result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "send_proposal":
+            result = await fn_send_proposal(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "notify_owner_handoff":
+            result = await fn_notify_owner_handoff(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "pause_agent_for_contact":

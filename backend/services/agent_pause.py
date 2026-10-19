@@ -139,11 +139,11 @@ def clear_pause(contact) -> None:
 
 
 def describe(contact) -> str:
-    """Короткая строка для тулз и логов: «на паузе до 18:30 МСК» / «работает»."""
+    """Короткая строка для тулз и логов: «на паузе до 18:30 Бишкек» / «работает»."""
     if not is_paused(contact):
         return "агент работает"
     until = contact.ai_paused_until
     if until >= AI_PAUSE_FOREVER - timedelta(days=1):
         return "агент отключён в этом чате навсегда"
-    from backend.core.timezone_utils import utc_to_msk
-    return f"агент на паузе до {utc_to_msk(until).strftime('%d.%m %H:%M')} МСК"
+    from backend.core.timezone_utils import utc_to_bishkek
+    return f"агент на паузе до {utc_to_bishkek(until).strftime('%d.%m %H:%M')} Бишкек"

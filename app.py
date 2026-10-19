@@ -2831,15 +2831,18 @@ async def startup_event():
             # (backend/core/background_loop.py): их синхронные запросы к БД
             # больше не останавливают звук звонков в основном loop'е воркера.
             from backend.core.background_loop import start_background_jobs
+            from backend.services.weekly_jobs import start_weekly_jobs_loop
             start_background_jobs([
                 start_subscription_checker,                                  # раз в час
                 lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
                 start_subscription_blocker,                                  # каждые 5 мин
                 lambda: start_telegram_user_poller(check_interval=60),       # личный Telegram агента
                 start_instagram_poller,                                      # Instagram DM агента
+                start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
             ])
             logger.info("✅ Background jobs started in a separate thread: subscription checker, "
-                        "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s)")
+                        "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s), "
+                        "weekly jobs (Sun 21:00 report + Mon 10:00 nurture, Bishkek)")
 
         except Exception as e:
             logger.error(f"❌ Error starting schedulers: {str(e)}")

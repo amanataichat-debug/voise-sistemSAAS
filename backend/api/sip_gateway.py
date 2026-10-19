@@ -417,8 +417,14 @@ async def sip_media(
     prompt = f"{base_prompt}\n\n[Контекст звонка] {context}".strip()
     try:
         agent_cfg = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
+        # Распознавание клиента на звонке с незнакомого номера (ветка 1810-anri-sales-logic):
+        # если номер не наш контакт, но за последний час писали / звонили похожие
+        # клиенты — подсказываем модели список имён и ниш, чтобы после «как вас зовут?»
+        # она состыковала собеседника с его контактом в CRM.
+        inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
+        enriched_context = f"{context}\n\n{inbound_hint}" if inbound_hint else context
         prompt, kb_stats = agent_voice_context.build_call_system_prompt(
-            db, assistant, agent_cfg, call_context=context,
+            db, assistant, agent_cfg, call_context=enriched_context,
             # Голосовой слой GPT-Live видит только начало промпта — остальное
             # доступно лишь делегирующему бэкенду, то есть снова через функцию.
             max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,

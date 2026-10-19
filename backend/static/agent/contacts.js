@@ -149,7 +149,7 @@ function renderContactDetails(c){
       <div class="cd-task-new" id="cd-task-new" style="display:none">
         <input type="text" class="form-input" id="cdt-new-title" placeholder="Название задачи">
         <div>
-          <label class="form-label" style="margin-bottom:4px">Дата и время <span style="color:var(--muted);font-weight:400">🕐 МСК</span></label>
+          <label class="form-label" style="margin-bottom:4px">Дата и время <span style="color:var(--muted);font-weight:400">🕐 Бишкек</span></label>
           <input type="datetime-local" class="form-input" id="cdt-new-time">
         </div>
         <div class="task-ed-btns">
