@@ -15,7 +15,7 @@ Task Scheduler для автоматического выполнения зап
 import asyncio
 import json
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, Tuple
 
@@ -45,6 +45,12 @@ VOXIMPLANT_API_URL = "https://api.voximplant.com/platform_api/StartScenarios/"
 
 # Timezone по умолчанию
 DEFAULT_TIMEZONE = "Asia/Bishkek"
+
+# Анти-долбёж (карта, баг B1): минимальный интервал между дозвонами ОДНОМУ
+# контакту. Если звонили меньше этого времени назад — повторный звонок не
+# набираем сейчас, а переносим. Клиент сбросил/не ответил → агент не долбит
+# подряд, перезвонит позже (во второй половине дня, в рабочем окне).
+CALL_RETRY_COOLDOWN = timedelta(hours=3)
 
 # Провайдеры со своим исходящим сценарием. Каскаду нужна цепочка
 # vox-turn-taking + outbound_cascade, Fish — прокси синтеза (/ws/fish/tts/…);
@@ -246,7 +252,45 @@ class TaskScheduler:
                 logger.info(f"   Assistant: {eleven_assistant.name} (Eleven)")
 
         return assistant_id, assistant_name, assistant_type
-    
+
+    def _dial_gate(self, agent_contact, now_utc: datetime) -> Optional[datetime]:
+        """
+        Детерминированный предохранитель перед исходящим дозвоном (карта, баги B1+B2).
+        НЕ зависит от решений оркестратора — работает всегда, на уровне кода:
+          * B2 — окно звонков 09:00–20:00 Бишкек (исполнение задачи, не только её создание);
+          * B1 — анти-долбёж: если контакту уже звонили менее CALL_RETRY_COOLDOWN
+            назад, повтор не набираем сейчас.
+
+        Возвращает None, если звонить можно прямо сейчас. Иначе — наивный UTC
+        datetime, на который нужно перенести задачу (оставив её SCHEDULED).
+        """
+        from backend.core.timezone_utils import BISHKEK
+        from backend.services.agent_tools import CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR
+
+        now_local = now_utc.replace(tzinfo=timezone.utc).astimezone(BISHKEK)
+        earliest = now_local
+
+        # B1 — анти-долбёж: не раньше, чем через CALL_RETRY_COOLDOWN после прошлого звонка.
+        last = getattr(agent_contact, "last_called_at", None)
+        if last is not None:
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            cooldown_until = last.astimezone(BISHKEK) + CALL_RETRY_COOLDOWN
+            if cooldown_until > earliest:
+                earliest = cooldown_until
+
+        # B2 — поджать к рабочему окну 09:00–20:00 Бишкек.
+        if earliest.hour < CALL_WINDOW_START_HOUR:
+            earliest = earliest.replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        elif earliest.hour >= CALL_WINDOW_END_HOUR:
+            earliest = (earliest + timedelta(days=1)).replace(
+                hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0
+            )
+
+        if earliest <= now_local:
+            return None
+        return earliest.astimezone(timezone.utc).replace(tzinfo=None)
+
     async def execute_agent_task(self, task: Task, db: Session):
         """
         Execute an agent task: create AgentCall, run PreCall with AgentContact,
@@ -288,6 +332,22 @@ class TaskScheduler:
             if not agent_config or not agent_config.is_active:
                 logger.info(f"[TASK-SCHEDULER] Skipping agent task {task.id}: agent missing or inactive")
                 return  # не помечаем как failed — просто пропускаем, ждём активации
+
+            # B1+B2 (карта): детерминированный предохранитель перед дозвоном —
+            # окно 09–20 Бишкек + анти-долбёж. Только для звонков; telegram-задачи
+            # идут своим путём (сообщение, а не звонок). Задача остаётся SCHEDULED
+            # и переносится на разрешённое время.
+            if (task.channel or "call") != "telegram":
+                postpone_to = self._dial_gate(agent_contact, datetime.utcnow())
+                if postpone_to is not None:
+                    task.scheduled_time = postpone_to
+                    task.status = TaskStatus.SCHEDULED
+                    db.commit()
+                    logger.info(
+                        f"[TASK-SCHEDULER] ⏳ Agent task {task.id} перенесена на {postpone_to} UTC "
+                        f"(окно 09–20 Бишкек / анти-долбёж, контакт {agent_contact.id})"
+                    )
+                    return
 
             # Lock task immediately
             task.status = TaskStatus.PENDING
