@@ -43,10 +43,16 @@ from backend.models.agent_contact import AgentContact
 
 logger = get_logger(__name__)
 
-# Причины отказа шлюза, при которых исходящий имеет смысл повторить позже
-RETRYABLE_FAIL_REASONS = {"channel_limit", "ami_unavailable", "ami_error", "trunk_unavailable", "congestion"}
-MAX_ORIGINATE_ATTEMPTS = 6
-RETRY_DELAY_SECONDS = 30
+# Причины отказа, при которых исходящий имеет смысл повторить позже.
+# ВАЖНО (баг B1, долбёж): сюда входят ТОЛЬКО причины «наша сторона, звонок до
+# клиента не дошёл» (канал/AMI/транк недоступны). "congestion" УБРАН намеренно:
+# оператор возвращает его и при СБРОСЕ клиентом, и при выключенном телефоне
+# (AMI Reason 8) — повтор таких звонков = долбёж и риск блокировки номера.
+# Сброс / занято / нет ответа / congestion НЕ повторяем: один звонок, дальше
+# агент пишет клиенту в мессенджер (см. промпт PostCall).
+RETRYABLE_FAIL_REASONS = {"channel_limit", "ami_unavailable", "ami_error", "trunk_unavailable"}
+MAX_ORIGINATE_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 120
 
 # Жёсткий анти-долбёж (карта, баг B1): минимальный интервал между исходящими на
 # ОДИН номер. Это последний рубеж — через queue_outbound_call проходят ВСЕ пути
