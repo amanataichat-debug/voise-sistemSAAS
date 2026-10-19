@@ -48,6 +48,13 @@ RETRYABLE_FAIL_REASONS = {"channel_limit", "ami_unavailable", "ami_error", "trun
 MAX_ORIGINATE_ATTEMPTS = 6
 RETRY_DELAY_SECONDS = 30
 
+# Жёсткий анти-долбёж (карта, баг B1): минимальный интервал между исходящими на
+# ОДИН номер. Это последний рубеж — через queue_outbound_call проходят ВСЕ пути
+# (планировщик, немедленный звонок, CRM, ручной), и он НЕ зависит от
+# last_called_at (тот обновляется только после PostCall и отстаёт, из-за чего
+# быстрый цикл повторов проскакивал). Защищает номер оператора от блокировки.
+OUTBOUND_MIN_GAP_PER_NUMBER = timedelta(minutes=30)
+
 
 def _utcnow() -> datetime:
     return datetime.utcnow()
@@ -183,6 +190,29 @@ class SipGatewayService:
         if not is_o_number(to_digits):
             raise ValueError(
                 "Исходящие возможны только на номера O! (префиксы " + ", ".join(O_MOBILE_PREFIXES) + ")"
+            )
+        # Жёсткий анти-долбёж: не ставим второй исходящий на тот же номер, если по
+        # нему уже был звонок за последние OUTBOUND_MIN_GAP_PER_NUMBER. Срабатывает
+        # на ЛЮБОМ пути постановки и не зависит от last_called_at. Защищает от
+        # блокировки номера оператором (клиент сбросил → агент не долбит подряд).
+        recent_call = (
+            db.query(SipCall.id)
+            .filter(
+                SipCall.user_id == user_id,
+                SipCall.direction == "outbound",
+                SipCall.to_number == to_digits,
+                SipCall.created_at >= _utcnow() - OUTBOUND_MIN_GAP_PER_NUMBER,
+            )
+            .first()
+        )
+        if recent_call is not None:
+            logger.warning(
+                f"[SIP] anti-flood: отклонён повторный исходящий на {to_digits} "
+                f"(user {user_id}) — был звонок менее {int(OUTBOUND_MIN_GAP_PER_NUMBER.total_seconds() // 60)} мин назад"
+            )
+            raise ValueError(
+                "Этому номеру уже звонили только что — повторный звонок будет позже, "
+                "чтобы не беспокоить клиента подряд."
             )
         if assistant_type == "eleven":
             # Минуты Eleven-карточек (и агентов) платятся из кошелька: пустой — не набираем номер
