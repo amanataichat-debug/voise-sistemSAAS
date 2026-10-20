@@ -250,7 +250,8 @@ class AgentCreateRequest(BaseModel):
     voice_additional_instructions: Optional[str] = None
     inbound_first_phrase: Optional[str] = Field(None, max_length=500)
     working_hours_start: int = Field(default=9, ge=0, le=23)
-    working_hours_end: int = Field(default=21, ge=0, le=23)
+    working_hours_end: int = Field(default=20, ge=1, le=24)
+    call_window_enabled: bool = True
     orchestrator_model: Optional[str] = None  # default → get_default_model()
     # Голос (gemini/openai/yandex). Для cartesia — cartesia_voice_id + voice_speed,
     # для fish — fish_voice_id + fish_model/fish_latency + voice_speed.
@@ -282,7 +283,9 @@ class AgentUpdateRequest(BaseModel):
     voice_additional_instructions: Optional[str] = None
     inbound_first_phrase: Optional[str] = Field(None, max_length=500)
     working_hours_start: Optional[int] = Field(None, ge=0, le=23)
-    working_hours_end: Optional[int] = Field(None, ge=0, le=23)
+    working_hours_end: Optional[int] = Field(None, ge=1, le=24)
+    # Окно звонков: False — агент звонит в любое время суток
+    call_window_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
     default_caller_id: Optional[str] = Field(None, max_length=50)
     webhook_url: Optional[str] = Field(None, max_length=500)
@@ -892,6 +895,7 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "inbound_first_phrase": agent.inbound_first_phrase,
         "working_hours_start": agent.working_hours_start,
         "working_hours_end": agent.working_hours_end,
+        "call_window_enabled": bool(getattr(agent, "call_window_enabled", True)),
         "default_caller_id": agent.default_caller_id,
         "webhook_url": agent.webhook_url,
         # Фирменный стиль PDF-документов агента (ветка 1310-kp-design)
@@ -1040,6 +1044,7 @@ async def create_agent(
         inbound_first_phrase=body.inbound_first_phrase,
         working_hours_start=body.working_hours_start,
         working_hours_end=body.working_hours_end,
+        call_window_enabled=body.call_window_enabled,
         uses_hardcoded_prompt=True,
         chat_history=[],
     )
@@ -1171,12 +1176,18 @@ async def update_agent(
 
     for field in ['name', 'additional_instructions', 'voice_additional_instructions',
                   'inbound_first_phrase',
-                  'working_hours_start', 'working_hours_end', 'is_active', 'default_caller_id',
+                  'working_hours_start', 'working_hours_end', 'call_window_enabled',
+                  'is_active', 'default_caller_id',
                   'webhook_url',
                   # Фирменный стиль PDF-документов агента (ветка 1310-kp-design)
                   'brand_company_name', 'brand_contacts']:
         if field in update_data:
             setattr(agent, field, update_data[field])
+
+    # Окно звонков «с start:00 до end:00» — без перехода через полночь.
+    if ('working_hours_start' in update_data or 'working_hours_end' in update_data) \
+            and agent.working_hours_start >= agent.working_hours_end:
+        raise HTTPException(status_code=400, detail="Время звонков: «с» должно быть раньше, чем «до»")
 
     # Цвет шапки документов: принимаем «#2a5ce8» и «2a5ce8», пустую строку —
     # как сброс к нейтральному оформлению.

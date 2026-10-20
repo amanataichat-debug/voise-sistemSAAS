@@ -125,9 +125,14 @@ class AgentConfig(Base):
     # Флаг — TRUE для агентов созданных после v3.0
     uses_hardcoded_prompt = Column(Boolean, default=False, nullable=False)
 
-    # Рабочие часы (Бишкек, UTC+6)
+    # Рабочие часы (Бишкек, UTC+6). Это же — окно, в которое агент ЗВОНИТ
+    # (_check_call_guards, планировщик): звонок с start:00 до end:00.
     working_hours_start = Column(Integer, default=9, nullable=False)
-    working_hours_end = Column(Integer, default=21, nullable=False)
+    working_hours_end = Column(Integer, default=20, nullable=False)  # не включительно, до 24
+    # Ограничивать ли время звонков этим окном. False — агент звонит в любое
+    # время суток (тесты владельца, круглосуточный бизнес). Настройка «Звонки»
+    # в карточке агента. Колонку добавляет app.ensure_branding_columns().
+    call_window_enabled = Column(Boolean, default=True, nullable=False, server_default="true")
 
     # Номер для исходящих звонков (caller_id)
     default_caller_id = Column(String(50), nullable=True)

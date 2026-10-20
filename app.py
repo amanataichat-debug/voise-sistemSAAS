@@ -1716,6 +1716,9 @@ def ensure_branding_columns():
         "ADD COLUMN IF NOT EXISTS brand_color VARCHAR(16)",
         "ADD COLUMN IF NOT EXISTS brand_contacts VARCHAR(500)",
         "ADD COLUMN IF NOT EXISTS brand_logo_file_id UUID",
+        # Окно звонков агента вкл/выкл (ветка 2010-live-human) — та же таблица,
+        # тот же ранний старт, поэтому здесь, а не отдельной функцией.
+        "ADD COLUMN IF NOT EXISTS call_window_enabled BOOLEAN NOT NULL DEFAULT TRUE",
     ]
     try:
         inspector = inspect(engine)
@@ -1734,6 +1737,15 @@ def ensure_branding_columns():
             with engine.begin() as conn:
                 conn.execute(text("SET LOCAL lock_timeout = '15s'"))
                 conn.execute(text(f'ALTER TABLE "agent_configs" {alter}'))
+                if col == "call_window_enabled":
+                    # Окно звонков теперь берётся из рабочих часов агента. До этого
+                    # они нигде не применялись (adjust_to_working_hours — no-op), а
+                    # звонки резал жёсткий код 09–20; у всех агентов лежал
+                    # неиспользуемый дефолт «до 21». Один раз — только при добавлении
+                    # колонки — ставим 20, чтобы поведение не изменилось.
+                    conn.execute(text(
+                        'UPDATE "agent_configs" SET working_hours_end = 20 WHERE working_hours_end = 21'
+                    ))
             added += 1
         except Exception as e:
             logger.error(f"❌ ensure_branding_columns: agent_configs.{col}: {e}")
