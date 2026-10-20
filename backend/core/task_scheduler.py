@@ -338,6 +338,24 @@ class TaskScheduler:
                 logger.info(f"[TASK-SCHEDULER] Skipping agent task {task.id}: agent missing or inactive")
                 return  # не помечаем как failed — просто пропускаем, ждём активации
 
+            # «Не звонить»: контакт в терминальной стадии do_not_call / rejected
+            # больше НЕ обзваниваем — ни по задаче агента, ни по задаче владельца.
+            # Это жёсткое правило «не беспокоим клиента»: задачу закрываем
+            # (CANCELLED), а не переносим. Касается только звонков; отложенные
+            # telegram-сообщения в терминальной стадии тоже не шлём.
+            if (agent_contact.status or "") in ("do_not_call", "rejected"):
+                task.status = TaskStatus.CANCELLED
+                task.call_result = json.dumps({
+                    "skipped": "contact_terminal_stage",
+                    "stage": agent_contact.status,
+                })
+                db.commit()
+                logger.info(
+                    f"[TASK-SCHEDULER] 🚫 Agent task {task.id} отменена: контакт "
+                    f"{agent_contact.id} в стадии «{agent_contact.status}» — не беспокоим."
+                )
+                return
+
             # B1+B2 (карта): детерминированный предохранитель перед дозвоном —
             # окно 09–20 Бишкек + анти-долбёж. Только для звонков; telegram-задачи
             # идут своим путём (сообщение, а не звонок). Задача остаётся SCHEDULED

@@ -50,6 +50,59 @@ from backend.services.credit_service import (
 
 logger = get_logger(__name__)
 
+# Жёсткий предел «не долбим клиента»: после скольких исходящих звонков ПОДРЯД
+# без ответа (клиент не взял / сбросил / молчал) контакт переводится в стадию
+# do_not_call и больше НЕ обзванивается. Это код, а не инструкция модели — модель
+# может ошибиться, а клиента нельзя беспокоить бесконечно. Счётчик живёт в
+# memory["no_answer_streak"] и обнуляется, как только клиент ответил на звонок
+# ИЛИ написал в переписке (contact «жив»). Между звонками агент пишет ему в
+# WhatsApp/Telegram — если там ответит, предел сбрасывается и работа продолжается.
+try:
+    from backend.core.config import settings as _settings
+    NO_ANSWER_GIVEUP_STREAK = int(getattr(_settings, "AGENT_NO_ANSWER_GIVEUP", 2) or 2)
+except Exception:
+    NO_ANSWER_GIVEUP_STREAK = 2
+
+
+def _apply_no_answer_streak(agent_contact, call_status, call_direction) -> None:
+    """Детерминированно вести счётчик недозвонов и в пределе закрывать звонки.
+
+    Вызывается при финализации ИСХОДЯЩЕГО звонка (не telegram-рассылки). Меняет
+    agent_contact.memory и, при достижении предела, agent_contact.status. Коммит и
+    flag_modified(memory) делает вызывающий код (он уже есть в обеих ветках).
+    """
+    direction = (call_direction or "outbound").lower()
+    if direction == "telegram_outbound":
+        # Исходящее сообщение агента — это не звонок и не ответ клиента.
+        return
+    mem = agent_contact.memory if isinstance(agent_contact.memory, dict) else {}
+
+    # Клиент «жив», счётчик недозвонов обнуляем, если он вышел на связь:
+    #   * ответил на исходящий звонок (answered), либо
+    #   * сам написал/позвонил (любой *_inbound канал — WhatsApp, Telegram,
+    #     Instagram, SMS, входящий звонок).
+    client_alive = direction.endswith("inbound") or (direction == "outbound" and call_status == "answered")
+    if client_alive:
+        if mem.get("no_answer_streak"):
+            mem["no_answer_streak"] = 0
+            agent_contact.memory = mem
+        return
+
+    # Инкремент только по неотвеченному ИСХОДЯЩЕМУ звонку.
+    if direction != "outbound":
+        return
+    streak = int(mem.get("no_answer_streak") or 0) + 1
+    mem["no_answer_streak"] = streak
+    agent_contact.memory = mem
+    if streak >= NO_ANSWER_GIVEUP_STREAK and (agent_contact.status or "") not in ("do_not_call", "rejected", "success"):
+        agent_contact.status = "do_not_call"
+        mem["giveup_reason"] = f"{streak} звонка(ов) подряд без ответа — больше не беспокоим"
+        agent_contact.memory = mem
+        logger.info(
+            f"[AGENT-POSTCALL] 🚫 Контакт {agent_contact.id} → do_not_call: "
+            f"{streak} недозвон(а/ов) подряд (предел {NO_ANSWER_GIVEUP_STREAK}). Звонки прекращены."
+        )
+
 
 # ============================================================================
 # ЕДИНАЯ ХРОНОЛОГИЯ ОБЩЕНИЯ (звонки + SMS + Telegram)
@@ -1618,6 +1671,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             if not is_tg_out:
                 agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
                 agent_contact.last_called_at = datetime.utcnow()
+                # Жёсткий предел недозвонов: может перевести контакт в do_not_call.
+                _apply_no_answer_streak(agent_contact, call_status, call_direction)
                 # Обязательная стадия воронки: если оркестратор не двинул контакт
                 # тулзой move_contact_stage — применяем детерминированный маппинг
                 # от post_call_decision (стадия проставляется ВСЕГДА).
@@ -1652,6 +1707,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             if not is_tg_out:
                 agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
                 agent_contact.last_called_at = datetime.utcnow()
+                # Жёсткий предел недозвонов: может перевести контакт в do_not_call.
+                _apply_no_answer_streak(agent_contact, call_status, call_direction)
             # Стадия воронки по решению — только если есть основание её менять
             # (для telegram_outbound авто-маппинг не применяем, см. выше).
             _new_stage = None if is_tg_out else stage_from_decision(agent_call.post_call_decision, agent_contact.status)

@@ -3957,6 +3957,21 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     from backend.models.sip_gateway import is_o_number, normalize_sip_number
     from backend.core.timezone_utils import BISHKEK
 
+    # --- «не звонить» ---
+    # Контакт в терминальной стадии do_not_call / rejected больше не обзваниваем.
+    # Планировать звонок такому клиенту нельзя — ни агенту, ни по просьбе владельца.
+    stage = (getattr(contact, "status", "") or "") if contact else ""
+    if stage in ("do_not_call", "rejected"):
+        return {
+            "ok": False,
+            "error": "contact_do_not_call",
+            "hint": (
+                "Этот контакт в стадии «не звонить» — звонки ему прекращены. "
+                "Если нужно, свяжись в переписке, но звонок не планируй."
+            ),
+            "stage": stage,
+        }
+
     # --- оператор ---
     phone = (contact.phone or "").strip() if contact else ""
     if not phone:
