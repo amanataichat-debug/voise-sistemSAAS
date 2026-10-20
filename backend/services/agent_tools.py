@@ -2365,6 +2365,14 @@ AGENT_CHAT_TOOLS = [
                 },
                 "title": {"type": "string", "description": "Название задачи"},
                 "notes": {"type": "string", "description": "Описание / заметки"},
+                "phone": {
+                    "type": "string",
+                    "description": (
+                        "Необязательно. Номер О! (050/070), на который звонить, если клиент дал "
+                        "ДРУГОЙ номер, чем в карточке (например, пишет с WhatsApp на Мегакоме, "
+                        "а звонить просит на О!). Запомнится как номер для звонков клиента."
+                    ),
+                },
             },
             "required": ["agent_contact_id", "title"],
         },
@@ -2639,6 +2647,14 @@ AGENT_CHAT_TOOLS = [
             "properties": {
                 "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
                 "title": {"type": "string", "description": "Название задачи (опционально)"},
+                "phone": {
+                    "type": "string",
+                    "description": (
+                        "Необязательно. Номер О! (050/070), на который звонить, если клиент дал "
+                        "ДРУГОЙ номер, чем в карточке (например, пишет с WhatsApp на Мегакоме, "
+                        "а звонить просит на О!). Запомнится как номер для звонков клиента."
+                    ),
+                },
             },
             "required": ["agent_contact_id"],
         },
@@ -2810,6 +2826,14 @@ AGENT_POSTCALL_TOOLS = [
                 },
                 "title": {"type": "string", "description": "Название задачи"},
                 "notes": {"type": "string", "description": "Описание / заметки"},
+                "phone": {
+                    "type": "string",
+                    "description": (
+                        "Необязательно. Номер О! (050/070), на который звонить, если клиент дал "
+                        "ДРУГОЙ номер, чем в карточке (например, пишет с WhatsApp на Мегакоме, "
+                        "а звонить просит на О!). Запомнится как номер для звонков клиента."
+                    ),
+                },
             },
             "required": ["agent_contact_id", "title"],
         },
@@ -2926,6 +2950,10 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         ).first()
         if guard_contact is None:
             return {"ok": False, "error": "Contact not found"}
+        # Клиент дал отдельный номер О! для звонка (переписка с другого оператора).
+        phone_error = _apply_call_phone(guard_contact, args.get("phone"))
+        if phone_error:
+            return phone_error
         guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True)
         if not guard.get("ok"):
             return guard
@@ -3936,6 +3964,38 @@ def _bishkek_now() -> datetime:
     return now_bishkek()
 
 
+def _apply_call_phone(contact: AgentContact, phone_arg) -> Optional[dict]:
+    """Запомнить номер для звонков, который клиент дал в переписке (параметр phone).
+
+    Нужен, когда переписка идёт с номера другого оператора (WhatsApp на Мегакоме),
+    а позвонить клиент просит на свой номер О!. Номер пишется в
+    memory["call_phone"]; основной phone карточки не меняется. Возвращает dict с
+    отказом, если номер не на О!, иначе None (номер сохранён или не передан).
+    """
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number
+
+    raw = str(phone_arg or "").strip()
+    if not raw:
+        return None
+    digits = normalize_sip_number(raw)  # 0700123456 / 700123456 / +996… → 996700123456
+    if not is_o_number(digits):
+        return {
+            "ok": False,
+            "error": "other_operator",
+            "hint": (
+                f"Номер {raw} не на О! (звоним только на 050 и 070). Предложи клиенту "
+                "переписку или входящий звонок на наш номер."
+            ),
+            "phone": raw,
+        }
+    mem = dict(contact.memory) if isinstance(contact.memory, dict) else {}
+    if mem.get("call_phone") != f"+{digits}":
+        mem["call_phone"] = f"+{digits}"
+        contact.memory = mem  # новый dict — SQLAlchemy заметит изменение JSONB
+        logger.info(f"[AGENT-TOOLS] Contact {contact.id}: номер для звонков → +{digits}")
+    return None
+
+
 def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True) -> dict:
     """
     Проверить, можно ли ставить звонок на этот момент.
@@ -3973,7 +4033,9 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
         }
 
     # --- оператор ---
-    phone = (contact.phone or "").strip() if contact else ""
+    # Звоним на номер для звонков: отдельный номер О!, если клиент его дал
+    # (memory.call_phone), иначе основной номер карточки.
+    phone = contact.call_phone() if contact else ""
     if not phone:
         return {"ok": False, "error": "no_phone", "hint": "У контакта не задан номер телефона."}
     digits = normalize_sip_number(phone)
@@ -3983,7 +4045,9 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             "error": "other_operator",
             "hint": (
                 "Этот номер не на операторе O! (мы звоним только на префиксы 050 и 070). "
-                "Предложи клиенту переписку или входящий звонок на наш номер."
+                "Если клиент дал ДРУГОЙ номер на О! — вызови этот же tool ещё раз и передай "
+                "этот номер в параметре phone, звонок уйдёт на него. Если номера О! нет — "
+                "предложи переписку или входящий звонок на наш номер."
             ),
             "phone": phone,
         }
@@ -4058,8 +4122,8 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
             AgentContact.user_id == user_id,
             AgentContact.agent_config_id == agent_config_id,
         ).first()
-        if contact and contact.phone:
-            phone = contact.phone.strip()
+        if contact:
+            phone = contact.call_phone()  # номер для звонков (О!, если клиент его дал), иначе phone
     if not phone:
         return {"ok": False, "error": "phone_required", "hint": "Передай phone или agent_contact_id."}
 
@@ -4086,7 +4150,9 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
             "phone": phone,
             "note": (
                 "Номер оператора O! — можем позвонить. Если собираешься звонить сейчас, "
-                "проверь, что сейчас 09:00–20:00 по Бишкеку."
+                "проверь, что сейчас 09:00–20:00 по Бишкеку. Если этот номер отличается от "
+                "номера в карточке клиента — передай его в параметре phone в "
+                "trigger_immediate_call / create_agent_task, иначе звонок уйдёт на номер карточки."
             ),
         }
     return {
@@ -4097,8 +4163,9 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
         "phone": phone,
         "note": (
             f"Префикс {prefix} не относится к O! (мы умеем звонить только на {', '.join(O_MOBILE_PREFIXES)}). "
-            "Скажи клиенту, что звонить мы можем только на O!, и предложи продолжить переписку "
-            "или входящий звонок на наш номер (его дай из базы знаний)."
+            "Спроси клиента, есть ли у него номер на О! — если даст, звони на него (передай в "
+            "phone). Если номера О! нет — предложи продолжить переписку или входящий звонок на "
+            "наш номер (его дай из базы знаний)."
         ),
     }
 
@@ -4125,6 +4192,11 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
     if agent_config is not None and not agent_config.is_active:
         return {"ok": False, "error": "agent_inactive", "hint": "Активируйте агента, иначе планировщик не выполнит звонок."}
+
+    # Клиент дал отдельный номер О! для звонка (переписка с другого оператора).
+    phone_error = _apply_call_phone(contact, args.get("phone"))
+    if phone_error:
+        return phone_error
 
     now_utc = datetime.now(timezone.utc)
     guard = _check_call_guards(contact, now_utc, allow_shift=False)

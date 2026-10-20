@@ -80,6 +80,18 @@ class AgentContact(Base):
         until = self.ai_paused_until
         return until is not None and until > (now or datetime.utcnow())
 
+    def call_phone(self) -> str:
+        """Номер, на который агент ЗВОНИТ.
+
+        Клиент часто пишет с WhatsApp на другом операторе (Мегаком), а звонить мы
+        можем только на О!. Номер О!, который он дал в переписке, хранится в
+        memory["call_phone"] (тулзы trigger_immediate_call / create_agent_task,
+        параметр phone) — основной phone карточки при этом не трогаем, чтобы не
+        сломать привязку переписки. Нет отдельного номера — звоним на phone.
+        """
+        mem = self.memory if isinstance(self.memory, dict) else {}
+        return (mem.get("call_phone") or self.phone or "").strip()
+
     def to_dict(self):
         return {
             "id": str(self.id),

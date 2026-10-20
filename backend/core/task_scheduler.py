@@ -447,8 +447,9 @@ class TaskScheduler:
                     logger.error(f"[TASK-SCHEDULER] ⚠️ Agent PreCall failed (continuing): {e}")
 
             # Determine which integration to use for the call
-            # Use agent_contact.phone as the number to call
-            phone_number = agent_contact.phone
+            # Номер для звонков: отдельный номер О!, если клиент дал его в переписке
+            # (memory.call_phone), иначе основной phone карточки.
+            phone_number = agent_contact.call_phone()
             contact_name = agent_contact.name or ""
 
             child_account: Optional[VoximplantChildAccount] = None
@@ -698,14 +699,14 @@ class TaskScheduler:
             call = SipGatewayService.queue_outbound_call(
                 db,
                 user_id=task.user_id,
-                to_number=agent_contact.phone,
+                to_number=agent_contact.call_phone(),
                 caller_number=sip_number,
                 assistant_type=assistant_type,
                 assistant_id=assistant_id,
                 metadata=metadata,
                 task_id=task.id,
             )
-            logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {agent_contact.phone} ({assistant_name}), call {call.id}")
+            logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {call.to_number} ({assistant_name}), call {call.id}")
             return str(call.id), True
         except ValueError as e:
             # Номер не проходит через транк (не O!) — причина для пользователя, не сбой
