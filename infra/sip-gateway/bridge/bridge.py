@@ -112,13 +112,14 @@ COUNTRY_CODE = _env("COUNTRY_CODE", "996")
 NATIONAL_PREFIX = _env("NATIONAL_PREFIX", "0")
 SUBSCRIBER_DIGITS = int(_env("SUBSCRIBER_DIGITS", "9"))
 ORIGINATE_TIMEOUT_MS = int(_env("ORIGINATE_TIMEOUT_MS", "45000"))
-# Failover to the second operator server only if the first one failed this fast.
-# The operator reports a client's REJECT (and a switched-off phone) as
-# "congestion" (Reason 8), sometimes as Reason 0 -> "trunk_unavailable". A quick
-# failure means the INVITE never reached the handset (server down, 503 at once);
-# a slower one means the phone rang and the client declined it. Redialing then
-# through server B rang the client a second time right after the reject - spam,
-# and the operator may block our number for it.
+# "congestion" (Reason 8) is what the operator returns when the client REJECTS the
+# call or the phone is off. Fail over to the second operator server on congestion
+# only if the first one answered this fast (the handset could not have rung yet,
+# e.g. an instant 503). A slower congestion = the phone rang and the client
+# declined: redialing through server B rang them a second time right after the
+# reject - spam, and the operator may block our number for it.
+# "trunk_unavailable" (the server did not take the call at all) always fails over,
+# as before: that is the case server B exists for.
 FAILOVER_MAX_SECONDS = float(_env("FAILOVER_MAX_SECONDS", "2.5"))
 OUTBOUND_CONTEXT = _env("OUTBOUND_CONTEXT", "outbound-answered")
 BACKEND_CONNECT_TIMEOUT = float(_env("BACKEND_CONNECT_TIMEOUT", "6"))
@@ -787,7 +788,7 @@ class Bridge:
             if last_reason not in ("trunk_unavailable", "congestion"):
                 break  # busy / no answer — the callee did not pick up, no point trying server B
             elapsed = time.monotonic() - attempt_started
-            if elapsed > FAILOVER_MAX_SECONDS:
+            if last_reason == "congestion" and elapsed > FAILOVER_MAX_SECONDS:
                 # The phone had time to ring: this is the client's reject / phone off,
                 # not a dead operator server. One call only - never ring them again.
                 log.info("call %s: %s after %.1fs - client side, no failover to the next server",
