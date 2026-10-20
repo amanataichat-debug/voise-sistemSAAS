@@ -112,6 +112,14 @@ COUNTRY_CODE = _env("COUNTRY_CODE", "996")
 NATIONAL_PREFIX = _env("NATIONAL_PREFIX", "0")
 SUBSCRIBER_DIGITS = int(_env("SUBSCRIBER_DIGITS", "9"))
 ORIGINATE_TIMEOUT_MS = int(_env("ORIGINATE_TIMEOUT_MS", "45000"))
+# Failover to the second operator server only if the first one failed this fast.
+# The operator reports a client's REJECT (and a switched-off phone) as
+# "congestion" (Reason 8), sometimes as Reason 0 -> "trunk_unavailable". A quick
+# failure means the INVITE never reached the handset (server down, 503 at once);
+# a slower one means the phone rang and the client declined it. Redialing then
+# through server B rang the client a second time right after the reject - spam,
+# and the operator may block our number for it.
+FAILOVER_MAX_SECONDS = float(_env("FAILOVER_MAX_SECONDS", "2.5"))
 OUTBOUND_CONTEXT = _env("OUTBOUND_CONTEXT", "outbound-answered")
 BACKEND_CONNECT_TIMEOUT = float(_env("BACKEND_CONNECT_TIMEOUT", "6"))
 MAX_CALL_SECONDS = int(_env("MAX_CALL_SECONDS", "3600"))
@@ -750,6 +758,7 @@ class Bridge:
             action_id = f"{call.call_id}:{index}"
             log.info("call %s: originating to %s (dial %s) via %s (cid=%s dial %s)",
                      call.call_id, to, dial_to, host, caller_id, dial_cid)
+            attempt_started = time.monotonic()
             try:
                 result = await self.ami.originate(
                     action_id=action_id,
@@ -777,6 +786,13 @@ class Bridge:
                      f" ({detail})" if detail else "")
             if last_reason not in ("trunk_unavailable", "congestion"):
                 break  # busy / no answer — the callee did not pick up, no point trying server B
+            elapsed = time.monotonic() - attempt_started
+            if elapsed > FAILOVER_MAX_SECONDS:
+                # The phone had time to ring: this is the client's reject / phone off,
+                # not a dead operator server. One call only - never ring them again.
+                log.info("call %s: %s after %.1fs - client side, no failover to the next server",
+                         call.call_id, last_reason, elapsed)
+                break
         await self._fail(call, last_reason)
 
     async def _fail(self, call: Call, reason: str) -> None:

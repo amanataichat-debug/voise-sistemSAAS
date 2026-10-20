@@ -126,6 +126,49 @@ def _apply_no_answer_streak(agent_contact, call_status, call_direction) -> None:
         )
 
 
+_CALL_DIRECTIONS = ("outbound", "inbound")
+
+
+def agent_call_policy_note(state) -> str:
+    from backend.services.agent_call_policy import postcall_note
+    return postcall_note(state)
+
+
+def _record_call_event(agent_contact, agent_call, call_status, call_direction, *, reached: bool = True) -> bool:
+    """Учесть событие в карточке контакта РОВНО ОДИН РАЗ на agent_call.
+
+    Звонок (outbound / inbound): attempts_count + 1, last_called_at = сейчас и
+    счётчик недозвонов (_apply_no_answer_streak). Сообщение клиента (*_inbound):
+    только сброс счётчика — last_called_at от переписки не трогаем, иначе «звонили
+    сегодня» срабатывало на сообщение и звонок по просьбе клиента не ставился.
+
+    Политика недозвона (agent_call_policy) вызывает это ДО анализа LLM, чтобы
+    агент уже видел «сегодня звонили» и «Не звонить»; концовка PostCall вызывает
+    повторно — метка memory["attempt_counted_call"] не даёт посчитать дважды.
+    reached=False — звонок до телефона клиента не дошёл (наша сторона): попытка
+    против клиента не засчитывается. Коммит и flag_modified — у вызывающего.
+    """
+    direction = (call_direction or "outbound").lower()
+    if direction == "telegram_outbound":
+        return False
+    mem = dict(agent_contact.memory) if isinstance(agent_contact.memory, dict) else {}
+    key = str(agent_call.id) if agent_call is not None and agent_call.id else ""
+    if key and mem.get("attempt_counted_call") == key:
+        return False
+    if key:
+        mem["attempt_counted_call"] = key
+    if direction.endswith("inbound") or call_status == "answered":
+        # Клиент на связи — повтор после недозвона больше не «единственный».
+        mem.pop("followup_task_id", None)
+    agent_contact.memory = mem
+    if direction in _CALL_DIRECTIONS:
+        agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
+        agent_contact.last_called_at = datetime.utcnow()
+    if reached:
+        _apply_no_answer_streak(agent_contact, call_status, call_direction)
+    return True
+
+
 # ============================================================================
 # ЕДИНАЯ ХРОНОЛОГИЯ ОБЩЕНИЯ (звонки + SMS + Telegram)
 # ============================================================================
@@ -1057,6 +1100,7 @@ class PostCallOrchestrator:
         call_status: str,
         duration_seconds: int = 0,
         call_direction: str = "outbound",
+        fail_reason: str = "",
     ):
         """
         Event-driven финализация звонка агента через собственный SIP-шлюз.
@@ -1105,6 +1149,20 @@ class PostCallOrchestrator:
             if agent_call.source_task_id:
                 task = db.query(Task).filter(Task.id == agent_call.source_task_id).first()
 
+            # Политика недозвона (не долбим клиента): исходящий без ответа — попытка
+            # учтена, лишние звонки сняты, один повтор на завтра или «Не звонить».
+            # ДО анализа LLM, чтобы модель уже не могла поставить звонок на сегодня.
+            policy_state = None
+            if (call_direction or "outbound") == "outbound" and call_status != "answered":
+                try:
+                    from backend.services import agent_call_policy
+                    policy_state = await agent_call_policy.before_postcall(
+                        db, agent_call, agent_contact, agent_config, task, call_status, fail_reason,
+                    )
+                except Exception as policy_err:
+                    logger.error(f"[AGENT-POSTCALL] (sip) missed-call policy failed: {policy_err}", exc_info=True)
+                    db.rollback()
+
             orchestrator = PostCallOrchestrator()
             try:
                 await orchestrator._analyze(
@@ -1119,6 +1177,7 @@ class PostCallOrchestrator:
                     openai_key=(user.openai_api_key or "") if user else "",
                     db=db,
                     call_direction=call_direction,
+                    policy_note=agent_call_policy_note(policy_state),
                 )
                 logger.info(f"[AGENT-POSTCALL] (sip) ✅ Finalized call {agent_call_id}")
             except Exception as analyze_err:
@@ -1131,6 +1190,13 @@ class PostCallOrchestrator:
                     synchronize_session=False,
                 )
                 db.commit()
+            if policy_state:
+                # Агент не написал клиенту о недозвоне (или анализ упал) — пишем шаблоном.
+                try:
+                    from backend.services import agent_call_policy
+                    await agent_call_policy.after_postcall(db, agent_call_id, policy_state)
+                except Exception as msg_err:
+                    logger.warning(f"[AGENT-POSTCALL] (sip) missed-call message failed: {msg_err}")
         except Exception as e:
             logger.error(f"[AGENT-POSTCALL] (sip) Fatal error: {e}", exc_info=True)
         finally:
@@ -1298,12 +1364,13 @@ class PostCallOrchestrator:
                 "   звонка уже достигнута (тогда ничего планировать не нужно).\n"
                 "   Канал выбирай по ситуации:\n"
                 "   - НЕ ДОЗВОНИЛСЯ (клиент не взял трубку, занято, сбросил звонок) →\n"
-                "     НЕ перезванивай сегодня. Максимум ОДИН звонок в день на клиента.\n"
-                "     Вместо повторного звонка НАПИШИ клиенту в его канал — WhatsApp\n"
-                "     (whatsapp_send_message) или Telegram (telegram_send_message), если\n"
-                "     есть: коротко, по-человечески «не смогли до вас дозвониться, когда\n"
-                "     удобно созвониться?». Следующий звонок запланируй через\n"
-                "     create_agent_task НЕ раньше следующего дня и только один.\n"
+                "     звонки решает СИСТЕМА, не ты: один повторный звонок на завтра она\n"
+                "     уже назначила, а после второго недозвона подряд перевела клиента\n"
+                "     в «Не звонить» (см. блок «АВТОМАТИКА НЕДОЗВОНА»). Звонков НЕ ставь.\n"
+                "     Твоё дело — НАПИСАТЬ клиенту в его канал: WhatsApp\n"
+                "     (whatsapp_send_message), Telegram (telegram_send_message) или\n"
+                "     Instagram (instagram_send_message), что доступно: коротко,\n"
+                "     по-человечески «не смогли до вас дозвониться, когда удобно созвониться?».\n"
                 "   - Клиент ОТВЕТИЛ, но цель НЕ достигнута / попросил перезвонить →\n"
                 "     create_agent_task через разумное время (1-3 дня).\n"
                 "   - Отложенное сообщение в Telegram → schedule_telegram_message\n"
@@ -1494,7 +1561,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         duration_seconds: float,
         openai_key: str,
         db,
-        call_direction: str = "outbound"
+        call_direction: str = "outbound",
+        policy_note: str = "",
     ):
         """
         Run PostCall analysis. Развилка по uses_hardcoded_prompt:
@@ -1514,7 +1582,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         if getattr(agent_config, "uses_hardcoded_prompt", False):
             return await self._analyze_v3_openrouter(
                 agent_call, agent_contact, agent_config, user, task,
-                transcript, call_status, duration_seconds, db, call_direction
+                transcript, call_status, duration_seconds, db, call_direction,
+                policy_note=policy_note,
             )
         return await self._analyze_v2_responses_api(
             agent_call, agent_contact, agent_config, user, task,
@@ -1532,7 +1601,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         call_status: str,
         duration_seconds: float,
         db,
-        call_direction: str = "outbound"
+        call_direction: str = "outbound",
+        policy_note: str = "",
     ):
         """PostCall v3 — OpenRouter Chat Completions, без previous_response_id."""
         logger.info(f"[AGENT-POSTCALL] (v3/OpenRouter) Analyzing call {agent_call.id}, model {agent_config.orchestrator_model}")
@@ -1565,6 +1635,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             post_call_input += agent_voice_service.prompt_hint(
                 db, agent_config, _dir.split("_")[0], agent_contact.id,
             )
+        # Что политика недозвона уже сделала со звонками (agent_call_policy).
+        post_call_input += policy_note or ""
         post_call_input += build_time_block(round_to_minutes=0)
 
         tools = await build_postcall_tools(agent_config, db)
@@ -1701,10 +1773,9 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             # попыток и авто-маппинг стадии (SUCCESS → success) к ней не применяем.
             # Стадию при отправке сообщения меняет только явный move_contact_stage.
             if not is_tg_out:
-                agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-                agent_contact.last_called_at = datetime.utcnow()
-                # Жёсткий предел недозвонов: может перевести контакт в do_not_call.
-                _apply_no_answer_streak(agent_contact, call_status, call_direction)
+                # Попытка + жёсткий предел недозвонов (может перевести контакт в
+                # do_not_call). Для исходящего недозвона уже учтено политикой до LLM.
+                _record_call_event(agent_contact, agent_call, call_status, call_direction)
                 # Обязательная стадия воронки: если оркестратор не двинул контакт
                 # тулзой move_contact_stage — применяем детерминированный маппинг
                 # от post_call_decision (стадия проставляется ВСЕГДА).
@@ -1737,10 +1808,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             agent_call.transcript = transcript
             agent_call.duration_seconds = int(duration_seconds)
             if not is_tg_out:
-                agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-                agent_contact.last_called_at = datetime.utcnow()
-                # Жёсткий предел недозвонов: может перевести контакт в do_not_call.
-                _apply_no_answer_streak(agent_contact, call_status, call_direction)
+                # Попытка + жёсткий предел недозвонов (может перевести контакт в do_not_call).
+                _record_call_event(agent_contact, agent_call, call_status, call_direction)
             # Стадия воронки по решению — только если есть основание её менять
             # (для telegram_outbound авто-маппинг не применяем, см. выше).
             _new_stage = None if is_tg_out else stage_from_decision(agent_call.post_call_decision, agent_contact.status)
@@ -1919,9 +1988,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                 "analyzed_at": datetime.utcnow().isoformat(),
             }
 
-            # Update AgentContact
-            agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-            agent_contact.last_called_at = datetime.utcnow()
+            # Update AgentContact (попытка + предел недозвонов, один раз на звонок)
+            _record_call_event(agent_contact, agent_call, call_status, call_direction)
             # Обязательная стадия воронки: если оркестратор не двинул контакт
             # тулзой move_contact_stage — применяем детерминированный маппинг.
             if not stage_moved_by_tool:
@@ -1955,8 +2023,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             agent_call.completed_at = datetime.utcnow()
             agent_call.transcript = transcript
             agent_call.duration_seconds = int(duration_seconds)
-            agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-            agent_contact.last_called_at = datetime.utcnow()
+            _record_call_event(agent_contact, agent_call, call_status, call_direction)
             # Стадия воронки по решению — только если есть основание её менять.
             _new_stage = stage_from_decision(agent_call.post_call_decision, agent_contact.status)
             if _new_stage:
