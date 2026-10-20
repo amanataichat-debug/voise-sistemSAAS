@@ -17,7 +17,11 @@ OpenAI-ассистентов, закрытой редиректом).
 **Телефония — только собственный SIP-шлюз.** Номер агента: карточка «Номер агента» и раздел
 настроек «Звонки» (`agent/phone.js`, `GET /api/agent/phone-numbers`, `PUT /api/agent/phone-number`).
 Агента можно создать без номера — работают чат, Telegram и Instagram; пока номеров нет, выбор
-заблокирован и показывается пояснение. Выбранный номер = номер исходящих + входящие на него идут
+заблокирован и показывается пояснение. Там же — **окно звонков**: переключатель «Ограничивать время
+звонков» (`call_window_enabled`) и часы «с / до» (`working_hours_start` / `working_hours_end`, Бишкек,
+«до» не включительно, до 24) — `fillCallWindow` / `callWindowToggled` / `readCallWindow` в
+`instructions-voice.js`, уходят в `PUT /api/agent/`. Бэкенд читает их через
+`agent_tools.call_window(agent)` в проверках звонка и в планировщике (`TaskScheduler._dial_gate`). Выбранный номер = номер исходящих + входящие на него идут
 агенту (PostCall по стенограмме, см. `backend/services/agent_call_finalizer.py`).
 
 **Вёрстка — дизайн-система VoksiAI**, каркас C (`design-system/04-pages-cabinet.md` §1):

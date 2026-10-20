@@ -258,11 +258,12 @@ class TaskScheduler:
 
         return assistant_id, assistant_name, assistant_type
 
-    def _dial_gate(self, agent_contact, now_utc: datetime) -> Optional[datetime]:
+    def _dial_gate(self, agent_contact, now_utc: datetime, agent_config=None) -> Optional[datetime]:
         """
         Детерминированный предохранитель перед исходящим дозвоном (карта, баги B1+B2).
         НЕ зависит от решений оркестратора — работает всегда, на уровне кода:
-          * B2 — окно звонков 09:00–20:00 Бишкек (исполнение задачи, не только её создание);
+          * B2 — окно звонков агента (настройка «Звонки», по умолчанию 09–20 Бишкек;
+            выключено — без ограничения по времени) — при исполнении задачи, не только при создании;
           * B1 — анти-долбёж: если контакту уже звонили менее CALL_RETRY_COOLDOWN
             назад, повтор не набираем сейчас.
 
@@ -270,7 +271,7 @@ class TaskScheduler:
         datetime, на который нужно перенести задачу (оставив её SCHEDULED).
         """
         from backend.core.timezone_utils import BISHKEK
-        from backend.services.agent_tools import CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR
+        from backend.services.agent_tools import call_window
 
         now_local = now_utc.replace(tzinfo=timezone.utc).astimezone(BISHKEK)
         earliest = now_local
@@ -284,13 +285,16 @@ class TaskScheduler:
             if cooldown_until > earliest:
                 earliest = cooldown_until
 
-        # B2 — поджать к рабочему окну 09:00–20:00 Бишкек.
-        if earliest.hour < CALL_WINDOW_START_HOUR:
-            earliest = earliest.replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
-        elif earliest.hour >= CALL_WINDOW_END_HOUR:
-            earliest = (earliest + timedelta(days=1)).replace(
-                hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0
-            )
+        # B2 — поджать к окну звонков агента (None — окно выключено владельцем).
+        window = call_window(agent_config)
+        if window is not None:
+            w_start, w_end = window
+            if earliest.hour < w_start:
+                earliest = earliest.replace(hour=w_start, minute=0, second=0, microsecond=0)
+            elif earliest.hour >= w_end:
+                earliest = (earliest + timedelta(days=1)).replace(
+                    hour=w_start, minute=0, second=0, microsecond=0
+                )
 
         if earliest <= now_local:
             return None
@@ -361,14 +365,14 @@ class TaskScheduler:
             # идут своим путём (сообщение, а не звонок). Задача остаётся SCHEDULED
             # и переносится на разрешённое время.
             if (task.channel or "call") != "telegram":
-                postpone_to = self._dial_gate(agent_contact, datetime.utcnow())
+                postpone_to = self._dial_gate(agent_contact, datetime.utcnow(), agent_config)
                 if postpone_to is not None:
                     task.scheduled_time = postpone_to
                     task.status = TaskStatus.SCHEDULED
                     db.commit()
                     logger.info(
                         f"[TASK-SCHEDULER] ⏳ Agent task {task.id} перенесена на {postpone_to} UTC "
-                        f"(окно 09–20 Бишкек / анти-долбёж, контакт {agent_contact.id})"
+                        f"(окно звонков агента / анти-долбёж, контакт {agent_contact.id})"
                     )
                     return
 

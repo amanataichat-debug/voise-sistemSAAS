@@ -2968,7 +2968,7 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         )
         if preflight:
             return preflight
-        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True)
+        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True, window=call_window(agent_config))
         if not guard.get("ok"):
             return guard
         scheduled_at = guard["scheduled_utc"]
@@ -3975,8 +3975,36 @@ async def fn_bulk_schedule_calls(args: dict, user_id: str, agent_config_id: str,
 # только через промпт. Теперь любое планирование звонка проходит через этот
 # shared-guard (чтобы в trigger_immediate_call и в create_agent_task(channel=call)
 # логика была единой).
-CALL_WINDOW_START_HOUR = 9   # 09:00 Бишкек
-CALL_WINDOW_END_HOUR = 20    # 20:00 Бишкек (включительно до :59)
+CALL_WINDOW_START_HOUR = 9   # 09:00 Бишкек — по умолчанию, если окно агента не задано
+CALL_WINDOW_END_HOUR = 20    # 20:00 Бишкек (не включительно)
+
+
+def call_window(agent_config) -> Optional[tuple]:
+    """Окно звонков агента (Бишкек): (start, end) часов, end не включительно.
+
+    Берётся из настроек агента (раздел «Звонки»: working_hours_start/end и
+    переключатель call_window_enabled). None — ограничение выключено, агент
+    звонит в любое время. Нет агента / битые значения — 09–20 по умолчанию.
+    """
+    if agent_config is None:
+        return (CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR)
+    if getattr(agent_config, "call_window_enabled", True) is False:
+        return None
+    try:
+        start = int(agent_config.working_hours_start)
+        end = int(agent_config.working_hours_end)
+    except (TypeError, ValueError):
+        return (CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR)
+    if not (0 <= start < end <= 24):
+        return (CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR)
+    return (start, end)
+
+
+def call_window_text(window: Optional[tuple]) -> str:
+    """«с 09:00 до 20:00» / «в любое время» — для подсказок агенту."""
+    if window is None:
+        return "в любое время"
+    return f"с {window[0]:02d}:00 до {window[1]:02d}:00 по Бишкеку"
 
 
 def _bishkek_now() -> datetime:
@@ -4081,7 +4109,8 @@ def _call_preflight(user_id, agent_config, db: Session, *, check_wallet: bool = 
     return None
 
 
-def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True) -> dict:
+def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True,
+                       window="default") -> dict:
     """
     Проверить, можно ли ставить звонок на этот момент.
 
@@ -4091,7 +4120,8 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
 
     Правила (все — Бишкек):
       * оператор клиента — O! (050 / 070);
-      * окно 09:00–20:00 по Бишкеку;
+      * окно звонков агента (call_window: настройка «Звонки», по умолчанию 09–20;
+        None — без ограничения по времени);
       * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
       * существующая запланированная «call»-задача на этого контакта на сегодня
         тоже считается — не создаём второй звонок.
@@ -4139,24 +4169,30 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             "phone": phone,
         }
 
-    # --- окно 09–20 Бишкек ---
+    # --- окно звонков агента (Бишкек) ---
+    if window == "default":
+        window = (CALL_WINDOW_START_HOUR, CALL_WINDOW_END_HOUR)
     if scheduled_utc.tzinfo is None:
         scheduled_utc = scheduled_utc.replace(tzinfo=timezone.utc)
     local = scheduled_utc.astimezone(BISHKEK)
-    if local.hour < CALL_WINDOW_START_HOUR or local.hour >= CALL_WINDOW_END_HOUR:
+    if window is not None and (local.hour < window[0] or local.hour >= window[1]):
+        w_start = window[0]
         if not allow_shift:
             return {
                 "ok": False,
                 "error": "outside_window",
-                "hint": f"Звонки только с {CALL_WINDOW_START_HOUR:02d}:00 до {CALL_WINDOW_END_HOUR:02d}:00 Бишкек.",
+                "hint": (
+                    f"Сейчас звонить нельзя: звонки агента {call_window_text(window)} "
+                    "(настройка владельца). Предложи клиенту время в этом окне или продолжай переписку."
+                ),
                 "scheduled_local": local.strftime("%Y-%m-%d %H:%M"),
             }
-        # Сдвигаем на ближайший момент внутри окна (сегодня 09:00 если ночь до
-        # окна, иначе завтра 09:00 если уже после окна).
-        if local.hour < CALL_WINDOW_START_HOUR:
-            shifted_local = local.replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+        # Сдвигаем на ближайший момент внутри окна (сегодня к началу, если ещё рано,
+        # иначе завтра к началу).
+        if local.hour < w_start:
+            shifted_local = local.replace(hour=w_start, minute=0, second=0, microsecond=0)
         else:
-            shifted_local = (local + timedelta(days=1)).replace(hour=CALL_WINDOW_START_HOUR, minute=0, second=0, microsecond=0)
+            shifted_local = (local + timedelta(days=1)).replace(hour=w_start, minute=0, second=0, microsecond=0)
         scheduled_utc = shifted_local.astimezone(timezone.utc)
         local = shifted_local
 
@@ -4172,7 +4208,7 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
                 "error": "already_called_today",
                 "hint": (
                     "Сегодня этому клиенту уже звонили — не больше одного звонка в день. "
-                    f"Ближайший разрешённый звонок: завтра с {CALL_WINDOW_START_HOUR:02d}:00 Бишкек."
+                    f"Ближайший разрешённый звонок: завтра {call_window_text(window)}."
                 ),
                 "last_called_at": last_called.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M"),
             }
@@ -4236,8 +4272,8 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
             "prefix": prefix,
             "phone": phone,
             "note": (
-                "Номер оператора O! — можем позвонить. Если собираешься звонить сейчас, "
-                "проверь, что сейчас 09:00–20:00 по Бишкеку. Если этот номер отличается от "
+                "Номер оператора O! — можем позвонить (в окно звонков агента из его настроек; "
+                "вне окна trigger_immediate_call откажет с подсказкой). Если этот номер отличается от "
                 "номера в карточке клиента — передай его в параметре phone в "
                 "trigger_immediate_call / create_agent_task, иначе звонок уйдёт на номер карточки."
             ),
@@ -4294,7 +4330,7 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
         return preflight
 
     now_utc = datetime.now(timezone.utc)
-    guard = _check_call_guards(contact, now_utc, allow_shift=False)
+    guard = _check_call_guards(contact, now_utc, allow_shift=False, window=call_window(agent_config))
     if not guard.get("ok"):
         return guard
     # Для немедленного звонка — отдельно проверим, что уже нет запланированного

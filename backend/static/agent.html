@@ -385,6 +385,17 @@
             <select class="form-select" id="i-phone-number"><option value="">Без номера</option></select>
           </div>
           <div class="form-group">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <label class="form-label" for="i-call_window_enabled" style="margin:0">Ограничивать время звонков <span class="hint" tabindex="0" data-hint="Агент звонит клиентам только в это время (Бишкек). Задачу на время вне окна он перенесёт на ближайшее разрешённое. Выключите — агент будет звонить в любое время суток: удобно для своих тестов, но клиентов ночью лучше не беспокоить."><i class="far fa-circle-question"></i></span></label>
+              <label class="switch"><input type="checkbox" id="i-call_window_enabled" onchange="callWindowToggled()"><span class="slider"></span></label>
+            </div>
+            <div class="form-row" id="i-call-window-hours" style="margin-top:10px">
+              <div class="form-group" style="margin:0"><label class="form-label" for="i-working_hours_start">Звонить с</label><select class="form-select" id="i-working_hours_start"></select></div>
+              <div class="form-group" style="margin:0"><label class="form-label" for="i-working_hours_end">до</label><select class="form-select" id="i-working_hours_end"></select></div>
+            </div>
+            <div class="form-hint" id="i-call-window-hint"></div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Первая фраза для входящих звонков</label>
             <textarea class="form-textarea" id="i-inbound_first_phrase" rows="2" style="min-height:64px" placeholder="Например: «Здравствуйте, {name}! Чем могу помочь?»"></textarea>
             <div class="form-hint">С чего агент начинает, когда звонят ему. <code>{name}</code> заменится именем из карточки контакта, если звонящий есть в базе агента (для незнакомых номеров переменная убирается). Пусто — приветствие по умолчанию.</div>

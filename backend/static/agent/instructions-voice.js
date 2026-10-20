@@ -405,6 +405,7 @@ function openInstructionsModal(section){
   document.getElementById('i-webhook_url').value = agentData.webhook_url || '';
   document.getElementById('i-voice_additional_instructions').value = agentData.voice_additional_instructions || '';
   document.getElementById('i-inbound_first_phrase').value = agentData.inbound_first_phrase || '';
+  fillCallWindow();
   const vType = agentData.assistant_type || 'eleven';
   const legacy = vType !== 'eleven'
     ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Агент создан на старом голосовом движке (${esc(AGENT_TYPE_NAMES[vType] || vType)}). Новые агенты работают на ElevenLabs — перевести этого можно, создав нового агента.</span></div>`
@@ -449,6 +450,41 @@ function openInstructionsModal(section){
   document.getElementById('instructions-modal-overlay').classList.remove('hidden');
 }
 
+// ── Окно звонков (раздел «Звонки»): working_hours_start/end + call_window_enabled.
+// Бэкенд: agent_tools.call_window — им пользуются проверки звонка и планировщик.
+function fillCallWindow(){
+  const opts = (from, to) => Array.from({length: to - from + 1}, (_, i) => from + i)
+    .map(h => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
+  const s = document.getElementById('i-working_hours_start');
+  const e = document.getElementById('i-working_hours_end');
+  s.innerHTML = opts(0, 23);
+  e.innerHTML = opts(1, 24);
+  s.value = String(agentData.working_hours_start ?? 9);
+  e.value = String(agentData.working_hours_end ?? 20);
+  document.getElementById('i-call_window_enabled').checked = agentData.call_window_enabled !== false;
+  callWindowToggled();
+}
+
+function callWindowToggled(){
+  const on = document.getElementById('i-call_window_enabled').checked;
+  document.getElementById('i-call-window-hours').style.display = on ? '' : 'none';
+  document.getElementById('i-call-window-hint').textContent = on
+    ? 'Время Бишкека. Звонок на время вне окна агент перенесёт на ближайшее разрешённое.'
+    : 'Агент звонит в любое время суток. Не забудьте включить обратно после тестов — клиентов ночью лучше не беспокоить.';
+}
+
+// Поля окна звонков для PUT /api/agent/ или null, если «с» не раньше «до».
+function readCallWindow(){
+  const enabled = document.getElementById('i-call_window_enabled').checked;
+  const start = parseInt(document.getElementById('i-working_hours_start').value, 10);
+  const end = parseInt(document.getElementById('i-working_hours_end').value, 10);
+  if(enabled && !(start < end)){
+    showToast('Время звонков: «с» должно быть раньше, чем «до»', 'error');
+    return null;
+  }
+  return { call_window_enabled: enabled, working_hours_start: start, working_hours_end: end };
+}
+
 function closeInstructionsModal(){
   document.getElementById('instructions-modal-overlay').classList.add('hidden');
 }
@@ -458,7 +494,14 @@ async function saveInstructions(){
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="width:15px;height:15px;border-width:2px"></div> Сохранение...';
 
+  const callWindow = readCallWindow();
+  if(!callWindow){
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Сохранить';
+    openSettingsSection('calls');
+    return;
+  }
   const body = {
+    ...callWindow,
     name: document.getElementById('i-name').value || agentData.name,
     additional_instructions: document.getElementById('i-additional_instructions').value,
     webhook_url: document.getElementById('i-webhook_url').value.trim() || null,
