@@ -13,7 +13,7 @@
 
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import or_
@@ -60,6 +60,19 @@ RETRY_DELAY_SECONDS = 120
 # last_called_at (тот обновляется только после PostCall и отстаёт, из-за чего
 # быстрый цикл повторов проскакивал). Защищает номер оператора от блокировки.
 OUTBOUND_MIN_GAP_PER_NUMBER = timedelta(minutes=30)
+
+# Жёсткий дневной предел для АВТОМАТИЧЕСКИХ звонков (агент обзвона / планировщик,
+# т.е. с task_id). Политика продукта — «не больше одного звонка в день на клиента»
+# (см. _check_call_guards в agent_tools) — раньше жила ТОЛЬКО в слое тулзы
+# fn_schedule_call, которую вызывает LLM-оркестратор. Любой другой путь к набору
+# (прямое пересоздание задачи, ретрай, будущий код) её обходил, и единственной
+# защитой оставался 30-минутный зазор выше — отсюда жалобы «агент долбит, пока
+# клиент не возьмёт трубку». Переносим предел в ЕДИНСТВЕННУЮ точку, через которую
+# проходят все наборы, и не зависим ни от LLM, ни от last_called_at: если сегодня
+# (по Бишкеку) этому номеру уже ставили автоматический исходящий — второй не ставим.
+# Ручной звонок владельца (без task_id) под это правило не попадает: он защищён
+# только 30-минутным зазором, чтобы владелец мог при необходимости перезвонить сам.
+OUTBOUND_AGENT_MAX_PER_DAY = 1
 
 
 def _utcnow() -> datetime:
@@ -220,6 +233,37 @@ class SipGatewayService:
                 "Этому номеру уже звонили только что — повторный звонок будет позже, "
                 "чтобы не беспокоить клиента подряд."
             )
+        # Дневной предел для автоматических (агентских) наборов. Считаем ПОПЫТКИ,
+        # а не только дозвоны: клиент, который сбросил или не взял трубку, не
+        # должен получить второй звонок в тот же день. Окно — календарный день по
+        # Бишкеку (как и остальные правила звонков). Ручной звонок (task_id=None)
+        # сюда не попадает.
+        if task_id is not None:
+            from backend.core.timezone_utils import BISHKEK
+            now_local = _utcnow().replace(tzinfo=timezone.utc).astimezone(BISHKEK)
+            day_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_start_utc = day_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+            calls_today = (
+                db.query(SipCall.id)
+                .filter(
+                    SipCall.user_id == user_id,
+                    SipCall.direction == "outbound",
+                    SipCall.to_number == to_digits,
+                    SipCall.task_id.isnot(None),
+                    SipCall.created_at >= day_start_utc,
+                )
+                .count()
+            )
+            if calls_today >= OUTBOUND_AGENT_MAX_PER_DAY:
+                logger.warning(
+                    f"[SIP] daily-cap: отклонён автоматический исходящий на {to_digits} "
+                    f"(user {user_id}) — сегодня уже было {calls_today} набор(а/ов), "
+                    f"предел {OUTBOUND_AGENT_MAX_PER_DAY}/день"
+                )
+                raise ValueError(
+                    "Этому клиенту сегодня уже звонили — больше одного звонка в день "
+                    "не делаем, чтобы не беспокоить. Следующий звонок — не раньше завтра."
+                )
         if assistant_type == "eleven":
             # Минуты Eleven-карточек (и агентов) платятся из кошелька: пустой — не набираем номер
             from backend.services.wallet_service import WalletService
