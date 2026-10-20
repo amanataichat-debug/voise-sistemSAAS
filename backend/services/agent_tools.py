@@ -3025,6 +3025,9 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         **assistant_task_kwargs(agent_config),
     )
     db.add(task)
+    db.flush()
+    if channel == "call" and guard_contact is not None:
+        _replace_auto_followup(guard_contact, task.id, db)
     db.commit()
     db.refresh(task)
 
@@ -4222,6 +4225,29 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     return {"ok": True, "scheduled_utc": scheduled_utc}
 
 
+def _replace_auto_followup(contact: AgentContact, new_task_id, db: Session) -> None:
+    """Новый звонок клиенту заменяет автоматический повтор после недозвона.
+
+    Клиент не взял трубку → политика поставила повтор на завтра. Потом клиент
+    написал «давайте в пятницу в 15:00» (или владелец попросил позвонить), агент
+    ставит звонок на это время — авто-повтор отменяем, иначе клиенту позвонили
+    бы дважды. Без commit — вызывающий коммитит вместе с новой задачей.
+    """
+    mem = dict(contact.memory) if isinstance(contact.memory, dict) else {}
+    old_id = mem.pop("auto_followup_task_id", None)
+    if not old_id or str(old_id) == str(new_task_id):
+        return
+    old = db.query(Task).filter(Task.id == old_id, Task.status == TaskStatus.SCHEDULED).first()
+    if old is not None:
+        old.status = TaskStatus.CANCELLED
+        old.call_result = json.dumps({"skipped": "replaced_by_new_call", "new_task_id": str(new_task_id)})
+        logger.info(f"[AGENT-TOOLS] Contact {contact.id}: авто-повтор {old_id} заменён звонком {new_task_id}")
+    if mem.get("followup_task_id") == old_id:
+        mem.pop("followup_task_id", None)
+    contact.memory = mem
+    flag_modified(contact, "memory")
+
+
 def _missed_call_followup_block(contact: AgentContact, db: Session) -> Optional[dict]:
     """Клиент не ответил на прошлый звонок, а повторный уже назначен → второй не ставим.
 
@@ -4393,6 +4419,8 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
         **assistant_task_kwargs(agent_config),
     )
     db.add(task)
+    db.flush()
+    _replace_auto_followup(contact, task.id, db)
     db.commit()
     db.refresh(task)
     logger.info(f"[AGENT-TOOLS] Triggered immediate call task {task.id} for contact {agent_contact_id}")

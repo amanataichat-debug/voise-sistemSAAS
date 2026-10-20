@@ -142,6 +142,10 @@ async def before_postcall(
         if followup_task_id:
             mem = dict(agent_contact.memory) if isinstance(agent_contact.memory, dict) else {}
             mem["followup_task_id"] = followup_task_id
+            # Отдельная метка «повтор поставлен автоматикой»: её НЕ снимает ответ
+            # клиента — если он договорится о другом времени, авто-повтор заменится
+            # (agent_tools._replace_auto_followup), а не останется вторым звонком.
+            mem["auto_followup_task_id"] = followup_task_id
             agent_contact.memory = mem
             flag_modified(agent_contact, "memory")
             db.commit()
