@@ -2874,7 +2874,8 @@ async def fn_create_agent_contact(args: dict, agent_config_id: str, user_id: str
     return {"ok": True, "contact_id": str(contact.id), "phone": contact.phone, "name": contact.name}
 
 
-async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, db: Session, channel: str = "call") -> dict:
+async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, db: Session, channel: str = "call",
+                               owner_request: bool = False) -> dict:
     """
     Создать агентскую задачу. channel="call" (дефолт) — задача на звонок,
     channel="telegram" — отложенное сообщение с личного Telegram-аккаунта
@@ -2950,6 +2951,9 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         ).first()
         if guard_contact is None:
             return {"ok": False, "error": "Contact not found"}
+        # Владелец сам просит позвонить — «Не звонить»/«Отказ» этому не мешают.
+        if owner_request:
+            _reopen_contact_for_call(guard_contact, "owner_request")
         # Клиент дал отдельный номер О! для звонка (переписка с другого оператора).
         phone_error = _apply_call_phone(guard_contact, args.get("phone"))
         if phone_error:
@@ -3980,6 +3984,30 @@ def _bishkek_now() -> datetime:
     return now_bishkek()
 
 
+def _reopen_contact_for_call(contact: AgentContact, why: str) -> bool:
+    """Снять «Не звонить» / «Отказ», когда звонок явно нужен (владелец сам попросил).
+
+    Стадия do_not_call блокирует звонки контакту (_check_call_guards, планировщик).
+    Живой тест 20.10: после 2 тестовых сбросов владельца его контакт ушёл в
+    do_not_call, и на просьбу владельца «позвони» агент молча не звонил ни на
+    какой номер. Явная просьба владельца важнее: контакт снова «В работе»,
+    счётчик недозвонов обнулён. Лимиты по номеру (1 звонок/день, 30 мин) и окно
+    09–20 при этом остаются. Возвращает True, если стадию сняли.
+    """
+    if (contact.status or "") not in ("do_not_call", "rejected"):
+        return False
+    mem = dict(contact.memory) if isinstance(contact.memory, dict) else {}
+    prev = contact.status
+    mem["no_answer_streak"] = 0
+    mem.pop("giveup_reason", None)
+    mem.pop("giveup_at", None)
+    mem["reopened"] = {"by": why, "from": prev, "at": datetime.utcnow().isoformat()}
+    contact.memory = mem
+    contact.status = "active"
+    logger.info(f"[AGENT-TOOLS] Contact {contact.id}: {prev} → active ({why})")
+    return True
+
+
 def _apply_call_phone(contact: AgentContact, phone_arg) -> Optional[dict]:
     """Запомнить номер для звонков, который клиент дал в переписке (параметр phone).
 
@@ -4083,8 +4111,10 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             "ok": False,
             "error": "contact_do_not_call",
             "hint": (
-                "Этот контакт в стадии «не звонить» — звонки ему прекращены. "
-                "Если нужно, свяжись в переписке, но звонок не планируй."
+                "Звонок не поставлен: контакт в стадии «Не звонить»/«Отказ». Если клиент "
+                "САМ сейчас просит позвонить — переведи его в active (move_contact_stage) и "
+                "повтори звонок. Не проси клиента звонить нам из-за этой стадии и не "
+                "называй это «обрывом связи»; если звонок не нужен — продолжай переписку."
             ),
             "stage": stage,
         }
@@ -4227,7 +4257,8 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
     }
 
 
-async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: str, db: Session,
+                                    owner_request: bool = False) -> dict:
     """Создать задачу на немедленный звонок (без сдвига в рабочие часы).
 
     Guard-ы (ветка 1810-anri-sales-logic): O! + окно 09–20 Бишкек + лимит одного
@@ -4250,6 +4281,9 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     if agent_config is not None and not agent_config.is_active:
         return {"ok": False, "error": "agent_inactive", "hint": "Активируйте агента, иначе планировщик не выполнит звонок."}
 
+    # Владелец сам просит позвонить — «Не звонить»/«Отказ» этому не мешают.
+    if owner_request:
+        _reopen_contact_for_call(contact, "owner_request")
     # Клиент дал отдельный номер О! для звонка (переписка с другого оператора).
     phone_error = _apply_call_phone(contact, args.get("phone"))
     if phone_error:
@@ -4681,7 +4715,10 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
         if tool_name == "create_agent_contact":
             result = await fn_create_agent_contact(tool_args, agent_config_id, user_id, db)
         elif tool_name == "create_agent_task":
-            result = await fn_create_agent_task(tool_args, user_id, agent_config_id, db)
+            result = await fn_create_agent_task(
+                tool_args, user_id, agent_config_id, db,
+                owner_request=context.get("initiator") == "owner",
+            )
         elif tool_name == "update_contact_memory":
             result = await fn_update_contact_memory(tool_args, agent_config_id, db)
         elif tool_name == "update_contact_info":
@@ -4726,7 +4763,10 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
         elif tool_name == "bulk_schedule_calls":
             result = await fn_bulk_schedule_calls(tool_args, user_id, agent_config_id, db)
         elif tool_name == "trigger_immediate_call":
-            result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
+            result = await fn_trigger_immediate_call(
+                tool_args, user_id, agent_config_id, db,
+                owner_request=context.get("initiator") == "owner",
+            )
         elif tool_name == "check_phone_operator":
             result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
         elif tool_name == "send_proposal":

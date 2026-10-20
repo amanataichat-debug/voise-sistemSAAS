@@ -64,6 +64,27 @@ except Exception:
     NO_ANSWER_GIVEUP_STREAK = 2
 
 
+def _lift_auto_giveup(agent_contact) -> bool:
+    """Клиент снова на связи → снять АВТОМАТИЧЕСКОЕ «Не звонить» (предел недозвонов).
+
+    Снимаем только то, что поставил _apply_no_answer_streak (есть giveup_reason).
+    do_not_call, поставленный по просьбе самого клиента («не звоните мне»), не
+    трогаем. Без этого клиент, который после двух пропущенных пишет «позвоните»,
+    оставался заблокированным, и агент просил его звонить нам самому.
+    """
+    mem = agent_contact.memory if isinstance(agent_contact.memory, dict) else {}
+    if (agent_contact.status or "") != "do_not_call" or not mem.get("giveup_reason"):
+        return False
+    mem = dict(mem)
+    mem.pop("giveup_reason", None)
+    mem.pop("giveup_at", None)
+    mem["no_answer_streak"] = 0
+    agent_contact.memory = mem
+    agent_contact.status = "active"
+    logger.info(f"[AGENT-POSTCALL] Контакт {agent_contact.id}: клиент на связи — авто «Не звонить» снято → active")
+    return True
+
+
 def _apply_no_answer_streak(agent_contact, call_status, call_direction) -> None:
     """Детерминированно вести счётчик недозвонов и в пределе закрывать звонки.
 
@@ -83,7 +104,7 @@ def _apply_no_answer_streak(agent_contact, call_status, call_direction) -> None:
     #     Instagram, SMS, входящий звонок).
     client_alive = direction.endswith("inbound") or (direction == "outbound" and call_status == "answered")
     if client_alive:
-        if mem.get("no_answer_streak"):
+        if not _lift_auto_giveup(agent_contact) and mem.get("no_answer_streak"):
             mem["no_answer_streak"] = 0
             agent_contact.memory = mem
         return
@@ -97,6 +118,7 @@ def _apply_no_answer_streak(agent_contact, call_status, call_direction) -> None:
     if streak >= NO_ANSWER_GIVEUP_STREAK and (agent_contact.status or "") not in ("do_not_call", "rejected", "success"):
         agent_contact.status = "do_not_call"
         mem["giveup_reason"] = f"{streak} звонка(ов) подряд без ответа — больше не беспокоим"
+        mem["giveup_at"] = datetime.utcnow().isoformat()
         agent_contact.memory = mem
         logger.info(
             f"[AGENT-POSTCALL] 🚫 Контакт {agent_contact.id} → do_not_call: "
@@ -1479,6 +1501,16 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         - v3 (TRUE):  OpenRouter Chat Completions + AGENT_POSTCALL_TOOLS, без цепочки.
         - v2 (FALSE): OpenAI Responses API (старые агенты).
         """
+        # Клиент сам вышел на связь (написал/позвонил) — снять автоматическое «Не
+        # звонить» ДО того, как агент начнёт отвечать: если клиент просит
+        # перезвонить, звонок должен пройти уже в этом ответе.
+        if (call_direction or "").lower().endswith("inbound") and agent_contact is not None:
+            try:
+                if _lift_auto_giveup(agent_contact):
+                    flag_modified(agent_contact, "memory")
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"[AGENT-POSTCALL] lift auto give-up failed: {e}")
         if getattr(agent_config, "uses_hardcoded_prompt", False):
             return await self._analyze_v3_openrouter(
                 agent_call, agent_contact, agent_config, user, task,
@@ -2032,6 +2064,7 @@ class ChatOrchestrator:
         tools = await build_chat_tools(agent_config, db)
 
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
@@ -2144,6 +2177,7 @@ class ChatOrchestrator:
 
         tools = await build_chat_tools(agent_config, db)
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
@@ -2290,6 +2324,7 @@ class ChatOrchestrator:
         input_items.append({"role": "user", "content": message})
 
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
@@ -2393,6 +2428,7 @@ class ChatOrchestrator:
         })
 
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
@@ -2637,6 +2673,7 @@ class ChatOrchestrator:
         })
 
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
@@ -2859,6 +2896,7 @@ class ChatOrchestrator:
                 raise
 
         context = {
+            "initiator": "owner",  # чат с владельцем: его «позвони» — явная просьба, а не автоматика
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
             "user": user,
