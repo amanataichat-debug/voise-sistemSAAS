@@ -2954,6 +2954,16 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         phone_error = _apply_call_phone(guard_contact, args.get("phone"))
         if phone_error:
             return phone_error
+        # Номер для исходящих и кошелёк — сразу, а не тихим падением в планировщике.
+        # Кошелёк — только для звонка в ближайший час: к завтрашнему звонку владелец
+        # успеет пополнить, а планировщик всё равно перепроверит баланс перед набором.
+        _sched_aware = scheduled_at if scheduled_at.tzinfo else scheduled_at.replace(tzinfo=timezone.utc)
+        preflight = _call_preflight(
+            user_id, agent_config, db,
+            check_wallet=_sched_aware <= datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        if preflight:
+            return preflight
         guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True)
         if not guard.get("ok"):
             return guard
@@ -3315,6 +3325,12 @@ async def fn_get_agent_tasks(args: dict, user_id: str, agent_config_id: str, db:
                 "scheduled_time": t.scheduled_time.isoformat() if t.scheduled_time else None,
                 "description": t.description,
                 "agent_contact_id": str(t.agent_contact_id) if t.agent_contact_id else None,
+                # Почему звонок не состоялся (кошелёк, нет номера, лимит дня…). Без
+                # этого агент не знал причины и сочинял «обрыв связи».
+                "result": (
+                    (t.call_result or "")[:300] or None
+                    if t.status in (TaskStatus.FAILED, TaskStatus.CANCELLED) else None
+                ),
             }
             for t in tasks
         ],
@@ -3996,6 +4012,47 @@ def _apply_call_phone(contact: AgentContact, phone_arg) -> Optional[dict]:
     return None
 
 
+def _call_preflight(user_id, agent_config, db: Session, *, check_wallet: bool = True) -> Optional[dict]:
+    """Проверить ДО постановки звонка то, что иначе всплывёт только в планировщике.
+
+    Без этого агент отвечал «звоню», задача тихо падала до набора (в журнале
+    звонков пусто), а агент, не зная причины, сочинял «обрыв связи». Те же
+    условия, что у планировщика (_sip_number_for) и у точки набора
+    (queue_outbound_call): есть номер для исходящих и есть чем платить за
+    разговор Eleven-карточки. Возвращает отказ с понятным hint или None.
+    """
+    import uuid as _uuid
+    from backend.services.sip_gateway_service import SipGatewayService
+
+    try:
+        uid = user_id if isinstance(user_id, _uuid.UUID) else _uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        return None
+    preferred = getattr(agent_config, "default_caller_id", None) if agent_config is not None else None
+    if SipGatewayService.outbound_number_for_user(db, uid, preferred) is None:
+        return {
+            "ok": False,
+            "error": "no_outbound_number",
+            "hint": (
+                "Звонок невозможен: у владельца не подключён номер для исходящих звонков. "
+                "Сообщи владельцу (send_telegram_notification), клиенту предложи переписку."
+            ),
+        }
+    if check_wallet and agent_config is not None and agent_config.assistant_type == "eleven":
+        from backend.services.wallet_service import WalletService
+        if not WalletService.can_start_call(db, uid):
+            return {
+                "ok": False,
+                "error": "wallet_empty",
+                "hint": (
+                    "Звонок невозможен: баланс кошелька VoksiAI исчерпан. Сообщи владельцу "
+                    "(send_telegram_notification), что нужно пополнить кошелёк. Клиенту не "
+                    "говори про «обрыв связи» — скажи, что свяжешься чуть позже, и продолжай переписку."
+                ),
+            }
+    return None
+
+
 def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True) -> dict:
     """
     Проверить, можно ли ставить звонок на этот момент.
@@ -4197,6 +4254,10 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     phone_error = _apply_call_phone(contact, args.get("phone"))
     if phone_error:
         return phone_error
+    # Номер для исходящих и кошелёк — сразу, а не тихим падением в планировщике.
+    preflight = _call_preflight(user_id, agent_config, db)
+    if preflight:
+        return preflight
 
     now_utc = datetime.now(timezone.utc)
     guard = _check_call_guards(contact, now_utc, allow_shift=False)

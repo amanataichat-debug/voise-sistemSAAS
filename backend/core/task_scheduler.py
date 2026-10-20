@@ -390,9 +390,20 @@ class TaskScheduler:
             #   тариф не profi). Дублирует scheduler-блокер.
             if not user.has_active_agent_subscription():
                 task.status = TaskStatus.CANCELLED
-                task.call_result = json.dumps({"error": "subscription_expired"})
+                task.call_result = "Нет доступа к агенту обзвона: тариф/пробный период закончился"
                 db.commit()
                 logger.warning(f"[TASK-SCHEDULER] Skipping agent task {task.id} — no agent access")
+                try:
+                    from backend.services.agent_tools import fn_send_telegram_notification
+                    await fn_send_telegram_notification(
+                        {"message": (
+                            f"⚠️ Задача «{task.title}» для {agent_contact.name or agent_contact.phone} "
+                            f"не выполнена: нет доступа к агенту обзвона (тариф или пробный период закончился)."
+                        )},
+                        agent_config, db,
+                    )
+                except Exception as ne:
+                    logger.warning(f"[TASK-SCHEDULER] Owner notify (no access) failed: {ne}")
                 return
 
             # 🆕 Telegram-задача: вместо звонка — отложенное сообщение с личного
@@ -470,11 +481,9 @@ class TaskScheduler:
             elif assistant_type == "eleven":
                 # Eleven звонит только через собственный SIP-шлюз (Voximplant выключен).
                 logger.warning(f"[TASK-SCHEDULER] ❌ No SIP number with outbound for agent task {task.id}")
-                task.status = TaskStatus.FAILED
-                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                agent_call.status = "failed"
-                agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                db.commit()
+                await self._agent_call_not_placed(
+                    task, agent_call, agent_contact, agent_config, NO_OUTBOUND_NUMBER_MESSAGE, db
+                )
                 return
             elif child_account and child_account.can_make_outbound_calls:
                 call_session_id, call_success = await self._agent_call_via_partner(
@@ -486,11 +495,9 @@ class TaskScheduler:
                 )
             else:
                 logger.error(f"[TASK-SCHEDULER] ❌ No outbound number for agent task {task.id}")
-                task.status = TaskStatus.FAILED
-                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                agent_call.status = "failed"
-                agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                db.commit()
+                await self._agent_call_not_placed(
+                    task, agent_call, agent_contact, agent_config, NO_OUTBOUND_NUMBER_MESSAGE, db
+                )
                 return
 
             if call_success and call_session_id and sip_number is not None:
@@ -520,10 +527,12 @@ class TaskScheduler:
                     )
                     logger.info(f"[TASK-SCHEDULER] 🤖 Agent PostCall started for call {agent_call.id}")
             else:
-                task.status = TaskStatus.FAILED
-                task.call_result = task.call_result or "Call failed"
-                agent_call.status = "failed"
-                db.commit()
+                # Звонок не поставлен в очередь шлюза (кошелёк, лимит дня, не О!, ошибка
+                # шлюза…): причину — в историю агента и владельцу, иначе её никто не видит.
+                await self._agent_call_not_placed(
+                    task, agent_call, agent_contact, agent_config,
+                    task.call_result or "Звонок не удалось поставить в очередь", db,
+                )
 
         except Exception as e:
             logger.error(f"[TASK-SCHEDULER] Error in agent task {task.id}: {e}", exc_info=True)
@@ -533,6 +542,38 @@ class TaskScheduler:
                 db.commit()
             except Exception:
                 pass
+
+    async def _agent_call_not_placed(self, task, agent_call, agent_contact, agent_config, reason: str, db) -> None:
+        """Звонок агента сорвался ДО набора — в журнале звонков его нет вообще.
+
+        Раньше причина оставалась только в task.call_result: в истории агента было
+        «причина не записана», владелец ничего не видел, а агент, не зная причины,
+        сочинял клиенту «обрыв связи». Теперь причина пишется в AgentCall (её видно в
+        «Последних звонках») и сразу уходит владельцу в Telegram-бот.
+        """
+        reason = (reason or "Звонок не удалось поставить в очередь").strip()
+        task.status = TaskStatus.FAILED
+        task.call_result = reason
+        task.call_completed_at = datetime.utcnow()
+        agent_call.status = "failed"
+        agent_call.call_result = reason[:1000]
+        agent_call.completed_at = datetime.utcnow()
+        db.commit()
+        logger.warning(f"[TASK-SCHEDULER] ❌ Agent call for task {task.id} not placed: {reason}")
+        try:
+            from backend.services.agent_tools import fn_send_telegram_notification
+            await fn_send_telegram_notification(
+                {
+                    "message": (
+                        f"⚠️ Звонок клиенту {agent_contact.name or agent_contact.phone} "
+                        f"({agent_contact.call_phone()}) НЕ состоялся — до набора не дошло.\n"
+                        f"Причина: {reason}"
+                    )
+                },
+                agent_config, db,
+            )
+        except Exception as ne:
+            logger.warning(f"[TASK-SCHEDULER] Owner notify (call not placed) failed: {ne}")
 
     async def execute_agent_telegram_task(self, task: Task, agent_contact, agent_config, user, db: Session):
         """
