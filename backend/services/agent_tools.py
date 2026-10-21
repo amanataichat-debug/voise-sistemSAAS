@@ -251,6 +251,78 @@ CHECK_PHONE_OPERATOR_TOOL = {
 }
 
 
+# Узнавание клиента и его номера (ветка 2110-client-memory) — в чате и в PostCall.
+FIND_CLIENT_TOOL = {
+    "type": "function",
+    "name": "find_client",
+    "description": (
+        "Найти клиента в базе агента по имени, компании, нише или номеру (основному или второму), "
+        "в том числе по именам в мессенджерах и свежей переписке. Используй, когда клиент пишет или "
+        "звонит с нового номера и называет себя («я Айбек, писал вам вчера», «звонил с другого "
+        "номера»). Ответ: confidence (high — это он; medium/low — не наверняка) и карточки с id. "
+        "Нашёл того же человека в другой карточке — склей их merge_contacts."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Имя клиента"},
+            "company": {"type": "string", "description": "Компания"},
+            "niche": {"type": "string", "description": "Чем занимается («стоматология»)"},
+            "phone": {"type": "string", "description": "Номер, который назвал клиент"},
+            "exclude_contact_id": {
+                "type": "string",
+                "description": "Не показывать эту карточку (например, текущую — созданную для нового номера)",
+            },
+        },
+        "required": [],
+    },
+}
+
+MERGE_CONTACTS_TOOL = {
+    "type": "function",
+    "name": "merge_contacts",
+    "description": (
+        "Склеить две карточки ОДНОГО клиента в одну (необратимо): звонки, записи, переписки, "
+        "задачи и номера лишней карточки переходят в основную, лишняя удаляется. Вызывай только "
+        "когда точно один человек: клиент сам назвал прежний номер, или find_client вернул "
+        "confidence=high. Основная — карточка с историей (старая), лишняя — новая, созданная "
+        "для незнакомого номера. После склейки работай с основной карточкой (main_contact_id)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "main_contact_id": {"type": "string", "description": "UUID основной карточки (остаётся)"},
+            "duplicate_contact_id": {"type": "string", "description": "UUID лишней карточки (удаляется)"},
+            "reason": {"type": "string", "description": "Почему это один клиент — одной фразой"},
+        },
+        "required": ["main_contact_id", "duplicate_contact_id", "reason"],
+    },
+}
+
+ADD_CONTACT_PHONE_TOOL = {
+    "type": "function",
+    "name": "add_contact_phone",
+    "description": (
+        "Добавить клиенту второй номер в карточку. Когда клиент в переписке или на звонке дал "
+        "другой номер («позвоните на 0700…», «мой второй номер …») — запиши его этим инструментом. "
+        "use_for_calls=true — звонить на этот номер (например, WhatsApp на Beeline, а звонить "
+        "можно только на O!). call_now=true — сразу и позвонить на него, если клиент просит "
+        "позвонить сейчас (действуют обычные правила: только O!, окно звонков, не больше "
+        "одного недозвона в день). Если номер уже у другой карточки — ответ подскажет склейку."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID карточки клиента"},
+            "phone": {"type": "string", "description": "Номер в любом формате: 0700 123 456, +996700123456"},
+            "use_for_calls": {"type": "boolean", "description": "Звонить клиенту на этот номер"},
+            "call_now": {"type": "boolean", "description": "Сразу позвонить на этот номер"},
+        },
+        "required": ["agent_contact_id", "phone"],
+    },
+}
+
+
 # Тёплая передача клиента админу (ветка 1810-anri-sales-logic). Отдельная
 # тулза вместо произвольного send_telegram_notification: гарантирует формат
 # карточки «Имя | ниша | нужны [входящие/исходящие] | объём | обсудили | готов
@@ -2756,6 +2828,9 @@ AGENT_CHAT_TOOLS = [
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
     NOTIFY_OWNER_HANDOFF_TOOL,
+    FIND_CLIENT_TOOL,
+    MERGE_CONTACTS_TOOL,
+    ADD_CONTACT_PHONE_TOOL,
 ]
 
 
@@ -2838,6 +2913,9 @@ AGENT_POSTCALL_TOOLS = [
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
     NOTIFY_OWNER_HANDOFF_TOOL,
+    FIND_CLIENT_TOOL,
+    MERGE_CONTACTS_TOOL,
+    ADD_CONTACT_PHONE_TOOL,
 ]
 
 
@@ -3558,6 +3636,7 @@ async def fn_search_contacts(args: dict, user_id: str, agent_config_id: str, db:
         q = q.filter(or_(
             AgentContact.name.ilike(like),
             AgentContact.phone.ilike(like),
+            AgentContact.alt_phones.ilike(like),
             AgentContact.company.ilike(like),
         ))
 
@@ -4032,7 +4111,10 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     from backend.core.timezone_utils import BISHKEK
 
     # --- оператор ---
-    phone = (contact.phone or "").strip() if contact else ""
+    # Номер для звонка: «номер для звонков» карточки → основной на O! → второй на O!
+    # (ветка 2110-client-memory: WhatsApp клиента на Beeline, звонить — на O!).
+    from backend.services.agent_contact_phones import dial_number
+    phone = dial_number(contact) if contact else ""
     if not phone:
         return {"ok": False, "error": "no_phone", "hint": "У контакта не задан номер телефона."}
     digits = normalize_sip_number(phone)
@@ -4041,8 +4123,9 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             "ok": False,
             "error": "other_operator",
             "hint": (
-                "Этот номер не на операторе O! (мы звоним только на префиксы 050 и 070). "
-                "Предложи клиенту переписку или входящий звонок на наш номер."
+                "У клиента нет номера O! (мы звоним только на префиксы 050 и 070). "
+                "Попроси номер O! и запиши его add_contact_phone(use_for_calls=true), "
+                "или предложи переписку / входящий звонок на наш номер."
             ),
             "phone": phone,
         }
@@ -4172,7 +4255,8 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
             AgentContact.agent_config_id == agent_config_id,
         ).first()
         if contact and contact.phone:
-            phone = contact.phone.strip()
+            from backend.services.agent_contact_phones import dial_number
+            phone = dial_number(contact)  # номер, на который агент и позвонит
     if not phone:
         return {"ok": False, "error": "phone_required", "hint": "Передай phone или agent_contact_id."}
 
@@ -4278,6 +4362,111 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     }
     if replaced:
         result["replaced"] = _replaced_text(now_utc, replaced)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Узнавание клиента, второй номер, склейка карточек (ветка 2110-client-memory)
+# ---------------------------------------------------------------------------
+
+def _own_contact(db: Session, contact_id, user_id, agent_config_id):
+    if not contact_id:
+        return None
+    try:
+        return db.query(AgentContact).filter(
+            AgentContact.id == contact_id,
+            AgentContact.user_id == user_id,
+            AgentContact.agent_config_id == agent_config_id,
+        ).first()
+    except Exception:
+        db.rollback()  # кривой UUID от модели
+        return None
+
+
+async def fn_find_client(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Найти клиента по имени / компании / нише / номеру — та же реализация, что у голоса."""
+    from backend.services import client_recognition
+    if not any(str(args.get(k) or "").strip() for k in ("name", "company", "niche", "phone")):
+        return {"ok": False, "error": "Передай имя, компанию, нишу или номер клиента."}
+    result = client_recognition.find_for_voice(
+        db, agent_config_id, args, exclude_ids=[args.get("exclude_contact_id")],
+    )
+    logger.info(f"[AGENT-TOOLS] find_client {args} → {result.get('confidence')}, {result.get('found', 0)} совп.")
+    return result
+
+
+async def fn_merge_contacts(args: dict, user_id: str, agent_config_id: str, db: Session,
+                            agent_config=None) -> dict:
+    """Склеить лишнюю карточку клиента в основную (необратимо, с записью в лог и владельцу)."""
+    from backend.services.agent_contact_merge import merge_contacts, notify_owner
+    main = _own_contact(db, args.get("main_contact_id"), user_id, agent_config_id)
+    extra = _own_contact(db, args.get("duplicate_contact_id"), user_id, agent_config_id)
+    if main is None or extra is None:
+        return {"ok": False, "error": "Contact not found",
+                "hint": "Нужны id двух карточек этого агента (возьми из find_client / search_contacts)."}
+    if main.id == extra.id:
+        return {"ok": False, "error": "same_contact", "hint": "Это одна и та же карточка — склеивать нечего."}
+    reason = str(args.get("reason") or "").strip()
+    result = merge_contacts(db, main, extra, reason=reason)
+    notify_owner(agent_config or db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first(),
+                 result["owner_line"])
+    return result
+
+
+async def fn_add_contact_phone(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Второй номер в карточку клиента; по желанию — звонить на него (и сразу позвонить)."""
+    from backend.models.sip_gateway import is_o_number
+    from backend.services.agent_contact_phones import (
+        add_alt_phone, find_contact_by_phone, has_phone, phone_digits,
+    )
+    contact = _own_contact(db, args.get("agent_contact_id"), user_id, agent_config_id)
+    if contact is None:
+        return {"ok": False, "error": "Contact not found"}
+    digits = phone_digits(args.get("phone"))
+    if len(digits) != 12 or not digits.startswith("996"):
+        return {"ok": False, "error": "bad_phone",
+                "hint": "Номер не похож на кыргызский (ждём 0XXX XXX XXX или +996…). Уточни у клиента."}
+
+    other = find_contact_by_phone(db, agent_config_id, digits)
+    if other is not None and other.id != contact.id:
+        return {
+            "ok": False,
+            "error": "phone_belongs_to_other_contact",
+            "other_contact_id": str(other.id),
+            "other_contact_name": other.name or other.phone,
+            "hint": (
+                "Этот номер уже есть в другой карточке. Если это тот же человек — склей карточки "
+                f"merge_contacts(main_contact_id=<карточка с историей>, duplicate_contact_id=<лишняя>)."
+            ),
+        }
+
+    added = add_alt_phone(contact, digits)
+    can_call = is_o_number(digits)
+    use_for_calls = bool(args.get("use_for_calls") or args.get("call_now"))
+    if use_for_calls and can_call:
+        contact.call_phone = digits
+    db.commit()
+    logger.info(
+        f"[AGENT-TOOLS] add_contact_phone: контакт {contact.id} +{digits} "
+        f"({'добавлен' if added else 'уже был'}{', звонить на него' if use_for_calls and can_call else ''})"
+    )
+    result = {
+        "ok": True,
+        "agent_contact_id": str(contact.id),
+        "phone": "+" + digits,
+        "added": added,
+        "already_known": not added and has_phone(contact, digits),
+        "can_call": can_call,
+        "call_phone": ("+" + contact.call_phone) if contact.call_phone else None,
+    }
+    if use_for_calls and not can_call:
+        result["hint"] = ("Номер записан, но он не на O! — звонить на него мы не можем. "
+                          "Попроси номер O! (050 / 070) или продолжай переписку.")
+    if args.get("call_now") and can_call:
+        result["call"] = await fn_trigger_immediate_call(
+            {"agent_contact_id": str(contact.id), "title": "Звонок на номер, который дал клиент"},
+            user_id, agent_config_id, db,
+        )
     return result
 
 
@@ -4644,6 +4833,9 @@ _TOOL_MAP = {
     "get_call_transcript": "fn_get_call_transcript",
     "get_period_report": "fn_get_period_report",
     "get_failed_calls": "fn_get_failed_calls",
+    "find_client": "fn_find_client",
+    "merge_contacts": "fn_merge_contacts",
+    "add_contact_phone": "fn_add_contact_phone",
 }
 
 
@@ -4710,6 +4902,13 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_trigger_immediate_call(tool_args, user_id, agent_config_id, db)
         elif tool_name == "check_phone_operator":
             result = await fn_check_phone_operator(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "find_client":
+            result = await fn_find_client(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "merge_contacts":
+            result = await fn_merge_contacts(tool_args, user_id, agent_config_id, db,
+                                             agent_config=context.get("agent_config"))
+        elif tool_name == "add_contact_phone":
+            result = await fn_add_contact_phone(tool_args, user_id, agent_config_id, db)
         elif tool_name == "send_proposal":
             result = await fn_send_proposal(tool_args, user_id, agent_config_id, db)
         elif tool_name == "notify_owner_handoff":

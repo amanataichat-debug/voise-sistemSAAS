@@ -3654,6 +3654,7 @@ async def list_agent_contacts(
             or_(
                 AgentContact.name.ilike(pattern),
                 AgentContact.phone.ilike(pattern),
+                AgentContact.alt_phones.ilike(pattern),  # второй номер клиента
                 AgentContact.company.ilike(pattern),
             )
         )

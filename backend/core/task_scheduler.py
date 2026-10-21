@@ -709,17 +709,20 @@ class TaskScheduler:
             agent_call = db.get(AgentCall, task.agent_call_id) if task.agent_call_id else None
             if agent_call is not None and agent_call.call_strategy:
                 metadata["call_strategy"] = agent_call.call_strategy[:1500]
+            # Номер для звонка: второй номер на O!, если клиент дал его в переписке (ветка 2110-client-memory).
+            from backend.services.agent_contact_phones import dial_number
+            to_number = dial_number(agent_contact)
             call = SipGatewayService.queue_outbound_call(
                 db,
                 user_id=task.user_id,
-                to_number=agent_contact.phone,
+                to_number=to_number,
                 caller_number=sip_number,
                 assistant_type=assistant_type,
                 assistant_id=assistant_id,
                 metadata=metadata,
                 task_id=task.id,
             )
-            logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {agent_contact.phone} ({assistant_name}), call {call.id}")
+            logger.info(f"[TASK-SCHEDULER] 📞 SIP call queued: {sip_number.phone_number} -> {to_number} ({assistant_name}), call {call.id}")
             return str(call.id), True
         except ValueError as e:
             # Номер не проходит через транк (не O!) — причина для пользователя, не сбой

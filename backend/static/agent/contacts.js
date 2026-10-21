@@ -117,7 +117,7 @@ function renderContactDetails(c){
 
   const infoBlock = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12.5px">
-      <div><b>Телефон:</b> ${esc(c.phone)}</div>
+      <div><b>Телефон:</b> ${esc(c.phone)}${(c.alt_phones || []).length ? `<div style="color:var(--muted);margin-top:2px">Другие номера: ${c.alt_phones.map(esc).join(', ')}</div>` : ''}${c.call_phone ? `<div style="color:var(--muted);margin-top:2px">Звоним на: ${esc(c.call_phone)}</div>` : ''}</div>
       <div><b>Попыток:</b> ${c.attempts_count || 0}</div>
       <div style="display:flex;align-items:center;gap:8px"><b>Стадия:</b>
         <select id="cd-stage" onchange="changeContactStage('${c.id}', this.value)" class="form-input" style="display:inline-block;width:auto;padding:2px 8px;font-size:12px">

@@ -79,6 +79,12 @@ class AgentCallFinalizer:
             return existing
         # По любому номеру клиента — основному или второму (ветка 2110-client-memory).
         contact = find_contact_by_phone(db, agent.id, phone)
+        # Голосовой агент узнал клиента на звонке (find_client) — новый номер идёт
+        # в его карточку, а не в новую; карточку, уже заведённую на этот номер,
+        # склеиваем в узнанную.
+        recognized = AgentCallFinalizer._recognized_contact(db, call, agent)
+        if recognized is not None and (contact is None or contact.id != recognized.id):
+            contact = AgentCallFinalizer._attach_to_recognized(db, call, agent, recognized, contact)
         if contact is None:
             contact = AgentContact(
                 agent_config_id=agent.id,
@@ -102,6 +108,47 @@ class AgentCallFinalizer:
         db.add(agent_call)
         db.flush()
         return agent_call
+
+    @staticmethod
+    def _recognized_contact(db: Session, call: SipCall, agent: AgentConfig) -> Optional[AgentContact]:
+        """Карточка, которую голосовой агент уверенно узнал на этом звонке (find_client)."""
+        contact_id = (call.call_metadata or {}).get("matched_agent_contact_id")
+        if not contact_id:
+            return None
+        try:
+            return db.query(AgentContact).filter(
+                AgentContact.id == uuid.UUID(str(contact_id)),
+                AgentContact.agent_config_id == agent.id,
+            ).first()
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _attach_to_recognized(db: Session, call: SipCall, agent: AgentConfig,
+                              recognized: AgentContact, by_phone: Optional[AgentContact]) -> AgentContact:
+        """Номер звонящего — вторым в узнанную карточку; его отдельную карточку — склеить в неё."""
+        from backend.services.agent_contact_merge import merge_contacts, notify_owner
+        from backend.services.agent_contact_phones import add_alt_phone
+
+        reason = "голосовой агент узнал клиента на входящем звонке с другого номера"
+        if by_phone is not None:
+            try:
+                result = merge_contacts(db, recognized, by_phone, reason=reason)
+                notify_owner(agent, result["owner_line"])
+            except Exception as e:
+                db.rollback()
+                logger.error(f"[AGENT-FINALIZER] склейка {by_phone.id} → {recognized.id} не удалась: {e}",
+                             exc_info=True)
+                return by_phone
+        elif add_alt_phone(recognized, call.caller):
+            line = (f"Клиент «{recognized.name or recognized.phone}» звонил с нового номера +{call.caller} — "
+                    "номер добавлен в его карточку.")
+            stamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            recognized.notes = f"{recognized.notes}\n[{stamp}] {line}" if recognized.notes else f"[{stamp}] {line}"
+            db.flush()
+            logger.info(f"[AGENT-FINALIZER] {line} (карточка {recognized.id}, звонок {call.id})")
+            notify_owner(agent, line)
+        return recognized
 
     @staticmethod
     def _find_agent_call(db: Session, call: SipCall, number: Optional[SipPhoneNumber]) -> Tuple[Optional[AgentCall], str]:

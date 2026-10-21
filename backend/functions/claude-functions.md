@@ -13,12 +13,13 @@
 - `add_google_sheet_row.py` — добавляет строку в Google Таблицу (сервисный аккаунт).
 - `api_request.py` — произвольный HTTP-запрос (GET/POST/PUT/DELETE/PATCH) к внешнему API.
 - `create_crm_voicyfy_task.py` — создаёт задачу на обратный звонок в CRM Voksy AI; находит/создаёт контакт по телефону.
+- `find_client.py` — **узнать клиента агента на звонке** (ветка `2110-client-memory`) по имени, компании, нише или прежнему номеру; реализация — `services/client_recognition.py`. Включается на карточке голоса живьём (`agent_voice_context.apply_live_client_functions`): только на входящем с незнакомого номера и в браузерном тесте агента. Уверенно узнанный клиент запоминается в `sip_calls.call_metadata.matched_agent_contact_id` — после звонка номер уйдёт в его карточку.
 - `get_current_time.py` — текущие дата/время в заданном часовом поясе.
 - `hangup_call.py` — завершает звонок (только в контексте Voximplant-телефонии).
 - `query_llm.py` — запрос к текстовой LLM (ChatGPT) для развёрнутых ответов; использует `services/llm_streaming` для стриминга в WebSocket.
 - `query_orchestrator.py` — обращение к оркестратору Voksy AI Agent (`services/agent_orchestrator`); мост между голосовым агентом и «мозгом».
 - `read_google_doc.py` — читает текст из публичного Google Документа по ссылке.
-- `search_contact_by_phone.py` — поиск контакта в CRM по номеру телефона.
+- `search_contact_by_phone.py` — поиск контакта в старой CRM (`contacts`) по номеру телефона; контактов агента не видит — для агентов обзвона есть `find_client`.
 - `search_pinecone.py` — векторный поиск по базе знаний (`services/pinecone_service`).
 - `send_sms.py` — отправка SMS (через Voximplant).
 - `send_telegram_notification.py` — уведомление через Telegram-бота в чат/группу/канал.

@@ -240,6 +240,22 @@ def record_during_pause(agent_contact, channel: str, message_body: str, db) -> N
             pass
 
 
+def _after_merge(db, result_str: str, agent_contact, agent_call):
+    """После merge_contacts в PostCall: если удалили текущую карточку — перейти на основную."""
+    try:
+        data = json.loads(result_str)
+    except Exception:
+        return agent_contact
+    if not data.get("ok") or data.get("removed_contact_id") != str(agent_contact.id):
+        return agent_contact
+    main = db.query(AgentContact).filter(AgentContact.id == data.get("main_contact_id")).first()
+    if main is None:
+        return agent_contact
+    agent_call.agent_contact_id = main.id
+    logger.info(f"[AGENT-POSTCALL] карточка {agent_contact.id} склеена в {main.id} — итог пишем в основную")
+    return main
+
+
 def build_conversation_timeline(
     db, agent_contact, exclude_call_id=None,
     max_events=TIMELINE_MAX_EVENTS, days_window=TIMELINE_DAYS_WINDOW,
@@ -1268,10 +1284,15 @@ class PostCallOrchestrator:
    Если ничего по сути не изменилось (клиент ещё думает) — НЕ вызывай
    move_contact_stage, оставь контакт в текущей стадии.
 {callback_rule}
-4. Если нужно уведомить владельца/менеджеров (важный результат) — вызови send_telegram_notification."""
+4. Если нужно уведомить владельца/менеджеров (важный результат) — вызови send_telegram_notification.{self._identity_rules(agent_contact, timeline, call_direction)}"""
 
+        from backend.services.agent_contact_phones import alt_phone_list
+        alt = alt_phone_list(agent_contact)
+        phones_line = f"{agent_contact.phone}" + (
+            f"; другие номера: {', '.join('+' + p for p in alt)}" if alt else ""
+        ) + (f"; звоним на +{agent_contact.call_phone}" if agent_contact.call_phone else "")
         return f"""{direction_line}
-КОНТАКТ: {agent_contact.name or 'Неизвестный'} ({agent_contact.phone})
+КОНТАКТ: {agent_contact.name or 'Неизвестный'} ({phones_line})
 КОМПАНИЯ: {agent_contact.company or 'Не указана'}
 ПАМЯТЬ О КОНТАКТЕ: {memory_json}
 ВСЕГО ПОПЫТОК: {agent_contact.attempts_count or 0}{timeline or ''}
@@ -1284,6 +1305,31 @@ class PostCallOrchestrator:
 AGENT_CONTACT_ID: {str(agent_contact.id)}
 
 {action_block}"""
+
+    @staticmethod
+    def _identity_rules(agent_contact, timeline: str, call_direction: str) -> str:
+        """
+        Правила про номера и личность клиента (ветка 2110-client-memory): второй
+        номер для звонков и склейка, когда клиент пришёл с нового номера.
+        """
+        rules = (
+            "\n5. Клиент дал другой номер («позвоните на 0700…», «мой второй номер …») —\n"
+            "   запиши его add_contact_phone (use_for_calls=true, если звонить туда;\n"
+            "   call_now=true, если просит позвонить сейчас). Звонки пойдут на этот номер."
+        )
+        created = getattr(agent_contact, "created_at", None)
+        is_new_card = not (timeline or "").strip() and (
+            created is None or datetime.utcnow() - created < timedelta(days=1)
+        )
+        if is_new_card and (call_direction or "outbound").lower() != "outbound":
+            rules += (
+                "\n6. Это НОВАЯ карточка: номер раньше не встречался. Если клиент называет\n"
+                "   себя, компанию или говорит, что уже писал/звонил с другого номера —\n"
+                f"   найди его find_client(exclude_contact_id=\"{agent_contact.id}\") и при\n"
+                "   confidence=high склей merge_contacts(main_contact_id=<найденный>,\n"
+                f"   duplicate_contact_id=\"{agent_contact.id}\"). Дальше работай с основной."
+            )
+        return rules
 
     async def run_for_sms(self, agent_call, agent_contact, agent_config, user, sms_body, db):
         """
@@ -1577,6 +1623,11 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                                 stage_moved_by_tool = True
                         except Exception:
                             pass
+
+                    # Текущую карточку склеили в другую (merge_contacts) — дальше
+                    # итог звонка пишем в основную: лишней в базе уже нет.
+                    if tool_name == "merge_contacts":
+                        agent_contact = _after_merge(db, result_str, agent_contact, agent_call)
 
                     messages.append({
                         "role": "tool",
