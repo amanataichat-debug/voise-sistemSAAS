@@ -578,6 +578,43 @@ class SipGatewayService:
         return " ".join(parts)
 
     @staticmethod
+    def messenger_followup_hint(agent, db: Session) -> str:
+        """Подсказка голосовому агенту: какие материалы он может пообещать прислать после звонка.
+
+        Живой звонок 21.10.2026 (сессия 46bb1565): клиент попросил «скинь каталог / КП в WhatsApp
+        после звонка», агент ответил «не смогу отправить файл в WhatsApp» — хотя у агента
+        подключён WhatsApp и разбор звонка (PostCall) умеет отправлять файлы. Голосовой модели
+        никто не сказал, что так можно. Обещание выполняет PostCall (правило materials_rule).
+        """
+        if agent is None:
+            return ""
+        channels = []
+        try:
+            from backend.models.agent_whatsapp import AgentWhatsAppAccount
+            wa = db.query(AgentWhatsAppAccount).filter(AgentWhatsAppAccount.agent_config_id == agent.id).first()
+            if wa is not None and wa.is_connected():
+                channels.append("WhatsApp")
+        except Exception as e:
+            logger.warning(f"[SIP] messenger_followup_hint: WhatsApp check failed: {e}")
+        try:
+            from backend.models.agent_telegram_account import AgentTelegramAccount
+            tg = db.query(AgentTelegramAccount).filter(AgentTelegramAccount.agent_config_id == agent.id).first()
+            if tg is not None and tg.is_connected():
+                channels.append("Telegram")
+        except Exception as e:
+            logger.warning(f"[SIP] messenger_followup_hint: Telegram check failed: {e}")
+        if not channels:
+            return ""
+        where = " или ".join(channels)
+        return (
+            f"[Материалы после звонка] Ты можешь прислать клиенту материалы — КП, каталог, прайс, "
+            f"файлы, адрес, ссылки — в {where}: их отправит система сразу после звонка. Если клиент "
+            f"просит прислать — соглашайся одной фразой («да, сразу после звонка пришлю в {channels[0]}») "
+            f"и уточни номер, только если он хочет на другой. Не говори, что не можешь отправить, и не "
+            f"предлагай почту вместо мессенджера."
+        )
+
+    @staticmethod
     def inbound_recent_contacts_hint(call: SipCall, agent, db: Session) -> str:
         """Подсказка голосовому агенту для входящего с незнакомого номера.
 

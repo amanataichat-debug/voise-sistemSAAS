@@ -66,6 +66,14 @@ QA_BUDGET = 4000
 PRICE_BUDGET = 3500
 FILES_BUDGET = 1000
 
+# Сколько знаний звонок получает минимум, даже если промпт карточки и контекст звонка
+# (история знакомого клиента) уже съели лимит голосового слоя. Живой звонок 21.10.2026
+# (сессия 46bb1565): промпт вышел 16001 символ, знания выброшены целиком, а журнал
+# написал «база не заполнена» — агент уходил за каждым ответом в поиск. Теперь первой
+# уступает история клиента (до CONTEXT_FLOOR символов), а не знания.
+MIN_CALL_KNOWLEDGE = 3500
+CONTEXT_FLOOR = 1500
+
 # Сколько позиций каталога показываем в прайсе. Больше — промпт раздувается,
 # а длинные перечисления на звонке всё равно бесполезны: остальное агент
 # достанет инструментом find_products.
@@ -125,6 +133,15 @@ def resolve_agent_for_voice(db, assistant_id) -> Optional[Any]:
 # ============================================================================
 # ХЕЛПЕРЫ
 # ============================================================================
+
+def _clip_lines(text: str, limit: int) -> str:
+    """Обрезать многострочный текст до limit символов по границе строки (переносы сохраняем)."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    nl = cut.rfind("\n")
+    return (cut[:nl] if nl > limit * 0.5 else cut).rstrip() + "\n…"
+
 
 def _clip(text: str, limit: int) -> str:
     """
@@ -439,6 +456,17 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
 
     if max_chars and block:
         room = max_chars - len(base) - len(tail)
+        want = min(len(block), MIN_CALL_KNOWLEDGE)
+        if room < want and len(tail) > CONTEXT_FLOOR:
+            keep = max(CONTEXT_FLOOR, max_chars - len(base) - want)
+            if keep < len(tail):
+                logger.warning(
+                    f"[VOICE-KB] контекст звонка урезан с {len(tail)} до {keep} символов, "
+                    f"чтобы знания влезли (правила {len(base)}, лимит {max_chars})"
+                )
+                stats["context_clipped"] = len(tail) - keep
+                tail = _clip_lines(tail, keep)
+                room = max_chars - len(base) - len(tail)
         if room < len(block):
             if room < 400:
                 # Промпт карточки сам съел бюджет (длинные доп. инструкции
@@ -449,7 +477,7 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                     f"правила {len(base)}, контекст {len(tail)}; "
                     f"сократите дополнительные инструкции агента"
                 )
-                block, stats = "", {}
+                block, stats = "", {"dropped": 1, "base": len(base), "context": len(tail)}
             else:
                 logger.warning(
                     f"[VOICE-KB] знания обрезаны с {len(block)} до {room} символов "

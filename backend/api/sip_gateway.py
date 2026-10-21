@@ -433,7 +433,10 @@ async def sip_media(
         if not inbound_hint:
             inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
             unknown_caller = bool(inbound_hint)
-        enriched_context = f"{context}\n\n{inbound_hint}" if inbound_hint else context
+        # Подсказка про материалы — раньше истории клиента: при нехватке места история
+        # обрезается с конца (agent_voice_context.build_call_system_prompt)
+        followup_hint = SipGatewayService.messenger_followup_hint(agent_cfg, db)
+        enriched_context = "\n\n".join(p for p in (context, followup_hint, inbound_hint) if p)
         prompt, kb_stats = agent_voice_context.build_call_system_prompt(
             db, assistant, agent_cfg, call_context=enriched_context,
             # Голосовой слой GPT-Live видит только начало промпта — остальное
@@ -504,6 +507,14 @@ async def sip_media(
     # знания до модели, без чтения логов сервера.
     if kb_error:
         call_log.add("kb", f"Знания агента не подмешаны, звонок идёт без них: {kb_error}", level="error")
+    elif agent_cfg is not None and kb_stats.get("dropped"):
+        call_log.add(
+            "kb",
+            f"Знания НЕ влезли в промпт звонка: промпт карточки {kb_stats.get('base', 0)} симв. "
+            f"+ контекст звонка {kb_stats.get('context', 0)} симв. при лимите {LIVE_VOICE_INSTRUCTIONS_MAX_CHARS} — "
+            f"агент будет искать каждый ответ функцией; сократите дополнительные инструкции агента",
+            level="warning", prompt_chars=len(prompt),
+        )
     elif agent_cfg is not None:
         call_log.add(
             "kb",
@@ -516,6 +527,7 @@ async def sip_media(
               ) if size) or "пусто — база знаний агента не заполнена"),
             prompt_chars=len(prompt),
             trimmed="да" if kb_stats.get("trimmed") else None,
+            context_clipped=kb_stats.get("context_clipped"),
         )
 
     # 6. Запуск браузерного хендлера через адаптер

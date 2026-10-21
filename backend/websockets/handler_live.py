@@ -38,6 +38,7 @@ handler_fish, поэтому обслуживает и браузерный ви
 """
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -62,6 +63,7 @@ from backend.websockets.function_calls import (
     async_save_to_google_sheets,
     execute_and_send_function_result,
 )
+from backend.websockets.live_client import audioop
 from backend.websockets.live_client import CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
 
 logger = get_logger(__name__)
@@ -71,6 +73,10 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 # Пауза в потоке output-аудио, после которой считаем, что ассистент договорил
 # (у Live нет события «аудио закончилось»; паузы между фразами короче).
 OUTPUT_IDLE_SEC = 1.0
+# GPT-Live шлёт звук непрерывно, в паузах — тишиной (живой звонок 21.10.2026: «озвучено» 189 с из
+# 198, «Ассистент начал говорить» один раз за звонок, задержка ответа не мерилась вовсе). Поэтому
+# речью ассистента считаем только куски громче порога (RMS PCM16), паузы — тишиной.
+VOICED_RMS = 200
 # Приветствие ушло в session.start, но модель молчит дольше — дублируем старым путём
 # (session.instructions.append): документация не гарантирует речь по session.input
 GREETING_FALLBACK_SEC = 3.0
@@ -79,16 +85,20 @@ GREETING_FALLBACK_SEC = 3.0
 DECISION_TRIGGERS = bool(getattr(settings, "LIVE_DECISION_TRIGGERS", True))
 AMD_HANGUP = bool(getattr(settings, "LIVE_AMD_HANGUP", False))
 AMD_WINDOW_SEC = 25.0       # автоответчик ищем только в начале исходящего звонка
-MOOD_HINT_GAP_SEC = 15.0    # не чаще одной подсказки о настроении за столько секунд
+# Живой звонок 21.10.2026 (сессия 46bb1565): 9 подсказок о настроении за 4 минуты, «confused»
+# на обычной паузе раздумья — агент начал переспрашивать «вы про каталог спросили, верно?».
+# Поэтому: «доволен» не подсказываем (агент и так тёплый), «запутался» — только если Decisions
+# сказал это два раза подряд, и не чаще раза в 45 с.
+# не чаще одной подсказки за столько секунд; раздражение важнее — ему интервал короче
+MOOD_HINT_GAP_SEC = {"irritated": 15.0, "confused": 45.0}
+MOOD_CONFIRM = {"confused": 2}  # сколько решений подряд нужно, чтобы поверить настроению
 # Подсказки голосовой модели (session.thinking.append — не озвучиваются, влияют на манеру)
 MOOD_HINTS = {
     "irritated": "Клиент сейчас звучит раздражённо или нетерпеливо. Не оправдывайся и не спорь: "
                  "спокойно признай это одной короткой фразой, говори ещё короче и сразу предложи один "
                  "понятный следующий шаг.",
-    "confused": "Клиент, похоже, запутался или не понял. Объясни проще и другими словами, одной короткой "
-                "фразой, и мягко спроси, понятно ли.",
-    "positive": "Клиент настроен дружелюбно и заинтересованно — можно теплее и живее, с улыбкой в голосе, "
-                "и мягко веди к следующему шагу.",
+    "confused": "Клиент, похоже, не до конца понял. Объясни проще и другими словами, одной короткой "
+                "фразой. Не переспрашивай, понял ли он, и не уточняй, что он имел в виду.",
 }
 INTENT_HINTS = {
     "call_back_later": "Клиент сейчас занят. Не продолжай рассказ: коротко уточни, когда ему удобно "
@@ -322,6 +332,7 @@ class LiveVoiceSession:
         self.decisions = 0
         self._mood = "neutral"
         self._mood_hint_at = 0.0
+        self._mood_seen = ("neutral", 0)  # последнее настроение от Decisions и сколько раз подряд
         self._intents_done: set = set()
         self.direction = getattr(assistant, "sip_direction", None)
 
@@ -370,12 +381,15 @@ class LiveVoiceSession:
     async def _on_audio_delta(self, delta_b64: str) -> None:
         if not delta_b64:
             return
-        self._last_audio_at = time.time()
         self.audio_bytes_out += len(delta_b64) * 3 // 4
         self.audio_deltas_out += 1
         if self._first_audio_at is None:
             self._first_audio_at = time.time()
             _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
+        if not self._is_voiced(delta_b64):
+            await self.emit({"type": "response.audio.delta", "delta": delta_b64})
+            return
+        self._last_audio_at = time.time()
         if not self.assistant_speaking:
             self.assistant_speaking = True
             if self.call_log:
@@ -391,6 +405,15 @@ class LiveVoiceSession:
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
+
+    @staticmethod
+    def _is_voiced(delta_b64: str) -> bool:
+        if audioop is None:
+            return True  # без audioop — как раньше: любой звук = речь
+        try:
+            return audioop.rms(base64.b64decode(delta_b64), 2) >= VOICED_RMS
+        except Exception:
+            return True
 
     # ------------------------------------------------------------------ прощание → завершение звонка
     def _is_phone(self) -> bool:
@@ -603,10 +626,12 @@ class LiveVoiceSession:
 
         # Подсказку, придержанную интервалом, не теряем: настроение запоминаем только когда
         # подсказка ушла (или клиент снова спокоен), следующее решение попробует ещё раз
+        streak = self._mood_seen[1] + 1 if self._mood_seen[0] == mood else 1
+        self._mood_seen = (mood, streak)
         if mood != self._mood:
             if mood not in MOOD_HINTS:
                 self._mood = mood
-            elif now - self._mood_hint_at >= MOOD_HINT_GAP_SEC:
+            elif streak >= MOOD_CONFIRM.get(mood, 1) and now - self._mood_hint_at >= MOOD_HINT_GAP_SEC.get(mood, 45.0):
                 self._mood = mood
                 self._mood_hint_at = now
                 _log(f"decisions: caller mood {mood}")
