@@ -71,6 +71,9 @@ DEFAULT_GREETING = "Здравствуйте! Чем я могу вам помо
 # Пауза в потоке output-аудио, после которой считаем, что ассистент договорил
 # (у Live нет события «аудио закончилось»; паузы между фразами короче).
 OUTPUT_IDLE_SEC = 1.0
+# Приветствие ушло в session.start, но модель молчит дольше — дублируем старым путём
+# (session.instructions.append): документация не гарантирует речь по session.input
+GREETING_FALLBACK_SEC = 3.0
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 # Потолок всплеска для пейсинга входящего аудио (секунды). OpenAI допускает всплески
@@ -296,8 +299,27 @@ class LiveVoiceSession:
         greeting = (getattr(self.assistant, "greeting_message", None) or self.default_greeting).strip()
         if not greeting:
             return
+        if self.client.greeting_in_start:
+            _log(f"greeting sent in session.start: {greeting[:60]}")
+            if self.call_log:
+                self.call_log.add("session", "Приветствие передано в session.start (без отдельного запроса)")
+            self._track(self._greeting_fallback(greeting))
+            return
         if await self.client.say_greeting(greeting):
             _log(f"greeting requested: {greeting[:60]}")
+
+    async def _greeting_fallback(self, greeting: str) -> None:
+        try:
+            await asyncio.sleep(GREETING_FALLBACK_SEC)
+        except asyncio.CancelledError:
+            return
+        if self._first_audio_at is not None or self._user_spoke_at is not None or self.stop_event.is_set():
+            return
+        _log(f"no audio {GREETING_FALLBACK_SEC:.0f}s after start, re-requesting greeting via instructions.append",
+             "WARNING")
+        if self.call_log:
+            self.call_log.add("session", "Модель молчит после старта — приветствие запрошено повторно")
+        await self.client.say_greeting(greeting)
 
     # ------------------------------------------------------------------ speech state
     async def _on_audio_delta(self, delta_b64: str) -> None:
@@ -815,7 +837,8 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
             pass
 
         client = OpenAILiveClient(api_key, assistant, client_id, db, audio_rate=LIVE_AUDIO_RATE,
-                                  voice_override=voice_override, telephony=telephony)
+                                  voice_override=voice_override, telephony=telephony,
+                                  greeting=assistant.greeting_message or DEFAULT_GREETING)
         connect_started = time.time()
         if not await client.connect():
             await fail("openai_connection_failed", "Failed to open gpt-live-1 session", 1011)
