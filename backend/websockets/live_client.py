@@ -204,6 +204,7 @@ class OpenAILiveClient:
         telephony: bool = False,
         conversation_model: Any = None,
         dialog_session_id: Optional[str] = None,
+        greeting: Optional[str] = None,
     ):
         self.api_key = api_key
         self.assistant_config = assistant_config
@@ -217,6 +218,13 @@ class OpenAILiveClient:
         # ElevenLabs с движком GPT-Live) и session_id диалога (у звонка — id звонка, иначе id сессии Live)
         self.conversation_model = conversation_model or Conversation
         self._dialog_session_id = dialog_session_id
+        # Приветствие кладём developer-сообщением в session.input прямо в session.start
+        # (рекомендация OpenAI, docs/openai_gpt_live_audio_reference.md §5.4/§7.2): модель
+        # начинает говорить сразу после старта, без лишнего круга instructions.append.
+        # greeting_in_start=True — приветствие ушло в старт и OpenAI его принял.
+        self.greeting = " ".join((greeting or "").split()) or None
+        self.greeting_in_start = False
+        self._input_retry_done = False
 
         self.ws = None
         self.is_connected = False
@@ -313,7 +321,7 @@ class OpenAILiveClient:
         if str(max_out).isdigit() and int(max_out) >= 16:
             responses_cfg["max_output_tokens"] = int(max_out)
 
-        return {
+        cfg: Dict[str, Any] = {
             "model": LIVE_MODEL,
             "instructions": voice_instructions,
             "audio": {
@@ -322,6 +330,21 @@ class OpenAILiveClient:
             },
             "delegation": {"type": "responses", "responses": responses_cfg},
         }
+        self.greeting_in_start = bool(self.greeting) and not self._input_retry_done
+        if self.greeting_in_start:
+            cfg["input"] = [{
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": self.greeting_instruction(self.greeting)}],
+            }]
+        return cfg
+
+    @staticmethod
+    def greeting_instruction(phrase: str) -> str:
+        return (
+            "Разговор только начался, собеседник ещё ничего не сказал. Начни первым прямо сейчас: "
+            f"скажи дословно «{phrase}», затем сделай паузу и слушай. Не повторяй приветствие позже."
+        )
 
     # ------------------------------------------------------------------
     # Соединение
@@ -391,6 +414,12 @@ class OpenAILiveClient:
                 msg = json.dumps(err, ensure_ascii=False)
                 logger.error(f"[LIVE-CLIENT] session.start rejected: {msg}")
                 await self._safe_close_ws()
+                # Приветствие в session.input не принято — один раз повторяем старт без него,
+                # хендлер тогда поздоровается старым путём (instructions.append)
+                if self.greeting_in_start and not self._input_retry_done and "input" in msg.lower():
+                    self._input_retry_done = True
+                    logger.warning("[LIVE-CLIENT] Retrying session.start without greeting in session.input")
+                    return await self.connect(start_timeout=start_timeout)
                 # Голос из кабинета не принят этой моделью — один раз повторяем с голосом по умолчанию
                 if (not self._voice_retry_done and self.voice != LIVE_DEFAULT_VOICE
                         and any(m in msg.lower() for m in _VOICE_ERROR_MARKERS)):
@@ -510,10 +539,7 @@ class OpenAILiveClient:
         phrase = " ".join((phrase or "").split())
         if not phrase:
             return False
-        return await self.append_instructions(
-            "Разговор только начался, собеседник ещё ничего не сказал. Начни первым: "
-            f"скажи дословно «{phrase}» и после этого жди ответа. Не повторяй приветствие позже."
-        )
+        return await self.append_instructions(self.greeting_instruction(phrase))
 
     async def mute_input(self, muted: bool) -> bool:
         return await self._send({

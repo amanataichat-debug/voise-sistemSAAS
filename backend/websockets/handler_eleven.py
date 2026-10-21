@@ -484,6 +484,7 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         conversation_model=ElevenConversation,
         # у звонка диалог пишется под id звонка (SIP-роут связывает по нему звонок и реплики)
         dialog_session_id=getattr(assistant, "sip_session_id", None),
+        greeting=assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
     )
     connect_task = asyncio.create_task(client.connect())
 
