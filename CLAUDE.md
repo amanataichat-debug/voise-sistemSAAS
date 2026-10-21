@@ -351,7 +351,7 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 
 ## Development Workflow (current)
 
-- Work happens on branch `1610-kb-calls` (знания агента на звонке + объединённая страница знаний и файлов; ответвлена от `1410-kb-v2`, которая содержит КП и базу знаний v2). Commit and push there; no pull requests unless asked.
+- Work happens on branch `2110-client-memory` (ответвлена от `1910-voice-fix-test1`): защита от дублей задач на звонок, узнавание клиента по имени/нише/номеру на звонке, склейка карточек одного клиента. ТЗ — `docs/tz_2110_client_memory.md`, читать первым. Commit and push there; no pull requests unless asked.
 - The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
 - Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
 - Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.
