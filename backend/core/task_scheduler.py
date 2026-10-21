@@ -300,6 +300,32 @@ class TaskScheduler:
             return None
         return earliest.astimezone(timezone.utc).replace(tzinfo=None)
 
+    def _missed_today_gate(self, agent_contact, task, agent_config, db) -> Optional[datetime]:
+        """
+        Подстраховка при исполнении (ветка 2110-client-memory): сегодня этому
+        клиенту уже не дозвонились (строки sip_calls, в том числе ручной звонок со
+        страницы «Телефония») и он с тех пор на связь не выходил — второй звонок в
+        тот же день не набираем, переносим на завтра к началу окна звонков.
+        Задачи на сегодня тулзы агента уже не ставят; это ловит те, что попали на
+        сегодня иначе (перенос времени, задача, поставленная до недозвона).
+        """
+        from backend.core.timezone_utils import BISHKEK
+        from backend.services.agent_contact_phones import missed_call_today
+        from backend.services.agent_tools import call_window, CALL_WINDOW_START_HOUR
+
+        today = datetime.now(timezone.utc).astimezone(BISHKEK).date()
+        missed = missed_call_today(db, agent_contact, task.user_id, today)
+        if missed is None:
+            return None
+        window = call_window(agent_config)
+        start_hour = window[0] if window is not None else CALL_WINDOW_START_HOUR
+        tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=BISHKEK)
+        logger.info(
+            f"[TASK-SCHEDULER] Агентский звонок {task.id}: сегодня клиенту {agent_contact.id} уже "
+            f"не дозвонились (звонок {missed.id}) — второй в тот же день не набираем"
+        )
+        return tomorrow.replace(hour=start_hour).astimezone(timezone.utc).replace(tzinfo=None)
+
     async def execute_agent_task(self, task: Task, db: Session):
         """
         Execute an agent task: create AgentCall, run PreCall with AgentContact,
@@ -348,6 +374,8 @@ class TaskScheduler:
             # и переносится на разрешённое время.
             if (task.channel or "call") != "telegram":
                 postpone_to = self._dial_gate(agent_contact, datetime.utcnow(), agent_config)
+                if postpone_to is None:
+                    postpone_to = self._missed_today_gate(agent_contact, task, agent_config, db)
                 if postpone_to is not None:
                     task.scheduled_time = postpone_to
                     task.status = TaskStatus.SCHEDULED

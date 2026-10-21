@@ -2342,7 +2342,9 @@ AGENT_CHAT_TOOLS = [
         "description": (
             "Создать задачу на звонок контакту агента в указанное время. "
             "Время задай ОДНИМ из способов: delay_minutes — для относительного "
-            "(«через N минут/часов»), scheduled_at — для абсолютного («завтра в 14:00»)."
+            "(«через N минут/часов»), scheduled_at — для абсолютного («завтра в 14:00»). "
+            "У клиента всегда одна запланированная задача на звонок: новая заменяет прежнюю "
+            "(в ответе — что заменено)."
         ),
         "parameters": {
             "type": "object",
@@ -2787,7 +2789,10 @@ AGENT_POSTCALL_TOOLS = [
             "перезвон — этим tool, отложенное сообщение — schedule_telegram_message "
             "(если доступен). "
             "Время задай ОДНИМ из способов: delay_minutes — для относительного "
-            "(«через N минут/часов»), scheduled_at — для абсолютного («завтра в 14:00»)."
+            "(«через N минут/часов»), scheduled_at — для абсолютного («завтра в 14:00»). "
+            "У клиента всегда одна запланированная задача на звонок: новая заменяет прежнюю "
+            "(в ответе — что заменено), удалять старую не нужно. После недозвона сегодня "
+            "второй звонок на сегодня система не поставит — ставь на завтра."
         ),
         "parameters": {
             "type": "object",
@@ -2883,8 +2888,29 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
             scheduled_at = datetime.fromisoformat(str(args["scheduled_at"]).replace("Z", "+00:00"))
         except (KeyError, ValueError, TypeError):
             scheduled_at = datetime.utcnow() + timedelta(hours=1)
-        # Клэмп: модель могла посчитать время от устаревшего значения в промпте.
         sched_aware = scheduled_at if scheduled_at.tzinfo else scheduled_at.replace(tzinfo=timezone.utc)
+        # Звонок на время, которое уже прошло, — ошибка модели во времени или
+        # часовом поясе, а не просьба «позвонить сейчас». Раньше такой звонок молча
+        # ставился на «через 3 минуты» (живой тест 21.10.2026: вторая задача на
+        # 14:38 сразу после недозвона). Теперь отказ с текущим временем — модель
+        # пересчитает. Пара минут назад — это «сейчас», их по-прежнему поднимаем.
+        if channel == "call" and sched_aware < now_utc - CALL_PAST_TOLERANCE:
+            from backend.core.timezone_utils import BISHKEK as _BISHKEK
+            logger.info(
+                f"[AGENT-TOOLS] create_agent_task: отказ — время звонка {sched_aware.isoformat()} "
+                f"уже прошло (контакт {agent_contact_id})"
+            )
+            return {
+                "ok": False,
+                "error": "scheduled_in_past",
+                "hint": (
+                    f"Время {sched_aware.astimezone(_BISHKEK).strftime('%d.%m %H:%M')} по Бишкеку уже прошло. "
+                    f"Сейчас {now_utc.astimezone(_BISHKEK).strftime('%d.%m %H:%M')} по Бишкеку "
+                    f"({now_utc.strftime('%Y-%m-%dT%H:%MZ')}). Пересчитай scheduled_at (UTC) "
+                    "или передай delay_minutes."
+                ),
+            }
+        # Клэмп: модель могла посчитать время от устаревшего значения в промпте.
         if sched_aware < now_utc + timedelta(minutes=2):
             scheduled_at = now_utc + timedelta(minutes=3)
             clamped_to_future = True
@@ -2926,42 +2952,41 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         ).first()
         if guard_contact is None:
             return {"ok": False, "error": "Contact not found"}
-        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True, window=call_window(agent_config))
+        # Проверка идёт по ИТОГОВОМУ времени (после клэмпа, паузы и окна): клэмп
+        # «сейчас + 3 мин» больше не обходит запрет второго звонка в день.
+        guard = _check_call_guards(guard_contact, scheduled_at, allow_shift=True,
+                                   window=call_window(agent_config), db=db, user_id=user_id)
         if not guard.get("ok"):
+            logger.info(
+                f"[AGENT-TOOLS] create_agent_task: отказ ({guard.get('error')}) — звонок контакту "
+                f"{agent_contact_id} на {scheduled_at.isoformat()}"
+            )
             return guard
         scheduled_at = guard["scheduled_utc"]
-        # Второй звонок в тот же бишкекский день (помимо текущего) не ставим.
-        from backend.core.timezone_utils import BISHKEK as _BISHKEK
-        local_date = scheduled_at.astimezone(_BISHKEK).date()
-        if _already_scheduled_call_today(agent_contact_id, local_date, db):
-            return {
-                "ok": False,
-                "error": "already_scheduled_today",
-                "hint": (
-                    f"На {local_date.isoformat()} этому клиенту уже запланирован звонок "
-                    "— не ставим второй в тот же день."
-                ),
-            }
 
-    # Cancel only exact-time duplicates for this contact (same contact + same
-    # scheduled_time + same channel). Tasks scheduled for other dates/times are
-    # preserved, so a contact can have several upcoming calls planned at
-    # different moments; звонок и telegram-сообщение на одно время — не дубли.
-    existing_tasks = db.query(Task).filter(
-        Task.agent_contact_id == agent_contact_id,
-        Task.status == TaskStatus.SCHEDULED,
-        Task.is_agent_task == True,
-        Task.scheduled_time == scheduled_at,
-        Task.channel == channel,
-    ).all()
-
-    cancelled_count = 0
-    for existing_task in existing_tasks:
-        existing_task.status = TaskStatus.CANCELLED
-        cancelled_count += 1
-
-    if cancelled_count > 0:
-        logger.info(f"[AGENT-TOOLS] Cancelled {cancelled_count} duplicate SCHEDULED tasks for contact {agent_contact_id} at {scheduled_at}")
+    replaced = []
+    if channel == "call":
+        # Одна запланированная задача на звонок у клиента: новая — последнее
+        # решение агента, прежние звонки этого клиента отменяются (раньше их могло
+        # копиться сколько угодно, удалить ошибочную PostCall не мог).
+        replaced = _replace_scheduled_calls(db, agent_contact_id)
+        cancelled_count = len(replaced)
+    else:
+        # Telegram-сообщения и напоминания владельцу: отменяем только дубль на
+        # то же самое время, остальные запланированные остаются.
+        existing_tasks = db.query(Task).filter(
+            Task.agent_contact_id == agent_contact_id,
+            Task.status == TaskStatus.SCHEDULED,
+            Task.is_agent_task == True,
+            Task.scheduled_time == scheduled_at,
+            Task.channel == channel,
+        ).all()
+        cancelled_count = 0
+        for existing_task in existing_tasks:
+            existing_task.status = TaskStatus.CANCELLED
+            cancelled_count += 1
+        if cancelled_count > 0:
+            logger.info(f"[AGENT-TOOLS] Cancelled {cancelled_count} duplicate SCHEDULED tasks for contact {agent_contact_id} at {scheduled_at}")
 
     # Create new task — route assistant to the correct Task FK by type.
     # Для telegram-задач ассистент не нужен (исполняет оркестратор, не звонилка),
@@ -3020,6 +3045,8 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     }
     if clamped_to_future:
         result["note"] = "scheduled_at был в прошлом — время поднято до ближайшего будущего"
+    if replaced:
+        result["replaced"] = _replaced_text(scheduled_at, replaced)
     if calendar_event is not None:
         result["calendar_event_created"] = True
     return result
@@ -3896,6 +3923,8 @@ async def fn_bulk_schedule_calls(args: dict, user_id: str, agent_config_id: str,
                 slot, agent_config.working_hours_start, agent_config.working_hours_end
             )
 
+        # Одна запланированная задача на звонок у клиента — прежние отменяем.
+        _replace_scheduled_calls(db, contact.id)
         task = Task(
             is_agent_task=True,
             agent_contact_id=contact.id,
@@ -3965,7 +3994,7 @@ def _bishkek_now() -> datetime:
 
 
 def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_shift: bool = True,
-                       window="default") -> dict:
+                       window="default", db: Optional[Session] = None, user_id=None) -> dict:
     """
     Проверить, можно ли ставить звонок на этот момент.
 
@@ -3978,8 +4007,8 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
       * окно звонков агента (call_window: настройка «Звонки», по умолчанию 09–20;
         None — без ограничения по времени);
       * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
-      * существующая запланированная «call»-задача на этого контакта на сегодня
-        тоже считается — не создаём второй звонок.
+      * недозвон сегодня (по факту, строки sip_calls; нужен db) — на этот день
+        звонок больше не ставим, пока клиент сам не вышел на связь.
 
     allow_shift=True: если время вне окна, предложим ближайший момент внутри окна
     и вернём его в scheduled_utc. False — просто ошибка «вне окна».
@@ -4047,24 +4076,72 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
                 "last_called_at": last_called.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M"),
             }
 
-    # Запланированная задача-звонок на этот день уже есть?
-    # Проверяем через SQLAlchemy у вызывающего — здесь только контракт результата.
+    # --- недозвон сегодня (по факту) ---
+    # last_called_at PostCall пишет в конце анализа, поэтому пока модель разбирает
+    # недозвон, проверка выше видит вчерашнюю дату. Строка sip_calls есть с момента
+    # постановки звонка в очередь.
+    if db is not None and today_local <= _bishkek_now().date():
+        from backend.services.agent_contact_phones import missed_call_today
+        missed = missed_call_today(db, contact, user_id or contact.user_id, today_local)
+        if missed is not None:
+            when = missed.created_at
+            if when is not None and when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            return {
+                "ok": False,
+                "error": "already_called_today",
+                "hint": (
+                    "Сегодня этому клиенту уже звонили и не дозвонились — второй звонок в тот же день "
+                    f"не ставим. Ближайший разрешённый звонок: завтра {call_window_text(window)}."
+                ),
+                "last_called_at": when.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M") if when else None,
+            }
+
     return {"ok": True, "scheduled_utc": scheduled_utc}
 
 
-def _already_scheduled_call_today(contact_id, local_date, db: Session) -> bool:
-    """Есть ли уже SCHEDULED call-задача для контакта на эту бишкекскую дату."""
-    from backend.core.timezone_utils import BISHKEK
-    start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=BISHKEK)
-    end_local = start_local + timedelta(days=1)
-    return db.query(Task.id).filter(
+# Насколько «в прошлом» может быть время звонка, чтобы считаться «сейчас»
+# (create_agent_task поднимет его до «через 3 минуты»); раньше — отказ.
+CALL_PAST_TOLERANCE = timedelta(minutes=5)
+
+
+def _replace_scheduled_calls(db: Session, contact_id, keep_task_id=None) -> list:
+    """
+    Отменить запланированные звонки клиента: у клиента остаётся одна задача на
+    звонок — та, что ставится сейчас. Telegram-задачи и напоминания владельцу не
+    трогает. Возвращает отменённые задачи (для ответа модели и лога).
+    """
+    q = db.query(Task).filter(
         Task.agent_contact_id == contact_id,
         Task.status == TaskStatus.SCHEDULED,
         Task.is_agent_task == True,
         Task.channel == "call",
-        Task.scheduled_time >= start_local.astimezone(timezone.utc).replace(tzinfo=None),
-        Task.scheduled_time < end_local.astimezone(timezone.utc).replace(tzinfo=None),
-    ).first() is not None
+    )
+    if keep_task_id is not None:
+        q = q.filter(Task.id != keep_task_id)
+    tasks = q.order_by(Task.scheduled_time.asc()).all()
+    for t in tasks:
+        t.status = TaskStatus.CANCELLED
+        logger.info(
+            f"[AGENT-TOOLS] Отменён прежний звонок {t.id} на {t.scheduled_time} (контакт {contact_id}): "
+            "у клиента остаётся одна запланированная задача на звонок"
+        )
+    return tasks
+
+
+def _replaced_text(new_utc: datetime, replaced: list) -> str:
+    """«звонок на 22.10 14:37 заменил звонок на 21.10 14:38» (Бишкек)."""
+    from backend.core.timezone_utils import BISHKEK
+
+    def fmt(dt):
+        if dt is None:
+            return "?"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(BISHKEK).strftime("%d.%m %H:%M")
+
+    old = ", ".join(f"звонок на {fmt(t.scheduled_time)}" for t in replaced)
+    return f"звонок на {fmt(new_utc)} заменил {old} (у клиента всегда одна запланированная задача на звонок)"
 
 
 async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
@@ -4148,19 +4225,17 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
         return {"ok": False, "error": "agent_inactive", "hint": "Активируйте агента, иначе планировщик не выполнит звонок."}
 
     now_utc = datetime.now(timezone.utc)
-    guard = _check_call_guards(contact, now_utc, allow_shift=False, window=call_window(agent_config))
+    guard = _check_call_guards(contact, now_utc, allow_shift=False, window=call_window(agent_config),
+                               db=db, user_id=user_id)
     if not guard.get("ok"):
+        logger.info(
+            f"[AGENT-TOOLS] trigger_immediate_call: отказ ({guard.get('error')}) — контакт {agent_contact_id}"
+        )
         return guard
-    # Для немедленного звонка — отдельно проверим, что уже нет запланированного
-    # звонка на сегодня (last_called_at успевает обновиться только после звонка).
-    from backend.core.timezone_utils import BISHKEK
-    today_bishkek = now_utc.astimezone(BISHKEK).date()
-    if _already_scheduled_call_today(contact.id, today_bishkek, db):
-        return {
-            "ok": False,
-            "error": "already_scheduled_today",
-            "hint": "На сегодня этому клиенту уже запланирован звонок — не ставим второй.",
-        }
+
+    # Немедленный звонок — последнее решение: прежние запланированные звонки
+    # клиента отменяются (одна задача на звонок у клиента).
+    replaced = _replace_scheduled_calls(db, contact.id)
 
     # Немедленно: ставим задачу на текущий момент, рабочие часы НЕ применяем —
     # пользователь явно просит позвонить сейчас. Планировщик подхватит её за ~30с.
@@ -4179,13 +4254,16 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     db.commit()
     db.refresh(task)
     logger.info(f"[AGENT-TOOLS] Triggered immediate call task {task.id} for contact {agent_contact_id}")
-    return {
+    result = {
         "ok": True,
         "task_id": str(task.id),
         "agent_contact_id": str(contact.id),
         "contact_name": contact.name or contact.phone,
         "note": "Звонок поставлен в очередь, планировщик выполнит его в течение ~30 секунд.",
     }
+    if replaced:
+        result["replaced"] = _replaced_text(now_utc, replaced)
+    return result
 
 
 async def fn_snooze_contact(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
