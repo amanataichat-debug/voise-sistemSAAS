@@ -52,7 +52,7 @@ from backend.websockets.google_stt_client import GoogleSTTClient, parse_credenti
 from backend.websockets.chat_llm_client import ChatLLMClient
 from backend.websockets.fish_llm_client import INPUT_RATE as LLM_INPUT_RATE, FishLLMClient
 from backend.websockets.handler_fish import LOG_TAG, FishVoiceSession
-from backend.websockets.handler_live import LIVE_AUDIO_RATE, LiveVoiceSession
+from backend.websockets.handler_live import LIVE_AUDIO_RATE, LiveVoiceSession, live_media_options
 from backend.websockets.live_client import LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
 from backend.websockets.wallet_meter import EMPTY_MESSAGE as WALLET_EMPTY_MESSAGE, WalletMeter
 
@@ -488,6 +488,7 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         # у звонка диалог пишется под id звонка (SIP-роут связывает по нему звонок и реплики)
         dialog_session_id=getattr(assistant, "sip_session_id", None),
         greeting=assistant.greeting_message or DEFAULT_ELEVEN_GREETING,
+        **live_media_options(assistant),
     )
     connect_task = asyncio.create_task(client.connect())
 
@@ -537,7 +538,7 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         "backend_model": client.delegation_model,
         "message": f"Connected to OpenAI {LIVE_MODEL} (full-duplex)",
         "full_duplex": True,
-        "audio_rate": LIVE_AUDIO_RATE,
+        "audio_rate": client.io_rate,
         "voice": client.voice,
         "voices": LIVE_VOICES,
         "session_id": client.session_id,

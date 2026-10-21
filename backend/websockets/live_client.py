@@ -27,6 +27,12 @@
 
 import asyncio
 import base64
+try:
+    import audioop  # Python ≤3.12; на 3.13+ (Render — 3.14) его даёт пакет audioop-lts
+except ImportError:  # pragma: no cover
+    audioop = None
+# Можно ли говорить с GPT-Live в G.711 μ-law: SIP-роут включает профиль 8 кГц только при True
+G711_AVAILABLE = audioop is not None
 import json
 import time
 import uuid
@@ -181,6 +187,54 @@ VOICE_TELEPHONY_HINT = (
     "не перечисляй длинные списки, переспрашивай, если не расслышал."
 )
 
+# Native Decisions (docs/openai_gpt_live_audio_reference.md §13.4): триггер по речи клиента.
+# Работает параллельно с Responses-делегированием (функции не трогает): пока клиент говорит,
+# Decisions (gpt-6-luna, ~10× быстрее Responses) отвечает на два вопроса, а хендлер реагирует —
+# подстраивает манеру под настроение клиента, ловит прощание на любом языке, автоответчик.
+CALL_DECISION_TRIGGER: Dict[str, Any] = {
+    "type": "decisions",
+    "event_type": "session.input_transcript.delta",
+    "decisions": {
+        "questions": [
+            {
+                "type": "choice",
+                "name": "caller_intent",
+                "instructions": (
+                    "Judge only the caller's latest words in a phone call (Russian or Kyrgyz). "
+                    "goodbye: the caller is saying goodbye or clearly wants to end the call. "
+                    "call_back_later: the caller is busy now and asks to talk later. "
+                    "wants_human: the caller asks for a real person, a manager or the owner. "
+                    "answering_machine: this is a voicemail greeting, an answering machine, an operator "
+                    "recording or a phone menu, not a live person. "
+                    "none: anything else, or not sure."
+                ),
+                "choices": [
+                    {"value": "none"},
+                    {"value": "goodbye"},
+                    {"value": "call_back_later"},
+                    {"value": "wants_human"},
+                    {"value": "answering_machine"},
+                ],
+            },
+            {
+                "type": "choice",
+                "name": "caller_mood",
+                "instructions": (
+                    "How does the caller sound in their latest words? "
+                    "irritated: annoyed, impatient or angry. confused: lost, unsure, does not understand. "
+                    "positive: friendly, interested, happy. neutral: anything else or not sure."
+                ),
+                "choices": [
+                    {"value": "neutral"},
+                    {"value": "positive"},
+                    {"value": "irritated"},
+                    {"value": "confused"},
+                ],
+            },
+        ]
+    },
+}
+
 # Ошибки старта, после которых имеет смысл повторить с голосом по умолчанию
 _VOICE_ERROR_MARKERS = ("voice",)
 
@@ -205,12 +259,23 @@ class OpenAILiveClient:
         conversation_model: Any = None,
         dialog_session_id: Optional[str] = None,
         greeting: Optional[str] = None,
+        audio_codec: str = "pcm",
+        decision_triggers: Optional[List[Dict[str, Any]]] = None,
     ):
         self.api_key = api_key
         self.assistant_config = assistant_config
         self.client_id = client_id
         self.db_session = db_session
         self.audio_rate = audio_rate
+        # "pcmu" — телефон: GPT-Live говорит G.711 μ-law 8 кГц, хендлер по-прежнему видит PCM16
+        # (8 кГц): клиент сам кодирует вход и декодирует выход, без ресемплинга
+        self.audio_codec = "pcmu" if (audio_codec == "pcmu" and audioop is not None) else "pcm"
+        if self.audio_codec == "pcmu":
+            self.audio_rate = 8000
+        # Триггеры Native Decisions (session.triggers); пусто — без триггеров.
+        # Отклонены при старте (beta) — один раз переподключаемся без них.
+        self.decision_triggers = list(decision_triggers or [])
+        self._triggers_retry_done = False
         self.delegation_model = delegation_model or LIVE_DELEGATION_MODEL
         self.voice_override = (voice_override or "").strip().lower() or None
         self.telephony = telephony
@@ -320,16 +385,22 @@ class OpenAILiveClient:
         max_out = getattr(settings, "LIVE_DELEGATION_MAX_OUTPUT_TOKENS", "") or ""
         if str(max_out).isdigit() and int(max_out) >= 16:
             responses_cfg["max_output_tokens"] = int(max_out)
+        parallel = str(getattr(settings, "LIVE_DELEGATION_PARALLEL_TOOLS", "") or "").lower()
+        if self.tools and parallel in ("true", "false"):
+            responses_cfg["parallel_tool_calls"] = parallel == "true"
 
         cfg: Dict[str, Any] = {
             "model": LIVE_MODEL,
             "instructions": voice_instructions,
             "audio": {
-                "format": {"type": "audio/pcm", "rate": self.audio_rate},
+                "format": ({"type": "audio/pcmu", "rate": 8000} if self.audio_codec == "pcmu"
+                           else {"type": "audio/pcm", "rate": self.audio_rate}),
                 "output": {"voice": self.voice},
             },
             "delegation": {"type": "responses", "responses": responses_cfg},
         }
+        if self.decision_triggers and not self._triggers_retry_done:
+            cfg["triggers"] = self.decision_triggers
         self.greeting_in_start = bool(self.greeting) and not self._input_retry_done
         if self.greeting_in_start:
             cfg["input"] = [{
@@ -385,6 +456,7 @@ class OpenAILiveClient:
         }))
         logger.info(
             f"[LIVE-CLIENT] session.start sent (model={LIVE_MODEL}, voice={self.voice}, rate={self.audio_rate}, "
+            f"codec={self.audio_codec}, triggers={len(session_cfg.get('triggers') or [])}, "
             f"backend={self.delegation_model}, tools={self.enabled_functions}, telephony={self.telephony})"
         )
 
@@ -414,6 +486,12 @@ class OpenAILiveClient:
                 msg = json.dumps(err, ensure_ascii=False)
                 logger.error(f"[LIVE-CLIENT] session.start rejected: {msg}")
                 await self._safe_close_ws()
+                # Триггеры Decisions (beta) не приняты — повторяем старт без них, звонок важнее
+                if (self.decision_triggers and not self._triggers_retry_done
+                        and any(m in msg.lower() for m in ("trigger", "decision"))):
+                    self._triggers_retry_done = True
+                    logger.warning("[LIVE-CLIENT] Retrying session.start without decision triggers")
+                    return await self.connect(start_timeout=start_timeout)
                 # Приветствие в session.input не принято — один раз повторяем старт без него,
                 # хендлер тогда поздоровается старым путём (instructions.append)
                 if self.greeting_in_start and not self._input_retry_done and "input" in msg.lower():
@@ -494,10 +572,28 @@ class OpenAILiveClient:
         self._pending_byte = data[complete:]
         if not complete:
             return True
+        chunk = data[:complete]
+        if self.audio_codec == "pcmu":
+            chunk = audioop.lin2ulaw(chunk, 2)
         return await self._send({
             "type": "session.input_audio.append",
-            "audio": base64.b64encode(data[:complete]).decode("ascii"),
+            "audio": base64.b64encode(chunk).decode("ascii"),
         })
+
+    @property
+    def io_rate(self) -> int:
+        """Частота PCM16, которую видит хендлер (вход и выход)."""
+        return 8000 if self.audio_codec == "pcmu" else self.audio_rate
+
+    def decode_output_b64(self, delta_b64: str) -> str:
+        """session.output_audio.delta → base64 PCM16 (для μ-law раскодируем, иначе как есть)."""
+        if self.audio_codec != "pcmu" or not delta_b64:
+            return delta_b64
+        try:
+            return base64.b64encode(audioop.ulaw2lin(base64.b64decode(delta_b64), 2)).decode("ascii")
+        except Exception as e:
+            logger.warning(f"[LIVE-CLIENT] bad μ-law output chunk: {e}")
+            return ""
 
     async def send_audio_b64(self, audio_b64: str) -> bool:
         try:

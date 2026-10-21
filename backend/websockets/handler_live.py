@@ -62,7 +62,7 @@ from backend.websockets.function_calls import (
     async_save_to_google_sheets,
     execute_and_send_function_result,
 )
-from backend.websockets.live_client import LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
+from backend.websockets.live_client import CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
 
 logger = get_logger(__name__)
 
@@ -74,6 +74,32 @@ OUTPUT_IDLE_SEC = 1.0
 # Приветствие ушло в session.start, но модель молчит дольше — дублируем старым путём
 # (session.instructions.append): документация не гарантирует речь по session.input
 GREETING_FALLBACK_SEC = 3.0
+
+# Native Decisions (триггер CALL_DECISION_TRIGGER): реакции на намерение и настроение клиента
+DECISION_TRIGGERS = bool(getattr(settings, "LIVE_DECISION_TRIGGERS", True))
+AMD_HANGUP = bool(getattr(settings, "LIVE_AMD_HANGUP", False))
+AMD_WINDOW_SEC = 25.0       # автоответчик ищем только в начале исходящего звонка
+MOOD_HINT_GAP_SEC = 15.0    # не чаще одной подсказки о настроении за столько секунд
+# Подсказки голосовой модели (session.thinking.append — не озвучиваются, влияют на манеру)
+MOOD_HINTS = {
+    "irritated": "Клиент сейчас звучит раздражённо или нетерпеливо. Не оправдывайся и не спорь: "
+                 "спокойно признай это одной короткой фразой, говори ещё короче и сразу предложи один "
+                 "понятный следующий шаг.",
+    "confused": "Клиент, похоже, запутался или не понял. Объясни проще и другими словами, одной короткой "
+                "фразой, и мягко спроси, понятно ли.",
+    "positive": "Клиент настроен дружелюбно и заинтересованно — можно теплее и живее, с улыбкой в голосе, "
+                "и мягко веди к следующему шагу.",
+}
+INTENT_HINTS = {
+    "call_back_later": "Клиент сейчас занят. Не продолжай рассказ: коротко уточни, когда ему удобно "
+                       "поговорить, и вежливо попрощайся.",
+    "wants_human": "Клиент просит живого человека. Не отказывай и не спорь: скажи, что передашь его "
+                   "просьбу менеджеру, и уточни, когда ему удобно, чтобы перезвонили.",
+}
+INTENT_LOG = {
+    "call_back_later": "Клиент занят, просит поговорить позже",
+    "wants_human": "Клиент просит живого человека / менеджера",
+}
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 # Потолок всплеска для пейсинга входящего аудио (секунды). OpenAI допускает всплески
@@ -225,6 +251,18 @@ async def _save_dialog(assistant_id: str, session_id: str, pairs: List[Dict[str,
 # ----------------------------------------------------------------------
 # Сессия
 # ----------------------------------------------------------------------
+def live_media_options(assistant: Any) -> Dict[str, Any]:
+    """
+    Кодек и триггеры для OpenAILiveClient. G.711 μ-law 8 кГц — только если SIP-роут выбрал
+    адаптеру профиль без ресемплинга (assistant.live_phone_g711, не колонка): обе стороны
+    должны договориться о частоте, иначе звук пойдёт не той скоростью.
+    """
+    return {
+        "audio_codec": "pcmu" if getattr(assistant, "live_phone_g711", False) else "pcm",
+        "decision_triggers": [CALL_DECISION_TRIGGER] if DECISION_TRIGGERS else None,
+    }
+
+
 class LiveVoiceSession:
     """Один диалог: сокет клиента + сессия GPT-Live."""
 
@@ -279,6 +317,13 @@ class LiveVoiceSession:
         # без потолка, и на длинном звонке всплеск снова пробивал лимит.
         self._audio_allowance: float = AUDIO_BURST_CAP
         self._audio_last_ts: Optional[float] = None
+        # Native Decisions: текущее настроение клиента, когда давали подсказку, какие намерения уже
+        # отработали (каждое — один раз за звонок), направление звонка (автоответчик — только исходящие)
+        self.decisions = 0
+        self._mood = "neutral"
+        self._mood_hint_at = 0.0
+        self._intents_done: set = set()
+        self.direction = getattr(assistant, "sip_direction", None)
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -444,7 +489,11 @@ class LiveVoiceSession:
         etype = event.get("type", "")
 
         if etype == "session.output_audio.delta":
-            await self._on_audio_delta(event.get("delta") or "")
+            await self._on_audio_delta(self.client.decode_output_b64(event.get("delta") or ""))
+            return
+
+        if etype == "decision.event":
+            await self._on_decision(event)
             return
 
         if etype in ("session.input_transcript.delta", "session.output_transcript.delta"):
@@ -510,6 +559,60 @@ class LiveVoiceSession:
             }})
             return
         # session.started / *.appended / input_audio.muted и прочее клиенту не нужны
+
+    # ------------------------------------------------------------------ Native Decisions
+    async def _on_decision(self, event: Dict[str, Any]) -> None:
+        inner = event.get("event") or {}
+        if inner.get("type") != "decision.completed":
+            return
+        answers = {a.get("name"): a.get("choice") for a in (inner.get("decision") or {}).get("answers") or []
+                   if isinstance(a, dict)}
+        if not answers:
+            return
+        self.decisions += 1
+        intent = answers.get("caller_intent") or "none"
+        mood = answers.get("caller_mood") or "neutral"
+        now = time.time()
+
+        if intent == "answering_machine":
+            if (self._is_phone() and self.direction == "outbound" and now - self.started_at < AMD_WINDOW_SEC
+                    and "answering_machine" not in self._intents_done):
+                self._intents_done.add("answering_machine")
+                _log(f"decisions: answering machine suspected (hangup={'on' if AMD_HANGUP else 'off'})", "WARNING")
+                if self.call_log:
+                    self.call_log.add("session", "Похоже, ответил автоответчик (Decisions)"
+                                      + ("; кладём трубку" if AMD_HANGUP else "; трубку не кладём — режим проверки"))
+                if AMD_HANGUP and not self._hangup_sent:
+                    self._hangup_sent = True
+                    await self.emit({"type": "call.hangup", "reason": "answering_machine"})
+            return
+
+        if intent == "goodbye":
+            # Прощание на любом языке (регулярка знает не все кыргызские формы): дальше — та же
+            # логика автозавершения, что и по тексту (_should_auto_hangup ждёт тишины клиента)
+            if self._is_phone() and not self._hangup_sent and self._farewell_at is None:
+                if self.call_log:
+                    self.call_log.add("session", "Прощание клиента (Decisions): ждём тишины, чтобы завершить звонок")
+                self._farewell_at = now
+        elif intent in INTENT_HINTS and intent not in self._intents_done:
+            self._intents_done.add(intent)
+            _log(f"decisions: intent {intent}")
+            if self.call_log:
+                self.call_log.add("session", f"{INTENT_LOG[intent]} (Decisions)")
+            await self.client.append_thinking(INTENT_HINTS[intent])
+
+        # Подсказку, придержанную интервалом, не теряем: настроение запоминаем только когда
+        # подсказка ушла (или клиент снова спокоен), следующее решение попробует ещё раз
+        if mood != self._mood:
+            if mood not in MOOD_HINTS:
+                self._mood = mood
+            elif now - self._mood_hint_at >= MOOD_HINT_GAP_SEC:
+                self._mood = mood
+                self._mood_hint_at = now
+                _log(f"decisions: caller mood {mood}")
+                if self.call_log:
+                    self.call_log.add("session", f"Настроение клиента: {mood} (Decisions) — подсказка голосовой модели")
+                await self.client.append_thinking(MOOD_HINTS[mood])
 
     async def _on_function_call(self, event: Dict[str, Any]) -> None:
         name = event.get("name") or ""
@@ -613,7 +716,7 @@ class LiveVoiceSession:
                     # до AUDIO_BURST_CAP. Устаревшее аудио из очереди (накопилось при задержке
                     # хендлера) обгоняет темп — такой кусок пропускаем, иначе OpenAI роняет всю
                     # пачку (input_audio_rate_limit_exceeded) и разговор рвётся.
-                    dur = (len(audio) * 3 / 4) / 2 / LIVE_AUDIO_RATE
+                    dur = (len(audio) * 3 / 4) / 2 / self.client.io_rate
                     now = time.time()
                     if self._audio_last_ts is not None:
                         self._audio_allowance = min(
@@ -727,7 +830,7 @@ class LiveVoiceSession:
             _log(
                 f"session {self.client_id} finished ({reason}): {elapsed:.1f}s, live_usage={usage_seconds}s, "
                 f"close_reason={(closed or {}).get('reason')}, audio_in={self.audio_chunks_in} chunks, "
-                f"audio_out={self.audio_bytes_out / (LIVE_AUDIO_RATE * 2):.1f}s in {self.audio_deltas_out} deltas "
+                f"audio_out={self.audio_bytes_out / (self.client.io_rate * 2):.1f}s in {self.audio_deltas_out} deltas "
                 f"(first after {'-' if self._first_audio_at is None else f'{self._first_audio_at - self.started_at:.2f}s'}), "
                 f"delegations={self.delegations}, "
                 f"functions={self.function_calls}, errors={self.errors}, dialog_pairs={len(pairs)} saved={saved}"
@@ -736,7 +839,7 @@ class LiveVoiceSession:
                 self.call_log.add(
                     "session",
                     f"Сессия завершена ({reason}): {elapsed:.1f} с, GPT-Live {usage_seconds if usage_seconds is not None else '—'} с, "
-                    f"озвучено {self.audio_bytes_out / (LIVE_AUDIO_RATE * 2):.1f} с, обращений к бэкенду {self.delegations}, "
+                    f"озвучено {self.audio_bytes_out / (self.client.io_rate * 2):.1f} с, обращений к бэкенду {self.delegations}, "
                     f"реплик в диалоге {len(pairs)}",
                 )
                 if self._owns_call_log:
@@ -838,7 +941,8 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
 
         client = OpenAILiveClient(api_key, assistant, client_id, db, audio_rate=LIVE_AUDIO_RATE,
                                   voice_override=voice_override, telephony=telephony,
-                                  greeting=assistant.greeting_message or DEFAULT_GREETING)
+                                  greeting=assistant.greeting_message or DEFAULT_GREETING,
+                                  **live_media_options(assistant))
         connect_started = time.time()
         if not await client.connect():
             await fail("openai_connection_failed", "Failed to open gpt-live-1 session", 1011)
@@ -856,7 +960,7 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
             "backend_model": client.delegation_model,
             "message": f"Connected to OpenAI {LIVE_MODEL} (full-duplex)",
             "full_duplex": True,
-            "audio_rate": LIVE_AUDIO_RATE,
+            "audio_rate": client.io_rate,
             "voice": client.voice,
             "voices": LIVE_VOICES,
             "session_id": client.session_id,

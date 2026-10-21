@@ -52,7 +52,7 @@ from backend.services.sip_gateway_service import SipGatewayService
 from backend.services.call_transcript import CallTranscript
 from backend.services.agent_call_finalizer import AgentCallFinalizer
 from backend.services import agent_voice_context
-from backend.websockets.live_client import LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
+from backend.websockets.live_client import G711_AVAILABLE, LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
 from backend.websockets.sip_media_adapter import HandlerSocket
 from backend.websockets.handler_live import handle_live_websocket_connection
 from backend.websockets.handler_gemini import handle_gemini_websocket_connection
@@ -470,6 +470,12 @@ async def sip_media(
         db.commit()
 
     adapter_profile = "openai" if gpt_live else call.assistant_type
+    # GPT-Live на телефоне — в G.711 μ-law 8 кГц без пересчёта частоты (LIVE_PHONE_G711): профиль
+    # адаптера и кодек клиента Live включаются вместе (assistant.live_phone_g711 читает хендлер)
+    if adapter_profile == "openai" and settings.LIVE_PHONE_G711 and G711_AVAILABLE:
+        adapter_profile = "openai_g711"
+        assistant.live_phone_g711 = True  # не колонка
+    assistant.sip_direction = direction  # не колонка: автоответчик ищем только на исходящих
 
     # Стенограмма звонка целиком. Приветствие Fish/Eleven озвучивается без текстовых событий.
     transcript = CallTranscript()

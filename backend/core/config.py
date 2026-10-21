@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     LIVE_DELEGATION_REASONING_EFFORT: str = os.getenv("LIVE_DELEGATION_REASONING_EFFORT", "low").strip()
     LIVE_DELEGATION_VERBOSITY: str = os.getenv("LIVE_DELEGATION_VERBOSITY", "low").strip()
     LIVE_DELEGATION_MAX_OUTPUT_TOKENS: str = os.getenv("LIVE_DELEGATION_MAX_OUTPUT_TOKENS", "").strip()
+    # Несколько независимых функций за один ответ бэкенда (delegation.responses.parallel_tool_calls):
+    # "true" / "false"; пусто = не передавать (значение по умолчанию OpenAI)
+    LIVE_DELEGATION_PARALLEL_TOOLS: str = os.getenv("LIVE_DELEGATION_PARALLEL_TOOLS", "true").strip().lower()
+    # Телефон: звук идёт в GPT-Live как G.711 μ-law 8 кГц (audio/pcmu) — без пересчёта 8 → 24 → 8 кГц.
+    # false = как раньше (PCM 24 кГц + ресемплинг в SIP-адаптере)
+    LIVE_PHONE_G711: bool = os.getenv("LIVE_PHONE_G711", "true").strip().lower() in ("1", "true", "yes")
+    # Native Decisions: триггер по речи клиента (session.triggers) — намерение и настроение на лету.
+    # LIVE_AMD_HANGUP — класть трубку, если на исходящем ответил автоответчик
+    # (false = только запись в журнал звонка, для проверки на тестах)
+    LIVE_DECISION_TRIGGERS: bool = os.getenv("LIVE_DECISION_TRIGGERS", "true").strip().lower() in ("1", "true", "yes")
+    LIVE_AMD_HANGUP: bool = os.getenv("LIVE_AMD_HANGUP", "false").strip().lower() in ("1", "true", "yes")
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")

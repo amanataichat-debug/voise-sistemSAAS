@@ -49,14 +49,17 @@ ANTIALIAS_CUTOFF_HZ = 3400
 ANTIALIAS_TAPS = 63
 
 PHONE_RATE = 8000
-HANDLER_OUT_RATE = 24000  # оба хендлера отдают 24 кГц
-HANDLER_IN_RATE = {"openai": 24000, "gemini": 16000, "fish": 24000, "eleven": 24000}
+HANDLER_OUT_RATE = 24000  # хендлеры отдают 24 кГц (кроме GPT-Live на G.711, см. ниже)
+# "openai_g711" — GPT-Live в формате G.711 μ-law 8 кГц: хендлер принимает и отдаёт PCM16 8 кГц,
+# адаптер ничего не пересчитывает (кодирование μ-law делает клиент Live)
+HANDLER_IN_RATE = {"openai": 24000, "openai_g711": 8000, "gemini": 16000, "fish": 24000, "eleven": 24000}
+HANDLER_OUT_RATES = {"openai_g711": 8000}
 # Размер порции входящего звука для хендлера, мс. Gemini Live лучше работает с порциями ~100 мс,
 # чем с 50 сообщениями в секунду; OpenAI GPT-Live и Realtime (текстовый мозг Fish) спокойно принимают 20 мс.
-INBOUND_BATCH_MS = {"openai": 20, "gemini": 100, "fish": 20, "eleven": 20}
+INBOUND_BATCH_MS = {"openai": 20, "openai_g711": 20, "gemini": 100, "fish": 20, "eleven": 20}
 # Запас (мс) перед началом отдачи реплики мосту — для провайдеров с выходом в реальном темпе (GPT-Live).
 # 0 / отсутствие = отдавать сразу (Gemini, Fish шлют быстрее реального времени, мост сам буферизует).
-OUTBOUND_CUSHION_MS = {"openai": 200}
+OUTBOUND_CUSHION_MS = {"openai": 200, "openai_g711": 200}
 # Пауза в потоке аудио, после которой следующая порция считается новой репликой и снова копит запас
 OUTBOUND_IDLE_RESET_SEC = 0.6
 
@@ -148,7 +151,7 @@ class HandlerSocket:
         self.on_event = on_event  # необязательный колбэк(dict) для наблюдения за событиями хендлера
         self._queue: "asyncio.Queue[Optional[Dict[str, Any]]]" = asyncio.Queue()
         self._up = Resampler(PHONE_RATE, HANDLER_IN_RATE.get(provider, 24000))
-        self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
+        self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
         in_rate = HANDLER_IN_RATE.get(provider, 24000)
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
@@ -341,7 +344,7 @@ class HandlerSocket:
                 f"{since_delta:.1f}s after last audio delta, {self.audio_bytes_out / 16000:.1f}s of audio sent so far"
             )
             await self._send_text({"type": "clear"})
-            self._down = Resampler(HANDLER_OUT_RATE, PHONE_RATE)
+            self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
             self._out_hold.clear()
             self._out_streaming = False
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера
