@@ -56,6 +56,16 @@ class AgentContact(Base):
     ai_paused_until = Column(DateTime, nullable=True)
     ai_pause_reason = Column(String(16), nullable=True)
 
+    # Дополнительные номера клиента (ветка 2110-client-memory): второй номер,
+    # номер для звонков (WhatsApp на Beeline, звонить — на O!), номер склеенной
+    # карточки. Канонические цифры через запятую с запятыми по краям
+    # (",996700111222,996555333444,") — поиск по последним 9 цифрам одним LIKE.
+    # call_phone — на какой номер звонить (NULL — основной, а если он не O!,
+    # первый дополнительный на O!). Работа с ними — services/agent_contact_phones.py.
+    # Колонки создаёт app.ensure_chat_v2_columns() в начале старта.
+    alt_phones = Column(Text, nullable=True)
+    call_phone = Column(String(50), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -87,6 +97,8 @@ class AgentContact(Base):
             "user_id": str(self.user_id) if self.user_id else None,
             "name": self.name,
             "phone": self.phone,
+            "alt_phones": ["+" + p for p in (self.alt_phones or "").split(",") if p],
+            "call_phone": ("+" + self.call_phone) if self.call_phone else None,
             "company": self.company,
             "position": self.position,
             "notes": self.notes,

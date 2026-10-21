@@ -2776,6 +2776,15 @@ AGENT_POSTCALL_TOOLS = [
                 },
                 "best_time": {"type": "string", "description": "Лучшее время для звонка или null"},
                 "tone": {"type": "string", "description": "Тон разговора (дружелюбный/деловой/холодный)"},
+                "niche": {
+                    "type": "string",
+                    "description": (
+                        "Чем занимается клиент, 1–3 слова («стоматология», «салон красоты»). "
+                        "Запиши, как только узнал: по нише агент узнаёт клиента, когда тот "
+                        "звонит с другого номера"
+                    ),
+                },
+                "need": {"type": "string", "description": "Запрос клиента одной фразой (что хочет)"},
             },
             "required": ["agent_contact_id", "summary"],
         },
@@ -3076,6 +3085,12 @@ async def fn_update_contact_memory(args: dict, agent_config_id: str, db: Session
         facts = set(memory.get("key_facts", []))
         facts.update(args["key_facts"])
         memory["key_facts"] = list(facts)
+    # Ниша и запрос — их читают узнавание клиента (find_client) и блок
+    # «знакомый клиент» на входящем звонке (memory.niche / direction_need).
+    if str(args.get("niche") or "").strip():
+        memory["niche"] = str(args["niche"]).strip()[:120]
+    if str(args.get("need") or "").strip():
+        memory["direction_need"] = str(args["need"]).strip()[:300]
 
     memory["attempts"] = (memory.get("attempts", 0)) + 1
     memory["last_call"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M")

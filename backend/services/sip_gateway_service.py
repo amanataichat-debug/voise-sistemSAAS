@@ -581,36 +581,29 @@ class SipGatewayService:
     def inbound_recent_contacts_hint(call: SipCall, agent, db: Session) -> str:
         """Подсказка голосовому агенту для входящего с незнакомого номера.
 
-        Ветка 1810-anri-sales-logic. Если клиент звонит с номера, который не
-        совпадает ни с одним контактом агента, но за последний час другие
-        контакты писали или звонили — высока вероятность, что он кто-то из
-        них с другого номера. Передаём короткий список имён + ниш, чтобы
-        после «как вас зовут?» модель быстро состыковала.
+        Ветка 2110-client-memory. Клиент мог писать нам с другого номера (WhatsApp
+        на одном, звонит с другого) или звонить раньше — тогда он назовёт имя,
+        компанию или скажет «я вам писал». Голосовой агент в этот момент вызывает
+        find_client (поиск по всей базе агента: имя, компания, ниша, прежний
+        номер, переписки) и продолжает с места.
 
-        Возвращает пустую строку, если непонятно, что подсказывать (нет
-        agent, нет caller, такой номер уже привязан к известному контакту).
+        Список недавних клиентов (окно INBOUND_RECENT_CONTACTS_HOURS, было 1 ч)
+        — только ориентир: чтобы модель понимала, кого ждать, а не повод
+        угадывать. Блок компактный: голосовой слой GPT-Live видит лишь начало
+        промпта. Пустая строка, если звонок не входящий или номер уже знаком.
         """
         if call.direction != "inbound" or agent is None or not call.caller:
             return ""
-        phone = call.caller
-        phone_tail = phone[-9:] if len(phone) >= 9 else phone
+        from backend.services.agent_contact_phones import find_contact_by_phone
         try:
-            known = (
-                db.query(AgentContact.id)
-                .filter(
-                    AgentContact.agent_config_id == agent.id,
-                    AgentContact.phone.like(f"%{phone_tail}"),
-                )
-                .first()
-            )
-            if known is not None:
+            if find_contact_by_phone(db, agent.id, call.caller) is not None:
                 return ""
-            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            since = datetime.utcnow() - timedelta(hours=max(1, settings.INBOUND_RECENT_CONTACTS_HOURS))
             recent = (
                 db.query(AgentContact)
                 .filter(
                     AgentContact.agent_config_id == agent.id,
-                    AgentContact.updated_at >= hour_ago,
+                    AgentContact.updated_at >= since,
                 )
                 .order_by(AgentContact.updated_at.desc())
                 .limit(5)
@@ -619,26 +612,25 @@ class SipGatewayService:
         except Exception as e:
             logger.warning(f"[SIP] inbound_recent_contacts_hint failed: {e}")
             return ""
-        if not recent:
-            return ""
         lines = [
-            "Клиент звонит с незнакомого номера. Поздоровайся коротко как с новым, "
-            "уточни имя и чем занимается. За последний час нам писали или звонили:"
+            "Звонят с незнакомого номера. Это может быть новый клиент или прежний, который "
+            "звонит с другого номера. Поздоровайся, спроси имя (один раз, не допрашивай). Как "
+            "только клиент назвал имя или компанию, или сказал «я вам писал / мы переписывались / "
+            "звонил с другого номера», СРАЗУ вызови find_client (имя, компания, ниша, прежний "
+            "номер) и продолжай с места по его истории. При сомнении уточни одним вопросом, не "
+            "угадывай; не нашёлся — говори как с новым клиентом."
         ]
+        names = []
         for c in recent:
-            name = (c.name or "—").strip()
-            niche = ""
-            if isinstance(c.memory, dict):
-                niche = str(c.memory.get("niche") or c.memory.get("industry") or "").strip()
-            marker = f"— {name}"
-            if niche:
-                marker += f" ({niche})"
-            lines.append(marker)
-        lines.append(
-            "Если имя или ниша совпали — найди этого контакта в CRM "
-            "(search_contact_by_phone по его прежнему номеру из списка) и продолжай "
-            "с места переписки: клиент уже знает контекст."
-        )
+            label = (c.name or "").strip()
+            if not label:
+                continue
+            extra = (c.company or "").strip()
+            if not extra and isinstance(c.memory, dict):
+                extra = str(c.memory.get("niche") or c.memory.get("industry") or "").strip()
+            names.append(label + (f" ({extra})" if extra else ""))
+        if names:
+            lines.append("Недавно с нами общались: " + "; ".join(names) + ".")
         return "\n".join(lines)
 
     @staticmethod
@@ -654,24 +646,17 @@ class SipGatewayService:
         WhatsApp/Telegram/Instagram/SMS, что видит оркестратор) и отдаём их
         голосовой модели: «я вас помню, вы писали про …».
 
-        Ключ связки — номер телефона (последние 9 цифр). Возвращает пустую
+        Ключ связки — номер телефона (последние 9 цифр), основной или второй
+        номер карточки. Возвращает пустую
         строку, если звонок не входящий, нет agent/caller, или номер не совпал
         ни с одним контактом (тогда отрабатывает inbound_recent_contacts_hint).
         Best-effort — любой сбой не должен рвать звонок (ловится выше).
         """
         if call.direction != "inbound" or agent is None or not call.caller:
             return ""
-        phone = call.caller
-        phone_tail = phone[-9:] if len(phone) >= 9 else phone
-        contact = (
-            db.query(AgentContact)
-            .filter(
-                AgentContact.agent_config_id == agent.id,
-                AgentContact.phone.like(f"%{phone_tail}"),
-            )
-            .order_by(AgentContact.updated_at.desc())
-            .first()
-        )
+        # По любому номеру клиента — основному или второму (ветка 2110-client-memory).
+        from backend.services.agent_contact_phones import find_contact_by_phone
+        contact = find_contact_by_phone(db, agent.id, call.caller)
         if contact is None:
             return ""
 
@@ -746,13 +731,8 @@ class SipGatewayService:
             greeting = getattr(assistant, "greeting_message", None)
         if greeting and "{name}" in greeting:
             if not contact_name and agent is not None and call.caller:
-                contact = (
-                    db.query(AgentContact)
-                    .filter(AgentContact.agent_config_id == agent.id,
-                            AgentContact.phone.like(f"%{call.caller[-9:]}"))
-                    .order_by(AgentContact.created_at.desc())
-                    .first()
-                )
+                from backend.services.agent_contact_phones import find_contact_by_phone
+                contact = find_contact_by_phone(db, agent.id, call.caller)
                 contact_name = (contact.name or "") if contact else ""
             if contact_name:
                 greeting = greeting.replace("{name}", contact_name)

@@ -24,6 +24,7 @@ from backend.models.agent_call import AgentCall
 from backend.models.agent_config import AgentConfig
 from backend.models.agent_contact import AgentContact
 from backend.models.sip_gateway import SipCall, SipPhoneNumber
+from backend.services.agent_contact_phones import find_contact_by_phone
 from backend.services.call_transcript import transcript_as_text
 
 logger = get_logger(__name__)
@@ -76,12 +77,8 @@ class AgentCallFinalizer:
         existing = db.query(AgentCall).filter(AgentCall.call_session_id == str(call.id)).first()
         if existing:
             return existing
-        contact = (
-            db.query(AgentContact)
-            .filter(AgentContact.agent_config_id == agent.id, AgentContact.phone.like(f"%{suffix}"))
-            .order_by(AgentContact.created_at.desc())
-            .first()
-        )
+        # По любому номеру клиента — основному или второму (ветка 2110-client-memory).
+        contact = find_contact_by_phone(db, agent.id, phone)
         if contact is None:
             contact = AgentContact(
                 agent_config_id=agent.id,

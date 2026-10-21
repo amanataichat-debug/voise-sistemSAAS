@@ -117,7 +117,6 @@ async def _baseline_dialogs(db: Session, row: AgentTelegramAccount, session_str:
     поллер не начал отвечать на старую переписку. Заодно связываем диалоги с
     контактами агента по видимому номеру телефона. Best-effort.
     """
-    from backend.models.agent_contact import AgentContact
     from backend.services.sms_history import phone_suffix
 
     try:
@@ -127,12 +126,9 @@ async def _baseline_dialogs(db: Session, row: AgentTelegramAccount, session_str:
             return
         for d in snap.get("dialogs", []):
             contact_id = None
-            suf = phone_suffix(d.get("phone") or "")
-            if suf:
-                contact = db.query(AgentContact).filter(
-                    AgentContact.agent_config_id == row.agent_config_id,
-                    AgentContact.phone.like(f"%{suf}"),
-                ).order_by(AgentContact.created_at.desc()).first()
+            if phone_suffix(d.get("phone") or ""):
+                from backend.services.agent_contact_phones import find_contact_by_phone
+                contact = find_contact_by_phone(db, row.agent_config_id, d.get("phone"))
                 if contact:
                     contact_id = contact.id
             db.add(AgentTelegramDialog(

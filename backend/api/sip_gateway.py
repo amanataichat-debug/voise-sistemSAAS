@@ -426,9 +426,13 @@ async def sip_media(
         # («я вас помню»). Входящий с НЕЗНАКОМОГО: прежняя подсказка со списком
         # недавних контактов (может звонить кто-то из них с другого номера).
         # Эти случаи взаимоисключающие по совпадению номера.
+        # Ветка 2110-client-memory: знакомым считается и второй номер карточки, а с
+        # незнакомого номера голосовой агент узнаёт клиента функцией find_client.
         inbound_hint = SipGatewayService.inbound_known_contact_block(call, agent_cfg, db)
+        unknown_caller = False
         if not inbound_hint:
             inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
+            unknown_caller = bool(inbound_hint)
         enriched_context = f"{context}\n\n{inbound_hint}" if inbound_hint else context
         prompt, kb_stats = agent_voice_context.build_call_system_prompt(
             db, assistant, agent_cfg, call_context=enriched_context,
@@ -444,6 +448,8 @@ async def sip_media(
         # search_pinecone. На живом звонке 16.10.2026 это и произошло — агент ушёл
         # на звонок со старым набором функций, хотя база уже была заполнена.
         agent_voice_context.apply_live_kb_functions(db, assistant, agent_cfg)
+        # Узнавание клиента — только на входящем с незнакомого номера.
+        agent_voice_context.apply_live_client_functions(assistant, unknown_caller)
     except Exception as exc:
         kb_error = f"{type(exc).__name__}: {exc}"
         logger.error(f"[SIP-MEDIA] call {call_id}: знания агента не подмешаны, звонок идёт без них: {exc}",

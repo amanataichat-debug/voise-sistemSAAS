@@ -278,6 +278,9 @@ class Settings(BaseSettings):
     SIP_GATEWAY_TOKEN: Optional[str] = os.getenv("SIP_GATEWAY_TOKEN")
     # Имя шлюза по умолчанию для новых номеров/звонков (gateway_id моста)
     SIP_GATEWAY_DEFAULT_ID: str = os.getenv("SIP_GATEWAY_DEFAULT_ID", "sip-gw-1")
+    # Входящий с незнакомого номера на номер агента: за сколько часов показать
+    # голосовому агенту недавних клиентов (вдруг это кто-то из них с другого номера).
+    INBOUND_RECENT_CONTACTS_HOURS: int = int(os.getenv("INBOUND_RECENT_CONTACTS_HOURS", "72"))
 
     # WhatsApp-шлюз агента обзвона (Evolution API на VPS wa-gateway-1, infra/whatsapp-gateway/)
     # URL вида https://wa.voksyai.online и AUTHENTICATION_API_KEY из /opt/voksy-wa/.env

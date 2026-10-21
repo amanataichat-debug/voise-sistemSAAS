@@ -32,6 +32,8 @@ def contact_phone_digits(contact) -> List[str]:
     raw = [getattr(contact, "phone", None)]
     raw.extend((getattr(contact, "alt_phones", None) or "").split(","))
     for value in raw:
+        if ":" in str(value or ""):
+            continue  # «ig:<id>» и подобные — не телефон
         digits = phone_digits(value)
         if len(digits) >= 9 and digits not in out:
             out.append(digits)
@@ -96,3 +98,87 @@ def missed_call_today(db: Session, contact, user_id, local_date) -> Optional[obj
         elif call.direction == "outbound" and _was_dialed(call):
             missed = call
     return missed
+
+
+# ---------------------------------------------------------------------------
+# Второй номер клиента и поиск карточки по любому его номеру
+# ---------------------------------------------------------------------------
+
+PHONE_TAIL_DIGITS = 9  # 700111222: код страны и ведущий 0 пишут по-разному
+
+
+def phone_tail(value) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-PHONE_TAIL_DIGITS:] if len(digits) >= PHONE_TAIL_DIGITS else ""
+
+
+def alt_phone_list(contact) -> List[str]:
+    """Дополнительные номера карточки (канонические цифры), без основного."""
+    return [p for p in (getattr(contact, "alt_phones", None) or "").split(",") if p]
+
+
+def phone_condition(phone):
+    """
+    SQL-условие «у карточки есть этот номер» — основной или дополнительный.
+    None, если номер слишком короткий для надёжного сравнения.
+    """
+    from backend.models.agent_contact import AgentContact
+    tail = phone_tail(phone)
+    if not tail:
+        return None
+    return or_(
+        AgentContact.phone.like(f"%{tail}"),
+        AgentContact.alt_phones.like(f"%{tail},%"),
+    )
+
+
+def find_contact_by_phone(db: Session, agent_config_id, phone):
+    """Карточка клиента агента по любому его номеру (основному или второму)."""
+    from backend.models.agent_contact import AgentContact
+    cond = phone_condition(phone)
+    if cond is None or not agent_config_id:
+        return None
+    return (
+        db.query(AgentContact)
+        .filter(AgentContact.agent_config_id == agent_config_id, cond)
+        .order_by(AgentContact.updated_at.desc())
+        .first()
+    )
+
+
+def has_phone(contact, phone) -> bool:
+    tail = phone_tail(phone)
+    return bool(tail) and any(p.endswith(tail) for p in contact_phone_digits(contact))
+
+
+def add_alt_phone(contact, phone) -> bool:
+    """
+    Добавить номер в карточку вторым. False — номер пустой/кривой или уже есть
+    у карточки (основным или дополнительным). Коммит — за вызывающим.
+    """
+    digits = phone_digits(phone)
+    if len(digits) < PHONE_TAIL_DIGITS or has_phone(contact, digits):
+        return False
+    phones = alt_phone_list(contact) + [digits]
+    contact.alt_phones = "," + ",".join(phones) + ","
+    return True
+
+
+def dial_number(contact) -> str:
+    """
+    На какой номер звонить клиенту: номер «для звонков» из карточки → основной,
+    если он на O! → первый дополнительный на O! → основной (его отклонит проверка
+    оператора с понятной подсказкой). Пример: WhatsApp клиента на Beeline,
+    в переписке он дал номер O! — звоним на него.
+    """
+    from backend.models.sip_gateway import is_o_number
+    preferred = phone_digits(getattr(contact, "call_phone", None))
+    if len(preferred) >= PHONE_TAIL_DIGITS:
+        return preferred
+    main = phone_digits(getattr(contact, "phone", None))
+    if is_o_number(main):
+        return main
+    for alt in alt_phone_list(contact):
+        if is_o_number(alt):
+            return alt
+    return main or (getattr(contact, "phone", None) or "")

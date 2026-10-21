@@ -460,13 +460,6 @@ def chat_for_contact(db, account_id, agent_contact_id):
 
 
 def match_contact_by_phone(db, agent_config_id, phone: Optional[str]):
-    """AgentContact агента по номеру (последние 10 цифр) или None."""
-    from backend.models.agent_contact import AgentContact
-    from backend.services.sms_history import phone_suffix
-    suf = phone_suffix(phone or "")
-    if not suf:
-        return None
-    return db.query(AgentContact).filter(
-        AgentContact.agent_config_id == agent_config_id,
-        AgentContact.phone.like(f"%{suf}"),
-    ).order_by(AgentContact.created_at.desc()).first()
+    """AgentContact агента по номеру — основному или второму номеру карточки — или None."""
+    from backend.services.agent_contact_phones import find_contact_by_phone
+    return find_contact_by_phone(db, agent_config_id, phone)

@@ -1611,6 +1611,9 @@ def ensure_chat_v2_columns():
         "agent_contacts": [
             "ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMP",
             "ADD COLUMN IF NOT EXISTS ai_pause_reason VARCHAR(16)",
+            # Второй номер / номер для звонков (ветка 2110-client-memory).
+            "ADD COLUMN IF NOT EXISTS alt_phones TEXT",
+            "ADD COLUMN IF NOT EXISTS call_phone VARCHAR(50)",
         ],
         "agent_whatsapp_accounts": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",

@@ -567,3 +567,41 @@ def apply_live_kb_functions(db, assistant, agent) -> None:
         set_committed_value(assistant, "functions", merged)
     except Exception as e:
         logger.warning(f"[VOICE-KB] функции знаний не пересчитаны: {e}")
+
+
+# ============================================================================
+# Узнавание клиента на звонке (ветка 2110-client-memory)
+# ============================================================================
+
+CLIENT_VOICE_FUNCTIONS = {
+    "find_client": "Находит клиента в базе по имени, компании, нише или прежнему номеру "
+                   "и возвращает его карточку с историей общения.",
+}
+
+
+def apply_live_client_functions(assistant, enabled: bool) -> None:
+    """
+    Включить (или снять) на карточке голоса В ПАМЯТИ функцию узнавания клиента
+    find_client — тем же приёмом, что apply_live_kb_functions. Включаем только
+    там, где она нужна: входящий с незнакомого номера и браузерный тест агента.
+    На исходящем и на входящем со знакомого номера клиент уже известен, а
+    лишний инструмент удлиняет каждый ответ модели.
+    """
+    try:
+        from sqlalchemy.orm.attributes import set_committed_value
+        functions = getattr(assistant, "functions", None)
+        names = set(CLIENT_VOICE_FUNCTIONS)
+        if isinstance(functions, dict) and "enabled_functions" in functions:
+            items = [n for n in list(functions.get("enabled_functions", [])) if n not in names]
+            if enabled:
+                items.extend(sorted(names))
+            merged = {"enabled_functions": items}
+        else:
+            items = list(functions) if isinstance(functions, list) else []
+            items = [f for f in items if (f.get("name") if isinstance(f, dict) else f) not in names]
+            if enabled:
+                items.extend({"name": n, "description": d} for n, d in sorted(CLIENT_VOICE_FUNCTIONS.items()))
+            merged = items
+        set_committed_value(assistant, "functions", merged)
+    except Exception as e:
+        logger.warning(f"[VOICE-KB] функция узнавания клиента не применена: {e}")

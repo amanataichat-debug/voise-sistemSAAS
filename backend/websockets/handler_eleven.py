@@ -104,6 +104,9 @@ def _apply_agent_knowledge(db: Session, assistant) -> None:
         # Та же живая подстраховка, что в api/sip_gateway.py: функции знаний
         # пересчитываются по текущей базе, а не берутся из хранимой колонки.
         agent_voice_context.apply_live_kb_functions(db, assistant, agent)
+        # Браузерный тест агента: владелец проверяет узнавание клиента
+        # («я Айбек, писал вам вчера») без звонка с другого номера.
+        agent_voice_context.apply_live_client_functions(assistant, True)
         _log(f"знания агента {agent.id} в промпте: {stats.get('total', 0)} символов "
              f"(всего промпт {len(prompt)})")
     except Exception as e:

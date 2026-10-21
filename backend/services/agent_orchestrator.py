@@ -2972,10 +2972,8 @@ async def handle_inbound_sms(sms_message_id: str):
         from_suf = phone_suffix(sms.from_number)
         contact = None
         if from_suf:
-            contact = db.query(AgentContact).filter(
-                AgentContact.agent_config_id == agent.id,
-                AgentContact.phone.like(f"%{from_suf}"),
-            ).order_by(AgentContact.created_at.desc()).first()
+            from backend.services.agent_contact_phones import find_contact_by_phone
+            contact = find_contact_by_phone(db, agent.id, sms.from_number)
         if not contact:
             contact = AgentContact(
                 agent_config_id=agent.id,
