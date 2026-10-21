@@ -2972,10 +2972,6 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         if not guard.get("ok"):
             return guard
         scheduled_at = guard["scheduled_utc"]
-        if not owner_request:
-            blocked = _missed_call_followup_block(guard_contact, db)
-            if blocked:
-                return blocked
         # Второй звонок в тот же бишкекский день (помимо текущего) не ставим.
         from backend.core.timezone_utils import BISHKEK as _BISHKEK
         local_date = scheduled_at.astimezone(_BISHKEK).date()
@@ -3025,9 +3021,6 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
         **assistant_task_kwargs(agent_config),
     )
     db.add(task)
-    db.flush()
-    if channel == "call" and guard_contact is not None:
-        _replace_auto_followup(guard_contact, task.id, db)
     db.commit()
     db.refresh(task)
 
@@ -4225,56 +4218,6 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     return {"ok": True, "scheduled_utc": scheduled_utc}
 
 
-def _replace_auto_followup(contact: AgentContact, new_task_id, db: Session) -> None:
-    """Новый звонок клиенту заменяет автоматический повтор после недозвона.
-
-    Клиент не взял трубку → политика поставила повтор на завтра. Потом клиент
-    написал «давайте в пятницу в 15:00» (или владелец попросил позвонить), агент
-    ставит звонок на это время — авто-повтор отменяем, иначе клиенту позвонили
-    бы дважды. Без commit — вызывающий коммитит вместе с новой задачей.
-    """
-    mem = dict(contact.memory) if isinstance(contact.memory, dict) else {}
-    old_id = mem.pop("auto_followup_task_id", None)
-    if not old_id or str(old_id) == str(new_task_id):
-        return
-    old = db.query(Task).filter(Task.id == old_id, Task.status == TaskStatus.SCHEDULED).first()
-    if old is not None:
-        old.status = TaskStatus.CANCELLED
-        old.call_result = json.dumps({"skipped": "replaced_by_new_call", "new_task_id": str(new_task_id)})
-        logger.info(f"[AGENT-TOOLS] Contact {contact.id}: авто-повтор {old_id} заменён звонком {new_task_id}")
-    if mem.get("followup_task_id") == old_id:
-        mem.pop("followup_task_id", None)
-    contact.memory = mem
-    flag_modified(contact, "memory")
-
-
-def _missed_call_followup_block(contact: AgentContact, db: Session) -> Optional[dict]:
-    """Клиент не ответил на прошлый звонок, а повторный уже назначен → второй не ставим.
-
-    Политика недозвона (agent_call_policy) сама ставит ОДИН повтор на завтра;
-    агент не должен добавлять к нему ещё звонки, пока клиент молчит. Как только
-    клиент ответит или напишет, счётчик недозвонов обнулится и блок снимется.
-    """
-    from backend.services.agent_call_policy import pending_followup_call
-    from backend.core.timezone_utils import BISHKEK
-
-    pending = pending_followup_call(db, contact)
-    if pending is None:
-        return None
-    when = pending.scheduled_time
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return {
-        "ok": False,
-        "error": "followup_already_scheduled",
-        "hint": (
-            "Клиент не ответил на прошлый звонок, повторный звонок уже назначен на "
-            f"{when.astimezone(BISHKEK).strftime('%d.%m %H:%M')} (Бишкек) — он единственный, "
-            "второй не ставим, чтобы не беспокоить клиента. Напиши клиенту в мессенджер."
-        ),
-    }
-
-
 def _already_scheduled_call_today(contact_id, local_date, db: Session) -> bool:
     """Есть ли уже SCHEDULED call-задача для контакта на эту бишкекскую дату."""
     from backend.core.timezone_utils import BISHKEK
@@ -4390,10 +4333,6 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
     guard = _check_call_guards(contact, now_utc, allow_shift=False, window=call_window(agent_config))
     if not guard.get("ok"):
         return guard
-    if not owner_request:
-        blocked = _missed_call_followup_block(contact, db)
-        if blocked:
-            return blocked
     # Для немедленного звонка — отдельно проверим, что уже нет запланированного
     # звонка на сегодня (last_called_at успевает обновиться только после звонка).
     from backend.core.timezone_utils import BISHKEK
@@ -4419,8 +4358,6 @@ async def fn_trigger_immediate_call(args: dict, user_id: str, agent_config_id: s
         **assistant_task_kwargs(agent_config),
     )
     db.add(task)
-    db.flush()
-    _replace_auto_followup(contact, task.id, db)
     db.commit()
     db.refresh(task)
     logger.info(f"[AGENT-TOOLS] Triggered immediate call task {task.id} for contact {agent_contact_id}")

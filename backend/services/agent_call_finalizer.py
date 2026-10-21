@@ -7,7 +7,7 @@
     AgentCall.source_task_id == sip_calls.task_id; входящий на номер, привязанный к агенту
     (sip_phone_numbers.agent_config_id), заводит AgentContact (если новый) + AgentCall.
   - on_call_failed — мост окончательно не дозвонился (failed без повтора): PostCall с
-    no_answer и причиной; повтор звонка решает код (agent_call_policy), не оркестратор.
+    no_answer, чтобы оркестратор решил, перезванивать ли.
 
 PostCallOrchestrator.finalize_sip_call забирает звонок атомарно, повторный вызов безопасен.
 """
@@ -46,8 +46,7 @@ def _call_duration(call: SipCall) -> int:
     return 0
 
 
-def _schedule(agent_call_id: str, transcript: str, call_status: str, duration: int, direction: str,
-              fail_reason: str = "") -> None:
+def _schedule(agent_call_id: str, transcript: str, call_status: str, duration: int, direction: str) -> None:
     # В фоновый loop (core/background_loop.py): вызывается и из основного loop'а
     # (конец звонка), и из потока событий моста (asyncio.to_thread — своего loop'а
     # там нет), а анализ LLM не должен делить loop со звуком звонков.
@@ -55,7 +54,6 @@ def _schedule(agent_call_id: str, transcript: str, call_status: str, duration: i
     from backend.services.agent_orchestrator import PostCallOrchestrator
     submit(PostCallOrchestrator.finalize_sip_call(
         agent_call_id, transcript, call_status, duration, call_direction=direction,
-        fail_reason=fail_reason,
     ))
 
 
@@ -147,7 +145,7 @@ class AgentCallFinalizer:
         if agent_call is None:
             return None
         logger.info(f"[AGENT-FINALIZER] call {call.id} failed ({call.end_reason}) → AgentCall {agent_call.id} no_answer")
-        _schedule(str(agent_call.id), "", "no_answer", 0, "outbound", fail_reason=call.end_reason or "")
+        _schedule(str(agent_call.id), "", "no_answer", 0, "outbound")
         return str(agent_call.id)
 
 
