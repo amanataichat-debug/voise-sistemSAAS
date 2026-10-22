@@ -1912,6 +1912,8 @@
     "er_channel_limit": "все каналы заняты",
     "er_congestion": "сеть перегружена",
     "er_rejected": "отклонён",
+    "er_unreachable": "не в сети",
+    "er_bad_number": "неверный номер",
     "er_failed": "ошибка",
     "er_user_request": "отбой из интерфейса",
     "er_unknown_number": "номер не найден",

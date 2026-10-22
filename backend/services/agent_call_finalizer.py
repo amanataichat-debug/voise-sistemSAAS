@@ -189,8 +189,29 @@ class AgentCallFinalizer:
         if agent_call is None:
             return None
         logger.info(f"[AGENT-FINALIZER] call {call.id} failed ({call.end_reason}) → AgentCall {agent_call.id} no_answer")
-        _schedule(str(agent_call.id), "", "no_answer", 0, "outbound")
+        _schedule(str(agent_call.id), failed_call_text(call), "no_answer", 0, "outbound")
         return str(agent_call.id)
+
+
+# Что сказать PostCall про недозвон: дальше агент решает по своей инструкции
+# (написать в мессенджер, когда перезвонить), и «сбросил» для него не то же, что
+# «не взял трубку» или «телефон выключен».
+_FAILED_FOR_POSTCALL = {
+    "rejected": "клиент СБРОСИЛ звонок — телефон звонил, вызов отклонён",
+    "busy": "занято — клиент сбросил звонок или разговаривал по другой линии",
+    "no_answer": "телефон звонил, клиент не взял трубку",
+    "unreachable": "телефон клиента выключен или вне сети",
+    "bad_number": "номер не существует или набран неверно",
+}
+
+
+def failed_call_text(call: SipCall) -> str:
+    reason = call.end_reason or ""
+    what = _FAILED_FOR_POSTCALL.get(reason) or (
+        "звонок не состоялся по технической причине на нашей стороне ("
+        + (_NETWORK_REASONS.get(reason) or reason or "неизвестно") + "), клиент вызова не видел"
+    )
+    return f"(Разговора не было. Итог дозвона: {what}.)"
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +275,12 @@ def call_outcome(agent_call, sip_call: Optional[SipCall]) -> Optional[dict]:
     if status == "answered" and not sip_call.ended_at and agent_call.status in ("calling", "finalizing"):
         return {"kind": "progress", "label": "Идёт разговор", "detail": ""}
     if status == "failed":
+        if reason == "rejected":
+            return {"kind": "warn", "label": "Сбросил звонок", "detail": "телефон звонил, клиент отклонил вызов"}
         if reason == "busy":
             return {"kind": "warn", "label": "Занято", "detail": "абонент разговаривал или сбросил"}
+        if reason == "unreachable":
+            return {"kind": "warn", "label": "Не в сети", "detail": "телефон выключен или вне зоны"}
         if reason == "no_answer":
             return {"kind": "warn", "label": "Не взял трубку", "detail": ""}
         if reason == "bad_number":

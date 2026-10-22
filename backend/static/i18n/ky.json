@@ -1912,6 +1912,8 @@
     "er_channel_limit": "бардык каналдар бош эмес",
     "er_congestion": "тармак ашыкча жүктөлгөн",
     "er_rejected": "четке кагылды",
+    "er_unreachable": "тармакта жок",
+    "er_bad_number": "туура эмес номер",
     "er_failed": "ката",
     "er_user_request": "интерфейстен бүтүрүлдү",
     "er_unknown_number": "номер табылган жок",

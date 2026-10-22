@@ -46,7 +46,7 @@
     st_queued: 'В очереди', st_dialing: 'Набор номера', st_ringing: 'Вызов', st_answered: 'Разговор', st_completed: 'Завершён', st_failed: 'Не состоялся',
     er_completed: 'завершён', er_hangup: 'абонент положил трубку', er_assistant_hangup: 'ассистент завершил', er_busy: 'занято',
     er_no_answer: 'нет ответа', er_cancelled: 'отменён', er_channel_limit: 'все каналы заняты', er_congestion: 'сеть перегружена',
-    er_rejected: 'отклонён', er_failed: 'ошибка', er_user_request: 'отбой из интерфейса', er_unknown_number: 'номер не найден',
+    er_rejected: 'отклонён', er_unreachable: 'не в сети', er_bad_number: 'неверный номер', er_failed: 'ошибка', er_user_request: 'отбой из интерфейса', er_unknown_number: 'номер не найден',
     er_assistant_not_found: 'ассистент не найден', er_ami_unavailable: 'шлюз недоступен', er_trunk_unavailable: 'транк недоступен',
     request_error: 'Ошибка запроса'
   };

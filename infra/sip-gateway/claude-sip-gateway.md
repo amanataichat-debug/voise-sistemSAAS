@@ -23,7 +23,7 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 | `asterisk/rtp.conf` | RTP 10000–20000 |
 | `asterisk/manager.conf` | AMI пользователь `bridge` на loopback, `__AMI_SECRET__` |
 | `asterisk/modules.conf` | noload `chan_sip` и прочих устаревших |
-| `bridge/bridge.py` | Мост (VERSION в шапке). Классы `Call`, `Bridge`, `AmiClient`. AudioSocket-сервер (TCP 9092), HTTP (9091: `/asterisk/inbound`, `/health`), AMI Originate с `Async: true`, failover по `TRUNK_HOSTS`, лимит `MAX_OUTBOUND`, 20 мс pacer с `mark`/`clear`/`hangup`, silence keepalive |
+| `bridge/bridge.py` | Мост (VERSION в шапке). Классы `Call`, `Bridge`, `AmiClient`. AudioSocket-сервер (TCP 9092), HTTP (9091: `/asterisk/inbound`, `/health`), AMI Originate с `Async: true`, failover по `TRUNK_HOSTS` только при отказе сервера оператора (сброс клиентом = `rejected`, без второго набора: `classify_dial_failure` по `Newstate`/`Hangup` канала с нашим `ChannelId`, см. README), лимит `MAX_OUTBOUND`, 20 мс pacer с `mark`/`clear`/`hangup`, silence keepalive |
 | `bridge/voksy-bridge.service` | systemd, пользователь `voksy`, `EnvironmentFile=/etc/voksy-bridge/bridge.env`, `Restart=always` |
 | `bridge/requirements.txt` | `websockets`, `aiohttp` |
 

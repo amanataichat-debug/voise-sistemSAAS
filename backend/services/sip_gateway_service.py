@@ -54,6 +54,15 @@ RETRYABLE_FAIL_REASONS = {"channel_limit", "ami_unavailable", "ami_error", "trun
 MAX_ORIGINATE_ATTEMPTS = 2
 RETRY_DELAY_SECONDS = 120
 
+# Сброс клиентом оператор O! отдаёт как AMI Reason=0, тем же кодом, что «транк
+# недоступен» (живой лог моста 21.10: отказ через 10–30 с после начала набора, и
+# звонок шёл клиенту 4 раза: второй сервер оператора + повтор бэкенда). Мост ≥1.3
+# сам различает и шлёт "rejected" вместе с dial_seconds/ringing; для старого моста
+# (без dial_seconds) долгий отказ считаем сбросом: настоящая недоступность транка
+# отвечает сразу.
+OLD_BRIDGE_REJECT_AFTER = timedelta(seconds=8)
+CALLEE_FAIL_REASONS = {"busy", "no_answer", "rejected", "unreachable"}
+
 # Жёсткий анти-долбёж (карта, баг B1): минимальный интервал между исходящими на
 # ОДИН номер. Это последний рубеж — через queue_outbound_call проходят ВСЕ пути
 # (планировщик, немедленный звонок, CRM, ручной), и он НЕ зависит от
@@ -381,6 +390,19 @@ class SipGatewayService:
             SipGatewayService._finish_task(db, call, success=True)
         elif kind == "failed":
             reason = event.get("reason") or "failed"
+            dial = {k: event[k] for k in ("dial_cause", "ringing", "dial_seconds") if event.get(k) is not None}
+            if dial:
+                call.call_metadata = {**(call.call_metadata or {}), "dial": dial}
+            if (
+                call.direction == "outbound"
+                and "dial_seconds" not in event
+                and reason in ("trunk_unavailable", "congestion")
+                and call.dialed_at is not None
+                and now - call.dialed_at >= OLD_BRIDGE_REJECT_AFTER
+            ):
+                logger.info(f"[SIP] call {call.id}: '{reason}' after {(now - call.dialed_at).total_seconds():.0f}s "
+                            f"of dialing — the client declined, not retrying")
+                reason = "rejected"
             if (
                 call.direction == "outbound"
                 and reason in RETRYABLE_FAIL_REASONS
@@ -427,7 +449,7 @@ class SipGatewayService:
                 agent_call.duration_seconds = int(call.duration_sec or 0)
                 agent_call.completed_at = _utcnow()
             else:
-                agent_call.status = "no_answer" if call.end_reason in ("busy", "no_answer") else "failed"
+                agent_call.status = "no_answer" if call.end_reason in CALLEE_FAIL_REASONS else "failed"
                 agent_call.completed_at = _utcnow()
 
     # ------------------------------------------------------------------ post-call

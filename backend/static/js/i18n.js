@@ -22,7 +22,7 @@
 
   var LANGS = ['ru', 'ky'];
   var STORAGE_KEY = 'vs_lang';
-  var DICT_VERSION = '5';   // +раздел akb (знания агента), ветка 1610-kb-calls
+  var DICT_VERSION = '6';   // +sip.er_unreachable / er_bad_number, ветка 2210-perebivaniya
   // Подстановки по умолчанию для {currency} и {tz} в строках словаря
   var DEFAULTS = { currency: 'сом', tz: 'Бишкек' };
 

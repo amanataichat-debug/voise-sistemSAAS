@@ -72,7 +72,7 @@ import aiohttp
 import websockets
 from aiohttp import web
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -112,6 +112,14 @@ COUNTRY_CODE = _env("COUNTRY_CODE", "996")
 NATIONAL_PREFIX = _env("NATIONAL_PREFIX", "0")
 SUBSCRIBER_DIGITS = int(_env("SUBSCRIBER_DIGITS", "9"))
 ORIGINATE_TIMEOUT_MS = int(_env("ORIGINATE_TIMEOUT_MS", "45000"))
+# A dial failure that comes this late means the phone was ringing: the client
+# declined the call. O! reports a decline as OriginateResponse Reason=0, the same
+# code as "trunk unavailable", so the bridge used to fail over to the second
+# operator server and ring the client again (live log 21.10: 4 rings per call).
+REJECT_MIN_SECONDS = float(_env("REJECT_MIN_SECONDS", "4"))
+# Only used when Asterisk sent no hangup cause: past this, the operator server
+# is silent (SIP timer B is 32 s), not a client declining.
+REJECT_FALLBACK_MAX_SECONDS = float(_env("REJECT_FALLBACK_MAX_SECONDS", "30"))
 OUTBOUND_CONTEXT = _env("OUTBOUND_CONTEXT", "outbound-answered")
 BACKEND_CONNECT_TIMEOUT = float(_env("BACKEND_CONNECT_TIMEOUT", "6"))
 MAX_CALL_SECONDS = int(_env("MAX_CALL_SECONDS", "3600"))
@@ -191,6 +199,10 @@ class Call:
     ended_at: Optional[float] = None
     end_reason: str = ""
     trunk_host: str = ""
+    # Last dial attempt: Q.850 hangup cause, whether the phone rang, seconds to the failure
+    dial_cause: Optional[int] = None
+    dial_ringing: Optional[bool] = None
+    dial_seconds: Optional[float] = None
 
     asterisk_writer: Optional[asyncio.StreamWriter] = None
     backend_ws: Optional[Any] = None
@@ -224,6 +236,9 @@ class Call:
             "ended_at": self.ended_at,
             "duration_sec": duration,
             "reason": self.end_reason,
+            "dial_cause": self.dial_cause,
+            "ringing": self.dial_ringing,
+            "dial_seconds": self.dial_seconds,
             "frames_in": self.frames_in,
             "frames_out": self.frames_out,
         }
@@ -748,6 +763,7 @@ class Bridge:
                 return
             call.trunk_host = host
             action_id = f"{call.call_id}:{index}"
+            started = time.monotonic()
             log.info("call %s: originating to %s (dial %s) via %s (cid=%s dial %s)",
                      call.call_id, to, dial_to, host, caller_id, dial_cid)
             try:
@@ -769,14 +785,19 @@ class Bridge:
                 call.channel = result.get("channel", "")
                 # Answered: AudioSocket will connect and emit "answered".
                 return
-            last_reason = result["reason"]
+            elapsed = time.monotonic() - started
+            cause = result.get("cause")
+            ringing = bool(result.get("ringing"))
+            last_reason = classify_dial_failure(result["reason"], cause, ringing, elapsed)
+            call.dial_cause, call.dial_ringing, call.dial_seconds = cause, ringing, round(elapsed, 1)
             # Текст ошибки AMI / сырой Reason из OriginateResponse — без них
             # "trunk_unavailable" не отличить от опечатки в канале или 403 оператора.
             detail = result.get("message") or (f"Reason={result['raw_reason']}" if result.get("raw_reason") else "")
-            log.info("call %s: originate via %s failed: %s%s", call.call_id, host, last_reason,
-                     f" ({detail})" if detail else "")
-            if last_reason not in ("trunk_unavailable", "congestion"):
-                break  # busy / no answer — the callee did not pick up, no point trying server B
+            log.info("call %s: originate via %s failed: %s%s [cause=%s %s, ringing=%s, %.1fs]",
+                     call.call_id, host, last_reason, f" ({detail})" if detail else "",
+                     cause, result.get("cause_txt") or "", ringing, elapsed)
+            if last_reason not in FAILOVER_REASONS:
+                break  # the call reached the client (declined / busy / no answer) — server B would ring again
         await self._fail(call, last_reason)
 
     async def _fail(self, call: Call, reason: str) -> None:
@@ -872,6 +893,46 @@ class Bridge:
 
 
 # ----------------------------------------------------------------------------
+# Why an outbound dial failed
+# ----------------------------------------------------------------------------
+
+# Only these mean "the operator server did not take the call": worth trying the
+# next one. Everything else reached the client, a second server would ring again.
+FAILOVER_REASONS = ("trunk_unavailable", "congestion")
+
+
+def classify_dial_failure(reason: str, cause: Optional[int], ringing: bool, elapsed: float) -> str:
+    """Final reason of a failed originate attempt.
+
+    reason   — from OriginateResponse (Reason 0 covers both "trunk refused" and
+               "client declined": Asterisk reports only busy/congestion/ringing there)
+    cause    — Q.850 cause of the channel's Hangup event (None if it never came)
+    ringing  — the channel went to Ringing (SIP 180)
+    elapsed  — seconds from the originate to the failure
+    """
+    if cause in (1, 28):  # unallocated number / invalid number format
+        return "bad_number"
+    if cause == 17 or reason == "busy":
+        return "busy"
+    if cause == 20:  # subscriber absent: phone off or out of coverage
+        return "unreachable"
+    if reason == "no_answer":
+        return "no_answer"
+    rang = ringing or elapsed >= REJECT_MIN_SECONDS  # O! often sends 183 early media, not 180
+    if cause in (16, 21):  # normal clearing / call rejected; instant 403 = the trunk refused us
+        return "rejected" if rang else reason
+    if cause == 19:  # 480: after ringing = nobody answered, at once = phone unavailable
+        return "no_answer" if rang else "unreachable"
+    if cause == 18:  # 408: without ringing the operator server did not respond
+        return "no_answer" if ringing else reason
+    if ringing:
+        return "rejected"
+    if not cause and REJECT_MIN_SECONDS <= elapsed < REJECT_FALLBACK_MAX_SECONDS:
+        return "rejected"
+    return reason
+
+
+# ----------------------------------------------------------------------------
 # Minimal AMI client
 # ----------------------------------------------------------------------------
 
@@ -894,6 +955,8 @@ class AmiClient:
         self.connected = False
         self._responses: Dict[str, asyncio.Future] = {}
         self._originates: Dict[str, asyncio.Future] = {}
+        # Originated channels by uniqueid (our ChannelId): Ringing state and hangup cause
+        self._channels: Dict[str, Dict[str, Any]] = {}
         self._seq = 0
 
     async def run(self) -> None:
@@ -912,6 +975,7 @@ class AmiClient:
                     fut.set_exception(ConnectionError("AMI disconnected"))
             self._responses.clear()
             self._originates.clear()
+            self._channels.clear()
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 15.0)
 
@@ -971,10 +1035,25 @@ class AmiClient:
             if not fut.done():
                 fut.set_result(packet)
             return
-        if packet.get("Event") == "OriginateResponse" and action_id in self._originates:
+        event = packet.get("Event")
+        if event == "OriginateResponse" and action_id in self._originates:
             fut = self._originates.pop(action_id)
             if not fut.done():
                 fut.set_result(packet)
+            return
+        if event in ("Newstate", "Hangup"):
+            info = self._channels.get(packet.get("Uniqueid", ""))
+            if info is None:
+                return
+            if event == "Newstate" and packet.get("ChannelState") == "5":  # Ringing
+                info["ringing"] = True
+            elif event == "Hangup":
+                try:
+                    info["cause"] = int(packet.get("Cause") or 0)
+                except ValueError:
+                    info["cause"] = 0
+                info["cause_txt"] = packet.get("Cause-txt", "")
+                info["hangup"].set()
 
     async def _action(self, fields: Dict[str, str], wait: bool = True) -> Any:
         assert self.writer is not None
@@ -992,9 +1071,25 @@ class AmiClient:
                         caller_id: str, timeout_ms: int, variables: Dict[str, str]) -> Dict[str, Any]:
         if not self.connected:
             raise ConnectionError("AMI not connected")
+        # Our own uniqueid on the channel: its Newstate/Hangup events tell whether the
+        # phone rang and why the call ended, which OriginateResponse does not.
+        channel_id = uuid.uuid4().hex
+        info: Dict[str, Any] = {"ringing": False, "cause": None, "cause_txt": "", "hangup": asyncio.Event()}
+        self._channels[channel_id] = info
+        try:
+            return await self._originate(channel_id=channel_id, info=info, action_id=action_id,
+                                         channel=channel, context=context, exten=exten, priority=priority,
+                                         caller_id=caller_id, timeout_ms=timeout_ms, variables=variables)
+        finally:
+            self._channels.pop(channel_id, None)
+
+    async def _originate(self, *, channel_id: str, info: Dict[str, Any], action_id: str, channel: str,
+                         context: str, exten: str, priority: str, caller_id: str, timeout_ms: int,
+                         variables: Dict[str, str]) -> Dict[str, Any]:
         fields = {
             "Action": "Originate",
             "ActionID": action_id,
+            "ChannelId": channel_id,
             "Channel": channel,
             "Context": context,
             "Exten": exten,
@@ -1018,11 +1113,17 @@ class AmiClient:
             event = await asyncio.wait_for(done, timeout=timeout_ms / 1000 + 15)
         except asyncio.TimeoutError:
             self._originates.pop(action_id, None)
-            return {"ok": False, "reason": "no_answer"}
+            return {"ok": False, "reason": "no_answer", "ringing": info["ringing"]}
         if event.get("Response") == "Success":
             return {"ok": True, "channel": event.get("Channel", ""), "uniqueid": event.get("Uniqueid", "")}
         reason = self.REASONS.get(event.get("Reason", ""), "failed")
-        return {"ok": False, "reason": reason, "raw_reason": event.get("Reason", "")}
+        # The channel's Hangup event may come right after OriginateResponse
+        try:
+            await asyncio.wait_for(info["hangup"].wait(), timeout=2)
+        except asyncio.TimeoutError:
+            pass
+        return {"ok": False, "reason": reason, "raw_reason": event.get("Reason", ""),
+                "cause": info["cause"], "cause_txt": info["cause_txt"], "ringing": info["ringing"]}
 
 
 def main() -> None:

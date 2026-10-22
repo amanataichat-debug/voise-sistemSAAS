@@ -106,7 +106,11 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 ```
 
 Причины `failed`: `channel_limit` (заняты все исходящие каналы), `busy`,
-`no_answer`, `trunk_unavailable`, `congestion`, `bad_number`, `ami_unavailable`.
+`no_answer`, `rejected` (клиент сбросил), `unreachable` (телефон выключен / вне сети),
+`trunk_unavailable`, `congestion`, `bad_number`, `ami_unavailable`. У исходящего
+`failed` с моста ≥1.3 есть поля `dial_cause` (Q.850 из события Hangup), `ringing`
+(канал был в Ringing), `dial_seconds` (сколько шёл набор); бэкенд кладёт их в
+`sip_calls.call_metadata.dial`.
 Причины `ended`: `asterisk_hangup` (абонент положил трубку), `backend_hangup`,
 `backend_closed`, `backend_unavailable`, `max_duration`, `gateway_shutdown`.
 
@@ -121,7 +125,14 @@ curl -s http://127.0.0.1:9091/health          # состояние моста
 ```
 
 Исходящий: мост пробует первый сервер оператора, при `trunk_unavailable` /
-`congestion` — второй. `busy` / `no_answer` второй раз не набирает.
+`congestion` — второй. `busy` / `no_answer` / `rejected` / `unreachable` второй раз
+не набирает. Сброс клиентом O! отдаёт как OriginateResponse `Reason=0` — тем же
+кодом, что недоступный транк (до 1.3 мост из-за этого звонил клиенту через второй
+сервер, а бэкенд ещё раз через 2 мин: 4 вызова на один звонок). Поэтому мост задаёт
+каналу свой `ChannelId`, ловит его `Newstate` (Ringing) и `Hangup` (Cause) и решает
+в `classify_dial_failure`: телефон звонил (Ringing, или отказ 16/21 позже
+`REJECT_MIN_SECONDS`=4 с) — это клиент, второй сервер не трогаем; мгновенный отказ
+или 408 без звонка — сервер оператора, переходим на второй.
 Одновременных исходящих не больше `MAX_OUTBOUND`, входящих — не больше
 `MAX_INBOUND` (оператор продал 5 + 5). Лишний входящий получает от моста
 не-UUID в ответ, и диалплан играет ему `congestion`.
