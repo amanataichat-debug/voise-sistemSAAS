@@ -30,8 +30,14 @@ async function loadPipeline(){
   const wrap = document.getElementById('pipeline-board');
   wrap.innerHTML = '<div class="empty">Загрузка...</div>';
   try{
-    const r = await apiFetch(API + '/contacts?limit=500&offset=0');
-    if(!r || r.status !== 200){ wrap.innerHTML = '<div class="empty">Ошибка</div>'; return; }
+    const r = await apiFetch(API + '/contacts?limit=200&offset=0');
+    if(!r){ wrap.innerHTML = '<div class="empty">Нет авторизации</div>'; return; }
+    if(r.status !== 200){
+      let msg = 'Ошибка ' + r.status;
+      try{ const j = await r.clone().json(); msg += ': ' + (j.detail || j.message || ''); }catch(e){}
+      wrap.innerHTML = `<div class="empty">${esc(msg)}</div>`;
+      return;
+    }
     const data = await r.json();
     plContacts = (data.contacts || []).map(c => ({ ...c }));
     renderPipeline();

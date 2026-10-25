@@ -518,7 +518,9 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .sk-dot, .sk-line { background: linear-gradient(100deg, var(--vf-surface-3) 28%, var(--vf-surface-2) 50%, var(--vf-surface-3) 72%); background-size: 200% 100%; animation: sk-shimmer 1.3s ease-in-out infinite; }
 
 /* ── Модалки ──────────────────────────────────────────────────────────── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); backdrop-filter: blur(3px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; animation: ov .15s ease; }
+/* Без backdrop-filter: blur() — он пересчитывается при каждом кадре скролла внутри модалки и
+   был главной причиной лагов курсора/скролла в кабинете. Непрозрачный фон компенсирует визуально. */
+.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .62); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; animation: ov .15s ease; }
 @keyframes ov { from { opacity: 0; } to { opacity: 1; } }
 .modal { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: var(--vf-shadow-3); animation: mi .2s ease; overflow: hidden; }
 @keyframes mi { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -782,7 +784,7 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .ob-kb { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--vf-accent); background: var(--vf-accent-soft); border-radius: 6px; padding: 2px 7px; }
 
 /* ── Мобильный drawer ─────────────────────────────────────────────────── */
-.drawer-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px); z-index: 90; animation: ov .15s ease; }
+.drawer-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); z-index: 90; animation: ov .15s ease; }
 .drawer { position: fixed; top: 0; left: 0; bottom: 0; width: min(360px, 88vw); background: var(--vf-surface-2); display: flex; flex-direction: column; box-shadow: var(--vf-shadow-3); z-index: 91; animation: drawerIn .25s ease; }
 @keyframes drawerIn { from { transform: translateX(-100%); } to { transform: none; } }
 .drawer-header { height: var(--topbar-h); padding: 0 12px 0 18px; display: flex; align-items: center; justify-content: space-between; background: var(--vf-surface); border-bottom: 1px solid var(--vf-border); flex-shrink: 0; }
