@@ -505,6 +505,10 @@ async def sip_media(
                  greeting="своё" if greeting else None)
     # Что агент знает наизусть в этом звонке: владельцу видно, доехали ли
     # знания до модели, без чтения логов сервера.
+    if gpt_live and LIVE_VOICE_INSTRUCTIONS_MAX_CHARS < 20000:
+        call_log.add("kb", f"Лимит промпта голоса {LIVE_VOICE_INSTRUCTIONS_MAX_CHARS} символов мал (норма 24000): "
+                           f"знания агента не помещаются. Удалите переменную LIVE_VOICE_INSTRUCTIONS_MAX_CHARS "
+                           f"в Render — по умолчанию стоит нужное значение", level="warning")
     if kb_error:
         call_log.add("kb", f"Знания агента не подмешаны, звонок идёт без них: {kb_error}", level="error")
     elif agent_cfg is not None and kb_stats.get("dropped"):
@@ -526,6 +530,7 @@ async def sip_media(
                 ("материалы", kb_stats.get("files", 0)),
               ) if size) or "пусто — база знаний агента не заполнена"),
             prompt_chars=len(prompt),
+            prompt_limit=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None,
             trimmed="да" if kb_stats.get("trimmed") else None,
             context_clipped=kb_stats.get("context_clipped"),
         )

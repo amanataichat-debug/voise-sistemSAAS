@@ -100,6 +100,158 @@ def keywords_of(query: str, limit: int = 6) -> List[str]:
     return out[:limit]
 
 
+# ----------------------------------------------------------------------------
+# ПОИСК, УСТОЙЧИВЫЙ К ОКОНЧАНИЯМ И СИНОНИМАМ (ветка 2510-voice-live)
+# ----------------------------------------------------------------------------
+# Звонок 21.10.2026: клиент спрашивал про «тестовую сим-карту», в базе это есть, а агент
+# отвечал «нет». Прежний поиск искал подстроку целого слова: «тестовая» не находила
+# «тестовый», «подключения» — «подключение», «симка» — «сим-карту». К тому же в
+# Postgres уходили только 4 самых длинных слова запроса — а длинные слова как раз
+# чаще всего склоняются. Теперь: основа слова = его начало (подходит и русскому, и
+# кыргызскому — оба меняют слово с конца), совпадение только с начала слова, синонимы
+# из словаря ниже, учитываются ВСЕ значимые слова запроса.
+
+def stem(word: str) -> str:
+    """Основа слова: его начало. «подключения» / «подключить» → «подкл», «цена» / «цены» → «цен»."""
+    w = (word or "").lower().replace("ё", "е").strip("-")
+    n = len(w)
+    if n <= 3:
+        return w
+    if n == 4:
+        return w[:3]
+    if n <= 6:
+        return w[:4]
+    return w[:5]
+
+
+_SYNONYM_GROUPS = [
+    ["сим", "симка", "симки", "сим-карта", "сим-карты", "симкарта", "sim", "simka", "sim-карта", "esim"],
+    ["кп", "коммерческое", "коммерческий", "предложение", "предложения", "kp"],
+    ["цена", "цены", "цену", "стоимость", "стоимости", "тариф", "тарифы", "прайс", "расценки", "стоит",
+     "оплата", "платить"],
+    ["тест", "тестовый", "тестовая", "тестирование", "пробный", "пробная", "демо", "демонстрация", "trial",
+     "бесплатный", "бесплатно"],
+    ["каталог", "ассортимент", "товар", "товары", "продукция", "номенклатура", "позиции"],
+    ["договор", "контракт", "оферта", "соглашение"],
+    ["whatsapp", "ватсап", "вотсап", "ватсапп", "вацап", "воцап", "вотсапп"],
+    ["telegram", "телеграм", "телеграмм", "телега", "тг"],
+    ["instagram", "инстаграм", "инста", "инстаграмм"],
+    ["подключение", "подключить", "подключиться", "подключаться", "регистрация", "зарегистрироваться",
+     "запуск", "запустить", "начать", "старт"],
+    ["документ", "документы", "бумаги", "справки", "реквизиты"],
+    ["менеджер", "специалист", "оператор", "человек", "живой"],
+    ["звонок", "звонки", "звонить", "позвонить", "обзвон", "телефония"],
+]
+
+_SYN_INDEX: Dict[str, frozenset] = {}
+for _group in _SYNONYM_GROUPS:
+    _stems = frozenset(stem(_w) for _w in _group)
+    for _st in _stems:
+        _SYN_INDEX[_st] = _SYN_INDEX.get(_st, frozenset()) | _stems
+
+MAX_QUERY_TERMS = 10
+MAX_SQL_ALTS = 40
+
+
+def query_terms(query: str, limit: int = MAX_QUERY_TERMS) -> List[frozenset]:
+    """
+    Значимые слова запроса, каждое — набор допустимых основ (само слово + синонимы).
+    Длинный запрос модели («Условия подключения к Voksy AI: какие документы нужны…»)
+    даёт до 10 слов, а не 4: поиск не должен терять слова из конца фразы.
+    """
+    seen = set()
+    terms: List[frozenset] = []
+    words = [w.lower() for w in _WORD_RE.findall(query or "")]
+    for w in sorted((x for x in words if x not in _STOP_WORDS), key=len, reverse=True):
+        st = stem(w)
+        if not st or st in seen:
+            continue
+        seen.add(st)
+        terms.append(_SYN_INDEX.get(st, frozenset()) | {st})
+        if len(terms) >= limit:
+            break
+    return terms
+
+
+def _term_regexes(terms: List[frozenset]) -> list:
+    return [re.compile(r"(?<!\w)(?:" + "|".join(re.escape(a) for a in sorted(alts, key=len, reverse=True)) + ")")
+            for alts in terms]
+
+
+def _rank_row(row, rxs: list, query_norm: str):
+    """(оценка, сколько слов запроса нашлось, было ли попадание в заголовок/ключевые слова)."""
+    title = (row.title or "").lower()
+    keywords = (row.keywords or "").lower()
+    body = (row.body or "").lower()
+    score, matched, strong = 0.0, 0, False
+    for rx in rxs:
+        hit = False
+        if rx.search(title):
+            score += 3.0
+            hit = strong = True
+        if rx.search(keywords):
+            score += 2.0
+            hit = strong = True
+        n = len(rx.findall(body))
+        if n:
+            score += 1.0 + min(n - 1, 2) * 0.25
+            hit = True
+        if hit:
+            matched += 1
+    if query_norm and query_norm in title:
+        score += 10.0
+        strong = True
+    if query_norm and query_norm in keywords:
+        score += 6.0
+        strong = True
+    if rxs:
+        # Запись, в которой нашлись почти все слова запроса, важнее той, где одно
+        score *= 0.6 + matched / len(rxs)
+    if getattr(row, "kind", None) == "qa":
+        score *= 1.2  # вопрос-ответ — готовая формулировка, её выдаём охотнее
+    return score, matched, strong
+
+
+def rank_entries(rows: list, query: str, limit: int = 4):
+    """
+    Ранжирование записей под запрос. Возвращает (записи, качество):
+    «ok» — есть уверенные совпадения (слово в заголовке/ключевых словах или ≥2 слов запроса),
+    «weak» — только одиночное упоминание в тексте (идём дальше, в документы),
+    «none» — не нашлось.
+    """
+    terms = query_terms(query)
+    query_norm = normalize(query)
+    if not terms:
+        return [], "none"
+    rxs = _term_regexes(terms)
+    ranked = []
+    for row in rows:
+        score, matched, strong = _rank_row(row, rxs, query_norm)
+        if score > 0:
+            ranked.append((score, matched, strong, row))
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    good = [r for sc, m, st, r in ranked if st or m >= 2]
+    if good:
+        return good[:limit], "ok"
+    if ranked:
+        return [r for _, _, _, r in ranked[:2]], "weak"
+    return [], "none"
+
+
+def _candidate_filter(terms: List[frozenset]):
+    """SQL-условие «в записи есть хоть одна основа любого слова запроса» (подстрока; точнее отберёт rank)."""
+    alts = sorted({a for t in terms for a in t if len(a) >= 2}, key=len, reverse=True)[:MAX_SQL_ALTS]
+    patterns = []
+    for a in alts:
+        like = f"%{a}%"
+        patterns += [
+            AgentKnowledgeEntry.title.ilike(like),
+            AgentKnowledgeEntry.keywords.ilike(like),
+            AgentKnowledgeEntry.body.ilike(like),
+        ]
+    return or_(*patterns) if patterns else None
+
+
 # ============================================================================
 # СЛОЙ 1: ЗНАНИЯ В ПРОМПТЕ
 # ============================================================================
@@ -189,33 +341,31 @@ def build_prompt_block(db, agent_config_id, budget: int = KB_PROMPT_CHAR_BUDGET)
 # СЛОЙ 2: БЫСТРЫЙ ПОИСК В POSTGRES
 # ============================================================================
 
-def _score(row: AgentKnowledgeEntry, words: List[str], query_norm: str) -> float:
-    """
-    Насколько запись подходит запросу. Простая и предсказуемая оценка:
-    совпадение в заголовке весит больше, чем в тексте, точная фраза — больше
-    отдельных слов. Для базы в сотни записей этого достаточно, зато считается
-    мгновенно и объяснимо для владельца.
-    """
-    title = (row.title or "").lower()
-    keywords = (row.keywords or "").lower()
-    body = (row.body or "").lower()
+def search_entries_ranked(
+    db,
+    agent_config_id,
+    query: str,
+    kinds: Optional[tuple] = None,
+    limit: int = 4,
+):
+    """Быстрый поиск по записям базы (без эмбеддингов). Возвращает (записи, качество: ok/weak/none)."""
+    terms = query_terms(query)
+    if not terms:
+        return [], "none"
 
-    score = 0.0
-    if query_norm and query_norm in title:
-        score += 10.0
-    if query_norm and query_norm in keywords:
-        score += 6.0
-    for w in words:
-        if w in title:
-            score += 3.0
-        if w in keywords:
-            score += 2.0
-        if w in body:
-            score += 1.0
-    # Вопрос-ответ — готовая формулировка, её выдаём охотнее.
-    if row.kind == "qa":
-        score *= 1.2
-    return score
+    q = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent_config_id,
+        AgentKnowledgeEntry.is_active.is_(True),
+    )
+    if kinds:
+        q = q.filter(AgentKnowledgeEntry.kind.in_(kinds))
+    cond = _candidate_filter(terms)
+    if cond is not None:
+        q = q.filter(cond)
+
+    # Кандидатов отбирает SQL по подстроке основы, точно ранжирует Python: база одного
+    # агента — сотни строк, это дешевле и гибче, чем SQL-рейтинг.
+    return rank_entries(q.limit(200).all(), query, limit)
 
 
 def search_entries(
@@ -225,37 +375,9 @@ def search_entries(
     kinds: Optional[tuple] = None,
     limit: int = 4,
 ) -> List[AgentKnowledgeEntry]:
-    """Быстрый поиск по записям базы (без эмбеддингов)."""
-    words = keywords_of(query)
-    query_norm = normalize(query)
-    if not words and not query_norm:
-        return []
-
-    q = db.query(AgentKnowledgeEntry).filter(
-        AgentKnowledgeEntry.agent_config_id == agent_config_id,
-        AgentKnowledgeEntry.is_active.is_(True),
-    )
-    if kinds:
-        q = q.filter(AgentKnowledgeEntry.kind.in_(kinds))
-
-    # Отбираем кандидатов по любому значимому слову, ранжируем уже в Python:
-    # база одного агента — сотни строк, это дешевле и гибче, чем SQL-рейтинг.
-    patterns = []
-    for w in words[:4]:
-        like = f"%{w}%"
-        patterns += [
-            AgentKnowledgeEntry.title.ilike(like),
-            AgentKnowledgeEntry.keywords.ilike(like),
-            AgentKnowledgeEntry.body.ilike(like),
-        ]
-    if patterns:
-        q = q.filter(or_(*patterns))
-
-    rows = q.limit(60).all()
-    scored = [(r, _score(r, words, query_norm)) for r in rows]
-    scored = [(r, s) for r, s in scored if s > 0]
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return [r for r, _ in scored[:limit]]
+    """Записи базы под запрос (совместимая обёртка: только список)."""
+    rows, _ = search_entries_ranked(db, agent_config_id, query, kinds, limit)
+    return rows
 
 
 def search_products(
@@ -280,24 +402,20 @@ def search_products(
     if min_price is not None:
         q = q.filter(AgentKnowledgeEntry.price >= min_price)
 
-    words = keywords_of(query)
-    if words:
-        patterns = []
-        for w in words[:4]:
-            like = f"%{w}%"
-            patterns += [
-                AgentKnowledgeEntry.title.ilike(like),
-                AgentKnowledgeEntry.keywords.ilike(like),
-                AgentKnowledgeEntry.body.ilike(like),
-            ]
-        q = q.filter(or_(*patterns))
+    terms = query_terms(query)
+    if terms:
+        cond = _candidate_filter(terms)
+        if cond is not None:
+            q = q.filter(cond)
 
-    rows = q.limit(60).all()
-    if not words:
+    rows = q.limit(200).all()
+    if not terms:
         rows.sort(key=lambda r: (r.price if r.price is not None else 0))
         return rows[:limit]
+    rxs = _term_regexes(terms)
     query_norm = normalize(query)
-    scored = [(r, _score(r, words, query_norm)) for r in rows]
+    scored = [(r, _rank_row(r, rxs, query_norm)[0]) for r in rows]
+    scored = [(r, sc) for r, sc in scored if sc > 0]
     scored.sort(key=lambda pair: pair[1], reverse=True)
     return [r for r, _ in scored[:limit]]
 
@@ -352,7 +470,7 @@ def _answer_from_entries(db, agent_config_id, query: str, top_k: int) -> Optiona
     Синхронный — вызывается через asyncio.to_thread, чтобы на звонке не
     задерживать звук (сетевой задержки здесь нет, но commit может ждать диск).
     """
-    rows = search_entries(db, agent_config_id, query, limit=top_k)
+    rows, quality = search_entries_ranked(db, agent_config_id, query, limit=top_k)
     if not rows:
         return None
     mark_hits(db, rows)
@@ -360,11 +478,16 @@ def _answer_from_entries(db, agent_config_id, query: str, top_k: int) -> Optiona
         db.commit()
     except Exception:
         db.rollback()
-    return {
+    out = {
         "ok": True, "query": query, "source": "knowledge_base",
         "total": len(rows),
         "results": [entry_for_agent(r) for r in rows],
     }
+    if quality == "weak":
+        out["weak"] = True
+        out["note"] = ("Совпадение неточное — слова запроса встретились только вскользь. Проверь, что это "
+                       "действительно про вопрос клиента, иначе скажи, что уточнишь.")
+    return out
 
 
 async def _answer_from_documents(namespace: str, query: str, top_k: int) -> Optional[Dict[str, Any]]:
@@ -432,12 +555,18 @@ async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: 
         except Exception as e:
             logger.warning(f"[KB] быстрый поиск не сработал: {e}")
             fast = None
-        if fast:
+        # Уверенное совпадение отдаём сразу; слабое (слово встретилось вскользь) не должно
+        # закрывать дорогу документам — сначала пробуем их.
+        if fast and not fast.get("weak"):
             return fast
 
     docs = await _answer_from_documents(kb_namespace or "", query, top_k)
     if docs is not None:
+        if fast:
+            docs["related"] = fast["results"]
         return docs
+    if fast:
+        return fast
 
     if agent_config_id:
         def _gap():

@@ -708,7 +708,7 @@ class OpenAILiveClient:
         self._delegations.pop(delegation_id, None)
         await self._send({"type": "response.create", "event_id": _short_id("cont_")})
 
-    async def close(self, timeout: float = 15.0) -> Optional[Dict[str, Any]]:
+    async def close(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         """
         session.close и ожидание session.closed (итоговый usage). Если
         receive_events() ещё крутится в другой таске, session.closed придёт

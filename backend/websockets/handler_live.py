@@ -226,6 +226,25 @@ async def _save_dialog(assistant_id: str, session_id: str, pairs: List[Dict[str,
                        duration: Optional[float], record_id: Optional[str], transport: str,
                        conversation_model: Any = Conversation) -> int:
     """
+    Записать диалог (в отдельном потоке со своим циклом событий).
+
+    Запись 28 пар подряд — это ~1 секунда на пару синхронной работы с БД. Раньше она шла
+    прямо в основном цикле воркера: звонок 21.10.2026 после положенной трубки «висел» ещё
+    ~27 секунд, и всё это время замирал звук у ВСЕХ остальных звонков на этом воркере.
+    В ConversationService.save_conversation нет ни одного await, поэтому безопасно
+    выполнять его в потоке через asyncio.run.
+    """
+    if not pairs:
+        return 0
+    return await asyncio.to_thread(
+        lambda: asyncio.run(_save_dialog_impl(
+            assistant_id, session_id, pairs, duration, record_id, transport, conversation_model)))
+
+
+async def _save_dialog_impl(assistant_id: str, session_id: str, pairs: List[Dict[str, str]],
+                            duration: Optional[float], record_id: Optional[str], transport: str,
+                            conversation_model: Any = Conversation) -> int:
+    """
     Записать диалог отдельной сессией БД. Первая пара заполняет пустую запись,
     созданную клиентом на старте (к ней привязаны function_logs), остальные —
     новые записи. Возвращает число сохранённых пар.
@@ -342,6 +361,10 @@ class LiveVoiceSession:
         # отработали (каждое — один раз за звонок), направление звонка (автоответчик — только исходящие)
         self.decisions = 0
         self.repeats: Dict[str, int] = {}
+        # Данные для автоматической диагностики звонка (_log_diagnostics)
+        self.function_times: List[tuple] = []     # (имя функции, секунды)
+        self.voiced_bytes = 0                     # сколько реально прозвучало речи ассистента
+        self.close_seconds: Optional[float] = None  # сколько заняло закрытие сессии GPT-Live
         self._mood = "neutral"
         self._mood_hint_at = 0.0
         self._mood_seen = ("neutral", 0)  # последнее настроение от Decisions и сколько раз подряд
@@ -402,6 +425,7 @@ class LiveVoiceSession:
             await self.emit({"type": "response.audio.delta", "delta": delta_b64})
             return
         self._last_audio_at = time.time()
+        self.voiced_bytes += len(delta_b64) * 3 // 4
         if not self.assistant_speaking:
             self.assistant_speaking = True
             if self.call_log:
@@ -511,6 +535,64 @@ class LiveVoiceSession:
                     self.repeats[name] = self.repeats.get(name, 0) + found
         self._log_buf[role] = ""
 
+    def _log_diagnostics(self, elapsed: float) -> None:
+        """
+        Автоматический «обход» звонка: итоговая диагностика одной пачкой строк в журнале.
+        Владельцу не нужно читать весь журнал, чтобы понять, был ли звонок здоровым:
+        задержки ответов, монологи, медленные функции, ошибки, повторы слов, закрытие сессии.
+        """
+        if not self.call_log:
+            return
+        issues: List[str] = []
+        info: List[str] = []
+
+        lat = self.call_log.latencies_ms
+        if lat:
+            slow = [x for x in lat if x > 3000]
+            info.append(f"ответов с замером задержки {len(lat)}: средняя {int(sum(lat) / len(lat))} мс, "
+                        f"максимум {max(lat)} мс")
+            if slow:
+                issues.append(f"{len(slow)} из {len(lat)} ответов медленнее 3 с (максимум {max(lat)} мс)")
+        else:
+            info.append("задержку ответов измерить не удалось (клиент не говорил или транскрипт не пришёл)")
+
+        if elapsed > 20 and self.voiced_bytes:
+            talk = self.voiced_bytes / (self.client.io_rate * 2)
+            share = talk / elapsed
+            info.append(f"агент говорил {int(talk)} с из {int(elapsed)} с ({int(share * 100)}%)")
+            if share > 0.6:
+                issues.append(f"агент говорил {int(share * 100)}% времени — это монолог, а не диалог (норма до 55%)")
+
+        if self.function_times:
+            name, secs = max(self.function_times, key=lambda x: x[1])
+            info.append(f"функций {len(self.function_times)}, самая долгая — {name} {secs:.1f} с")
+            if secs >= 3.0:
+                issues.append(f"функция {name} выполнялась {secs:.1f} с — клиент слышал паузу")
+            same = {}
+            for n, _ in self.function_times:
+                same[n] = same.get(n, 0) + 1
+            for n, c in same.items():
+                if c >= 3:
+                    issues.append(f"функция {n} вызвана {c} раза — проверьте, что ответ не лежит в промпте")
+
+        if self.repeats and any(v >= REPEAT_WARN_AT for v in self.repeats.values()):
+            top = max(self.repeats.items(), key=lambda x: x[1])
+            issues.append(f"слово-паразит «{top[0]}» повторено {top[1]} раз")
+
+        if self.errors:
+            issues.append(f"ошибок GPT-Live: {self.errors}")
+        if self.call_log.function_errors:
+            issues.append(f"функций с ошибкой: {self.call_log.function_errors}")
+        if self.close_seconds is not None and self.close_seconds > 3.0:
+            issues.append(f"закрытие сессии заняло {self.close_seconds:.1f} с (итоговый usage не пришёл)")
+
+        if issues:
+            for text in issues:
+                self.call_log.add("diag", f"Диагностика: {text}", level="warning")
+        else:
+            self.call_log.add("diag", "Диагностика: замечаний нет")
+        self.call_log.add("diag", "Итого по звонку: " + "; ".join(info))
+
     def _log_repeat_summary(self) -> None:
         """Одна строка в журнал звонка: какие слова ассистент повторял и сколько раз."""
         if not self.call_log or not self.repeats:
@@ -523,10 +605,11 @@ class LiveVoiceSession:
     # ------------------------------------------------------------------ Live events
     async def handle_live_events(self) -> None:
         try:
+            # Читаем до конца потока, даже когда звонок уже остановлен: session.closed (итоговый
+            # usage) приходит ПОСЛЕ session.close, и если здесь выйти раньше, client.close() ждёт его
+            # весь таймаут впустую — на звонке 21.10.2026 это были лишние 15 секунд на каждом звонке
             async for event in self.client.receive_events():
                 await self._on_live_event(event)
-                if self.stop_event.is_set():
-                    break
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -536,6 +619,10 @@ class LiveVoiceSession:
 
     async def _on_live_event(self, event: Dict[str, Any]) -> None:
         etype = event.get("type", "")
+
+        # Звонок уже остановлен, ждём только закрытия сессии: звук и транскрипт клиенту не нужны
+        if self.stop_event.is_set() and etype not in ("session.closed", "session.usage.updated", "error"):
+            return
 
         if etype == "session.output_audio.delta":
             await self._on_audio_delta(self.client.decode_output_b64(event.get("delta") or ""))
@@ -735,6 +822,8 @@ class LiveVoiceSession:
             if failed:
                 self.call_log.function_errors += 1
             secs = data.get("execution_time")
+            if isinstance(secs, (int, float)):
+                self.function_times.append((name or "?", float(secs)))
             self.call_log.add("function", f"Функция {name} {'вернула ошибку' if failed else 'выполнена'}"
                               + (f" за {secs:.2f} с" if isinstance(secs, (int, float)) else ""),
                               level="warning" if failed else "info", result=text[:500] or None)
@@ -846,10 +935,12 @@ class LiveVoiceSession:
             self._log_repeat_summary()
             # 1. Закрыть сессию у OpenAI (дождаться session.closed с итоговым usage)
             closed = None
+            close_started = time.time()
             try:
                 closed = await self.client.close()
             except Exception as exc:
                 _log(f"client.close error: {exc}", "WARNING")
+            self.close_seconds = time.time() - close_started
             for task in (live_task, watch_task, client_task, stop_task, *self._tasks):
                 if not task.done():
                     task.cancel()
@@ -894,6 +985,7 @@ class LiveVoiceSession:
                     f"озвучено {self.audio_bytes_out / (self.client.io_rate * 2):.1f} с, обращений к бэкенду {self.delegations}, "
                     f"реплик в диалоге {len(pairs)}",
                 )
+                self._log_diagnostics(elapsed)
                 if self._owns_call_log:
                     await self.call_log.save()
             await self._send_webhook()
