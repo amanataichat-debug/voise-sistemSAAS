@@ -131,31 +131,30 @@
         <button class="icon-btn panel-close" type="button" data-panel="left" title="Свернуть панель"><i class="fas fa-chevron-left"></i></button>
       </div>
       <div class="panel-scroll">
+        <!-- Карточки-цифры: клик по цифре/подписи = переход на соответствующую вкладку -->
         <div class="stats-row">
-          <div class="stat-card">
+          <div class="stat-card stat-clickable" onclick="switchTab('calls')" title="Перейти к звонкам">
             <div class="stat-icon blue"><i class="fas fa-phone-volume"></i></div>
             <div class="stat-num" id="stat-calls">—</div>
             <div class="stat-label">Всего звонков <span class="hint" tabindex="0" data-hint="Все разговоры агента: исходящие по задачам и входящие на его номер."><i class="far fa-circle-question"></i></span></div>
-            <span class="stat-go" onclick="switchTab('calls')">Все звонки →</span>
           </div>
-          <div class="stat-card">
+          <div class="stat-card stat-clickable" onclick="switchTab('clients')" title="Перейти к клиентам">
             <div class="stat-icon green"><i class="fas fa-users"></i></div>
             <div class="stat-num" id="stat-contacts">—</div>
-            <div class="stat-label">Контакты <span class="hint hint-l" tabindex="0" data-hint="База контактов этого агента. «Воронка» показывает стадии, «Импорт» загружает список из файла."><i class="far fa-circle-question"></i></span></div>
-            <div class="stat-links">
-              <span class="stat-go" onclick="switchTab('pipeline')">Воронка</span>
-              <span class="stat-go" onclick="switchTab('clients')">Все</span>
-              <span class="stat-go" onclick="openAddContactModal()">Добавить</span>
+            <div class="stat-label">Контакты <span class="hint hint-l" tabindex="0" data-hint="База контактов агента. Все действия со списком и воронкой — во вкладках сверху."><i class="far fa-circle-question"></i></span></div>
+            <!-- Быстрые действия (не дублируют вкладки, это модалки) -->
+            <div class="stat-links" onclick="event.stopPropagation()">
+              <span class="stat-go" onclick="openAddContactModal()">+ Добавить</span>
               <span class="stat-go" onclick="openImportModal()">Импорт</span>
             </div>
           </div>
         </div>
 
+        <!-- Быстрые просмотры: ссылки «→ вкладка» убраны (есть сверху) -->
         <div class="card">
           <div class="card-head">
             <div class="card-head-title"><i class="far fa-calendar-check"></i> Ближайшие задачи</div>
             <span class="hint" tabindex="0" data-hint="Что агент собирается сделать: звонки и сообщения, поставленные вами в чате или им самим после разговоров."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="switchTab('tasks')">Календарь →</span>
           </div>
           <div id="tasks-list"><div class="empty">Нет задач</div></div>
         </div>
@@ -164,7 +163,6 @@
           <div class="card-head">
             <div class="card-head-title"><i class="fas fa-clock-rotate-left"></i> Последние звонки</div>
             <span class="hint" tabindex="0" data-hint="Итоги последних разговоров: транскрипт, длительность и решение агента по каждому."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="switchTab('calls')">Все звонки →</span>
           </div>
           <div id="recent-calls"><div class="empty">Нет звонков</div></div>
         </div>
@@ -539,6 +537,19 @@
   </div>
 </div>
 
+<!-- VIEW: Аналитика (вкладка «Аналитика» в tab-mode превращает её в full-screen страницу).
+     Структура та же, что у модалок: .modal-overlay > .modal > .modal-header + .modal-body.
+     Данные рисует agent/analytics.js (нет chart.js — обычные div-бары). -->
+<div class="modal-overlay hidden" id="analytics-view-overlay">
+  <div class="modal modal-pipeline">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-chart-column"></i> Аналитика агента</div>
+      <button class="modal-close" onclick="closeAnalyticsView()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" id="analytics-view-body"><div class="empty">Загрузка…</div></div>
+  </div>
+</div>
+
 <!-- MODAL: Воронка -->
 <div class="modal-overlay hidden" id="pipeline-modal-overlay">
   <div class="modal modal-pipeline">
@@ -733,6 +744,7 @@
 <script defer src="/static/agent/voice-messages.js"></script>
 <script defer src="/static/agent/branding.js"></script>
 <script defer src="/static/agent/tabs.js"></script>
+<script defer src="/static/agent/analytics.js"></script>
 <script defer src="/static/agent/init.js"></script>
 </body>
 </html>

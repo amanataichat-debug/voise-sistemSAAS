@@ -263,6 +263,8 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-shrink: 0; }
 .stat-card { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 12px; padding: 10px 12px; box-shadow: var(--vf-shadow-1); transition: box-shadow var(--dur), transform var(--dur-slow) var(--ease-spring); }
 .stat-card:hover { box-shadow: var(--vf-shadow-2); transform: translateY(-1px); }
+.stat-card.stat-clickable { cursor: pointer; }
+.stat-card.stat-clickable:hover { border-color: var(--vf-accent-soft); }
 .stat-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 11px; margin-bottom: 6px; }
 .stat-icon .ic { width: 14px; height: 14px; }
 .stat-icon.blue { background: var(--vf-accent-soft); color: var(--vf-accent); }
@@ -534,6 +536,12 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .atab i { font-size: 13px; opacity: .9; }
 .atab.is-active { background: var(--vf-accent-soft); color: var(--vf-accent); font-weight: 600; }
 .atab.is-active i { opacity: 1; }
+.atab .acount {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px;
+  border-radius: 9px; background: var(--vf-surface-3); color: var(--vf-text-3); font-size: 11px; font-weight: 600; margin-left: 2px;
+}
+.atab.is-active .acount { background: var(--vf-accent); color: #fff; }
+.atab .acount.is-zero { display: none; }
 @media (max-width: 720px){
   .agent-tabs { padding: 4px 6px; }
   .atab { padding: 7px 10px; font-size: 12.5px; }
@@ -553,34 +561,64 @@ body.tab-mode .main-layout { display: none !important; }
  * Отступ сверху = высота топбара (--topbar-h) + высота полосы вкладок
  * (--agent-tabs-h) + граница. Вложенные модалки (напр. «карточка контакта»
  * внутри «Клиентов») не трогаем — они остаются обычными модалками. */
-body.tab-mode.tab-clients  #contacts-list-modal-overlay,
-body.tab-mode.tab-pipeline #pipeline-modal-overlay,
-body.tab-mode.tab-calls    #calls-modal-overlay,
-body.tab-mode.tab-tasks    #tasks-cal-modal-overlay {
+body.tab-mode.tab-clients   #contacts-list-modal-overlay,
+body.tab-mode.tab-pipeline  #pipeline-modal-overlay,
+body.tab-mode.tab-calls     #calls-modal-overlay,
+body.tab-mode.tab-tasks     #tasks-cal-modal-overlay,
+body.tab-mode.tab-analytics #analytics-view-overlay {
   position: fixed; inset: calc(var(--topbar-h) + var(--agent-tabs-h) + 1px) 0 0 0;
   padding: 0; background: var(--vf-surface-2); z-index: 15; animation: none;
 }
-body.tab-mode.tab-clients  #contacts-list-modal-overlay > .modal,
-body.tab-mode.tab-pipeline #pipeline-modal-overlay > .modal,
-body.tab-mode.tab-calls    #calls-modal-overlay > .modal,
-body.tab-mode.tab-tasks    #tasks-cal-modal-overlay > .modal {
+body.tab-mode.tab-clients   #contacts-list-modal-overlay > .modal,
+body.tab-mode.tab-pipeline  #pipeline-modal-overlay > .modal,
+body.tab-mode.tab-calls     #calls-modal-overlay > .modal,
+body.tab-mode.tab-tasks     #tasks-cal-modal-overlay > .modal,
+body.tab-mode.tab-analytics #analytics-view-overlay > .modal {
   max-width: 100%; max-height: 100%; width: 100%; height: 100%;
   border: 0; border-radius: 0; box-shadow: none; animation: none; background: var(--vf-surface-2);
 }
 /* В page-mode у модалки прячем крестик и footer «Закрыть» — выход через вкладки */
-body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-close,
-body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-close,
-body.tab-mode.tab-calls    #calls-modal-overlay .modal-close,
-body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-close { display: none; }
-body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-footer,
-body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-footer,
-body.tab-mode.tab-calls    #calls-modal-overlay .modal-footer,
-body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-footer { display: none; }
+body.tab-mode.tab-clients   #contacts-list-modal-overlay .modal-close,
+body.tab-mode.tab-pipeline  #pipeline-modal-overlay .modal-close,
+body.tab-mode.tab-calls     #calls-modal-overlay .modal-close,
+body.tab-mode.tab-tasks     #tasks-cal-modal-overlay .modal-close,
+body.tab-mode.tab-analytics #analytics-view-overlay .modal-close { display: none; }
+body.tab-mode.tab-clients   #contacts-list-modal-overlay .modal-footer,
+body.tab-mode.tab-pipeline  #pipeline-modal-overlay .modal-footer,
+body.tab-mode.tab-calls     #calls-modal-overlay .modal-footer,
+body.tab-mode.tab-tasks     #tasks-cal-modal-overlay .modal-footer,
+body.tab-mode.tab-analytics #analytics-view-overlay .modal-footer { display: none; }
 /* Контент модалки в page-mode — на всю высоту и собственный скролл */
-body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-body,
-body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-body,
-body.tab-mode.tab-calls    #calls-modal-overlay .modal-body,
-body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-body { flex: 1; overflow: auto; padding: 18px 22px; }
+body.tab-mode.tab-clients   #contacts-list-modal-overlay .modal-body,
+body.tab-mode.tab-pipeline  #pipeline-modal-overlay .modal-body,
+body.tab-mode.tab-calls     #calls-modal-overlay .modal-body,
+body.tab-mode.tab-tasks     #tasks-cal-modal-overlay .modal-body,
+body.tab-mode.tab-analytics #analytics-view-overlay .modal-body { flex: 1; overflow: auto; padding: 18px 22px; }
+
+/* ── Аналитика: сетка карточек, бары без chart.js ────────────────────── */
+.alx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.alx-card { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--vf-shadow-1); display: flex; flex-direction: column; gap: 8px; }
+.alx-card h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--vf-text-3); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 8px; }
+.alx-card h4 i { font-size: 12px; opacity: .7; }
+.alx-big { font-size: 32px; font-weight: 700; color: var(--vf-text); line-height: 1.1; }
+.alx-sub { font-size: 12.5px; color: var(--vf-text-3); }
+.alx-sub b { color: var(--vf-text); font-weight: 600; }
+.alx-bars { display: flex; flex-direction: column; gap: 10px; }
+.alx-bar { display: flex; flex-direction: column; gap: 5px; }
+.alx-bar-head { display: flex; justify-content: space-between; font-size: 12.5px; }
+.alx-bar-label { color: var(--vf-text-3); }
+.alx-bar-value { color: var(--vf-text); font-weight: 600; }
+.alx-bar-track { height: 8px; border-radius: 5px; background: var(--vf-surface-2); overflow: hidden; }
+.alx-bar-fill { height: 100%; border-radius: 5px; transition: width .4s ease; }
+.alx-cols { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding-top: 12px; }
+.alx-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.alx-col-bar { width: 100%; max-width: 36px; background: linear-gradient(180deg, var(--vf-accent) 0%, var(--vf-accent-hover) 100%); border-radius: 5px 5px 2px 2px; min-height: 2px; transition: height .4s ease; }
+.alx-col-label { font-size: 10.5px; color: var(--vf-text-4); text-align: center; }
+.alx-col-value { font-size: 11px; color: var(--vf-text-3); font-weight: 600; }
+.alx-empty { padding: 40px 0; text-align: center; color: var(--vf-text-4); font-size: 13px; }
+.alx-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.alx-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.alx-head .alx-hint { font-size: 12.5px; color: var(--vf-text-3); }
 
 /* ── Карточка клиента — боковой drawer справа ──────────────────────────── *
  * Было: модалка-коробка посередине экрана. Для долгой работы с клиентом

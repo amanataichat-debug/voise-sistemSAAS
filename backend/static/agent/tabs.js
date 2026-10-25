@@ -1,8 +1,8 @@
 /* ============================================================================
- * agent/tabs.js — Полоса вкладок (Диалог · Клиенты · Воронка · Звонки · Задачи)
+ * agent/tabs.js — Полоса вкладок (Диалог · Клиенты · Воронка · Звонки · Задачи · Аналитика)
  * Часть страницы /static/agent.html (Voksy AI Agent).
  * Классический скрипт (НЕ ES-модуль): всё, что нужно разметке, выставлено
- * на window (switchTab).
+ * на window (switchTab, refreshTabCounts).
  *
  * Как работает:
  * - По клику на вкладку вешаем на <body> класс .tab-mode + .tab-<id>.
@@ -11,16 +11,19 @@
  * - Содержимое вкладок — те же модалки, что открывались из левой панели
  *   (contacts-list / pipeline / calls / tasks-cal). Код загрузки не трогаем.
  * - «Диалог» ничего не открывает, просто возвращает в чат.
+ * - «Аналитика» показывает отдельный блок (#analytics-view, agent/analytics.js).
  * - Esc или крестик в заголовке модалки → возврат в чат.
+ * - Счётчики на вкладках обновляются из /api/agent/stats.
  * ========================================================================== */
 
 (function(){
   const TABS = [
-    { id: 'chat',     label: 'Диалог',   icon: 'fas fa-comments',       modal: null,                           open: null },
-    { id: 'clients',  label: 'Клиенты',  icon: 'fas fa-users',          modal: 'contacts-list-modal-overlay',  open: 'openContactsListModal' },
-    { id: 'pipeline', label: 'Воронка',  icon: 'fas fa-stream',         modal: 'pipeline-modal-overlay',       open: 'openPipelineModal' },
-    { id: 'calls',    label: 'Звонки',   icon: 'fas fa-phone-volume',   modal: 'calls-modal-overlay',          open: 'openCallsModal' },
-    { id: 'tasks',    label: 'Задачи',   icon: 'far fa-calendar-check', modal: 'tasks-cal-modal-overlay',      open: 'openTasksCalendar' },
+    { id: 'chat',      label: 'Диалог',    icon: 'fas fa-comments',       modal: null,                          open: null,                   countKey: null },
+    { id: 'clients',   label: 'Клиенты',   icon: 'fas fa-users',          modal: 'contacts-list-modal-overlay', open: 'openContactsListModal', countKey: 'total_contacts' },
+    { id: 'pipeline',  label: 'Воронка',   icon: 'fas fa-stream',         modal: 'pipeline-modal-overlay',      open: 'openPipelineModal',    countKey: 'active_contacts' },
+    { id: 'calls',     label: 'Звонки',    icon: 'fas fa-phone-volume',   modal: 'calls-modal-overlay',         open: 'openCallsModal',       countKey: 'total_calls' },
+    { id: 'tasks',     label: 'Задачи',    icon: 'far fa-calendar-check', modal: 'tasks-cal-modal-overlay',     open: 'openTasksCalendar',    countKey: 'scheduled_tasks' },
+    { id: 'analytics', label: 'Аналитика', icon: 'fas fa-chart-column',   modal: 'analytics-view-overlay',      open: 'openAnalyticsView',    countKey: null },
   ];
   const TAB_IDS = TABS.map(t => t.id);
   const TAB_BY_ID = Object.fromEntries(TABS.map(t => [t.id, t]));
@@ -32,6 +35,7 @@
     host.innerHTML = TABS.map(t => `
       <button class="atab" data-tab="${t.id}" type="button" onclick="switchTab('${t.id}')">
         <i class="${t.icon}"></i><span>${t.label}</span>
+        ${t.countKey ? `<span class="acount is-zero" data-count="${t.id}">0</span>` : ''}
       </button>
     `).join('');
     highlight(currentTab);
@@ -76,6 +80,26 @@
       }
     }
     highlight(id);
+    // Освежаем счётчики — особенно если возвращаемся на «Диалог» после работы
+    refreshTabCounts();
+  };
+
+  // ── Счётчики на вкладках: /api/agent/stats → acount бейджи ─────────────
+  window.refreshTabCounts = async function refreshTabCounts(){
+    try{
+      if(typeof apiFetch !== 'function') return;
+      const r = await apiFetch(API + '/stats');
+      if(!r || r.status !== 200) return;
+      const s = await r.json();
+      TABS.forEach(t => {
+        if(!t.countKey) return;
+        const el = document.querySelector(`[data-count="${t.id}"]`);
+        if(!el) return;
+        const n = Number(s[t.countKey] || 0);
+        el.textContent = n;
+        el.classList.toggle('is-zero', n === 0);
+      });
+    }catch(e){ /* silent */ }
   };
 
   // Если модалку закрыли извне (крестиком/кнопкой "Закрыть") — возврат в чат
@@ -107,5 +131,10 @@
     watchModalClose();
     document.addEventListener('keydown', onEsc);
     document.body.classList.add('tab-chat');
+    // Первый вызов — после того как кабинет точно виден (showDashboard уже
+    // прошёл loadStats, но от нашей точки это может быть чуть позже).
+    setTimeout(() => window.refreshTabCounts(), 1200);
+    // Периодически обновлять, чтобы цифры жили (минута).
+    setInterval(() => window.refreshTabCounts(), 60000);
   });
 })();
