@@ -88,9 +88,16 @@ REPEAT_WORDS = {
     "угу": re.compile(r"\bугу\b|\bага\b", re.IGNORECASE),
     "хорошо": re.compile(r"\bхорошо\b", re.IGNORECASE),
     "ясно": re.compile(r"\bясно\b", re.IGNORECASE),
-    "сейчас уточню/посмотрю": re.compile(r"\bсейчас\s+(?:уточню|посмотрю|прикин\w+|проверю)\b", re.IGNORECASE),
+    "сейчас уточню/посмотрю": re.compile(
+        r"\bсейчас\s+(?:уточню|посмотрю|прикин\w+|проверю)\b|\bдайте\s+(?:я\s+)?(?:уточню|проверю)\b",
+        re.IGNORECASE),
+    "түшүндүм/түшүнүктүү": re.compile(r"\bтүшүнд[үу]м\b|\bтүшүнүктүү\b", re.IGNORECASE),
 }
 REPEAT_WARN_AT = 3
+
+# Защита от преждевременного hangup_call (звонок 25.10.2026): модель вызывала завершение, пока клиент
+# ещё говорил. Без прощания и пока клиент не молчит дольше этого порога — завершение отклоняем.
+HANGUP_GUARD_SILENCE_SEC = 6.0
 
 # Native Decisions (триггер CALL_DECISION_TRIGGER): реакции на намерение и настроение клиента
 DECISION_TRIGGERS = bool(getattr(settings, "LIVE_DECISION_TRIGGERS", True))
@@ -112,8 +119,12 @@ MOOD_HINTS = {
                 "фразой. Не переспрашивай, понял ли он, и не уточняй, что он имел в виду.",
 }
 INTENT_HINTS = {
-    "call_back_later": "Клиент сейчас занят. Не продолжай рассказ: коротко уточни, когда ему удобно "
-                       "поговорить, и вежливо попрощайся.",
+    # Звонок 25.10.2026 (сессия 043c4070): здесь стояло «…и вежливо попрощайся» — модель сразу вызвала
+    # hangup_call, пока клиент ещё называл время и номер Telegram, и связь оборвалась на полуслове.
+    "call_back_later": "Клиент сейчас занят или просит связаться позже. Не продолжай рассказ: уточни удобное "
+                       "время и канал (звонок или сообщение), подтверди договорённость одной фразой "
+                       "(«Договорились, напишу вам в Telegram в десять») и дождись, пока клиент сам "
+                       "попрощается. Не завершай звонок сам, пока клиент не закончил говорить.",
     "wants_human": "Клиент просит живого человека. Не отказывай и не спорь: скажи, что передашь его "
                    "просьбу менеджеру, и уточни, когда ему удобно, чтобы перезвонили.",
 }
@@ -361,6 +372,7 @@ class LiveVoiceSession:
         # отработали (каждое — один раз за звонок), направление звонка (автоответчик — только исходящие)
         self.decisions = 0
         self.repeats: Dict[str, int] = {}
+        self.hangup_rejections = 0
         # Данные для автоматической диагностики звонка (_log_diagnostics)
         self.function_times: List[tuple] = []     # (имя функции, секунды)
         self.voiced_bytes = 0                     # сколько реально прозвучало речи ассистента
@@ -752,6 +764,41 @@ class LiveVoiceSession:
                     self.call_log.add("session", f"Настроение клиента: {mood} (Decisions) — подсказка голосовой модели")
                 await self.client.append_thinking(MOOD_HINTS[mood])
 
+    def _hangup_refusal(self, raw_arguments: Any) -> Optional[str]:
+        """
+        Можно ли сейчас класть трубку. None — можно; строка — почему нельзя (её прочтёт модель).
+
+        Звонок 25.10.2026: клиент говорил «давайте к десяти напиши мне… на этом номере есть Telegram», а
+        модель в это время вызвала hangup_call(conversation_completed) — через 12 с связь оборвалась на
+        полуслове. Завершаем только если клиент попрощался (или прощание было от ассистента и клиент
+        после него молчит), либо клиент молчит дольше HANGUP_GUARD_SILENCE_SEC, либо это просьба клиента /
+        лимит времени / экстренный случай.
+        """
+        if not self._is_phone():
+            return None
+        args = raw_arguments
+        if isinstance(args, str):
+            try:
+                args = json.loads(args) if args.strip() else {}
+            except json.JSONDecodeError:
+                args = {}
+        reason = str((args or {}).get("reason") or "")
+        if reason in ("user_request", "time_limit_reached", "emergency"):
+            return None
+        now = time.time()
+        last_user = self._last_user_voice_at
+        silent = (now - last_user) if last_user else 999.0
+        spoke_after_farewell = (self._farewell_at is not None and last_user > self._farewell_at + 1.5)
+        if self._farewell_at is not None and not spoke_after_farewell:
+            return None
+        if silent >= HANGUP_GUARD_SILENCE_SEC:
+            return None
+        return (
+            f"Звонок НЕ завершён: клиент ещё не попрощался и говорил {silent:.0f} с назад. Не прощайся и не "
+            f"вызывай hangup_call сейчас. Коротко подтверди, о чём договорились (время, канал, действие), "
+            f"и дождись ответа клиента. Когда клиент сам попрощается — вызови hangup_call снова."
+        )
+
     async def _on_function_call(self, event: Dict[str, Any]) -> None:
         name = event.get("name") or ""
         call_id = event.get("call_id")
@@ -767,6 +814,18 @@ class LiveVoiceSession:
             await self.client.send_function_result(call_id, {"error": f"Function {normalized} not allowed",
                                                              "status": "error"})
             return
+
+        if normalized == "hangup_call":
+            refusal = self._hangup_refusal(event.get("arguments"))
+            if refusal:
+                self.hangup_rejections += 1
+                _log(f"hangup_call rejected: {refusal[:90]}", "WARNING")
+                if self.call_log:
+                    self.call_log.add("session", "Завершение звонка отклонено: клиент ещё не попрощался и недавно "
+                                                 "говорил — звонок продолжается", level="warning")
+                await self.client.send_function_result(call_id, {"success": False, "status": "rejected",
+                                                                 "message": refusal})
+                return
 
         # SIP-адаптер по этому событию (function == hangup_call) запускает прощание → hangup
         await self.emit({"type": "function_call.started", "function": normalized, "function_call_id": call_id})

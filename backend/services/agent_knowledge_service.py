@@ -230,9 +230,11 @@ def rank_entries(rows: list, query: str, limit: int = 4):
         if score > 0:
             ranked.append((score, matched, strong, row))
     ranked.sort(key=lambda x: x[0], reverse=True)
-    good = [r for sc, m, st, r in ranked if st or m >= 2]
+    good = [(sc, r) for sc, m, st, r in ranked if st or m >= 2]
     if good:
-        return good[:limit], "ok"
+        # Хвост, который набрал меньше трети очков лучшей записи, — шум: голосу его не отдаём
+        cutoff = good[0][0] * 0.35
+        return [r for sc, r in good if sc >= cutoff][:limit], "ok"
     if ranked:
         return [r for _, _, _, r in ranked[:2]], "weak"
     return [], "none"
