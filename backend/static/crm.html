@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
   <!-- Sortable.js для drag & drop -->
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
   <style>
     /* Основные стили */
     :root {
@@ -973,8 +973,8 @@
   <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
-  <script src="/static/js/i18n.js"></script>
-  <script src="/static/js/ui.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
 </head>
 <body class="vf">
   <!-- Overlay для мобильного меню -->
@@ -998,7 +998,7 @@
       </a>
     </div>
   </aside>
-  <script src="/static/js/sidebar.js"></script>
+  <script defer src="/static/js/sidebar.js"></script>
   
   <!-- Основной контент -->
   <main class="main-content">
@@ -1170,6 +1170,6 @@
     <div class="loading-spinner"></div>
   </div>
   
-  <script src="/static/js/crm.js"></script>
+  <script defer src="/static/js/crm.js"></script>
 </body>
 </html>

@@ -14,11 +14,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <link rel="stylesheet" href="/static/css/voksiai.css">
 <link rel="stylesheet" href="/static/agent/agent.css">
-<script src="/static/js/ui.js"></script>
+<script defer src="/static/js/ui.js"></script>
 </head>
 <body>
 
@@ -541,9 +541,16 @@
       <div class="modal-title"><i class="fas fa-stream"></i> Воронка контактов <span style="color:var(--hint);font-weight:400;font-size:13px">· перетащите карточку, чтобы сменить стадию</span></div>
       <button class="modal-close" onclick="closePipelineModal()"><i class="fas fa-xmark"></i></button>
     </div>
-    <div class="modal-body"><div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input type="search" class="form-input" id="pipeline-search" placeholder="Поиск по имени, телефону или компании…" oninput="plSearch(event)" style="flex:1;min-width:220px;height:36px">
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openAddContactModal()"><i class="fas fa-plus"></i> Контакт</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openImportModal()"><i class="fas fa-file-import"></i> Импорт</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="loadPipeline()" title="Обновить"><i class="fas fa-rotate"></i></button>
+      </div>
+      <div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div>
+    </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="loadPipeline()"><i class="fas fa-rotate"></i> Обновить</button>
       <button class="btn btn-secondary" onclick="closePipelineModal()">Закрыть</button>
     </div>
   </div>
@@ -689,34 +696,37 @@
 </div>
 
 <!-- Скрипты агента: классические (не ES-модули), общее глобальное окружение.
+     Все с defer: скачиваются параллельно, выполняются в этом порядке
+     перед DOMContentLoaded — глобалы и inline-onclick остаются рабочими,
+     но парсер не ждёт сеть на каждом теге.
      Порядок: core → фичи → panels → init. Документация: /static/agent/CLAUDE.md -->
-<script src="/static/js/sidebar.js"></script>
-<script src="/static/agent/core.js"></script>
-<script src="/static/agent/credits.js"></script>
-<script src="/static/agent/agent-switcher.js"></script>
-<script src="/static/agent/dashboard.js"></script>
-<script src="/static/agent/tasks-calendar.js"></script>
-<script src="/static/agent/chat.js"></script>
-<script src="/static/agent/instructions-voice.js"></script>
-<script src="/static/agent/phone.js"></script>
-<script src="/static/agent/telegram.js"></script>
-<script src="/static/agent/telegram-account.js"></script>
-<script src="/static/agent/whatsapp-account.js"></script>
-<script src="/static/agent/contacts.js"></script>
-<script src="/static/agent/calls.js"></script>
-<script src="/static/agent/history.js"></script>
-<script src="/static/agent/import.js"></script>
-<script src="/static/agent/pipeline.js"></script>
-<script src="/static/agent/knowledge-base.js"></script>
-<script src="/static/agent/files.js"></script>
-<script src="/static/agent/connectors.js"></script>
-<script src="/static/agent/onboarding.js"></script>
-<script src="/static/agent/wizard.js"></script>
-<script src="/static/agent/presence.js"></script>
-<script src="/static/agent/motion.js"></script>
-<script src="/static/agent/panels.js"></script>
-<script src="/static/agent/voice-messages.js"></script>
-<script src="/static/agent/branding.js"></script>
-<script src="/static/agent/init.js"></script>
+<script defer src="/static/js/sidebar.js"></script>
+<script defer src="/static/agent/core.js"></script>
+<script defer src="/static/agent/credits.js"></script>
+<script defer src="/static/agent/agent-switcher.js"></script>
+<script defer src="/static/agent/dashboard.js"></script>
+<script defer src="/static/agent/tasks-calendar.js"></script>
+<script defer src="/static/agent/chat.js"></script>
+<script defer src="/static/agent/instructions-voice.js"></script>
+<script defer src="/static/agent/phone.js"></script>
+<script defer src="/static/agent/telegram.js"></script>
+<script defer src="/static/agent/telegram-account.js"></script>
+<script defer src="/static/agent/whatsapp-account.js"></script>
+<script defer src="/static/agent/contacts.js"></script>
+<script defer src="/static/agent/calls.js"></script>
+<script defer src="/static/agent/history.js"></script>
+<script defer src="/static/agent/import.js"></script>
+<script defer src="/static/agent/pipeline.js"></script>
+<script defer src="/static/agent/knowledge-base.js"></script>
+<script defer src="/static/agent/files.js"></script>
+<script defer src="/static/agent/connectors.js"></script>
+<script defer src="/static/agent/onboarding.js"></script>
+<script defer src="/static/agent/wizard.js"></script>
+<script defer src="/static/agent/presence.js"></script>
+<script defer src="/static/agent/motion.js"></script>
+<script defer src="/static/agent/panels.js"></script>
+<script defer src="/static/agent/voice-messages.js"></script>
+<script defer src="/static/agent/branding.js"></script>
+<script defer src="/static/agent/init.js"></script>
 </body>
 </html>
