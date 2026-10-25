@@ -81,6 +81,17 @@ VOICED_RMS = 200
 # (session.instructions.append): документация не гарантирует речь по session.input
 GREETING_FALLBACK_SEC = 3.0
 
+# Слова-паразиты ассистента: считаем за звонок и пишем в журнал, чтобы повторы были видны цифрой.
+# Звонок 21.10.2026: «понял» ~10 раз за 4 минуты. Порог: с этого числа повторов — строка-предупреждение.
+REPEAT_WORDS = {
+    "понял": re.compile(r"\bпонял[аи]?\b|\bпонимаю\b", re.IGNORECASE),
+    "угу": re.compile(r"\bугу\b|\bага\b", re.IGNORECASE),
+    "хорошо": re.compile(r"\bхорошо\b", re.IGNORECASE),
+    "ясно": re.compile(r"\bясно\b", re.IGNORECASE),
+    "сейчас уточню/посмотрю": re.compile(r"\bсейчас\s+(?:уточню|посмотрю|прикин\w+|проверю)\b", re.IGNORECASE),
+}
+REPEAT_WARN_AT = 3
+
 # Native Decisions (триггер CALL_DECISION_TRIGGER): реакции на намерение и настроение клиента
 DECISION_TRIGGERS = bool(getattr(settings, "LIVE_DECISION_TRIGGERS", True))
 AMD_HANGUP = bool(getattr(settings, "LIVE_AMD_HANGUP", False))
@@ -330,6 +341,7 @@ class LiveVoiceSession:
         # Native Decisions: текущее настроение клиента, когда давали подсказку, какие намерения уже
         # отработали (каждое — один раз за звонок), направление звонка (автоответчик — только исходящие)
         self.decisions = 0
+        self.repeats: Dict[str, int] = {}
         self._mood = "neutral"
         self._mood_hint_at = 0.0
         self._mood_seen = ("neutral", 0)  # последнее настроение от Decisions и сколько раз подряд
@@ -492,7 +504,21 @@ class LiveVoiceSession:
                 else:
                     self.call_log.assistant_turns += 1
                     self.call_log.add("assistant", f"Ассистент: «{text}»")
+        if role == "assistant" and text:
+            for name, rx in REPEAT_WORDS.items():
+                found = len(rx.findall(text))
+                if found:
+                    self.repeats[name] = self.repeats.get(name, 0) + found
         self._log_buf[role] = ""
+
+    def _log_repeat_summary(self) -> None:
+        """Одна строка в журнал звонка: какие слова ассистент повторял и сколько раз."""
+        if not self.call_log or not self.repeats:
+            return
+        parts = ", ".join(f"«{k}» {v}" for k, v in sorted(self.repeats.items(), key=lambda x: -x[1]))
+        noisy = any(v >= REPEAT_WARN_AT for v in self.repeats.values())
+        self.call_log.add("session", f"Повторяющиеся слова ассистента: {parts}",
+                          level="warning" if noisy else "info")
 
     # ------------------------------------------------------------------ Live events
     async def handle_live_events(self) -> None:
@@ -817,6 +843,7 @@ class LiveVoiceSession:
             self.closed = True  # дальше клиенту ничего не шлём
             for role in ("user", "assistant"):
                 self._flush_log(role)
+            self._log_repeat_summary()
             # 1. Закрыть сессию у OpenAI (дождаться session.closed с итоговым usage)
             closed = None
             try:
