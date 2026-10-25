@@ -517,10 +517,71 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .sk-line.short { width: 52%; }
 .sk-dot, .sk-line { background: linear-gradient(100deg, var(--vf-surface-3) 28%, var(--vf-surface-2) 50%, var(--vf-surface-3) 72%); background-size: 200% 100%; animation: sk-shimmer 1.3s ease-in-out infinite; }
 
+/* ── Полоса вкладок страницы агента (agent/tabs.js) ────────────────────── */
+:root { --agent-tabs-h: 46px; }
+.agent-tabs {
+  height: var(--agent-tabs-h); flex-shrink: 0; display: flex; gap: 2px; padding: 0 12px;
+  background: var(--vf-surface); border-bottom: 1px solid var(--vf-border);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; align-items: center;
+}
+.agent-tabs::-webkit-scrollbar { display: none; }
+.atab {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 0; background: transparent;
+  color: var(--vf-text-3); font-size: 13.5px; font-weight: 500; cursor: pointer; border-radius: 9px;
+  white-space: nowrap; transition: background var(--vf-fast), color var(--vf-fast);
+}
+.atab:hover { background: var(--vf-surface-2); color: var(--vf-text); }
+.atab i { font-size: 13px; opacity: .9; }
+.atab.is-active { background: var(--vf-accent-soft); color: var(--vf-accent); font-weight: 600; }
+.atab.is-active i { opacity: 1; }
+@media (max-width: 720px){
+  .agent-tabs { padding: 4px 6px; }
+  .atab { padding: 7px 10px; font-size: 12.5px; }
+  .atab span { display: none; }
+  .atab i { font-size: 15px; }
+}
+
+/* В «режиме вкладки» прячем 3-колоночную раскладку чата */
+body.tab-mode .main-layout { display: none !important; }
+
 /* ── Модалки ──────────────────────────────────────────────────────────── */
 /* Без backdrop-filter: blur() — он пересчитывается при каждом кадре скролла внутри модалки и
    был главной причиной лагов курсора/скролла в кабинете. Непрозрачный фон компенсирует визуально. */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .62); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; animation: ov .15s ease; }
+
+/* ── Модалка активной вкладки → «страница» ─────────────────────────────── *
+ * Отступ сверху = высота топбара (--topbar-h) + высота полосы вкладок
+ * (--agent-tabs-h) + граница. Вложенные модалки (напр. «карточка контакта»
+ * внутри «Клиентов») не трогаем — они остаются обычными модалками. */
+body.tab-mode.tab-clients  #contacts-list-modal-overlay,
+body.tab-mode.tab-pipeline #pipeline-modal-overlay,
+body.tab-mode.tab-calls    #calls-modal-overlay,
+body.tab-mode.tab-tasks    #tasks-cal-modal-overlay {
+  position: fixed; inset: calc(var(--topbar-h) + var(--agent-tabs-h) + 1px) 0 0 0;
+  padding: 0; background: var(--vf-surface-2); z-index: 15; animation: none;
+}
+body.tab-mode.tab-clients  #contacts-list-modal-overlay > .modal,
+body.tab-mode.tab-pipeline #pipeline-modal-overlay > .modal,
+body.tab-mode.tab-calls    #calls-modal-overlay > .modal,
+body.tab-mode.tab-tasks    #tasks-cal-modal-overlay > .modal {
+  max-width: 100%; max-height: 100%; width: 100%; height: 100%;
+  border: 0; border-radius: 0; box-shadow: none; animation: none; background: var(--vf-surface-2);
+}
+/* В page-mode у модалки прячем крестик и footer «Закрыть» — выход через вкладки */
+body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-close,
+body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-close,
+body.tab-mode.tab-calls    #calls-modal-overlay .modal-close,
+body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-close { display: none; }
+body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-footer,
+body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-footer,
+body.tab-mode.tab-calls    #calls-modal-overlay .modal-footer,
+body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-footer { display: none; }
+/* Контент модалки в page-mode — на всю высоту и собственный скролл */
+body.tab-mode.tab-clients  #contacts-list-modal-overlay .modal-body,
+body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-body,
+body.tab-mode.tab-calls    #calls-modal-overlay .modal-body,
+body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-body { flex: 1; overflow: auto; padding: 18px 22px; }
+
 @keyframes ov { from { opacity: 0; } to { opacity: 1; } }
 .modal { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: var(--vf-shadow-3); animation: mi .2s ease; overflow: hidden; }
 @keyframes mi { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }

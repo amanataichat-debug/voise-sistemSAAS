@@ -60,6 +60,8 @@ function showDashboard(){
   document.getElementById('loading-screen').classList.add('hidden');
   document.getElementById('wizard-overlay').classList.add('hidden');
   document.getElementById('top-nav').style.display='grid';
+  const tabsBar = document.getElementById('agent-tabs');
+  if(tabsBar) tabsBar.style.display='flex';
   document.getElementById('main-layout').style.display='grid';
 
   renderAgentHeader();
