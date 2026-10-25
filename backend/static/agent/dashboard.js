@@ -140,6 +140,19 @@ async function loadStats(){
     const s = await r.json();
     document.getElementById('stat-calls').textContent = s.total_calls||0;
     document.getElementById('stat-contacts').textContent = s.total_contacts||0;
+    // Подпись-подсказка под цифрой — чтобы карточки не выглядели пустыми
+    const callsTrend = document.getElementById('stat-calls-trend');
+    if(callsTrend){
+      const success = s.success_calls || 0;
+      const na = s.no_answer_calls || 0;
+      callsTrend.innerHTML = `успешно <b>${success}</b> · не ответили <b>${na}</b>`;
+    }
+    const contactsTrend = document.getElementById('stat-contacts-trend');
+    if(contactsTrend){
+      const active = s.active_contacts || 0;
+      const queued = s.scheduled_tasks || 0;
+      contactsTrend.innerHTML = `в работе <b>${active}</b> · в очереди звонков <b>${queued}</b>`;
+    }
   }catch(e){}
 }
 

@@ -131,23 +131,37 @@
         <button class="icon-btn panel-close" type="button" data-panel="left" title="Свернуть панель"><i class="fas fa-chevron-left"></i></button>
       </div>
       <div class="panel-scroll">
-        <!-- Карточки-цифры: клик по цифре/подписи = переход на соответствующую вкладку -->
+        <!-- Карточки-цифры: клик по карточке = переход на вкладку.
+             Внутри «Контакты» — две кнопки-пилюли: добавить и импорт (модалки, не дублируют вкладки). -->
         <div class="stats-row">
           <div class="stat-card stat-clickable" onclick="switchTab('calls')" title="Перейти к звонкам">
             <div class="stat-icon blue"><i class="fas fa-phone-volume"></i></div>
-            <div class="stat-num" id="stat-calls">—</div>
-            <div class="stat-label">Всего звонков <span class="hint" tabindex="0" data-hint="Все разговоры агента: исходящие по задачам и входящие на его номер."><i class="far fa-circle-question"></i></span></div>
+            <div class="stat-main">
+              <div class="stat-num" id="stat-calls">—</div>
+              <div class="stat-label">Всего звонков</div>
+              <div class="stat-trend" id="stat-calls-trend">сегодня <b>—</b> · неделя <b>—</b></div>
+            </div>
+            <i class="fas fa-chevron-right stat-arrow"></i>
           </div>
           <div class="stat-card stat-clickable" onclick="switchTab('clients')" title="Перейти к клиентам">
             <div class="stat-icon green"><i class="fas fa-users"></i></div>
-            <div class="stat-num" id="stat-contacts">—</div>
-            <div class="stat-label">Контакты <span class="hint hint-l" tabindex="0" data-hint="База контактов агента. Все действия со списком и воронкой — во вкладках сверху."><i class="far fa-circle-question"></i></span></div>
-            <!-- Быстрые действия (не дублируют вкладки, это модалки) -->
-            <div class="stat-links" onclick="event.stopPropagation()">
-              <span class="stat-go" onclick="openAddContactModal()">+ Добавить</span>
-              <span class="stat-go" onclick="openImportModal()">Импорт</span>
+            <div class="stat-main">
+              <div class="stat-num" id="stat-contacts">—</div>
+              <div class="stat-label">Контакты</div>
+              <div class="stat-trend" id="stat-contacts-trend">в работе <b>—</b> · в очереди <b>—</b></div>
             </div>
+            <i class="fas fa-chevron-right stat-arrow"></i>
           </div>
+        </div>
+
+        <!-- Быстрые действия над базой клиентов (это модалки, не навигация) -->
+        <div class="quick-actions">
+          <button class="qa-btn" type="button" onclick="openAddContactModal()" title="Добавить одного клиента вручную">
+            <i class="fas fa-user-plus"></i><span>Добавить клиента</span>
+          </button>
+          <button class="qa-btn qa-btn-ghost" type="button" onclick="openImportModal()" title="Загрузить список клиентов из xlsx или csv">
+            <i class="fas fa-file-arrow-up"></i><span>Импорт</span>
+          </button>
         </div>
 
         <!-- Быстрые просмотры: ссылки «→ вкладка» убраны (есть сверху) -->

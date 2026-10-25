@@ -96,141 +96,55 @@ function closeContactDetailsModal(){
   document.getElementById('contact-details-modal-overlay').classList.add('hidden');
 }
 
-// Иконка канала для бейджа в объединённой ленте переписки
-const CD_CHANNEL_META = {
-  sms:       { icon: 'fas fa-comment-sms',    color: '#64748b', label: 'SMS' },
-  telegram:  { icon: 'fas fa-paper-plane',    color: '#229ED9', label: 'Telegram' },
-  instagram: { icon: 'fa-brands fa-instagram',color: '#E1306C', label: 'Instagram' },
-  whatsapp:  { icon: 'fa-brands fa-whatsapp', color: '#25D366', label: 'WhatsApp' },
-};
-
-// Единая лента переписки: мерджим все каналы и сортируем по времени
-function _cdMergedThread(c){
-  const items = [];
-  const push = (arr, channel) => (arr || []).forEach(m => items.push({ ...m, _channel: channel }));
-  push(c.sms, 'sms');
-  push(c.telegram, 'telegram');
-  push(c.instagram, 'instagram');
-  push(c.whatsapp, 'whatsapp');
-  items.sort((a, b) => new Date(a.ts || 0) - new Date(b.ts || 0));
-  return items;
-}
-
-// Пузырь переписки с бейджем канала (расширенная версия _cdSmsBubble)
-function _cdChannelBubble(m){
-  const out = (m.direction === 'outbound');
-  const who = !out ? 'Клиент' : (m.sent_by === 'owner' ? 'Вы' : 'Агент');
-  const tm = m.ts ? fmtDate(m.ts) : '';
-  const body = (m.body || '').replace(/\s*\[file_id=[0-9a-f-]+\]/g, '');
-  const file = m.attachment_id
-    ? `<div style="margin-top:4px"><span class="card-link" onclick="downloadAgentFile('${esc(m.attachment_id)}')"><i class="fas fa-download"></i> Файл</span></div>`
-    : '';
-  const ch = CD_CHANNEL_META[m._channel];
-  const channelBadge = ch ? `<span class="cd-ch" style="color:${ch.color}"><i class="${ch.icon}"></i> ${ch.label}</span>` : '';
-  return `<div class="cd-sms ${out ? 'cd-sms-out' : 'cd-sms-in'}">
-    <div class="cd-sms-meta">${channelBadge}${who}${tm ? ' · ' + tm : ''}</div>
-    <div class="cd-sms-body">${esc(body)}</div>${file}
-  </div>`;
-}
-
-// Переключение вкладки внутри карточки клиента
-function cdSwitchSection(name){
-  const body = document.getElementById('contact-details-body');
-  if(!body) return;
-  body.querySelectorAll('.cd-nav .cd-nav-btn').forEach(b => b.classList.toggle('is-active', b.dataset.section === name));
-  body.querySelectorAll('.cd-section').forEach(s => s.classList.toggle('is-active', s.dataset.section === name));
-  // Скроллим верх при смене раздела
-  body.scrollTop = 0;
-}
-
 function renderContactDetails(c){
   document.getElementById('contact-details-title').textContent = c.name || c.phone;
   const mem = c.memory || {};
-  const callsCount = (c.calls || []).length;
-  const chatItems = _cdMergedThread(c);
-  const chatCount = chatItems.length;
-  const tasksCount = (c.tasks || []).length;
-
-  // ── Шапка карточки: ключевые факты, стадия, основные действия
-  const headerBlock = `
-    <div class="cd-header">
-      <div class="cd-header-main">
-        <div class="cd-header-row">
-          <div class="cd-fact"><i class="fas fa-phone"></i>${esc(c.phone)}</div>
-          ${c.company ? `<div class="cd-fact"><i class="fas fa-building"></i>${esc(c.company)}</div>` : ''}
-          <div class="cd-fact"><i class="fas fa-repeat"></i>Попыток: ${c.attempts_count || 0}</div>
-          ${c.last_called_at ? `<div class="cd-fact"><i class="fas fa-clock"></i>Был звонок: ${esc(fmtDate(c.last_called_at))}</div>` : ''}
-        </div>
-        ${(c.alt_phones || []).length ? `<div class="cd-sub">Другие номера: ${c.alt_phones.map(esc).join(', ')}${c.call_phone ? ` · звоним на: <b>${esc(c.call_phone)}</b>` : ''}</div>` : ''}
+  const memBlock = `
+    <div style="background:var(--bg);border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--blue-dark)">
+        <i class="fas fa-brain"></i> Память агента
       </div>
-      <div class="cd-header-right">
-        <label class="cd-stage-lbl">Стадия:</label>
-        <select id="cd-stage" onchange="changeContactStage('${c.id}', this.value)" class="form-input cd-stage-select">
+      ${mem.summary ? `<div style="font-size:12.5px;margin-bottom:8px;line-height:1.5">${esc(mem.summary)}</div>` : '<div class="empty" style="text-align:left;padding:0">Память ещё не накоплена</div>'}
+      ${mem.key_facts && mem.key_facts.length ? `
+        <div style="font-size:11px;color:var(--muted);margin-top:8px"><b>Ключевые факты:</b></div>
+        <ul style="font-size:12px;color:var(--muted);padding-left:18px;margin-top:4px">
+          ${mem.key_facts.map(f => `<li>${esc(f)}</li>`).join('')}
+        </ul>
+      ` : ''}
+      ${mem.best_time ? `<div style="font-size:12px;color:var(--muted);margin-top:6px"><b>Лучшее время:</b> ${esc(mem.best_time)}</div>` : ''}
+      ${mem.tone_history && mem.tone_history.length ? `<div style="font-size:12px;color:var(--muted);margin-top:6px"><b>Тон последних разговоров:</b> ${mem.tone_history.slice(-5).map(esc).join(' → ')}</div>` : ''}
+    </div>`;
+
+  const infoBlock = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12.5px">
+      <div><b>Телефон:</b> ${esc(c.phone)}${(c.alt_phones || []).length ? `<div style="color:var(--muted);margin-top:2px">Другие номера: ${c.alt_phones.map(esc).join(', ')}</div>` : ''}${c.call_phone ? `<div style="color:var(--muted);margin-top:2px">Звоним на: ${esc(c.call_phone)}</div>` : ''}</div>
+      <div><b>Попыток:</b> ${c.attempts_count || 0}</div>
+      <div style="display:flex;align-items:center;gap:8px"><b>Стадия:</b>
+        <select id="cd-stage" onchange="changeContactStage('${c.id}', this.value)" class="form-input" style="display:inline-block;width:auto;padding:2px 8px;font-size:12px">
           ${STAGE_ORDER.map(s => `<option value="${s}" ${s === c.status ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
         </select>
       </div>
-    </div>`;
-
-  // ── Внутренние вкладки
-  const navBlock = `
-    <div class="cd-nav">
-      <button class="cd-nav-btn is-active" type="button" data-section="chat" onclick="cdSwitchSection('chat')">
-        <i class="fas fa-comments"></i><span>Переписка</span>${chatCount ? `<span class="cd-nav-num">${chatCount}</span>` : ''}
-      </button>
-      <button class="cd-nav-btn" type="button" data-section="calls" onclick="cdSwitchSection('calls')">
-        <i class="fas fa-phone-volume"></i><span>Звонки</span>${callsCount ? `<span class="cd-nav-num">${callsCount}</span>` : ''}
-      </button>
-      <button class="cd-nav-btn" type="button" data-section="memory" onclick="cdSwitchSection('memory')">
-        <i class="fas fa-brain"></i><span>Размышления</span>
-      </button>
-      <button class="cd-nav-btn" type="button" data-section="tasks" onclick="cdSwitchSection('tasks')">
-        <i class="far fa-calendar-check"></i><span>Задачи</span>${tasksCount ? `<span class="cd-nav-num">${tasksCount}</span>` : ''}
-      </button>
-      <button class="cd-nav-btn" type="button" data-section="info" onclick="cdSwitchSection('info')">
-        <i class="fas fa-id-card"></i><span>Данные</span>
-      </button>
-    </div>`;
-
-  // ── Разделы ───────────────────────────────────────────────────────────
-  // 1. Переписка (default) — объединённая лента всех каналов хронологически
-  const chatSection = `
-    <div class="cd-section is-active" data-section="chat">
-      ${chatCount
-        ? `<div class="cd-sms-thread cd-chat-thread">${chatItems.map(_cdChannelBubble).join('')}</div>`
-        : '<div class="empty">Переписки пока не было. Клиент пишет в WhatsApp / Telegram / Instagram — здесь появится вся история.</div>'}
-    </div>`;
-
-  // 2. Звонки — карточки звонков с аудио (renderCallExpanded умеет audio)
-  const callsSection = `
-    <div class="cd-section" data-section="calls">
-      ${callsCount
-        ? `<div style="display:flex;flex-direction:column;gap:10px">${c.calls.map((call, i) => renderCallExpanded(call, 'cc-' + i)).join('')}</div>`
-        : '<div class="empty">Звонков пока не было</div>'}
-    </div>`;
-
-  // 3. Размышления — память агента о клиенте
-  const memorySection = `
-    <div class="cd-section" data-section="memory">
-      <div class="cd-memory-card">
-        <div class="cd-memory-head"><i class="fas fa-brain"></i> Память агента об этом клиенте</div>
-        ${mem.summary
-          ? `<div class="cd-memory-summary">${esc(mem.summary)}</div>`
-          : '<div class="empty" style="text-align:left;padding:12px 0">Память ещё не накоплена — агент заполнит её после первого разговора.</div>'}
-        ${mem.key_facts && mem.key_facts.length ? `
-          <div class="cd-memory-section"><b>Ключевые факты:</b>
-            <ul>${mem.key_facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-          </div>` : ''}
-        ${mem.best_time ? `<div class="cd-memory-section"><b>Лучшее время связи:</b> ${esc(mem.best_time)}</div>` : ''}
-        ${mem.tone_history && mem.tone_history.length ? `<div class="cd-memory-section"><b>Тон последних разговоров:</b> ${mem.tone_history.slice(-5).map(esc).join(' → ')}</div>` : ''}
+      <div><b>Последний звонок:</b> ${c.last_called_at ? fmtDate(c.last_called_at) : '—'}</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--blue-dark)"><i class="fas fa-id-card"></i> Данные контакта</div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Имя</label><input type="text" class="form-input" id="cd-name" value="${esc(c.name||'')}"></div>
+        <div class="form-group"><label class="form-label">Компания</label><input type="text" class="form-input" id="cd-company" value="${esc(c.company||'')}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Должность</label><input type="text" class="form-input" id="cd-position" value="${esc(c.position||'')}"></div>
+      <div class="form-group"><label class="form-label">Информация о клиенте</label><textarea class="form-textarea" id="cd-notes" rows="3" style="min-height:70px">${esc(c.notes||'')}</textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" onclick="resetContactEdit()">Отмена</button>
+        <button class="btn btn-primary btn-sm" onclick="saveContactInfo()"><i class="fas fa-check"></i> Сохранить</button>
       </div>
     </div>`;
 
-  // 4. Задачи
-  const tasksSection = `
-    <div class="cd-section" data-section="tasks">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:14px;font-weight:600">Запланированное</div>
-        <button class="btn btn-secondary btn-sm" onclick="cdTaskAddToggle()"><i class="fas fa-plus"></i> Добавить задачу</button>
+  const tasksBlock = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--blue-dark)"><i class="far fa-calendar-check"></i> Задачи</div>
+        <button class="btn btn-secondary btn-sm" onclick="cdTaskAddToggle()"><i class="fas fa-plus"></i> Добавить</button>
       </div>
       <div class="cd-task-new" id="cd-task-new" style="display:none">
         <input type="text" class="form-input" id="cdt-new-title" placeholder="Название задачи">
@@ -246,31 +160,36 @@ function renderContactDetails(c){
       <div id="cd-tasks-list"></div>
     </div>`;
 
-  // 5. Данные — форма редактирования
-  const infoSection = `
-    <div class="cd-section" data-section="info">
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Имя</label><input type="text" class="form-input" id="cd-name" value="${esc(c.name||'')}"></div>
-        <div class="form-group"><label class="form-label">Компания</label><input type="text" class="form-input" id="cd-company" value="${esc(c.company||'')}"></div>
-      </div>
-      <div class="form-group"><label class="form-label">Должность</label><input type="text" class="form-input" id="cd-position" value="${esc(c.position||'')}"></div>
-      <div class="form-group"><label class="form-label">Заметки о клиенте</label><textarea class="form-textarea" id="cd-notes" rows="4" style="min-height:90px">${esc(c.notes||'')}</textarea></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-secondary btn-sm" onclick="resetContactEdit()">Отмена</button>
-        <button class="btn btn-primary btn-sm" onclick="saveContactInfo()"><i class="fas fa-check"></i> Сохранить</button>
-      </div>
-    </div>`;
+  const callsBlock = (c.calls && c.calls.length) ? `
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px"><i class="fas fa-phone-volume"></i> История звонков (${c.calls.length})</div>
+    ${c.calls.map((call, i) => renderCallExpanded(call, 'cc-' + i)).join('')}
+  ` : '<div class="empty">Звонков пока не было</div>';
+
+  const smsBlock = (c.sms && c.sms.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fas fa-comment-sms"></i> SMS-переписка (${c.sms.length})</div>
+    <div class="cd-sms-thread">${c.sms.map(_cdSmsBubble).join('')}</div>
+  ` : '';
+
+  // Telegram-переписка (личный аккаунт владельца) — те же пузыри, что SMS.
+  const tgBlock = (c.telegram && c.telegram.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fas fa-paper-plane" style="color:#229ED9"></i> Telegram-переписка (${c.telegram.length})</div>
+    <div class="cd-sms-thread">${c.telegram.map(_cdSmsBubble).join('')}</div>
+  ` : '';
+
+  // Instagram-переписка (DM бизнес-аккаунта владельца) — те же пузыри.
+  const igBlock = (c.instagram && c.instagram.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fa-brands fa-instagram" style="color:#E1306C"></i> Instagram-переписка (${c.instagram.length})</div>
+    <div class="cd-sms-thread">${c.instagram.map(_cdSmsBubble).join('')}</div>
+  ` : '';
+
+  // WhatsApp-переписка (номер владельца, Evolution API) — те же пузыри.
+  const waBlock = (c.whatsapp && c.whatsapp.length) ? `
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px"><i class="fa-brands fa-whatsapp" style="color:#25D366"></i> WhatsApp-переписка (${c.whatsapp.length})</div>
+    <div class="cd-sms-thread">${c.whatsapp.map(_cdSmsBubble).join('')}</div>
+  ` : '';
 
   _cdTasks = (c.tasks || []).slice().sort((a,b)=> new Date(a.scheduled_time)-new Date(b.scheduled_time));
-  document.getElementById('contact-details-body').innerHTML =
-    '<div id="cd-ai-pause">' + aiPauseBlockHtml(c) + '</div>' +
-    headerBlock +
-    navBlock +
-    chatSection +
-    callsSection +
-    memorySection +
-    tasksSection +
-    infoSection;
+  document.getElementById('contact-details-body').innerHTML = '<div id="cd-ai-pause">' + aiPauseBlockHtml(c) + '</div>' + infoBlock + tasksBlock + memBlock + callsBlock + smsBlock + tgBlock + igBlock + waBlock;
   renderContactTasksSection();
 }
 
