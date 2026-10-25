@@ -582,6 +582,31 @@ body.tab-mode.tab-pipeline #pipeline-modal-overlay .modal-body,
 body.tab-mode.tab-calls    #calls-modal-overlay .modal-body,
 body.tab-mode.tab-tasks    #tasks-cal-modal-overlay .modal-body { flex: 1; overflow: auto; padding: 18px 22px; }
 
+/* ── Карточка клиента — боковой drawer справа ──────────────────────────── *
+ * Было: модалка-коробка посередине экрана. Для долгой работы с клиентом
+ * (ответ на звонок, переписка, редактирование) удобнее боковая панель —
+ * параллельно виден список/канбан под ней. Внутри страницы (tab-mode)
+ * drawer накрывает рабочую область (кроме топбара+вкладок). */
+#contact-details-modal-overlay { justify-content: flex-end; padding: 0; animation: ov .18s ease; }
+#contact-details-modal-overlay > .modal {
+  max-width: min(760px, 62vw); width: min(760px, 62vw); max-height: 100vh; height: 100vh;
+  border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; box-shadow: -12px 0 32px -16px rgba(15, 23, 42, .35);
+  animation: cdDrawerIn .22s cubic-bezier(.2, .7, .2, 1);
+}
+@keyframes cdDrawerIn { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* В tab-mode drawer опускается ниже топбара + вкладок (не накрывает их) */
+body.tab-mode #contact-details-modal-overlay {
+  inset: calc(var(--topbar-h) + var(--agent-tabs-h) + 1px) 0 0 0;
+  background: rgba(15, 23, 42, .35);
+}
+body.tab-mode #contact-details-modal-overlay > .modal { height: 100%; max-height: 100%; }
+@media (max-width: 820px){
+  #contact-details-modal-overlay { padding: 16px; justify-content: center; }
+  #contact-details-modal-overlay > .modal { max-width: 720px; width: 100%; max-height: 92vh; height: auto; border-radius: 16px; border: 1px solid var(--vf-border); box-shadow: var(--vf-shadow-3); }
+  body.tab-mode #contact-details-modal-overlay { inset: 0; background: rgba(15, 23, 42, .62); padding: 16px; }
+  body.tab-mode #contact-details-modal-overlay > .modal { height: auto; }
+}
+
 @keyframes ov { from { opacity: 0; } to { opacity: 1; } }
 .modal { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: var(--vf-shadow-3); animation: mi .2s ease; overflow: hidden; }
 @keyframes mi { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
