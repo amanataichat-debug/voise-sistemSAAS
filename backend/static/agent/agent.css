@@ -620,6 +620,47 @@ body.tab-mode.tab-analytics #analytics-view-overlay .modal-body { flex: 1; overf
 .alx-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
 .alx-head .alx-hint { font-size: 12.5px; color: var(--vf-text-3); }
 
+/* ── Карточка клиента (внутренние вкладки) ─────────────────────────────── */
+.cd-header { display: flex; gap: 14px; align-items: flex-start; padding: 14px 18px 12px; border-bottom: 1px solid var(--vf-border); background: var(--vf-surface-2); border-radius: 10px 10px 0 0; margin-bottom: 0; }
+.cd-header-main { flex: 1; min-width: 0; }
+.cd-header-row { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 12.5px; color: var(--vf-text); }
+.cd-fact { display: inline-flex; align-items: center; gap: 6px; }
+.cd-fact i { color: var(--vf-text-4); font-size: 11px; }
+.cd-sub { margin-top: 8px; font-size: 11.5px; color: var(--vf-text-3); }
+.cd-sub b { color: var(--vf-text); font-weight: 600; }
+.cd-header-right { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.cd-stage-lbl { color: var(--vf-text-3); font-size: 12px; }
+.cd-stage-select { display: inline-block; width: auto; padding: 4px 10px; font-size: 12.5px; font-weight: 600; }
+
+.cd-nav { display: flex; gap: 2px; border-bottom: 1px solid var(--vf-border); background: var(--vf-surface); padding: 4px 10px 0; overflow-x: auto; scrollbar-width: none; }
+.cd-nav::-webkit-scrollbar { display: none; }
+.cd-nav-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; border: 0; background: transparent;
+  color: var(--vf-text-3); font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 7px 7px 0 0;
+  border-bottom: 2px solid transparent; white-space: nowrap; margin-bottom: -1px;
+}
+.cd-nav-btn:hover { color: var(--vf-text); background: var(--vf-surface-2); }
+.cd-nav-btn i { font-size: 12.5px; opacity: .85; }
+.cd-nav-btn.is-active { color: var(--vf-accent); border-bottom-color: var(--vf-accent); background: var(--vf-surface); font-weight: 600; }
+.cd-nav-num { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--vf-surface-3); color: var(--vf-text-3); font-size: 10.5px; font-weight: 600; }
+.cd-nav-btn.is-active .cd-nav-num { background: var(--vf-accent); color: #fff; }
+
+.cd-section { display: none; padding: 18px 20px; }
+.cd-section.is-active { display: block; }
+.cd-chat-thread { max-height: none; }
+.cd-ch { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; }
+.cd-ch i { font-size: 10px; }
+
+.cd-memory-card { background: var(--vf-surface-2); border: 1px solid var(--vf-border); border-radius: 12px; padding: 16px 18px; }
+.cd-memory-head { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--vf-accent); display: flex; align-items: center; gap: 8px; }
+.cd-memory-summary { font-size: 13px; line-height: 1.55; color: var(--vf-text); margin-bottom: 10px; }
+.cd-memory-section { font-size: 12.5px; color: var(--vf-text-3); margin-top: 10px; }
+.cd-memory-section b { color: var(--vf-text); font-weight: 600; }
+.cd-memory-section ul { padding-left: 20px; margin-top: 4px; line-height: 1.55; }
+
+/* В drawer-режиме body padding подрезаем — вкладки + секции сами задают отступы */
+#contact-details-modal-overlay .modal-body { padding: 0; }
+
 /* ── Карточка клиента — боковой drawer справа ──────────────────────────── *
  * Было: модалка-коробка посередине экрана. Для долгой работы с клиентом
  * (ответ на звонок, переписка, редактирование) удобнее боковая панель —
