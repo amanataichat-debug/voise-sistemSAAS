@@ -49,6 +49,9 @@ from backend.models.contact import Contact
 from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
 from backend.models.agent_connector import AgentConnector, CONNECTOR_TOOLKITS
+from backend.models.agent_whatsapp import AgentWhatsAppMessage
+from backend.models.agent_telegram_account import AgentTelegramMessage
+from backend.models.agent_instagram import AgentInstagramMessage
 from backend.services import composio_service
 from backend.services import agent_pause
 from backend.services import agent_voice_context
@@ -3662,9 +3665,43 @@ async def list_agent_contacts(
     total = q.count()
     contacts = q.order_by(AgentContact.created_at.desc()).offset(offset).limit(limit).all()
 
+    # Аннотация для карточек воронки: по каким каналам клиент уже писал
+    # и сколько у него запланированных задач (всё одной выборкой на страницу,
+    # не N+1). Канбан-карточка показывает маленькие иконки WhatsApp/Telegram/
+    # Instagram и бейдж «есть задача».
+    contact_ids = [c.id for c in contacts]
+    wa_ids = tg_ids = ig_ids = set()
+    pending_tasks_by_contact: dict = {}
+    if contact_ids:
+        wa_ids = {row[0] for row in db.query(AgentWhatsAppMessage.agent_contact_id)
+                 .filter(AgentWhatsAppMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        tg_ids = {row[0] for row in db.query(AgentTelegramMessage.agent_contact_id)
+                 .filter(AgentTelegramMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        ig_ids = {row[0] for row in db.query(AgentInstagramMessage.agent_contact_id)
+                 .filter(AgentInstagramMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        rows = (
+            db.query(Task.agent_contact_id, func.count(Task.id))
+              .filter(Task.agent_contact_id.in_(contact_ids))
+              .filter(Task.status == TaskStatus.SCHEDULED)
+              .group_by(Task.agent_contact_id)
+              .all()
+        )
+        pending_tasks_by_contact = {cid: int(n or 0) for cid, n in rows}
+
+    out = []
+    for c in contacts:
+        d = c.to_dict()
+        d["channels"] = {
+            "whatsapp": c.id in wa_ids,
+            "telegram": c.id in tg_ids,
+            "instagram": c.id in ig_ids,
+        }
+        d["pending_tasks"] = pending_tasks_by_contact.get(c.id, 0)
+        out.append(d)
+
     return {
         "total": total,
-        "contacts": [c.to_dict() for c in contacts],
+        "contacts": out,
     }
 
 

@@ -77,14 +77,34 @@ function renderPipeline(){
 }
 
 function pipelineCard(c){
+  const ch = c.channels || {};
+  const chanIcons = [
+    ch.whatsapp  ? `<span class="pl-ch pl-ch-wa"  title="WhatsApp"><i class="fab fa-whatsapp"></i></span>` : '',
+    ch.telegram  ? `<span class="pl-ch pl-ch-tg"  title="Telegram"><i class="fab fa-telegram"></i></span>` : '',
+    ch.instagram ? `<span class="pl-ch pl-ch-ig"  title="Instagram"><i class="fab fa-instagram"></i></span>` : '',
+  ].join('');
+  const pending = (c.pending_tasks || 0);
+  const taskBadge = pending > 0
+    ? `<span class="pl-task" title="Запланировано задач: ${pending}"><i class="far fa-calendar-check"></i>${pending}</span>`
+    : '';
+  const initial = (c.name || c.phone || '?').trim()[0].toUpperCase();
   return `
     <div class="pl-card" draggable="true" data-id="${c.id}" data-stage="${c.status || 'new'}"
          ondragstart="plDragStart(event)" ondragend="plDragEnd(event)"
          onclick="openContactDetailsModal('${c.id}')">
-      <div style="font-weight:600;font-size:12.5px">${esc(c.name || c.phone)}${aiPauseBadge(c)}</div>
-      <div style="font-size:11px;color:var(--muted)">${esc(c.phone)}</div>
-      ${c.company ? `<div style="font-size:11px;color:var(--muted)">${esc(c.company)}</div>` : ''}
-      <div style="font-size:10.5px;color:var(--hint);margin-top:4px">Попыток: ${c.attempts_count || 0}${c.last_called_at ? ' · ' + fmtDate(c.last_called_at) : ''}</div>
+      <div class="pl-card-top">
+        <div class="pl-avatar">${esc(initial)}</div>
+        <div class="pl-card-main">
+          <div class="pl-card-name">${esc(c.name || c.phone)}${aiPauseBadge(c)}</div>
+          <div class="pl-card-phone">${esc(c.phone)}</div>
+        </div>
+      </div>
+      ${c.company ? `<div class="pl-card-company" title="${esc(c.company)}"><i class="fas fa-building"></i>${esc(c.company)}</div>` : ''}
+      <div class="pl-card-foot">
+        <div class="pl-chans">${chanIcons || '<span class="pl-ch pl-ch-off" title="Нет переписки"><i class="fas fa-phone"></i></span>'}</div>
+        ${taskBadge}
+      </div>
+      <div class="pl-card-meta">${c.attempts_count ? `${c.attempts_count} попыток` : 'не звонили'}${c.last_called_at ? ' · ' + fmtDate(c.last_called_at) : ''}</div>
     </div>`;
 }
 

@@ -11,7 +11,30 @@
 
 let analyticsCache = null;
 let analyticsCacheAt = 0;
+let analyticsPeriod = 'month'; // week | month | half | all
 const ANALYTICS_TTL_MS = 30000;
+
+const ANALYTICS_PERIODS = [
+  { id: 'week',  label: 'Неделя',  days: 7 },
+  { id: 'month', label: 'Месяц',   days: 30 },
+  { id: 'half',  label: 'Полгода', days: 183 },
+  { id: 'all',   label: 'Всё время', days: null },
+];
+
+function _periodMs(id){
+  const p = ANALYTICS_PERIODS.find(x => x.id === id);
+  return p && p.days ? p.days * 24 * 3600 * 1000 : null;
+}
+function _periodLabel(id){
+  const p = ANALYTICS_PERIODS.find(x => x.id === id);
+  return p ? p.label.toLowerCase() : 'период';
+}
+function setAnalyticsPeriod(id){
+  if(!ANALYTICS_PERIODS.find(p => p.id === id)) return;
+  analyticsPeriod = id;
+  const body = document.getElementById('analytics-view-body');
+  if(body && analyticsCache) body.innerHTML = renderAnalytics(analyticsCache);
+}
 
 async function openAnalyticsView(){
   document.getElementById('analytics-view-overlay').classList.remove('hidden');
@@ -125,11 +148,15 @@ function _areaChart(points, opts){
       <line x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}" stroke="var(--vf-border)" stroke-dasharray="2 3" opacity=".6"/>
       <text x="${padL - 6}" y="${y + 3}" text-anchor="end" class="alx-axis">${v}</text>`;
   }).join('');
+  // Шаг меток зависит от количества точек: 7 — каждую, 14-30 — через одну, 26 — каждую 4ю, 12 — каждую
+  const labelStep = n <= 7 ? 1 : n <= 14 ? 2 : n <= 31 ? Math.ceil(n / 7) : n <= 26 ? 4 : 1;
+  const bucketLabel = opts.bucketLabel || 'день';
   const xLabels = points.map((p, i) => {
-    // Показываем каждую 2-ю метку, чтобы не перекрывались
-    if(i % 2 !== 0 && i !== n - 1) return '';
+    if(i % labelStep !== 0 && i !== n - 1) return '';
     const d = p.x instanceof Date ? p.x : new Date(p.x);
-    const label = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
+    const label = bucketLabel === 'месяц'
+      ? d.toLocaleDateString('ru-RU', { month: 'short' })
+      : d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
     return `<text x="${scaleX(i)}" y="${h - 6}" text-anchor="middle" class="alx-axis">${label}</text>`;
   }).join('');
   const dots = points.map((p, i) => `<circle cx="${scaleX(i)}" cy="${scaleY(p.y)}" r="3" fill="var(--vf-accent)" stroke="var(--vf-surface)" stroke-width="2"><title>${p.x.toLocaleDateString ? p.x.toLocaleDateString('ru-RU') : p.x}: ${p.y}</title></circle>`).join('');
@@ -164,16 +191,31 @@ function _hBarRow(label, value, max, color, pctLabel){
 
 // ── Главный рендер ───────────────────────────────────────────────────────
 function renderAnalytics(data){
-  const { stats, contacts, calls } = data;
-  const total_calls = stats.total_calls || 0;
-  const success_calls = stats.success_calls || 0;
-  const no_answer_calls = stats.no_answer_calls || 0;
+  const { stats, contacts, calls: allCalls } = data;
+
+  // Фильтр звонков по выбранному периоду (week/month/half/all)
+  const nowMs = Date.now();
+  const periodMs = _periodMs(analyticsPeriod);
+  const calls = periodMs
+    ? allCalls.filter(c => {
+        const t = c.started_at || c.created_at;
+        if(!t) return false;
+        return (nowMs - new Date(t).getTime()) <= periodMs;
+      })
+    : allCalls;
+
+  // Метрики — часть считается из stats (вся база), часть — из calls за период
   const total_contacts = stats.total_contacts || 0;
   const active_contacts = stats.active_contacts || 0;
   const scheduled_tasks = stats.scheduled_tasks || 0;
 
+  // За период считаем ЗВОНКИ из фильтрованной выборки
+  const total_calls = calls.length;
+  const success_calls = calls.filter(c => (c.post_call_decision || c.decision || '').toUpperCase() === 'SUCCESS').length;
+  const no_answer_calls = calls.filter(c => (c.post_call_decision || c.decision || '').toUpperCase() === 'NO_ANSWER').length;
   const answered_calls = total_calls - no_answer_calls;
   const answer_rate = total_calls ? Math.round(answered_calls / total_calls * 100) : 0;
+
   const won_contacts = contacts.filter(c => c.status === 'success').length;
   const lost_contacts = contacts.filter(c => c.status === 'rejected' || c.status === 'do_not_call').length;
   const conversion_rate = total_contacts ? Math.round(won_contacts / total_contacts * 100) : 0;
@@ -212,24 +254,33 @@ function renderAnalytics(data){
   });
   const chanTotal = Math.max(1, Object.values(channels).reduce((a, b) => a + b, 0));
 
-  // ── Звонки по дням за 14 дней
+  // ── Таймлайн звонков: период → размер и шаг бакета
+  const bucketCfg =
+    analyticsPeriod === 'week'  ? { count: 7,  stepDays: 1,  label: 'день' } :
+    analyticsPeriod === 'month' ? { count: 30, stepDays: 1,  label: 'день' } :
+    analyticsPeriod === 'half'  ? { count: 26, stepDays: 7,  label: 'неделя' } :
+                                   { count: 12, stepDays: 30, label: 'месяц' };
   const days = [];
   const now = new Date();
-  for(let i = 13; i >= 0; i--){
-    const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - i);
-    days.push({ x: d, y: 0, iso: d.toISOString().slice(0,10) });
+  for(let i = bucketCfg.count - 1; i >= 0; i--){
+    const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - i * bucketCfg.stepDays);
+    days.push({ x: d, y: 0, start: d.getTime(), end: d.getTime() + bucketCfg.stepDays * 24 * 3600 * 1000 });
   }
-  const dayByIso = Object.fromEntries(days.map(d => [d.iso, d]));
-  calls.forEach(c => {
+  (periodMs ? calls : allCalls).forEach(c => {
     const t = c.started_at || c.created_at;
     if(!t) return;
-    const iso = String(t).slice(0, 10);
-    if(dayByIso[iso]) dayByIso[iso].y++;
+    const ms = new Date(t).getTime();
+    for(const d of days){ if(ms >= d.start && ms < d.end){ d.y++; break; } }
   });
-  const callsToday = (dayByIso[days[days.length - 1].iso] || {}).y || 0;
-  const callsYesterday = (dayByIso[days[days.length - 2].iso] || {}).y || 0;
-  const callsWeek = days.slice(-7).reduce((a, d) => a + d.y, 0);
-  const callsPrevWeek = days.slice(0, 7).reduce((a, d) => a + d.y, 0);
+  const callsToday = analyticsPeriod === 'week' || analyticsPeriod === 'month'
+    ? (days[days.length - 1] || {}).y || 0
+    : calls.filter(c => { const t = c.started_at || c.created_at; return t && (nowMs - new Date(t).getTime() < 24*3600*1000); }).length;
+  const callsWeek = calls.filter(c => { const t = c.started_at || c.created_at; return t && (nowMs - new Date(t).getTime() < 7*24*3600*1000); }).length;
+  const callsPrevWeek = calls.filter(c => {
+    const t = c.started_at || c.created_at; if(!t) return false;
+    const age = nowMs - new Date(t).getTime();
+    return age >= 7*24*3600*1000 && age < 14*24*3600*1000;
+  }).length;
   const weekDelta = callsPrevWeek ? Math.round((callsWeek - callsPrevWeek) / callsPrevWeek * 100) : 0;
 
   // ── Деньги (нужны поля сделки — пока оцениваем на коленке)
@@ -239,13 +290,21 @@ function renderAnalytics(data){
   const totalRevenue = null;
 
   // ── Рендер ────────────────────────────────────────────────────────────
+  const periodLabel = _periodLabel(analyticsPeriod);
   return `
     <div class="alx-head">
       <div>
         <h3>Аналитика агента</h3>
-        <div class="alx-hint">Данные из последних 200 звонков и базы контактов. Обновляются раз в 30 секунд.</div>
+        <div class="alx-hint">Период: <b>${periodLabel}</b> · данные из последних 200 звонков. Обновляются раз в 30 секунд.</div>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="loadAnalytics(true)"><i class="fas fa-rotate"></i> Обновить</button>
+      <div class="alx-head-right">
+        <div class="alx-periods">
+          ${ANALYTICS_PERIODS.map(p => `
+            <button class="alx-period ${p.id === analyticsPeriod ? 'is-active' : ''}" onclick="setAnalyticsPeriod('${p.id}')">${p.label}</button>
+          `).join('')}
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadAnalytics(true)" title="Обновить"><i class="fas fa-rotate"></i></button>
+      </div>
     </div>
 
     <!-- 4 главные метрики: KPI-плитки -->
@@ -284,13 +343,13 @@ function renderAnalytics(data){
       </div>
     </div>
 
-    <!-- Звонки по дням (большая карта) -->
+    <!-- Таймлайн звонков -->
     <div class="alx-card alx-card-wide">
       <div class="alx-card-head">
-        <h4><i class="far fa-calendar-days"></i> Звонки по дням · 14 дней</h4>
-        <div class="alx-card-sub">Прошлая неделя: ${callsPrevWeek} · Эта: ${callsWeek}</div>
+        <h4><i class="far fa-calendar-days"></i> Звонки по ${bucketCfg.label === 'день' ? 'дням' : bucketCfg.label === 'неделя' ? 'неделям' : 'месяцам'} · ${periodLabel}</h4>
+        <div class="alx-card-sub">Эта неделя: ${callsWeek} · Прошлая: ${callsPrevWeek}${weekDelta !== 0 ? ` · <span class="${weekDelta>0?'alx-up':'alx-down'}"><i class="fas fa-${weekDelta>0?'arrow-up':'arrow-down'}"></i>${Math.abs(weekDelta)}%</span>` : ''}</div>
       </div>
-      ${_areaChart(days)}
+      ${_areaChart(days, { bucketLabel: bucketCfg.label })}
     </div>
 
     <!-- Воронка (donut + легенда) и Исходы (horiz bars) -->
@@ -312,11 +371,11 @@ function renderAnalytics(data){
       </div>
     </div>
 
-    <!-- Каналы коммуникации -->
+    <!-- Каналы коммуникации — абсолютные числа и % -->
     <div class="alx-card">
       <div class="alx-card-head">
-        <h4><i class="fas fa-tower-cell"></i> Каналы коммуникации</h4>
-        <div class="alx-card-sub">Из каких каналов приходят разговоры и переписки</div>
+        <h4><i class="fas fa-tower-cell"></i> Каналы коммуникации · ${periodLabel}</h4>
+        <div class="alx-card-sub">Сколько разговоров и переписок прошло через каждый канал</div>
       </div>
       <div class="alx-stack">
         ${Object.entries(channels).filter(([, v]) => v > 0).map(([k, v]) => {
@@ -334,7 +393,8 @@ function renderAnalytics(data){
               <div class="alx-chan-dot" style="background:${m.color}22;color:${m.color}"><i class="${m.icon}"></i></div>
               <div class="alx-chan-body">
                 <div class="alx-chan-label">${esc(m.label)}</div>
-                <div class="alx-chan-val"><b>${v}</b> <span class="alx-chan-pct">${pct}%</span></div>
+                <div class="alx-chan-big">${v}</div>
+                <div class="alx-chan-sub">${v === 1 ? 'разговор' : v < 5 ? 'разговора' : 'разговоров'} · ${pct}%</div>
               </div>
             </div>`;
         }).join('')}

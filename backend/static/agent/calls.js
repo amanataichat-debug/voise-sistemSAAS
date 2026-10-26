@@ -20,12 +20,12 @@ async function openCallsModal(){
       return;
     }
     tb.innerHTML = data.calls.map((c, i) => `
-      <div style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div class="avatar">${esc((c.contact_name||'?').trim().charAt(0).toUpperCase())}</div>
-          <div style="flex:1">
-            <div style="font-weight:600;font-size:13.5px">${esc(c.contact_name || '—')}</div>
-            <div style="font-size:11.5px;color:var(--hint)">${esc(c.contact_phone || '')}</div>
+      <div class="calls-item">
+        <div class="calls-item-head">
+          <div class="calls-item-avatar">${esc((c.contact_name||'?').trim().charAt(0).toUpperCase())}</div>
+          <div class="calls-item-main">
+            <div class="calls-item-name">${esc(c.contact_name || '—')}</div>
+            <div class="calls-item-phone">${esc(c.contact_phone || '')}</div>
           </div>
         </div>
         ${renderCallExpanded(c, 'mc-' + i)}
