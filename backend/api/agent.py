@@ -57,7 +57,10 @@ from backend.services import agent_pause
 from backend.services import agent_voice_context
 from backend.core.config import settings
 from backend.core.dependencies import get_current_user, get_current_user_flexible
-from backend.core.pipeline_stages import AGENT_CONTACT_STAGES, is_valid_stage
+from backend.core.pipeline_stages import (
+    AGENT_CONTACT_STAGES, is_valid_stage, get_agent_stages,
+    is_valid_stage_for_agent, save_agent_stages, normalize_stages_list,
+)
 from backend.services.agent_prompts import get_voice_agent_prompt, build_voice_agent_prompt
 from backend.services.agent_models import (
     ORCHESTRATOR_MODELS, get_default_model, is_valid_model, resolve_slug,
@@ -3981,9 +3984,57 @@ async def delete_agent_contact(
 
 
 @router.get("/pipeline/stages")
-async def get_pipeline_stages(current_user: User = Depends(get_current_user)):
-    """Справочник стадий воронки (фиксированный набор) — для канбана на фронте."""
-    return {"stages": AGENT_CONTACT_STAGES}
+async def get_pipeline_stages(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Стадии воронки агента: кастомные (CRM v2) или дефолтные."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    stages = get_agent_stages(agent)
+    return {"stages": stages, "custom": bool(agent and agent.pipeline_stages)}
+
+
+class PipelineStagesSaveRequest(BaseModel):
+    """
+    Сохранение кастомных стадий воронки для текущего агента.
+    stages: массив { key: str (lower a-z0-9_), label, color (#RRGGBB), kind (open|won|lost) }.
+    """
+    stages: List[dict] = Field(..., min_items=2, max_items=20)
+
+
+@router.put("/pipeline/stages")
+async def save_pipeline_stages(
+    body: PipelineStagesSaveRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Записать кастомные стадии воронки для агента. Валидация в normalize_stages_list."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    saved = save_agent_stages(agent, body.stages)
+    if saved is None:
+        raise HTTPException(status_code=400, detail="invalid_stages")
+    db.commit()
+    logger.info(f"[AGENT] Agent {agent.id} pipeline_stages updated ({len(saved)} stages)")
+    return {"stages": saved, "custom": True}
+
+
+@router.delete("/pipeline/stages")
+async def reset_pipeline_stages(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Сбросить кастомные стадии и вернуться к дефолтным."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    agent.pipeline_stages = None
+    db.commit()
+    return {"stages": AGENT_CONTACT_STAGES, "custom": False}
 
 
 @router.patch("/contacts/{contact_id}/status")
@@ -3994,15 +4045,16 @@ async def update_agent_contact_status(
     db: Session = Depends(get_db),
 ):
     """Ручной перевод контакта на стадию воронки (drag-drop в канбане / select в карточке)."""
-    if not is_valid_stage(body.status):
-        raise HTTPException(status_code=400, detail="invalid_stage")
-
     contact = db.query(AgentContact).filter(
         AgentContact.id == contact_id,
         AgentContact.user_id == current_user.id,
     ).first()
     if not contact:
         raise HTTPException(status_code=404, detail="not_found")
+    # Валидация с учётом КАСТОМНЫХ стадий агента контакта (CRM v2)
+    agent = db.query(AgentConfig).filter(AgentConfig.id == contact.agent_config_id).first() if contact.agent_config_id else None
+    if not is_valid_stage_for_agent(agent, body.status):
+        raise HTTPException(status_code=400, detail="invalid_stage")
 
     old_stage = contact.status
     contact.status = body.status

@@ -1600,8 +1600,11 @@ def ensure_wallet_columns():
 
 def ensure_crm_v2_columns():
     """
-    CRM v2 (ветка 2510-crm-v2): теги клиентов и поля сделки у AgentContact.
-    Для аналитики выручки, фильтров воронки, цветных пилюль-меток в карточке.
+    CRM v2 (ветка 2510-crm-v2):
+      - теги + поля сделки у AgentContact (цветные пилюли, аналитика выручки);
+      - pipeline_stages TEXT (JSON) на agent_configs — настраиваемые стадии
+        воронки на каждого агента (NULL = использовать дефолт из
+        backend/core/pipeline_stages.py).
     Идёт в начале старта, в каждом воркере — ORM выбирает все эти колонки
     в любом запросе списка клиентов; без них всё падает с UndefinedColumn.
     Каждый ALTER отдельной транзакцией — сбой одного не мешает остальным.
@@ -1609,22 +1612,25 @@ def ensure_crm_v2_columns():
     try:
         from sqlalchemy import text, inspect
         inspector = inspect(engine)
-        if not inspector.has_table('agent_contacts'):
-            return
-        cols = {c['name'] for c in inspector.get_columns('agent_contacts')}
         stmts = []
-        if 'tags' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS tags TEXT")
-        if 'deal_amount' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_amount NUMERIC(14, 2)")
-        if 'deal_currency' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_currency VARCHAR(8) DEFAULT 'KGS'")
-        if 'next_step_text' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_text TEXT")
-        if 'next_step_at' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP")
-        if 'lost_reason' not in cols:
-            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS lost_reason TEXT")
+        if inspector.has_table('agent_contacts'):
+            cols = {c['name'] for c in inspector.get_columns('agent_contacts')}
+            if 'tags' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS tags TEXT")
+            if 'deal_amount' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_amount NUMERIC(14, 2)")
+            if 'deal_currency' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_currency VARCHAR(8) DEFAULT 'KGS'")
+            if 'next_step_text' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_text TEXT")
+            if 'next_step_at' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP")
+            if 'lost_reason' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS lost_reason TEXT")
+        if inspector.has_table('agent_configs'):
+            cols_cfg = {c['name'] for c in inspector.get_columns('agent_configs')}
+            if 'pipeline_stages' not in cols_cfg:
+                stmts.append("ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS pipeline_stages TEXT")
         for s in stmts:
             try:
                 with engine.begin() as conn:
@@ -1632,7 +1638,7 @@ def ensure_crm_v2_columns():
             except Exception as e:
                 logger.error(f"❌ ensure_crm_v2_columns stmt failed [{s}]: {e}")
         if stmts:
-            logger.info(f"✅ CRM v2 columns in agent_contacts ({len(stmts)})")
+            logger.info(f"✅ CRM v2 columns ({len(stmts)})")
     except Exception as e:
         logger.error(f"❌ ensure_crm_v2_columns error: {e}")
 

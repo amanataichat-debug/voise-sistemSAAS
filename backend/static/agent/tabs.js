@@ -57,7 +57,22 @@
     }
   }
 
-  window.switchTab = function(id){
+  // Записать состояние вкладки в URL (?tab=…) — чтобы F5 вернул на то же место
+  // и ссылкой на /static/agent.html?tab=pipeline сразу открывалась воронка.
+  // skipHistory=true — когда событие пришло из popstate, иначе получим цикл.
+  function pushUrlState(id, skipHistory){
+    if(skipHistory) return;
+    try{
+      const url = new URL(location.href);
+      if(id === 'chat') url.searchParams.delete('tab');
+      else url.searchParams.set('tab', id);
+      // Карточку клиента (?client=…) не трогаем — URL state для неё ставится из contacts.js
+      history.replaceState({ tab: id }, '', url.pathname + (url.search ? url.search : '') + url.hash);
+    }catch(e){ /* ignore */ }
+  }
+
+  window.switchTab = function(id, opts){
+    opts = opts || {};
     if(!TAB_IDS.includes(id)) id = 'chat';
     currentTab = id;
 
@@ -80,9 +95,25 @@
       }
     }
     highlight(id);
+    pushUrlState(id, opts.skipHistory);
     // Освежаем счётчики — особенно если возвращаемся на «Диалог» после работы
     refreshTabCounts();
   };
+
+  // Восстановление вкладки/карточки клиента из URL при загрузке и Back/Forward
+  function restoreFromUrl(skipHistory){
+    try{
+      const p = new URLSearchParams(location.search);
+      const tab = p.get('tab') || 'chat';
+      const client = p.get('client');
+      window.switchTab(tab, { skipHistory: !!skipHistory });
+      if(client && typeof window.openContactDetailsModal === 'function'){
+        // Небольшая задержка — модалка вкладки должна успеть загрузиться
+        setTimeout(() => { try { window.openContactDetailsModal(client); } catch(e){} }, 150);
+      }
+    }catch(e){}
+  }
+  window.restoreTabsFromUrl = restoreFromUrl;
 
   // ── Счётчики на вкладках: /api/agent/stats → acount бейджи ─────────────
   window.refreshTabCounts = async function refreshTabCounts(){
@@ -131,6 +162,15 @@
     watchModalClose();
     document.addEventListener('keydown', onEsc);
     document.body.classList.add('tab-chat');
+    // Поддержка Back/Forward: при popstate восстанавливаем вкладку из URL
+    window.addEventListener('popstate', () => restoreFromUrl(true));
+    // Восстановление из URL — чуть позже, когда /api/agent/* готов отвечать
+    // и currentAgentId уже выставлен. Если вкладка не chat, модалка откроется.
+    setTimeout(() => {
+      if(document.getElementById('top-nav') && document.getElementById('top-nav').style.display !== 'none'){
+        restoreFromUrl(true);
+      }
+    }, 1500);
     // Первый вызов — после того как кабинет точно виден (showDashboard уже
     // прошёл loadStats, но от нашей точки это может быть чуть позже).
     setTimeout(() => window.refreshTabCounts(), 1200);

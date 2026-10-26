@@ -587,12 +587,29 @@
         <input type="search" class="form-input" id="pipeline-search" placeholder="Поиск по имени, телефону или компании…" oninput="plSearch(event)" style="flex:1;min-width:220px;height:36px">
         <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openAddContactModal()"><i class="fas fa-plus"></i> Контакт</button>
         <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openImportModal()"><i class="fas fa-file-import"></i> Импорт</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openStagesEditor()" title="Настроить стадии воронки"><i class="fas fa-sliders"></i> Стадии</button>
         <button class="btn btn-secondary btn-sm" style="height:36px" onclick="loadPipeline()" title="Обновить"><i class="fas fa-rotate"></i></button>
       </div>
       <div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closePipelineModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Редактор стадий воронки (CRM v2 — agent/stages.js) -->
+<div class="modal-overlay hidden" id="stages-editor-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-sliders"></i> Стадии воронки</div>
+      <button class="modal-close" onclick="closeStagesEditor()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" id="stages-editor-body"><div class="empty">Загрузка…</div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" style="margin-right:auto" onclick="resetStagesToDefault()"><i class="fas fa-rotate-left"></i> Сбросить к дефолту</button>
+      <button class="btn btn-secondary" onclick="closeStagesEditor()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveStagesEditor()"><i class="fas fa-check"></i> Сохранить</button>
     </div>
   </div>
 </div>
@@ -771,6 +788,7 @@
 <script defer src="/static/agent/branding.js"></script>
 <script defer src="/static/agent/tabs.js"></script>
 <script defer src="/static/agent/analytics.js"></script>
+<script defer src="/static/agent/stages.js"></script>
 <script defer src="/static/agent/init.js"></script>
 </body>
 </html>

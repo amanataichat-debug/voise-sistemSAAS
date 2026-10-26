@@ -1073,6 +1073,72 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .cd-deal-card .form-group:last-child { margin-bottom: 0; }
 .pl-empty { font-size: 11.5px; color: var(--vf-text-4); text-align: center; padding: 20px 0; }
 
+/* ── Редактор стадий воронки (agent/stages.js) ─────────────────────────── */
+.se-note { padding: 10px 14px; border-radius: 10px; background: var(--vf-surface-2); color: var(--vf-text-3); font-size: 12.5px; line-height: 1.5; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 8px; }
+.se-note i { color: var(--vf-accent); margin-top: 2px; }
+.se-note b { color: var(--vf-text); font-weight: 600; }
+.se-list { display: flex; flex-direction: column; gap: 8px; }
+.se-row {
+  display: grid; grid-template-columns: 24px 1.5fr 1fr auto auto auto; gap: 8px;
+  align-items: center; padding: 8px 10px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 10px;
+}
+.se-grab { color: var(--vf-text-4); font-size: 14px; cursor: grab; text-align: center; }
+.se-row .se-label { height: 36px; font-size: 13.5px; }
+.se-row .se-kind { height: 36px; font-size: 12.5px; }
+.se-colors { display: flex; gap: 4px; flex-wrap: wrap; max-width: 220px; }
+.se-color {
+  width: 22px; height: 22px; border-radius: 7px; border: 2px solid transparent;
+  cursor: pointer; padding: 0; transition: transform var(--vf-fast), border-color var(--vf-fast);
+}
+.se-color:hover { transform: scale(1.1); }
+.se-color.is-active { border-color: var(--vf-text); box-shadow: 0 0 0 2px var(--vf-surface); }
+.se-move { display: flex; flex-direction: column; gap: 0; }
+.se-move .icon-btn { width: 26px; height: 20px; }
+.se-move .icon-btn i { font-size: 10px; }
+.se-del { width: 32px; height: 32px; }
+.se-del:not([disabled]):hover { background: var(--vf-danger-soft); color: var(--vf-danger); }
+.se-del[disabled] { opacity: .4; cursor: not-allowed; }
+@media (max-width: 720px){
+  .se-row { grid-template-columns: 1fr; }
+  .se-colors { max-width: none; }
+}
+
+/* ── Фильтры во вкладке «Клиенты» (chip-строки по стадии / каналу / задачам / тегу) ── */
+.cf-filters { display: flex; flex-direction: column; gap: 8px; padding: 10px 2px 14px; }
+.cf-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cf-label { font-size: 11.5px; font-weight: 600; color: var(--vf-text-3); text-transform: uppercase; letter-spacing: .04em; min-width: 56px; }
+.cf-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.cf-chip {
+  display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+  background: var(--vf-surface-2); color: var(--vf-text-3); font-size: 12.5px; font-weight: 500;
+  border: 1px solid transparent; cursor: pointer;
+  transition: background var(--vf-fast), color var(--vf-fast), border-color var(--vf-fast);
+}
+.cf-chip:hover { color: var(--vf-text); background: var(--vf-surface-3); }
+.cf-chip.is-active {
+  background: var(--vf-accent); color: #fff; font-weight: 600;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--vf-accent) 40%, transparent);
+}
+.cf-tag {
+  display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px;
+  background: var(--vf-surface-2); color: var(--vf-text-2); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--vf-border); cursor: pointer;
+  transition: background var(--vf-fast), color var(--vf-fast), border-color var(--vf-fast);
+}
+.cf-tag:hover { color: var(--vf-text); background: var(--vf-surface-3); }
+.cf-tag.is-active { background: var(--vf-accent); color: #fff; border-color: var(--vf-accent); }
+.cf-tag-mini {
+  display: inline-block; padding: 1px 7px; margin-right: 3px; border-radius: 999px;
+  background: color-mix(in srgb, var(--vf-accent) 15%, var(--vf-surface-2)); color: var(--vf-accent);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.cf-task-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--vf-warning) 18%, transparent); color: var(--vf-warning);
+  font-size: 11px; font-weight: 600;
+}
+.cf-task-badge i { font-size: 10px; }
+
 /* ── Вкладка «Звонки»: крупные читаемые карточки ──────────────────────── */
 .calls-item { margin-bottom: 16px; padding: 14px 16px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 14px; box-shadow: var(--vf-shadow-1); }
 .calls-item-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }

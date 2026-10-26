@@ -24,9 +24,14 @@ async function saveContact(){
 // ── CONTACTS LIST MODAL ──
 let contactsSearchTimer = null;
 
+// Активные фильтры во вкладке «Клиенты» (одна активная вкладка списка)
+let contactsFilters = { stage: 'all', channel: 'all', tasks: 'all', tag: null };
+let contactsListCache = []; // последняя порция с бэка, для живой фильтрации
+
 async function openContactsListModal(){
   document.getElementById('contacts-list-modal-overlay').classList.remove('hidden');
   document.getElementById('contacts-search').value = '';
+  contactsFilters = { stage: 'all', channel: 'all', tasks: 'all', tag: null };
   await loadContactsList('');
   // debounced search
   document.getElementById('contacts-search').oninput = (e) => {
@@ -38,47 +43,131 @@ function closeContactsListModal(){
   document.getElementById('contacts-list-modal-overlay').classList.add('hidden');
 }
 
+// Переключение фильтра (вызывается из chip-кнопок)
+function cfSet(key, value){
+  contactsFilters[key] = value;
+  _renderContactsListFromCache();
+}
+function cfSetTag(tag){
+  contactsFilters.tag = contactsFilters.tag === tag ? null : tag;
+  _renderContactsListFromCache();
+}
+
 async function loadContactsList(search){
   const body = document.getElementById('contacts-list-body');
   body.innerHTML = '<div class="empty">Загрузка...</div>';
   try{
-    const qs = new URLSearchParams({ limit: 100, offset: 0 });
+    const qs = new URLSearchParams({ limit: 200, offset: 0 });
     if(search) qs.set('search', search);
+    // Стадия — на бэке (/contacts поддерживает status)
+    if(contactsFilters.stage && contactsFilters.stage !== 'all') qs.set('status', contactsFilters.stage);
     const r = await apiFetch(API + '/contacts?' + qs);
     if(!r || r.status !== 200){ body.innerHTML='<div class="empty">Ошибка</div>'; return; }
     const data = await r.json();
-    document.getElementById('contacts-list-count').textContent =
-      `· всего ${data.total}`;
-    if(!data.contacts.length){
-      body.innerHTML = `<div class="empty">${search ? 'Ничего не найдено' : 'Контактов пока нет'}</div>`;
-      return;
+    contactsListCache = { contacts: data.contacts || [], total: data.total || 0, search: search || '' };
+    _renderContactsListFromCache();
+  }catch(e){
+    body.innerHTML = '<div class="empty">Ошибка сети</div>';
+  }
+}
+
+// Собирает уникальные теги из загруженных контактов — для chip-строки
+function _collectTags(contacts){
+  const map = {};
+  (contacts || []).forEach(c => (c.tags || []).forEach(t => { map[t] = (map[t] || 0) + 1; }));
+  return Object.keys(map).sort((a, b) => map[b] - map[a]).slice(0, 10); // top-10
+}
+
+function _renderContactsListFromCache(){
+  const body = document.getElementById('contacts-list-body');
+  if(!body || !contactsListCache || !contactsListCache.contacts) return;
+  const all = contactsListCache.contacts;
+  // Канал + задачи + тег — клиентские фильтры (поверх серверного status/search)
+  const list = all.filter(c => {
+    if(contactsFilters.channel !== 'all'){
+      const ch = c.channels || {};
+      if(contactsFilters.channel === 'none'){
+        if(ch.whatsapp || ch.telegram || ch.instagram) return false;
+      } else if(!ch[contactsFilters.channel]) return false;
     }
-    body.innerHTML = `
-      <table class="calls-table">
-        <thead><tr><th>Имя</th><th>Телефон</th><th>Компания</th><th>Стадия</th><th>Попыток</th><th>Последний звонок</th><th></th></tr></thead>
-        <tbody>
-          ${data.contacts.map(c => `
+    if(contactsFilters.tasks === 'with' && !(c.pending_tasks > 0)) return false;
+    if(contactsFilters.tasks === 'without' && (c.pending_tasks > 0)) return false;
+    if(contactsFilters.tag && !(c.tags || []).includes(contactsFilters.tag)) return false;
+    return true;
+  });
+  document.getElementById('contacts-list-count').textContent =
+    (list.length === all.length ? `· всего ${contactsListCache.total}` : `· показано ${list.length} из ${contactsListCache.total}`);
+  const tags = _collectTags(all);
+  // Строка фильтров сверху списка
+  const chip = (active, label, onclick) => `<button class="cf-chip ${active ? 'is-active' : ''}" onclick="${onclick}">${esc(label)}</button>`;
+  const stageChips = ['all'].concat(STAGE_ORDER).map(k => chip(
+    contactsFilters.stage === k,
+    k === 'all' ? 'Все стадии' : (STAGE_META[k] ? STAGE_META[k].label : k),
+    `cfSet('stage','${k}')`
+  )).join('');
+  const chChips = [['all','Все каналы'],['whatsapp','WhatsApp'],['telegram','Telegram'],['instagram','Instagram'],['none','Без переписки']]
+    .map(([k, l]) => chip(contactsFilters.channel === k, l, `cfSet('channel','${k}')`)).join('');
+  const tsChips = [['all','Все'],['with','С задачей'],['without','Без задачи']]
+    .map(([k, l]) => chip(contactsFilters.tasks === k, l, `cfSet('tasks','${k}')`)).join('');
+  const tagChips = tags.length ? tags.map(t => `<button class="cf-tag ${contactsFilters.tag === t ? 'is-active' : ''}" onclick="cfSetTag('${esc(t).replace(/'/g,"\\'")}')">${esc(t)}</button>`).join('') : '';
+
+  const filtersBar = `
+    <div class="cf-filters">
+      <div class="cf-row"><span class="cf-label">Стадия</span><div class="cf-chips">${stageChips}</div></div>
+      <div class="cf-row"><span class="cf-label">Канал</span><div class="cf-chips">${chChips}</div></div>
+      <div class="cf-row"><span class="cf-label">Задачи</span><div class="cf-chips">${tsChips}</div></div>
+      ${tags.length ? `<div class="cf-row"><span class="cf-label">Теги</span><div class="cf-chips">${tagChips}</div></div>` : ''}
+    </div>`;
+
+  if(!list.length){
+    body.innerHTML = filtersBar + `<div class="empty" style="margin-top:14px">${contactsListCache.search ? 'Ничего не найдено' : 'Под фильтр ничего не попало'}</div>`;
+    return;
+  }
+  const table = `
+    <table class="calls-table">
+      <thead><tr><th>Имя</th><th>Телефон</th><th>Компания</th><th>Стадия</th><th>Каналы</th><th>Теги</th><th>Задачи</th><th>Последний звонок</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(c => {
+          const ch = c.channels || {};
+          const chBadges = [
+            ch.whatsapp  ? '<i class="fab fa-whatsapp"  style="color:#25D366"></i>' : '',
+            ch.telegram  ? '<i class="fab fa-telegram"  style="color:#229ED9"></i>' : '',
+            ch.instagram ? '<i class="fab fa-instagram" style="color:#E1306C"></i>' : '',
+          ].filter(Boolean).join(' ') || '<span style="color:var(--vf-text-4);font-size:11px">—</span>';
+          const tagPills = (c.tags || []).slice(0, 2).map(t => `<span class="cf-tag-mini">${esc(t)}</span>`).join('');
+          const taskCell = c.pending_tasks > 0
+            ? `<span class="cf-task-badge"><i class="far fa-calendar-check"></i>${c.pending_tasks}</span>`
+            : '<span style="color:var(--vf-text-4);font-size:11px">—</span>';
+          return `
             <tr style="cursor:pointer" onclick="openContactDetailsModal('${c.id}')">
               <td style="font-weight:600">${esc(c.name || '—')}${aiPauseBadge(c)}</td>
               <td style="color:var(--muted)">${esc(c.phone)}</td>
               <td style="color:var(--muted)">${esc(c.company || '—')}</td>
               <td>${stageBadge(c.status)}</td>
-              <td style="color:var(--muted)">${c.attempts_count || 0}</td>
+              <td style="font-size:14px;white-space:nowrap">${chBadges}</td>
+              <td>${tagPills || '<span style="color:var(--vf-text-4);font-size:11px">—</span>'}</td>
+              <td style="white-space:nowrap">${taskCell}</td>
               <td style="color:var(--muted)">${c.last_called_at ? fmtDate(c.last_called_at) : '—'}</td>
-              <td style="text-align:right;white-space:nowrap"><span class="btn btn-secondary btn-sm" style="pointer-events:none"><i class="fas fa-eye"></i> Смотреть инфо</span></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`;
-  }catch(e){
-    body.innerHTML = '<div class="empty">Ошибка сети</div>';
-  }
+              <td style="text-align:right;white-space:nowrap"><span class="btn btn-secondary btn-sm" style="pointer-events:none"><i class="fas fa-eye"></i> Открыть</span></td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  body.innerHTML = filtersBar + table;
 }
 
 let currentContactDetailId = null;
 let _cdTasks = [];   // запланированные задачи текущего контакта (для блока «Задачи»)
 async function openContactDetailsModal(contactId){
   currentContactDetailId = contactId;
+  // URL state: ?client=<id> — F5 возвращает открытую карточку, ссылка открывает её же
+  try {
+    const url = new URL(location.href);
+    if(url.searchParams.get('client') !== String(contactId)){
+      url.searchParams.set('client', contactId);
+      history.replaceState({ ...(history.state || {}), client: contactId }, '', url.toString());
+    }
+  } catch(e) {}
   document.getElementById('contact-details-modal-overlay').classList.remove('hidden');
   const body = document.getElementById('contact-details-body');
   body.innerHTML = '<div class="empty">Загрузка...</div>';
@@ -94,6 +183,15 @@ async function openContactDetailsModal(contactId){
 }
 function closeContactDetailsModal(){
   document.getElementById('contact-details-modal-overlay').classList.add('hidden');
+  currentContactDetailId = null;
+  // Убираем ?client=… из URL, не трогая ?tab=…
+  try {
+    const url = new URL(location.href);
+    if(url.searchParams.has('client')){
+      url.searchParams.delete('client');
+      history.replaceState({ ...(history.state || {}), client: null }, '', url.toString());
+    }
+  } catch(e) {}
 }
 
 // Иконка канала для бейджа в объединённой ленте переписки
