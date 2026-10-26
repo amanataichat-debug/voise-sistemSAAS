@@ -283,11 +283,14 @@ function renderAnalytics(data){
   }).length;
   const weekDelta = callsPrevWeek ? Math.round((callsWeek - callsPrevWeek) / callsPrevWeek * 100) : 0;
 
-  // ── Деньги (нужны поля сделки — пока оцениваем на коленке)
-  // TODO (следующий коммит, миграция БД): deal_amount у клиента → реальная выручка.
-  // Пока показываем «данные появятся с полями сделки» в сомах.
-  const avgCheck = null;
-  const totalRevenue = null;
+  // ── Деньги: считаем по deal_amount успешно закрытых клиентов (CRM v2) ──
+  const wonWithAmount = contacts.filter(c => c.status === 'success' && c.deal_amount != null && c.deal_amount > 0);
+  const totalRevenue = wonWithAmount.reduce((a, c) => a + Number(c.deal_amount || 0), 0);
+  const avgCheck = wonWithAmount.length ? Math.round(totalRevenue / wonWithAmount.length) : 0;
+  // Клиенты, у которых сумма сделки заполнена и ждут решения
+  const openPipelineAmount = contacts
+    .filter(c => c.status !== 'rejected' && c.status !== 'do_not_call' && c.deal_amount != null && c.deal_amount > 0)
+    .reduce((a, c) => a + Number(c.deal_amount || 0), 0);
 
   // ── Рендер ────────────────────────────────────────────────────────────
   const periodLabel = _periodLabel(analyticsPeriod);
@@ -401,27 +404,29 @@ function renderAnalytics(data){
       </div>
     </div>
 
-    <!-- Деньги — заглушка до появления полей сделки у клиента -->
+    <!-- Деньги: реальная выручка из поля «Сумма сделки» у успешно закрытых клиентов -->
     <div class="alx-card alx-money-card">
       <div class="alx-card-head">
         <h4><i class="fas fa-coins"></i> Выручка и средний чек</h4>
-        <div class="alx-card-sub">Валюта — сом (KGS)</div>
+        <div class="alx-card-sub">Валюта — сом (KGS)${wonWithAmount.length ? ` · по ${wonWithAmount.length} закрытым сделкам` : ''}</div>
       </div>
       <div class="alx-money-row">
         <div class="alx-money-cell">
           <div class="alx-money-label">Выручка от успешных сделок</div>
-          <div class="alx-money-big">${totalRevenue != null ? totalRevenue.toLocaleString('ru-RU') + ' сом' : '— сом'}</div>
+          <div class="alx-money-big">${totalRevenue.toLocaleString('ru-RU')} сом</div>
         </div>
         <div class="alx-money-cell">
-          <div class="alx-money-label">Средний чек клиента</div>
-          <div class="alx-money-big">${avgCheck != null ? avgCheck.toLocaleString('ru-RU') + ' сом' : '— сом'}</div>
+          <div class="alx-money-label">Средний чек</div>
+          <div class="alx-money-big">${avgCheck.toLocaleString('ru-RU')} сом</div>
         </div>
         <div class="alx-money-cell">
-          <div class="alx-money-label">Успешно закрыто клиентов</div>
-          <div class="alx-money-big">${won_contacts}</div>
+          <div class="alx-money-label">Сумма в работе</div>
+          <div class="alx-money-big">${openPipelineAmount.toLocaleString('ru-RU')} сом</div>
         </div>
       </div>
-      <div class="alx-money-note"><i class="fas fa-info-circle"></i> Чтобы считать выручку автоматически, у карточки клиента должно быть поле «Сумма сделки». Включим в следующем обновлении — тогда эти цифры заполнятся без ручного ввода.</div>
+      ${wonWithAmount.length === 0
+        ? `<div class="alx-money-note"><i class="fas fa-info-circle"></i> Чтобы цифры заработали — в карточке клиента (вкладка «Данные») заполните поле «Сумма сделки». В конце успешной сделки она попадёт в выручку автоматически.</div>`
+        : ''}
     </div>
   `;
 }

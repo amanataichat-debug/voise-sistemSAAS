@@ -336,6 +336,13 @@ class AgentContactUpdateRequest(BaseModel):
     company: Optional[str] = Field(None, max_length=255)
     position: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
+    # ── CRM v2 поля (ветка 2510-crm-v2) ──
+    # tags: массив строк → хранится comma-separated в колонке; "" очищает.
+    tags: Optional[List[str]] = None
+    deal_amount: Optional[float] = Field(None, ge=0)
+    next_step_text: Optional[str] = None
+    next_step_at: Optional[str] = None  # ISO; парсится ниже
+    lost_reason: Optional[str] = None
 
 
 class PublicAccessToggleRequest(BaseModel):
@@ -3912,12 +3919,34 @@ async def update_agent_contact(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
+    # Нормализация CRM v2 полей:
+    #   tags: List[str] → "a,b,c" (нижний регистр, пробелы, уникальные, max 10)
+    #   next_step_at: ISO-строка → datetime (naive UTC); пустая → None
+    if 'tags' in update_data:
+        raw = update_data.pop('tags') or []
+        seen = []
+        for t in raw:
+            v = (t or '').strip().lower()[:32]
+            if v and v not in seen:
+                seen.append(v)
+            if len(seen) >= 10: break
+        contact.tags = ",".join(seen) if seen else None
+    if 'next_step_at' in update_data:
+        v = update_data.pop('next_step_at')
+        if not v:
+            contact.next_step_at = None
+        else:
+            try:
+                from datetime import datetime as _dt
+                contact.next_step_at = _dt.fromisoformat(str(v).replace('Z', '+00:00')).replace(tzinfo=None)
+            except Exception:
+                pass  # игнорируем битый ISO
     for field, value in update_data.items():
         setattr(contact, field, value)
 
     db.commit()
     db.refresh(contact)
-    logger.info(f"[AGENT] Updated contact {contact_id} fields: {list(update_data.keys())}")
+    logger.info(f"[AGENT] Updated contact {contact_id} fields: {list(body.dict(exclude_unset=True).keys())}")
     return contact.to_dict()
 
 

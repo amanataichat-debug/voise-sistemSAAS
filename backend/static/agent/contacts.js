@@ -246,7 +246,11 @@ function renderContactDetails(c){
       <div id="cd-tasks-list"></div>
     </div>`;
 
-  // 5. Данные — форма редактирования
+  // 5. Данные — форма редактирования, включая CRM v2 поля (сделка, теги, следующий шаг)
+  const nsAt = c.next_step_at
+    ? new Date(c.next_step_at).toISOString().slice(0, 16) // local-form datetime-local
+    : '';
+  const tagsVal = (c.tags || []).join(', ');
   const infoSection = `
     <div class="cd-section" data-section="info">
       <div class="form-row">
@@ -254,6 +258,20 @@ function renderContactDetails(c){
         <div class="form-group"><label class="form-label">Компания</label><input type="text" class="form-input" id="cd-company" value="${esc(c.company||'')}"></div>
       </div>
       <div class="form-group"><label class="form-label">Должность</label><input type="text" class="form-input" id="cd-position" value="${esc(c.position||'')}"></div>
+      <div class="form-group"><label class="form-label">Теги <span style="color:var(--vf-text-4);font-weight:400;font-size:11px">· через запятую: vip, повтор, розница</span></label><input type="text" class="form-input" id="cd-tags" value="${esc(tagsVal)}" placeholder="vip, hot, розница"></div>
+
+      <div class="cd-deal-card">
+        <div class="cd-deal-head"><i class="fas fa-coins"></i> Сделка</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Сумма, сом</label><input type="number" min="0" step="100" class="form-input" id="cd-deal-amount" value="${c.deal_amount != null ? esc(c.deal_amount) : ''}" placeholder="например, 25000"></div>
+          <div class="form-group"><label class="form-label">Следующий шаг — когда <span style="color:var(--vf-text-4);font-weight:400;font-size:11px">🕐 Бишкек</span></label><input type="datetime-local" class="form-input" id="cd-next-at" value="${esc(nsAt)}"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Следующий шаг — что сделать</label><input type="text" class="form-input" id="cd-next-text" value="${esc(c.next_step_text||'')}" placeholder="Прислать КП в WhatsApp"></div>
+        ${c.status === 'rejected' || c.status === 'do_not_call' ? `
+          <div class="form-group"><label class="form-label">Причина отказа</label><input type="text" class="form-input" id="cd-lost" value="${esc(c.lost_reason||'')}" placeholder="Дорого / не актуально / конкурент"></div>
+        ` : ''}
+      </div>
+
       <div class="form-group"><label class="form-label">Заметки о клиенте</label><textarea class="form-textarea" id="cd-notes" rows="4" style="min-height:90px">${esc(c.notes||'')}</textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary btn-sm" onclick="resetContactEdit()">Отмена</button>
@@ -485,11 +503,18 @@ function resetContactEdit(){
 
 async function saveContactInfo(){
   if(!currentContactDetailId) return;
+  const val = id => (document.getElementById(id) || {}).value || '';
   const body = {
-    name: document.getElementById('cd-name').value.trim() || null,
-    company: document.getElementById('cd-company').value.trim() || null,
-    position: document.getElementById('cd-position').value.trim() || null,
-    notes: document.getElementById('cd-notes').value.trim() || null,
+    name: val('cd-name').trim() || null,
+    company: val('cd-company').trim() || null,
+    position: val('cd-position').trim() || null,
+    notes: val('cd-notes').trim() || null,
+    // CRM v2: теги + сделка
+    tags: val('cd-tags').split(',').map(t => t.trim()).filter(Boolean),
+    deal_amount: val('cd-deal-amount') ? Number(val('cd-deal-amount')) : null,
+    next_step_text: val('cd-next-text').trim() || null,
+    next_step_at: val('cd-next-at') || null,  // datetime-local → ISO-ish
+    lost_reason: val('cd-lost').trim() || null,
   };
   try{
     const r = await apiFetch(API + '/contacts/' + currentContactDetailId, { method:'PUT', body:JSON.stringify(body) });

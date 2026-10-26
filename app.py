@@ -1598,6 +1598,45 @@ def ensure_wallet_columns():
         logger.error(f"❌ ensure_wallet_columns error: {e}")
 
 
+def ensure_crm_v2_columns():
+    """
+    CRM v2 (ветка 2510-crm-v2): теги клиентов и поля сделки у AgentContact.
+    Для аналитики выручки, фильтров воронки, цветных пилюль-меток в карточке.
+    Идёт в начале старта, в каждом воркере — ORM выбирает все эти колонки
+    в любом запросе списка клиентов; без них всё падает с UndefinedColumn.
+    Каждый ALTER отдельной транзакцией — сбой одного не мешает остальным.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if not inspector.has_table('agent_contacts'):
+            return
+        cols = {c['name'] for c in inspector.get_columns('agent_contacts')}
+        stmts = []
+        if 'tags' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS tags TEXT")
+        if 'deal_amount' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_amount NUMERIC(14, 2)")
+        if 'deal_currency' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_currency VARCHAR(8) DEFAULT 'KGS'")
+        if 'next_step_text' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_text TEXT")
+        if 'next_step_at' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP")
+        if 'lost_reason' not in cols:
+            stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS lost_reason TEXT")
+        for s in stmts:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(s))
+            except Exception as e:
+                logger.error(f"❌ ensure_crm_v2_columns stmt failed [{s}]: {e}")
+        if stmts:
+            logger.info(f"✅ CRM v2 columns in agent_contacts ({len(stmts)})")
+    except Exception as e:
+        logger.error(f"❌ ensure_crm_v2_columns error: {e}")
+
+
 def ensure_chat_v2_columns():
     """
     Переписка v2 (ветка 1210-chat-v2): пауза агента с клиентом, настройки
@@ -2669,6 +2708,7 @@ async def startup_event():
         ensure_chat_v2_columns()
         ensure_branding_columns()
         ensure_knowledge_v2_tables()
+        ensure_crm_v2_columns()
 
         try:
             # Для Render используем более простую блокировку

@@ -76,6 +76,28 @@ function renderPipeline(){
   }).join('');
 }
 
+// Палитра для тегов — хэш-функция чтобы один и тот же тег всегда получал
+// одинаковый цвет (не хочется радугу «vip» в каждой карточке разного цвета).
+const PL_TAG_PALETTE = [
+  { bg: '#ef4444', fg: '#fff' },  // red
+  { bg: '#f97316', fg: '#fff' },  // orange
+  { bg: '#f59e0b', fg: '#fff' },  // amber
+  { bg: '#10b981', fg: '#fff' },  // emerald
+  { bg: '#06b6d4', fg: '#fff' },  // cyan
+  { bg: '#3b82f6', fg: '#fff' },  // blue
+  { bg: '#8b5cf6', fg: '#fff' },  // violet
+  { bg: '#ec4899', fg: '#fff' },  // pink
+];
+function plTagColor(tag){
+  let h = 0; for(let i = 0; i < tag.length; i++) h = ((h << 5) - h + tag.charCodeAt(i)) | 0;
+  return PL_TAG_PALETTE[Math.abs(h) % PL_TAG_PALETTE.length];
+}
+function plFormatSum(n){
+  if(n == null) return '';
+  const v = Number(n) || 0;
+  return v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' сом';
+}
+
 function pipelineCard(c){
   const ch = c.channels || {};
   const chanIcons = [
@@ -88,6 +110,39 @@ function pipelineCard(c){
     ? `<span class="pl-task" title="Запланировано задач: ${pending}"><i class="far fa-calendar-check"></i>${pending}</span>`
     : '';
   const initial = (c.name || c.phone || '?').trim()[0].toUpperCase();
+
+  // Теги (max 3 в карточке, 4-й и далее → +N)
+  const tags = (c.tags || []).slice();
+  const tagChips = tags.slice(0, 3).map(t => {
+    const col = plTagColor(t);
+    return `<span class="pl-tag" style="background:${col.bg};color:${col.fg}">${esc(t)}</span>`;
+  }).join('');
+  const extraTags = tags.length > 3 ? `<span class="pl-tag pl-tag-more">+${tags.length - 3}</span>` : '';
+  const tagsRow = tags.length ? `<div class="pl-tags">${tagChips}${extraTags}</div>` : '';
+
+  // Сумма сделки — акцент крупным текстом (ощущение CRM с деньгами)
+  const amount = c.deal_amount ? `<div class="pl-amount">${plFormatSum(c.deal_amount)}</div>` : '';
+
+  // Следующий шаг + его срок (красный если просрочен, оранжевый если сегодня)
+  let nextStepRow = '';
+  if(c.next_step_text || c.next_step_at){
+    let kind = 'future';
+    let when = '';
+    if(c.next_step_at){
+      const t = new Date(c.next_step_at).getTime();
+      const now = Date.now();
+      const diffH = (t - now) / (3600 * 1000);
+      if(diffH < 0) kind = 'overdue';
+      else if(diffH < 24) kind = 'today';
+      when = fmtDate(c.next_step_at);
+    }
+    nextStepRow = `
+      <div class="pl-next pl-next-${kind}" title="${esc(c.next_step_text || '')}">
+        <i class="fas fa-arrow-right-long"></i>
+        <span>${esc(c.next_step_text || 'Следующий шаг')}${when ? ' · ' + when : ''}</span>
+      </div>`;
+  }
+
   return `
     <div class="pl-card" draggable="true" data-id="${c.id}" data-stage="${c.status || 'new'}"
          ondragstart="plDragStart(event)" ondragend="plDragEnd(event)"
@@ -100,6 +155,9 @@ function pipelineCard(c){
         </div>
       </div>
       ${c.company ? `<div class="pl-card-company" title="${esc(c.company)}"><i class="fas fa-building"></i>${esc(c.company)}</div>` : ''}
+      ${amount}
+      ${tagsRow}
+      ${nextStepRow}
       <div class="pl-card-foot">
         <div class="pl-chans">${chanIcons || '<span class="pl-ch pl-ch-off" title="Нет переписки"><i class="fas fa-phone"></i></span>'}</div>
         ${taskBadge}

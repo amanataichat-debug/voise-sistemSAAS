@@ -5,7 +5,7 @@ AgentContact — контакт в базе автономного агента 
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, Index, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -66,6 +66,19 @@ class AgentContact(Base):
     alt_phones = Column(Text, nullable=True)
     call_phone = Column(String(50), nullable=True)
 
+    # ── Поля CRM v2 (ветка 2510-crm-v2) ─────────────────────────────────
+    # Теги: произвольные метки (VIP, Hot, по продукту). Хранятся как
+    # comma-separated TEXT: "vip,повтор,розница". Разбирать через split(',').
+    tags = Column(Text, nullable=True)
+    # Сделка: сумма в сомах (сомов), следующий шаг и когда, причина потери.
+    # Используется для аналитики выручки, фильтров воронки и расчёта среднего
+    # чека. Колонки создаёт app.ensure_crm_v2_columns() в начале старта.
+    deal_amount = Column(Numeric(14, 2), nullable=True)       # KGS
+    deal_currency = Column(String(8), nullable=True, default="KGS")
+    next_step_text = Column(Text, nullable=True)
+    next_step_at = Column(DateTime, nullable=True)
+    lost_reason = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -111,6 +124,13 @@ class AgentContact(Base):
             "ai_paused_until": iso_utc(self.ai_paused_until) if self.is_ai_paused() else None,
             "ai_pause_reason": self.ai_pause_reason if self.is_ai_paused() else None,
             "ai_paused_forever": self.is_ai_paused() and self.ai_paused_until.year >= 9999,
+            # CRM v2 поля: теги + сделка
+            "tags": [t.strip() for t in (self.tags or "").split(",") if t.strip()],
+            "deal_amount": float(self.deal_amount) if self.deal_amount is not None else None,
+            "deal_currency": self.deal_currency or "KGS",
+            "next_step_text": self.next_step_text,
+            "next_step_at": iso_utc(self.next_step_at),
+            "lost_reason": self.lost_reason,
             "created_at": iso_utc(self.created_at),
             "updated_at": iso_utc(self.updated_at),
         }
