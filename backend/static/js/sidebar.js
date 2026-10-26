@@ -264,6 +264,27 @@
   }
 
   // ---------------------------------------------------------------------
+  // Переключатель темы ☀/☾: ставим в топбаре слева от переключателя языка.
+  // Логика самого переключения — в /static/js/theme.js (слушает клики по
+  // .theme-toggle и обновляет data-theme на <html>).
+  // ---------------------------------------------------------------------
+  function renderThemeToggle() {
+    if (document.querySelector('.theme-toggle')) return;
+    var bar = document.querySelector('.vf-topbar-right') || document.querySelector('.top-nav');
+    if (!bar) return;
+    var btn = document.createElement('button');
+    btn.className = 'icon-btn theme-toggle';
+    btn.id = 'theme-toggle';
+    btn.type = 'button';
+    btn.title = 'Переключить тему';
+    btn.setAttribute('aria-pressed', 'false');
+    btn.innerHTML = '<i class="fas fa-moon"></i>';
+    var userMenu = bar.querySelector('.user-menu');
+    if (userMenu) userMenu.parentNode.insertBefore(btn, userMenu);
+    else bar.insertBefore(btn, bar.firstChild);
+  }
+
+  // ---------------------------------------------------------------------
   // Переключатель языка RU | KY: в топбаре перед меню пользователя
   // ---------------------------------------------------------------------
   function renderLangSwitch() {
@@ -308,6 +329,7 @@
 
   function init() {
     var nav = renderNav();
+    renderThemeToggle();
     renderLangSwitch();
     if (!nav) return;
 

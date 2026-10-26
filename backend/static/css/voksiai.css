@@ -458,6 +458,21 @@ html:has(body.vf) { scrollbar-width: thin; scrollbar-color: var(--vf-border-stro
 /* В топбаре старых страниц (flex, space-between) — прижать к меню пользователя */
 .top-nav > .vf-lang-switch { margin-left: auto; margin-right: 10px; }
 
+/* ---------- Переключатель темы ☾/☀ (кнопка в топбаре всех страниц кабинета) ---------- */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--vf-r-md);
+  border: 1px solid var(--vf-border); background: var(--vf-surface);
+  color: var(--vf-text-3); cursor: pointer; flex: 0 0 auto; padding: 0;
+  transition: background var(--vf-fast), color var(--vf-fast), border-color var(--vf-fast);
+}
+.theme-toggle:hover { color: var(--vf-text); background: var(--vf-surface-2); border-color: var(--vf-border-strong); }
+.theme-toggle i { font-size: 15px; }
+.theme-toggle[aria-pressed="true"] { color: var(--vf-accent); border-color: color-mix(in srgb, var(--vf-accent) 50%, var(--vf-border)); }
+/* Внутри agent.html (своя .top-nav) .icon-btn.theme-toggle подхватывает стили .icon-btn */
+.top-nav .theme-toggle, .nav-right .theme-toggle { width: 34px; height: 34px; border: 0; background: transparent; border-radius: 9px; }
+.top-nav .theme-toggle:hover { background: var(--vf-surface-3); color: var(--vf-text); }
+
 /* Мост FA → Lucide: ui.js вставил svg внутрь <i class="fas …"> (класс .vf-fa) —
    глиф самого Font Awesome (::before) гасим, иначе иконка рисуется дважды.
    Иконки без аналога в спрайте класса .vf-fa не получают и остаются глифом FA. */

@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#2a5ce8">
+<!-- theme-bootstrap: СИНХРОННО ставим data-theme до загрузки стилей, иначе
+     при входе на страницу темная тема мигает серо-белым. localStorage.vs_theme
+     = 'light' | 'dark' | 'system' (по умолчанию). -->
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
 <title>Агент обзвона · VoksiAI</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
@@ -99,6 +109,7 @@
       <button class="sub-action" id="sub-action" style="display:none" onclick="onSubAction()">Пополнить</button>
     </div>
     <span class="nav-sep"></span>
+    <button class="icon-btn theme-toggle" id="theme-toggle" type="button" title="Тёмная тема" aria-pressed="false"><i class="fas fa-moon"></i></button>
     <a href="/static/agent-guide.html" class="icon-btn" id="guide-btn" title="Как это работает" target="_blank" rel="noopener"><i class="far fa-circle-question"></i></a>
     <a class="icon-btn" id="delete-agent-btn" title="Удалить агента" onclick="deleteAgent()" role="button" tabindex="0"><i class="far fa-trash-can"></i></a>
     <button class="icon-btn" id="logout-btn" type="button" data-logout title="Выйти с платформы"><i class="fas fa-right-from-bracket"></i></button>
@@ -730,6 +741,7 @@
      перед DOMContentLoaded — глобалы и inline-onclick остаются рабочими,
      но парсер не ждёт сеть на каждом теге.
      Порядок: core → фичи → panels → init. Документация: /static/agent/CLAUDE.md -->
+<script defer src="/static/js/theme.js"></script>
 <script defer src="/static/js/sidebar.js"></script>
 <script defer src="/static/agent/core.js"></script>
 <script defer src="/static/agent/credits.js"></script>

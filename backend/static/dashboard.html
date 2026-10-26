@@ -3,6 +3,13 @@
 <!-- ✅ ВЕРСИЯ 3.1: Исправлен подсчёт ассистентов (OpenAI + Gemini) -->
 <html lang="ru">
 <head>
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Панель управления — VoksiAI</title>
@@ -1724,6 +1731,7 @@
       </a>
     </div>
   </aside>
+  <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/sidebar.js"></script>
   
   <!-- Основной контент -->
