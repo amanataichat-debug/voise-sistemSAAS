@@ -41,7 +41,6 @@ function Footer() {
         </div>
         <div className="lp-footer-bottom">
           <span>{t('footer.copyright')}</span>
-          <span>{t('footer.company')}</span>
         </div>
       </div>
     </footer>

@@ -1,5 +1,5 @@
 /**
- * VoksiAI — единый сайдбар личного кабинета (дизайн-система, этап 1).
+ * Voksy AI — единый сайдбар личного кабинета (дизайн-система, этап 1).
  *
  * Раньше меню было скопировано руками в каждую страницу и везде разъехалось.
  * Теперь страница держит пустой <nav class="sidebar-nav" id="sidebar-nav"></nav>
@@ -11,7 +11,7 @@
  *   4. даёт единый выход (#logout-button, #dropdown-logout, [data-logout]);
  *   5. ставит переключатель языка RU | KY в топбар.
  *
- * 6. карточка «Кошелёк VoksiAI» (баланс в сомах, /api/wallet/balance) над подвалом сайдбара
+ * 6. карточка «Кошелёк Voksy AI» (баланс в сомах, /api/wallet/balance) над подвалом сайдбара
  *    и модалка пополнения (POST /api/wallet/topup → переход на страницу оплаты Finik).
  *    Другие страницы обновляют баланс через window.VoksiAISidebar.refreshWallet()
  *    и получают событие vf:wallet с ответом /balance.
@@ -183,7 +183,7 @@
     card.className = 'vf-wallet';
     card.id = 'vf-wallet-card';
     card.innerHTML =
-      '<div class="vf-wallet-label">' + icon('wallet') + ' ' + T('wallet.card_title', 'Кошелёк VoksiAI') + '</div>' +
+      '<div class="vf-wallet-label">' + icon('wallet') + ' ' + T('wallet.card_title', 'Кошелёк Voksy AI') + '</div>' +
       '<div class="vf-wallet-balance" id="vf-wallet-balance">…</div>' +
       '<button class="vf-wallet-btn" type="button" id="vf-wallet-topup">' + icon('plus') + ' ' + T('wallet.topup', 'Пополнить') + '</button>' +
       '<a class="vf-wallet-link" href="/static/settings.html#wallet">' + T('wallet.history', 'История операций') + '</a>';

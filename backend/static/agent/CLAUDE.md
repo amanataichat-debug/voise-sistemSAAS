@@ -1,4 +1,4 @@
-# Агент обзвона VoksiAI — фронтенд страницы `/static/agent.html`
+# Агент обзвона Voksy AI — фронтенд страницы `/static/agent.html`
 
 Дашборд **автономного агента для обзвонов** (не путать с `agents.html` — старой страницей
 OpenAI-ассистентов, закрытой редиректом).
@@ -24,7 +24,7 @@ OpenAI-ассистентов, закрытой редиректом).
 `agent_tools.call_window(agent)` в проверках звонка и в планировщике (`TaskScheduler._dial_gate`). Выбранный номер = номер исходящих + входящие на него идут
 агенту (PostCall по стенограмме, см. `backend/services/agent_call_finalizer.py`).
 
-**Вёрстка — дизайн-система VoksiAI**, каркас C (`design-system/04-pages-cabinet.md` §1):
+**Вёрстка — дизайн-система Voksy AI**, каркас C (`design-system/04-pages-cabinet.md` §1):
 `<html class="vf">`, `/static/css/voksiai.css` → `agent/agent.css` (алиасы старых переменных на
 токены `--vf-*`), иконки — мост Font Awesome → Lucide из `/static/js/ui.js` (разметка по-прежнему
 `<i class="fas fa-…">`; нового имени нет в `FA_MAP` — добавьте туда и символ в `/static/icons/ui.svg`).

@@ -1,7 +1,6 @@
 import React from 'react';
 import { useT } from '../i18n';
 import Icon from './Icon';
-import ModelLogo, { MODELS, MODEL_ORDER, PLATFORM_KEY_MODELS } from './ModelLogo';
 import SectionHead from './SectionHead';
 import { Reveal } from './Reveal';
 
@@ -95,16 +94,55 @@ function Pricing({ onOpenModal }) {
           </div>
         </Reveal>
 
+        <div className="plans-cards">
+          {PLANS.map((p, i) => {
+            const plan = t(`pricing.plans.${p.key}`);
+            return (
+              <Reveal key={p.key} className={`plan-card${p.col ? ` ${p.col}` : ''}`} y={16}>
+                <div className="plan-card-head">
+                  <div>
+                    <b>{plan.name}</b>
+                    <span className="plan-desc">{plan.desc}</span>
+                  </div>
+                  {plan.badge ? <span className={`chip ${p.chip}`}>{plan.badge}</span> : null}
+                </div>
+                <span className="plans-price">
+                  {plan.price}
+                  <small>{plan.period}</small>
+                </span>
+                <ul className="plan-card-list">
+                  {ROWS.filter(([, values]) => values[i] !== false && values[i] !== null).map(([feature, values]) => (
+                    <li key={feature}>
+                      <Icon name="check" className="ic-sm" />
+                      <span>
+                        {t(`pricing.features.${feature}`)}
+                        {values[i] !== true ? <b>{t(`pricing.values.${values[i]}`)}</b> : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className={`btn${p.primary ? ' btn-primary' : ''}`}
+                  onClick={() => onOpenModal('register')}
+                >
+                  {plan.cta}
+                </button>
+              </Reveal>
+            );
+          })}
+        </div>
+
         <div className="extra">
           <Reveal className="extra-col" y={16}>
             <h3>{t('pricing.extra_models_title')}</h3>
             <p>{t('pricing.extra_models_text')}</p>
             <ul className="rate-list">
-              {MODEL_ORDER.map((code) => (
-                <li key={code}>
-                  <ModelLogo code={code} size={16} wrap={false} />
-                  <span>{MODELS[code].name}</span>
-                  <b>{PLATFORM_KEY_MODELS.includes(code) ? t('pricing.key_platform') : t('pricing.key_own')}</b>
+              {t('pricing.extra_models').map(([icon, label, value]) => (
+                <li key={label}>
+                  <Icon name={icon} className="ic-sm" />
+                  <span>{label}</span>
+                  <b>{value}</b>
                 </li>
               ))}
             </ul>

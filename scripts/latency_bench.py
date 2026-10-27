@@ -155,7 +155,7 @@ async def chat_stream(client: httpx.AsyncClient, provider: str, model: str, ctx:
     body.update(extra)
     headers = {"Authorization": f"Bearer {key}"}
     if provider == "openrouter":
-        headers.update({"HTTP-Referer": "https://voksyai.online", "X-Title": "VoksiAI latency bench"})
+        headers.update({"HTTP-Referer": "https://voksyai.online", "X-Title": "Voksy AI latency bench"})
 
     t0 = time.perf_counter()
     first_any = first_text = None

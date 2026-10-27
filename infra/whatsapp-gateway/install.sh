@@ -98,7 +98,7 @@ CACHE_LOCAL_ENABLED=false
 # Webhooks are set per instance by the backend (POST /instance/create), not globally
 WEBHOOK_GLOBAL_ENABLED=false
 
-CONFIG_SESSION_PHONE_CLIENT=VoksiAI
+CONFIG_SESSION_PHONE_CLIENT=Voksy AI
 CONFIG_SESSION_PHONE_NAME=Chrome
 QRCODE_LIMIT=30
 DEL_INSTANCE=false

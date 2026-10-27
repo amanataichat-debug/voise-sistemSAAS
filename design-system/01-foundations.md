@@ -1,4 +1,4 @@
-# 01 · Основы дизайн-системы VoksiAI
+# 01 · Основы дизайн-системы Voksy AI
 
 Дизайн-система перенесена 1:1 с Voicyfy (направление «Studio»: светлая тема, тонкие бордеры,
 мягкие многослойные тени, синий акцент). Всё, что ниже, реализовано в `css/voksiai.css`
@@ -13,12 +13,12 @@
 
 ## 1. Палитра
 
-### 1.1 Светлая тема (по умолчанию) — VoksiAI
+### 1.1 Светлая тема (по умолчанию) — Voksy AI
 
 Цвета сдвинуты относительно Voicyfy едва заметно (акцент чуть более индиго, нейтральные
 чуть холоднее). В таблице обе версии, чтобы было видно, что менялось.
 
-| Токен | VoksiAI | Voicyfy (было) | Назначение |
+| Токен | Voksy AI | Voicyfy (было) | Назначение |
 |---|---|---|---|
 | `--vf-bg` | `#ffffff` | `#ffffff` | фон страницы (единый белый, без серой подложки) |
 | `--vf-surface` | `#ffffff` | `#ffffff` | панели, карточки |
@@ -48,7 +48,7 @@
 ### 1.2 Тёмная тема `[data-theme="dark"]`
 
 Поддерживается токенами (переключение атрибутом на `<html>`), в кабинете Voicyfy по умолчанию
-не включена. Значения VoksiAI:
+не включена. Значения Voksy AI:
 
 | Токен | Значение |
 |---|---|
@@ -309,9 +309,9 @@ upload, user, user-check, user-round, users, volume-2, wallet, wand-2, x, zap, a
 
 ### 4.4 Бренд-ассеты
 
-| Ассет | Voicyfy | Что сделать для VoksiAI |
+| Ассет | Voicyfy | Что сделать для Voksy AI |
 |---|---|---|
-| Wordmark | текст «Voicyfy» Syne 800 с градиентом акцента | текст «VoksiAI» тем же стилем; в `.vf-logo` перед ним знак `<img class="mark-img" src="/static/brand/logo.svg">` 30×30 (прозрачный фон, синяя V `#2563EB` + фиолетовые полоски `#4F46E5`); на тёмной панели модалки входа лендинга — на белой плашке |
+| Wordmark | текст «Voicyfy» Syne 800 с градиентом акцента | текст «Voksy AI» тем же стилем; в `.vf-logo` перед ним знак `<img class="mark-img" src="/static/brand/logo.svg">` 30×30 (прозрачный фон, синяя V `#2563EB` + фиолетовые полоски `#4F46E5`); на тёмной панели модалки входа лендинга — на белой плашке |
 | Favicon | `favicon.svg`, `favicon.ico` (16–64), `favicon-16/32/48/64/96/192/512.png` (прозрачные), `apple-touch-icon.png` 180 и `android-chrome-192/512.png` (белый фон, отступ под маску), `manifest.json` | все сгенерированы из `brand/logo.svg`; `theme-color` `#2a5ce8` |
 | OG-картинка | `og-image.png` 1200×630 | своя |
 | Загрузчик | «волна» из 5 полос акцента + wordmark + подпись «Загружаем кабинет…» | оставить, заменить текст |
@@ -327,7 +327,7 @@ upload, user, user-check, user-round, users, volume-2, wallet, wand-2, x, zap, a
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">    <!-- все страницы кабинета -->
-  <title>Голосовые ассистенты | VoksiAI</title>
+  <title>Голосовые ассистенты | Voksy AI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">

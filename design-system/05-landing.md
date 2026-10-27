@@ -1,17 +1,17 @@
-# 05 · Лендинг VoksiAI (React + Vite)
+# 05 · Лендинг Voksy AI (React + Vite)
 
-Полная инвентаризация лендинга Voicyfy для пересборки 1:1 под бренд VoksiAI. Ниже — структура,
+Полная инвентаризация лендинга Voicyfy для пересборки 1:1 под бренд Voksy AI. Ниже — структура,
 технологии, токены, все секции с текстами и стилями, модалка авторизации. Готовый CSS лендинга
-лежит в `css/landing.css` (уже с палитрой VoksiAI); базовые токены и компоненты — в
+лежит в `css/landing.css` (уже с палитрой Voksy AI); базовые токены и компоненты — в
 `css/voksiai.css` (лендинг подключает его напрямую тегом `<link>`, вне бандла).
 
-## Что менять для VoksiAI и рынка КР (сводка)
+## Что менять для Voksy AI и рынка КР (сводка)
 
-| Что | В Voicyfy | Для VoksiAI |
+| Что | В Voicyfy | Для Voksy AI |
 |---|---|---|
-| Бренд в разметке | `Voicyfy` (Navbar, Footer, AuthModal, Frame в макетах, kicker в Hero, `<title>`, OG, JSON-LD) | `VoksiAI` |
+| Бренд в разметке | `Voicyfy` (Navbar, Footer, AuthModal, Frame в макетах, kicker в Hero, `<title>`, OG, JSON-LD) | `Voksy AI` |
 | Логотип-картинка | `/static/images/IMG_2820.PNG` | свой файл, 30×30 в шапке, 20×20 в макете |
-| Домен | `https://voicyfy.ru` (canonical, OG, JSON-LD, скрипт виджета в `Integration.jsx`) | домен VoksiAI |
+| Домен | `https://voicyfy.ru` (canonical, OG, JSON-LD, скрипт виджета в `Integration.jsx`) | домен Voksy AI |
 | Телефон демо-агента | `+7 931 10-710-31` (`Hero.jsx` → `PHONE`, `PHONE_DISPLAY`) | номер КР (`+996 …`) |
 | Валюта | `₽`, «подарочные рубли», `priceCurrency: "RUB"` | сом (`KGS`), «подарочные сомы»; цены телефонии и тарифов в JSX — пересчитать |
 | Юр. информация в футере | ИП + ИНН РФ | реквизиты компании в КР |

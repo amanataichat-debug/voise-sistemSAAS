@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ElevenLabs агенты — VoksiAI</title>
+  <title>ElevenLabs агенты — Voksy AI</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -952,7 +952,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
-  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
+  <!-- Дизайн-система Voksy AI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
   <script src="/static/js/i18n.js"></script>
@@ -968,7 +968,7 @@
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
         <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
-        <span class="wordmark">VoksiAI</span>
+        <span class="wordmark">Voksy AI</span>
       </a>
       <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
         <i class="fas fa-times"></i>
@@ -1015,9 +1015,9 @@
     <!-- Content Area -->
     <div class="content-container">
 
-      <!-- Статус серверных ключей (ElevenLabs-агенты работают на ключах VoksiAI, свои не нужны) -->
+      <!-- Статус серверных ключей (ElevenLabs-агенты работают на ключах Voksy AI, свои не нужны) -->
       <div class="api-keys-card" id="server-status-card" style="display: none;">
-        <h3><i class="fas fa-server" style="color: var(--eleven-accent);"></i> ElevenLabs-агенты работают на ключах VoksiAI</h3>
+        <h3><i class="fas fa-server" style="color: var(--eleven-accent);"></i> ElevenLabs-агенты работают на ключах Voksy AI</h3>
         <p style="color: var(--text-gray); font-size: 0.875rem; margin-top: 0.5rem;">
           Диалог ведёт OpenAI Realtime, озвучивает ElevenLabs (Eleven v3 — единственное семейство с кыргызским языком).
           Свои API-ключи вводить не нужно. Агент работает в браузерном виджете и по телефону через SIP-шлюз одинаково.
@@ -1106,7 +1106,7 @@
               </div>
               <input type="hidden" id="agent-voice-name">
               <div class="voice-preview" id="voice-preview"></div>
-              <p class="hint">Голоса из аккаунта ElevenLabs VoksiAI. Первыми идут голоса с подтверждённым выбранным языком (отмечены «рекомендован»). Нужного голоса нет — найдите его в публичной библиотеке и добавьте в аккаунт одной кнопкой.</p>
+              <p class="hint">Голоса из аккаунта ElevenLabs Voksy AI. Первыми идут голоса с подтверждённым выбранным языком (отмечены «рекомендован»). Нужного голоса нет — найдите его в публичной библиотеке и добавьте в аккаунт одной кнопкой.</p>
 
               <div class="library-panel" id="library-panel">
                 <div class="library-filters">
@@ -1136,7 +1136,7 @@
               <div class="form-group">
                 <label for="agent-llm-model">Диалоговая модель</label>
                 <select class="form-control" id="agent-llm-model"></select>
-                <p class="hint">Модель OpenAI Realtime, которая слушает абонента и придумывает ответ текстом; озвучивает его ElevenLabs. Работает на ключе VoksiAI. Отдельное распознавание речи не нужно — она делает это сама.</p>
+                <p class="hint">Модель OpenAI Realtime, которая слушает абонента и придумывает ответ текстом; озвучивает его ElevenLabs. Работает на ключе Voksy AI. Отдельное распознавание речи не нужно — она делает это сама.</p>
               </div>
               <div class="form-group" id="agent-active-wrap" style="display: none;">
                 <label for="agent-active">Статус</label>
@@ -1245,7 +1245,7 @@
       'referral_trial': 'Реферальный триал',
       'ai_voice': 'AI Voice',
       'start': 'Тариф Старт',
-      'profi': 'Profi', 'agent': 'VoksiAI Agent'
+      'profi': 'Profi', 'agent': 'Voksy AI Agent'
     };
 
     const API_BASE_URL = '/api';

@@ -63,12 +63,12 @@ FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 FONT_REGULAR = "VoksiSans"
 FONT_BOLD = "VoksiSans-Bold"
 
-# Фирменный цвет VoksiAI (design-system/README.md) — запасной, если бизнес свой не задал.
+# Фирменный цвет Voksy AI (design-system/README.md) — запасной, если бизнес свой не задал.
 DEFAULT_ACCENT = "#2a5ce8"
 
 # Пишется в свойства PDF (Creator). У старого fpdf2-рендера это поле пустое,
 # поэтому по нему сразу видно, каким кодом собран присланный клиенту файл.
-RENDERER_SIGNATURE = "VoksiAI documents v2 (document_design)"
+RENDERER_SIGNATURE = "Voksy AI documents v2 (document_design)"
 
 INK = colors.HexColor("#111827")        # основной текст
 MUTED = colors.HexColor("#6b7280")      # подписи, колонтитул
@@ -796,7 +796,7 @@ def render_pdf(
 
     brand: {company_name, color, contacts, logo_bytes} — всё опционально.
     Логотипа нет → в шапке только название компании (или ничего); цвета нет →
-    фирменный синий VoksiAI.
+    фирменный синий Voksy AI.
     images: [{bytes, caption}] — картинки из библиотеки файлов агента.
     cover: титульная страница. None = сама решит по объёму (короткой памятке
     обложка не нужна, презентации и большому КП — нужна).

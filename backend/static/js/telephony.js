@@ -1,5 +1,5 @@
 /**
- * VoksiAI — страница «Телефония» (/static/telephony.html), собственный SIP-шлюз.
+ * Voksy AI — страница «Телефония» (/static/telephony.html), собственный SIP-шлюз.
  *
  *   GET   /api/sip/numbers              номера пользователя с привязкой
  *   PATCH /api/sip/numbers/{id}         привязка: {assistant_type, assistant_id} | {agent_config_id}
@@ -19,7 +19,7 @@
     page_title: 'Телефония', refresh: 'Обновить',
     numbers_title: 'Мои номера', numbers_sub: 'Входящий звонок на номер отвечает привязанный ассистент или агент обзвона.',
     th_number: 'Номер', th_answers: 'Отвечает на входящие', th_outbound: 'Исходящие', th_status: 'Статус',
-    no_numbers: 'Номеров пока нет', no_numbers_text: 'Номер оператора выдаёт администратор VoksiAI. Напишите в поддержку, и он появится здесь.',
+    no_numbers: 'Номеров пока нет', no_numbers_text: 'Номер оператора выдаёт администратор Voksy AI. Напишите в поддержку, и он появится здесь.',
     numbers_failed: 'Не удалось загрузить номера',
     agent_label: 'Агент обзвона', agent_deleted: 'Агент удалён', agent_voice_missing: 'голосовой ассистент агента не найден',
     assistant_missing: 'Ассистент не найден', rebind: 'Привяжите заново', inactive: 'неактивен', not_bound: 'Не привязан',

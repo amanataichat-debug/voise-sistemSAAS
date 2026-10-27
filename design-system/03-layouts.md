@@ -19,7 +19,7 @@
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
         <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
-        <span class="wordmark">VoksiAI</span>
+        <span class="wordmark">Voksy AI</span>
       </a>
       <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню">
         <svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg>
@@ -159,7 +159,7 @@ accent-soft, полоска 3×20 акцента слева, иконка accent
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ .top-nav 48px: [лого VoksiAI] | [панель◧] … [переключатель агентов ▾] [+чат] … [Активен ⏻][подписка/кредиты][⚙][◨] │
+│ .top-nav 48px: [лого Voksy AI] | [панель◧] … [переключатель агентов ▾] [+чат] … [Активен ⏻][подписка/кредиты][⚙][◨] │
 ├───────────┬─────────────────────────────────────────────┬──────────────────┤
 │ .col-left │ .chat (карточка)                            │ .col-right       │
 │ 268px     │  header · лента сообщений · композер        │ 288px            │

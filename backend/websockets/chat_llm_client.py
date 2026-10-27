@@ -111,7 +111,7 @@ class ChatLLMClient(FishLLMClient):
             return False
         headers = {"Authorization": f"Bearer {self.api_key}"}
         if self.provider == "openrouter":
-            headers.update({"HTTP-Referer": "https://voksyai.online", "X-Title": "VoksiAI voice"})
+            headers.update({"HTTP-Referer": "https://voksyai.online", "X-Title": "Voksy AI voice"})
         self._http = httpx.AsyncClient(
             headers=headers,
             timeout=httpx.Timeout(60.0, connect=10.0),

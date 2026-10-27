@@ -6,14 +6,14 @@
  *   • фирменный цвет шапки (палитра + своё значение #RRGGBB);
  *   • название компании в шапке и контакты в подвале.
  * Этим оформляются PDF, которые агент собирает тулзой create_document
- * (backend/services/document_design.py). Пусто → нейтральный стиль VoksiAI
+ * (backend/services/document_design.py). Пусто → нейтральный стиль Voksy AI
  * без логотипа. Сохраняется сразу, как голосовые сообщения.
  * Классический скрипт.
  * ========================================================================== */
 
 // Палитра: безопасные тёмные цвета — на них белый текст шапки читается.
 const BRAND_COLORS = [
-  { v: '#2a5ce8', t: 'Синий VoksiAI' },
+  { v: '#2a5ce8', t: 'Синий Voksy AI' },
   { v: '#0f766e', t: 'Изумрудный' },
   { v: '#b91c1c', t: 'Красный' },
   { v: '#7c3aed', t: 'Фиолетовый' },
@@ -74,7 +74,7 @@ function renderBranding(){
         <input type="text" id="brand-color-input" maxlength="7" placeholder="#2a5ce8" value="${esc(s.color || '')}">
         <button type="button" class="btn btn-secondary btn-sm" onclick="brandSetColor(document.getElementById('brand-color-input').value)">Применить</button>
       </div>
-      <div class="form-hint">Можно вписать свой цвет в формате #RRGGBB. Пусто — синий VoksiAI.</div>
+      <div class="form-hint">Можно вписать свой цвет в формате #RRGGBB. Пусто — синий Voksy AI.</div>
     </div>
 
     <div class="form-group">

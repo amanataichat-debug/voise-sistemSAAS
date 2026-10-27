@@ -1,5 +1,5 @@
 /**
- * VoksiAI — страница «Голосовые ассистенты» (/static/voice-assistants.html).
+ * Voksy AI — страница «Голосовые ассистенты» (/static/voice-assistants.html).
  *
  * В кабинете остались только ассистенты ElevenLabs (диалог ведёт OpenAI на
  * серверном ключе, озвучивает ElevenLabs v3). Витрина карточек → редактор с
@@ -714,7 +714,7 @@
     if (!cur) { box.innerHTML = emptyBox('save', t('save_first'), t('save_first_text')); return; }
     if (cur.is_active === false) { box.innerHTML = emptyBox('circle-minus', t('embed_inactive'), ''); return; }
     var origin = location.origin;
-    var code = '<!-- VoksiAI Voice Assistant -->\n<script src="' + origin + '/static/widget.js"\n        data-assistantId="' + cur.id + '"\n        data-server="' + origin +
+    var code = '<!-- Voksy AI Voice Assistant -->\n<script src="' + origin + '/static/widget.js"\n        data-assistantId="' + cur.id + '"\n        data-server="' + origin +
       '"\n        data-ws-path="/ws/eleven/"\n        data-position="bottom-right"\n        async></' + 'script>';
     box.innerHTML = '<p class="muted" style="margin-bottom:12px">' + esc(t('embed_text')) + '</p><div class="code-box"><pre id="embed-code"></pre>' +
       '<button class="btn btn-sm" type="button" id="copy-code">' + VF.icon('copy', 'ic-sm') + esc(t('embed_copy')) + '</button></div>' +

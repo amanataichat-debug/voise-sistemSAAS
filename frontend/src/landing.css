@@ -1,6 +1,6 @@
 /* ============================================================================
-   Лендинг VoksiAI на дизайн-системе кабинета (копия design-system/css/landing.css
-   + блок «Дополнения VoksiAI» перед адаптивом).
+   Лендинг Voksy AI на дизайн-системе кабинета (копия design-system/css/landing.css
+   + блок «Дополнения Voksy AI» перед адаптивом).
    Токены и компоненты (.btn, .card, .chip, .input, .ic, .logo, .table) приходят
    из /static/css/voksiai.css. Здесь раскладка, типографика и макеты экранов.
    ============================================================================ */
@@ -463,7 +463,7 @@ html.lenis, html.lenis body { height: auto; }
 .lp-verify-info { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; margin: -4px 0 14px; }
 
 
-/* ---------- Дополнения VoksiAI ---------- */
+/* ---------- Дополнения Voksy AI ---------- */
 /* Кыргызская версия: в Unbounded нет букв Ң Ө Ү (проверено по cmap Google Fonts),
    поэтому дисплейный шрифт — Inter 800 (фолбэк из 07-i18n.md). Wordmark остаётся Unbounded. */
 html[lang="ky"] .lp { --vf-font-display: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
@@ -618,3 +618,34 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
 @media (prefers-reduced-motion: reduce) {
   .lp [data-reveal] { opacity: 1 !important; transform: none !important; }
 }
+
+/* ---------- Тарифы: на телефоне и планшете — карточки вместо широкой таблицы ---------- */
+.plans-cards { display: none; }
+@media (max-width: 900px) {
+  .plans-card { display: none; }
+  .plans-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .plan-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 18px; border: 1px solid var(--vf-border); border-radius: 16px; background: var(--vf-surface); box-shadow: var(--vf-shadow-2); }
+  .plan-card.hot { border-color: var(--vf-accent); box-shadow: 0 0 0 1px var(--vf-accent), var(--vf-shadow-2); }
+  .plan-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .plan-card-head b { display: block; font-family: var(--vf-font-display); font-size: 17px; color: var(--vf-text); }
+  .plan-card .plan-desc { display: block; margin-top: 2px; font-size: 13px; color: var(--vf-text-3); }
+  .plan-card .plans-price { font-size: 24px; margin-top: 0; }
+  .plan-card-list { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--vf-border); display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .plan-card-list li { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--vf-text-2); }
+  .plan-card-list li .ic { flex: 0 0 auto; margin-top: 3px; color: var(--vf-success, #137a4b); }
+  .plan-card-list li b { margin-left: 6px; color: var(--vf-text); font-weight: 600; }
+  .plan-card .btn { width: 100%; }
+  .extra { margin-top: 36px; padding-top: 28px; }
+}
+@media (max-width: 600px) {
+  .plans-cards { grid-template-columns: 1fr; }
+}
+
+/* Карточка звонка в первом экране не должна выходить за ширину телефона */
+@media (max-width: 600px) {
+  .cc-wrap { max-width: 100%; min-width: 0; }
+  .cc { min-width: 0; overflow: hidden; }
+}
+
+/* Элементы, которые ещё «подъезжают» при появлении, не должны давать горизонтальную прокрутку страницы */
+.lp { overflow-x: clip; }

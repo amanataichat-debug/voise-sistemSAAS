@@ -1,7 +1,7 @@
-# frontend — React + Vite лендинг VoksiAI (исходники)
+# frontend — React + Vite лендинг Voksy AI (исходники)
 
 ## Назначение
-Публичный лендинг voksyai.online на React 18 + Vite по дизайн-системе VoksiAI
+Публичный лендинг voksyai.online на React 18 + Vite по дизайн-системе Voksy AI
 (`design-system/05-landing.md`). Единственная часть фронтенда на React — страницы кабинета
 сделаны на vanilla HTML/JS в `backend/static/`.
 

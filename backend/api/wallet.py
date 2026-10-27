@@ -62,7 +62,7 @@ async def topup(body: TopupRequest, current_user: User = Depends(get_current_use
                                                     f"до {settings.WALLET_MAX_TOPUP} сом")
     payment = await create_finik_payment_transaction(
         db=db, user=current_user, amount=amount,
-        description=f"Пополнение кошелька VoksiAI на {amount:g} сом",
+        description=f"Пополнение кошелька Voksy AI на {amount:g} сом",
         details={"type": "wallet_topup", "amount_tyiyn": int(round(amount * 100))},
     )
     logger.info(f"[WALLET] topup payment {payment['payment_id']} for user {current_user.id}: {amount} KGS")

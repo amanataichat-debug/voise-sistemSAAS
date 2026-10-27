@@ -1,5 +1,5 @@
 /**
- * VoksiAI — единый сайдбар личного кабинета (v6.0).
+ * Voksy AI — единый сайдбар личного кабинета (v6.0).
  *
  * Раньше меню было скопировано руками в 17 страниц и везде разъехалось.
  * Теперь каждая страница держит пустой <nav class="sidebar-nav" id="sidebar-nav"></nav>
@@ -29,7 +29,7 @@
   var ONBOARDING_PAGES = ['/static/voice-assistants.html', '/static/telephony.html'];
   var ONBOARDING_START = '/static/voice-assistants.html?onboarding=1';
   var ONBOARDING_MSG = 'Сначала создайте ассистента и позвоните ему на тестовый номер — после этого откроется весь кабинет.';
-  var ADMIN_EMAILS = []; // e-mail администраторов VoksiAI (или полагаемся на user.is_admin)
+  var ADMIN_EMAILS = []; // e-mail администраторов Voksy AI (или полагаемся на user.is_admin)
 
   var MENU = [
     { section: 'Основное' },
@@ -174,7 +174,7 @@
     card.className = 'vf-wallet';
     card.id = 'vf-wallet-card';
     card.innerHTML =
-      '<div class="vf-wallet-label">' + (window.VF ? window.VF.icon('wallet') : '<i class="fas fa-wallet"></i>') + ' Кошелёк VoksiAI</div>' +
+      '<div class="vf-wallet-label">' + (window.VF ? window.VF.icon('wallet') : '<i class="fas fa-wallet"></i>') + ' Кошелёк Voksy AI</div>' +
       '<div class="vf-wallet-balance" id="vf-wallet-balance">…</div>' +
       '<button class="vf-wallet-btn" type="button" id="vf-wallet-topup">' + (window.VF ? window.VF.icon('plus', 'ic-sm') : '<i class="fas fa-plus"></i>') + ' Пополнить</button>' +
       '<a class="vf-wallet-link" href="/static/settings.html#wallet">История операций</a>';

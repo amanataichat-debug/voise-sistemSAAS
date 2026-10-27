@@ -1,6 +1,6 @@
 // Контакты и номер демо-ассистента (факты с текущего лендинга).
-export const PHONE = '+996554128222';
-export const PHONE_DISPLAY = '+996 554 128 222';
+export const PHONE = '+996705701707';
+export const PHONE_DISPLAY = '+996 705 701 707';
 export const TELEGRAM_URL = 'https://t.me/Aibotconnect';
 export const SUPPORT_URL = 'https://t.me/Aibotconnect';
 export const SITE_URL = 'https://voksyai.online';

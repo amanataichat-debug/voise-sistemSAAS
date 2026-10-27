@@ -1,4 +1,4 @@
-# frontend/src — исходники лендинга VoksiAI
+# frontend/src — исходники лендинга Voksy AI
 
 ## Точки входа
 - `main.jsx` — если `#root` пререндерен: язык из `<html lang>`, `hydrateRoot`; иначе (dev)
@@ -7,7 +7,7 @@
 - `entry-server.jsx` — `render(lang)` и `head(lang)` для `scripts/prerender.mjs`.
 - `App.jsx` — секции (`.lp`), модалка авторизации, Lenis, якорный скролл с отступом шапки,
   `useAuth()` (редирект залогиненного в кабинет), `useReferralTracker()`.
-- `landing.css` — копия `design-system/css/landing.css` + блок «Дополнения VoksiAI»
+- `landing.css` — копия `design-system/css/landing.css` + блок «Дополнения Voksy AI»
   (переключатель языка, иконки моделей без логотипа, KY-фолбэк шрифта: в Unbounded нет Ң Ө Ү,
   поэтому на `html[lang=ky]` заголовки набираются Inter 800).
 

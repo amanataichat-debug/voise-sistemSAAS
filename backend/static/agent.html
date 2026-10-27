@@ -15,7 +15,7 @@
   if(dark) document.documentElement.setAttribute('data-theme','dark');
 }catch(e){} })();
 </script>
-<title>Агент обзвона · VoksiAI</title>
+<title>Агент обзвона · Voksy AI</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -33,7 +33,7 @@
 <body>
 
 <div id="loading-screen">
-  <div class="brand"><img src="/static/brand/logo.svg" alt=""><span>VoksiAI</span></div>
+  <div class="brand"><img src="/static/brand/logo.svg" alt=""><span>Voksy AI</span></div>
   <div class="vf-wave"><i></i><i></i><i></i><i></i><i></i></div>
   <p>Загрузка агента…</p>
 </div>
@@ -42,7 +42,7 @@
 <div class="ob-overlay hidden" id="onboarding-overlay">
   <div class="ob-card">
     <div class="ob-top">
-      <div class="ob-brand"><img src="/static/brand/logo.svg" alt=""><span>VoksiAI</span></div>
+      <div class="ob-brand"><img src="/static/brand/logo.svg" alt=""><span>Voksy AI</span></div>
       <button class="ob-skip" onclick="obSkip()">Пропустить <i class="fas fa-xmark"></i></button>
     </div>
     <div id="ob-content"></div>
@@ -54,7 +54,7 @@
 <!-- WIZARD -->
 <div class="wizard-overlay hidden" id="wizard-overlay">
   <div class="wizard-card">
-    <div class="wizard-logo"><img src="/static/brand/logo.svg" alt=""><div class="wizard-logo-text">VoksiAI</div></div>
+    <div class="wizard-logo"><img src="/static/brand/logo.svg" alt=""><div class="wizard-logo-text">Voksy AI</div></div>
     <div class="wizard-sub">Создание автономного агента для звонков</div>
     <div class="wizard-progress" id="wizard-progress"></div>
     <div id="wizard-content"></div>
@@ -65,8 +65,8 @@
 <nav class="top-nav" id="top-nav" style="display:none">
   <div class="nav-left">
     <a href="/static/dashboard.html" class="nav-logo" title="В личный кабинет">
-      <img class="nav-logo-img" src="/static/brand/logo.svg" alt="VoksiAI">
-      <span class="nav-logo-text">VoksiAI</span>
+      <img class="nav-logo-img" src="/static/brand/logo.svg" alt="Voksy AI">
+      <span class="nav-logo-text">Voksy AI</span>
     </a>
     <span class="nav-sep"></span>
     <button class="icon-btn panel-btn" id="panel-btn-left" type="button" data-panel="left" title="Панель «Работа» ( [ )">
@@ -263,7 +263,7 @@
         <div class="card" id="phone-card">
           <div class="card-head">
             <div class="card-head-title"><i class="fas fa-phone"></i> Номер агента</div>
-            <span class="hint hint-l" tabindex="0" data-hint="С этого номера агент звонит, на него же принимает входящие. Номер подключается в собственной телефонии VoksiAI."><i class="far fa-circle-question"></i></span>
+            <span class="hint hint-l" tabindex="0" data-hint="С этого номера агент звонит, на него же принимает входящие. Номер подключается в собственной телефонии Voksy AI."><i class="far fa-circle-question"></i></span>
             <span class="card-link" onclick="openInstructionsModal('calls')">Настроить</span>
           </div>
           <div id="phone-block"><div class="empty">Загрузка...</div></div>
@@ -408,7 +408,7 @@
         <section class="settings-section" data-section="calls">
           <div class="settings-section-head"><h3>Звонки · живой разговор</h3><p>С какого номера агент звонит, с чего начинает разговор и чего избегает.</p></div>
           <div class="form-group">
-            <label class="form-label">Номер агента <span class="hint" tabindex="0" data-hint="Номер из собственной телефонии VoksiAI: с него агент звонит, на него же принимает входящие (они попадают в историю агента с разбором разговора)."><i class="far fa-circle-question"></i></span></label>
+            <label class="form-label">Номер агента <span class="hint" tabindex="0" data-hint="Номер из собственной телефонии Voksy AI: с него агент звонит, на него же принимает входящие (они попадают в историю агента с разбором разговора)."><i class="far fa-circle-question"></i></span></label>
             <div id="i-phone-note"></div>
             <select class="form-select" id="i-phone-number"><option value="">Без номера</option></select>
           </div>

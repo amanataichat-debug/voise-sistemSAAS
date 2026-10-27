@@ -12,7 +12,7 @@
 </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Панель управления — VoksiAI</title>
+  <title>Панель управления — Voksy AI</title>
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
@@ -1725,7 +1725,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
-  <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
+  <!-- Дизайн-система Voksy AI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
   <script defer src="/static/js/i18n.js"></script>
@@ -1737,7 +1737,7 @@
     <div class="vf-sidebar-head">
       <a href="/static/dashboard.html" class="vf-logo">
         <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
-        <span class="wordmark">VoksiAI</span>
+        <span class="wordmark">Voksy AI</span>
       </a>
       <button class="mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
         <i class="fas fa-times"></i>
@@ -2144,7 +2144,7 @@
         },
         agent: {
           code: 'agent',
-          name: 'VoksiAI Agent',
+          name: 'Voksy AI Agent',
           basePrice: 50,
           maxAssistants: 3,
           description: 'AI-оркестратор автономных звонков',
@@ -3135,7 +3135,7 @@
           if (response.trial_activated) {
             hidePaymentModal();
             ui.hideSubscriptionExpiredModal();
-            ui.showNotification('Тестовый период VoksiAI Agent активирован! Вам доступно 1 500 кредитов на 3 дня.', 'success');
+            ui.showNotification('Тестовый период Voksy AI Agent активирован! Вам доступно 1 500 кредитов на 3 дня.', 'success');
             await loadSubscriptionInfo();
             return;
           }

@@ -22,7 +22,7 @@
   `cascade.html` (страница переименована; заглушка сохраняет query-параметры
   старых ссылок).
 
-### Дизайн-система VoksiAI (кабинет)
+### Дизайн-система Voksy AI (кабинет)
 Спеки и исходники пакета — в корневом `design-system/` (читать `README.md`). В кабинет перенесено:
 - `css/voksiai.css` — токены `--vf-*` и компоненты; `css/voksiai-legacy.css` — мост старых классов
   страниц (`--primary-blue`, `.btn`, `.card`, `.top-nav` …) на токены + нормализация сайдбара и
@@ -59,7 +59,7 @@
 - `index/` — `css/` и `js/` для входной страницы.
 - `voice_llm_interface/` — отдельный голосовой LLM-интерфейс: `index.html`, `jarvis-ui.html`, `main.js`, `audio.js`, `config.js`, `styles.css`.
 - `css/`, `images/` — стили и изображения; `icons/` и `i18n/` — дизайн-система (см. выше).
-- `brand/` — знак VoksiAI: `logo.svg` (исходник, из него нарезаны все фавиконы) и `logo-512.png`.
+- `brand/` — знак Voksy AI: `logo.svg` (исходник, из него нарезаны все фавиконы) и `logo-512.png`.
 - Иконки/манифесты PWA (`favicon*`, `apple-touch-icon.png`, `android-chrome-*`, `site.webmanifest`, `manifest.json`), аудио-сэмпл `zvuki-razgovorov...mp3`.
 
 ## Ключевые сущности / точки входа

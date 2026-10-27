@@ -216,7 +216,7 @@ def render_text(row) -> str:
     if started is not None and started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
     lines = [
-        "Лог звонка — VoksiAI",
+        "Лог звонка — Voksy AI",
         "=" * 60,
         f"Сессия:        {row.session_id}",
         f"Ассистент:     {meta.get('assistant_name') or '—'} ({row.assistant_type or '—'}, {row.assistant_id or '—'})",

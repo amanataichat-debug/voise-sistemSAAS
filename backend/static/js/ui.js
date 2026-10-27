@@ -1,9 +1,9 @@
 /**
- * VoksiAI UI — поведение компонентов дизайн-системы (v1), без зависимостей.
+ * Voksy AI UI — поведение компонентов дизайн-системы (v1), без зависимостей.
  *
  *   VF.icon(name, cls)              — SVG-иконка Lucide из спрайта /static/icons/ui.svg
  *   VF.logo(code, opts)             — логотип голосовой модели (/static/icons/models/*.svg)
- *   VF.loader.show()/hide()         — загрузчик страницы (волна VoksiAI); показывается сам
+ *   VF.loader.show()/hide()         — загрузчик страницы (волна Voksy AI); показывается сам
  *                                     при подключении скрипта, прячется по VF.ready()
  *   VF.progress.start()/done()      — тонкая полоса прогресса сверху
  *   VF.toast(msg, {type, action, actionLabel, duration})
@@ -102,7 +102,7 @@
       el.setAttribute('role', 'status');
       el.setAttribute('aria-live', 'polite');
       el.innerHTML =
-        '<div class="brand"><span class="vf-wave"><i></i><i></i><i></i><i></i><i></i></span> VoksiAI</div>' +
+        '<div class="brand"><span class="vf-wave"><i></i><i></i><i></i><i></i><i></i></span> Voksy AI</div>' +
         '<div class="sub">' + esc(L('common.loader_text', 'Загружаем кабинет…')) + '</div>';
       (document.body || document.documentElement).appendChild(el);
       shownAt = Date.now();

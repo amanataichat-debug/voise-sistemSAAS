@@ -8,7 +8,7 @@ import { SITE_URL, copyText } from './contacts';
 // Пример кода виджета — тот же формат, что генерирует кабинет (data-assistantId, data-server).
 // Живой демо-виджет на лендинге не подключаем (своего демо-ассистента пока нет).
 function widgetCode(assistantId) {
-  return `<!-- VoksiAI Voice Assistant -->
+  return `<!-- Voksy AI Voice Assistant -->
 <script>
   (function () {
     var script = document.createElement('script');
@@ -20,7 +20,7 @@ function widgetCode(assistantId) {
     document.head.appendChild(script);
   })();
 </script>
-<!-- End VoksiAI Widget -->`;
+<!-- End Voksy AI Widget -->`;
 }
 
 function Integration() {

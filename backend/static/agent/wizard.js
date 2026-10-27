@@ -69,7 +69,7 @@ function drawStep0(c){
       <div class="type-radio"></div>
       <div class="type-info">
         <div class="type-name">Голос ElevenLabs</div>
-        <div class="type-desc">Живые голоса Eleven v3, кыргызский и русский. Диалог ведёт OpenAI, озвучивает ElevenLabs — всё на ключах VoksiAI, свои ключи не нужны. Голос и язык выберете на последнем шаге.</div>
+        <div class="type-desc">Живые голоса Eleven v3, кыргызский и русский. Диалог ведёт OpenAI, озвучивает ElevenLabs — всё на ключах Voksy AI, свои ключи не нужны. Голос и язык выберете на последнем шаге.</div>
         <div style="margin-top:8px"><span class="key-pill ok"><i class="fas fa-check"></i> Готово к работе</span></div>
       </div>
     </div>
