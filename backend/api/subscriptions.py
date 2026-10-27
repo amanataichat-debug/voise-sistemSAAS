@@ -259,7 +259,7 @@ async def get_subscription_plans(
                 {
                     "code": "start",
                     "name": "Тариф Старт",
-                    "price": 3990,
+                    "price": 7500,
                     "max_assistants": 5,
                     "description": "Start plan with extended features",
                     "is_active": True
@@ -321,7 +321,7 @@ async def get_subscription_plans(
             {
                 "code": "start",
                 "name": "Тариф Старт (Default)",
-                "price": 3990,
+                "price": 7500,
                 "max_assistants": 5,
                 "description": "Start plan with extended features",
                 "is_active": True
@@ -387,7 +387,7 @@ async def subscribe_to_plan(
                 "free": 0,
                 "referral_trial": 0,
                 "ai_voice": 1990,
-                "start": 3990,
+                "start": 7500,
                 "profi": 15000
             }
             

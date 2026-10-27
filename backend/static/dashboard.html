@@ -1864,7 +1864,7 @@
           </button>
           <button class="plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">3 990 сом/мес</span>
+            <span class="tab-price">7 500 сом/мес</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="plan-tab" data-plan="profi">
@@ -2018,7 +2018,7 @@
           </button>
           <button class="expired-plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">3 990 сом</span>
+            <span class="tab-price">7 500 сом</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="expired-plan-tab" data-plan="profi">
@@ -2088,32 +2088,32 @@
           description: 'Базовый тариф для голосовых ассистентов',
           restrictedFeatures: ['crm', 'telephony', 'outbound_calls'],
           features: [
-            { icon: 'fa-robot', text: 'До 3 голосовых ассистентов', available: true },
-            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
+            { icon: 'fa-robot', text: 'До 3 голосовых ассистентов на сайт', available: true },
             { icon: 'fa-book', text: 'База знаний', available: true },
-            { icon: 'fa-code', text: 'API доступ', available: true },
+            { icon: 'fa-bell', text: 'Заявки в Telegram и Google Таблицу', available: true },
             { icon: 'fa-headset', text: 'Поддержка', available: true },
             { icon: 'fa-phone', text: 'Телефония', available: false },
-            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: false },
+            { icon: 'fa-comments', text: 'Мессенджеры', available: false },
             { icon: 'fa-address-book', text: 'CRM система', available: false }
           ]
         },
         start: {
           code: 'start',
           name: 'Тариф Старт',
-          basePrice: 3990,
+          basePrice: 7500,
           maxAssistants: 5,
-          description: 'Оптимальный тариф для бизнеса',
+          description: 'Агент отвечает клиентам в мессенджерах и на звонки',
           restrictedFeatures: [],
           features: [
+            { icon: 'fa-comments', text: 'WhatsApp, Instagram и Telegram: агент отвечает', available: true },
+            { icon: 'fa-paperclip', text: 'Фото, документы, КП и голосовые клиентам', available: true },
+            { icon: 'fa-phone', text: 'Входящие звонки, исходящие по кнопке', available: true },
+            { icon: 'fa-address-book', text: 'CRM, воронка и аналитика', available: true },
+            { icon: 'fa-book', text: 'База знаний: вопросы-ответы, каталог, файлы', available: true },
+            { icon: 'fa-bell', text: 'Заявки в Telegram и Google Таблицу', available: true },
+            { icon: 'fa-coins', text: '10 000 кредитов агента в месяц', available: true },
             { icon: 'fa-robot', text: 'До 5 голосовых ассистентов', available: true },
-            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
-            { icon: 'fa-book', text: 'База знаний', available: true },
-            { icon: 'fa-code', text: 'API доступ', available: true },
-            { icon: 'fa-headset', text: 'Приоритетная поддержка', available: true },
-            { icon: 'fa-phone', text: 'Телефония', available: true },
-            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: true },
-            { icon: 'fa-address-book', text: 'CRM система', available: true }
+            { icon: 'fa-user-astronaut', text: 'Агент пишет и звонит первым — на Profi', available: false }
           ]
         },
         profi: {

@@ -649,3 +649,8 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
 
 /* Элементы, которые ещё «подъезжают» при появлении, не должны давать горизонтальную прокрутку страницы */
 .lp { overflow-x: clip; }
+
+/* Колонки тарифов одинаковой ширины, цены на одной линии */
+.plans { table-layout: fixed; }
+.plans th.plans-feature { width: 26%; }
+.plans .plan-desc { min-height: 2.6em; }

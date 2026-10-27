@@ -9,20 +9,23 @@ import { Reveal } from './Reveal';
 const PLANS = [
   { key: 'trial', chip: 'chip-success', primary: true },
   { key: 'voice', chip: 'chip-ghost' },
-  { key: 'start', chip: 'chip-ghost' },
+  { key: 'start', chip: 'chip-success' },
   { key: 'profi', chip: 'chip-accent', primary: true, col: 'hot' },
 ];
 
+// Колонки: Trial, AI Voice, Start, Profi. Start — агент только отвечает,
+// Profi — сам пишет, звонит и составляет документы.
 const ROWS = [
   ['assistants', ['a1', 'a3', 'a5', 'a10']],
-  ['agents', [true, false, false, 'ag3']],
+  ['messengers', [true, false, 'reply', true]],
   ['widget', [true, true, true, true]],
-  ['telephony', [true, false, true, true]],
+  ['telephony', [true, false, 'tel_in', 'tel_full']],
   ['crm', [true, false, true, true]],
   ['knowledge', [true, true, true, true]],
-  ['jarvis', [true, true, true, true]],
+  ['leads', [true, true, true, true]],
   ['selfcall', [true, false, false, true]],
-  ['credits', ['credits_trial', false, false, 'credits']],
+  ['documents', [true, false, false, true]],
+  ['credits', ['credits_trial', false, 'credits_start', 'credits']],
   ['support', [null, null, 'priority', 'vip']],
 ];
 
