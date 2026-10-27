@@ -236,6 +236,31 @@ def voice_hints():
           "Backend tools" in cfg["instructions"] and "hangup_call" in cfg["instructions"] and "мужском роде" in cfg["instructions"])
 
 
+def greeting_personal():
+    from datetime import datetime
+    import backend.services.sip_gateway_service as sgs
+    ev, day, night = datetime(2026, 10, 27, 19, 40), datetime(2026, 10, 27, 13, 0), datetime(2026, 10, 27, 2, 0)
+    p = sgs.personalize_greeting
+    check("приветствие: вечер + имя", p("Здравствуйте. Чем могу помочь?", "Айбек", ev) == "Добрый вечер, Айбек. Чем могу помочь?",
+          p("Здравствуйте. Чем могу помочь?", "Айбек", ev))
+    check("приветствие: «Добрый день» владельца днём без имени — как было",
+          p("Добрый день! Это Анри из Voksy.", "", day) == "Добрый день! Это Анри из Voksy.")
+    check("приветствие: «Добрый день» вечером → «Добрый вечер»", p("Добрый день! Это Анри.", "", ev) == "Добрый вечер! Это Анри.")
+    check("приветствие: ночью — «Здравствуйте»", p("Добрый вечер! Слушаю вас.", "", night).startswith("Здравствуйте!"))
+    check("приветствие: имя уже во фразе — не дублируем",
+          p("Здравствуйте, Айгуль! Это Анри.", "Айгуль", ev) == "Добрый вечер, Айгуль! Это Анри.")
+    check("приветствие: кыргызское «Саламатсызбы» не меняем, добавляем имя",
+          p("Саламатсызбы! Сизге кантип жардам берсем болот?", "Айбек", ev) == "Саламатсызбы, Айбек! Сизге кантип жардам берсем болот?")
+    check("приветствие: фраза без приветствия в начале — как есть", p("Компания Voksy, слушаю вас.", "Айбек", ev) == "Компания Voksy, слушаю вас.")
+    check("имя: «Клиент 0700…» и компания — не имя, «Айбек Осмонов» → «Айбек»",
+          sgs.first_name("Клиент 0700123456") == "" and sgs.first_name("ООО Ромашка") == "" and sgs.first_name("Айбек Осмонов") == "Айбек")
+    call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
+    check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
+    hint = lc.VOICE_DELEGATION_HINT
+    check("подсказка голосу: вдохи/выдохи и связки (ЖИВАЯ РЕЧЬ)", "ЖИВАЯ РЕЧЬ" in hint and "вдох" in hint and "выдох" in hint)
+    check("подсказка голосу: обращение по имени к месту (ИМЯ)", "ИМЯ." in hint and "не в каждой фразе" in hint)
+
+
 def prompt_budget():
     blk = "# ЗНАНИЯ\n" + "В: цена? О: 5000 сом.\n" * 400
     avc.build_voice_knowledge_block = lambda db, a, budget=0: (blk[:9000], {"knowledge": 9000, "total": 9000})
@@ -284,6 +309,7 @@ async def main():
     await farewell()
     phone_voice()
     voice_hints()
+    greeting_personal()
     prompt_budget()
     session_config()
 

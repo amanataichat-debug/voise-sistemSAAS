@@ -43,6 +43,68 @@ from backend.models.agent_contact import AgentContact
 
 logger = get_logger(__name__)
 
+
+# ---------------------------------------------------------------- приветствие по времени и имени
+# Владелец 27.10.2026: «добрый вечер, Айбек!» звучит как живой менеджер, «Здравствуйте» в 21:00 — как робот.
+BISHKEK_OFFSET = timedelta(hours=6)
+_DAYPART_RU = {"morning": "Доброе утро", "day": "Добрый день", "evening": "Добрый вечер"}
+_DAYPART_WORD = {"morning": "утро", "day": "день", "evening": "вечер", "night": "ночь"}
+_WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+# Только приветствие в САМОМ начале фразы владельца — остальной текст не трогаем
+_RU_HELLO_RE = re.compile(r"^\s*(здравствуйте|добрый\s+(?:день|вечер)|доброе\s+утро|доброго\s+времени\s+суток|"
+                          r"приветствую(?:\s+вас)?)(?=[\s!.,]|$)", re.IGNORECASE)
+_KY_HELLO_RE = re.compile(r"^\s*(саламатсызбы|ассалому\s+алейкум|салам)(?=[\s!.,]|$)", re.IGNORECASE)
+_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁёҢңӨөҮү][A-Za-zА-Яа-яЁёҢңӨөҮү\-]{1,19}$")
+_NOT_A_NAME = ("клиент", "client", "контакт", "неизвест", "без имени", "тест", "менеджер", "компания", "ооо", "ип ")
+
+
+def bishkek_now() -> datetime:
+    return datetime.utcnow() + BISHKEK_OFFSET
+
+
+def day_part(hour: int) -> str:
+    if 5 <= hour < 11:
+        return "morning"
+    if 11 <= hour < 17:
+        return "day"
+    if 17 <= hour < 23:
+        return "evening"
+    return "night"
+
+
+def first_name(name: Optional[str]) -> str:
+    """Имя для обращения: первое слово карточки, если оно похоже на имя (не «Клиент 0700…», не компания)."""
+    n = " ".join((name or "").split())
+    if not n or any(bad in n.lower() + " " for bad in _NOT_A_NAME):
+        return ""
+    word = n.split(" ")[0].strip(",.")
+    return word if _NAME_RE.match(word) else ""
+
+
+def personalize_greeting(greeting: str, name: str = "", now: Optional[datetime] = None) -> str:
+    """
+    «Здравствуйте. Чем могу помочь?» → «Добрый вечер, Айбек. Чем могу помочь?» (время — Бишкек).
+    Меняем только приветственное слово в начале фразы: ночью (23–5) остаётся «Здравствуйте»,
+    кыргызское «Саламатсызбы» не меняем, только добавляем имя. Имя, уже стоящее во фразе, не дублируем.
+    Фраза без приветствия в начале остаётся как есть.
+    """
+    g = " ".join((greeting or "").split())
+    if not g:
+        return greeting
+    now = now or bishkek_now()
+    m = _RU_HELLO_RE.match(g)
+    if m:
+        hello = _DAYPART_RU.get(day_part(now.hour), "Здравствуйте")
+    else:
+        m = _KY_HELLO_RE.match(g)
+        if not m:
+            return g
+        hello = m.group(1)
+    rest = g[m.end(1):]
+    if name and name.lower() not in g.lower():
+        hello = f"{hello}, {name}"
+    return f"{hello}{rest}"
+
 # Причины отказа, при которых исходящий имеет смысл повторить позже.
 # ВАЖНО (баг B1, долбёж): сюда входят ТОЛЬКО причины «наша сторона, звонок до
 # клиента не дошёл» (канал/AMI/транк недоступны). "congestion" УБРАН намеренно:
@@ -596,6 +658,10 @@ class SipGatewayService:
             parts.append("Это входящий телефонный звонок.")
             if call.caller:
                 parts.append(f"Номер звонящего: +{call.caller}.")
+        now = bishkek_now()
+        part = day_part(now.hour)
+        parts.append(f"Сейчас в Бишкеке {_WEEKDAYS_RU[now.weekday()]}, {now:%H:%M} ({_DAYPART_WORD[part]}): "
+                     f"прощаясь, желай по времени («хорошего дня» / «хорошего вечера»).")
         parts.append("Говори коротко, как по телефону. Функцию hangup_call вызывай только после того, как клиент "
                      "сам попрощался или ясно закончил разговор, — не пока он ещё говорит или уточняет время "
                      "и способ связи.")
@@ -796,15 +862,22 @@ class SipGatewayService:
                 greeting = agent.inbound_first_phrase
         if not greeting:
             greeting = getattr(assistant, "greeting_message", None)
-        if greeting and "{name}" in greeting:
+        personalize = bool(getattr(settings, "SIP_GREETING_PERSONALIZE", True))
+        if greeting and ("{name}" in greeting or personalize):
             if not contact_name and agent is not None and call.caller:
-                from backend.services.agent_contact_phones import find_contact_by_phone
-                contact = find_contact_by_phone(db, agent.id, call.caller)
-                contact_name = (contact.name or "") if contact else ""
+                try:
+                    from backend.services.agent_contact_phones import find_contact_by_phone
+                    contact = find_contact_by_phone(db, agent.id, call.caller)
+                    contact_name = (contact.name or "") if contact else ""
+                except Exception as e:  # приветствие важнее имени
+                    logger.warning(f"[SIP] greeting: contact lookup failed: {e}")
+        if greeting and "{name}" in greeting:
             if contact_name:
                 greeting = greeting.replace("{name}", contact_name)
             else:
                 # «Салам, {name}!» без имени → «Салам!», а не «Салам, !»
                 greeting = re.sub(r",?\s*\{name\}", "", greeting)
             greeting = " ".join(greeting.split())
+        if greeting and personalize:
+            greeting = personalize_greeting(greeting, first_name(contact_name))
         return greeting
