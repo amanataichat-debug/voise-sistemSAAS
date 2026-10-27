@@ -49,6 +49,7 @@ from backend.models.contact import Contact
 from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
 from backend.models.agent_connector import AgentConnector, CONNECTOR_TOOLKITS
+from backend.services import agent_knowledge_vectors as kb_vectors
 from backend.services import composio_service
 from backend.services import agent_pause
 from backend.services import agent_voice_context
@@ -1786,6 +1787,7 @@ async def create_knowledge_entry(
     db.refresh(row)
     _voice_sync_kb_functions(db, agent)
     db.commit()
+    kb_vectors.schedule_sync(agent.id)  # вектор записи — в фоне, ответ клиенту не ждёт
     return {"success": True, "entry": row.to_dict()}
 
 
@@ -1817,11 +1819,16 @@ async def update_knowledge_entry(
             setattr(row, field, value)
     if "body" in data:
         row.char_count = len(row.body or "")
+    # Изменилось то, что попадает в вектор, — пометить на переиндексацию (досинхронизирует
+    # и фоновая проверка при поиске, если запуск ниже не успеет)
+    if any(f in data for f in ("title", "body", "keywords", "price", "currency", "attributes", "is_active")):
+        row.vector_status = "pending"
     # Запись могли выключить — тогда у карточки голоса мог стать лишним
     # каталог или поиск целиком.
     _voice_sync_kb_functions(db, agent)
     db.commit()
     db.refresh(row)
+    kb_vectors.schedule_sync(agent.id)
     return {"success": True, "entry": row.to_dict()}
 
 
@@ -1836,12 +1843,35 @@ async def delete_knowledge_entry(
     if not agent:
         raise HTTPException(status_code=404, detail="not_found")
     row = _kb_entry_or_404(db, agent, entry_id)
+    deleted_id = str(row.id)
     db.delete(row)
     db.flush()
     # Удалили последнюю позицию каталога — find_products больше не нужен.
     _voice_sync_kb_functions(db, agent)
     db.commit()
+    kb_vectors.schedule_delete(agent.id, [deleted_id])
     return {"success": True}
+
+
+@router.post("/knowledge/reindex")
+async def reindex_knowledge_vectors(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Переиндексировать записи базы (вопросы-ответы, секции, каталог) для поиска по смыслу:
+    всё заново, лишние вектора убираются. Обычно не нужно — правки индексируются сами, а старые
+    записи подтягиваются фоновой проверкой при поиске; кнопка на случай сомнений.
+    """
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not kb_vectors.enabled():
+        return {"success": False, "enabled": False,
+                "detail": "Векторный поиск выключен (KB_VECTOR_ENABLED=0 или нет ключей Pinecone / OpenAI)"}
+    stats = await kb_vectors.sync_agent(agent.id, force=True)
+    return {"success": True, "enabled": True, **stats}
 
 
 @router.post("/knowledge/test")

@@ -2670,6 +2670,14 @@ async def startup_event():
         ensure_branding_columns()
         ensure_knowledge_v2_tables()
 
+        # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
+        # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.
+        try:
+            from backend.services import agent_knowledge_vectors as _kb_vectors
+            _kb_vectors.spawn(_kb_vectors.warmup())
+        except Exception as _e:
+            logger.warning(f"⚠️ Прогрев векторного поиска пропущен: {_e}")
+
         try:
             # Для Render используем более простую блокировку
             if not os.path.exists(lock_file_path):

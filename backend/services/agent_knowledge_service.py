@@ -532,6 +532,115 @@ async def _answer_from_documents(namespace: str, query: str, top_k: int) -> Opti
             "total": len(results), "results": results}
 
 
+async def _not_found(db, agent_config_id, query: str, channel: Optional[str]) -> Dict[str, Any]:
+    """Ничего не нашлось: записать вопрос в пробелы базы и сказать агенту не выдумывать."""
+    if agent_config_id:
+        def _gap():
+            record_gap(db, agent_config_id, query, channel)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        try:
+            await asyncio.to_thread(_gap)
+        except Exception as e:
+            logger.warning(f"[KB] пробел не записан: {e}")
+    return {
+        "ok": True, "query": query, "total": 0, "results": [],
+        "note": "В базе знаний ответа нет. Не выдумывай: скажи клиенту, что "
+                "уточнишь у специалиста, и предложи записать его вопрос.",
+    }
+
+
+def _load_entries_by_ids(db, agent_config_id, ids: List[str]) -> Dict[str, AgentKnowledgeEntry]:
+    """Активные записи агента по id (из векторного поиска). Чужие и выключенные отсеиваются."""
+    from backend.services.agent_knowledge_vectors import _uuids
+
+    uids = _uuids(ids)
+    if not uids:
+        return {}
+    rows = (
+        db.query(AgentKnowledgeEntry)
+        .filter(AgentKnowledgeEntry.agent_config_id == agent_config_id,
+                AgentKnowledgeEntry.is_active.is_(True),
+                AgentKnowledgeEntry.id.in_(uids))
+        .all()
+    )
+    return {str(r.id): r for r in rows}
+
+
+async def _hybrid_answer(db, agent_config_id, kb_namespace: Optional[str], query: str,
+                         top_k: int, channel: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Слова + смысл одновременно. Возвращает ответ (в том числе «не нашлось») или None, если
+    векторный слой недоступен — тогда answer_query работает по-старому.
+
+    1. Векторный поиск стартует сразу (эмбеддинг + два запроса к индексу параллельно).
+    2. Пока он идёт, Postgres ищет по словам (миллисекунды).
+    3. Списки сливаются (RRF): запись, найденная обоими способами, идёт первой.
+    4. Куски файлов добавляются, только если они достаточно близки и записей мало.
+    Ответ собирается из строк БАЗЫ, а не из текста векторов — правка записи видна сразу.
+    """
+    from backend.services import agent_knowledge_vectors as vectors
+
+    vec_task = asyncio.create_task(vectors.search(query, kb_namespace, agent_config_id, top_k_entries=top_k * 2))
+    try:
+        kw_rows, kw_quality = await asyncio.to_thread(
+            search_entries_ranked, db, agent_config_id, query, None, top_k * 2)
+    except Exception as e:
+        vec_task.cancel()
+        raise e
+    vec = await vec_task
+    if vec is None:
+        return None  # векторный слой не ответил — прежний путь
+    vectors.spawn(vectors.maybe_backfill(agent_config_id))
+
+    ordered = sorted((e for e in vec["entries"] if e["score"] >= vectors.ENTRY_MIN_SCORE),
+                     key=lambda e: -e["score"])
+    vec_ids = [e["entry_id"] for e in ordered]
+    by_id = await asyncio.to_thread(_load_entries_by_ids, db, agent_config_id, vec_ids)
+    vec_rows = [by_id[i] for i in vec_ids if i in by_id]
+
+    strong_kw = kw_rows if kw_quality == "ok" else []
+    keys = vectors.fuse_ranked([[str(r.id) for r in strong_kw], [str(r.id) for r in vec_rows]])
+    pool = {str(r.id): r for r in list(kw_rows) + vec_rows}
+    entries = [pool[k] for k in keys if k in pool][:top_k]
+    if not entries and kw_quality == "weak":
+        entries = list(kw_rows)[:2]  # только слабое совпадение по словам — лучше, чем ничего
+
+    docs = [d for d in vec["docs"] if d["score"] >= KB_MIN_SCORE]
+    if len(entries) >= 2:
+        docs = [d for d in docs if d["score"] >= 0.5]  # записей хватает — файлы только очень близкие
+    docs = docs[:2]
+
+    logger.info(f"[KB] гибрид «{query[:60]}»: слова {len(strong_kw)}/{kw_quality}, смысл {len(vec_rows)}, "
+                f"файлы {len(docs)}, итог {len(entries)}, вектор {vec.get('ms')} мс")
+
+    if not entries and not docs:
+        return await _not_found(db, agent_config_id, query, channel)
+
+    if entries:
+        def _hits():
+            mark_hits(db, entries)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        await asyncio.to_thread(_hits)
+
+    results: List[Dict[str, Any]] = [entry_for_agent(r) for r in entries]
+    results += [{"text": d["text"], "score": round(d["score"], 3)} for d in docs]
+    out: Dict[str, Any] = {
+        "ok": True, "query": query, "source": "knowledge_base" if entries else "documents",
+        "total": len(results), "results": results, "search": "hybrid", "vector_ms": vec.get("ms"),
+    }
+    if entries and kw_quality == "weak" and not vec_rows:
+        out["weak"] = True
+        out["note"] = ("Совпадение неточное — слова запроса встретились только вскользь. Проверь, что это "
+                       "действительно про вопрос клиента, иначе скажи, что уточнишь.")
+    return out
+
+
 async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: str,
                        top_k: int = 4, channel: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -550,6 +659,19 @@ async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: 
     query = (query or "").strip()
     if not query:
         return {"ok": False, "error": "Пустой поисковый запрос"}
+
+    # Гибридный поиск: по словам (Postgres) + по смыслу (Pinecone) одновременно. Любой сбой
+    # векторного слоя → None → дальше идёт прежний путь без изменений (слова → файлы → пробел).
+    if agent_config_id:
+        from backend.services import agent_knowledge_vectors as vectors
+        if vectors.enabled():
+            try:
+                hybrid = await _hybrid_answer(db, agent_config_id, kb_namespace, query, top_k, channel)
+            except Exception as e:
+                logger.warning(f"[KB] гибридный поиск упал, идём по-старому: {e}", exc_info=True)
+                hybrid = None
+            if hybrid is not None:
+                return hybrid
 
     if agent_config_id:
         try:
@@ -570,22 +692,7 @@ async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: 
     if fast:
         return fast
 
-    if agent_config_id:
-        def _gap():
-            record_gap(db, agent_config_id, query, channel)
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
-        try:
-            await asyncio.to_thread(_gap)
-        except Exception as e:
-            logger.warning(f"[KB] пробел не записан: {e}")
-    return {
-        "ok": True, "query": query, "total": 0, "results": [],
-        "note": "В базе знаний ответа нет. Не выдумывай: скажи клиенту, что "
-                "уточнишь у специалиста, и предложи записать его вопрос.",
-    }
+    return await _not_found(db, agent_config_id, query, channel)
 
 
 async def answer_products(db, agent_config_id, query: str = "",
