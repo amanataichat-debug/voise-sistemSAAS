@@ -117,6 +117,21 @@ def _is_first_contact(db: Session, contact) -> bool:
     return db.query(AgentCall.id).filter(AgentCall.agent_contact_id == contact.id).count() <= 1
 
 
+async def _append_lead_row(agent, contact, direction: str, first_text: str) -> None:
+    import asyncio
+    from backend.services import sheets_leads
+    phone = (contact.phone or "").strip()
+    if phone.startswith(("tg:", "ig:", "wa:")):
+        phone = ""
+    try:
+        await asyncio.to_thread(
+            sheets_leads.append_lead, agent.leads_sheet_id, CHANNEL_TITLES.get(direction, direction),
+            (contact.name or "").strip(), phone, _stage(agent, contact.status), first_text,
+        )
+    except Exception as e:
+        logger.warning(f"[OWNER-NOTIFY] lead row not written for agent {agent.id}: {e}")
+
+
 async def after_postcall(agent_call_id, call_direction: str, first_text: str = "") -> None:
     """Вызывается после разбора звонка или сообщения. Своя сессия БД, без исключений наружу."""
     from backend.db.session import SessionLocal
@@ -132,11 +147,16 @@ async def after_postcall(agent_call_id, call_direction: str, first_text: str = "
             return
         agent = db.query(AgentConfig).filter(AgentConfig.id == call.agent_config_id).first()
         contact = db.query(AgentContact).filter(AgentContact.id == call.agent_contact_id).first()
-        if agent is None or contact is None or not agent.telegram_enabled:
+        if agent is None or contact is None:
             return
 
         is_inbound = direction == "inbound" or direction.endswith("_inbound")
-        if is_inbound and _enabled(agent, "notify_new_lead") and _is_first_contact(db, contact):
+        new_lead = is_inbound and _is_first_contact(db, contact)
+        if new_lead and getattr(agent, "leads_sheet_id", None):
+            await _append_lead_row(agent, contact, direction, first_text)
+        if not agent.telegram_enabled:
+            return
+        if new_lead and _enabled(agent, "notify_new_lead"):
             await _send(agent, db, format_new_lead(agent, contact, direction, first_text))
             return  # итог первого звонка не дублируем отдельным сообщением
 

@@ -396,6 +396,7 @@ function openSettingsSection(name){
   document.querySelectorAll('#instructions-modal-overlay .settings-section').forEach(s => s.classList.toggle('active', s.dataset.section === name));
   if(name === 'voice-msg' && typeof loadVoiceMessages === 'function') loadVoiceMessages();
   if(name === 'branding' && typeof loadBranding === 'function') loadBranding();
+  if(name === 'sheet' && typeof loadAgentSheet === 'function') loadAgentSheet();
 }
 
 function openInstructionsModal(section){

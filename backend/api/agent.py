@@ -2,6 +2,7 @@
 Voksy AI Agent API v2.0 — CRUD, chat (with tools), contacts, calls, stats.
 """
 
+import asyncio
 import re
 import json
 import uuid
@@ -1871,6 +1872,105 @@ async def delete_knowledge_entry(
     db.commit()
     kb_vectors.schedule_delete(agent.id, [deleted_id])
     return {"success": True}
+
+
+# ============================================================================
+# GOOGLE ТАБЛИЦА АГЕНТА: заявки и прайс (services/sheets_leads.py)
+# ============================================================================
+
+class SheetConnectRequest(BaseModel):
+    url: str = Field(..., max_length=500)
+
+
+def _sheet_dict(agent: AgentConfig) -> dict:
+    from backend.services import sheets_leads
+    sid = agent.leads_sheet_id
+    return {
+        "connected": bool(sid),
+        "sheet_id": sid,
+        "title": agent.leads_sheet_title,
+        "url": f"https://docs.google.com/spreadsheets/d/{sid}/edit" if sid else None,
+        "service_email": sheets_leads.service_account_email(),
+        "leads_sheet": sheets_leads.LEADS_SHEET_TITLE,
+    }
+
+
+@router.get("/sheet")
+async def get_agent_sheet(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    return _sheet_dict(agent)
+
+
+@router.post("/sheet")
+async def connect_agent_sheet(
+    body: SheetConnectRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Подключить таблицу: проверяем доступ сразу, чтобы владелец увидел ошибку здесь, а не в пустой таблице."""
+    from backend.services import sheets_leads
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    sid = sheets_leads.parse_sheet_id(body.url)
+    if not sid:
+        raise HTTPException(status_code=400, detail="Не похоже на ссылку на Google Таблицу.")
+    try:
+        info = await asyncio.to_thread(sheets_leads.check_access, sid)
+    except sheets_leads.SheetError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    agent.leads_sheet_id = sid
+    agent.leads_sheet_title = (info.get("title") or "")[:255]
+    db.commit()
+    db.refresh(agent)
+    return _sheet_dict(agent)
+
+
+@router.delete("/sheet")
+async def disconnect_agent_sheet(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    agent.leads_sheet_id = None
+    agent.leads_sheet_title = None
+    db.commit()
+    db.refresh(agent)
+    return _sheet_dict(agent)
+
+
+@router.post("/sheet/import-catalog")
+async def import_catalog_from_sheet(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Первый лист подключённой таблицы → позиции каталога базы знаний."""
+    from backend.services import sheets_leads
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not agent.leads_sheet_id:
+        raise HTTPException(status_code=400, detail="Сначала подключите Google Таблицу.")
+    try:
+        products = await asyncio.to_thread(sheets_leads.read_catalog, agent.leads_sheet_id)
+    except sheets_leads.SheetError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    result = sheets_leads.import_catalog(db, agent, current_user.id, products)
+    _voice_sync_kb_functions(db, agent)
+    db.commit()
+    kb_vectors.schedule_sync(agent.id)
+    return {"success": True, **result, "total": len(products)}
 
 
 @router.post("/knowledge/reindex")

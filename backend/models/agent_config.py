@@ -154,6 +154,9 @@ class AgentConfig(Base):
     notify_daily_digest = Column(Boolean, default=True, nullable=False)
     # {"daily_digest": "2026-10-27", ...} — дедуп ежедневных заданий между воркерами
     jobs_ran_on = Column(JSONB, nullable=True)
+    # Google Таблица агента (services/sheets_leads.py): лист «Заявки» + прайс на первом листе
+    leads_sheet_id = Column(String(128), nullable=True)
+    leads_sheet_title = Column(String(255), nullable=True)
 
     # ── Публичный HTTP-канал (приём заявок «сервер-к-серверу») ──
     # Внешний бэкенд (например форма сайта) шлёт запрос с секретным ключом,

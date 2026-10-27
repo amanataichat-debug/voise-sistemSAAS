@@ -379,7 +379,8 @@
         <button class="settings-nav-item" type="button" data-section="orchestrator"><i class="fas fa-brain"></i><span><b>Оркестратор</b><small>Модель, инструкции, вебхук</small></span></button>
         <button class="settings-nav-item" type="button" data-section="calls"><i class="fas fa-phone"></i><span><b>Звонки</b><small>Номер, первая фраза, поведение</small></span></button>
         <button class="settings-nav-item" type="button" data-section="voice-msg"><i class="fas fa-microphone"></i><span><b>Голосовые сообщения</b><small>Голос ответов в Telegram и WhatsApp</small></span></button>
-        <button class="settings-nav-item" type="button" data-section="branding"><i class="fas fa-palette"></i><span><b>Фирменный стиль</b><small>Логотип и цвет в документах агента</small></span></button>
+        <button class="settings-nav-item" type="button" data-section="sheet"><i class="fas fa-table"></i><span><b>Google Таблица</b><small>Заявки и прайс из таблицы</small></span></button>
+        <button class="settings-nav-item profi-only" type="button" data-section="branding"><i class="fas fa-palette"></i><span><b>Фирменный стиль</b><small>Логотип и цвет в документах агента</small></span></button>
         <button class="settings-nav-item" type="button" data-section="public"><i class="fas fa-plug"></i><span><b>Публичный API</b><small>Приём заявок извне</small></span></button>
       </nav>
       <div class="settings-content">
@@ -444,6 +445,11 @@
         <section class="settings-section" data-section="voice-msg">
           <div class="settings-section-head"><h3>Голосовые сообщения · Telegram и WhatsApp</h3><p>Агент может отвечать клиентам голосовым — как живой менеджер, спокойно и с паузами. Здесь выбираются озвучка (ElevenLabs или OpenAI), голос и доля голосовых; когда отвечать голосом — в окне каждого мессенджера. Сохраняется сразу.</p></div>
           <div id="i-voice-msg"><div class="form-hint">Загрузка…</div></div>
+        </section>
+
+        <section class="settings-section" data-section="sheet">
+          <div class="settings-section-head"><h3>Google Таблица</h3><p>Новые клиенты сами попадают в лист «Заявки» вашей таблицы. А первый лист можно загрузить как прайс: агент будет называть цены и наличие по нему. Поменяли цены в таблице — нажмите «Обновить каталог».</p></div>
+          <div id="i-sheet"><div class="form-hint">Загрузка…</div></div>
         </section>
 
         <section class="settings-section" data-section="branding">
@@ -792,6 +798,7 @@
 <script defer src="/static/agent/panels.js"></script>
 <script defer src="/static/agent/voice-messages.js"></script>
 <script defer src="/static/agent/branding.js"></script>
+<script defer src="/static/agent/sheet.js"></script>
 <script defer src="/static/agent/tabs.js"></script>
 <script defer src="/static/agent/analytics.js"></script>
 <script defer src="/static/agent/stages.js"></script>
