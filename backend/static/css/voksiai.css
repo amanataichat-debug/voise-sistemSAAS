@@ -54,27 +54,60 @@
   --vf-topbar-h: 64px;
 }
 
+/* Темная тема (v2 — повышен контраст, крепче палитра, меньше «молочности»).
+   Жалоба 26.10: милочные блоки на /conversations.html и белый flash на agent.html.
+   Фикс палитры здесь + body-override ниже + точечные override hardcoded цветов. */
 [data-theme="dark"] {
-  --vf-bg: #0b1220;
-  --vf-surface: #111a2e;
-  --vf-surface-2: #16203a;
-  --vf-surface-3: #1c2744;
-  --vf-border: rgba(148, 163, 184, 0.14);
-  --vf-border-strong: rgba(148, 163, 184, 0.28);
-  --vf-text: #e7ecf5;
-  --vf-text-2: #b6c2d6;
-  --vf-text-3: #8a98b2;
-  --vf-text-4: #61708c;
-  --vf-accent: #4a7cf3;
-  --vf-accent-hover: #6ea2fa;
-  --vf-accent-soft: rgba(74, 124, 243, 0.14);
-  --vf-accent-ring: rgba(74, 124, 243, 0.3);
-  --vf-success-soft: rgba(22, 163, 74, 0.16);
-  --vf-warning-soft: rgba(217, 119, 6, 0.16);
-  --vf-danger-soft: rgba(220, 38, 38, 0.16);
-  --vf-shadow-1: 0 1px 2px rgba(0,0,0,.3);
-  --vf-shadow-2: 0 4px 14px -2px rgba(0,0,0,.45);
-  --vf-shadow-3: 0 18px 48px -12px rgba(0,0,0,.6);
+  --vf-bg: #0a0f1b;              /* чуть глубже, крепче — не серо-молочный */
+  --vf-surface: #121a2c;          /* панели: заметно отличаются от bg */
+  --vf-surface-2: #1b2742;        /* вложенные блоки */
+  --vf-surface-3: #243454;        /* hover строк, активные подложки */
+  --vf-border: rgba(148, 163, 184, 0.18);
+  --vf-border-strong: rgba(148, 163, 184, 0.32);
+  --vf-text: #f1f5f9;             /* ярче, легче читать */
+  --vf-text-2: #c7d2e2;
+  --vf-text-3: #94a3b8;
+  --vf-text-4: #64748b;
+  --vf-accent: #60a5fa;           /* светлее для читабельности на тёмном */
+  --vf-accent-hover: #93c5fd;
+  --vf-accent-soft: rgba(96, 165, 250, 0.16);
+  --vf-accent-ring: rgba(96, 165, 250, 0.3);
+  --vf-success-soft: rgba(34, 197, 94, 0.18);
+  --vf-warning-soft: rgba(234, 179, 8, 0.18);
+  --vf-danger-soft: rgba(248, 113, 113, 0.18);
+  --vf-shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --vf-shadow-2: 0 4px 14px -2px rgba(0,0,0,.55);
+  --vf-shadow-3: 0 18px 48px -12px rgba(0,0,0,.7);
+  color-scheme: dark;             /* нативные контролы (scrollbar, date-input) — тёмные */
+}
+
+/* Фон <html> и <body> выставляем даже если на body нет класса .vf —
+   иначе agent.html (где vf на <html>, но не на body) мигает белым при F5.
+   Из-за color-scheme: dark браузер уже выдаёт тёмный системный фон, но
+   этот селектор это гарантирует для старых страниц. */
+[data-theme="dark"] html,
+[data-theme="dark"] body { background: var(--vf-bg); color: var(--vf-text); }
+
+/* ── Compat-слой для старых страниц кабинета в тёмной теме ─────────────
+ * Многие страницы (dashboard, settings, admin, crm, crm-contact) определяют
+ * свои локальные токены с ЭТИМИ ЖЕ ИМЕНАМИ: --white, --bg-light,
+ * --text-dark, --text-gray, --border-color, --shadow-* и т.п. В тёмной теме
+ * они оставались светлыми → страница светилась белыми прямоугольниками.
+ * Селектор body[data-theme] / html[data-theme] перекрывает page-local :root
+ * благодаря специфичности [attr] (1,0,1 против 0,1,0). */
+html[data-theme="dark"],
+body[data-theme="dark"],
+html[data-theme="dark"] body {
+  --white: #121a2c;
+  --bg-light: #0a0f1b;
+  --bg-blue-light: rgba(96, 165, 250, 0.08);
+  --text-dark: #f1f5f9;
+  --text-gray: #94a3b8;
+  --text-light: #64748b;
+  --border-color: rgba(148, 163, 184, 0.18);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 10px -2px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 14px 32px -8px rgba(0, 0, 0, 0.65);
 }
 
 /* ---------- База ----------
@@ -160,7 +193,7 @@ body.vf {
 .vf-main { flex: 1; margin-left: var(--vf-sidebar-w); min-width: 0; display: flex; flex-direction: column; }
 .vf-topbar {
   height: var(--vf-topbar-h); position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 0 28px; background: color-mix(in srgb, var(--vf-bg) 86%, transparent); backdrop-filter: saturate(160%) blur(10px); -webkit-backdrop-filter: saturate(160%) blur(10px);
+  padding: 0 28px; background: var(--vf-bg);
   border-bottom: 1px solid transparent; transition: border-color var(--vf-fast), box-shadow var(--vf-fast);
 }
 /* Граница и тень у верхней панели появляются только при прокрутке (VF: класс .scrolled) */
@@ -327,7 +360,7 @@ body.vf {
    Слои общих диалогов/тостов выше страничных .modal-overlay (z-index: 1000),
    иначе VF.confirm и тосты открываются ПОД модалкой страницы (например,
    подтверждение покупки номера в телефонии). Портал VF.select — 1300. */
-.vf-backdrop { position: fixed; inset: 0; z-index: 1100; background: rgba(15, 23, 42, .45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; transition: opacity var(--vf-normal); }
+.vf-backdrop { position: fixed; inset: 0; z-index: 1100; background: rgba(15, 23, 42, .62); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; transition: opacity var(--vf-normal); }
 .vf-backdrop.open { opacity: 1; }
 .vf-dialog { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; background: var(--vf-surface); border-radius: var(--vf-r-lg); box-shadow: var(--vf-shadow-3); border: 1px solid var(--vf-border); transform: translateY(8px) scale(.985); opacity: 0; transition: transform var(--vf-normal), opacity var(--vf-normal); }
 .vf-backdrop.open .vf-dialog { transform: none; opacity: 1; }
@@ -457,6 +490,21 @@ html:has(body.vf) { scrollbar-width: thin; scrollbar-color: var(--vf-border-stro
 .vf-lang-switch button.active { background: var(--vf-accent-soft); color: var(--vf-accent); }
 /* В топбаре старых страниц (flex, space-between) — прижать к меню пользователя */
 .top-nav > .vf-lang-switch { margin-left: auto; margin-right: 10px; }
+
+/* ---------- Переключатель темы ☾/☀ (кнопка в топбаре всех страниц кабинета) ---------- */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--vf-r-md);
+  border: 1px solid var(--vf-border); background: var(--vf-surface);
+  color: var(--vf-text-3); cursor: pointer; flex: 0 0 auto; padding: 0;
+  transition: background var(--vf-fast), color var(--vf-fast), border-color var(--vf-fast);
+}
+.theme-toggle:hover { color: var(--vf-text); background: var(--vf-surface-2); border-color: var(--vf-border-strong); }
+.theme-toggle i { font-size: 15px; }
+.theme-toggle[aria-pressed="true"] { color: var(--vf-accent); border-color: color-mix(in srgb, var(--vf-accent) 50%, var(--vf-border)); }
+/* Внутри agent.html (своя .top-nav) .icon-btn.theme-toggle подхватывает стили .icon-btn */
+.top-nav .theme-toggle, .nav-right .theme-toggle { width: 34px; height: 34px; border: 0; background: transparent; border-radius: 9px; }
+.top-nav .theme-toggle:hover { background: var(--vf-surface-3); color: var(--vf-text); }
 
 /* Мост FA → Lucide: ui.js вставил svg внутрь <i class="fas …"> (класс .vf-fa) —
    глиф самого Font Awesome (::before) гасим, иначе иконка рисуется дважды.

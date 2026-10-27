@@ -60,6 +60,8 @@ function showDashboard(){
   document.getElementById('loading-screen').classList.add('hidden');
   document.getElementById('wizard-overlay').classList.add('hidden');
   document.getElementById('top-nav').style.display='grid';
+  const tabsBar = document.getElementById('agent-tabs');
+  if(tabsBar) tabsBar.style.display='flex';
   document.getElementById('main-layout').style.display='grid';
 
   renderAgentHeader();
@@ -138,6 +140,19 @@ async function loadStats(){
     const s = await r.json();
     document.getElementById('stat-calls').textContent = s.total_calls||0;
     document.getElementById('stat-contacts').textContent = s.total_contacts||0;
+    // Подпись-подсказка под цифрой — короткая, помещается в узкую stat-card
+    const callsTrend = document.getElementById('stat-calls-trend');
+    if(callsTrend){
+      const success = s.success_calls || 0;
+      const na = s.no_answer_calls || 0;
+      callsTrend.innerHTML = `✓ <b>${success}</b> · не ответ. <b>${na}</b>`;
+    }
+    const contactsTrend = document.getElementById('stat-contacts-trend');
+    if(contactsTrend){
+      const active = s.active_contacts || 0;
+      const queued = s.scheduled_tasks || 0;
+      contactsTrend.innerHTML = `в работе <b>${active}</b> · в очереди <b>${queued}</b>`;
+    }
   }catch(e){}
 }
 

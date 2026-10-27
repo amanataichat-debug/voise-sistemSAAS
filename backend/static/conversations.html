@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Диалоги — VoksiAI</title>
@@ -1872,6 +1879,41 @@
         display: block;
       }
     }
+
+    /* ── Темная тема: точечные override жёстко-светлых цветов ──
+       Страница написана с кучей hardcoded #fff / #f0f2f5 — в тёмной теме
+       получались «молочные» блики. Здесь только то, что реально плохо
+       смотрится; остальные цветные пилюли (успех зелёный и т.п.) остаются. */
+    [data-theme="dark"] body { background: var(--vf-bg); color: var(--vf-text); }
+    [data-theme="dark"] .conversation-card,
+    [data-theme="dark"] .modal-content,
+    [data-theme="dark"] .filters-section,
+    [data-theme="dark"] .pagination-section { background: var(--vf-surface) !important; border-color: var(--vf-border) !important; color: var(--vf-text); }
+    [data-theme="dark"] .chat-container { background: var(--vf-surface-2) !important; }
+    [data-theme="dark"] .message-content { background: var(--vf-surface) !important; color: var(--vf-text); border: 1px solid var(--vf-border); }
+    [data-theme="dark"] .message.user .message-content { background: var(--vf-accent) !important; color: #fff; border-color: transparent; }
+    [data-theme="dark"] .conversation-header,
+    [data-theme="dark"] .modal-header,
+    [data-theme="dark"] .modal-footer { background: var(--vf-surface) !important; border-color: var(--vf-border) !important; color: var(--vf-text) !important; }
+    [data-theme="dark"] .filter-select,
+    [data-theme="dark"] .filter-input,
+    [data-theme="dark"] input[type="date"],
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] input[type="search"],
+    [data-theme="dark"] select { background: var(--vf-surface-2) !important; color: var(--vf-text) !important; border-color: var(--vf-border) !important; }
+    [data-theme="dark"] input::placeholder { color: var(--vf-text-4); }
+    [data-theme="dark"] .btn-secondary,
+    [data-theme="dark"] .refresh-btn,
+    [data-theme="dark"] .pagination-btn { background: var(--vf-surface-2) !important; color: var(--vf-text) !important; border-color: var(--vf-border) !important; }
+    [data-theme="dark"] .btn-secondary:hover,
+    [data-theme="dark"] .pagination-btn:hover { background: var(--vf-surface-3) !important; color: var(--vf-text) !important; }
+    [data-theme="dark"] .label,
+    [data-theme="dark"] .form-label { color: var(--vf-text-3) !important; }
+    [data-theme="dark"] .separator,
+    [data-theme="dark"] hr { border-color: var(--vf-border) !important; }
+    /* Чипы (телефон, дата, сообщений) — в тёмной читаемая подложка */
+    [data-theme="dark"] .meta-chip,
+    [data-theme="dark"] .chip { background: var(--vf-surface-2) !important; color: var(--vf-text-2) !important; border-color: var(--vf-border) !important; }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1879,8 +1921,8 @@
   <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
-  <script src="/static/js/i18n.js"></script>
-  <script src="/static/js/ui.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
 </head>
 <body class="vf">
   <!-- Overlay для мобильного меню -->
@@ -1904,7 +1946,8 @@
       </a>
     </div>
   </aside>
-  <script src="/static/js/sidebar.js"></script>
+  <script defer src="/static/js/theme.js"></script>
+  <script defer src="/static/js/sidebar.js"></script>
   
   <!-- Основной контент -->
   <main class="main-content">

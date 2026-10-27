@@ -169,6 +169,12 @@ class AgentConfig(Base):
     brand_contacts = Column(String(500), nullable=True)      # «сайт · телефон»
     brand_logo_file_id = Column(UUID(as_uuid=True), nullable=True)  # agent_files.id
 
+    # ── CRM v2 (2510-crm-v2): настраиваемые стадии воронки ─────────────
+    # JSON-строка со списком [{key,label,color,kind}], kind: open|won|lost.
+    # NULL → дефолт из backend/core/pipeline_stages.py (5 стадий).
+    # Колонка добавляется app.ensure_crm_v2_columns() в начале startup.
+    pipeline_stages = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

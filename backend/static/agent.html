@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#2a5ce8">
+<!-- theme-bootstrap: СИНХРОННО ставим data-theme до загрузки стилей, иначе
+     при входе на страницу темная тема мигает серо-белым. localStorage.vs_theme
+     = 'light' | 'dark' | 'system' (по умолчанию). -->
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
 <title>Агент обзвона · VoksiAI</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
@@ -14,11 +24,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <link rel="stylesheet" href="/static/css/voksiai.css">
 <link rel="stylesheet" href="/static/agent/agent.css">
-<script src="/static/js/ui.js"></script>
+<script defer src="/static/js/ui.js"></script>
 </head>
 <body>
 
@@ -99,6 +109,7 @@
       <button class="sub-action" id="sub-action" style="display:none" onclick="onSubAction()">Пополнить</button>
     </div>
     <span class="nav-sep"></span>
+    <button class="icon-btn theme-toggle" id="theme-toggle" type="button" title="Тёмная тема" aria-pressed="false"><i class="fas fa-moon"></i></button>
     <a href="/static/agent-guide.html" class="icon-btn" id="guide-btn" title="Как это работает" target="_blank" rel="noopener"><i class="far fa-circle-question"></i></a>
     <a class="icon-btn" id="delete-agent-btn" title="Удалить агента" onclick="deleteAgent()" role="button" tabindex="0"><i class="far fa-trash-can"></i></a>
     <button class="icon-btn" id="logout-btn" type="button" data-logout title="Выйти с платформы"><i class="fas fa-right-from-bracket"></i></button>
@@ -107,6 +118,11 @@
     </button>
   </div>
 </nav>
+
+<!-- Полоса вкладок страницы агента: Диалог · Клиенты · Воронка · Звонки · Задачи.
+     Разметку наполняет agent/tabs.js (одно место правды для порядка/иконок/модалок).
+     Показывается из dashboard.js:showDashboard() вместе с top-nav / main-layout. -->
+<div class="agent-tabs" id="agent-tabs" role="tablist" aria-label="Разделы агента" style="display:none"></div>
 
 <!-- Баннер истёкшей подписки -->
 <div id="sub-expired-banner" style="display:none;padding:10px 20px;font-size:13.5px;align-items:center;gap:12px;justify-content:center">
@@ -126,31 +142,44 @@
         <button class="icon-btn panel-close" type="button" data-panel="left" title="Свернуть панель"><i class="fas fa-chevron-left"></i></button>
       </div>
       <div class="panel-scroll">
+        <!-- Карточки-цифры: клик по карточке = переход на вкладку.
+             Внутри «Контакты» — две кнопки-пилюли: добавить и импорт (модалки, не дублируют вкладки). -->
         <div class="stats-row">
-          <div class="stat-card">
+          <div class="stat-card stat-clickable" onclick="switchTab('calls')" title="Перейти к звонкам">
             <div class="stat-icon blue"><i class="fas fa-phone-volume"></i></div>
-            <div class="stat-num" id="stat-calls">—</div>
-            <div class="stat-label">Всего звонков <span class="hint" tabindex="0" data-hint="Все разговоры агента: исходящие по задачам и входящие на его номер."><i class="far fa-circle-question"></i></span></div>
-            <span class="stat-go" onclick="openCallsModal()">Все звонки →</span>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon green"><i class="fas fa-users"></i></div>
-            <div class="stat-num" id="stat-contacts">—</div>
-            <div class="stat-label">Контакты <span class="hint hint-l" tabindex="0" data-hint="База контактов этого агента. «Воронка» показывает стадии, «Импорт» загружает список из файла."><i class="far fa-circle-question"></i></span></div>
-            <div class="stat-links">
-              <span class="stat-go" onclick="openPipelineModal()">Воронка</span>
-              <span class="stat-go" onclick="openContactsListModal()">Все</span>
-              <span class="stat-go" onclick="openAddContactModal()">Добавить</span>
-              <span class="stat-go" onclick="openImportModal()">Импорт</span>
+            <div class="stat-main">
+              <div class="stat-num" id="stat-calls">—</div>
+              <div class="stat-label">Всего звонков</div>
+              <div class="stat-trend" id="stat-calls-trend">✓ <b>—</b> · не ответ. <b>—</b></div>
             </div>
+            <i class="fas fa-chevron-right stat-arrow"></i>
+          </div>
+          <div class="stat-card stat-clickable" onclick="switchTab('clients')" title="Перейти к клиентам">
+            <div class="stat-icon green"><i class="fas fa-users"></i></div>
+            <div class="stat-main">
+              <div class="stat-num" id="stat-contacts">—</div>
+              <div class="stat-label">Контакты</div>
+              <div class="stat-trend" id="stat-contacts-trend">в работе <b>—</b> · в очереди <b>—</b></div>
+            </div>
+            <i class="fas fa-chevron-right stat-arrow"></i>
           </div>
         </div>
 
+        <!-- Быстрые действия над базой клиентов (это модалки, не навигация) -->
+        <div class="quick-actions">
+          <button class="qa-btn" type="button" onclick="openAddContactModal()" title="Добавить одного клиента вручную">
+            <i class="fas fa-user-plus"></i><span>Добавить клиента</span>
+          </button>
+          <button class="qa-btn qa-btn-ghost" type="button" onclick="openImportModal()" title="Загрузить список клиентов из xlsx или csv">
+            <i class="fas fa-file-arrow-up"></i><span>Импорт</span>
+          </button>
+        </div>
+
+        <!-- Быстрые просмотры: ссылки «→ вкладка» убраны (есть сверху) -->
         <div class="card">
           <div class="card-head">
             <div class="card-head-title"><i class="far fa-calendar-check"></i> Ближайшие задачи</div>
             <span class="hint" tabindex="0" data-hint="Что агент собирается сделать: звонки и сообщения, поставленные вами в чате или им самим после разговоров."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="openTasksCalendar()">Календарь →</span>
           </div>
           <div id="tasks-list"><div class="empty">Нет задач</div></div>
         </div>
@@ -159,7 +188,6 @@
           <div class="card-head">
             <div class="card-head-title"><i class="fas fa-clock-rotate-left"></i> Последние звонки</div>
             <span class="hint" tabindex="0" data-hint="Итоги последних разговоров: транскрипт, длительность и решение агента по каждому."><i class="far fa-circle-question"></i></span>
-            <span class="card-link" onclick="openCallsModal()">Все звонки →</span>
           </div>
           <div id="recent-calls"><div class="empty">Нет звонков</div></div>
         </div>
@@ -534,6 +562,19 @@
   </div>
 </div>
 
+<!-- VIEW: Аналитика (вкладка «Аналитика» в tab-mode превращает её в full-screen страницу).
+     Структура та же, что у модалок: .modal-overlay > .modal > .modal-header + .modal-body.
+     Данные рисует agent/analytics.js (нет chart.js — обычные div-бары). -->
+<div class="modal-overlay hidden" id="analytics-view-overlay">
+  <div class="modal modal-pipeline">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-chart-column"></i> Аналитика агента</div>
+      <button class="modal-close" onclick="closeAnalyticsView()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" id="analytics-view-body"><div class="empty">Загрузка…</div></div>
+  </div>
+</div>
+
 <!-- MODAL: Воронка -->
 <div class="modal-overlay hidden" id="pipeline-modal-overlay">
   <div class="modal modal-pipeline">
@@ -541,10 +582,34 @@
       <div class="modal-title"><i class="fas fa-stream"></i> Воронка контактов <span style="color:var(--hint);font-weight:400;font-size:13px">· перетащите карточку, чтобы сменить стадию</span></div>
       <button class="modal-close" onclick="closePipelineModal()"><i class="fas fa-xmark"></i></button>
     </div>
-    <div class="modal-body"><div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input type="search" class="form-input" id="pipeline-search" placeholder="Поиск по имени, телефону или компании…" oninput="plSearch(event)" style="flex:1;min-width:220px;height:36px">
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openAddContactModal()"><i class="fas fa-plus"></i> Контакт</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openImportModal()"><i class="fas fa-file-import"></i> Импорт</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="openStagesEditor()" title="Настроить стадии воронки"><i class="fas fa-sliders"></i> Стадии</button>
+        <button class="btn btn-secondary btn-sm" style="height:36px" onclick="loadPipeline()" title="Обновить"><i class="fas fa-rotate"></i></button>
+      </div>
+      <div class="pl-board" id="pipeline-board"><div class="empty">Загрузка...</div></div>
+    </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="loadPipeline()"><i class="fas fa-rotate"></i> Обновить</button>
       <button class="btn btn-secondary" onclick="closePipelineModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Редактор стадий воронки (CRM v2 — agent/stages.js) -->
+<div class="modal-overlay hidden" id="stages-editor-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-sliders"></i> Стадии воронки</div>
+      <button class="modal-close" onclick="closeStagesEditor()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" id="stages-editor-body"><div class="empty">Загрузка…</div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" style="margin-right:auto" onclick="resetStagesToDefault()"><i class="fas fa-rotate-left"></i> Сбросить к дефолту</button>
+      <button class="btn btn-secondary" onclick="closeStagesEditor()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveStagesEditor()"><i class="fas fa-check"></i> Сохранить</button>
     </div>
   </div>
 </div>
@@ -689,34 +754,41 @@
 </div>
 
 <!-- Скрипты агента: классические (не ES-модули), общее глобальное окружение.
+     Все с defer: скачиваются параллельно, выполняются в этом порядке
+     перед DOMContentLoaded — глобалы и inline-onclick остаются рабочими,
+     но парсер не ждёт сеть на каждом теге.
      Порядок: core → фичи → panels → init. Документация: /static/agent/CLAUDE.md -->
-<script src="/static/js/sidebar.js"></script>
-<script src="/static/agent/core.js"></script>
-<script src="/static/agent/credits.js"></script>
-<script src="/static/agent/agent-switcher.js"></script>
-<script src="/static/agent/dashboard.js"></script>
-<script src="/static/agent/tasks-calendar.js"></script>
-<script src="/static/agent/chat.js"></script>
-<script src="/static/agent/instructions-voice.js"></script>
-<script src="/static/agent/phone.js"></script>
-<script src="/static/agent/telegram.js"></script>
-<script src="/static/agent/telegram-account.js"></script>
-<script src="/static/agent/whatsapp-account.js"></script>
-<script src="/static/agent/contacts.js"></script>
-<script src="/static/agent/calls.js"></script>
-<script src="/static/agent/history.js"></script>
-<script src="/static/agent/import.js"></script>
-<script src="/static/agent/pipeline.js"></script>
-<script src="/static/agent/knowledge-base.js"></script>
-<script src="/static/agent/files.js"></script>
-<script src="/static/agent/connectors.js"></script>
-<script src="/static/agent/onboarding.js"></script>
-<script src="/static/agent/wizard.js"></script>
-<script src="/static/agent/presence.js"></script>
-<script src="/static/agent/motion.js"></script>
-<script src="/static/agent/panels.js"></script>
-<script src="/static/agent/voice-messages.js"></script>
-<script src="/static/agent/branding.js"></script>
-<script src="/static/agent/init.js"></script>
+<script defer src="/static/js/theme.js"></script>
+<script defer src="/static/js/sidebar.js"></script>
+<script defer src="/static/agent/core.js"></script>
+<script defer src="/static/agent/credits.js"></script>
+<script defer src="/static/agent/agent-switcher.js"></script>
+<script defer src="/static/agent/dashboard.js"></script>
+<script defer src="/static/agent/tasks-calendar.js"></script>
+<script defer src="/static/agent/chat.js"></script>
+<script defer src="/static/agent/instructions-voice.js"></script>
+<script defer src="/static/agent/phone.js"></script>
+<script defer src="/static/agent/telegram.js"></script>
+<script defer src="/static/agent/telegram-account.js"></script>
+<script defer src="/static/agent/whatsapp-account.js"></script>
+<script defer src="/static/agent/contacts.js"></script>
+<script defer src="/static/agent/calls.js"></script>
+<script defer src="/static/agent/history.js"></script>
+<script defer src="/static/agent/import.js"></script>
+<script defer src="/static/agent/pipeline.js"></script>
+<script defer src="/static/agent/knowledge-base.js"></script>
+<script defer src="/static/agent/files.js"></script>
+<script defer src="/static/agent/connectors.js"></script>
+<script defer src="/static/agent/onboarding.js"></script>
+<script defer src="/static/agent/wizard.js"></script>
+<script defer src="/static/agent/presence.js"></script>
+<script defer src="/static/agent/motion.js"></script>
+<script defer src="/static/agent/panels.js"></script>
+<script defer src="/static/agent/voice-messages.js"></script>
+<script defer src="/static/agent/branding.js"></script>
+<script defer src="/static/agent/tabs.js"></script>
+<script defer src="/static/agent/analytics.js"></script>
+<script defer src="/static/agent/stages.js"></script>
+<script defer src="/static/agent/init.js"></script>
 </body>
 </html>

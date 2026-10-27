@@ -50,12 +50,18 @@ from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
 from backend.models.agent_connector import AgentConnector, CONNECTOR_TOOLKITS
 from backend.services import agent_knowledge_vectors as kb_vectors
+from backend.models.agent_whatsapp import AgentWhatsAppMessage
+from backend.models.agent_telegram_account import AgentTelegramMessage
+from backend.models.agent_instagram import AgentInstagramMessage
 from backend.services import composio_service
 from backend.services import agent_pause
 from backend.services import agent_voice_context
 from backend.core.config import settings
 from backend.core.dependencies import get_current_user, get_current_user_flexible
-from backend.core.pipeline_stages import AGENT_CONTACT_STAGES, is_valid_stage
+from backend.core.pipeline_stages import (
+    AGENT_CONTACT_STAGES, is_valid_stage, get_agent_stages,
+    is_valid_stage_for_agent, save_agent_stages, normalize_stages_list,
+)
 from backend.services.agent_prompts import get_voice_agent_prompt, build_voice_agent_prompt
 from backend.services.agent_models import (
     ORCHESTRATOR_MODELS, get_default_model, is_valid_model, resolve_slug,
@@ -334,6 +340,13 @@ class AgentContactUpdateRequest(BaseModel):
     company: Optional[str] = Field(None, max_length=255)
     position: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
+    # ── CRM v2 поля (ветка 2510-crm-v2) ──
+    # tags: массив строк → хранится comma-separated в колонке; "" очищает.
+    tags: Optional[List[str]] = None
+    deal_amount: Optional[float] = Field(None, ge=0)
+    next_step_text: Optional[str] = None
+    next_step_at: Optional[str] = None  # ISO; парсится ниже
+    lost_reason: Optional[str] = None
 
 
 class PublicAccessToggleRequest(BaseModel):
@@ -3692,9 +3705,43 @@ async def list_agent_contacts(
     total = q.count()
     contacts = q.order_by(AgentContact.created_at.desc()).offset(offset).limit(limit).all()
 
+    # Аннотация для карточек воронки: по каким каналам клиент уже писал
+    # и сколько у него запланированных задач (всё одной выборкой на страницу,
+    # не N+1). Канбан-карточка показывает маленькие иконки WhatsApp/Telegram/
+    # Instagram и бейдж «есть задача».
+    contact_ids = [c.id for c in contacts]
+    wa_ids = tg_ids = ig_ids = set()
+    pending_tasks_by_contact: dict = {}
+    if contact_ids:
+        wa_ids = {row[0] for row in db.query(AgentWhatsAppMessage.agent_contact_id)
+                 .filter(AgentWhatsAppMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        tg_ids = {row[0] for row in db.query(AgentTelegramMessage.agent_contact_id)
+                 .filter(AgentTelegramMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        ig_ids = {row[0] for row in db.query(AgentInstagramMessage.agent_contact_id)
+                 .filter(AgentInstagramMessage.agent_contact_id.in_(contact_ids)).distinct().all()}
+        rows = (
+            db.query(Task.agent_contact_id, func.count(Task.id))
+              .filter(Task.agent_contact_id.in_(contact_ids))
+              .filter(Task.status == TaskStatus.SCHEDULED)
+              .group_by(Task.agent_contact_id)
+              .all()
+        )
+        pending_tasks_by_contact = {cid: int(n or 0) for cid, n in rows}
+
+    out = []
+    for c in contacts:
+        d = c.to_dict()
+        d["channels"] = {
+            "whatsapp": c.id in wa_ids,
+            "telegram": c.id in tg_ids,
+            "instagram": c.id in ig_ids,
+        }
+        d["pending_tasks"] = pending_tasks_by_contact.get(c.id, 0)
+        out.append(d)
+
     return {
         "total": total,
-        "contacts": [c.to_dict() for c in contacts],
+        "contacts": out,
     }
 
 
@@ -3905,12 +3952,34 @@ async def update_agent_contact(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
+    # Нормализация CRM v2 полей:
+    #   tags: List[str] → "a,b,c" (нижний регистр, пробелы, уникальные, max 10)
+    #   next_step_at: ISO-строка → datetime (naive UTC); пустая → None
+    if 'tags' in update_data:
+        raw = update_data.pop('tags') or []
+        seen = []
+        for t in raw:
+            v = (t or '').strip().lower()[:32]
+            if v and v not in seen:
+                seen.append(v)
+            if len(seen) >= 10: break
+        contact.tags = ",".join(seen) if seen else None
+    if 'next_step_at' in update_data:
+        v = update_data.pop('next_step_at')
+        if not v:
+            contact.next_step_at = None
+        else:
+            try:
+                from datetime import datetime as _dt
+                contact.next_step_at = _dt.fromisoformat(str(v).replace('Z', '+00:00')).replace(tzinfo=None)
+            except Exception:
+                pass  # игнорируем битый ISO
     for field, value in update_data.items():
         setattr(contact, field, value)
 
     db.commit()
     db.refresh(contact)
-    logger.info(f"[AGENT] Updated contact {contact_id} fields: {list(update_data.keys())}")
+    logger.info(f"[AGENT] Updated contact {contact_id} fields: {list(body.dict(exclude_unset=True).keys())}")
     return contact.to_dict()
 
 
@@ -3945,9 +4014,57 @@ async def delete_agent_contact(
 
 
 @router.get("/pipeline/stages")
-async def get_pipeline_stages(current_user: User = Depends(get_current_user)):
-    """Справочник стадий воронки (фиксированный набор) — для канбана на фронте."""
-    return {"stages": AGENT_CONTACT_STAGES}
+async def get_pipeline_stages(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Стадии воронки агента: кастомные (CRM v2) или дефолтные."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    stages = get_agent_stages(agent)
+    return {"stages": stages, "custom": bool(agent and agent.pipeline_stages)}
+
+
+class PipelineStagesSaveRequest(BaseModel):
+    """
+    Сохранение кастомных стадий воронки для текущего агента.
+    stages: массив { key: str (lower a-z0-9_), label, color (#RRGGBB), kind (open|won|lost) }.
+    """
+    stages: List[dict] = Field(..., min_items=2, max_items=20)
+
+
+@router.put("/pipeline/stages")
+async def save_pipeline_stages(
+    body: PipelineStagesSaveRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Записать кастомные стадии воронки для агента. Валидация в normalize_stages_list."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    saved = save_agent_stages(agent, body.stages)
+    if saved is None:
+        raise HTTPException(status_code=400, detail="invalid_stages")
+    db.commit()
+    logger.info(f"[AGENT] Agent {agent.id} pipeline_stages updated ({len(saved)} stages)")
+    return {"stages": saved, "custom": True}
+
+
+@router.delete("/pipeline/stages")
+async def reset_pipeline_stages(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Сбросить кастомные стадии и вернуться к дефолтным."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    agent.pipeline_stages = None
+    db.commit()
+    return {"stages": AGENT_CONTACT_STAGES, "custom": False}
 
 
 @router.patch("/contacts/{contact_id}/status")
@@ -3958,15 +4075,16 @@ async def update_agent_contact_status(
     db: Session = Depends(get_db),
 ):
     """Ручной перевод контакта на стадию воронки (drag-drop в канбане / select в карточке)."""
-    if not is_valid_stage(body.status):
-        raise HTTPException(status_code=400, detail="invalid_stage")
-
     contact = db.query(AgentContact).filter(
         AgentContact.id == contact_id,
         AgentContact.user_id == current_user.id,
     ).first()
     if not contact:
         raise HTTPException(status_code=404, detail="not_found")
+    # Валидация с учётом КАСТОМНЫХ стадий агента контакта (CRM v2)
+    agent = db.query(AgentConfig).filter(AgentConfig.id == contact.agent_config_id).first() if contact.agent_config_id else None
+    if not is_valid_stage_for_agent(agent, body.status):
+        raise HTTPException(status_code=400, detail="invalid_stage")
 
     old_stage = contact.status
     contact.status = body.status

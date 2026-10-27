@@ -1598,6 +1598,51 @@ def ensure_wallet_columns():
         logger.error(f"❌ ensure_wallet_columns error: {e}")
 
 
+def ensure_crm_v2_columns():
+    """
+    CRM v2 (ветка 2510-crm-v2):
+      - теги + поля сделки у AgentContact (цветные пилюли, аналитика выручки);
+      - pipeline_stages TEXT (JSON) на agent_configs — настраиваемые стадии
+        воронки на каждого агента (NULL = использовать дефолт из
+        backend/core/pipeline_stages.py).
+    Идёт в начале старта, в каждом воркере — ORM выбирает все эти колонки
+    в любом запросе списка клиентов; без них всё падает с UndefinedColumn.
+    Каждый ALTER отдельной транзакцией — сбой одного не мешает остальным.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        stmts = []
+        if inspector.has_table('agent_contacts'):
+            cols = {c['name'] for c in inspector.get_columns('agent_contacts')}
+            if 'tags' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS tags TEXT")
+            if 'deal_amount' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_amount NUMERIC(14, 2)")
+            if 'deal_currency' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS deal_currency VARCHAR(8) DEFAULT 'KGS'")
+            if 'next_step_text' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_text TEXT")
+            if 'next_step_at' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP")
+            if 'lost_reason' not in cols:
+                stmts.append("ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS lost_reason TEXT")
+        if inspector.has_table('agent_configs'):
+            cols_cfg = {c['name'] for c in inspector.get_columns('agent_configs')}
+            if 'pipeline_stages' not in cols_cfg:
+                stmts.append("ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS pipeline_stages TEXT")
+        for s in stmts:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(s))
+            except Exception as e:
+                logger.error(f"❌ ensure_crm_v2_columns stmt failed [{s}]: {e}")
+        if stmts:
+            logger.info(f"✅ CRM v2 columns ({len(stmts)})")
+    except Exception as e:
+        logger.error(f"❌ ensure_crm_v2_columns error: {e}")
+
+
 def ensure_chat_v2_columns():
     """
     Переписка v2 (ветка 1210-chat-v2): пауза агента с клиентом, настройки
@@ -2669,6 +2714,7 @@ async def startup_event():
         ensure_chat_v2_columns()
         ensure_branding_columns()
         ensure_knowledge_v2_tables()
+        ensure_crm_v2_columns()
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.

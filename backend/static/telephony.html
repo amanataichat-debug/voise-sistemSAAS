@@ -4,6 +4,13 @@
      журнал звонков. Вся логика — /static/js/telephony.js, API — /api/sip/*. -->
 <html lang="ru" data-vf-loader>
 <head>
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
@@ -17,8 +24,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
   <link rel="stylesheet" href="/static/css/voksiai.css">
-  <script src="/static/js/i18n.js"></script>
-  <script src="/static/js/ui.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
   <style>
     .stack-lg { display: flex; flex-direction: column; gap: 20px; max-width: 1200px; }
     .card-head h2 { font-size: 15px; }
@@ -86,7 +93,8 @@
       </a>
     </div>
   </aside>
-  <script src="/static/js/sidebar.js"></script>
+  <script defer src="/static/js/theme.js"></script>
+  <script defer src="/static/js/sidebar.js"></script>
 
   <main class="vf-main">
     <header class="vf-topbar">
@@ -188,6 +196,6 @@
   </div>
 </div>
 
-<script src="/static/js/telephony.js"></script>
+<script defer src="/static/js/telephony.js"></script>
 </body>
 </html>

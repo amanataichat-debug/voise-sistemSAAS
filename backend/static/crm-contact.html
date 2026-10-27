@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Контакт — VoksiAI CRM</title>
@@ -974,8 +981,8 @@
   <!-- Дизайн-система VoksiAI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
-  <script src="/static/js/i18n.js"></script>
-  <script src="/static/js/ui.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
 </head>
 <body class="vf">
   <!-- Header -->
@@ -1343,6 +1350,7 @@
     <div class="loading-spinner"></div>
   </div>
   
-  <script src="/static/js/crm-contact.js"></script>
+  <script defer src="/static/js/crm-contact.js"></script>
+  <script defer src="/static/js/theme.js"></script>
 </body>
 </html>
