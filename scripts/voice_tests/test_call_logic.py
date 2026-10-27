@@ -113,7 +113,7 @@ async def decisions():
     check("эмоции: клиент пошутил → подсказка посмеяться вместе", len(s.client.thinking) == 1 and "посмейся" in s.client.thinking[0])
     await s._on_live_event(cue("joke"))
     check("эмоции: вторая шутка сразу — без повторной подсказки", len(s.client.thinking) == 1)
-    s._cue_hint_at["joke"] -= 15
+    s._cue_hint_at["joke"] -= 35
     await s._on_live_event(cue("problem"))
     check("эмоции: проблема клиента → сочувствие, без шуток", len(s.client.thinking) == 2 and "посочувствуй" in s.client.thinking[1]
           and "без шуток" in s.client.thinking[1])
@@ -121,6 +121,20 @@ async def decisions():
     s, out, _ = session(); s._farewell_at = time.time()
     await s._on_live_event(cue("good_news"))
     check("эмоции: после прощания подсказок нет", len(s.client.thinking) == 0)
+    # звонок 27.10.2026 (f7cc4b4c): «тише/медленнее» в подсказках проседало голос, скачки тона
+    hints_all = " ".join(h.CUE_HINTS.values()) + " " + lc.VOICE_DELEGATION_HINT
+    check("стабильный голос: нигде не просим говорить тише/медленнее/бодрее",
+          not any(w in hints_all for w in ("медленнее и тише", "говори тише", "бодрее", "слышимый вдох")))
+    check("стабильный голос: правило одной громкости и темпа на весь звонок",
+          "СТАБИЛЬНЫЙ ГОЛОС" in lc.VOICE_DELEGATION_HINT and "Никогда не шепчи" in lc.VOICE_DELEGATION_HINT)
+    check("эмоции: реакция — после того, как клиент договорит", all("договорит" in v for v in h.CUE_HINTS.values()))
+    s, out, _ = session()
+    for i, c in enumerate(["joke", "problem", "good_news", "joke"]):
+        s._cue_hint_at = {k: v - 100 for k, v in s._cue_hint_at.items()}
+        await s._on_live_event(cue(c))
+    check("эмоции: не больше 3 подсказок за звонок", len(s.client.thinking) == 3, str(len(s.client.thinking)))
+    check("материалы: не говорить «уже отправил» (голос и бэкенд)",
+          "«уже " in lc.VOICE_DELEGATION_HINT and "никогда «уже отправил»" in lc.BACKEND_SYSTEM_PROMPT)
     names = [q["name"] for q in lc.CALL_DECISION_TRIGGER["decisions"]["questions"]]
     check("эмоции: Decisions спрашивает caller_cue (joke/problem/good_news)", "caller_cue" in names)
     check("эмоции: в подсказке голосу есть смех, шутки и эмпатия по ситуации",
