@@ -407,14 +407,18 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 
 .task-when.overdue { color: var(--vf-danger); font-weight: 600; }
 
-.task-quick-goto {
-  position: absolute; top: 10px; right: 4px;
-  width: 24px; height: 24px; border-radius: 6px; border: 0; cursor: pointer;
-  background: transparent; color: var(--vf-text-4); font-size: 11px;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background var(--vf-fast), color var(--vf-fast);
+/* Видимая кнопка «В CRM» рядом с задачей в сайдбаре — чтобы не искать */
+.task-crm-btn {
+  position: absolute; top: 10px; right: 6px;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 0 9px; border-radius: 7px;
+  background: var(--vf-accent-soft); color: var(--vf-accent);
+  border: 1px solid transparent; cursor: pointer;
+  font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
+  transition: background var(--vf-fast), color var(--vf-fast), border-color var(--vf-fast);
 }
-.task-quick-goto:hover { background: var(--vf-accent-soft); color: var(--vf-accent); }
+.task-crm-btn i { font-size: 10px; }
+.task-crm-btn:hover { background: var(--vf-accent); color: #fff; border-color: var(--vf-accent); }
 
 .tcal-empty { padding: 24px 10px; text-align: center; color: var(--vf-text-3); font-size: 13px; line-height: 1.6; }
 
@@ -428,17 +432,28 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
   transition: transform var(--vf-fast), box-shadow var(--vf-fast);
 }
 .tcal-new-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -4px color-mix(in srgb, var(--vf-accent) 60%, transparent); }
-.tcal-filters { display: flex; gap: 4px; background: var(--vf-surface-2); border-radius: 8px; padding: 3px; }
+/* Фильтры 6 чипов — ряд с переносом, компактные с иконками каналов */
+.tcal-filters { display: flex; flex-wrap: wrap; gap: 4px; background: var(--vf-surface-2); border-radius: 10px; padding: 4px; }
 .tcal-filter-chip {
-  flex: 1; padding: 6px 10px; border: 0; background: transparent; color: var(--vf-text-3);
-  font-size: 11.5px; font-weight: 600; cursor: pointer; border-radius: 6px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  flex: 1 1 auto; min-width: 0; padding: 6px 10px; border: 0; background: transparent; color: var(--vf-text-3);
+  font-size: 11px; font-weight: 600; cursor: pointer; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
   transition: background var(--vf-fast), color var(--vf-fast);
 }
-.tcal-filter-chip:hover { color: var(--vf-text); }
+.tcal-filter-chip:hover { color: var(--vf-text); background: color-mix(in srgb, var(--vf-text) 5%, transparent); }
 .tcal-filter-chip.is-active { background: var(--vf-surface); color: var(--vf-accent); box-shadow: var(--vf-shadow-1); }
-.tcal-filter-n { font-size: 10px; opacity: .75; font-weight: 700; }
-.tcal-filter-chip.is-active .tcal-filter-n { opacity: 1; }
+.tcal-filter-chip i { font-size: 11px; opacity: .9; }
+.tcal-filter-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 14px; padding: 0 4px; border-radius: 7px;
+  background: color-mix(in srgb, var(--vf-text-3) 20%, transparent); color: var(--vf-text-2);
+  font-size: 9.5px; font-weight: 700;
+}
+.tcal-filter-chip.is-active .tcal-filter-n { background: var(--vf-accent); color: #fff; }
+/* Скрываем текст на очень узких (оставляем только иконку), подсказка в title */
+@media (max-width: 420px){
+  .tcal-filter-chip .tcal-filter-lbl { display: none; }
+}
 
 /* ── DnD задачи на клетки календаря ── */
 .task-item.tcal-list-row[draggable="true"] { cursor: grab; }

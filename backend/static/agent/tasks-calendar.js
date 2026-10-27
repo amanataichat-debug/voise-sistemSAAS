@@ -398,7 +398,7 @@ function _tcalListRow(t, dayKey, selected){
           <div class="task-title">${esc(t.title || 'Задача')} ${taskChannelBadge(t.channel)}</div>
           ${t.contact_name ? `<div class="task-foot"><span class="task-contact">${esc(t.contact_name)}${t.contact_phone ? ` · ${esc(t.contact_phone)}` : ''}</span><span class="task-when ${soon ? 'soon' : ''} ${overdue ? 'overdue' : ''}">${whenText}</span></div>` : ''}
         </div>
-        ${contactId ? `<button class="task-quick-goto" onclick="event.stopPropagation();_tcalOpenContact('${contactId}')" title="Открыть карточку клиента"><i class="fas fa-arrow-up-right-from-square"></i></button>` : ''}
+        ${contactId ? `<button class="task-crm-btn" onclick="event.stopPropagation();_tcalOpenContact('${contactId}')" title="Открыть карточку клиента в CRM"><i class="fas fa-user"></i> В CRM</button>` : ''}
 
         <!-- Подробности (та же разметка, что раньше внутри _tcalTaskRow) -->
         <div class="task-details" id="tcal-task-det-${t.id}" style="display:none">
@@ -475,18 +475,25 @@ function _tcalRenderList(key){
     ? (_tcalFilter === 'all' ? 'Запланированных задач нет' : 'По этому фильтру задач нет')
     : `Актуальных: ${totalFuture}${totalOverdue ? ` · просрочено: ${totalOverdue}` : ''}`;
 
-  // Верхний блок: кнопка «+ Новая задача» и фильтр-чипы
+  // Верхний блок: кнопка «+ Новая задача» и фильтр-чипы (все каналы)
   const total = allTasksRaw.length;
-  const nCall = allTasksRaw.filter(t => { const c = (t.channel || 'call').toLowerCase(); return c === 'call' || c === 'voice' || c === 'phone'; }).length;
-  const nTg = allTasksRaw.filter(t => (t.channel || '').toLowerCase() === 'telegram').length;
-  const chip = (id, label, n) => `<button class="tcal-filter-chip ${_tcalFilter === id ? 'is-active' : ''}" onclick="_tcalSetFilter('${id}')">${esc(label)} ${n ? `<span class="tcal-filter-n">${n}</span>` : ''}</button>`;
+  const chCount = (keys) => allTasksRaw.filter(t => keys.includes((t.channel || 'call').toLowerCase())).length;
+  const nCall = chCount(['call', 'voice', 'phone']);
+  const nTg   = chCount(['telegram']);
+  const nWa   = chCount(['whatsapp']);
+  const nIg   = chCount(['instagram']);
+  const nSms  = chCount(['sms']);
+  const chip = (id, label, n, icon) => `<button class="tcal-filter-chip ${_tcalFilter === id ? 'is-active' : ''}" onclick="_tcalSetFilter('${id}')" title="${esc(label)}">${icon ? `<i class="${icon}"></i>` : ''}<span class="tcal-filter-lbl">${esc(label)}</span>${n ? `<span class="tcal-filter-n">${n}</span>` : ''}</button>`;
   const topbar = `
     <div class="tcal-topbar">
       <button class="btn btn-primary btn-sm tcal-new-btn" onclick="_tcalNewTaskViaChat()"><i class="fas fa-plus"></i> Новая задача</button>
       <div class="tcal-filters">
-        ${chip('all', 'Все', total)}
-        ${chip('call', 'Звонки', nCall)}
-        ${chip('telegram', 'Telegram', nTg)}
+        ${chip('all',       'Все',       total, 'fas fa-list')}
+        ${chip('call',      'Звонки',    nCall, 'fas fa-phone-volume')}
+        ${chip('telegram',  'Telegram',  nTg,   'fab fa-telegram')}
+        ${chip('whatsapp',  'WhatsApp',  nWa,   'fab fa-whatsapp')}
+        ${chip('instagram', 'Instagram', nIg,   'fab fa-instagram')}
+        ${chip('sms',       'SMS',       nSms,  'fas fa-comment-sms')}
       </div>
     </div>`;
 
