@@ -14,6 +14,7 @@ Subscription blocker — фоновая задача отмены заплани
 Запускается каждые 5 минут.
 """
 
+from sqlalchemy import or_
 import asyncio
 
 from backend.core.logging import get_logger
@@ -55,15 +56,15 @@ async def check_expired_agent_subscriptions():
             if user.has_agent_access():
                 continue
 
-            tasks_cancelled = (
-                db.query(Task)
-                .filter(
-                    Task.user_id == user.id,
-                    Task.is_agent_task == True,  # noqa: E712
-                    Task.status == TaskStatus.SCHEDULED,
-                )
-                .update({"status": TaskStatus.CANCELLED}, synchronize_session=False)
+            query = db.query(Task).filter(
+                Task.user_id == user.id,
+                Task.is_agent_task == True,  # noqa: E712
+                Task.status == TaskStatus.SCHEDULED,
             )
+            # Тариф Старт: агент сам не звонит, но напоминания владельцу (channel="owner") остаются
+            if user.has_agent_chat_access():
+                query = query.filter(or_(Task.channel.is_(None), Task.channel != "owner"))
+            tasks_cancelled = query.update({"status": TaskStatus.CANCELLED}, synchronize_session=False)
             if tasks_cancelled:
                 affected += 1
                 total_cancelled += tasks_cancelled

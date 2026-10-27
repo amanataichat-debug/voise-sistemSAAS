@@ -161,6 +161,9 @@ async def after_postcall(agent_call_id, call_direction: str, first_text: str = "
             return  # итог первого звонка не дублируем отдельным сообщением
 
         if direction in ("inbound", "outbound") and _enabled(agent, "notify_call_summary"):
+            # Недозвоны на исходящих не шлём по одному — они есть в итогах дня
+            if direction == "outbound" and (call.status or "") != "answered":
+                return
             await _send(agent, db, format_call_summary(agent, contact, call, direction))
     except Exception as e:
         logger.warning(f"[OWNER-NOTIFY] after_postcall failed for call {agent_call_id}: {e}")
