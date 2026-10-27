@@ -118,6 +118,19 @@ MOOD_HINTS = {
     "confused": "Клиент, похоже, не до конца понял. Объясни проще и другими словами, одной короткой "
                 "фразой. Не переспрашивай, понял ли он, и не уточняй, что он имел в виду.",
 }
+# Эмоциональные сигналы клиента (Decisions, вопрос caller_cue): живая реакция голосом на лету.
+# Подсказка — не чаще CUE_HINT_GAP_SEC на один и тот же сигнал и CUE_ANY_GAP_SEC на любой.
+CUE_HINTS = {
+    "joke": "Клиент сейчас пошутил или смеётся. Искренне и коротко посмейся вместе с ним (живой смешок), "
+            "ответь с улыбкой в голосе; можно одну лёгкую добрую шутку в тему, потом мягко вернись к делу.",
+    "problem": "Клиент делится проблемой или переживает. Сначала одной тёплой фразой посочувствуй, с мягким "
+               "вздохом, говори медленнее и тише; без шуток. Потом коротко предложи, чем поможешь.",
+    "good_news": "Клиент поделился хорошей новостью. Искренне и тепло порадуйся за него одной фразой "
+                 "(«о, здорово, поздравляю!»), с улыбкой в голосе, и продолжай разговор.",
+}
+CUE_LOG = {"joke": "шутит / смеётся", "problem": "делится проблемой", "good_news": "хорошая новость"}
+CUE_HINT_GAP_SEC = 40.0
+CUE_ANY_GAP_SEC = 12.0
 INTENT_HINTS = {
     # Звонок 25.10.2026 (сессия 043c4070): здесь стояло «…и вежливо попрощайся» — модель сразу вызвала
     # hangup_call, пока клиент ещё называл время и номер Telegram, и связь оборвалась на полуслове.
@@ -422,6 +435,8 @@ class LiveVoiceSession:
         self._mood_hint_at = 0.0
         self._mood_seen = ("neutral", 0)  # последнее настроение от Decisions и сколько раз подряд
         self._intents_done: set = set()
+        self._cue_hint_at: Dict[str, float] = {}
+        self.emotion_hints = 0
         self.direction = getattr(assistant, "sip_direction", None)
 
     # ------------------------------------------------------------------ helpers
@@ -811,6 +826,8 @@ class LiveVoiceSession:
                 self.call_log.add("session", f"{INTENT_LOG[intent]} (Decisions)")
             await self.client.append_thinking(INTENT_HINTS[intent])
 
+        await self._on_cue(answers.get("caller_cue") or "none", now)
+
         # Подсказку, придержанную интервалом, не теряем: настроение запоминаем только когда
         # подсказка ушла (или клиент снова спокоен), следующее решение попробует ещё раз
         streak = self._mood_seen[1] + 1 if self._mood_seen[0] == mood else 1
@@ -825,6 +842,21 @@ class LiveVoiceSession:
                 if self.call_log:
                     self.call_log.add("session", f"Настроение клиента: {mood} (Decisions) — подсказка голосовой модели")
                 await self.client.append_thinking(MOOD_HINTS[mood])
+
+    async def _on_cue(self, cue: str, now: float) -> None:
+        """Шутка / проблема / хорошая новость клиента → подсказка живой реакции (не озвучивается)."""
+        if cue not in CUE_HINTS or self._farewell_at is not None:
+            return
+        if now - self._cue_hint_at.get(cue, 0.0) < CUE_HINT_GAP_SEC:
+            return
+        if self._cue_hint_at and now - max(self._cue_hint_at.values()) < CUE_ANY_GAP_SEC:
+            return
+        self._cue_hint_at[cue] = now
+        self.emotion_hints += 1
+        _log(f"decisions: caller cue {cue}")
+        if self.call_log:
+            self.call_log.add("session", f"Клиент {CUE_LOG[cue]} (Decisions) — подсказка живой реакции голосу")
+        await self.client.append_thinking(CUE_HINTS[cue])
 
     def _hangup_refusal(self, raw_arguments: Any) -> Optional[str]:
         """

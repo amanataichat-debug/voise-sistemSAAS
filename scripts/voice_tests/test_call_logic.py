@@ -104,6 +104,29 @@ async def decisions():
     await s._on_live_event(ev("goodbye", "positive"))
     check("decisions: прощание → автозавершение ждёт тишины", s._farewell_at is not None)
 
+    # живые эмоции на лету (владелец 27.10.2026): шутка / проблема / хорошая новость клиента
+    cue = lambda c: {"type": "decision.event", "event": {"type": "decision.completed", "decision": {"answers": [
+        {"name": "caller_intent", "choice": "none"}, {"name": "caller_cue", "choice": c},
+        {"name": "caller_mood", "choice": "neutral"}]}}}
+    s, out, cl = session()
+    await s._on_live_event(cue("joke"))
+    check("эмоции: клиент пошутил → подсказка посмеяться вместе", len(s.client.thinking) == 1 and "посмейся" in s.client.thinking[0])
+    await s._on_live_event(cue("joke"))
+    check("эмоции: вторая шутка сразу — без повторной подсказки", len(s.client.thinking) == 1)
+    s._cue_hint_at["joke"] -= 15
+    await s._on_live_event(cue("problem"))
+    check("эмоции: проблема клиента → сочувствие, без шуток", len(s.client.thinking) == 2 and "посочувствуй" in s.client.thinking[1]
+          and "без шуток" in s.client.thinking[1])
+    check("эмоции: реакция записана в журнал звонка", any("Decisions) — подсказка живой реакции" in e["text"] for e in cl.events))
+    s, out, _ = session(); s._farewell_at = time.time()
+    await s._on_live_event(cue("good_news"))
+    check("эмоции: после прощания подсказок нет", len(s.client.thinking) == 0)
+    names = [q["name"] for q in lc.CALL_DECISION_TRIGGER["decisions"]["questions"]]
+    check("эмоции: Decisions спрашивает caller_cue (joke/problem/good_news)", "caller_cue" in names)
+    check("эмоции: в подсказке голосу есть смех, шутки и эмпатия по ситуации",
+          "ЭМОЦИИ И ЮМОР" in lc.VOICE_DELEGATION_HINT and "посмейся" in lc.VOICE_DELEGATION_HINT
+          and "без шуток" in lc.VOICE_DELEGATION_HINT)
+
 
 async def diagnostics():
     cl = CallLogRecorder(channel="phone"); cl.latencies_ms.extend([900, 4200, 5100])
