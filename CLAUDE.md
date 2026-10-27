@@ -356,7 +356,7 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 
 ## Development Workflow (current)
 
-- Work happens on branch `2510-voice-live` (от `2210-perebivaniya` ← `2110-voice-render` ← `2110-client-memory`): живой голос — без повторов «понял», агент знает, что КП/прайс уходят клиенту в WhatsApp/Telegram после звонка (отправляет оркестратор). Предыдущая ветка с памятью клиента: ТЗ `docs/tz_2110_client_memory.md`. Commit and push there; no pull requests unless asked.
+- Work happens on branch `2710-voice-crm` — ЕДИНАЯ ветка для деплоя: слияние `2510-voice-live` (голос: гибридный поиск по базе знаний, защита hangup_call, диагностика звонка, лимит промпта 24000) и `2510-crm-v2` (CRM v2, календарь задач, воронка, тёмная тема). Исходные ветки не трогаем. Голос улучшаем здесь; перед деплоем любой правки голоса — `python scripts/voice_regression.py`. Commit and push there; no pull requests unless asked.
 - The SIP gateway VPS is updated from GitHub: after changing anything in `infra/sip-gateway/`, commit, push, then run `install.sh` on the VPS (see `infra/sip-gateway/SERVER.md`). Never edit configs on the server by hand.
 - Render deploys the backend automatically from the branch it is bound to; during a deploy the SIP bridge logs `backend_unavailable` for 1–2 minutes (expected).
 - Render actually runs Python 3.14 despite `runtime.txt`; `audioop` comes from `audioop-lts`.
