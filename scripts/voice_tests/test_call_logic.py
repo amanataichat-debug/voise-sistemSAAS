@@ -140,6 +140,79 @@ async def voiced():
     check("после остановки звонка звук игнорируется", out == [])
 
 
+async def farewell():
+    # звонок 27.10.2026 (f50d0b4e): «Да, всё, спасибо, хорошо» → «Тогда на этом всё, спасибо за звонок!»,
+    # hangup_call не вызван, линия висела 35 с
+    check("прощание: «Тогда на этом всё, спасибо за звонок!» — закрывающая фраза ассистента",
+          h.is_assistant_closing("Тогда на этом всё, спасибо за звонок!"))
+    check("прощание: «спасибо за звонок в …! Чем помочь?» — не прощание",
+          not h.is_assistant_closing("Спасибо за звонок в Voksy! Чем могу помочь?"))
+    check("прощание: кыргызское «Чалганыңыз үчүн рахмат, жакшы калыңыз!»",
+          h.is_assistant_closing("Чалганыңыз үчүн рахмат, жакшы калыңыз!"))
+    check("прощание: клиент «Да, всё, спасибо, хорошо» закончил разговор", h.is_caller_closing("Да, всё, спасибо, хорошо"))
+    check("прощание: «спасибо, а сколько стоит доставка?» — не конец", not h.is_caller_closing("спасибо, а сколько стоит доставка?"))
+
+    now = time.time()
+    s, out, _ = session()
+    s._last_user_voice_at = now - 12
+    s._log_transcript("assistant", "Тогда на этом всё, спасибо за звонок!")
+    check("автозавершение: прощание ассистента зафиксировано", s._farewell_at is not None)
+    s._farewell_at = now - 6; s._last_audio_at = now - 3
+    check("автозавершение: прощание + 4 с общей тишины → кладём трубку", s._should_auto_hangup(now))
+    s._last_audio_at = now - 0.5
+    check("автозавершение: ассистент ещё говорит → ждём", not s._should_auto_hangup(now))
+
+    s, out, _ = session()
+    s._log_transcript("assistant", "Спасибо за звонок в нашу компанию!")
+    check("автозавершение: «спасибо за звонок» в приветствии (клиент ещё молчал) не считается", s._farewell_at is None)
+
+    s, out, _ = session()
+    s._last_user_voice_at = now - 1
+    s._log_transcript("user", "Хорошо, спасибо")
+    check("автозавершение: «хорошо, спасибо» клиента — ждём тишины", s._farewell_at is not None)
+    s._log_transcript("assistant", "А вам удобно, если завтра в десять я пришлю договор?")
+    check("автозавершение: ассистент продолжил разговор вопросом → прощание снято", s._farewell_at is None)
+
+
+def phone_voice():
+    import numpy as np
+    import backend.websockets.sip_media_adapter as sma
+    t = np.arange(8000) / 8000.0
+    def level(freq, fx):
+        x = (np.sin(2 * np.pi * freq * t) * 8000).astype(np.int16).tobytes()
+        y = b"".join(fx(x[i:i + 320]) for i in range(0, len(x), 320))
+        a = np.frombuffer(y, dtype=np.int16)[2000:].astype(float)
+        return 20 * np.log10(np.sqrt((a ** 2).mean()) / (8000 / np.sqrt(2)))
+    low, mid = level(90, sma.PhoneVoice(highpass_hz=200, gain_db=0)), level(1000, sma.PhoneVoice(highpass_hz=200, gain_db=0))
+    check("звук в линию: бас 90 Гц срезан (≥ 15 дБ), 1 кГц не тронут (±1 дБ)", low <= -15 and abs(mid) <= 1.0,
+          f"90 Гц {low:.1f} дБ, 1 кГц {mid:.1f} дБ")
+    g = level(1000, sma.PhoneVoice(highpass_hz=0, gain_db=-3))
+    check("звук в линию: усиление −3 дБ", abs(g + 3) <= 0.3, f"{g:.1f} дБ")
+    full = (np.sin(2 * np.pi * 400 * t) * 32000).astype(np.int16).tobytes()
+    peak = np.abs(np.frombuffer(sma.PhoneVoice(highpass_hz=0, gain_db=6)(full), dtype=np.int16)).max()
+    check("звук в линию: ограничитель не даёт клиппинга при +6 дБ", peak < 32767, str(peak))
+    check("звук в линию: по умолчанию включено (срез НЧ + тише)",
+          sma.PhoneVoice().enabled and sma.settings.SIP_OUT_GAIN_DB < 0 and sma.settings.SIP_OUT_HIGHPASS_HZ > 0)
+
+
+def voice_hints():
+    check("подсказка: мужской голос cedar → мужской род", "мужском роде" in lc.voice_gender_hint("cedar"))
+    check("подсказка: marin → женский род", "женском роде" in lc.voice_gender_hint("marin"))
+    check("подсказка: alloy — без подсказки рода", lc.voice_gender_hint("alloy") == "")
+    hint = lc.VOICE_DELEGATION_HINT
+    for needle, label in [("Delegation policy", "метка делегирования OpenAI"), ("Interruption policy", "метка перебивания OpenAI"),
+                          ("ЗАВЕРШЕНИЕ", "прощание + hangup_call в том же ходе"), ("Чалганыңыз үчүн рахмат", "кыргызские образцы"),
+                          ("давайте в Телеграм", "выбор канала не делегировать")]:
+        check(f"подсказка голосу: {label}", needle in hint)
+    check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
+          "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
+    a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},
+                              voice="cedar", greeting_message=None)
+    cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()
+    check("конфиг: Backend tools и род голоса — в инструкции голосового слоя",
+          "Backend tools" in cfg["instructions"] and "hangup_call" in cfg["instructions"] and "мужском роде" in cfg["instructions"])
+
+
 def prompt_budget():
     blk = "# ЗНАНИЯ\n" + "В: цена? О: 5000 сом.\n" * 400
     avc.build_voice_knowledge_block = lambda db, a, budget=0: (blk[:9000], {"knowledge": 9000, "total": 9000})
@@ -185,6 +258,9 @@ async def main():
     await decisions()
     await diagnostics()
     await voiced()
+    await farewell()
+    phone_voice()
+    voice_hints()
     prompt_budget()
     session_config()
 

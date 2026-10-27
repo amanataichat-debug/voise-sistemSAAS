@@ -146,13 +146,28 @@ AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
 # Сколько клиент должен молчать после прощания, чтобы положить трубку. С запасом на то,
 # чтобы ассистент успел договорить своё прощание (играет в реальном темпе ~3 с).
 HANGUP_SILENCE_SEC = 4.0
+# Ассистент тоже должен молчать: звук GPT-Live идёт в реальном темпе, последний голосовой кусок
+# пришёл ≈ тогда же, когда его услышал клиент. Без этого условия «спасибо, хорошо» клиента
+# посреди звонка и 4 с его молчания клали трубку, пока агент ещё договаривал ответ.
+HANGUP_ASSISTANT_QUIET_SEC = 1.5
 _FAREWELL_RE = re.compile(
-    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:дня|вечера)|до\s+встречи|до\s+связи|"
+    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:вам\s+)?(?:дня|вечера)|до\s+встречи|до\s+связи|"
     r"прощайте|счастливо\s+оставаться|рахмат.*бол|"
-    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|"
+    # Закрывающие фразы ассистента (звонок 27.10.2026, сессия f50d0b4e): «Тогда на этом всё, спасибо
+    # за звонок!» — регулярка их не знала, hangup_call модель не вызвала, линия висела 35 с.
+    r"спасибо\s+(?:вам\s+)?за\s+(?:звонок|разговор|ваше\s+время|время|уделённое|уделенное|общение)|"
+    r"на\s+этом\s+(?:пока\s+)?вс[её]|будем\s+на\s+связи|до\s+скорого|хороших\s+выходных|"
+    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|көрүшкөнчө|"
+    r"чалганыңыз\w*\s+(?:үчүн\s+)?рахмат|убакыт\w*\s+(?:бөлгөнүңүз\w*\s+)?(?:үчүн\s+)?рахмат|"
+    r"байланышта\s+болобуз|жакшы\s+күн\s+каалайм|"
     r"\bgood\s?bye\b|\bbye\b", re.IGNORECASE)
 # «пока» — прощание только в конце короткой реплики («давай, пока»), а не «пока не знаю»
 _PAKA_RE = re.compile(r"(?:^|[\s,.!?])пока[\s.!?…]*$", re.IGNORECASE)
+# Короткое «да, всё, спасибо» / «рахмат, болду» клиента — он закончил разговор, даже без «до свидания»
+# (звонок 27.10.2026). Слабее прощания: если после него агент заговорит не о прощании — отмена.
+_THANKS_RE = re.compile(r"спасибо|благодарю|рахмат|чоң\s+рахмат", re.IGNORECASE)
+_DONE_RE = re.compile(r"\bвс[её]\b|хорошо|ладно|понятно|договорились|окей|\bок\b|макул|болду|болот|жакшы|бүттү",
+                      re.IGNORECASE)
 
 
 def is_farewell(text: str) -> bool:
@@ -162,6 +177,32 @@ def is_farewell(text: str) -> bool:
     if _FAREWELL_RE.search(t):
         return True
     return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
+
+
+def is_caller_closing(text: str) -> bool:
+    """Реплика клиента заканчивает разговор: прощание или короткое «всё, спасибо»."""
+    t = " ".join((text or "").split())
+    if is_farewell(t):
+        return True
+    return (0 < len(t.split()) <= 6 and "?" not in t
+            and bool(_THANKS_RE.search(t)) and bool(_DONE_RE.search(t)))
+
+
+def is_assistant_closing(text: str) -> bool:
+    """
+    Реплика ассистента кончается прощанием. Смотрим только хвост (последние ~2 фразы): «Спасибо
+    за звонок в нашу компанию! Чем помочь?» — не прощание; вопрос после прощальной фразы — тоже.
+    """
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    tail = t[-90:]
+    m = None
+    for m in _FAREWELL_RE.finditer(tail):
+        pass
+    if m is None:
+        return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
+    return "?" not in tail[m.end():]
 
 # Активные соединения по ассистенту (для статистики /ws/status)
 active_live_connections: Dict[str, List[Any]] = {}
@@ -468,13 +509,31 @@ class LiveVoiceSession:
         return bool(self.telephony or (self.call_log is not None and self.call_log.channel == "phone"))
 
     def _scan_farewell(self, role: str, text: str) -> None:
+        """
+        Вызывается на каждом фрагменте стенограммы с накопленной репликой роли.
+
+        Клиент: прощание или короткое «всё, спасибо» → ждём тишины. Ассистент: решает его ПОСЛЕДНЯЯ
+        реплика — кончается прощанием → ждём тишины; заговорил о другом (вопрос, новое предложение) —
+        разговор продолжается, прощание снимаем. Прощание ассистента до первой речи клиента (это
+        приветствие «спасибо за звонок в …») не считаем.
+        """
         if not self._is_phone() or self._hangup_sent:
             return
-        if is_farewell(text):
+        if role == "user":
+            closing = is_caller_closing(text)
+        else:
+            closing = self._last_user_voice_at > 0 and is_assistant_closing(text)
+            if not closing:
+                if self._farewell_at is not None and len(text.split()) >= 4:
+                    self._farewell_at = None
+                    if self.call_log:
+                        self.call_log.add("session", "Прощание отменено: ассистент продолжил разговор")
+                return
+        if closing:
             if self._farewell_at is None and self.call_log:
                 self.call_log.add("session",
                                   f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
-                                  f"ждём тишины клиента, чтобы завершить звонок")
+                                  f"ждём тишины, чтобы завершить звонок")
             self._farewell_at = time.time()
 
     def _should_auto_hangup(self, now: float) -> bool:
@@ -495,6 +554,9 @@ class LiveVoiceSession:
             return False
         # клиент сейчас говорит (только что был фрагмент речи) — ждём
         if now - self._last_user_voice_at < 1.0:
+            return False
+        # ассистент ещё договаривает — ждём, трубку кладём только в общей тишине
+        if now - self._last_audio_at < HANGUP_ASSISTANT_QUIET_SEC:
             return False
         quiet_since = max(self._last_user_voice_at, self._farewell_at)
         return now - quiet_since >= HANGUP_SILENCE_SEC

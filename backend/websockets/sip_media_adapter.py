@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.websockets.call_log import CallLogRecorder
 
@@ -91,6 +92,54 @@ class _LowPass:
         self._tail = buf[-(len(self.coeffs) - 1):]
         # "valid" даёт ровно len(samples) отсчётов, задержка (taps-1)/2 ≈ 1.3 мс
         return numpy.convolve(buf, self.coeffs, mode="valid")
+
+
+class PhoneVoice:
+    """
+    Подготовка голоса ассистента к телефонной линии: срез НЧ + усиление + мягкий ограничитель.
+
+    Запись звонка 27.10.2026 (сессия f50d0b4e): активный уровень агента −24 dBFS против −34 у клиента,
+    пики −7 dBFS и 17 % энергии ниже 150 Гц. Телефонный канал (AMR/G.711, 300–3400 Гц) эти басы не
+    передаёт, а маленький динамик на громкой связи на них хрипит и «бубнит». Срез — КИХ-фильтр ВЧ
+    (спектральная инверсия НЧ), хвост между кадрами переносится, как у _LowPass, чтобы не было щелчков.
+    Ограничитель: выше 0.7 полной шкалы — tanh-колено, пики не клиппуются при любом усилении.
+    """
+
+    TAPS = 129  # 8 кГц: переходная полоса ≈ 200 Гц, задержка 8 мс
+    KNEE = 0.7 * 32767
+
+    def __init__(self, rate: int = PHONE_RATE, highpass_hz: Optional[int] = None,
+                 gain_db: Optional[float] = None) -> None:
+        hp = settings.SIP_OUT_HIGHPASS_HZ if highpass_hz is None else highpass_hz
+        gdb = settings.SIP_OUT_GAIN_DB if gain_db is None else gain_db
+        self.gain = float(10 ** (gdb / 20.0))
+        self._hp = None
+        if numpy is not None and hp and 0 < hp < rate / 4:
+            lp = _LowPass(rate, cutoff=hp, taps=self.TAPS)
+            h = -lp.coeffs
+            h[(self.TAPS - 1) // 2] += 1.0
+            lp.coeffs = h.astype(numpy.float32)
+            self._hp = lp
+        self.enabled = numpy is not None and (self._hp is not None or abs(self.gain - 1.0) > 1e-3)
+
+    def __call__(self, pcm: bytes) -> bytes:
+        if not self.enabled or not pcm or len(pcm) % 2:
+            return pcm
+        try:
+            x = numpy.frombuffer(pcm, dtype=numpy.int16).astype(numpy.float32)
+            if self._hp is not None:
+                x = self._hp(x)
+            x *= self.gain
+            over = numpy.abs(x) > self.KNEE
+            if over.any():
+                room = 32767 - self.KNEE
+                v = x[over]
+                x[over] = numpy.sign(v) * (self.KNEE + room * numpy.tanh((numpy.abs(v) - self.KNEE) / room))
+            return numpy.clip(x, -32768, 32767).astype(numpy.int16).tobytes()
+        except Exception as exc:  # обработка — улучшение, звук в линию важнее
+            logger.warning(f"[SIP-MEDIA] PhoneVoice отключён после ошибки: {exc}")
+            self.enabled = False
+            return pcm
 
 
 class Resampler:
@@ -152,6 +201,7 @@ class HandlerSocket:
         self._queue: "asyncio.Queue[Optional[Dict[str, Any]]]" = asyncio.Queue()
         self._up = Resampler(PHONE_RATE, HANDLER_IN_RATE.get(provider, 24000))
         self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
+        self._voice = PhoneVoice()
         in_rate = HANDLER_IN_RATE.get(provider, 24000)
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
@@ -328,7 +378,7 @@ class HandlerSocket:
                             f"(user done -> first audio)")
             delta = data.get("delta") or ""
             if delta:
-                pcm = self._down(base64.b64decode(delta))
+                pcm = self._voice(self._down(base64.b64decode(delta)))
                 if pcm:
                     self.frames_out += 1
                     self.audio_bytes_out += len(pcm)
@@ -345,6 +395,7 @@ class HandlerSocket:
             )
             await self._send_text({"type": "clear"})
             self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
+            self._voice = PhoneVoice()
             self._out_hold.clear()
             self._out_streaming = False
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера
