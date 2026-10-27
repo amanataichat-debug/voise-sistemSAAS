@@ -418,6 +418,34 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 
 .tcal-empty { padding: 24px 10px; text-align: center; color: var(--vf-text-3); font-size: 13px; line-height: 1.6; }
 
+/* ── Шапка сайдбара календаря: кнопка "Новая задача" + фильтр ── */
+.tcal-topbar { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 10px; margin-bottom: 6px; border-bottom: 1px solid var(--vf-border); }
+.tcal-new-btn {
+  width: 100%; justify-content: center; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--vf-accent) 0%, var(--vf-accent-hover) 100%);
+  color: #fff; border: 0; font-weight: 600; font-size: 13px;
+  box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--vf-accent) 50%, transparent);
+  transition: transform var(--vf-fast), box-shadow var(--vf-fast);
+}
+.tcal-new-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -4px color-mix(in srgb, var(--vf-accent) 60%, transparent); }
+.tcal-filters { display: flex; gap: 4px; background: var(--vf-surface-2); border-radius: 8px; padding: 3px; }
+.tcal-filter-chip {
+  flex: 1; padding: 6px 10px; border: 0; background: transparent; color: var(--vf-text-3);
+  font-size: 11.5px; font-weight: 600; cursor: pointer; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  transition: background var(--vf-fast), color var(--vf-fast);
+}
+.tcal-filter-chip:hover { color: var(--vf-text); }
+.tcal-filter-chip.is-active { background: var(--vf-surface); color: var(--vf-accent); box-shadow: var(--vf-shadow-1); }
+.tcal-filter-n { font-size: 10px; opacity: .75; font-weight: 700; }
+.tcal-filter-chip.is-active .tcal-filter-n { opacity: 1; }
+
+/* ── DnD задачи на клетки календаря ── */
+.task-item.tcal-list-row[draggable="true"] { cursor: grab; }
+.task-item.is-dragging { opacity: .4; cursor: grabbing; }
+.tcal-day.tcal-drop-ready { outline: 1px dashed color-mix(in srgb, var(--vf-accent) 30%, transparent); outline-offset: -2px; }
+.tcal-day.tcal-drop-over { outline: 2px solid var(--vf-accent); outline-offset: -2px; background: var(--vf-accent-soft); transform: scale(1.02); }
+
 /* ── Подробности задачи в календаре (клик по задаче → раскрывает) ── */
 .task-details {
   margin-top: 10px; padding: 12px 14px; border-radius: 10px;

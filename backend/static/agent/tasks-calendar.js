@@ -13,6 +13,8 @@ let _tcalByDay = {};                 // 'YYYY-MM-DD' -> [task, ...]
 let _tcalYear = 0, _tcalMonth = 0;   // отображаемый месяц (0-based)
 let _tcalSel = null;                 // выбранный день 'YYYY-MM-DD'
 let _tcalExpanded = false;           // развёрнут ли список дня с >5 задачами
+let _tcalFilter = 'all';             // all | call | telegram — фильтр сайдбара
+let _tcalDragId = null;              // id задачи при DnD в календарь
 
 function _pad2(n){ return String(n).padStart(2,'0'); }
 // Русский плюрал: pluralRu(2,'задача','задачи','задач') -> 'задачи'
@@ -85,7 +87,6 @@ function _tcalRenderGrid(){
       cls.push('has');
       const cnt = tasks.length > 9 ? '9+' : tasks.length;
       badge = `<span class="tcal-count" title="${tasks.length} ${pluralRu(tasks.length,'задача','задачи','задач')}">${cnt}</span>`;
-      // Превью первых 2-х задач прямо в клетке — чтобы было видно, что это за задачи
       preview = '<div class="tcal-day-tasks">' +
         tasks.slice(0, 2).map(t => {
           const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
@@ -97,10 +98,93 @@ function _tcalRenderGrid(){
     }
     if(key === today) cls.push('today');
     if(key === _tcalSel) cls.push('sel');
-    html += `<div class="${cls.join(' ')}" onclick="_tcalSelectDay('${key}')"><span class="tcal-day-num">${day}</span>${badge}${preview}</div>`;
+    // DnD-мишень для переноса задачи на другой день
+    html += `<div class="${cls.join(' ')}" data-key="${key}"
+                  onclick="_tcalSelectDay('${key}')"
+                  ondragover="_tcalDragOver(event)"
+                  ondragleave="_tcalDragLeave(event)"
+                  ondrop="_tcalDrop(event,'${key}')">
+               <span class="tcal-day-num">${day}</span>${badge}${preview}
+             </div>`;
   }
   document.getElementById('tcal-grid').innerHTML = html;
 }
+
+// ── DnD задачи из сайдбара на день в календаре ─────────────────────────
+window._tcalDragStart = function(e, id){
+  _tcalDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', String(id)); } catch(err){}
+  e.currentTarget.classList.add('is-dragging');
+  // Подсвечиваем ВСЕ клетки календаря как потенциальные цели
+  document.querySelectorAll('.tcal-day:not(.empty)').forEach(el => el.classList.add('tcal-drop-ready'));
+};
+window._tcalDragEnd = function(e){
+  _tcalDragId = null;
+  e.currentTarget.classList.remove('is-dragging');
+  document.querySelectorAll('.tcal-day').forEach(el => { el.classList.remove('tcal-drop-ready', 'tcal-drop-over'); });
+};
+window._tcalDragOver = function(e){
+  if(!_tcalDragId) return;
+  if(e.currentTarget.classList.contains('empty')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('tcal-drop-over');
+};
+window._tcalDragLeave = function(e){
+  e.currentTarget.classList.remove('tcal-drop-over');
+};
+window._tcalDrop = async function(e, newKey){
+  e.preventDefault();
+  e.currentTarget.classList.remove('tcal-drop-over');
+  const id = _tcalDragId; _tcalDragId = null;
+  document.querySelectorAll('.tcal-day').forEach(el => { el.classList.remove('tcal-drop-ready', 'tcal-drop-over'); });
+  if(!id) return;
+  // Находим задачу в кеше по id
+  let task = null, oldKey = null;
+  for(const k of Object.keys(_tcalByDay)){
+    const i = _tcalByDay[k].findIndex(x => String(x.id) === String(id));
+    if(i >= 0){ task = _tcalByDay[k][i]; oldKey = k; break; }
+  }
+  if(!task || !oldKey) return;
+  if(oldKey === newKey) return;
+  // Сохраняем ВРЕМЯ дня, меняем только дату — так пользователь ожидает.
+  const oldD = new Date(task.scheduled_time);
+  const [ny, nm, nd] = newKey.split('-').map(Number);
+  const newD = new Date(oldD);
+  newD.setFullYear(ny); newD.setMonth(nm - 1); newD.setDate(nd);
+  const iso = newD.toISOString();
+  // Оптимистично переносим в кеше, рендерим
+  const i = _tcalByDay[oldKey].findIndex(x => String(x.id) === String(id));
+  if(i >= 0) _tcalByDay[oldKey].splice(i, 1);
+  if(!_tcalByDay[oldKey].length) delete _tcalByDay[oldKey];
+  task.scheduled_time = iso;
+  (_tcalByDay[newKey] = _tcalByDay[newKey] || []).push(task);
+  _tcalByDay[newKey].sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+  _tcalSel = newKey;
+  _tcalYear = ny; _tcalMonth = nm - 1;
+  _tcalRenderGrid();
+  _tcalRenderList(_tcalSel);
+  // Фоновый PUT, откат при ошибке
+  try {
+    const r = await apiFetch(API + '/tasks/' + id, { method: 'PUT', body: JSON.stringify({ scheduled_time: iso }) });
+    if(!r || r.status !== 200){
+      showToast('Не удалось перенести задачу', 'error');
+      // Возвращаем задачу обратно
+      task.scheduled_time = oldD.toISOString();
+      const j = _tcalByDay[newKey].findIndex(x => String(x.id) === String(id));
+      if(j >= 0) _tcalByDay[newKey].splice(j, 1);
+      if(!_tcalByDay[newKey].length) delete _tcalByDay[newKey];
+      (_tcalByDay[oldKey] = _tcalByDay[oldKey] || []).push(task);
+      _tcalRenderGrid(); _tcalRenderList(_tcalSel);
+    } else {
+      showToast('Задача перенесена', 'success');
+      if(typeof loadTasks === 'function') loadTasks();
+    }
+  } catch(err){
+    showToast('Ошибка сети', 'error');
+  }
+};
 
 function _tcalSelectDay(key){
   _tcalSel = key;
@@ -293,7 +377,7 @@ async function tcalDeleteDayTasks(key){
   }catch(e){ showToast('Ошибка сети', 'error'); }
 }
 
-// Строка задачи в едином списке (с меткой даты и подсветкой если выбрана).
+// Строка задачи в едином списке (с меткой даты, подсветкой если выбрана, DnD на календарь).
 function _tcalListRow(t, dayKey, selected){
   const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
   const d = new Date(t.scheduled_time);
@@ -304,7 +388,10 @@ function _tcalListRow(t, dayKey, selected){
   const soon = rel.soon && !overdue;
   const whenText = overdue ? 'Просрочена' : rel.text;
   return `
-    <div class="task-item tcal-list-row ${selected ? 'is-selected' : ''} ${overdue ? 'is-overdue' : ''}" data-id="${t.id}" data-day="${dayKey}">
+    <div class="task-item tcal-list-row ${selected ? 'is-selected' : ''} ${overdue ? 'is-overdue' : ''}"
+         data-id="${t.id}" data-day="${dayKey}" draggable="true"
+         ondragstart="_tcalDragStart(event,'${t.id}')" ondragend="_tcalDragEnd(event)"
+         title="Перетащите на дату в календаре, чтобы перенести">
       <div class="task-date tcal-list-date"><div class="t">${tm}</div><div class="m">${dayLabel}</div></div>
       <div class="task-body">
         <div class="cd-task-clickable" onclick="_tcalFocusTask('${t.id}', '${dayKey}')" title="Нажмите для подробностей">
@@ -362,15 +449,20 @@ function _tcalRenderList(key){
   const sub  = document.getElementById('tcal-side-sub');
   const body = document.getElementById('tcal-side-body');
 
-  // Собираем ВСЕ задачи с today и позже + просроченные (<today ∧ scheduled)
+  // Собираем ВСЕ задачи, применяем активный фильтр канала.
   const today = _mskTodayKey();
-  const allTasks = [];
+  const allTasksRaw = [];
   Object.keys(_tcalByDay).sort().forEach(k => {
-    _tcalByDay[k].forEach(t => allTasks.push({ ...t, _dayKey: k }));
+    _tcalByDay[k].forEach(t => allTasksRaw.push({ ...t, _dayKey: k }));
   });
-  allTasks.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+  const matchFilter = (t) => {
+    if(_tcalFilter === 'all') return true;
+    const ch = (t.channel || 'call').toLowerCase();
+    if(_tcalFilter === 'call') return ch === 'call' || ch === 'voice' || ch === 'phone';
+    return ch === _tcalFilter;
+  };
+  const allTasks = allTasksRaw.filter(matchFilter).sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
 
-  // Группируем по дню (today и позже + просроченные отдельной группой сверху)
   const overdue = allTasks.filter(t => t._dayKey < today);
   const future = allTasks.filter(t => t._dayKey >= today);
   const byDay = {};
@@ -380,20 +472,33 @@ function _tcalRenderList(key){
   const totalFuture = future.length;
   const totalOverdue = overdue.length;
   sub.textContent = totalFuture + totalOverdue === 0
-    ? 'Запланированных задач нет'
+    ? (_tcalFilter === 'all' ? 'Запланированных задач нет' : 'По этому фильтру задач нет')
     : `Актуальных: ${totalFuture}${totalOverdue ? ` · просрочено: ${totalOverdue}` : ''}`;
 
+  // Верхний блок: кнопка «+ Новая задача» и фильтр-чипы
+  const total = allTasksRaw.length;
+  const nCall = allTasksRaw.filter(t => { const c = (t.channel || 'call').toLowerCase(); return c === 'call' || c === 'voice' || c === 'phone'; }).length;
+  const nTg = allTasksRaw.filter(t => (t.channel || '').toLowerCase() === 'telegram').length;
+  const chip = (id, label, n) => `<button class="tcal-filter-chip ${_tcalFilter === id ? 'is-active' : ''}" onclick="_tcalSetFilter('${id}')">${esc(label)} ${n ? `<span class="tcal-filter-n">${n}</span>` : ''}</button>`;
+  const topbar = `
+    <div class="tcal-topbar">
+      <button class="btn btn-primary btn-sm tcal-new-btn" onclick="_tcalNewTaskViaChat()"><i class="fas fa-plus"></i> Новая задача</button>
+      <div class="tcal-filters">
+        ${chip('all', 'Все', total)}
+        ${chip('call', 'Звонки', nCall)}
+        ${chip('telegram', 'Telegram', nTg)}
+      </div>
+    </div>`;
+
   if(!totalFuture && !totalOverdue){
-    body.innerHTML = `<div class="tcal-empty">Запланированных задач пока нет.<br><span style="color:var(--vf-text-4);font-size:12px">Поставить новую — через чат («Позвонить Айко завтра в 15:00») или кнопку в карточке клиента.</span></div>`;
+    body.innerHTML = topbar + `<div class="tcal-empty">${_tcalFilter === 'all' ? 'Запланированных задач пока нет.<br><span style="color:var(--vf-text-4);font-size:12px">Поставить новую — кнопкой выше или в карточке клиента.</span>' : 'По выбранному фильтру задач нет.'}</div>`;
     return;
   }
 
-  let html = '';
-  // Просроченные сверху — чтобы владелец сразу их видел
+  let html = topbar;
   if(overdue.length){
     html += `<div class="tcal-group tcal-group-overdue"><div class="tcal-group-head"><i class="fas fa-triangle-exclamation"></i> Просрочено <span class="tcal-group-n">${overdue.length}</span></div>${overdue.map(t => _tcalListRow(t, t._dayKey, key === t._dayKey)).join('')}</div>`;
   }
-  // Сгруппированный по дням актуальный список
   Object.keys(byDay).sort().forEach(k => {
     const label = _tcalDayGroupLabel(k, today);
     const n = byDay[k].length;
@@ -401,6 +506,30 @@ function _tcalRenderList(key){
     html += `<div class="tcal-group${sel}"><div class="tcal-group-head" onclick="_tcalSelectDay('${k}')" title="Показать в календаре">${esc(label)} <span class="tcal-group-n">${n}</span></div>${byDay[k].map(t => _tcalListRow(t, k, key === k)).join('')}</div>`;
   });
   body.innerHTML = html;
+}
+
+// Переключение фильтра сайдбара (чип Все/Звонки/Telegram)
+function _tcalSetFilter(f){
+  _tcalFilter = f;
+  _tcalRenderList(_tcalSel);
+}
+
+// «+ Новая задача» → закрываем календарь, переключаем на чат, подставляем
+// заготовку, чтобы оркестратор понял и сам создал задачу через свои тулзы.
+// Так агент сразу знает про новую задачу (не нужно отдельно синхронизировать).
+function _tcalNewTaskViaChat(){
+  closeTasksCalendar();
+  if(typeof switchTab === 'function') switchTab('chat');
+  setTimeout(() => {
+    const input = document.getElementById('chat-input');
+    if(!input) return;
+    input.value = 'Запланируй задачу: ';
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch(e){}
+    // Авто-resize textarea если нужно
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+  }, 180);
 }
 
 // Удобное название группы: Сегодня / Завтра / <день месяца>
