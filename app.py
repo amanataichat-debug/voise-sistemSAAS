@@ -2744,6 +2744,7 @@ async def startup_event():
         # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
         ensure_eleven_voice_engine_columns()
         ensure_wallet_columns()
+        ensure_plan_prices()  # цены тарифов из конфига в БД — в каждом воркере, до миграций
         ensure_chat_v2_columns()
         ensure_branding_columns()
         ensure_knowledge_v2_tables()

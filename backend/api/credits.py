@@ -236,7 +236,9 @@ async def subscribe_agent(
     if not plan:
         raise HTTPException(status_code=500, detail="agent_plan_not_found")
 
-    amount = float(plan.price) if plan.price else AGENT_PLAN_PRICE
+    # Старый тариф agent продлевается по цене Profi (в БД у него стояла тестовая цена 50 сом)
+    from backend.api.payments import SUBSCRIPTION_PLANS_CONFIG
+    amount = float(SUBSCRIPTION_PLANS_CONFIG["profi"]["base_price"])
 
     payment = await create_finik_payment_transaction(
         db=db,

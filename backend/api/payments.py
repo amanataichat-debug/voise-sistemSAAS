@@ -133,18 +133,12 @@ def format_som(amount: float) -> str:
 def get_effective_base_price(db: Optional[Session], plan_code: str) -> float:
     """
     Базовая месячная цена тарифа в сомах.
-    Источник истины — БД (subscription_plans.price); fallback — конфиг выше.
+    Источник истины — конфиг выше (SUBSCRIPTION_PLANS_CONFIG).
     """
-    config_price = SUBSCRIPTION_PLANS_CONFIG[plan_code]["base_price"]
-    if db is None:
-        return config_price
-    try:
-        plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == plan_code).first()
-        if plan is not None and plan.price is not None and float(plan.price) > 0:
-            return float(plan.price)
-    except Exception as e:
-        logger.warning(f"⚠️ Could not read plan price from DB for {plan_code}: {e}")
-    return config_price
+    # Цена берётся только из конфига: в subscription_plans на проде оседали
+    # тестовые 10/20/30 сом, и окно оплаты показывало их. Строку в БД
+    # синхронизирует app.ensure_plan_prices() (для админки и отчётов).
+    return float(SUBSCRIPTION_PLANS_CONFIG[plan_code]["base_price"])
 
 
 def calculate_period_price(base_price: float, months: int) -> Dict[str, Any]:
