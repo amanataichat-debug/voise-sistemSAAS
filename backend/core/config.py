@@ -144,6 +144,9 @@ class Settings(BaseSettings):
     WALLET_MARKUP: float = float(os.getenv("WALLET_MARKUP", "1.25"))
     VOICE_COST_USD_PER_MIN_GPT_LIVE: float = float(os.getenv("VOICE_COST_USD_PER_MIN_GPT_LIVE", "0.05"))
     VOICE_COST_USD_PER_MIN_ELEVEN: float = float(os.getenv("VOICE_COST_USD_PER_MIN_ELEVEN", "0.05"))
+    # Минута оператора связи на ИСХОДЯЩЕМ звонке (O!: 1 сом/мин на свои номера), добавляется к цене голоса.
+    # Входящие оператор не тарифицирует, на них надбавки нет.
+    WALLET_OPERATOR_OUT_SOM_PER_MIN: float = float(os.getenv("WALLET_OPERATOR_OUT_SOM_PER_MIN", "1.0"))
     WALLET_MIN_TOPUP: int = int(os.getenv("WALLET_MIN_TOPUP", "10"))
     WALLET_MAX_TOPUP: int = int(os.getenv("WALLET_MAX_TOPUP", "100000"))
     WALLET_WELCOME_BONUS: int = int(os.getenv("WALLET_WELCOME_BONUS", "120"))

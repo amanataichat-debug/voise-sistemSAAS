@@ -27,11 +27,12 @@ EMPTY_MESSAGE = "Баланс кошелька исчерпан. Пополни�
 
 
 class WalletMeter:
-    def __init__(self, user_id, engine: str, assistant_id: str, telephony: bool) -> None:
+    def __init__(self, user_id, engine: str, assistant_id: str, telephony: bool, outbound: bool = False) -> None:
         self.user_id = user_id
         self.engine = engine
         self.assistant_id = assistant_id
         self.channel = "phone" if telephony else "widget"
+        self.outbound = bool(telephony and outbound)  # минута оператора только на исходящих звонках
         self.free = True
         self.balance = 0           # тыйын на старте
         self.charged = 0
@@ -81,7 +82,7 @@ class WalletMeter:
         try:
             while True:
                 await asyncio.sleep(WATCH_SEC)
-                if cost_tyiyn(self.engine, self.elapsed() + WATCH_SEC / 2) < self.balance:
+                if cost_tyiyn(self.engine, self.elapsed() + WATCH_SEC / 2, self.outbound) < self.balance:
                     continue
                 self.stopped_by_wallet = True
                 log = CallLogRecorder.current()
@@ -120,7 +121,7 @@ class WalletMeter:
             try:
                 return WalletService.charge_call(db, self.user_id, engine=self.engine, seconds=seconds,
                                                  session_id=session_id, assistant_id=self.assistant_id,
-                                                 channel=self.channel)
+                                                 channel=self.channel, outbound=self.outbound)
             finally:
                 db.close()
 

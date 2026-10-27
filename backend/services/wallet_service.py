@@ -40,20 +40,27 @@ def _engine_cost_usd(engine: str) -> float:
     return settings.VOICE_COST_USD_PER_MIN_ELEVEN
 
 
-def tyiyn_per_minute(engine: str) -> float:
-    """Цена минуты в тыйынах (дробная — округляем только итог списания)."""
+def operator_out_tyiyn_per_minute() -> float:
+    """Надбавка за минуту оператора на исходящем звонке (тыйын)."""
+    return max(0.0, settings.WALLET_OPERATOR_OUT_SOM_PER_MIN) * 100
+
+
+def tyiyn_per_minute(engine: str, outbound: bool = False) -> float:
+    """Цена минуты в тыйынах (дробная — округляем только итог списания).
+    outbound=True — исходящий звонок: к голосу добавляется минута оператора."""
     rate = settings.WALLET_KGS_USD_RATE or 0.01143392
-    return _engine_cost_usd(engine) * settings.WALLET_MARKUP / rate * 100
+    price = _engine_cost_usd(engine) * settings.WALLET_MARKUP / rate * 100
+    return price + (operator_out_tyiyn_per_minute() if outbound else 0.0)
 
 
 def som_per_minute(engine: str) -> float:
     return round(tyiyn_per_minute(engine) / 100, 2)
 
 
-def cost_tyiyn(engine: str, seconds: float) -> int:
+def cost_tyiyn(engine: str, seconds: float, outbound: bool = False) -> int:
     if seconds <= 0:
         return 0
-    return int(math.ceil(seconds * tyiyn_per_minute(engine) / 60 - 1e-9))
+    return int(math.ceil(seconds * tyiyn_per_minute(engine, outbound) / 60 - 1e-9))
 
 
 def tariffs() -> List[Dict[str, Any]]:
@@ -139,7 +146,8 @@ class WalletService:
     # ------------------------------------------------------------------ списание
     @classmethod
     def charge_call(cls, db: Session, user_id, *, engine: str, seconds: float, session_id: Optional[str] = None,
-                    assistant_id: Optional[str] = None, channel: Optional[str] = None) -> Tuple[int, int]:
+                    assistant_id: Optional[str] = None, channel: Optional[str] = None,
+                    outbound: bool = False) -> Tuple[int, int]:
         """
         Списать разговор (посекундно). Возвращает (списано тыйын, баланс после).
         Бесплатным пользователям — (0, баланс) без записи. Баланс может уйти в небольшой минус:
@@ -149,16 +157,17 @@ class WalletService:
         if user is None:
             db.rollback()
             return 0, 0
-        amount = cost_tyiyn(engine, seconds)
+        amount = cost_tyiyn(engine, seconds, outbound)
         if is_free_user(user) or amount <= 0:
             balance = int(user.wallet_balance or 0)
             db.rollback()
             return 0, balance
         cls._add(db, user, WalletTransactionType.CHARGE, -amount, engine=engine, seconds=int(round(seconds)),
                  session_id=(session_id or None) and str(session_id)[:100],
-                 assistant_id=assistant_id and str(assistant_id), channel=channel)
+                 assistant_id=assistant_id and str(assistant_id), channel=channel,
+                 note="Исходящий: голос + оператор" if outbound else None)
         db.commit()
-        logger.info(f"[WALLET] charge {amount / 100:.2f} KGS ({engine}, {seconds:.0f}s) → user {user.id}, "
+        logger.info(f"[WALLET] charge {amount / 100:.2f} KGS ({engine}{', outbound' if outbound else ''}, {seconds:.0f}s) → user {user.id}, "
                     f"balance {user.wallet_balance / 100:.2f}")
         return amount, int(user.wallet_balance)
 

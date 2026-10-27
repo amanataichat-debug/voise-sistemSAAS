@@ -30,7 +30,8 @@ class TopupRequest(BaseModel):
 
 @router.get("/tariffs")
 async def get_tariffs():
-    return {"currency": "KGS", "tariffs": tariffs(), "markup": settings.WALLET_MARKUP}
+    return {"currency": "KGS", "tariffs": tariffs(), "markup": settings.WALLET_MARKUP,
+            "operator_out_som_per_minute": settings.WALLET_OPERATOR_OUT_SOM_PER_MIN}
 
 
 @router.get("/balance")
@@ -44,6 +45,7 @@ async def get_balance(current_user: User = Depends(get_current_user), db: Sessio
         "min_topup": settings.WALLET_MIN_TOPUP,
         "max_topup": settings.WALLET_MAX_TOPUP,
         "tariffs": tariffs(),
+        "operator_out_som_per_minute": settings.WALLET_OPERATOR_OUT_SOM_PER_MIN,
     }
 
 

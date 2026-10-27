@@ -2445,7 +2445,9 @@
           document.getElementById('wallet-tariffs').innerHTML = (d.tariffs || []).map(function (t) {
             return '<span class="badge" style="padding: 4px 10px; border-radius: 999px; border: 1px solid var(--vf-border, #e2e8f0); font-size: 12.5px;">' +
               esc(t.title) + ' · ' + esc(money(t.som_per_minute)) + '/мин</span>';
-          }).join('');
+          }).join('') + (d.operator_out_som_per_minute
+            ? '<span class="badge" style="padding: 4px 10px; border-radius: 999px; border: 1px solid var(--vf-border, #e2e8f0); font-size: 12.5px;">' +
+              'Исходящий звонок на номер O! · +' + esc(money(d.operator_out_som_per_minute)) + '/мин за оператора</span>' : '');
         }).catch(function () { document.getElementById('wallet-page-balance').textContent = '—'; });
       }
       function loadHistory(reset) {

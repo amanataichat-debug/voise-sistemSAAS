@@ -206,7 +206,8 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
 
         # Минуты разговора оплачиваются из кошелька владельца (сом): пустой кошелёк — не начинаем
         engine = "gpt_live" if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE else "eleven"
-        meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)))
+        meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)),
+                            outbound=getattr(assistant, "sip_direction", None) == "outbound")
         if not await meter.prepare():
             await fail("WALLET_EMPTY", WALLET_EMPTY_MESSAGE)
             return
