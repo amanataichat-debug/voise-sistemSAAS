@@ -37,6 +37,7 @@ from backend.db.session import SessionLocal
 from backend.models.agent_config import AgentConfig
 from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
+from backend.services.owner_notifications import claim_agent_job, run_daily_digest, DIGEST_HOUR
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ TICK_SECONDS = 300  # 5 минут — достаточно, чтобы попа
 _LAST_RUN: dict[str, Optional[date]] = {
     "weekly_report": None,
     "monday_nurture": None,
+    "daily_digest": None,
 }
 
 
@@ -149,6 +151,8 @@ async def _run_weekly_reports(db: Session) -> int:
             # Не шлём отчёт по полностью пустому агенту — только лишний шум.
             if stats["calls_total"] == 0 and stats["contacts_new"] == 0:
                 continue
+            if not claim_agent_job(db, agent.id, "weekly_report", _now_bishkek().date()):
+                continue  # уже отправил другой воркер
             message = _format_weekly_report(agent, stats)
             await fn_send_telegram_notification({"message": message}, agent, db)
             sent += 1
@@ -229,9 +233,16 @@ async def _run_monday_nurture(db: Session) -> int:
     """Отправить подогрев всем контактам в nurture по всем агентам."""
     sent = 0
     agents = db.query(AgentConfig).filter(AgentConfig.is_active == True).all()
+    from backend.services import agent_mode
+    today = _now_bishkek().date()
     for agent in agents:
         try:
+            # Писать первым может только автономный агент (Profi); Старт только отвечает
+            if agent_mode.mode_for_agent(db, agent) != agent_mode.FULL:
+                continue
             candidates = _nurture_candidates(agent, db)
+            if not candidates or not claim_agent_job(db, agent.id, "monday_nurture", today):
+                continue
             for contact in candidates:
                 ok = await _send_nurture_message(contact, agent, db)
                 if ok:
@@ -266,6 +277,13 @@ async def _tick() -> None:
                     await _run_weekly_reports(db)
                 finally:
                     _mark_ran("weekly_report", today_local)
+        # Каждый день 20:00–20:15 Бишкек — итоги дня владельцу (дедуп по агенту в БД)
+        if now_local.hour == DIGEST_HOUR and now_local.minute < 15:
+            if not _already_ran_today("daily_digest", today_local):
+                try:
+                    await run_daily_digest(db, today_local)
+                finally:
+                    _mark_ran("daily_digest", today_local)
         # Понедельник 10:00–10:15 Бишкек
         if now_local.weekday() == 0 and now_local.hour == 10 and now_local.minute < 15:
             if not _already_ran_today("monday_nurture", today_local):

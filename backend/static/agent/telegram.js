@@ -87,6 +87,13 @@ async function renderTelegramModal(){
       </div>
     </div>
 
+    <div style="margin:4px 0 8px;font-weight:600;font-size:13.5px">Что присылать</div>
+    <div class="tg-notify">
+      ${tgNotifyRow('new_lead', 'Новый клиент', 'Клиент впервые написал или позвонил: имя, номер, первое сообщение.', s)}
+      ${tgNotifyRow('call_summary', 'Итог звонка', 'После каждого разговора: длительность, краткий итог, стадия в CRM.', s)}
+      ${tgNotifyRow('daily_digest', 'Итоги дня в 20:00', 'Новые клиенты, переписки, звонки и успехи за день.', s)}
+    </div>
+
     <div style="margin:16px 0 8px;font-weight:600;font-size:13.5px">Чаты</div>
     <table class="calls-table" style="width:100%">
       <thead><tr><th>chat_id</th><th>Название</th><th>Тип</th><th>Добавлен</th><th></th></tr></thead>
@@ -234,3 +241,23 @@ function tgErr(detail){
 }
 
 
+
+
+// ── Оповещения владельцу: новый клиент, итог звонка, итоги дня ──
+function tgNotifyRow(key, title, hint, s){
+  const on = !s.notify || s.notify[key] !== false;
+  return `<label class="tg-notify-row">
+      <span class="tg-notify-text"><b>${esc(title)}</b><span>${esc(hint)}</span></span>
+      <span class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleTelegramNotify('${key}', this)"><span class="slider"></span></span>
+    </label>`;
+}
+
+async function toggleTelegramNotify(key, input){
+  const value = !!input.checked;
+  try{
+    const r = await apiFetch(TG_API + '/notify', { method:'PATCH', body: JSON.stringify({ [key]: value }) });
+    if(!r || r.status !== 200){ input.checked = !value; showToast('Не удалось сохранить', 'error'); return; }
+    telegramState = await r.json();
+    showToast(value ? 'Оповещение включено' : 'Оповещение выключено', 'success');
+  }catch(e){ input.checked = !value; showToast('Ошибка сети', 'error'); }
+}

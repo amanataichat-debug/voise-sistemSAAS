@@ -695,6 +695,14 @@ first_phrase — ОДНА короткая фраза до 15 слов: позд
 # POST-CALL ORCHESTRATOR
 # ============================================================================
 
+def _strip_channel_prefix(transcript: str) -> str:
+    """'Клиент написал в WhatsApp: "текст"' → 'текст' (для оповещения владельцу)."""
+    text_ = (transcript or "").strip()
+    if text_.startswith("Клиент ") and ":" in text_:
+        text_ = text_.split(":", 1)[1].strip().strip('"«»')
+    return text_
+
+
 class PostCallOrchestrator:
     """Analyzes call results using GPT-5 with AGENT_POSTCALL_TOOLS."""
 
@@ -1507,15 +1515,22 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         - v3 (TRUE):  OpenRouter Chat Completions + AGENT_POSTCALL_TOOLS, без цепочки.
         - v2 (FALSE): OpenAI Responses API (старые агенты).
         """
-        if getattr(agent_config, "uses_hardcoded_prompt", False):
-            return await self._analyze_v3_openrouter(
+        call_id = agent_call.id
+        try:
+            if getattr(agent_config, "uses_hardcoded_prompt", False):
+                return await self._analyze_v3_openrouter(
+                    agent_call, agent_contact, agent_config, user, task,
+                    transcript, call_status, duration_seconds, db, call_direction
+                )
+            return await self._analyze_v2_responses_api(
                 agent_call, agent_contact, agent_config, user, task,
-                transcript, call_status, duration_seconds, db, call_direction
+                transcript, call_status, duration_seconds, openai_key, db, call_direction
             )
-        return await self._analyze_v2_responses_api(
-            agent_call, agent_contact, agent_config, user, task,
-            transcript, call_status, duration_seconds, openai_key, db, call_direction
-        )
+        finally:
+            # Оповещение владельцу: новый клиент / итог звонка (своя сессия, без исключений)
+            from backend.services import owner_notifications
+            first_text = transcript if (call_direction or "").endswith("_inbound") else ""
+            await owner_notifications.after_postcall(call_id, call_direction, _strip_channel_prefix(first_text))
 
     async def _analyze_v3_openrouter(
         self,

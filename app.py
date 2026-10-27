@@ -1703,6 +1703,11 @@ def ensure_chat_v2_columns():
             "ADD COLUMN IF NOT EXISTS voice_msg_engine VARCHAR(16)",
             "ADD COLUMN IF NOT EXISTS voice_msg_openai_voice VARCHAR(32)",
             "ADD COLUMN IF NOT EXISTS voice_msg_auto_share INTEGER",
+            # Оповещения владельцу в Telegram (services/owner_notifications.py)
+            "ADD COLUMN IF NOT EXISTS notify_new_lead BOOLEAN NOT NULL DEFAULT TRUE",
+            "ADD COLUMN IF NOT EXISTS notify_call_summary BOOLEAN NOT NULL DEFAULT TRUE",
+            "ADD COLUMN IF NOT EXISTS notify_daily_digest BOOLEAN NOT NULL DEFAULT TRUE",
+            "ADD COLUMN IF NOT EXISTS jobs_ran_on JSONB",
         ],
         "agent_connectors": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",

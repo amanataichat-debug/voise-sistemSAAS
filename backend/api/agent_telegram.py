@@ -90,6 +90,12 @@ def _settings_dict(agent: AgentConfig) -> dict:
         "bot_username": agent.telegram_bot_username,
         "bot_token_masked": token_masked,
         "chat_ids": agent.telegram_chat_ids or [],
+        # Оповещения владельцу (services/owner_notifications.py)
+        "notify": {
+            "new_lead": bool(getattr(agent, "notify_new_lead", True)),
+            "call_summary": bool(getattr(agent, "notify_call_summary", True)),
+            "daily_digest": bool(getattr(agent, "notify_daily_digest", True)),
+        },
     }
 
 
@@ -217,6 +223,32 @@ async def set_telegram_enabled(
     """Рубильник enabled/disabled."""
     agent = _get_agent(current_user, db, agent_id)
     agent.telegram_enabled = bool(body.enabled)
+    db.commit()
+    db.refresh(agent)
+    return _settings_dict(agent)
+
+
+class TelegramNotifyRequest(BaseModel):
+    new_lead: Optional[bool] = None
+    call_summary: Optional[bool] = None
+    daily_digest: Optional[bool] = None
+
+
+@router.patch("/notify")
+async def set_telegram_notify(
+    body: TelegramNotifyRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Какие оповещения бот присылает владельцу (меняются только переданные поля)."""
+    agent = _get_agent(current_user, db, agent_id)
+    if body.new_lead is not None:
+        agent.notify_new_lead = body.new_lead
+    if body.call_summary is not None:
+        agent.notify_call_summary = body.call_summary
+    if body.daily_digest is not None:
+        agent.notify_daily_digest = body.daily_digest
     db.commit()
     db.refresh(agent)
     return _settings_dict(agent)

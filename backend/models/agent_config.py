@@ -147,6 +147,14 @@ class AgentConfig(Base):
     telegram_webhook_secret = Column(String(64), nullable=True, unique=True)
     telegram_enabled = Column(Boolean, default=False, nullable=False)
 
+    # Оповещения владельцу в Telegram-бот агента (services/owner_notifications.py).
+    # Колонки добавляет app.ensure_chat_v2_columns().
+    notify_new_lead = Column(Boolean, default=True, nullable=False)
+    notify_call_summary = Column(Boolean, default=True, nullable=False)
+    notify_daily_digest = Column(Boolean, default=True, nullable=False)
+    # {"daily_digest": "2026-10-27", ...} — дедуп ежедневных заданий между воркерами
+    jobs_ran_on = Column(JSONB, nullable=True)
+
     # ── Публичный HTTP-канал (приём заявок «сервер-к-серверу») ──
     # Внешний бэкенд (например форма сайта) шлёт запрос с секретным ключом,
     # запрос попадает в ChatOrchestrator (stateless), агент сам решает что делать.

@@ -1529,3 +1529,12 @@ body[data-agent-mode="reactive"] .profi-only { display: none !important; }
 .plan-pill-up { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--vf-accent-soft); color: var(--vf-accent); font-weight: 600; }
 .plan-pill-up i { font-size: 10px; }
 @media (max-width: 1100px) { .plan-pill-text { display: none; } }
+
+/* ── Оповещения владельцу в модалке Telegram-бота ── */
+.tg-notify { display: flex; flex-direction: column; border: 1px solid var(--vf-border); border-radius: 12px; overflow: hidden; margin-bottom: 4px; }
+.tg-notify-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 14px; cursor: pointer; background: var(--vf-surface); }
+.tg-notify-row + .tg-notify-row { border-top: 1px solid var(--vf-border); }
+.tg-notify-row:hover { background: var(--vf-surface-2, var(--vf-surface)); }
+.tg-notify-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; color: var(--vf-text); }
+.tg-notify-text span { font-size: 12px; color: var(--vf-text-3); line-height: 1.4; }
+.tg-notify-row .switch { flex: 0 0 auto; }
