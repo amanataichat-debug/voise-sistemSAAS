@@ -374,6 +374,23 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .task-ed { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--vf-border); display: flex; flex-direction: column; gap: 8px; }
 .task-ed-btns { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ── Подробности задачи в календаре (клик по задаче → раскрывает) ── */
+.task-details {
+  margin-top: 10px; padding: 12px 14px; border-radius: 10px;
+  background: var(--vf-surface-2); border: 1px solid var(--vf-border);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.td-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.td-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.td-k { font-size: 10.5px; font-weight: 600; color: var(--vf-text-4); text-transform: uppercase; letter-spacing: .04em; }
+.td-v { font-size: 13px; color: var(--vf-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-desc { display: flex; flex-direction: column; gap: 4px; }
+.td-text { font-size: 12.5px; color: var(--vf-text-2); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+.td-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 6px; border-top: 1px solid var(--vf-border); }
+.td-actions .btn-sm { height: 32px; }
+.cd-task-clickable { cursor: pointer; border-radius: 6px; padding: 2px; margin: -2px; transition: background var(--vf-fast); }
+.cd-task-clickable:hover { background: var(--vf-surface-2); }
+
 /* Кредиты */
 .exp-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--vf-border) 50%, transparent); }
 .exp-row:last-of-type { border-bottom: 0; padding-bottom: 10px; }

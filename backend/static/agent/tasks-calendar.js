@@ -119,10 +119,12 @@ function _tcalDateLabel(key){
 function _tcalTaskRow(t, key){
   const tm = t.scheduled_time ? (mskParts(t.scheduled_time)||{}).time || '' : '';
   const rel = relTime(t.scheduled_time);
+  const contactId = t.agent_contact_id || '';
+  const dateFull = t.scheduled_time ? fmtDate(t.scheduled_time) : '';
   return `<div class="task-item" data-id="${t.id}">
     <div class="task-date"><div class="t" style="margin-top:0;font-size:13px">${tm}</div><div class="m">Бишкек</div></div>
     <div class="task-body">
-      <div class="cd-task-clickable" onclick="_tcalToggleTask('${t.id}')">
+      <div class="cd-task-clickable" onclick="_tcalToggleDetails('${t.id}')" title="Нажмите для подробностей">
         <div class="task-title">${esc(t.title||'Задача')} ${taskChannelBadge(t.channel)}</div>
         ${t.description?`<div class="task-desc">${esc(t.description)}</div>`:''}
         <div class="task-foot">
@@ -130,24 +132,71 @@ function _tcalTaskRow(t, key){
           <span class="task-when ${rel.soon?'soon':''}">${rel.text}</span>
         </div>
       </div>
+
+      <!-- Подробности задачи — раскрываются по клику на тело -->
+      <div class="task-details" id="tcal-task-det-${t.id}" style="display:none">
+        <div class="td-grid">
+          <div class="td-cell"><span class="td-k">Время</span><span class="td-v">${esc(dateFull || '—')}</span></div>
+          <div class="td-cell"><span class="td-k">Канал</span><span class="td-v">${taskChannelBadge(t.channel) || (t.channel === 'telegram' ? 'Telegram' : 'Звонок')}</span></div>
+          ${t.contact_name ? `<div class="td-cell"><span class="td-k">Клиент</span><span class="td-v">${esc(t.contact_name)}</span></div>` : ''}
+          ${t.contact_phone ? `<div class="td-cell"><span class="td-k">Телефон</span><span class="td-v">${esc(t.contact_phone)}</span></div>` : ''}
+        </div>
+        ${t.description ? `<div class="td-desc"><div class="td-k">Описание</div><div class="td-text">${esc(t.description)}</div></div>` : ''}
+        ${t.custom_greeting ? `<div class="td-desc"><div class="td-k">Инструкция (${t.channel === 'telegram' ? 'текст сообщения' : 'приветствие'})</div><div class="td-text">${esc(t.custom_greeting)}</div></div>` : ''}
+        <div class="td-actions">
+          ${contactId ? `<button class="btn btn-primary btn-sm" onclick="_tcalOpenContact('${contactId}')"><i class="fas fa-arrow-up-right-from-square"></i> Открыть клиента</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="_tcalStartEdit('${t.id}')"><i class="fas fa-pen"></i> Изменить</button>
+          <button class="btn btn-secondary btn-sm" style="margin-left:auto;color:var(--vf-danger)" onclick="_tcalDeleteTask('${t.id}','${key}')"><i class="far fa-trash-can"></i> Удалить</button>
+        </div>
+      </div>
+
+      <!-- Форма редактирования — показывается из details по «Изменить» -->
       <div class="task-ed" id="tcal-task-ed-${t.id}" style="display:none">
         <input type="text" class="form-input" id="tcal-title-${t.id}" value="${esc(t.title||'')}" placeholder="Название задачи">
         <input type="datetime-local" class="form-input" id="tcal-time-${t.id}" value="${utcToMskInput(t.scheduled_time)}">
         <div class="task-ed-btns">
-          <button class="btn btn-secondary btn-sm" onclick="_tcalToggleTask('${t.id}')">Отмена</button>
+          <button class="btn btn-secondary btn-sm" onclick="_tcalCancelEdit('${t.id}')">Отмена</button>
           <button class="btn btn-primary btn-sm" onclick="_tcalSaveTask('${t.id}','${key}')"><i class="fas fa-check"></i> Сохранить</button>
         </div>
       </div>
     </div>
-    <button class="task-edit-btn" title="Изменить" onclick="_tcalToggleTask('${t.id}')"><i class="fas fa-pen"></i></button>
-    <button class="task-del" title="Удалить задачу" onclick="_tcalDeleteTask('${t.id}','${key}')"><i class="fas fa-trash-alt"></i></button>
   </div>`;
 }
 
-function _tcalToggleTask(id){
-  const ed = document.getElementById('tcal-task-ed-' + id);
-  if(ed) ed.style.display = (ed.style.display === 'none' || !ed.style.display) ? 'flex' : 'none';
+// Клик по телу задачи → раскрыть/свернуть панель подробностей.
+// Повторный клик по тому же — свернуть. По другой — свернуть предыдущую, открыть новую.
+function _tcalToggleDetails(id){
+  const det = document.getElementById('tcal-task-det-' + id);
+  if(!det) return;
+  const willOpen = (det.style.display === 'none' || !det.style.display);
+  // Свернуть все остальные details + все edit-формы
+  document.querySelectorAll('.task-details').forEach(el => { el.style.display = 'none'; });
+  document.querySelectorAll('.task-ed').forEach(el => { el.style.display = 'none'; });
+  if(willOpen) det.style.display = 'flex';
 }
+// Переход на карточку клиента — используем вкладочную навигацию.
+function _tcalOpenContact(contactId){
+  if(!contactId) return;
+  closeTasksCalendar();
+  // открываем вкладку «Клиенты» и там подтягиваем карточку
+  if(typeof switchTab === 'function') switchTab('clients');
+  if(typeof openContactDetailsModal === 'function'){
+    setTimeout(() => openContactDetailsModal(contactId), 120);
+  }
+}
+// Переход details → edit (из details по «Изменить»)
+function _tcalStartEdit(id){
+  const det = document.getElementById('tcal-task-det-' + id);
+  const ed = document.getElementById('tcal-task-ed-' + id);
+  if(det) det.style.display = 'none';
+  if(ed) ed.style.display = 'flex';
+}
+function _tcalCancelEdit(id){
+  const ed = document.getElementById('tcal-task-ed-' + id);
+  if(ed) ed.style.display = 'none';
+}
+// Старое имя оставлено для обратной совместимости (если кто-то зовёт извне)
+function _tcalToggleTask(id){ _tcalToggleDetails(id); }
 
 async function _tcalSaveTask(id, key){
   const title = (document.getElementById('tcal-title-' + id).value || '').trim();
