@@ -391,6 +391,30 @@ def build_webhook_block(agent_config) -> str:
 и не дублируй одно и то же событие."""
 
 
+def build_pipeline_stages_block(agent_config) -> str:
+    """
+    Блок промпта: актуальные стадии воронки этого агента (CRM v2).
+    Включается всегда — если у агента кастомные стадии, модель про них знает;
+    если дефолт — просто перечислены стандартные 5. Используется move_contact_stage.
+    """
+    try:
+        from backend.core.pipeline_stages import get_agent_stages
+        stages = get_agent_stages(agent_config)
+    except Exception:
+        return ""
+    if not stages:
+        return ""
+    kind_label = {"open": "в работе", "won": "успешная сделка", "lost": "потеря/отказ"}
+    lines = [f"- {s['key']} — {s['label']} ({kind_label.get(s.get('kind'), 'в работе')})" for s in stages]
+    return (
+        "\n\n## Стадии воронки продаж (актуальные для этого агента)\n"
+        "При смене стадии через move_contact_stage используй ТОЛЬКО эти ключи:\n"
+        + "\n".join(lines)
+        + "\nПереводи клиента на стадию «успех» только когда сделка реально закрыта. "
+        "Клиентов, которые ещё думают — оставляй в текущей стадии."
+    )
+
+
 def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=None) -> str:
     """
     Собирает финальный промпт оркестратора из шаблона + данных агента.
@@ -411,6 +435,7 @@ def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=
     )
     prompt = (
         base
+        + build_pipeline_stages_block(agent_config)
         + build_knowledge_base_block(agent_config, db)
         + build_webhook_block(agent_config)
     )

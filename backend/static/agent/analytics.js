@@ -11,7 +11,10 @@
 
 let analyticsCache = null;
 let analyticsCacheAt = 0;
-let analyticsPeriod = 'month'; // week | month | half | all
+// По умолчанию — «Всё время», чтобы в аналитике сразу было видно все накопленные
+// данные. Если период активный и за него мало звонков — верхние KPI
+// ДОПОЛНИТЕЛЬНО показывают суммарные цифры из /stats, чтобы не казалось «ноль».
+let analyticsPeriod = 'all';
 const ANALYTICS_TTL_MS = 30000;
 
 const ANALYTICS_PERIODS = [
@@ -236,22 +239,31 @@ function renderAnalytics(data){
   });
   const decTotal = Math.max(1, Object.values(decisions).reduce((a, b) => a + b, 0));
 
-  // ── Каналы: откуда идут клиенты. Берём канал из calls (sms/telegram/call/whatsapp/instagram)
+  // ── Каналы коммуникации: сколько КЛИЕНТОВ связывались через каждый канал.
+  // Считаем из contacts.channels (поле от бэка /contacts — annotation по
+  // messengers табличкам, см. list_agent_contacts). Это даёт стабильные
+  // цифры даже когда calls за период пустые. Голосовой звонок считаем по
+  // контактам, у которых реально были звонки за период (calls).
   const chanMeta = {
     call:       { label: 'Голосовой звонок', color: '#2a5ce8', icon: 'fas fa-phone-volume' },
-    sms:        { label: 'SMS',              color: '#64748b', icon: 'fas fa-comment-sms' },
-    telegram:   { label: 'Telegram',         color: '#229ED9', icon: 'fab fa-telegram' },
     whatsapp:   { label: 'WhatsApp',         color: '#25D366', icon: 'fab fa-whatsapp' },
+    telegram:   { label: 'Telegram',         color: '#229ED9', icon: 'fab fa-telegram' },
     instagram:  { label: 'Instagram',        color: '#E1306C', icon: 'fab fa-instagram' },
-    other:      { label: 'Другое',           color: '#94a3b8', icon: 'fas fa-circle' },
+    sms:        { label: 'SMS',              color: '#64748b', icon: 'fas fa-comment-sms' },
   };
-  const channels = { call: 0, sms: 0, telegram: 0, whatsapp: 0, instagram: 0, other: 0 };
-  calls.forEach(c => {
-    const ch = (c.channel || '').toLowerCase();
-    if(channels[ch] !== undefined) channels[ch]++;
-    else if(!ch || ch === 'phone' || ch === 'voice') channels.call++;
-    else channels.other++;
+  const callContactIds = new Set();
+  calls.forEach(c => { if(c.agent_contact_id) callContactIds.add(c.agent_contact_id); });
+  const channels = { call: 0, whatsapp: 0, telegram: 0, instagram: 0, sms: 0 };
+  contacts.forEach(c => {
+    const ch = c.channels || {};
+    if(ch.whatsapp)  channels.whatsapp++;
+    if(ch.telegram)  channels.telegram++;
+    if(ch.instagram) channels.instagram++;
+    if(callContactIds.has(c.id)) channels.call++;
   });
+  // SMS считаем из calls (postcall_log.call_direction == sms_inbound), т.к.
+  // отдельной таблицы SMS-сообщений нет.
+  channels.sms = calls.filter(c => c.channel === 'sms').length;
   const chanTotal = Math.max(1, Object.values(channels).reduce((a, b) => a + b, 0));
 
   // ── Таймлайн звонков: период → размер и шаг бакета
@@ -310,14 +322,19 @@ function renderAnalytics(data){
       </div>
     </div>
 
-    <!-- 4 главные метрики: KPI-плитки -->
+    <!-- 4 главные метрики: KPI-плитки. ЗВОНКИ:
+         - на «Всё время» показываем stats.total_calls (всю базу);
+         - на другом периоде — count за период, а всего рядом подписью. -->
     <div class="alx-grid alx-kpi">
       <div class="alx-card alx-kpi-card">
         <div class="alx-kpi-icon" style="background:color-mix(in srgb, var(--vf-accent) 15%, transparent);color:var(--vf-accent)"><i class="fas fa-phone-volume"></i></div>
         <div class="alx-kpi-body">
           <div class="alx-kpi-label">Звонки</div>
-          <div class="alx-kpi-big">${total_calls}</div>
-          <div class="alx-kpi-trend">сегодня <b>${callsToday}</b> · неделя <b>${callsWeek}</b>${weekDelta !== 0 ? ` <span class="${weekDelta>0?'alx-up':'alx-down'}"><i class="fas fa-${weekDelta>0?'arrow-up':'arrow-down'}"></i>${Math.abs(weekDelta)}%</span>` : ''}</div>
+          <div class="alx-kpi-big">${periodMs ? total_calls : (stats.total_calls || 0)}</div>
+          <div class="alx-kpi-trend">${periodMs
+            ? `за ${periodLabel} <b>${total_calls}</b> · всего <b>${stats.total_calls || 0}</b>`
+            : `сегодня <b>${callsToday}</b> · неделя <b>${callsWeek}</b>${weekDelta !== 0 ? ` <span class="${weekDelta>0?'alx-up':'alx-down'}"><i class="fas fa-${weekDelta>0?'arrow-up':'arrow-down'}"></i>${Math.abs(weekDelta)}%</span>` : ''}`
+          }</div>
         </div>
       </div>
       <div class="alx-card alx-kpi-card">
@@ -377,8 +394,8 @@ function renderAnalytics(data){
     <!-- Каналы коммуникации — абсолютные числа и % -->
     <div class="alx-card">
       <div class="alx-card-head">
-        <h4><i class="fas fa-tower-cell"></i> Каналы коммуникации · ${periodLabel}</h4>
-        <div class="alx-card-sub">Сколько разговоров и переписок прошло через каждый канал</div>
+        <h4><i class="fas fa-tower-cell"></i> Каналы коммуникации</h4>
+        <div class="alx-card-sub">Сколько клиентов связывались с агентом через каждый канал (вся база)</div>
       </div>
       <div class="alx-stack">
         ${Object.entries(channels).filter(([, v]) => v > 0).map(([k, v]) => {
@@ -397,7 +414,7 @@ function renderAnalytics(data){
               <div class="alx-chan-body">
                 <div class="alx-chan-label">${esc(m.label)}</div>
                 <div class="alx-chan-big">${v}</div>
-                <div class="alx-chan-sub">${v === 1 ? 'разговор' : v < 5 ? 'разговора' : 'разговоров'} · ${pct}%</div>
+                <div class="alx-chan-sub">${v === 1 ? 'клиент' : v < 5 ? 'клиента' : 'клиентов'} · ${pct}%</div>
               </div>
             </div>`;
         }).join('')}

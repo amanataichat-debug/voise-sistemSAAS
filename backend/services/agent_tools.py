@@ -27,7 +27,10 @@ from backend.services import agent_pause
 from backend.services import agent_voice_service
 from backend.services.telegram_notification import TelegramNotificationService
 from backend.core.timezone_utils import adjust_to_working_hours
-from backend.core.pipeline_stages import AGENT_CONTACT_STAGE_KEYS, is_valid_stage
+from backend.core.pipeline_stages import (
+    AGENT_CONTACT_STAGE_KEYS, is_valid_stage,
+    get_agent_stages, is_valid_stage_for_agent,
+)
 
 logger = get_logger(__name__)
 
@@ -574,11 +577,53 @@ async def _augment_with_connectors(base_tools: list, agent_config, db: Session) 
     return base_tools + connector_tools
 
 
+def _patch_move_stage_tool_for_agent(tools: list, agent_config) -> list:
+    """
+    Подменяет move_contact_stage на вариант с актуальными стадиями агента.
+    У владельца может быть кастомный набор (CRM v2, agent_configs.pipeline_stages).
+    Без этого агент не знал бы про новые стадии и ругался бы в enum.
+    """
+    stages = get_agent_stages(agent_config)
+    if not stages:
+        return tools
+    keys = [s["key"] for s in stages]
+    # Короткое описание со списком стадий для подсказки модели
+    desc_stages = ", ".join([f"{s['key']} ({s['label']})" for s in stages])
+    out = []
+    for t in tools:
+        # Chat Completions формат: {type, function: {name, description, parameters}}.
+        fn = t.get("function") if isinstance(t, dict) else None
+        if fn and fn.get("name") == "move_contact_stage":
+            # Копируем, чтобы не мутировать общий MOVE_CONTACT_STAGE_TOOL
+            new_fn = dict(fn)
+            new_fn["description"] = (
+                "Перевести контакт на стадию воронки продаж. "
+                f"Доступные стадии этого агента: {desc_stages}. "
+                "Вызывай только когда есть реальное основание сменить стадию. Если "
+                "ничего по сути не изменилось (не дозвонились, клиент ещё думает) — "
+                "НЕ вызывай."
+            )
+            params = dict(new_fn.get("parameters") or {})
+            props = dict(params.get("properties") or {})
+            props["stage"] = {
+                "type": "string",
+                "enum": keys,
+                "description": "Ключ стадии воронки из списка выше",
+            }
+            params["properties"] = props
+            new_fn["parameters"] = params
+            out.append({**t, "function": new_fn})
+        else:
+            out.append(t)
+    return out
+
+
 async def build_chat_tools(agent_config, db: Session) -> list:
     """
     Tools для чата/Telegram оркестратора (Chat Completions формат): базовый
     AGENT_CHAT_TOOLS + коннекторы Composio + личный Telegram + Instagram +
-    WhatsApp (последние три — только если подключены).
+    WhatsApp (последние три — только если подключены). move_contact_stage
+    подменяется на актуальные стадии агента (кастомные CRM v2).
     """
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_CHAT_TOOLS), agent_config, db
@@ -587,11 +632,12 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
-    return _augment_with_voice(tools, agent_config, db)
+    tools = _augment_with_voice(tools, agent_config, db)
+    return _patch_move_stage_tool_for_agent(tools, agent_config)
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
-    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + файлы + личный Telegram + Instagram + WhatsApp."""
+    """Tools для PostCall-анализа: AGENT_POSTCALL_TOOLS + коннекторы + файлы + личный Telegram + Instagram + WhatsApp + подмена move_contact_stage под кастомные стадии."""
     tools = await _augment_with_connectors(
         to_chat_completions_tools(AGENT_POSTCALL_TOOLS), agent_config, db
     )
@@ -599,7 +645,8 @@ async def build_postcall_tools(agent_config, db: Session) -> list:
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
-    return _augment_with_voice(tools, agent_config, db)
+    tools = _augment_with_voice(tools, agent_config, db)
+    return _patch_move_stage_tool_for_agent(tools, agent_config)
 
 
 async def fn_execute_connector(tool_name: str, args: dict, agent_config_id: str, db: Session) -> dict:
@@ -3221,7 +3268,12 @@ async def fn_move_contact_stage(args: dict, user_id: str, agent_config_id: str, 
     stage = args.get("stage")
     if not agent_contact_id:
         return {"ok": False, "error": "agent_contact_id_required"}
-    if not is_valid_stage(stage):
+
+    # Валидация стадии — с учётом кастомных стадий агента (CRM v2).
+    # agent_config нужен ДО этой проверки, чтобы read его pipeline_stages.
+    from backend.models.agent_config import AgentConfig
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if not is_valid_stage_for_agent(agent_config, stage):
         return {"ok": False, "error": f"invalid_stage: {stage}"}
 
     contact = db.query(AgentContact).filter(
