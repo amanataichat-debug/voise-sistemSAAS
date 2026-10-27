@@ -311,7 +311,7 @@ html.lenis, html.lenis body { height: auto; }
 /* ---------- Тарифы ---------- */
 .plans-card { border: 1px solid var(--vf-border); border-radius: 18px; background: var(--vf-surface); box-shadow: var(--vf-shadow-2); padding: 4px 24px 8px; }
 .plans-wrap { overflow-x: auto; }
-.plans { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; min-width: 900px; }
+.plans { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; min-width: 720px; }
 .plans th, .plans td { padding: 0 12px; height: 40px; border-bottom: 1px solid var(--vf-border); text-align: center; vertical-align: middle; color: var(--vf-text-2); font-size: 13.5px; }
 .plans tbody tr:last-child td { border-bottom: none; }
 .plans th { height: auto; vertical-align: top; padding: 14px 10px 12px; }

@@ -251,7 +251,7 @@ async def get_subscription_plans(
                 {
                     "code": "ai_voice",
                     "name": "AI Voice",
-                    "price": 1490,
+                    "price": 1990,
                     "max_assistants": 3,
                     "description": "AI Voice plan",
                     "is_active": True
@@ -259,7 +259,7 @@ async def get_subscription_plans(
                 {
                     "code": "start",
                     "name": "Тариф Старт",
-                    "price": 2990,
+                    "price": 3990,
                     "max_assistants": 5,
                     "description": "Start plan with extended features",
                     "is_active": True
@@ -267,7 +267,7 @@ async def get_subscription_plans(
                 {
                     "code": "profi",
                     "name": "Profi",
-                    "price": 5990,
+                    "price": 15000,
                     "max_assistants": 10,
                     "description": "Professional plan with all features",
                     "is_active": True
@@ -313,7 +313,7 @@ async def get_subscription_plans(
             {
                 "code": "ai_voice",
                 "name": "AI Voice (Default)",
-                "price": 1490,
+                "price": 1990,
                 "max_assistants": 3,
                 "description": "AI Voice plan",
                 "is_active": True
@@ -321,7 +321,7 @@ async def get_subscription_plans(
             {
                 "code": "start",
                 "name": "Тариф Старт (Default)",
-                "price": 2990,
+                "price": 3990,
                 "max_assistants": 5,
                 "description": "Start plan with extended features",
                 "is_active": True
@@ -329,7 +329,7 @@ async def get_subscription_plans(
             {
                 "code": "profi",
                 "name": "Profi (Default)",
-                "price": 5990,
+                "price": 15000,
                 "max_assistants": 10,
                 "description": "Professional plan with all features",
                 "is_active": True
@@ -386,9 +386,9 @@ async def subscribe_to_plan(
             price_map = {
                 "free": 0,
                 "referral_trial": 0,
-                "ai_voice": 1490,
-                "start": 2990,
-                "profi": 5990
+                "ai_voice": 1990,
+                "start": 3990,
+                "profi": 15000
             }
             
             plan = SubscriptionPlan(

@@ -13,11 +13,10 @@ Payment API endpoints for WellcomeAI application.
   5. RedirectUrl (/api/payments/success) — только UX-страница, ничего не зачисляет.
 
 ЦЕНЫ ТАРИФОВ:
-  Источник истины — БД, таблица subscription_plans (колонка price, в сомах).
-  Значения ниже в SUBSCRIPTION_PLANS_CONFIG — fallback, если строки тарифа
-  в БД ещё нет (она создаётся автоматически при первом платеже).
-  ⚠️ Сейчас выставлены МИНИМАЛЬНЫЕ ТЕСТОВЫЕ ЦЕНЫ для проверки эквайринга.
-  Смена цены: UPDATE subscription_plans SET price = <сом> WHERE code = '<код>';
+  Источник истины — SUBSCRIPTION_PLANS_CONFIG ниже (цены в сомах). При старте
+  приложения app.ensure_plan_prices() записывает эти цены в subscription_plans,
+  поэтому смена цены = правка base_price здесь и деплой.
+  Цены с 27.10.2026: AI Voice 1 990, Старт 3 990, Profi 15 000 (в Profi автономный агент).
   Пакеты кредитов: UPDATE credit_packages SET price_rub = <сом> WHERE code = '<код>';
 """
 
@@ -61,17 +60,16 @@ PERIOD_DISCOUNTS = {
     12: 30   # 12 месяцев — 30% скидка
 }
 
-# ⚠️ ВРЕМЕННЫЕ ТЕСТОВЫЕ ЦЕНЫ (сомы). Реальные цены задаются в БД
-# (subscription_plans.price) и имеют приоритет над этими значениями.
+# Цены тарифов (сомы в месяц). Это единый источник: app.ensure_plan_prices()
+# переносит их в subscription_plans при каждом старте.
 SUBSCRIPTION_PLANS_CONFIG = {
     "ai_voice": {
         "name": "AI Voice",
-        "base_price": 10.0,   # ТЕСТ: сом/мес
+        "base_price": 1990.0,   # сом/мес
         "max_assistants": 3,
         "description": "Голосовые ассистенты без телефонии",
         "features": [
             "До 3 голосовых ассистентов",
-            "OpenAI и Gemini агенты",
             "База знаний",
             "Безлимитные диалоги",
             "API доступ"
@@ -80,12 +78,11 @@ SUBSCRIPTION_PLANS_CONFIG = {
     },
     "start": {
         "name": "Тариф Старт",
-        "base_price": 20.0,   # ТЕСТ: сом/мес
+        "base_price": 3990.0,   # сом/мес
         "max_assistants": 5,
         "description": "Полный доступ со всеми функциями",
         "features": [
             "До 5 голосовых ассистентов",
-            "OpenAI и Gemini агенты",
             "База знаний",
             "Телефония и исходящие звонки",
             "CRM система",
@@ -97,19 +94,19 @@ SUBSCRIPTION_PLANS_CONFIG = {
     },
     "profi": {
         "name": "Profi",
-        "base_price": 30.0,   # ТЕСТ: сом/мес
+        "base_price": 15000.0,   # сом/мес
         "max_assistants": 10,
-        "description": "Максимальные возможности для бизнеса",
+        "description": "Автономный агент: переписка, звонки, CRM и воронка",
         "features": [
+            "Автономный агент обзвона и переписки",
+            "WhatsApp, Instagram и Telegram",
+            "20 000 кредитов агента в месяц",
             "До 10 голосовых ассистентов",
-            "OpenAI и Gemini агенты",
-            "База знаний",
             "Телефония и исходящие звонки",
-            "CRM система",
-            "Безлимитные диалоги",
+            "CRM, воронка и аналитика",
+            "База знаний",
             "Приоритетная поддержка 24/7",
-            "API доступ",
-            "Персональный менеджер"
+            "API доступ"
         ],
         "restricted_features": []
     }

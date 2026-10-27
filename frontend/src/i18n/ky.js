@@ -319,7 +319,7 @@ export default {
       ['Чалуудан кийин', 'Жыйынтыктарды окуп, кардар тууралуу эсти жаңылайт жана кийинки тапшырманы өзү коёт.'],
     ],
     cta: 'Агентти туташтыруу',
-    cta_note: 'Agent тарифи: айына 5 490 {currency}, үч агентке чейин, 20 000 кредит.',
+    cta_note: 'Агент Profi тарифине кирет: айына 15 000 {currency}, 20 000 агент кредити.',
   },
 
   start: {
@@ -380,10 +380,9 @@ export default {
     month: '/ ай',
     plans: {
       trial: { name: 'Trial', badge: 'ушундан башташат', desc: 'Сыноо үчүн бардык функциялар', price: '0 {currency}', period: '/ 3 күн', cta: 'Акысыз баштоо' },
-      voice: { name: 'AI Voice', badge: '', desc: 'Сайт үчүн үн боту', price: '1 490 {currency}', period: '/ ай', cta: 'Тандоо' },
-      start: { name: 'Start', badge: 'сунуштайбыз', desc: 'Толук функционал', price: '2 990 {currency}', period: '/ ай', cta: 'Тандоо' },
-      profi: { name: 'Profi', badge: '', desc: 'Олуттуу бизнес үчүн', price: '5 990 {currency}', period: '/ ай', cta: 'Тандоо' },
-      agent: { name: 'Agent', badge: 'автопилот', desc: 'Автономдуу чалуулардын ИИ-оркестратору', price: '5 490 {currency}', period: '/ ай', cta: 'Тандоо' },
+      voice: { name: 'AI Voice', badge: '', desc: 'Сайт үчүн үн боту', price: '1 990 {currency}', period: '/ ай', cta: 'Тандоо' },
+      start: { name: 'Start', badge: '', desc: 'Үн ассистенттери, номер жана CRM', price: '3 990 {currency}', period: '/ ай', cta: 'Тандоо' },
+      profi: { name: 'Profi', badge: 'агент менен', desc: 'Агент өзү жазат, чалат жана кардарларды жүргүзөт', price: '15 000 {currency}', period: '/ ай', cta: 'Тандоо' },
     },
     features: {
       assistants: 'Үн ассистенттери',
@@ -404,6 +403,7 @@ export default {
       a10: '10го чейин',
       ag3: '3кө чейин',
       credits: 'айына 20 000',
+      credits_trial: '1 500 бир жолу',
       priority: 'артыкчылыктуу',
       vip: 'VIP',
     },
@@ -424,7 +424,7 @@ export default {
     extra_credits_title: 'Агенттин кредиттери',
     extra_credits_text: 'Оркестратордун ишине төлөнөт: чалууга даярдануу жана жыйынтыкты талдоо.',
     extra_credits: [
-      ['refresh-cw', 'Agent тарифинде', 'айына 20 000'],
+      ['refresh-cw', 'Profi тарифинде', 'айына 20 000'],
     ],
   },
 

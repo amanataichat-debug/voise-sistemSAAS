@@ -1342,6 +1342,31 @@ def ensure_cascade_credit_packages():
         logger.error(f"❌ ensure_cascade_credit_packages error: {e}")
 
 
+def ensure_plan_prices():
+    """
+    Переносит цены платных тарифов из SUBSCRIPTION_PLANS_CONFIG (backend/api/payments.py)
+    в subscription_plans при каждом старте. Конфиг — единый источник цен: раньше в БД
+    оседали тестовые 10/20/30 сом, и оплата выставляла именно их. Меняет только price
+    уже существующих строк; новые строки создаёт платёжный эндпоинт. Идемпотентно.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.api.payments import SUBSCRIPTION_PLANS_CONFIG
+        if not inspect(engine).has_table('subscription_plans'):
+            return
+        with engine.begin() as conn:
+            for code, cfg in SUBSCRIPTION_PLANS_CONFIG.items():
+                price = float(cfg["base_price"])
+                res = conn.execute(
+                    text("UPDATE subscription_plans SET price = :price WHERE code = :code AND price <> :price"),
+                    {"price": price, "code": code},
+                )
+                if res.rowcount:
+                    logger.info(f"💰 Plan price synced: {code} -> {price:.0f} KGS")
+    except Exception as e:
+        logger.error(f"❌ ensure_plan_prices error: {e}")
+
+
 def normalize_agent_contact_stages():
     """
     Разовая нормализация стадий воронки агентских контактов.
@@ -2789,6 +2814,9 @@ async def startup_event():
 
                 # 🆕 Шаг 11.2: Гарантированный сид пакетов докупки каскада
                 ensure_cascade_credit_packages()
+
+                # 🆕 Шаг 11.25: Цены тарифов из конфига в subscription_plans
+                ensure_plan_prices()
 
                 # 🆕 Шаг 11.3: Устаревшие слаги моделей оркестратора → актуальные
                 ensure_agent_orchestrator_model_migration()

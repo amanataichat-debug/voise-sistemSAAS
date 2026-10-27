@@ -84,7 +84,7 @@ class CreditService:
 
     # Разовые начисления
     TRIAL_CREDITS = 1500
-    SUBSCRIPTION_CREDITS = 10000
+    SUBSCRIPTION_CREDITS = 20000
 
     # ------------------------------------------------------------------
     # PRE-FLIGHT

@@ -321,7 +321,7 @@ export default {
       ['После звонка', 'Читает итоги, обновляет память о клиенте и сам ставит следующую задачу.'],
     ],
     cta: 'Подключить агента',
-    cta_note: 'Тариф Agent: 5 490 {currency} в месяц, до трёх агентов, 20 000 кредитов.',
+    cta_note: 'Агент входит в тариф Profi: 15 000 {currency} в месяц, 20 000 кредитов агента.',
   },
 
   start: {
@@ -382,10 +382,9 @@ export default {
     month: '/ мес',
     plans: {
       trial: { name: 'Trial', badge: 'с него начинают', desc: 'Все функции для пробы', price: '0 {currency}', period: '/ 3 дня', cta: 'Начать бесплатно' },
-      voice: { name: 'AI Voice', badge: '', desc: 'Голосовой бот для сайта', price: '1 490 {currency}', period: '/ мес', cta: 'Выбрать' },
-      start: { name: 'Start', badge: 'рекомендуем', desc: 'Полный функционал', price: '2 990 {currency}', period: '/ мес', cta: 'Выбрать' },
-      profi: { name: 'Profi', badge: '', desc: 'Для серьёзного бизнеса', price: '5 990 {currency}', period: '/ мес', cta: 'Выбрать' },
-      agent: { name: 'Agent', badge: 'автопилот', desc: 'ИИ-оркестратор автономных звонков', price: '5 490 {currency}', period: '/ мес', cta: 'Выбрать' },
+      voice: { name: 'AI Voice', badge: '', desc: 'Голосовой бот для сайта', price: '1 990 {currency}', period: '/ мес', cta: 'Выбрать' },
+      start: { name: 'Start', badge: '', desc: 'Голосовые ассистенты, номер и CRM', price: '3 990 {currency}', period: '/ мес', cta: 'Выбрать' },
+      profi: { name: 'Profi', badge: 'с агентом', desc: 'Агент сам пишет, звонит и ведёт клиентов', price: '15 000 {currency}', period: '/ мес', cta: 'Выбрать' },
     },
     features: {
       assistants: 'Голосовые ассистенты',
@@ -406,6 +405,7 @@ export default {
       a10: 'до 10',
       ag3: 'до 3',
       credits: '20 000 в месяц',
+      credits_trial: '1 500 разово',
       priority: 'приоритетная',
       vip: 'VIP',
     },
@@ -426,7 +426,7 @@ export default {
     extra_credits_title: 'Кредиты агента',
     extra_credits_text: 'Оплачивают работу оркестратора: подготовку к звонку и разбор результата.',
     extra_credits: [
-      ['refresh-cw', 'В тарифе Agent', '20 000 в месяц'],
+      ['refresh-cw', 'В тарифе Profi', '20 000 в месяц'],
     ],
   },
 

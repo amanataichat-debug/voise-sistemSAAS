@@ -1860,20 +1860,16 @@
         <div class="plan-tabs" id="plan-tabs">
           <button class="plan-tab active" data-plan="ai_voice">
             <span class="tab-name">AI Voice</span>
-            <span class="tab-price">10 сом/мес</span>
+            <span class="tab-price">1 990 сом/мес</span>
           </button>
           <button class="plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">20 сом/мес</span>
+            <span class="tab-price">3 990 сом/мес</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="plan-tab" data-plan="profi">
             <span class="tab-name">Profi</span>
-            <span class="tab-price">30 сом/мес</span>
-          </button>
-          <button class="plan-tab" data-plan="agent">
-            <span class="tab-name">Agent</span>
-            <span class="tab-price">50 сом/мес</span>
+            <span class="tab-price">15 000 сом/мес</span>
           </button>
         </div>
 
@@ -1915,7 +1911,7 @@
 
           <!-- Цена за месяц -->
           <div class="monthly-price-info" id="modal-monthly-price" style="display: none;">
-            <span class="old-price" id="modal-old-price">10 сом/мес</span>
+            <span class="old-price" id="modal-old-price">1 990 сом/мес</span>
             <span class="new-price" id="modal-monthly-value">8 сом/мес</span>
           </div>
         </div>
@@ -1957,7 +1953,7 @@
         </button>
         <button class="btn btn-primary payment-pay-btn" id="payment-pay-btn">
           <i class="fas fa-credit-card"></i>
-          <span id="pay-btn-text">Оплатить 10 сом</span>
+          <span id="pay-btn-text">Оплатить 1 990 сом</span>
         </button>
       </div>
       
@@ -2018,20 +2014,16 @@
         <div class="expired-plan-tabs" id="expired-plan-tabs">
           <button class="expired-plan-tab active" data-plan="ai_voice">
             <span class="tab-name">AI Voice</span>
-            <span class="tab-price">10 сом</span>
+            <span class="tab-price">1 990 сом</span>
           </button>
           <button class="expired-plan-tab" data-plan="start">
             <span class="tab-name">Старт</span>
-            <span class="tab-price">20 сом</span>
+            <span class="tab-price">3 990 сом</span>
             <span class="recommended-badge">Хит</span>
           </button>
           <button class="expired-plan-tab" data-plan="profi">
             <span class="tab-name">Profi</span>
-            <span class="tab-price">30 сом</span>
-          </button>
-          <button class="expired-plan-tab" data-plan="agent">
-            <span class="tab-name">Agent</span>
-            <span class="tab-price">50 сом</span>
+            <span class="tab-price">15 000 сом</span>
           </button>
         </div>
 
@@ -2054,7 +2046,7 @@
         <div class="expired-selected-plan">
           <div class="expired-plan-name" id="expired-plan-name">AI Voice</div>
           <div class="expired-plan-assistants" id="expired-plan-assistants">До 3 ассистентов</div>
-          <div class="expired-plan-price" id="expired-price">10 сом</div>
+          <div class="expired-plan-price" id="expired-price">1 990 сом</div>
           <div class="expired-plan-period" id="expired-period">30 дней доступа</div>
           <div class="expired-savings-badge hidden" id="expired-savings">
             <i class="fas fa-piggy-bank"></i>
@@ -2066,7 +2058,7 @@
       <div class="subscription-expired-footer">
         <button class="renew-subscription-btn" id="renew-subscription-btn">
           <i class="fas fa-credit-card"></i>
-          <span id="renew-btn-text">Продлить подписку за 10 сом</span>
+          <span id="renew-btn-text">Продлить подписку за 1 990 сом</span>
         </button>
         
         <button class="btn btn-secondary" id="expired-logout-btn" style="width: 100%; justify-content: center;">
@@ -2091,7 +2083,7 @@
         ai_voice: {
           code: 'ai_voice',
           name: 'AI Voice',
-          basePrice: 10,
+          basePrice: 1990,
           maxAssistants: 3,
           description: 'Базовый тариф для голосовых ассистентов',
           restrictedFeatures: ['crm', 'telephony', 'outbound_calls'],
@@ -2109,7 +2101,7 @@
         start: {
           code: 'start',
           name: 'Тариф Старт',
-          basePrice: 20,
+          basePrice: 3990,
           maxAssistants: 5,
           description: 'Оптимальный тариф для бизнеса',
           restrictedFeatures: [],
@@ -2127,19 +2119,19 @@
         profi: {
           code: 'profi',
           name: 'Profi',
-          basePrice: 30,
+          basePrice: 15000,
           maxAssistants: 10,
-          description: 'Максимальные возможности',
+          description: 'Автономный агент: переписка, звонки, CRM и воронка',
           restrictedFeatures: [],
           features: [
+            { icon: 'fa-user-astronaut', text: 'Автономный агент обзвона и переписки', available: true },
+            { icon: 'fa-comments', text: 'WhatsApp, Instagram и Telegram', available: true },
+            { icon: 'fa-coins', text: '20 000 кредитов агента каждый месяц', available: true },
             { icon: 'fa-robot', text: 'До 10 голосовых ассистентов', available: true },
-            { icon: 'fa-infinity', text: 'Безлимитные диалоги', available: true },
+            { icon: 'fa-phone', text: 'Телефония, входящие и исходящие', available: true },
+            { icon: 'fa-address-book', text: 'CRM, воронка и аналитика', available: true },
             { icon: 'fa-book', text: 'База знаний без ограничений', available: true },
-            { icon: 'fa-code', text: 'Полный API доступ', available: true },
-            { icon: 'fa-headset', text: 'VIP поддержка', available: true },
-            { icon: 'fa-phone', text: 'Телефония', available: true },
-            { icon: 'fa-phone-alt', text: 'Исходящие звонки', available: true },
-            { icon: 'fa-address-book', text: 'CRM система', available: true }
+            { icon: 'fa-headset', text: 'VIP поддержка', available: true }
           ]
         },
         agent: {
@@ -2664,7 +2656,7 @@
           
           // По умолчанию — текущий тариф пользователя (agent продлевается как agent),
           // для остальных сбрасываем на ai_voice и 1 месяц
-          expiredSelectedPlan = (currentUserPlanCode === 'agent') ? 'agent' : 'ai_voice';
+          expiredSelectedPlan = (currentUserPlanCode === 'agent') ? 'profi' : 'ai_voice';
           expiredSelectedPeriod = 1;
           updateExpiredModalUI();
           

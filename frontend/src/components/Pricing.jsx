@@ -9,22 +9,21 @@ import { Reveal } from './Reveal';
 const PLANS = [
   { key: 'trial', chip: 'chip-success', primary: true },
   { key: 'voice', chip: 'chip-ghost' },
-  { key: 'start', chip: 'chip-accent', primary: true, col: 'hot' },
-  { key: 'profi', chip: 'chip-ghost' },
-  { key: 'agent', chip: 'chip-violet', col: 'agent' },
+  { key: 'start', chip: 'chip-ghost' },
+  { key: 'profi', chip: 'chip-accent', primary: true, col: 'hot' },
 ];
 
 const ROWS = [
-  ['assistants', ['a1', 'a3', 'a5', 'a10', null]],
-  ['agents', [false, false, false, false, 'ag3']],
-  ['widget', [true, true, true, true, null]],
-  ['telephony', [true, false, true, true, true]],
-  ['crm', [true, false, true, true, true]],
-  ['knowledge', [true, true, true, true, true]],
-  ['jarvis', [true, true, true, true, null]],
-  ['selfcall', [false, false, false, false, true]],
-  ['credits', [false, false, false, false, 'credits']],
-  ['support', [null, null, 'priority', 'vip', null]],
+  ['assistants', ['a1', 'a3', 'a5', 'a10']],
+  ['agents', [true, false, false, 'ag3']],
+  ['widget', [true, true, true, true]],
+  ['telephony', [true, false, true, true]],
+  ['crm', [true, false, true, true]],
+  ['knowledge', [true, true, true, true]],
+  ['jarvis', [true, true, true, true]],
+  ['selfcall', [true, false, false, true]],
+  ['credits', ['credits_trial', false, false, 'credits']],
+  ['support', [null, null, 'priority', 'vip']],
 ];
 
 function Cell({ value }) {
