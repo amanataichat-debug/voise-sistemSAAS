@@ -1519,3 +1519,13 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .kb-media-item.on{border-color:var(--accent,#2a5ce8);background:#eff6ff}
 .kb-media-item input{margin:0}
 .kb-prompt-meta{font-size:12px;color:var(--muted,#6b7280);margin-right:auto}
+
+/* ── Тариф Старт: агент «только отвечает» (body[data-agent-mode="reactive"]) ── */
+body[data-agent-mode="reactive"] .profi-only { display: none !important; }
+.plan-pill { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 5px 0 12px; border: 1px solid var(--vf-border); border-radius: 999px; background: var(--vf-surface); font-size: 12.5px; color: var(--vf-text-2); text-decoration: none; white-space: nowrap; transition: border-color var(--vf-fast, .15s); }
+.plan-pill[hidden] { display: none; }
+.plan-pill:hover { border-color: var(--vf-accent); text-decoration: none; }
+.plan-pill-name { font-weight: 700; color: var(--vf-text); }
+.plan-pill-up { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--vf-accent-soft); color: var(--vf-accent); font-weight: 600; }
+.plan-pill-up i { font-size: 10px; }
+@media (max-width: 1100px) { .plan-pill-text { display: none; } }

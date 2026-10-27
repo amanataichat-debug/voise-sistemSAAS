@@ -17,6 +17,7 @@ async function initAgents(){
     agentsList = data.agents || [];
     agentsMax = data.max_agents || 3;
     agentsCanCreateMore = !!data.can_create_more;
+    applyAgentMode(data.agent_mode);
     if(agentsList.length === 0){ renderAgentSwitcher(); showWizard(); return; }
     const saved = localStorage.getItem('agent_current_id');
     currentAgentId = (saved && agentsList.some(a => String(a.id)===String(saved))) ? saved : agentsList[0].id;

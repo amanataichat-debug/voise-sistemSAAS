@@ -263,7 +263,7 @@ async def _process_media(account_id: str, contact_id: str, msg_row_id: str, msg:
         allowed = bool(agent and agent.is_active and user)
         if allowed:
             try:
-                allowed = user.has_active_agent_subscription()
+                allowed = user.has_agent_chat_access()
             except Exception:
                 pass
         if not allowed:

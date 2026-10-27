@@ -1571,6 +1571,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             "user_id": str(agent_call.user_id),
             "user": user,
             "agent_config": agent_config,  # ← v2.2: для тулзы send_telegram_notification
+            "surface": "postcall",  # тариф Старт «только отвечает»: клиентский контур
+            "current_contact_id": str(agent_call.agent_contact_id) if agent_call.agent_contact_id else None,
         }
 
         messages: List[Dict[str, Any]] = [
@@ -1811,6 +1813,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                 "user_id": str(agent_call.user_id),
                 "user": user,
                 "agent_config": agent_config,  # ← v2.2: для тулзы send_telegram_notification
+                "surface": "postcall",  # тариф Старт «только отвечает»: клиентский контур
+                "current_contact_id": str(agent_call.agent_contact_id) if agent_call.agent_contact_id else None,
             }
 
             post_call_decision = None
@@ -3133,7 +3137,7 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
 
         # Доступ к агенту (триал/подписка) — как у SMS и планировщика.
         try:
-            if not user.has_active_agent_subscription():
+            if not user.has_agent_chat_access():
                 logger.info(f"[AGENT-TG-USER] user {user.id} has no agent access, skip tg message")
                 return
         except Exception:
@@ -3216,7 +3220,7 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
 
         # Доступ к агенту (триал/подписка) — как у SMS/Telegram и планировщика.
         try:
-            if not user.has_active_agent_subscription():
+            if not user.has_agent_chat_access():
                 logger.info(f"[AGENT-IG] user {user.id} has no agent access, skip ig message")
                 return
         except Exception:
@@ -3304,7 +3308,7 @@ async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, messag
             return
 
         try:
-            if not user.has_active_agent_subscription():
+            if not user.has_agent_chat_access():
                 logger.info(f"[AGENT-WA] user {user.id} has no agent access, skip wa message")
                 return
         except Exception:

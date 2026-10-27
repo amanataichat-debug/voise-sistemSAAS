@@ -137,7 +137,8 @@ async def get_balance(
         "days_remaining": user.agent_days_remaining(),
         "is_blocked": bool(user.agent_subscription_blocked),
         "trial_available": not bool(user.agent_trial_used),
-        "has_agent_access": user.has_agent_access(),
+        "has_agent_access": user.has_agent_chat_access(),
+        "agent_mode": user.agent_mode(),
         "is_profi_plan": user.is_profi_plan(),
     }
 
@@ -196,7 +197,7 @@ async def purchase_package(
         raise HTTPException(status_code=404, detail="package_not_found")
 
     # Пакеты доступны только при активной подписке agent (включая trial)
-    if not user.has_active_agent_subscription():
+    if not user.has_agent_chat_access():
         raise HTTPException(status_code=403, detail="subscription_required")
 
     plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == AGENT_PLAN_CODE).first()

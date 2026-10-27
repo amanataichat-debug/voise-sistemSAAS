@@ -337,7 +337,7 @@ async def _process_media_and_dispatch(account_id: str, contact_id: str, items) -
         allowed = bool(agent and agent.is_active and user)
         if allowed:
             try:
-                allowed = user.has_active_agent_subscription()
+                allowed = user.has_agent_chat_access()
             except Exception:
                 pass
 

@@ -19,17 +19,17 @@ const CHAT_SUGGESTIONS = [
   { icon:'fa-calendar-day',     label:'Расписание на сегодня', prompt:'Какие звонки запланированы на сегодня?' },
   { icon:'fa-calendar-week',    label:'Расписание на неделю',  prompt:'Покажи расписание звонков на ближайшую неделю' },
   { icon:'fa-forward',          label:'Ближайшие звонки',      prompt:'Покажи мои ближайшие запланированные звонки' },
-  { icon:'fa-calendar-plus',    label:'Запланировать звонок',  prompt:'Помоги запланировать звонок контакту' },
+  { icon:'fa-calendar-plus',    label:'Запланировать звонок',  prompt:'Помоги запланировать звонок контакту' , profi:true },
   { icon:'fa-phone-slash',      label:'Недозвоны',             prompt:'Покажи, кому не дозвонились — очередь на перезвон' },
   { icon:'fa-chart-line',       label:'Отчёт за неделю',       prompt:'Сделай отчёт по звонкам за последнюю неделю' },
   { icon:'fa-calendar-check',   label:'Отчёт за месяц',        prompt:'Сделай отчёт по звонкам за последний месяц' },
   { icon:'fa-clock-rotate-left',label:'Последние звонки',      prompt:'Покажи историю последних звонков' },
   { icon:'fa-bullseye',         label:'Конверсия',             prompt:'Какая у меня конверсия звонков за неделю?' },
-  { icon:'fa-user',             label:'Добавить контакт',      prompt:'Хочу добавить новый контакт в базу обзвона' },
-  { icon:'fa-file-import',      label:'Импорт списка',         prompt:'Помоги загрузить список контактов для обзвона' },
-  { icon:'fa-rocket',           label:'Обзвонить новых',       prompt:'Запланируй обзвон всех новых контактов' },
-  { icon:'fa-phone-volume',     label:'Позвонить сейчас',      prompt:'Позвони контакту прямо сейчас' },
-  { icon:'fa-circle-pause',     label:'Пауза по контакту',     prompt:'Поставь контакт на паузу — не звонить какое-то время' },
+  { icon:'fa-user',             label:'Добавить контакт',      prompt:'Хочу добавить новый контакт в базу обзвона' , profi:true },
+  { icon:'fa-file-import',      label:'Импорт списка',         prompt:'Помоги загрузить список контактов для обзвона' , profi:true },
+  { icon:'fa-rocket',           label:'Обзвонить новых',       prompt:'Запланируй обзвон всех новых контактов' , profi:true },
+  { icon:'fa-phone-volume',     label:'Позвонить сейчас',      prompt:'Позвони контакту прямо сейчас' , profi:true },
+  { icon:'fa-circle-pause',     label:'Пауза по контакту',     prompt:'Поставь контакт на паузу — не звонить какое-то время' , profi:true },
   { icon:'fa-lightbulb',        label:'Что ты умеешь',         prompt:'Что ты умеешь? Расскажи о своих возможностях' },
   { icon:'fa-mug-hot',          label:'Итоги дня',             prompt:'Подведи итоги звонков за сегодня' },
   { icon:'fa-clock',            label:'Лучшее время звонка',   prompt:'В какое время лучше звонить моим контактам?' },
@@ -38,7 +38,7 @@ const CHAT_SUGGESTIONS = [
 ];
 
 function pickSuggestions(n){
-  const arr = CHAT_SUGGESTIONS.slice();
+  const arr = CHAT_SUGGESTIONS.filter(s => !(s.profi && isReactiveMode()));
   for(let i=arr.length-1; i>0; i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
   return arr.slice(0, n);
 }

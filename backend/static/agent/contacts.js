@@ -328,7 +328,7 @@ function renderContactDetails(c){
     <div class="cd-section" data-section="tasks">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:14px;font-weight:600">Запланированное</div>
-        <button class="btn btn-secondary btn-sm" onclick="cdTaskAddToggle()"><i class="fas fa-plus"></i> Добавить задачу</button>
+        <button class="btn btn-secondary btn-sm profi-only" onclick="cdTaskAddToggle()"><i class="fas fa-plus"></i> Добавить задачу</button>
       </div>
       <div class="cd-task-new" id="cd-task-new" style="display:none">
         <input type="text" class="form-input" id="cdt-new-title" placeholder="Название задачи">

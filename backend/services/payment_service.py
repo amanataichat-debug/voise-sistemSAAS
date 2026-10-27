@@ -285,16 +285,18 @@ class FinikPaymentService:
 
         # Тариф profi даёт доступ к агенту-оркестратору и месячный пакет
         # кредитов (идемпотентно по payment_transaction)
-        if plan_code == "profi":
+        # Тариф start — агент «только отвечает»: свой меньший пакет кредитов.
+        if plan_code in ("profi", "start"):
             try:
                 from backend.services.credit_service import CreditService
+                credits = CreditService.SUBSCRIPTION_CREDITS if plan_code == "profi" else CreditService.START_CREDITS
                 CreditService.grant_subscription(
-                    db, user, transaction,
-                    notes="Profi plan monthly agent credits",
+                    db, user, transaction, credits=credits * max(1, duration_months),
+                    notes=f"{plan_code} plan agent credits ({duration_months} мес)",
                 )
                 db.refresh(user)
             except Exception as credit_error:
-                logger.error(f"❌ [FINIK] Failed to grant profi agent credits: {credit_error}", exc_info=True)
+                logger.error(f"❌ [FINIK] Failed to grant {plan_code} agent credits: {credit_error}", exc_info=True)
 
         logger.info(
             f"✅ [FINIK] Subscription {plan_code} activated for user {user.id}: "

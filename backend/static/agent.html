@@ -103,6 +103,12 @@
       <label class="switch"><input type="checkbox" id="active-toggle"><span class="slider"></span></label>
       <span class="hint hint-l" tabindex="0" data-hint="Выключенный агент не звонит и не отвечает клиентам. Запланированные задачи ждут включения."><i class="far fa-circle-question"></i></span>
     </div>
+    <a class="plan-pill" id="plan-pill" href="/static/dashboard.html#plans" hidden
+       title="Агент отвечает клиентам в мессенджерах и на входящие звонки, ведёт CRM. Писать и звонить первым, планировать задачи и создавать документы — на тарифе Profi.">
+      <span class="plan-pill-name">Старт</span>
+      <span class="plan-pill-text">отвечает на обращения</span>
+      <span class="plan-pill-up">Profi <i class="fas fa-arrow-up"></i></span>
+    </a>
     <div class="sub-badge" id="sub-badge" style="display:none">
       <span class="sub-status" id="sub-status">—</span>
       <span class="sub-credits" id="sub-credits" title="Баланс кредитов оркестратора"><i class="fas fa-coins"></i> <span id="sub-credits-num">0</span></span>
@@ -649,7 +655,7 @@
       </div>
       <div id="import-step-2" style="display:none">
         <div id="import-preview-summary"></div>
-        <div id="import-tasks-toggle" style="display:none;margin-top:12px;padding:12px 14px;background:var(--bg);border-radius:10px">
+        <div id="import-tasks-toggle" class="profi-only" style="display:none;margin-top:12px;padding:12px 14px;background:var(--bg);border-radius:10px">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <span class="switch"><input type="checkbox" id="import-tasks-checkbox" checked onchange="onImportTasksToggle()"><span class="slider"></span></span>
             <span style="font-size:13px;font-weight:600;color:var(--text)">Проставлять авто-задачи через оркестратора</span>

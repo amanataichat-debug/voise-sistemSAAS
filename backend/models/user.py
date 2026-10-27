@@ -314,6 +314,44 @@ class User(Base, BaseModel):
         """Алиас has_agent_access (имя сохранено для обратной совместимости)."""
         return self.has_agent_access()
 
+    # ------------------------------------------------------------------
+    # Режим «только отвечает» (тариф Старт, ветка 2710-start-tier)
+    # ------------------------------------------------------------------
+    # full     — автономный агент (trial / profi / legacy agent / админ);
+    # reactive — тариф Старт: бот отвечает клиентам в мессенджерах и на входящие
+    #            звонки, ведёт CRM и аналитику, но сам не пишет и не звонит первым;
+    # None     — доступа к агенту нет.
+
+    def is_start_plan(self) -> bool:
+        """True если активный (не истёкший) тариф — `start`."""
+        try:
+            plan = self.subscription_plan_rel
+            if not (plan and plan.code == "start"):
+                return False
+            if not self.subscription_end_date:
+                return False
+            from datetime import datetime, timezone
+            end = self.subscription_end_date
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            return end > datetime.now(timezone.utc)
+        except Exception:
+            return False
+
+    def agent_mode(self):
+        """'full' | 'reactive' | None — см. комментарий выше."""
+        if self.agent_subscription_blocked:
+            return None
+        if self.has_agent_access():
+            return "full"
+        if self.is_start_plan():
+            return "reactive"
+        return None
+
+    def has_agent_chat_access(self) -> bool:
+        """Агент может отвечать клиентам и вести CRM (full или reactive)."""
+        return self.agent_mode() is not None
+
     def agent_days_remaining(self) -> int:
         """Сколько дней осталось доступа к агенту (триал или profi/agent)."""
         from datetime import datetime, timezone, timedelta
@@ -324,7 +362,7 @@ class User(Base, BaseModel):
             if started.tzinfo is None:
                 started = started.replace(tzinfo=timezone.utc)
             candidates.append(started + timedelta(days=self.AGENT_TRIAL_DAYS))
-        if (self.is_profi_plan() or self._legacy_agent_plan_active()) and self.subscription_end_date:
+        if (self.is_profi_plan() or self._legacy_agent_plan_active() or self.is_start_plan()) and self.subscription_end_date:
             end = self.subscription_end_date
             if end.tzinfo is None:
                 end = end.replace(tzinfo=timezone.utc)
@@ -335,6 +373,8 @@ class User(Base, BaseModel):
 
     def agent_subscription_status(self) -> str:
         """active | trial | expired | none"""
+        if self.agent_mode() == "reactive":
+            return "active"
         if self.has_agent_access():
             # «trial» — только если доступ держится исключительно на триале
             if self.agent_trial_active() and not (

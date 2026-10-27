@@ -387,7 +387,7 @@ async def _process_media_and_dispatch(agent_config_id: str, contact_id: str, ite
         allowed = bool(agent and agent.is_active and user)
         if allowed:
             try:
-                allowed = user.has_active_agent_subscription()
+                allowed = user.has_agent_chat_access()
             except Exception:
                 pass
         max_bytes = settings.AGENT_MEDIA_MAX_MB * 1024 * 1024

@@ -245,6 +245,11 @@ def _voice_set_connector_function(va, toolkit: str, enabled: bool) -> None:
 MAX_AGENTS_PER_USER = 3
 
 
+def _max_agents_for(user) -> int:
+    """Старт («только отвечает») — один агент, Profi — до MAX_AGENTS_PER_USER."""
+    return 1 if user.agent_mode() == "reactive" else MAX_AGENTS_PER_USER
+
+
 class AgentCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     assistant_type: str = Field(...)  # "gemini" | "openai" | "cartesia" | "yandex"
@@ -956,9 +961,11 @@ async def list_agents(
     )
     return {
         "total": len(agents),
-        "max_agents": MAX_AGENTS_PER_USER,
-        "can_create_more": len(agents) < MAX_AGENTS_PER_USER and current_user.has_agent_access(),
-        "has_agent_access": current_user.has_agent_access(),
+        "max_agents": _max_agents_for(current_user),
+        "can_create_more": len(agents) < _max_agents_for(current_user) and current_user.has_agent_chat_access(),
+        "has_agent_access": current_user.has_agent_chat_access(),
+        # full — автономный агент (Profi), reactive — Старт «только отвечает», None — нет доступа
+        "agent_mode": current_user.agent_mode(),
         "agents": [_agent_to_dict(a) for a in agents],
     }
 
@@ -1010,13 +1017,13 @@ async def create_agent(
     agents_count = db.query(AgentConfig).filter(
         AgentConfig.user_id == current_user.id
     ).count()
-    if agents_count >= MAX_AGENTS_PER_USER:
+    if agents_count >= _max_agents_for(current_user):
         raise HTTPException(status_code=400, detail="agent_limit_reached")
 
     # 5b. Гейтинг доступа к агенту (v3.1): тестовый период / profi / legacy agent.
     #     Если триал уже использован и доступа нет — требуется тариф profi.
     #     Проверяем ДО создания, чтобы не оставлять «висячий» агент при 402.
-    if current_user.agent_trial_used and not current_user.has_agent_access():
+    if current_user.agent_trial_used and not current_user.has_agent_chat_access():
         raise HTTPException(status_code=402, detail="subscription_required")
 
     # 6. Create the voice assistant with the hardcoded base prompt
@@ -3844,6 +3851,9 @@ async def create_agent_contact_task(
     db: Session = Depends(get_db)
 ):
     """Ручное создание задачи (запланированного звонка) для контакта из UI."""
+    # Тариф Старт: агент сам не звонит и не пишет — задачи только на Profi
+    if current_user.agent_mode() == "reactive":
+        raise HTTPException(status_code=402, detail="reactive_mode")
     contact = db.query(AgentContact).filter(
         AgentContact.id == contact_id,
         AgentContact.user_id == current_user.id,
@@ -3910,6 +3920,13 @@ async def create_agent_contact(
 
     # Auto-create first task in 1 hour, но прогоняем через ту же проверку
     # рабочих часов (Бишкек), что и массовый импорт — для унификации.
+    # Тариф Старт («только отвечает»): агент первым не звонит — без автозадачи
+    if current_user.agent_mode() == "reactive":
+        db.commit()
+        db.refresh(contact)
+        logger.info(f"[AGENT] Created contact {contact.id} (reactive mode, no auto-task) for user {current_user.id}")
+        return contact.to_dict()
+
     scheduled_time, _shifted = adjust_to_working_hours(
         now_utc() + timedelta(hours=1),
         agent.working_hours_start,
@@ -4382,6 +4399,9 @@ async def _run_contacts_import(
         if data.get("user_id") != str(user_id):
             logger.error(f"[AGENT-IMPORT] Preview ownership mismatch for {preview_token}")
             return
+        # Тариф Старт («только отвечает»): контакты импортируем, звонки не планируем
+        _owner = db.query(User).filter(User.id == user_id).first()
+        reactive = bool(_owner and _owner.agent_mode() == "reactive")
 
         agent = db.query(AgentConfig).filter(
             AgentConfig.id == agent_id,
@@ -4429,7 +4449,7 @@ async def _run_contacts_import(
             created_contacts += 1
 
             # Авто-задачи выключены → создаём задачу только если она явно задана в файле.
-            if create_tasks or _row_has_explicit_task(r):
+            if not reactive and (create_tasks or _row_has_explicit_task(r)):
                 # scheduled_time_utc — ISO-строка с UTC-маркером
                 try:
                     scheduled_time = datetime.fromisoformat(r["scheduled_time_utc"])

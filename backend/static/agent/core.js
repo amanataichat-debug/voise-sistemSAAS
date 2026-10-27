@@ -37,6 +37,17 @@ let telegramState = null;
 let currentAgentId = null;
 let agentsList = [];
 let agentsCanCreateMore = false;
+// 'full' — автономный агент (Profi), 'reactive' — тариф Старт «только отвечает»
+let agentMode = 'full';
+function isReactiveMode(){ return agentMode === 'reactive'; }
+function applyAgentMode(mode){
+  agentMode = mode || 'full';
+  document.body.dataset.agentMode = agentMode;
+  const pill = document.getElementById('plan-pill');
+  if(pill) pill.hidden = !isReactiveMode();
+  const inp = document.getElementById('chat-input');
+  if(inp && isReactiveMode()) inp.placeholder = 'Спросите агента: отчёт, клиенты, переписки…';
+}
 
 // Добавляет ?agent_id=<выбранный> к запросам по конкретному агенту.
 // Не трогает /list и /create (там агент ещё не выбран / создаётся новый).
@@ -77,6 +88,8 @@ async function handle402(resp){
     if(confirm('Тестовый период использован. Агент доступен на тарифе Profi. Перейти к тарифам?')){
       location.href = '/static/dashboard.html';
     }
+  } else if(detail === 'reactive_mode'){
+    showToast('На тарифе Старт агент только отвечает клиентам. Планирование звонков — на тарифе Profi.', 'error');
   } else if(detail && detail.error === 'insufficient_credits'){
     openCreditsModal();
     alert(`Недостаточно кредитов: нужно ${detail.required}, доступно ${detail.available}.`);
@@ -96,7 +109,7 @@ function errText(detail){
     invalid_assistant_type:'Неверный тип ассистента.',
     invalid_orchestrator_model:'Неверная модель оркестратора.',
     already_exists:'Агент уже существует.',
-    agent_limit_reached:'Достигнут лимит агентов (максимум 3).',
+    agent_limit_reached:'Достигнут лимит агентов для вашего тарифа.',
     not_found:'Агент не найден.',
     openai_key_required:'Нужен OpenAI API ключ.',
     unsupported_format:'Неподдерживаемый формат. Используйте .xlsx или .csv.',
@@ -109,6 +122,7 @@ function errText(detail){
     number_not_found:'Номер не найден или отключён.',
     invalid_number_id:'Неверный номер.',
     subscription_required:'Нужен тариф с доступом к агенту.',
+    reactive_mode:'На тарифе Старт агент только отвечает клиентам. Планирование звонков доступно на тарифе Profi.',
   };
   if(typeof detail === 'string' && map[detail]) return map[detail];
   if(detail && typeof detail === 'object' && detail.error === 'insufficient_credits'){

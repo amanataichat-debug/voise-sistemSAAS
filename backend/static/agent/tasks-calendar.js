@@ -486,7 +486,7 @@ function _tcalRenderList(key){
   const chip = (id, label, n, icon) => `<button class="tcal-filter-chip ${_tcalFilter === id ? 'is-active' : ''}" onclick="_tcalSetFilter('${id}')" title="${esc(label)}">${icon ? `<i class="${icon}"></i>` : ''}<span class="tcal-filter-lbl">${esc(label)}</span>${n ? `<span class="tcal-filter-n">${n}</span>` : ''}</button>`;
   const topbar = `
     <div class="tcal-topbar">
-      <button class="btn btn-primary btn-sm tcal-new-btn" onclick="_tcalNewTaskViaChat()"><i class="fas fa-plus"></i> Новая задача</button>
+      <button class="btn btn-primary btn-sm tcal-new-btn profi-only" onclick="_tcalNewTaskViaChat()"><i class="fas fa-plus"></i> Новая задача</button>
       <div class="tcal-filters">
         ${chip('all',       'Все',       total, 'fas fa-list')}
         ${chip('call',      'Звонки',    nCall, 'fas fa-phone-volume')}

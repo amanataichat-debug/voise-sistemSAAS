@@ -3096,6 +3096,16 @@
       if (upgradeSubscriptionBtn) {
         upgradeSubscriptionBtn.addEventListener('click', showPaymentModal);
       }
+
+      // Ссылка /static/dashboard.html#plans (например, «Profi» на странице агента
+      // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi.
+      if (location.hash === '#plans') {
+        setTimeout(function () {
+          showPaymentModal();
+          selectedPlan = 'profi';
+          updatePaymentModalUI();
+        }, 300);
+      }
       
       paymentModalClose.addEventListener('click', hidePaymentModal);
       paymentCancelBtn.addEventListener('click', hidePaymentModal);

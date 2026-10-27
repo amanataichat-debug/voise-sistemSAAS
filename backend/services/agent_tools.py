@@ -633,7 +633,16 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
-    return _patch_move_stage_tool_for_agent(tools, agent_config)
+    tools = _patch_move_stage_tool_for_agent(tools, agent_config)
+    return _limit_tools_for_mode(tools, agent_config, db, "owner_chat")
+
+
+def _limit_tools_for_mode(tools: list, agent_config, db: Session, surface: str) -> list:
+    """Тариф Старт (режим «только отвечает»): убираем инструменты инициативы."""
+    from backend.services import agent_mode
+    if agent_mode.mode_for_agent(db, agent_config) == agent_mode.REACTIVE:
+        return agent_mode.filter_tools(tools, surface)
+    return tools
 
 
 async def build_postcall_tools(agent_config, db: Session) -> list:
@@ -646,7 +655,8 @@ async def build_postcall_tools(agent_config, db: Session) -> list:
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
-    return _patch_move_stage_tool_for_agent(tools, agent_config)
+    tools = _patch_move_stage_tool_for_agent(tools, agent_config)
+    return _limit_tools_for_mode(tools, agent_config, db, "postcall")
 
 
 async def fn_execute_connector(tool_name: str, args: dict, agent_config_id: str, db: Session) -> dict:
@@ -4901,6 +4911,13 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
     agent_config_id = context.get("agent_config_id")
     user_id = context.get("user_id")
     user = context.get("user")
+
+    # Тариф Старт: агент только отвечает (services/agent_mode.py)
+    from backend.services import agent_mode
+    refusal = agent_mode.check_tool(user, tool_name, tool_args, context, db)
+    if refusal:
+        logger.info(f"[AGENT-TOOLS] reactive mode blocked {tool_name} for user {user_id}")
+        return json.dumps({"ok": False, "error": refusal}, ensure_ascii=False)
 
     try:
         if tool_name == "create_agent_contact":

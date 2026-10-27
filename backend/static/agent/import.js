@@ -172,7 +172,7 @@ function updateImportProceedBtn(){
 async function executeImport(){
   if(!importState.token) return;
   const total = (importState.preview && importState.preview.valid_rows) || 0;
-  const createTasks = document.getElementById('import-tasks-checkbox').checked;
+  const createTasks = !isReactiveMode() && document.getElementById('import-tasks-checkbox').checked;
   importGotoStep(3);
   document.getElementById('import-progress-block').style.display = '';
   document.getElementById('import-result-block').style.display = 'none';

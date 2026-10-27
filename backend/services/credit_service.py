@@ -85,6 +85,7 @@ class CreditService:
     # Разовые начисления
     TRIAL_CREDITS = 1500
     SUBSCRIPTION_CREDITS = 20000
+    START_CREDITS = 10000  # тариф Старт, агент «только отвечает»
 
     # ------------------------------------------------------------------
     # PRE-FLIGHT
@@ -98,14 +99,14 @@ class CreditService:
         - InsufficientCreditsError если кредитов меньше MIN_PRECHECK_BALANCE.
 
         ⚠️ Доступ к оркестратору даёт тестовый период (3 дня), тариф `profi`,
-        legacy-тариф `agent` или admin. Тарифы ai_voice/start после триала →
-        отказ.
+        legacy-тариф `agent`, admin — и тариф `start` в режиме «только отвечает»
+        (User.agent_mode() == "reactive"). Тариф ai_voice после триала → отказ.
 
         Админ освобождён только от проверок ДОСТУПА (через has_agent_access →
         True), но НЕ от проверки кредитов: баланс < MIN_PRECHECK_BALANCE
         блокирует оркестратор для всех.
         """
-        if not user.has_agent_access():
+        if not user.has_agent_chat_access():
             # Никогда не было триала → требуется оформление; иначе доступ истёк.
             if user.agent_trial_used:
                 raise SubscriptionExpiredError("Agent access expired or blocked")

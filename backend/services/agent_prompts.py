@@ -438,10 +438,21 @@ def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=
         + build_pipeline_stages_block(agent_config)
         + build_knowledge_base_block(agent_config, db)
         + build_webhook_block(agent_config)
+        + _reactive_mode_block(agent_config, db)
     )
     if include_time_block:
         prompt += build_time_block()
     return prompt
+
+
+def _reactive_mode_block(agent_config, db) -> str:
+    """Тариф Старт: правила режима «только отвечает» (services/agent_mode.py)."""
+    if db is None:
+        return ""
+    from backend.services import agent_mode
+    if agent_mode.mode_for_agent(db, agent_config) != agent_mode.REACTIVE:
+        return ""
+    return agent_mode.PROMPT_BLOCK
 
 
 def get_voice_agent_prompt() -> str:
