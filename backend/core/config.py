@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     # (false = только запись в журнал звонка, для проверки на тестах)
     LIVE_DECISION_TRIGGERS: bool = os.getenv("LIVE_DECISION_TRIGGERS", "true").strip().lower() in ("1", "true", "yes")
     LIVE_AMD_HANGUP: bool = os.getenv("LIVE_AMD_HANGUP", "false").strip().lower() in ("1", "true", "yes")
+    # Звук ассистента в телефонную линию (SIP-адаптер, все движки). Запись звонка 27.10.2026: голос агента
+    # на ~10 дБ громче клиента (активный уровень −24 dBFS при норме линии ≈ −26…−28) и 17 % энергии ниже
+    # 150 Гц — на громкой связи телефона это «бубнит» и звучит как через динамик. Срез НЧ (Гц, 0 = выкл.)
+    # и усиление (дБ, отрицательное = тише) + мягкий ограничитель пиков.
+    # Приветствие звонка по времени суток Бишкека и по имени клиента из CRM («Добрый вечер, Айбек! …»):
+    # меняется только начальное «Здравствуйте» / «Саламатсызбы» фразы владельца. false = фраза как есть.
+    SIP_GREETING_PERSONALIZE: bool = os.getenv("SIP_GREETING_PERSONALIZE", "true").strip().lower() in ("1", "true", "yes")
+    SIP_OUT_HIGHPASS_HZ: int = int(os.getenv("SIP_OUT_HIGHPASS_HZ", "200") or 0)
+    SIP_OUT_GAIN_DB: float = float(os.getenv("SIP_OUT_GAIN_DB", "-3") or 0)
 
     # ✅ v3.0: OpenRouter — системный ключ для оркестратора Voksy AI Agent
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")

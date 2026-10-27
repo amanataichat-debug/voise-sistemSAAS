@@ -104,6 +104,43 @@ async def decisions():
     await s._on_live_event(ev("goodbye", "positive"))
     check("decisions: прощание → автозавершение ждёт тишины", s._farewell_at is not None)
 
+    # живые эмоции на лету (владелец 27.10.2026): шутка / проблема / хорошая новость клиента
+    cue = lambda c: {"type": "decision.event", "event": {"type": "decision.completed", "decision": {"answers": [
+        {"name": "caller_intent", "choice": "none"}, {"name": "caller_cue", "choice": c},
+        {"name": "caller_mood", "choice": "neutral"}]}}}
+    s, out, cl = session()
+    await s._on_live_event(cue("joke"))
+    check("эмоции: клиент пошутил → подсказка посмеяться вместе", len(s.client.thinking) == 1 and "посмейся" in s.client.thinking[0])
+    await s._on_live_event(cue("joke"))
+    check("эмоции: вторая шутка сразу — без повторной подсказки", len(s.client.thinking) == 1)
+    s._cue_hint_at["joke"] -= 35
+    await s._on_live_event(cue("problem"))
+    check("эмоции: проблема клиента → сочувствие, без шуток", len(s.client.thinking) == 2 and "посочувствуй" in s.client.thinking[1]
+          and "без шуток" in s.client.thinking[1])
+    check("эмоции: реакция записана в журнал звонка", any("Decisions) — подсказка живой реакции" in e["text"] for e in cl.events))
+    s, out, _ = session(); s._farewell_at = time.time()
+    await s._on_live_event(cue("good_news"))
+    check("эмоции: после прощания подсказок нет", len(s.client.thinking) == 0)
+    # звонок 27.10.2026 (f7cc4b4c): «тише/медленнее» в подсказках проседало голос, скачки тона
+    hints_all = " ".join(h.CUE_HINTS.values()) + " " + lc.VOICE_DELEGATION_HINT
+    check("стабильный голос: нигде не просим говорить тише/медленнее/бодрее",
+          not any(w in hints_all for w in ("медленнее и тише", "говори тише", "бодрее", "слышимый вдох")))
+    check("стабильный голос: правило одной громкости и темпа на весь звонок",
+          "СТАБИЛЬНЫЙ ГОЛОС" in lc.VOICE_DELEGATION_HINT and "Никогда не шепчи" in lc.VOICE_DELEGATION_HINT)
+    check("эмоции: реакция — после того, как клиент договорит", all("договорит" in v for v in h.CUE_HINTS.values()))
+    s, out, _ = session()
+    for i, c in enumerate(["joke", "problem", "good_news", "joke"]):
+        s._cue_hint_at = {k: v - 100 for k, v in s._cue_hint_at.items()}
+        await s._on_live_event(cue(c))
+    check("эмоции: не больше 3 подсказок за звонок", len(s.client.thinking) == 3, str(len(s.client.thinking)))
+    check("материалы: не говорить «уже отправил» (голос и бэкенд)",
+          "«уже " in lc.VOICE_DELEGATION_HINT and "никогда «уже отправил»" in lc.BACKEND_SYSTEM_PROMPT)
+    names = [q["name"] for q in lc.CALL_DECISION_TRIGGER["decisions"]["questions"]]
+    check("эмоции: Decisions спрашивает caller_cue (joke/problem/good_news)", "caller_cue" in names)
+    check("эмоции: в подсказке голосу есть смех, шутки и эмпатия по ситуации",
+          "ЭМОЦИИ И ЮМОР" in lc.VOICE_DELEGATION_HINT and "посмейся" in lc.VOICE_DELEGATION_HINT
+          and "без шуток" in lc.VOICE_DELEGATION_HINT)
+
 
 async def diagnostics():
     cl = CallLogRecorder(channel="phone"); cl.latencies_ms.extend([900, 4200, 5100])
@@ -138,6 +175,104 @@ async def voiced():
     s.stop_event.set(); out.clear()
     await s._on_live_event({"type": "session.output_audio.delta", "delta": voice})
     check("после остановки звонка звук игнорируется", out == [])
+
+
+async def farewell():
+    # звонок 27.10.2026 (f50d0b4e): «Да, всё, спасибо, хорошо» → «Тогда на этом всё, спасибо за звонок!»,
+    # hangup_call не вызван, линия висела 35 с
+    check("прощание: «Тогда на этом всё, спасибо за звонок!» — закрывающая фраза ассистента",
+          h.is_assistant_closing("Тогда на этом всё, спасибо за звонок!"))
+    check("прощание: «спасибо за звонок в …! Чем помочь?» — не прощание",
+          not h.is_assistant_closing("Спасибо за звонок в Voksy! Чем могу помочь?"))
+    check("прощание: кыргызское «Чалганыңыз үчүн рахмат, жакшы калыңыз!»",
+          h.is_assistant_closing("Чалганыңыз үчүн рахмат, жакшы калыңыз!"))
+    check("прощание: клиент «Да, всё, спасибо, хорошо» закончил разговор", h.is_caller_closing("Да, всё, спасибо, хорошо"))
+    check("прощание: «спасибо, а сколько стоит доставка?» — не конец", not h.is_caller_closing("спасибо, а сколько стоит доставка?"))
+
+    now = time.time()
+    s, out, _ = session()
+    s._last_user_voice_at = now - 12
+    s._log_transcript("assistant", "Тогда на этом всё, спасибо за звонок!")
+    check("автозавершение: прощание ассистента зафиксировано", s._farewell_at is not None)
+    s._farewell_at = now - 6; s._last_audio_at = now - 3
+    check("автозавершение: прощание + 4 с общей тишины → кладём трубку", s._should_auto_hangup(now))
+    s._last_audio_at = now - 0.5
+    check("автозавершение: ассистент ещё говорит → ждём", not s._should_auto_hangup(now))
+
+    s, out, _ = session()
+    s._log_transcript("assistant", "Спасибо за звонок в нашу компанию!")
+    check("автозавершение: «спасибо за звонок» в приветствии (клиент ещё молчал) не считается", s._farewell_at is None)
+
+    s, out, _ = session()
+    s._last_user_voice_at = now - 1
+    s._log_transcript("user", "Хорошо, спасибо")
+    check("автозавершение: «хорошо, спасибо» клиента — ждём тишины", s._farewell_at is not None)
+    s._log_transcript("assistant", "А вам удобно, если завтра в десять я пришлю договор?")
+    check("автозавершение: ассистент продолжил разговор вопросом → прощание снято", s._farewell_at is None)
+
+
+def phone_voice():
+    import numpy as np
+    import backend.websockets.sip_media_adapter as sma
+    t = np.arange(8000) / 8000.0
+    def level(freq, fx):
+        x = (np.sin(2 * np.pi * freq * t) * 8000).astype(np.int16).tobytes()
+        y = b"".join(fx(x[i:i + 320]) for i in range(0, len(x), 320))
+        a = np.frombuffer(y, dtype=np.int16)[2000:].astype(float)
+        return 20 * np.log10(np.sqrt((a ** 2).mean()) / (8000 / np.sqrt(2)))
+    low, mid = level(90, sma.PhoneVoice(highpass_hz=200, gain_db=0)), level(1000, sma.PhoneVoice(highpass_hz=200, gain_db=0))
+    check("звук в линию: бас 90 Гц срезан (≥ 15 дБ), 1 кГц не тронут (±1 дБ)", low <= -15 and abs(mid) <= 1.0,
+          f"90 Гц {low:.1f} дБ, 1 кГц {mid:.1f} дБ")
+    g = level(1000, sma.PhoneVoice(highpass_hz=0, gain_db=-3))
+    check("звук в линию: усиление −3 дБ", abs(g + 3) <= 0.3, f"{g:.1f} дБ")
+    full = (np.sin(2 * np.pi * 400 * t) * 32000).astype(np.int16).tobytes()
+    peak = np.abs(np.frombuffer(sma.PhoneVoice(highpass_hz=0, gain_db=6)(full), dtype=np.int16)).max()
+    check("звук в линию: ограничитель не даёт клиппинга при +6 дБ", peak < 32767, str(peak))
+    check("звук в линию: по умолчанию включено (срез НЧ + тише)",
+          sma.PhoneVoice().enabled and sma.settings.SIP_OUT_GAIN_DB < 0 and sma.settings.SIP_OUT_HIGHPASS_HZ > 0)
+
+
+def voice_hints():
+    check("подсказка: мужской голос cedar → мужской род", "мужском роде" in lc.voice_gender_hint("cedar"))
+    check("подсказка: marin → женский род", "женском роде" in lc.voice_gender_hint("marin"))
+    check("подсказка: alloy — без подсказки рода", lc.voice_gender_hint("alloy") == "")
+    hint = lc.VOICE_DELEGATION_HINT
+    for needle, label in [("Delegation policy", "метка делегирования OpenAI"), ("Interruption policy", "метка перебивания OpenAI"),
+                          ("ЗАВЕРШЕНИЕ", "прощание + hangup_call в том же ходе"), ("Чалганыңыз үчүн рахмат", "кыргызские образцы"),
+                          ("давайте в Телеграм", "выбор канала не делегировать")]:
+        check(f"подсказка голосу: {label}", needle in hint)
+    check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
+          "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
+    a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},
+                              voice="cedar", greeting_message=None)
+    cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()
+    check("конфиг: Backend tools и род голоса — в инструкции голосового слоя",
+          "Backend tools" in cfg["instructions"] and "hangup_call" in cfg["instructions"] and "мужском роде" in cfg["instructions"])
+
+
+def greeting_personal():
+    from datetime import datetime
+    import backend.services.sip_gateway_service as sgs
+    ev, day, night = datetime(2026, 10, 27, 19, 40), datetime(2026, 10, 27, 13, 0), datetime(2026, 10, 27, 2, 0)
+    p = sgs.personalize_greeting
+    check("приветствие: вечер + имя", p("Здравствуйте. Чем могу помочь?", "Айбек", ev) == "Добрый вечер, Айбек. Чем могу помочь?",
+          p("Здравствуйте. Чем могу помочь?", "Айбек", ev))
+    check("приветствие: «Добрый день» владельца днём без имени — как было",
+          p("Добрый день! Это Анри из Voksy.", "", day) == "Добрый день! Это Анри из Voksy.")
+    check("приветствие: «Добрый день» вечером → «Добрый вечер»", p("Добрый день! Это Анри.", "", ev) == "Добрый вечер! Это Анри.")
+    check("приветствие: ночью — «Здравствуйте»", p("Добрый вечер! Слушаю вас.", "", night).startswith("Здравствуйте!"))
+    check("приветствие: имя уже во фразе — не дублируем",
+          p("Здравствуйте, Айгуль! Это Анри.", "Айгуль", ev) == "Добрый вечер, Айгуль! Это Анри.")
+    check("приветствие: кыргызское «Саламатсызбы» не меняем, добавляем имя",
+          p("Саламатсызбы! Сизге кантип жардам берсем болот?", "Айбек", ev) == "Саламатсызбы, Айбек! Сизге кантип жардам берсем болот?")
+    check("приветствие: фраза без приветствия в начале — как есть", p("Компания Voksy, слушаю вас.", "Айбек", ev) == "Компания Voksy, слушаю вас.")
+    check("имя: «Клиент 0700…» и компания — не имя, «Айбек Осмонов» → «Айбек»",
+          sgs.first_name("Клиент 0700123456") == "" and sgs.first_name("ООО Ромашка") == "" and sgs.first_name("Айбек Осмонов") == "Айбек")
+    call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
+    check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
+    hint = lc.VOICE_DELEGATION_HINT
+    check("подсказка голосу: вдохи/выдохи и связки (ЖИВАЯ РЕЧЬ)", "ЖИВАЯ РЕЧЬ" in hint and "вдох" in hint and "выдох" in hint)
+    check("подсказка голосу: обращение по имени к месту (ИМЯ)", "ИМЯ." in hint and "не в каждой фразе" in hint)
 
 
 def prompt_budget():
@@ -185,6 +320,10 @@ async def main():
     await decisions()
     await diagnostics()
     await voiced()
+    await farewell()
+    phone_voice()
+    voice_hints()
+    greeting_personal()
     prompt_budget()
     session_config()
 

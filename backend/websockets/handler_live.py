@@ -118,6 +118,22 @@ MOOD_HINTS = {
     "confused": "Клиент, похоже, не до конца понял. Объясни проще и другими словами, одной короткой "
                 "фразой. Не переспрашивай, понял ли он, и не уточняй, что он имел в виду.",
 }
+# Эмоциональные сигналы клиента (Decisions, вопрос caller_cue): живая реакция голосом на лету.
+# Подсказка — не чаще CUE_HINT_GAP_SEC на один и тот же сигнал и CUE_ANY_GAP_SEC на любой.
+# Звонок 27.10.2026 (f7cc4b4c): «говори медленнее и тише» в подсказке проседало голос почти до шёпота,
+# а реакция начиналась поверх ещё говорящего клиента. Теперь: только слова, тот же ровный голос, после клиента.
+CUE_HINTS = {
+    "joke": "Клиент пошутил или смеётся. Когда он договорит — коротко посмейся вместе с ним и ответь с "
+            "улыбкой; можно одну лёгкую добрую шутку в тему, потом вернись к делу. Голос тот же, ровный.",
+    "problem": "Клиент расстроен. Когда он договорит — одной тёплой фразой посочувствуй, без шуток, тем же "
+               "ровным голосом (не тише и не медленнее), потом коротко предложи, чем поможешь.",
+    "good_news": "Клиент поделился хорошей новостью. Когда он договорит — искренне порадуйся одной фразой "
+                 "(«о, здорово, поздравляю!») тем же ровным голосом и продолжай разговор.",
+}
+CUE_LOG = {"joke": "шутит / смеётся", "problem": "делится проблемой", "good_news": "хорошая новость"}
+CUE_HINT_GAP_SEC = 40.0
+CUE_ANY_GAP_SEC = 30.0
+CUE_MAX_PER_CALL = 3  # больше — эмоции превращаются в театр
 INTENT_HINTS = {
     # Звонок 25.10.2026 (сессия 043c4070): здесь стояло «…и вежливо попрощайся» — модель сразу вызвала
     # hangup_call, пока клиент ещё называл время и номер Telegram, и связь оборвалась на полуслове.
@@ -146,13 +162,28 @@ AUTO_HANGUP = bool(getattr(settings, "LIVE_AUTO_HANGUP", True))
 # Сколько клиент должен молчать после прощания, чтобы положить трубку. С запасом на то,
 # чтобы ассистент успел договорить своё прощание (играет в реальном темпе ~3 с).
 HANGUP_SILENCE_SEC = 4.0
+# Ассистент тоже должен молчать: звук GPT-Live идёт в реальном темпе, последний голосовой кусок
+# пришёл ≈ тогда же, когда его услышал клиент. Без этого условия «спасибо, хорошо» клиента
+# посреди звонка и 4 с его молчания клали трубку, пока агент ещё договаривал ответ.
+HANGUP_ASSISTANT_QUIET_SEC = 1.5
 _FAREWELL_RE = re.compile(
-    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:дня|вечера)|до\s+встречи|до\s+связи|"
+    r"до\s*свидани|всего\s+доброго|всего\s+хорошего|хорошего\s+(?:вам\s+)?(?:дня|вечера)|до\s+встречи|до\s+связи|"
     r"прощайте|счастливо\s+оставаться|рахмат.*бол|"
-    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|"
+    # Закрывающие фразы ассистента (звонок 27.10.2026, сессия f50d0b4e): «Тогда на этом всё, спасибо
+    # за звонок!» — регулярка их не знала, hangup_call модель не вызвала, линия висела 35 с.
+    r"спасибо\s+(?:вам\s+)?за\s+(?:звонок|разговор|ваше\s+время|время|уделённое|уделенное|общение)|"
+    r"на\s+этом\s+(?:пока\s+)?вс[её]|будем\s+на\s+связи|до\s+скорого|хороших\s+выходных|"
+    r"кош\s*бол|сау\s*бол|жакшы\s*кал|жакшы\s*бар|кайра\s*көрүш|күнүңүз\s+жакшы|көрүшкөнчө|"
+    r"чалганыңыз\w*\s+(?:үчүн\s+)?рахмат|убакыт\w*\s+(?:бөлгөнүңүз\w*\s+)?(?:үчүн\s+)?рахмат|"
+    r"байланышта\s+болобуз|жакшы\s+күн\s+каалайм|"
     r"\bgood\s?bye\b|\bbye\b", re.IGNORECASE)
 # «пока» — прощание только в конце короткой реплики («давай, пока»), а не «пока не знаю»
 _PAKA_RE = re.compile(r"(?:^|[\s,.!?])пока[\s.!?…]*$", re.IGNORECASE)
+# Короткое «да, всё, спасибо» / «рахмат, болду» клиента — он закончил разговор, даже без «до свидания»
+# (звонок 27.10.2026). Слабее прощания: если после него агент заговорит не о прощании — отмена.
+_THANKS_RE = re.compile(r"спасибо|благодарю|рахмат|чоң\s+рахмат", re.IGNORECASE)
+_DONE_RE = re.compile(r"\bвс[её]\b|хорошо|ладно|понятно|договорились|окей|\bок\b|макул|болду|болот|жакшы|бүттү",
+                      re.IGNORECASE)
 
 
 def is_farewell(text: str) -> bool:
@@ -162,6 +193,32 @@ def is_farewell(text: str) -> bool:
     if _FAREWELL_RE.search(t):
         return True
     return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
+
+
+def is_caller_closing(text: str) -> bool:
+    """Реплика клиента заканчивает разговор: прощание или короткое «всё, спасибо»."""
+    t = " ".join((text or "").split())
+    if is_farewell(t):
+        return True
+    return (0 < len(t.split()) <= 6 and "?" not in t
+            and bool(_THANKS_RE.search(t)) and bool(_DONE_RE.search(t)))
+
+
+def is_assistant_closing(text: str) -> bool:
+    """
+    Реплика ассистента кончается прощанием. Смотрим только хвост (последние ~2 фразы): «Спасибо
+    за звонок в нашу компанию! Чем помочь?» — не прощание; вопрос после прощальной фразы — тоже.
+    """
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    tail = t[-90:]
+    m = None
+    for m in _FAREWELL_RE.finditer(tail):
+        pass
+    if m is None:
+        return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
+    return "?" not in tail[m.end():]
 
 # Активные соединения по ассистенту (для статистики /ws/status)
 active_live_connections: Dict[str, List[Any]] = {}
@@ -381,6 +438,8 @@ class LiveVoiceSession:
         self._mood_hint_at = 0.0
         self._mood_seen = ("neutral", 0)  # последнее настроение от Decisions и сколько раз подряд
         self._intents_done: set = set()
+        self._cue_hint_at: Dict[str, float] = {}
+        self.emotion_hints = 0
         self.direction = getattr(assistant, "sip_direction", None)
 
     # ------------------------------------------------------------------ helpers
@@ -468,13 +527,31 @@ class LiveVoiceSession:
         return bool(self.telephony or (self.call_log is not None and self.call_log.channel == "phone"))
 
     def _scan_farewell(self, role: str, text: str) -> None:
+        """
+        Вызывается на каждом фрагменте стенограммы с накопленной репликой роли.
+
+        Клиент: прощание или короткое «всё, спасибо» → ждём тишины. Ассистент: решает его ПОСЛЕДНЯЯ
+        реплика — кончается прощанием → ждём тишины; заговорил о другом (вопрос, новое предложение) —
+        разговор продолжается, прощание снимаем. Прощание ассистента до первой речи клиента (это
+        приветствие «спасибо за звонок в …») не считаем.
+        """
         if not self._is_phone() or self._hangup_sent:
             return
-        if is_farewell(text):
+        if role == "user":
+            closing = is_caller_closing(text)
+        else:
+            closing = self._last_user_voice_at > 0 and is_assistant_closing(text)
+            if not closing:
+                if self._farewell_at is not None and len(text.split()) >= 4:
+                    self._farewell_at = None
+                    if self.call_log:
+                        self.call_log.add("session", "Прощание отменено: ассистент продолжил разговор")
+                return
+        if closing:
             if self._farewell_at is None and self.call_log:
                 self.call_log.add("session",
                                   f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
-                                  f"ждём тишины клиента, чтобы завершить звонок")
+                                  f"ждём тишины, чтобы завершить звонок")
             self._farewell_at = time.time()
 
     def _should_auto_hangup(self, now: float) -> bool:
@@ -495,6 +572,9 @@ class LiveVoiceSession:
             return False
         # клиент сейчас говорит (только что был фрагмент речи) — ждём
         if now - self._last_user_voice_at < 1.0:
+            return False
+        # ассистент ещё договаривает — ждём, трубку кладём только в общей тишине
+        if now - self._last_audio_at < HANGUP_ASSISTANT_QUIET_SEC:
             return False
         quiet_since = max(self._last_user_voice_at, self._farewell_at)
         return now - quiet_since >= HANGUP_SILENCE_SEC
@@ -749,6 +829,8 @@ class LiveVoiceSession:
                 self.call_log.add("session", f"{INTENT_LOG[intent]} (Decisions)")
             await self.client.append_thinking(INTENT_HINTS[intent])
 
+        await self._on_cue(answers.get("caller_cue") or "none", now)
+
         # Подсказку, придержанную интервалом, не теряем: настроение запоминаем только когда
         # подсказка ушла (или клиент снова спокоен), следующее решение попробует ещё раз
         streak = self._mood_seen[1] + 1 if self._mood_seen[0] == mood else 1
@@ -763,6 +845,21 @@ class LiveVoiceSession:
                 if self.call_log:
                     self.call_log.add("session", f"Настроение клиента: {mood} (Decisions) — подсказка голосовой модели")
                 await self.client.append_thinking(MOOD_HINTS[mood])
+
+    async def _on_cue(self, cue: str, now: float) -> None:
+        """Шутка / проблема / хорошая новость клиента → подсказка живой реакции (не озвучивается)."""
+        if cue not in CUE_HINTS or self._farewell_at is not None or self.emotion_hints >= CUE_MAX_PER_CALL:
+            return
+        if now - self._cue_hint_at.get(cue, 0.0) < CUE_HINT_GAP_SEC:
+            return
+        if self._cue_hint_at and now - max(self._cue_hint_at.values()) < CUE_ANY_GAP_SEC:
+            return
+        self._cue_hint_at[cue] = now
+        self.emotion_hints += 1
+        _log(f"decisions: caller cue {cue}")
+        if self.call_log:
+            self.call_log.add("session", f"Клиент {CUE_LOG[cue]} (Decisions) — подсказка живой реакции голосу")
+        await self.client.append_thinking(CUE_HINTS[cue])
 
     def _hangup_refusal(self, raw_arguments: Any) -> Optional[str]:
         """
