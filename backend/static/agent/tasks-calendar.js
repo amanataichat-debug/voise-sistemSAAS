@@ -293,64 +293,125 @@ async function tcalDeleteDayTasks(key){
   }catch(e){ showToast('Ошибка сети', 'error'); }
 }
 
+// Строка задачи в едином списке (с меткой даты и подсветкой если выбрана).
+function _tcalListRow(t, dayKey, selected){
+  const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
+  const d = new Date(t.scheduled_time);
+  const dayLabel = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'short' });
+  const rel = relTime(t.scheduled_time);
+  const contactId = t.agent_contact_id || '';
+  const overdue = t.scheduled_time ? (new Date(t.scheduled_time) < new Date() && dayKey < _mskTodayKey()) : false;
+  const soon = rel.soon && !overdue;
+  const whenText = overdue ? 'Просрочена' : rel.text;
+  return `
+    <div class="task-item tcal-list-row ${selected ? 'is-selected' : ''} ${overdue ? 'is-overdue' : ''}" data-id="${t.id}" data-day="${dayKey}">
+      <div class="task-date tcal-list-date"><div class="t">${tm}</div><div class="m">${dayLabel}</div></div>
+      <div class="task-body">
+        <div class="cd-task-clickable" onclick="_tcalFocusTask('${t.id}', '${dayKey}')" title="Нажмите для подробностей">
+          <div class="task-title">${esc(t.title || 'Задача')} ${taskChannelBadge(t.channel)}</div>
+          ${t.contact_name ? `<div class="task-foot"><span class="task-contact">${esc(t.contact_name)}${t.contact_phone ? ` · ${esc(t.contact_phone)}` : ''}</span><span class="task-when ${soon ? 'soon' : ''} ${overdue ? 'overdue' : ''}">${whenText}</span></div>` : ''}
+        </div>
+        ${contactId ? `<button class="task-quick-goto" onclick="event.stopPropagation();_tcalOpenContact('${contactId}')" title="Открыть карточку клиента"><i class="fas fa-arrow-up-right-from-square"></i></button>` : ''}
+
+        <!-- Подробности (та же разметка, что раньше внутри _tcalTaskRow) -->
+        <div class="task-details" id="tcal-task-det-${t.id}" style="display:none">
+          <div class="td-grid">
+            <div class="td-cell"><span class="td-k">Время</span><span class="td-v">${esc(fmtDate(t.scheduled_time) || '—')}</span></div>
+            <div class="td-cell"><span class="td-k">Канал</span><span class="td-v">${taskChannelBadge(t.channel) || 'Звонок'}</span></div>
+            ${t.contact_name ? `<div class="td-cell"><span class="td-k">Клиент</span><span class="td-v">${esc(t.contact_name)}</span></div>` : ''}
+            ${t.contact_phone ? `<div class="td-cell"><span class="td-k">Телефон</span><span class="td-v">${esc(t.contact_phone)}</span></div>` : ''}
+          </div>
+          ${t.description ? `<div class="td-desc"><div class="td-k">Описание</div><div class="td-text">${esc(t.description)}</div></div>` : ''}
+          ${t.custom_greeting ? `<div class="td-desc"><div class="td-k">Инструкция</div><div class="td-text">${esc(t.custom_greeting)}</div></div>` : ''}
+          <div class="td-actions">
+            ${contactId ? `<button class="btn btn-primary btn-sm" onclick="_tcalOpenContact('${contactId}')"><i class="fas fa-arrow-up-right-from-square"></i> Открыть клиента</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="_tcalStartEdit('${t.id}')"><i class="fas fa-pen"></i> Изменить</button>
+            <button class="btn btn-secondary btn-sm" style="margin-left:auto;color:var(--vf-danger)" onclick="_tcalDeleteTask('${t.id}','${dayKey}')"><i class="far fa-trash-can"></i> Удалить</button>
+          </div>
+        </div>
+        <!-- Форма редактирования -->
+        <div class="task-ed" id="tcal-task-ed-${t.id}" style="display:none">
+          <input type="text" class="form-input" id="tcal-title-${t.id}" value="${esc(t.title||'')}" placeholder="Название задачи">
+          <input type="datetime-local" class="form-input" id="tcal-time-${t.id}" value="${utcToMskInput(t.scheduled_time)}">
+          <div class="task-ed-btns">
+            <button class="btn btn-secondary btn-sm" onclick="_tcalCancelEdit('${t.id}')">Отмена</button>
+            <button class="btn btn-primary btn-sm" onclick="_tcalSaveTask('${t.id}','${dayKey}')"><i class="fas fa-check"></i> Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Клик по строке в списке: раскрыть подробности + переключить день в календаре.
+function _tcalFocusTask(id, dayKey){
+  _tcalToggleDetails(id);  // переключение panel как было
+  // если открыли (не закрыли) — ведём календарь на этот день
+  const det = document.getElementById('tcal-task-det-' + id);
+  if(det && det.style.display !== 'none'){
+    if(dayKey && _tcalSel !== dayKey){
+      _tcalSel = dayKey;
+      _tcalYear = parseInt(dayKey.slice(0,4),10);
+      _tcalMonth = parseInt(dayKey.slice(5,7),10) - 1;
+      _tcalRenderGrid();
+    }
+  }
+}
+
 function _tcalRenderList(key){
   const head = document.getElementById('tcal-side-head');
   const sub  = document.getElementById('tcal-side-sub');
   const body = document.getElementById('tcal-side-body');
-  const tasks = key ? _tcalByDay[key] : null;
-  if(!key || !tasks || !tasks.length){
-    head.textContent = key ? _tcalDateLabel(key) : 'Выберите день';
-    sub.textContent  = key ? 'На этот день задач нет' : 'Дни с задачами отмечены в календаре';
-    // Умный empty-state: показываем 5 ближайших задач (с сегодня и позже).
-    const today = _mskTodayKey();
-    const upcoming = [];
-    Object.keys(_tcalByDay).sort().forEach(k => {
-      if(k < today) return;
-      _tcalByDay[k].forEach(t => upcoming.push({ ...t, _dayKey: k }));
-    });
-    upcoming.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
-    const next = upcoming.slice(0, 5);
-    if(!next.length){
-      body.innerHTML = `<div class="tcal-empty">Запланированных задач нет.<br><span style="color:var(--vf-text-4);font-size:12px">Поставить новую — через чат («Позвонить Айко завтра в 15:00») или кнопку в карточке клиента.</span></div>`;
-      return;
-    }
-    body.innerHTML = `
-      <div class="tcal-upcoming-head">Ближайшие ${pluralRu(next.length,'задача','задачи','задач')}</div>
-      <div class="tcal-list">${next.map(t => {
-        const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
-        const dayLabel = new Date(t.scheduled_time).toLocaleDateString('ru-RU', { day:'2-digit', month:'short' });
-        const rel = relTime(t.scheduled_time);
-        return `
-          <div class="task-item tcal-upcoming" onclick="_tcalSelectDay('${t._dayKey}')" title="Перейти к ${dayLabel}">
-            <div class="task-date"><div class="t" style="margin-top:0;font-size:13px">${tm}</div><div class="m">${dayLabel}</div></div>
-            <div class="task-body">
-              <div class="task-title">${esc(t.title || 'Задача')} ${taskChannelBadge(t.channel)}</div>
-              <div class="task-foot">
-                <span class="task-contact">${esc(t.contact_name || '')}</span>
-                <span class="task-when ${rel.soon ? 'soon' : ''}">${rel.text}</span>
-              </div>
-            </div>
-            <div class="tcal-upcoming-arrow"><i class="fas fa-chevron-right"></i></div>
-          </div>`;
-      }).join('')}</div>`;
+
+  // Собираем ВСЕ задачи с today и позже + просроченные (<today ∧ scheduled)
+  const today = _mskTodayKey();
+  const allTasks = [];
+  Object.keys(_tcalByDay).sort().forEach(k => {
+    _tcalByDay[k].forEach(t => allTasks.push({ ...t, _dayKey: k }));
+  });
+  allTasks.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+
+  // Группируем по дню (today и позже + просроченные отдельной группой сверху)
+  const overdue = allTasks.filter(t => t._dayKey < today);
+  const future = allTasks.filter(t => t._dayKey >= today);
+  const byDay = {};
+  future.forEach(t => { (byDay[t._dayKey] = byDay[t._dayKey] || []).push(t); });
+
+  head.textContent = 'Все задачи';
+  const totalFuture = future.length;
+  const totalOverdue = overdue.length;
+  sub.textContent = totalFuture + totalOverdue === 0
+    ? 'Запланированных задач нет'
+    : `Актуальных: ${totalFuture}${totalOverdue ? ` · просрочено: ${totalOverdue}` : ''}`;
+
+  if(!totalFuture && !totalOverdue){
+    body.innerHTML = `<div class="tcal-empty">Запланированных задач пока нет.<br><span style="color:var(--vf-text-4);font-size:12px">Поставить новую — через чат («Позвонить Айко завтра в 15:00») или кнопку в карточке клиента.</span></div>`;
     return;
   }
-  head.textContent = _tcalDateLabel(key);
-  sub.textContent  = `Задач: ${tasks.length}`;
 
   let html = '';
-  if(tasks.length > TCAL_DAY_LIMIT){
-    html += `<div class="tcal-warn"><i class="fas fa-circle-exclamation"></i> На этот день больше ${TCAL_DAY_LIMIT} задач (${tasks.length})</div>`;
-    const shown = _tcalExpanded ? tasks : tasks.slice(0, TCAL_DAY_LIMIT);
-    html += `<div class="tcal-list">${shown.map(t=>_tcalTaskRow(t,key)).join('')}</div>`;
-    html += _tcalExpanded
-      ? `<button class="tcal-more" onclick="_tcalToggleExpand()">Свернуть</button>`
-      : `<button class="tcal-more" onclick="_tcalToggleExpand()">Показать все ${tasks.length}</button>`;
-  } else {
-    html += `<div class="tcal-list">${tasks.map(t=>_tcalTaskRow(t,key)).join('')}</div>`;
+  // Просроченные сверху — чтобы владелец сразу их видел
+  if(overdue.length){
+    html += `<div class="tcal-group tcal-group-overdue"><div class="tcal-group-head"><i class="fas fa-triangle-exclamation"></i> Просрочено <span class="tcal-group-n">${overdue.length}</span></div>${overdue.map(t => _tcalListRow(t, t._dayKey, key === t._dayKey)).join('')}</div>`;
   }
-  html += `<button class="tcal-del-day" onclick="tcalDeleteDayTasks('${key}')"><i class="fas fa-trash-alt"></i> Удалить задачи дня</button>`;
+  // Сгруппированный по дням актуальный список
+  Object.keys(byDay).sort().forEach(k => {
+    const label = _tcalDayGroupLabel(k, today);
+    const n = byDay[k].length;
+    const sel = (key === k) ? ' is-active' : '';
+    html += `<div class="tcal-group${sel}"><div class="tcal-group-head" onclick="_tcalSelectDay('${k}')" title="Показать в календаре">${esc(label)} <span class="tcal-group-n">${n}</span></div>${byDay[k].map(t => _tcalListRow(t, k, key === k)).join('')}</div>`;
+  });
   body.innerHTML = html;
+}
+
+// Удобное название группы: Сегодня / Завтра / <день месяца>
+function _tcalDayGroupLabel(key, todayKey){
+  if(key === todayKey) return 'Сегодня';
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d, 12));
+  const tdt = new Date(Date.UTC(parseInt(todayKey.slice(0,4),10), parseInt(todayKey.slice(5,7),10)-1, parseInt(todayKey.slice(8,10),10), 12));
+  const diff = Math.round((dt - tdt) / (24 * 3600 * 1000));
+  if(diff === 1) return 'Завтра';
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', day: 'numeric', month: 'long', weekday: 'long' }).format(dt);
 }
 
 function _tcalToggleExpand(){

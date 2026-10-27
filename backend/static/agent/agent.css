@@ -374,16 +374,48 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .task-ed { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--vf-border); display: flex; flex-direction: column; gap: 8px; }
 .task-ed-btns { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* Умный empty-state сайдбара календаря: «Ближайшие задачи» */
-.tcal-upcoming-head {
-  font-size: 11.5px; font-weight: 600; color: var(--vf-text-3); text-transform: uppercase;
-  letter-spacing: .04em; padding: 4px 2px 8px;
+/* Сайдбар календаря: ВСЕГДА показывает все актуальные задачи, сгруппированные по дням */
+.tcal-group { margin-bottom: 14px; }
+.tcal-group-head {
+  font-size: 11.5px; font-weight: 700; color: var(--vf-text-3); text-transform: uppercase;
+  letter-spacing: .05em; padding: 6px 10px; margin-bottom: 4px;
+  background: var(--vf-surface-2); border-radius: 7px;
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  transition: background var(--vf-fast), color var(--vf-fast);
 }
-.task-item.tcal-upcoming { cursor: pointer; border-radius: 10px; padding: 10px; margin-top: 4px; border-top: 0; background: var(--vf-surface-2); transition: background var(--vf-fast), transform var(--vf-fast); }
-.task-item.tcal-upcoming:hover { background: var(--vf-surface-3); transform: translateX(2px); }
-.task-item.tcal-upcoming:first-child { border-top: 0; }
-.tcal-upcoming-arrow { color: var(--vf-text-4); font-size: 12px; align-self: center; }
-.task-item.tcal-upcoming:hover .tcal-upcoming-arrow { color: var(--vf-accent); }
+.tcal-group-head:hover { background: var(--vf-accent-soft); color: var(--vf-accent); }
+.tcal-group.is-active .tcal-group-head { background: var(--vf-accent-soft); color: var(--vf-accent); }
+.tcal-group-n {
+  margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px;
+  background: var(--vf-surface); color: var(--vf-text-3); font-size: 10.5px; font-weight: 700;
+}
+.tcal-group.is-active .tcal-group-n { background: var(--vf-accent); color: #fff; }
+.tcal-group-overdue .tcal-group-head { background: color-mix(in srgb, var(--vf-danger) 15%, var(--vf-surface-2)); color: var(--vf-danger); }
+.tcal-group-overdue .tcal-group-n { background: var(--vf-danger); color: #fff; }
+.tcal-group-overdue .tcal-group-head i { font-size: 11px; }
+
+/* Строка задачи в едином списке */
+.task-item.tcal-list-row { padding: 8px 0; border-top: 1px solid var(--vf-border); position: relative; }
+.task-item.tcal-list-row:first-child { border-top: 0; }
+.task-item.tcal-list-row.is-selected { background: color-mix(in srgb, var(--vf-accent) 6%, transparent); border-radius: 8px; padding: 8px 10px; margin: 0 -6px; border-top-color: transparent; }
+.task-item.tcal-list-row.is-overdue { background: color-mix(in srgb, var(--vf-danger) 5%, transparent); border-radius: 8px; padding: 8px 10px; margin: 0 -6px; border-top-color: transparent; }
+.tcal-list-date { text-align: center; min-width: 50px; }
+.tcal-list-date .t { font-weight: 700; font-size: 13.5px; color: var(--vf-text); font-variant-numeric: tabular-nums; }
+.tcal-list-date .m { font-size: 10.5px; color: var(--vf-text-4); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
+
+.task-when.overdue { color: var(--vf-danger); font-weight: 600; }
+
+.task-quick-goto {
+  position: absolute; top: 10px; right: 4px;
+  width: 24px; height: 24px; border-radius: 6px; border: 0; cursor: pointer;
+  background: transparent; color: var(--vf-text-4); font-size: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background var(--vf-fast), color var(--vf-fast);
+}
+.task-quick-goto:hover { background: var(--vf-accent-soft); color: var(--vf-accent); }
+
 .tcal-empty { padding: 24px 10px; text-align: center; color: var(--vf-text-3); font-size: 13px; line-height: 1.6; }
 
 /* ── Подробности задачи в календаре (клик по задаче → раскрывает) ── */
