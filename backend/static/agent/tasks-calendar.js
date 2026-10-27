@@ -300,8 +300,39 @@ function _tcalRenderList(key){
   const tasks = key ? _tcalByDay[key] : null;
   if(!key || !tasks || !tasks.length){
     head.textContent = key ? _tcalDateLabel(key) : 'Выберите день';
-    sub.textContent  = 'Дни с задачами отмечены в календаре';
-    body.innerHTML   = '<div class="tcal-empty">На этот день задач нет</div>';
+    sub.textContent  = key ? 'На этот день задач нет' : 'Дни с задачами отмечены в календаре';
+    // Умный empty-state: показываем 5 ближайших задач (с сегодня и позже).
+    const today = _mskTodayKey();
+    const upcoming = [];
+    Object.keys(_tcalByDay).sort().forEach(k => {
+      if(k < today) return;
+      _tcalByDay[k].forEach(t => upcoming.push({ ...t, _dayKey: k }));
+    });
+    upcoming.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+    const next = upcoming.slice(0, 5);
+    if(!next.length){
+      body.innerHTML = `<div class="tcal-empty">Запланированных задач нет.<br><span style="color:var(--vf-text-4);font-size:12px">Поставить новую — через чат («Позвонить Айко завтра в 15:00») или кнопку в карточке клиента.</span></div>`;
+      return;
+    }
+    body.innerHTML = `
+      <div class="tcal-upcoming-head">Ближайшие ${pluralRu(next.length,'задача','задачи','задач')}</div>
+      <div class="tcal-list">${next.map(t => {
+        const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
+        const dayLabel = new Date(t.scheduled_time).toLocaleDateString('ru-RU', { day:'2-digit', month:'short' });
+        const rel = relTime(t.scheduled_time);
+        return `
+          <div class="task-item tcal-upcoming" onclick="_tcalSelectDay('${t._dayKey}')" title="Перейти к ${dayLabel}">
+            <div class="task-date"><div class="t" style="margin-top:0;font-size:13px">${tm}</div><div class="m">${dayLabel}</div></div>
+            <div class="task-body">
+              <div class="task-title">${esc(t.title || 'Задача')} ${taskChannelBadge(t.channel)}</div>
+              <div class="task-foot">
+                <span class="task-contact">${esc(t.contact_name || '')}</span>
+                <span class="task-when ${rel.soon ? 'soon' : ''}">${rel.text}</span>
+              </div>
+            </div>
+            <div class="tcal-upcoming-arrow"><i class="fas fa-chevron-right"></i></div>
+          </div>`;
+      }).join('')}</div>`;
     return;
   }
   head.textContent = _tcalDateLabel(key);

@@ -374,6 +374,18 @@ span.hint.hint-l::after { left: auto; right: 0; width: max-content; max-width: 2
 .task-ed { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--vf-border); display: flex; flex-direction: column; gap: 8px; }
 .task-ed-btns { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* Умный empty-state сайдбара календаря: «Ближайшие задачи» */
+.tcal-upcoming-head {
+  font-size: 11.5px; font-weight: 600; color: var(--vf-text-3); text-transform: uppercase;
+  letter-spacing: .04em; padding: 4px 2px 8px;
+}
+.task-item.tcal-upcoming { cursor: pointer; border-radius: 10px; padding: 10px; margin-top: 4px; border-top: 0; background: var(--vf-surface-2); transition: background var(--vf-fast), transform var(--vf-fast); }
+.task-item.tcal-upcoming:hover { background: var(--vf-surface-3); transform: translateX(2px); }
+.task-item.tcal-upcoming:first-child { border-top: 0; }
+.tcal-upcoming-arrow { color: var(--vf-text-4); font-size: 12px; align-self: center; }
+.task-item.tcal-upcoming:hover .tcal-upcoming-arrow { color: var(--vf-accent); }
+.tcal-empty { padding: 24px 10px; text-align: center; color: var(--vf-text-3); font-size: 13px; line-height: 1.6; }
+
 /* ── Подробности задачи в календаре (клик по задаче → раскрывает) ── */
 .task-details {
   margin-top: 10px; padding: 12px 14px; border-radius: 10px;
