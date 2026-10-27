@@ -49,19 +49,13 @@ async function openTasksCalendar(){
     Object.values(_tcalByDay).forEach(arr => arr.sort((a,b)=> new Date(a.scheduled_time)-new Date(b.scheduled_time)));
   }catch(e){ _tcalByDay = {}; }
 
-  // отображаемый месяц = текущий по МСК
+  // Отображаемый месяц = текущий, выбранный день = СЕГОДНЯ (не прыгаем на
+  // первую задачу — пользователь хочет видеть «что сегодня», а задачи
+  // других дней уже видны по бейджам в клетках).
   const today = _mskTodayKey();
   _tcalYear = parseInt(today.slice(0,4),10);
   _tcalMonth = parseInt(today.slice(5,7),10) - 1;
-
-  // выбор по умолчанию: ближайший день с задачами (сегодня или позже), иначе первый
-  const keys = Object.keys(_tcalByDay).sort();
-  if(keys.length){
-    _tcalSel = keys.find(k => k >= today) || keys[0];
-    // показать месяц выбранного дня
-    _tcalYear = parseInt(_tcalSel.slice(0,4),10);
-    _tcalMonth = parseInt(_tcalSel.slice(5,7),10) - 1;
-  }
+  _tcalSel = today;
   _tcalRenderGrid();
   _tcalRenderList(_tcalSel);
 }
@@ -86,14 +80,24 @@ function _tcalRenderGrid(){
     const tasks = _tcalByDay[key];
     const cls = ['tcal-day'];
     let badge = '';
+    let preview = '';
     if(tasks && tasks.length){
       cls.push('has');
       const cnt = tasks.length > 9 ? '9+' : tasks.length;
       badge = `<span class="tcal-count" title="${tasks.length} ${pluralRu(tasks.length,'задача','задачи','задач')}">${cnt}</span>`;
+      // Превью первых 2-х задач прямо в клетке — чтобы было видно, что это за задачи
+      preview = '<div class="tcal-day-tasks">' +
+        tasks.slice(0, 2).map(t => {
+          const tm = t.scheduled_time ? ((mskParts(t.scheduled_time) || {}).time || '') : '';
+          const title = (t.title || 'Задача').slice(0, 24);
+          return `<div class="tcal-day-task" title="${esc(t.title || '')}">${tm ? `<b>${tm}</b> ` : ''}${esc(title)}</div>`;
+        }).join('') +
+        (tasks.length > 2 ? `<div class="tcal-day-more">+${tasks.length - 2}</div>` : '') +
+        '</div>';
     }
     if(key === today) cls.push('today');
     if(key === _tcalSel) cls.push('sel');
-    html += `<div class="${cls.join(' ')}" onclick="_tcalSelectDay('${key}')"><span>${day}</span>${badge}</div>`;
+    html += `<div class="${cls.join(' ')}" onclick="_tcalSelectDay('${key}')"><span class="tcal-day-num">${day}</span>${badge}${preview}</div>`;
   }
   document.getElementById('tcal-grid').innerHTML = html;
 }

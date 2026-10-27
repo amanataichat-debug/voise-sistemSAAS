@@ -956,15 +956,31 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
 .tcal-nav button:hover { background: var(--vf-accent-soft); color: var(--vf-accent); }
 .tcal-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-bottom: 5px; }
 .tcal-dow span { text-align: center; font-size: 10.5px; font-weight: 600; color: var(--vf-text-4); text-transform: uppercase; }
-.tcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.tcal-day { aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent; display: flex; align-items: center; justify-content: center; position: relative; font-size: 13px; background: var(--vf-surface-2); cursor: pointer; }
+.tcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+/* Клетка — не квадрат (чтобы вместить превью задач); минимальная высота + растяжка */
+.tcal-day {
+  min-height: 92px; padding: 6px 7px 7px; border-radius: 10px; border: 1px solid transparent;
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start;
+  position: relative; font-size: 12.5px; background: var(--vf-surface-2); cursor: pointer;
+  transition: background var(--vf-fast), border-color var(--vf-fast);
+}
 .tcal-day.empty { background: transparent; cursor: default; }
-.tcal-day:not(.empty):hover { background: var(--vf-accent-soft); }
-.tcal-day.has { font-weight: 700; background: var(--vf-accent-soft); }
-.tcal-day.today { border-color: var(--vf-accent); }
-.tcal-day.sel { background: var(--vf-accent); color: #fff; }
-.tcal-count { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--vf-accent); color: #fff; font-size: 9.5px; font-weight: 700; line-height: 16px; text-align: center; }
+.tcal-day:not(.empty):hover { background: var(--vf-surface-3); border-color: var(--vf-border); }
+.tcal-day.has { background: color-mix(in srgb, var(--vf-accent) 10%, var(--vf-surface-2)); }
+.tcal-day.today { border-color: var(--vf-accent); box-shadow: inset 0 0 0 1px var(--vf-accent); }
+.tcal-day.sel { background: var(--vf-accent); color: #fff; border-color: var(--vf-accent); }
+.tcal-day.sel .tcal-day-task { background: rgba(255, 255, 255, .14); color: #fff; }
+.tcal-day.sel .tcal-day-more { color: rgba(255, 255, 255, .9); }
+.tcal-day-num { font-weight: 700; font-size: 13px; line-height: 1; }
+.tcal-count { position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--vf-accent); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center; }
 .tcal-day.sel .tcal-count { background: #fff; color: var(--vf-accent); }
+.tcal-day-tasks { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.tcal-day-task {
+  background: var(--vf-surface); color: var(--vf-text-2); font-size: 10.5px; line-height: 1.3;
+  padding: 2px 6px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tcal-day-task b { color: var(--vf-text); font-variant-numeric: tabular-nums; margin-right: 2px; }
+.tcal-day-more { font-size: 10px; color: var(--vf-text-4); font-weight: 600; padding-left: 2px; }
 .tcal-side-head { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .tcal-side-sub { font-size: 11.5px; color: var(--vf-text-3); margin-bottom: 10px; }
 .tcal-warn { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--vf-warning); background: var(--vf-warning-soft); border-radius: 9px; padding: 8px 10px; margin-bottom: 10px; }
@@ -1083,6 +1099,10 @@ input[type=range] { accent-color: var(--vf-accent); width: 100%; }
   align-items: center; padding: 8px 10px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 10px;
 }
 .se-grab { color: var(--vf-text-4); font-size: 14px; cursor: grab; text-align: center; }
+.se-row[draggable="true"] { cursor: grab; }
+.se-row[draggable="true"] input, .se-row[draggable="true"] select, .se-row[draggable="true"] button { cursor: auto; }
+.se-row.se-dragging { opacity: .45; cursor: grabbing; }
+.se-row.se-drag-over { outline: 2px dashed var(--vf-accent); outline-offset: -2px; background: var(--vf-accent-soft); }
 .se-row .se-label { height: 36px; font-size: 13.5px; }
 .se-row .se-kind { height: 36px; font-size: 12.5px; }
 .se-colors { display: flex; gap: 4px; flex-wrap: wrap; max-width: 220px; }

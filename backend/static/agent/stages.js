@@ -107,7 +107,12 @@
       `<button class="se-color ${s.color.toLowerCase() === c.toLowerCase() ? 'is-active' : ''}" style="background:${c}" onclick="seSetColor(${i},'${c}')" title="${c}"></button>`
     ).join('');
     return `
-      <div class="se-row" data-i="${i}">
+      <div class="se-row" data-i="${i}" draggable="true"
+           ondragstart="seDragStart(event, ${i})"
+           ondragover="seDragOver(event, ${i})"
+           ondragleave="seDragLeave(event)"
+           ondrop="seDrop(event, ${i})"
+           ondragend="seDragEnd(event)">
         <div class="se-grab" title="Перетащить"><i class="fas fa-grip-vertical"></i></div>
         <input type="text" class="form-input se-label" value="${esc(s.label)}" oninput="seSetLabel(${i}, this.value)" placeholder="Название стадии">
         <select class="form-input se-kind" onchange="seSetKind(${i}, this.value)">
@@ -131,6 +136,35 @@
     if(j < 0 || j >= stagesDraft.length) return;
     const tmp = stagesDraft[i]; stagesDraft[i] = stagesDraft[j]; stagesDraft[j] = tmp;
     renderStagesEditor();
+  };
+
+  // ── Drag&drop стадий (HTML5 Drag API) ──
+  let _seDragFrom = null;
+  window.seDragStart = function(e, i){
+    _seDragFrom = i;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(i)); } catch(err){}
+    e.currentTarget.classList.add('se-dragging');
+  };
+  window.seDragOver = function(e, i){
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Подсветка цели: куда уедет при drop
+    e.currentTarget.classList.add('se-drag-over');
+  };
+  window.seDragLeave = function(e){ e.currentTarget.classList.remove('se-drag-over'); };
+  window.seDrop = function(e, i){
+    e.preventDefault();
+    e.currentTarget.classList.remove('se-drag-over');
+    const from = _seDragFrom; _seDragFrom = null;
+    if(from == null || from === i) return;
+    const item = stagesDraft.splice(from, 1)[0];
+    stagesDraft.splice(i, 0, item);
+    renderStagesEditor();
+  };
+  window.seDragEnd = function(e){
+    e.currentTarget.classList.remove('se-dragging');
+    document.querySelectorAll('.se-drag-over').forEach(el => el.classList.remove('se-drag-over'));
   };
   window.seDelete = function(i){
     if(stagesDraft.length <= 2){ showToast('Минимум 2 стадии', 'error'); return; }
