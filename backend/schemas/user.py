@@ -104,6 +104,8 @@ class UserResponse(UserBase):
     is_trial: bool = Field(False, description="Whether user is in trial period")
     is_admin: bool = Field(False, description="Whether user is an admin")
     subscription_end_date: Optional[datetime] = Field(None, description="End date of subscription")
+    # 'full' (Profi/триал/админ) | 'reactive' (Старт) | None — по нему меню кабинета выбирает набор разделов
+    agent_mode: Optional[str] = Field(None, description="Agent mode of the plan: full | reactive | null")
     
     class Config:
         from_attributes = True

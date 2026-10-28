@@ -98,7 +98,8 @@ class UserService:
             # ✅ Тарифы
             is_trial=user.is_trial,
             is_admin=user.is_admin,
-            subscription_end_date=user.subscription_end_date
+            subscription_end_date=user.subscription_end_date,
+            agent_mode=user.agent_mode()
         )
 
     @staticmethod

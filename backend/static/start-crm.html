@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru" class="vf">
+<head>
+<script>
+(function(){ try{
+  var t = localStorage.getItem('vs_theme') || 'system';
+  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark) document.documentElement.setAttribute('data-theme','dark');
+}catch(e){} })();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>CRM | Voksy AI</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <link rel="stylesheet" href="/static/start/start.css">
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
+</head>
+<body class="vf">
+<div class="vf-app">
+  <aside class="sidebar vf-sidebar" id="sidebar">
+    <div class="vf-sidebar-head">
+      <a href="/static/dashboard.html" class="vf-logo">
+        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
+        <span class="wordmark">Voksy AI</span>
+      </a>
+      <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню" data-i18n-title="sidebar.close_menu">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer">
+      <a href="/" data-logout class="btn btn-ghost" style="width:100%;justify-content:flex-start" id="logout-button">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-log-out"></use></svg> <span data-i18n="sidebar.logout">Выйти</span>
+      </a>
+    </div>
+  </aside>
+  <div class="st-scrim" id="st-scrim"></div>
+  <script defer src="/static/js/theme.js"></script>
+  <script defer src="/static/js/sidebar.js"></script>
+
+  <main class="vf-main">
+    <header class="vf-topbar">
+      <div class="vf-topbar-left">
+        <button class="btn btn-ghost btn-icon mobile-toggle" id="sidebar-toggle" aria-label="Меню" data-i18n-title="sidebar.open_menu">
+          <svg class="ic"><use href="/static/icons/ui.svg#i-menu"></use></svg>
+        </button>
+        <h1 data-i18n="sidebar.crm">CRM</h1>
+      </div>
+      <div class="vf-topbar-right"></div>
+    </header>
+
+    <div class="vf-content">
+      <div class="st-page" id="page">
+        <div class="skeleton" style="height:320px"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script defer src="/static/start/common.js"></script>
+<script defer src="/static/start/crm.js"></script>
+</body>
+</html>

@@ -22,7 +22,7 @@
 
   var LANGS = ['ru', 'ky'];
   var STORAGE_KEY = 'vs_lang';
-  var DICT_VERSION = '6';   // +sip.er_unreachable / er_bad_number, ветка 2210-perebivaniya
+  var DICT_VERSION = '7';   // +sidebar.analytics / chatbot (меню тарифа Старт), ветка 2710-start-tier
   // Подстановки по умолчанию для {currency} и {tz} в строках словаря
   var DEFAULTS = { currency: 'сом', tz: 'Бишкек' };
 

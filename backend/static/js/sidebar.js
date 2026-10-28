@@ -57,6 +57,33 @@
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
   ];
 
+  // Тариф Старт (agent_mode = 'reactive') — отдельный набор страниц кабинета. Это НЕ страница
+  // агента обзвона (agent.html, её видит только Профи): CRM, Аналитика и Чат-бот Старта —
+  // собственные страницы в оформлении кабинета, свой код в /static/start/.
+  var START_MENU = [
+    { section: 'sidebar.section_main', def: 'Основное' },
+    { href: '/static/dashboard.html', lucide: 'house', label: 'sidebar.dashboard', def: 'Дашборд', id: 'dashboard-nav-item' },
+    { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
+      aliases: ['/static/eleven-test.html'] },
+    { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
+    { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item' },
+    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item' },
+    { href: '/static/start-analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
+    { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
+
+    { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
+    { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
+  ];
+
+  // Режим агента кэшируем, чтобы меню не мигало «Профи → Старт» при каждой загрузке
+  var MODE_KEY = 'vf_agent_mode';
+  function cachedMode() {
+    try { return localStorage.getItem(MODE_KEY) || ''; } catch (e) { return ''; }
+  }
+  function currentMenu() {
+    return cachedMode() === 'reactive' ? START_MENU : MENU;
+  }
+
   var ADMIN_ITEMS = [
     { section: 'sidebar.section_admin', def: 'Администрирование', admin: true },
     { href: '/static/admin.html', lucide: 'shield-check', label: 'sidebar.admin', def: 'Управление', id: 'admin-nav-item', admin: true }
@@ -107,7 +134,7 @@
     var nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
     if (!nav) return null;
     nav.innerHTML = '';
-    MENU.forEach(function (item) { nav.appendChild(renderItem(item)); });
+    currentMenu().forEach(function (item) { nav.appendChild(renderItem(item)); });
     return nav;
   }
 
@@ -327,7 +354,38 @@
     logout();
   });
 
+  // Страницы, которых у Старта нет: агент обзвона, «Знания агента» и старая CRM кабинета
+  // (бот Старта пишет в CRM агента, поэтому «CRM» у Старта — start-crm.html)
+  var START_REDIRECTS = {
+    '/static/agent.html': '/static/start-bot.html',
+    '/static/agent-knowledge.html': '/static/start-bot.html#knowledge',
+    '/static/crm.html': '/static/start-crm.html',
+    '/static/crm-contact.html': '/static/start-crm.html'
+  };
+  function redirectStartPages() {
+    if (cachedMode() !== 'reactive') return false;
+    var target = START_REDIRECTS[currentPath()];
+    if (!target) return false;
+    location.replace(target);
+    return true;
+  }
+
+  function applyAgentMode(mode) {
+    var prev = cachedMode();
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) { /* ignore */ }
+    if (mode !== prev) {
+      // режим сменился (купили/потеряли Старт): перерисовываем меню и, если надо, уводим со страницы
+      if (redirectStartPages()) return;
+      var nav = renderNav();
+      if (nav) {
+        try { if (sessionStorage.getItem('vf_is_admin') === '1') injectAdmin(nav); } catch (e) { /* ignore */ }
+        document.dispatchEvent(new CustomEvent('vf:menu', { detail: { mode: mode } }));
+      }
+    }
+  }
+
   function init() {
+    if (redirectStartPages()) return;
     var nav = renderNav();
     renderThemeToggle();
     renderLangSwitch();
@@ -345,7 +403,8 @@
       if (!user) return;
       var admin = !!user.is_admin || ADMIN_EMAILS.indexOf(user.email) !== -1;
       try { sessionStorage.setItem('vf_is_admin', admin ? '1' : '0'); } catch (e) { /* ignore */ }
-      if (admin) injectAdmin(nav);
+      applyAgentMode(user.agent_mode || '');
+      if (admin) injectAdmin(document.getElementById('sidebar-nav') || nav);
       document.dispatchEvent(new CustomEvent('vf:user', { detail: user }));
     }).catch(function () { /* ignore */ });
   }

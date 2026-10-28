@@ -14,7 +14,8 @@
 - `outbound-calls.html`, `test_outbound-calls.html` — страницы Voximplant, **мёртвые** (Voximplant не используется, см. корневой `CLAUDE.md`).
 - `crm.html`, `crm-contact.html` — CRM (список и карточка контакта).
 - `conversations.html` — история диалогов.
-- `agent.html` — страница Voksy AI Agent (оркестратор/обзвон).
+- `agent.html` — страница Voksy AI Agent (оркестратор/обзвон); только тариф Profi.
+- `start-crm.html`, `start-analytics.html`, `start-bot.html` — кабинет тарифа Старт (CRM, Аналитика, Чат-бот), свой код в `start/` (`common.js`, `crm.js`, `analytics.js`, `bot.js`, `start.css`); Старт на `agent.html` не попадает, редиректы — в `js/sidebar.js`. Подробнее — в `CLAUDE.md` (раздел про кабинет Старта).
 - `knowledge-base.html`, `integrations.html`, `settings.html`, `admin.html` — база знаний, интеграции, настройки, админка.
 - `index.html`, `index_original.html` — входные/легаси страницы; `widget.html` — демо виджета.
 - Юридические/контентные: `privacy-policy.html`, `public-offer.html`, `terms-of-service.html`, `payment-terms.html`, `prompts-wiki.html`, `api-docs.html`, и др.

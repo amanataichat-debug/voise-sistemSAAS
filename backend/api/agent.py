@@ -1078,7 +1078,9 @@ async def create_agent(
     #    (3 дня + 1500 кредитов). Если trial уже был — не выдаём повторно.
     trial_activated = False
     try:
-        trial_activated = activate_agent_trial(db, current_user)
+        # Тариф Старт не получает тест полного агента: у него свои 10 000 кредитов в месяц
+        if current_user.agent_mode() != "reactive":
+            trial_activated = activate_agent_trial(db, current_user)
         if trial_activated:
             db.refresh(current_user)
     except Exception as e:

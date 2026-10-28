@@ -342,10 +342,14 @@ class User(Base, BaseModel):
         """'full' | 'reactive' | None — см. комментарий выше."""
         if self.agent_subscription_blocked:
             return None
-        if self.has_agent_access():
+        if self.is_admin:
             return "full"
+        # Платный Старт сильнее тестового периода: оплатил Старт — работает «только отвечает»,
+        # даже если 3-дневный триал полного агента ещё не закончился.
         if self.is_start_plan():
             return "reactive"
+        if self.has_agent_access():
+            return "full"
         return None
 
     def has_agent_chat_access(self) -> bool:
