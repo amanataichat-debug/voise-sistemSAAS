@@ -87,6 +87,8 @@ async function renderTelegramModal(){
       </div>
     </div>
 
+    ${tgManageBlock(s)}
+
     <div style="margin:4px 0 8px;font-weight:600;font-size:13.5px">Что присылать</div>
     <div class="tg-notify">
       ${tgNotifyRow('new_lead', 'Новый клиент', 'Клиент впервые написал или позвонил: имя, номер, первое сообщение.', s)}
@@ -121,6 +123,56 @@ async function renderTelegramModal(){
       <button class="btn btn-secondary btn-sm" onclick="testTelegram()"><i class="fas fa-paper-plane"></i> Тест отправки</button>
       <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="disconnectTelegramBot()"><i class="fas fa-unlink"></i> Отключить бота</button>
     </div>`;
+}
+
+// ── Управление агентом из Telegram: подключение своего чата по ссылке ──
+// Бот отвечает только чатам из списка. Раньше владелец вставлял chat_id руками (узнавал его у @userinfobot);
+// без этого бот молчал, и «управление через Telegram» казалось неработающим. Ссылка t.me/<бот>?start=owner_<код>
+// сама добавляет чат и включает бота.
+let tgLinkTimer = null;
+function tgManageBlock(s){
+  const linked = (s.chat_ids || []).length > 0;
+  const on = linked && s.enabled;
+  const examples = ['«Какая статистика за неделю?»', '«Позвони Айбеку завтра в 10:00»', '«Поставь задачу: выставить счёт Нурлану»', '«Напиши Мээрим в WhatsApp, что КП готово»'];
+  const link = s.link_url
+    ? `<a class="btn btn-primary btn-sm" href="${esc(s.link_url)}" target="_blank" rel="noopener" onclick="tgWatchLink()"><i class="fab fa-telegram"></i> ${linked ? 'Подключить ещё один чат' : 'Подключить мой Telegram'}</a>`
+    : '';
+  const head = on
+    ? '<b style="color:var(--green-dark,#166534)"><i class="fas fa-circle-check"></i> Управление из Telegram работает</b>'
+    : '<b><i class="fas fa-wand-magic-sparkles" style="color:var(--blue)"></i> Управляйте агентом из Telegram</b>';
+  const how = on
+    ? 'Напишите боту в подключённом чате текстом или голосовым, как в чате с агентом на сайте. Например: ' + examples.join(' ')
+    : (linked
+      ? 'Чат подключён, но бот выключен: включите тумблер «Включён» выше.'
+      : 'Нажмите кнопку, откройте бота в Telegram и нажмите <b>Start</b>: чат подключится сам, бот включится. Потом можно писать ему как в чате на сайте: ' + examples.join(' '));
+  return `<div style="margin:0 0 16px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
+      <div style="font-size:13.5px;margin-bottom:6px">${head}</div>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:${link ? 10 : 0}px">${how}</div>
+      ${link}
+    </div>`;
+}
+// После нажатия на ссылку ждём, пока владелец нажмёт Start в Telegram, и обновляем окно
+function tgWatchLink(){
+  clearInterval(tgLinkTimer);
+  const before = (telegramState && telegramState.chat_ids || []).length;
+  const wasOn = !!(telegramState && telegramState.enabled);
+  let tries = 0;
+  tgLinkTimer = setInterval(async () => {
+    tries++;
+    if(tries > 40 || document.getElementById('telegram-modal-overlay')?.classList.contains('hidden')){ clearInterval(tgLinkTimer); return; }
+    try{
+      const r = await apiFetch(TG_API);
+      if(!r || r.status !== 200) return;
+      const d = await r.json();
+      if((d.chat_ids || []).length > before || (d.enabled && !wasOn)){
+        clearInterval(tgLinkTimer);
+        telegramState = d;
+        showToast('Чат подключён. Бот включён.', 'success');
+        renderTelegramModal();
+        renderTelegramStatusBlock();
+      }
+    }catch(e){ /* повторим на следующем тике */ }
+  }, 3000);
 }
 
 async function connectTelegramBot(){

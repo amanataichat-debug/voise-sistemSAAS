@@ -401,6 +401,23 @@ async def test_telegram(
 # ENDPOINT — WEBHOOK (public, no auth)
 # ============================================================================
 
+_NOTICE_LAST: dict = {}
+
+
+def _notice_due(agent_id, chat_id: str, kind: str, every: int = 600) -> bool:
+    """Подсказку «чат не подключён / бот выключен» шлём не чаще раза в `every` секунд на чат (анти-спам)."""
+    import time
+    key = (str(agent_id), chat_id, kind)
+    now = time.monotonic()
+    if now - _NOTICE_LAST.get(key, -1e9) < every:
+        return False
+    _NOTICE_LAST[key] = now
+    if len(_NOTICE_LAST) > 5000:
+        for k in [k for k, t in _NOTICE_LAST.items() if now - t > every]:
+            _NOTICE_LAST.pop(k, None)
+    return True
+
+
 async def _handle_owner_link(agent: AgentConfig, message: dict, db: Session) -> bool:
     """
     /start от владельца: с верным кодом привязывает чат и включает оповещения;
@@ -493,12 +510,9 @@ async def telegram_webhook(
         if await _handle_owner_link(agent, message, db):
             return {"ok": True}
 
-        # 5. Включён ли бот
-        if not agent.telegram_enabled:
-            logger.info(f"[AGENT-TG] Webhook ignored: bot disabled (agent {agent.id})")
-            return {"ok": True}
-
-        # 6. chat_id в списке разрешённых?
+        # 5. chat_id в списке разрешённых? Раньше бот молча игнорировал чужой чат, и владелец, который
+        #    подключил токен, но не добавил свой чат, видел «бот не отвечает» без единой подсказки.
+        #    Теперь отвечаем (не чаще раза в 10 минут на чат): что делать и chat_id для ручного добавления.
         chat = message.get("chat", {})
         chat_id = str(chat.get("id", ""))
         if not chat_id or chat_id not in agent.get_telegram_chat_ids_list():
@@ -506,6 +520,25 @@ async def telegram_webhook(
                 f"[AGENT-TG] Webhook ignored: chat {chat_id} not in allow-list "
                 f"{agent.get_telegram_chat_ids_list()} (agent {agent.id})"
             )
+            if chat_id and _notice_due(agent.id, chat_id, "unknown"):
+                await AgentTelegramService.send_message(
+                    agent.telegram_bot_token, chat_id,
+                    "Этот чат не подключён к агенту, поэтому я не могу отвечать.\n\n"
+                    f"chat_id этого чата: <code>{chat_id}</code>\n\n"
+                    "Владелец: откройте кабинет Voksy AI → настройки Telegram-бота и нажмите "
+                    "«Подключить мой Telegram» (или добавьте этот chat_id вручную).",
+                )
+            return {"ok": True}
+
+        # 6. Включён ли бот (чат уже подключён, но тумблер в кабинете выключен)
+        if not agent.telegram_enabled:
+            logger.info(f"[AGENT-TG] Webhook ignored: bot disabled (agent {agent.id})")
+            if _notice_due(agent.id, chat_id, "disabled"):
+                await AgentTelegramService.send_message(
+                    agent.telegram_bot_token, chat_id,
+                    "Управление через Telegram выключено. Включите тумблер «Включён» в кабинете: "
+                    "настройки Telegram-бота агента.",
+                )
             return {"ok": True}
 
         # 7. Текст или голосовое (voice → распознаём в текст через STT)

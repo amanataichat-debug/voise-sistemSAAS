@@ -1117,6 +1117,7 @@
       '<div>' + (noChats ? 'Чат не привязан' : 'Привязано чатов: ' + chats.length) + (t.enabled ? '' : ' · оповещения выключены') + '</div></div>' +
       (t.link_url ? '<a class="btn btn-primary btn-sm" id="n-link" href="' + esc(t.link_url) + '" target="_blank" rel="noopener">' + icon('send') + '<span>Подключить мой Telegram</span></a>' : '') + '</div>' +
 
+      '<div class="st-note" style="margin-top:14px">В подключённом чате бот отвечает и на ваши вопросы: «какая статистика за неделю», «найди клиента Айбек», «какие задачи». На тарифе Старт он только читает данные и отвечает; команды «позвони», «напиши», «поставь задачу» доступны на тарифе Profi.</div>' +
       '<div class="st-switch-row" style="margin-top:14px"><div class="t"><b>Оповещения включены</b><div>Общий выключатель. Выключите, если пока не хотите получать сообщения.</div></div>' +
       '<label class="switch"><input type="checkbox" id="n-on"' + (t.enabled ? ' checked' : '') + '><span class="track"></span></label></div>' +
       '<div class="st-sub-h" style="margin-top:14px">Что присылать</div>' +
