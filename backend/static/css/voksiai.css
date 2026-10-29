@@ -512,6 +512,10 @@ html:has(body.vf) { scrollbar-width: thin; scrollbar-color: var(--vf-border-stro
 }
 .theme-toggle:hover { color: var(--vf-text); background: var(--vf-surface-2); border-color: var(--vf-border-strong); }
 .theme-toggle i { font-size: 15px; }
+.theme-toggle .ic { width: 17px; height: 17px; }
+.theme-toggle .ic-sun { display: none; }
+[data-theme="dark"] .theme-toggle .ic-sun { display: block; }
+[data-theme="dark"] .theme-toggle .ic-moon { display: none; }
 .theme-toggle[aria-pressed="true"] { color: var(--vf-accent); border-color: color-mix(in srgb, var(--vf-accent) 50%, var(--vf-border)); }
 /* Внутри agent.html (своя .top-nav) .icon-btn.theme-toggle подхватывает стили .icon-btn */
 .top-nav .theme-toggle, .nav-right .theme-toggle { width: 34px; height: 34px; border: 0; background: transparent; border-radius: 9px; }
@@ -521,3 +525,7 @@ html:has(body.vf) { scrollbar-width: thin; scrollbar-color: var(--vf-border-stro
    глиф самого Font Awesome (::before) гасим, иначе иконка рисуется дважды.
    Иконки без аналога в спрайте класса .vf-fa не получают и остаются глифом FA. */
 i.vf-fa::before, span.vf-fa::before, i.vf-fa::after, span.vf-fa::after { content: none !important; display: none !important; }
+
+/* Старые страницы кабинета закрывают экран белой пеленой на время загрузки — в тёмной теме это выглядит как белая вспышка */
+[data-theme="dark"] .loading-overlay { background-color: color-mix(in srgb, var(--vf-bg) 82%, transparent) !important; }
+[data-theme="dark"] .payment-loading { background-color: color-mix(in srgb, var(--vf-surface) 96%, transparent) !important; }

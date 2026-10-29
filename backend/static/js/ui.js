@@ -699,7 +699,13 @@
   global.VF = VF;
 
   // Автозапуск: загрузчик сразу, каркас после DOM. Страховка: спрятать через 6 с.
-  if (document.documentElement.hasAttribute('data-vf-loader')) {
+  // Полноэкранная заставка «Загружаем кабинет…» нужна один раз за вкладку (первый вход). При переходах
+  // между страницами кабинета она закрывала меню и шапку чёрным экраном с логотипом на 0,3–2 с, и
+  // интерфейс выглядел «сломанным»: меню исчезало и появлялось снова. Дальше каркас остаётся на
+  // месте, а данные подгружаются под скелетонами.
+  var shellSeen = false;
+  try { shellSeen = sessionStorage.getItem('vf_shell_seen') === '1'; sessionStorage.setItem('vf_shell_seen', '1'); } catch (e) { /* ignore */ }
+  if (document.documentElement.hasAttribute('data-vf-loader') && !shellSeen) {
     if (document.body) loader.ensure(); else document.addEventListener('DOMContentLoaded', function () { loader.ensure(); });
     setTimeout(function () { loader.hide(); }, 6000);
     // Страницы без VF.ready() (data-vf-loader="auto"): прячем загрузчик, когда DOM готов

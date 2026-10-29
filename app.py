@@ -336,7 +336,8 @@ class _CabinetStaticFiles(StaticFiles):
     def file_response(self, full_path, stat_result, scope, status_code=200):
         response = super().file_response(full_path, stat_result, scope, status_code=status_code)
         path = str(full_path)
-        if self._HASHED.search(path):
+        if self._HASHED.search(path) or path.lower().endswith(".woff2"):
+            # шрифты кабинета (static/fonts) не меняются под тем же именем: новый шрифт — новый файл
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         elif path.lower().endswith(self._REVALIDATE):
             response.headers["Cache-Control"] = "no-cache"

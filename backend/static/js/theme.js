@@ -37,6 +37,9 @@
   }
   function apply(pref){
     const r = resolved(pref);
+    // inline-фон из <head> нужен только до загрузки стилей; дальше фон задают css-переменные темы
+    document.documentElement.style.removeProperty('background-color');
+    document.documentElement.style.removeProperty('color-scheme');
     if(r === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     else document.documentElement.removeAttribute('data-theme');
     updateButtons(r);
@@ -65,12 +68,12 @@
   window.setTheme = function(v){ writePref(v); apply(v); };
   window.toggleTheme = toggle;
 
+  // Клик ловим на документе: кнопку темы sidebar.js создаёт ПОСЛЕ этого скрипта, и привязка
+  // обработчика к уже существующим кнопкам её пропускала — переключатель не работал.
+  document.addEventListener('click', function(e){
+    if(e.target.closest && e.target.closest('.theme-toggle, #theme-toggle')) toggle();
+  });
   function wireButtons(){
-    document.querySelectorAll('.theme-toggle, #theme-toggle').forEach(btn => {
-      if(btn.dataset.vsBound) return;
-      btn.dataset.vsBound = '1';
-      btn.addEventListener('click', toggle);
-    });
     // Обновим внешний вид (если кнопки появились после начальной отрисовки)
     updateButtons(resolved(readPref()));
   }

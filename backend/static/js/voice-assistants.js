@@ -190,7 +190,7 @@
     return Promise.all([
       api(BASE + '/options').then(function (o) { state.options = o || {}; }, function () { state.options = {}; }),
       api(BASE + '/status').then(function (s) { state.status = s || null; }, function () {})
-    ]).then(function () { if (state.items.length) renderList(); });   // названия языков в карточках приходят с опциями
+    ]);
   }
 
   // ------------------------------------------------------------------
@@ -934,11 +934,12 @@
   // ------------------------------------------------------------------
   bind();
   VF.skeleton($('list-body'), 6);
-  // Список ассистентов показываем, как только он пришёл, не дожидаясь остального: каталог функций,
-  // опции голосов, коннекторы бота и лимиты подтягиваются параллельно и нужны только редактору.
-  // Раньше страница ждала всё вместе, а список запрашивала последним, и заставка висела несколько секунд.
-  var listP = loadList().then(function () { VF.ready(); });
-  var restP = Promise.all([loadUser(), loadUsage(), loadCatalog(), loadOptions(), loadBot()]);
+  // Заставка снимается, когда есть всё, что видно на первом экране: список, лимит (бейдж в шапке) и опции
+  // (названия языков в карточках). Если снять раньше, страница после заставки «прыгает»: бейдж появляется,
+  // карточки перерисовываются. Остальное нужно только редактору (каталог функций, коннекторы бота, профиль)
+  // и грузится параллельно, не задерживая показ.
+  var listP = Promise.all([loadList(), loadUsage(), loadOptions()]).then(function () { renderList(); VF.ready(); });
+  var restP = Promise.all([loadUser(), loadCatalog(), loadBot()]);
   Promise.all([listP, restP]).then(function () {
     var q = new URLSearchParams(location.search);
     var id = q.get('id'), tab = q.get('tab');

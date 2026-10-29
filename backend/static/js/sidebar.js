@@ -197,6 +197,16 @@
     return (Number(v) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ' + T('wallet.currency', 'сом');
   }
 
+  // Баланс прошлой страницы показываем сразу, пока запрос не вернулся: иначе при каждом переходе
+  // в карточке кошелька мигает «…» вместо суммы
+  function cachedBalanceText() {
+    try {
+      var c = JSON.parse(sessionStorage.getItem('vf_wallet') || 'null');
+      if (c && typeof c.balance === 'number') { walletState.balance = c.balance; return fmtSom(c.balance); }
+    } catch (e) { /* ignore */ }
+    return '…';
+  }
+
   function renderWalletCard(nav) {
     var aside = nav ? nav.closest('.sidebar') : document.querySelector('.sidebar');
     if (!aside || aside.querySelector('.vf-wallet')) return;
@@ -211,7 +221,7 @@
     card.id = 'vf-wallet-card';
     card.innerHTML =
       '<div class="vf-wallet-label">' + icon('wallet') + ' ' + T('wallet.card_title', 'Кошелёк Voksy AI') + '</div>' +
-      '<div class="vf-wallet-balance" id="vf-wallet-balance">…</div>' +
+      '<div class="vf-wallet-balance" id="vf-wallet-balance">' + cachedBalanceText() + '</div>' +
       '<button class="vf-wallet-btn" type="button" id="vf-wallet-topup">' + icon('plus') + ' ' + T('wallet.topup', 'Пополнить') + '</button>' +
       '<a class="vf-wallet-link" href="/static/settings.html#wallet">' + T('wallet.history', 'История операций') + '</a>';
     var footer = aside.querySelector('.sidebar-footer');
@@ -230,6 +240,7 @@
       walletState.min = d.min_topup || 10;
       walletState.max = d.max_topup || 100000;
       walletState.free = !!d.free;
+      try { sessionStorage.setItem('vf_wallet', JSON.stringify({ balance: walletState.balance })); } catch (e) { /* ignore */ }
       if (el) {
         el.textContent = fmtSom(walletState.balance);
         el.classList.toggle('neg', walletState.balance < 0);
@@ -305,7 +316,11 @@
     btn.type = 'button';
     btn.title = 'Переключить тему';
     btn.setAttribute('aria-pressed', 'false');
-    btn.innerHTML = '<i class="fas fa-moon"></i>';
+    // Иконки — inline-svg: на страницах кабинета нет Font Awesome, и кнопка была пустым квадратом.
+    // Какая из двух видна, решает css по data-theme на <html>.
+    var svg = '<svg class="ic ic-%s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">%s</svg>';
+    btn.innerHTML = svg.replace('%s', 'moon').replace('%s', '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>') +
+      svg.replace('%s', 'sun').replace('%s', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>');
     var userMenu = bar.querySelector('.user-menu');
     if (userMenu) userMenu.parentNode.insertBefore(btn, userMenu);
     else bar.insertBefore(btn, bar.firstChild);
@@ -344,7 +359,7 @@
   // ---------------------------------------------------------------------
   function logout() {
     try { localStorage.removeItem('auth_token'); } catch (e) { /* ignore */ }
-    try { sessionStorage.removeItem('vf_is_admin'); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem('vf_is_admin'); sessionStorage.removeItem('vf_wallet'); } catch (e) { /* ignore */ }
     window.location.href = '/';
   }
   document.addEventListener('click', function (e) {
