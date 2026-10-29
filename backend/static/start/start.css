@@ -263,3 +263,15 @@
 .st-swatch .ic { width: 14px; height: 14px; opacity: 0; }
 .st-swatch.on { border-color: var(--vf-text); }
 .st-swatch.on .ic { opacity: 1; }
+
+/* ── Вкладки страницы «Чат-бот» ───────────────────────────────────────────── */
+.st-bot-main > section { display: none; }
+.st-bot-main > section.active { display: block; }
+.st-steps { margin: 0 0 16px 18px; padding: 0; line-height: 1.75; color: var(--vf-text-2); font-size: 14px; }
+.st-steps code, .st-details code, .note code { background: var(--vf-surface-3); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+.st-steps a, .st-details a { color: var(--vf-accent); }
+.st-details { margin-top: 12px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); padding: 10px 14px; background: var(--vf-surface-2); }
+.st-details summary { cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.st-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-sm); margin-top: 8px; cursor: pointer; }
+.st-opt:has(input:checked) { border-color: var(--vf-accent); background: var(--vf-accent-soft); }
+.st-opt small { display: block; color: var(--vf-text-3); font-size: 12.5px; margin-top: 2px; }

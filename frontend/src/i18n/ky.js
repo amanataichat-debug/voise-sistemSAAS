@@ -405,6 +405,7 @@ export default {
       tel_in: 'кирүүчү жана баскыч',
       tel_full: 'кирүүчү жана чалуулар',
       reply: 'кардарга жооп берет',
+      docs_reply: 'кардар сураганда',
       credits: 'айына 20 000',
       credits_start: 'айына 10 000',
       credits_trial: '1 500 бир жолу',

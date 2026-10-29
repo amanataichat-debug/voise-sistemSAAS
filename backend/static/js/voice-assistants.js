@@ -154,6 +154,37 @@
   }
   function loadUsage() { return api('/api/subscriptions/assistants-usage').then(function (u) { state.usage = u; renderUsage(); }, function () { state.usage = null; renderUsage(); }); }
   function loadUser() { return api('/api/users/me').then(function (u) { state.user = u; }, function () {}); }
+  // Чат-бот владельца: его коннекторы (Google) и база знаний используют функции ассистента
+  function loadBot() {
+    return api('/api/agent/list').then(function (d) {
+      var a = d && d.agents && d.agents[0];
+      state.bot = a ? { agent: a, conn: {} } : null;
+      if (!a) return;
+      return api('/api/agent/connectors').then(function (c) {
+        ((c && c.connectors) || []).forEach(function (x) { state.bot.conn[x.toolkit] = x; });
+      }, function () { /* коннекторы недоступны: покажем «не подключено» */ });
+    }, function () { state.bot = null; });
+  }
+  function botHref(hash) {
+    var mode = ''; try { mode = localStorage.getItem('vf_agent_mode') || ''; } catch (e) { /* ignore */ }
+    return mode === 'reactive' ? '/static/start-bot.html' + (hash || '') : '/static/agent.html';
+  }
+  // Что нужно функции, чтобы она сработала: чат-бот (знания, клиенты) или подключённый Google
+  var FN_NEEDS = {
+    google_calendar_create_event: 'google_calendar', google_calendar_find_events: 'google_calendar',
+    gmail_send_email: 'gmail', gmail_fetch_emails: 'gmail',
+    search_knowledge_base: 'bot', find_products: 'bot', find_client: 'bot'
+  };
+  function needHtml(name) {
+    var need = FN_NEEDS[name];
+    if (!need) return '';
+    var b = state.bot;
+    if (!b) return '<div class="f-req warn">Нужен чат-бот. <a href="' + botHref('') + '" data-stop>Создать</a></div>';
+    if (need === 'bot') return '<div class="f-req ok">Берёт данные из чат-бота «' + esc(b.agent.name || '') + '»</div>';
+    var c = b.conn[need];
+    if (c && c.connected) return '<div class="f-req ok">Подключено' + (c.connected_email ? ': ' + esc(c.connected_email) : '') + '</div>';
+    return '<div class="f-req warn">Google не подключён. <a href="' + botHref('#s-channels') + '" data-stop>Подключить в «Чат-бот» → «Каналы»</a></div>';
+  }
   function loadCatalog() { return api('/api/functions/').then(function (d) { state.catalog = Array.isArray(d) ? d : null; }, function () { state.catalog = null; }); }
   function loadOptions() {
     return Promise.all([
@@ -529,8 +560,11 @@
     box.innerHTML = state.catalog.map(function (fn) {
       var on = f.functions.indexOf(fn.name) !== -1;
       return '<label class="func' + (on ? ' on' : '') + '" data-name="' + esc(fn.name) + '"><span class="switch"><input type="checkbox"' + (on ? ' checked' : '') + '><span class="track"></span></span>' +
-        '<span><div class="f-name">' + esc(fn.display_name || fn.name) + '</div><div class="f-desc">' + esc(fn.description || '') + '</div></span></label>';
+        '<span><div class="f-name">' + esc(fn.display_name || fn.name) + '</div><div class="f-desc">' + esc(fn.description || '') + '</div>' + needHtml(fn.name) + '</span></label>';
     }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-stop]'), function (a) {
+      a.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
     Array.prototype.forEach.call(box.querySelectorAll('.func'), function (el) {
       var cb = el.querySelector('input');
       cb.addEventListener('change', function () {
@@ -729,7 +763,36 @@
   // База знаний ассистента (одна на ассистента)
   // ------------------------------------------------------------------
   var kbModal = null;
+  // Карточка «База знаний чат-бота»: общая база (вопрос-ответ, каталог, файлы) как источник ответов ассистента
+  function drawBotKb() {
+    var holder = $('botkb-block'); if (!holder) return;
+    var b = state.bot, cur = state.current;
+    if (!b) {
+      holder.innerHTML = '<div class="block-title">База знаний чат-бота</div><p class="block-sub">Общая база для бота и голосовых ассистентов: вопросы-ответы, каталог с фото, файлы. Создайте чат-бота, и ассистент сможет искать в ней ответы.</p>' +
+        '<a class="btn btn-sm" href="' + botHref('') + '">Создать чат-бота</a>';
+      return;
+    }
+    var names = cur ? fnNames(cur.functions) : [];
+    var kbOn = names.indexOf('search_knowledge_base') !== -1, prodOn = names.indexOf('find_products') !== -1;
+    holder.innerHTML = '<div class="block-title">База знаний чат-бота «' + esc(b.agent.name || '') + '»</div>' +
+      '<p class="block-sub">Одна база на всё: что вы добавили боту (вопросы-ответы, о компании, каталог, файлы), ассистент находит и в разговоре. Редактировать её нужно в «Чат-бот» → «База знаний».</p>' +
+      '<div class="funcs" id="botkb-funcs"><label class="func' + (kbOn ? ' on' : '') + '"><span class="switch"><input type="checkbox" data-fn="search_knowledge_base"' + (kbOn ? ' checked' : '') + (cur ? '' : ' disabled') + '><span class="track"></span></span><span><div class="f-name">Искать в базе знаний бота</div><div class="f-desc">Ответы, цены и содержимое файлов.</div></span></label>' +
+      '<label class="func' + (prodOn ? ' on' : '') + '"><span class="switch"><input type="checkbox" data-fn="find_products"' + (prodOn ? ' checked' : '') + (cur ? '' : ' disabled') + '><span class="track"></span></span><span><div class="f-name">Каталог товаров</div><div class="f-desc">Подбор по цене и наличию, фото позиций.</div></span></label></div>' +
+      '<div style="margin-top:10px"><a class="btn btn-sm" href="' + botHref('#s-kb') + '">Открыть базу знаний бота</a></div>' +
+      (cur ? '' : '<p class="faint small" style="margin-top:8px">Сохраните ассистента, чтобы включить эти функции.</p>');
+    Array.prototype.forEach.call(holder.querySelectorAll('input[data-fn]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var list = fnNames(state.current.functions), n = cb.getAttribute('data-fn'), i = list.indexOf(n);
+        if (cb.checked && i === -1) list.push(n);
+        if (!cb.checked && i !== -1) list.splice(i, 1);
+        cb.disabled = true;
+        saveFunctionsOnly(list).then(function () { VF.toast('Сохранено', { type: 'success' }); drawBotKb(); },
+          function (e) { cb.checked = !cb.checked; cb.disabled = false; VF.toast(e.message, { type: 'error' }); });
+      });
+    });
+  }
   function renderKb() {
+    drawBotKb();
     var box = $('kb-box'), cur = state.current;
     if (!cur) { box.innerHTML = emptyBox('save', t('save_first'), t('save_first_text')); return; }
     box.innerHTML = '<div class="skeleton" style="height:120px"></div>';
@@ -871,7 +934,7 @@
   // ------------------------------------------------------------------
   bind();
   VF.skeleton($('list-body'), 6);
-  Promise.all([loadUser(), loadUsage(), loadCatalog(), loadOptions()]).then(loadList).then(function () {
+  Promise.all([loadUser(), loadUsage(), loadCatalog(), loadOptions(), loadBot()]).then(loadList).then(function () {
     var q = new URLSearchParams(location.search);
     var id = q.get('id'), tab = q.get('tab');
     if (id) {

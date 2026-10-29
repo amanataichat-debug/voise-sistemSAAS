@@ -9,6 +9,8 @@ send_telegram_notification из PostCall-оркестратора.
 Старые users.telegram_* (общесистемные уведомления о звонках) не трогаются.
 """
 
+import hashlib
+import hmac
 from datetime import datetime
 from typing import Optional
 
@@ -77,6 +79,25 @@ def _get_agent(current_user: User, db: Session, agent_id: Optional[str] = None) 
     return agent
 
 
+def _owner_link_code(agent: AgentConfig) -> Optional[str]:
+    """
+    Код привязки чата владельца: HMAC от секрета webhook. Попадает только в ссылку
+    t.me/<бот>?start=owner_<код>, которую видит владелец в кабинете; по коду нельзя
+    восстановить сам секрет.
+    """
+    secret = agent.telegram_webhook_secret
+    if not secret:
+        return None
+    return hmac.new(secret.encode(), b"owner-link", hashlib.sha256).hexdigest()[:20]
+
+
+def _owner_link_url(agent: AgentConfig) -> Optional[str]:
+    code = _owner_link_code(agent)
+    if not code or not agent.telegram_bot_username:
+        return None
+    return f"https://t.me/{agent.telegram_bot_username}?start=owner_{code}"
+
+
 def _settings_dict(agent: AgentConfig) -> dict:
     """Сериализация настроек Telegram (без раскрытия токена/секрета целиком)."""
     is_configured = agent.has_telegram_bot()
@@ -90,6 +111,8 @@ def _settings_dict(agent: AgentConfig) -> dict:
         "bot_username": agent.telegram_bot_username,
         "bot_token_masked": token_masked,
         "chat_ids": agent.telegram_chat_ids or [],
+        # Ссылка «Подключить мой Telegram»: нажатие Start в боте привязывает чат без ввода chat_id
+        "link_url": _owner_link_url(agent) if is_configured else None,
         # Оповещения владельцу (services/owner_notifications.py)
         "notify": {
             "new_lead": bool(getattr(agent, "notify_new_lead", True)),
@@ -378,6 +401,59 @@ async def test_telegram(
 # ENDPOINT — WEBHOOK (public, no auth)
 # ============================================================================
 
+async def _handle_owner_link(agent: AgentConfig, message: dict, db: Session) -> bool:
+    """
+    /start от владельца: с верным кодом привязывает чат и включает оповещения;
+    из чужого, ещё не привязанного чата отвечает его chat_id (чтобы можно было добавить вручную).
+    True — сообщение обработано здесь.
+    """
+    text = (message.get("text") or "").strip()
+    if not text.startswith("/start"):
+        return False
+    chat = message.get("chat") or {}
+    chat_id = str(chat.get("id", ""))
+    if not chat_id:
+        return False
+    payload = text[len("/start"):].strip()
+    known = chat_id in agent.get_telegram_chat_ids_list()
+    token = agent.telegram_bot_token
+    code = _owner_link_code(agent)
+
+    if code and payload and hmac.compare_digest(payload, f"owner_{code}"):
+        if not known:
+            title = chat.get("title") or " ".join(
+                p for p in (chat.get("first_name"), chat.get("last_name")) if p
+            ) or (("@" + chat["username"]) if chat.get("username") else None)
+            chats = list(agent.telegram_chat_ids or [])
+            chats.append({
+                "chat_id": chat_id,
+                "title": title,
+                "type": chat.get("type") if chat.get("type") in VALID_CHAT_TYPES else None,
+                "added_at": datetime.utcnow().isoformat(),
+            })
+            agent.telegram_chat_ids = chats
+            flag_modified(agent, "telegram_chat_ids")
+        agent.telegram_enabled = True
+        db.commit()
+        logger.info(f"[AGENT-TG] Owner chat {chat_id} linked by deep link (agent {agent.id})")
+        await AgentTelegramService.send_message(
+            token, chat_id,
+            "✅ Готово. Сюда я буду присылать оповещения: новые клиенты, итоги звонков и итоги дня. "
+            "Что именно присылать, настраивается в кабинете: «Чат-бот» → «Оповещения».",
+        )
+        return True
+
+    if not known:
+        await AgentTelegramService.send_message(
+            token, chat_id,
+            f"Этот чат пока не подключён к оповещениям.\n\nЕго chat_id: <code>{chat_id}</code>\n\n"
+            "Откройте кабинет → «Чат-бот» → «Оповещения» и нажмите «Подключить мой Telegram» "
+            "или вставьте этот chat_id вручную.",
+        )
+        return True
+    return False
+
+
 @router.post("/webhook/{secret}")
 async def telegram_webhook(
     secret: str,
@@ -402,12 +478,7 @@ async def telegram_webhook(
             logger.warning(f"[AGENT-TG] Webhook secret header mismatch for agent {agent.id}")
             return {"ok": True}
 
-        # 3. Включён ли бот
-        if not agent.telegram_enabled:
-            logger.info(f"[AGENT-TG] Webhook ignored: bot disabled (agent {agent.id})")
-            return {"ok": True}
-
-        # 4. Распарсить update
+        # 3. Распарсить update
         try:
             update = await request.json()
         except Exception:
@@ -417,7 +488,17 @@ async def telegram_webhook(
         if not message or not isinstance(message, dict):
             return {"ok": True}
 
-        # 5. chat_id в списке разрешённых?
+        # 4. «/start owner_<код>» — привязка чата владельца по ссылке из кабинета.
+        #    Работает и при выключенном боте: оповещения как раз включаются привязкой.
+        if await _handle_owner_link(agent, message, db):
+            return {"ok": True}
+
+        # 5. Включён ли бот
+        if not agent.telegram_enabled:
+            logger.info(f"[AGENT-TG] Webhook ignored: bot disabled (agent {agent.id})")
+            return {"ok": True}
+
+        # 6. chat_id в списке разрешённых?
         chat = message.get("chat", {})
         chat_id = str(chat.get("id", ""))
         if not chat_id or chat_id not in agent.get_telegram_chat_ids_list():
@@ -427,7 +508,7 @@ async def telegram_webhook(
             )
             return {"ok": True}
 
-        # 6. Текст или голосовое (voice → распознаём в текст через STT)
+        # 7. Текст или голосовое (voice → распознаём в текст через STT)
         text = message.get("text")
         if not text:
             voice = message.get("voice")
@@ -454,10 +535,10 @@ async def telegram_webhook(
                 )
                 return {"ok": True}
 
-        # 7. Отправитель
+        # 8. Отправитель
         from_user = message.get("from", {}) or {}
 
-        # 8. Обработать
+        # 9. Обработать
         logger.info(f"[AGENT-TG] Incoming message from chat {chat_id} (agent {agent.id}): {text[:80]!r}")
         await process_telegram_message(
             agent=agent,

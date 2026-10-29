@@ -40,31 +40,24 @@
     });
   });
 
+  // Каждый раздел — отдельная вкладка: слева меню, справа один раздел. Адрес #s-kb открывает «База знаний»
+  var TAB_ALIAS = { knowledge: 's-kb', channels: 's-channels', instructions: 's-instr', notify: 's-notify' };
+  function showSection(id, push) {
+    if (!document.getElementById(id)) id = 's-main';
+    S.$$('.st-bot-main > section').forEach(function (el) { el.classList.toggle('active', el.id === id); });
+    S.$$('.st-nav a').forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + id); });
+    try { if (push !== false) history.replaceState(null, '', '#' + id); } catch (e) { /* ignore */ }
+    var top = S.$('.st-bot-layout'); if (top && window.scrollY > top.offsetTop) window.scrollTo(0, 0);
+  }
   function setupScroll() {
-    var links = S.$$('.st-nav a');
-    var map = {};
-    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
-    function spy() {
-      var best = null;
-      SECTIONS.forEach(function (s) {
-        var el = document.getElementById(s[0]);
-        if (el && el.getBoundingClientRect().top < 140) best = s[0];
-      });
-      links.forEach(function (a) { a.classList.remove('active'); });
-      if (best && map[best]) map[best].classList.add('active');
-    }
-    window.addEventListener('scroll', S.debounce(spy, 60), { passive: true });
-    links.forEach(function (a) {
-      a.addEventListener('click', function (e) {
-        e.preventDefault();
-        var el = document.getElementById(a.getAttribute('href').slice(1));
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+    S.$$('.st-nav a').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); showSection(a.getAttribute('href').slice(1)); });
     });
-    spy();
     var h = (location.hash || '').replace('#', '');
-    if (h === 'knowledge') h = 's-kb';
-    if (h && document.getElementById(h)) setTimeout(function () { document.getElementById(h).scrollIntoView(); }, 80);
+    showSection(TAB_ALIAS[h] || h || 's-main', false);
+    window.addEventListener('hashchange', function () {
+      var x = (location.hash || '').replace('#', ''); showSection(TAB_ALIAS[x] || x || 's-main', false);
+    });
   }
 
   // ══════════════════════════════ СОЗДАНИЕ БОТА ════════════════════════════
@@ -277,28 +270,64 @@
   }
 
   // ══════════════════════════════ ИНСТРУКЦИИ ═══════════════════════════════
+  var TPL_CHAT = 'Роль: ты менеджер компании. Отвечаешь клиентам в WhatsApp, Instagram и Telegram.\n\n' +
+    'Как общаться: коротко, дружелюбно, на «вы». Одно-два предложения, без длинных списков. Отвечай на языке клиента.\n\n' +
+    'Что делать: сначала выясни, что нужно клиенту. Предложи подходящий товар или услугу и назови цену из базы знаний. Когда клиент готов, уточни имя и телефон и запиши заявку.\n\n' +
+    'Файлы и фото: когда клиент просит прайс, каталог или фото товара, отправь нужный файл из библиотеки и добавь одну короткую фразу. Договор и счёт отправляй только по просьбе клиента.\n\n' +
+    'Если не знаешь ответ: не выдумывай. Скажи, что уточнишь, и передай клиента владельцу.\n\n' +
+    'Когда передавать владельцу: клиент недоволен, просит скидку, хочет встретиться или говорит о крупном заказе.';
+  var TPL_VOICE = 'Говори спокойно и дружелюбно, не торопись. Сначала поздоровайся и назови компанию. Задавай по одному вопросу за раз. ' +
+    'Цены и адреса называй медленно. Если клиент просит прислать подробности, скажи, что отправишь в WhatsApp. ' +
+    'Если не уверен в ответе, не выдумывай, скажи, что уточнишь, и предложи перезвонить.';
+
   function fillInstr() {
     var b = S.$('#b-instr');
-    b.innerHTML = DOCS.map(function (d) {
-      return '<div class="field"><label class="label" for="i-' + d[0] + '">' + esc(d[1]) + '</label><textarea class="textarea" id="i-' + d[0] + '" rows="3" placeholder="' + esc(d[3]) + '">' + esc(A[d[0]] || '') + '</textarea><div class="hint">' + esc(d[2]) + '</div></div>';
-    }).join('') +
-      '<div class="field"><label class="label" for="i-add">Дополнительные правила для переписки</label><textarea class="textarea" id="i-add" rows="3" placeholder="Например: не называть скидки, сложные вопросы передавать владельцу">' + esc(A.additional_instructions || '') + '</textarea></div>' +
-      '<div class="field"><label class="label" for="i-vadd">Дополнительные правила для звонков</label><textarea class="textarea" id="i-vadd" rows="3" placeholder="Например: говорить медленно, всегда уточнять имя">' + esc(A.voice_additional_instructions || '') + '</textarea></div>' +
-      '<button class="btn btn-primary" id="i-save" type="button">Сохранить инструкции</button>';
-    S.$('#i-save').addEventListener('click', function () {
-      var body = { additional_instructions: S.$('#i-add').value, voice_additional_instructions: S.$('#i-vadd').value };
+    b.innerHTML =
+      '<div class="note" style="margin-bottom:18px"><div>Здесь вы объясняете боту, как работать. <b>Главная инструкция</b> действует в переписке (WhatsApp, Telegram, Instagram, почта) и при разборе звонков. ' +
+      '<b>Инструкция для звонков</b> действует, когда клиент звонит боту. Ниже ещё блок «О бизнесе» с фактами о компании.</div></div>' +
+
+      '<div class="st-sub-h">Главная инструкция бота (переписка)</div>' +
+      '<div class="field"><textarea class="textarea st-textarea-lg" id="i-add" rows="10" placeholder="Как общаться, когда отправлять файлы, что делать, если не знает ответ, когда передавать вам клиента">' + esc(A.additional_instructions || '') + '</textarea>' +
+      '<div class="hint">Пишите так, как объясняли бы новому сотруднику: как вежливо общаться, в какой момент отправлять файлы и фото, что узнавать у клиента, когда звать вас. Чем конкретнее, тем лучше ответы.</div></div>' +
+      '<div class="row" style="gap:8px"><button class="btn btn-primary" id="i-save-chat" type="button">Сохранить</button><button class="btn" id="i-tpl-chat" type="button">' + icon('wand-2') + '<span>Вставить шаблон</span></button></div>' +
+
+      '<div class="st-sub-h" style="margin-top:26px">Инструкция для звонков</div>' +
+      '<div class="field"><textarea class="textarea" id="i-vadd" rows="6" placeholder="Стиль общения по телефону, манера, что говорить и чего не говорить">' + esc(A.voice_additional_instructions || '') + '</textarea>' +
+      '<div class="hint">Как бот звучит и ведёт себя в телефонном разговоре: темп, тон, что уточнять, как заканчивать звонок. Знания из базы бот берёт сам.</div></div>' +
+      '<div class="row" style="gap:8px"><button class="btn btn-primary" id="i-save-voice" type="button">Сохранить</button><button class="btn" id="i-tpl-voice" type="button">' + icon('wand-2') + '<span>Вставить шаблон</span></button></div>' +
+
+      '<div class="st-sub-h" style="margin-top:26px">О бизнесе</div>' +
+      DOCS.map(function (d) {
+        return '<div class="field"><label class="label" for="i-' + d[0] + '">' + esc(d[1]) + '</label><textarea class="textarea" id="i-' + d[0] + '" rows="3" placeholder="' + esc(d[3]) + '">' + esc(A[d[0]] || '') + '</textarea><div class="hint">' + esc(d[2]) + '</div></div>';
+      }).join('') +
+      '<button class="btn btn-primary" id="i-save-docs" type="button">Сохранить «О бизнесе»</button>';
+
+    function saveBody(body, btn, msg) {
+      btn.disabled = true;
+      put(body).then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        Object.keys(body).forEach(function (k) { A[k] = body[k]; });
+        S.toast(msg, 'success');
+      });
+    }
+    function tpl(id, text) {
+      var el = S.$(id);
+      if (el.value.trim() && !window.confirm('Заменить текст шаблоном?')) return;
+      el.value = text; el.focus();
+    }
+    S.$('#i-tpl-chat').addEventListener('click', function () { tpl('#i-add', TPL_CHAT); });
+    S.$('#i-tpl-voice').addEventListener('click', function () { tpl('#i-vadd', TPL_VOICE); });
+    S.$('#i-save-chat').addEventListener('click', function () { saveBody({ additional_instructions: S.$('#i-add').value }, this, 'Инструкция для переписки сохранена'); });
+    S.$('#i-save-voice').addEventListener('click', function () { saveBody({ voice_additional_instructions: S.$('#i-vadd').value }, this, 'Инструкция для звонков сохранена'); });
+    S.$('#i-save-docs').addEventListener('click', function () {
+      var body = {};
       for (var i = 0; i < DOCS.length; i++) {
         var v = S.$('#i-' + DOCS[i][0]).value.trim();
         if (!v) { S.toast('Поле «' + DOCS[i][1] + '» не должно быть пустым', 'error'); return; }
         body[DOCS[i][0]] = v;
       }
-      var btn = this; btn.disabled = true;
-      put(body).then(function (r) {
-        btn.disabled = false;
-        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-        Object.keys(body).forEach(function (k) { A[k] = body[k]; });
-        S.toast('Инструкции сохранены', 'success');
-      });
+      saveBody(body, this, 'Сохранено');
     });
   }
 
@@ -649,12 +678,12 @@
     var html = '';
     // WhatsApp
     if (!wa || !wa.configured) html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Недоступно на сервере, напишите в поддержку', '');
-    else if (wa.status === 'connected') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Подключён: ' + esc(wa.phone_masked || '') + (wa.wa_name ? ' · ' + esc(wa.wa_name) : '') + (wa.auto_reply_enabled ? '' : ' · автоответ выключен'), btn('wa-set', 'Настройки') + btn('wa-off', 'Отключить', 'btn-ghost'));
+    else if (wa.status === 'connected') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Подключён: ' + esc(wa.phone_masked || '') + (wa.wa_name ? ' · ' + esc(wa.wa_name) : '') + scopeText(wa), btn('wa-set', 'Настройки') + btn('wa-off', 'Отключить', 'btn-ghost'));
     else if (wa.status === 'pending_qr') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Ждём сканирования QR-кода', btn('wa-on', 'Показать QR', 'btn-primary'));
     else html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Бот отвечает клиентам на ваш номер WhatsApp', btn('wa-on', 'Подключить', 'btn-primary'));
     // Telegram личный
     if (!tg || !tg.configured) html += chRow('#229ED9', 'send', 'Telegram', 'Недоступно на сервере, напишите в поддержку', '');
-    else if (tg.status === 'connected') html += chRow('#229ED9', 'send', 'Telegram', 'Подключён: ' + esc(tg.tg_username ? '@' + tg.tg_username : (tg.tg_first_name || tg.phone_masked || '')) + (tg.auto_reply_enabled ? '' : ' · автоответ выключен'), btn('tg-set', 'Настройки') + btn('tg-off', 'Отключить', 'btn-ghost'));
+    else if (tg.status === 'connected') html += chRow('#229ED9', 'send', 'Telegram', 'Подключён: ' + esc(tg.tg_username ? '@' + tg.tg_username : (tg.tg_first_name || tg.phone_masked || '')) + scopeText(tg), btn('tg-set', 'Настройки') + btn('tg-off', 'Отключить', 'btn-ghost'));
     else if (tg.status === 'pending_code' || tg.status === 'pending_password') html += chRow('#229ED9', 'send', 'Telegram', 'Подключение не завершено', btn('tg-on', 'Продолжить', 'btn-primary'));
     else html += chRow('#229ED9', 'send', 'Telegram', 'Бот отвечает от имени вашего личного аккаунта Telegram', btn('tg-on', 'Подключить', 'btn-primary'));
     // Instagram
@@ -672,6 +701,31 @@
     on('gcal-on', function () { connectToolkit('google_calendar'); }); on('gcal-off', function () { disconnect('Google Календарь', '/connectors/google_calendar'); });
     on('ig-on', function () { connectToolkit('instagram'); }); on('ig-set', function () { settingsDialog('Instagram', '/connectors/instagram/settings', ch.ig, false, true); }); on('ig-off', function () { disconnect('Instagram', '/connectors/instagram'); });
   }
+  // Кому отвечает бот. 'contacts' — только клиентам, уже заведённым в CRM: новые люди без ответа, поэтому подсвечиваем
+  function scopeText(c) {
+    if (!c.auto_reply_enabled) return ' · <span style="color:var(--vf-warning)">автоответ выключен</span>';
+    return c.reply_scope === 'all' ? ' · отвечает всем, кто пишет'
+      : ' · <span style="color:var(--vf-warning)">отвечает только клиентам из CRM, новым не ответит</span>';
+  }
+
+  // Шаг после подключения: кому отвечать. Без явного выбора новые клиенты остались бы без ответа
+  function scopeStep(box, path, onDone) {
+    box.innerHTML = '<div style="text-align:left;width:100%"><b>Кому отвечать боту?</b>' +
+      '<label class="st-opt"><input type="radio" name="sc" value="all"><span><b>Всем, кто пишет</b><small>Каждый новый человек сразу попадёт в CRM, и бот ему ответит. Подходит для рабочего номера.</small></span></label>' +
+      '<label class="st-opt"><input type="radio" name="sc" value="contacts"><span><b>Только клиентам из CRM</b><small>Знакомым и друзьям бот не ответит. Новых клиентов нужно добавлять вручную.</small></span></label>' +
+      '<button class="btn btn-primary" id="sc-go" type="button" disabled style="margin-top:10px">Сохранить</button></div>';
+    var go = S.$('#sc-go', box);
+    S.$$('input[name="sc"]', box).forEach(function (r) { r.addEventListener('change', function () { go.disabled = false; }); });
+    go.addEventListener('click', function () {
+      var v = S.$('input[name="sc"]:checked', box).value;
+      go.disabled = true;
+      S.api(path, { method: 'PATCH', body: { reply_scope: v, auto_reply_enabled: true } }).then(function (r) {
+        if (!r.ok) { go.disabled = false; S.toast(S.apiError(r), 'error'); return; }
+        S.toast('Готово', 'success'); onDone();
+      });
+    });
+  }
+
   function connRow(id, ic, color, name, sub, label, c) {
     if (!ch.igCfg || !c || !c.available) return chRow(color, ic, name, 'Недоступно на сервере, напишите в поддержку', '');
     if (c.connected) return chRow(color, ic, name, 'Подключён' + (c.connected_email ? ': ' + esc(c.connected_email) : ''), btn(id + '-off', 'Отключить', 'btn-ghost'));
@@ -729,9 +783,8 @@
       var box = S.$('#wa-box', d.el); if (!box) return;
       if (s.status === 'connected') {
         clearInterval(waTimer);
-        box.innerHTML = '<div class="st-empty-ic">' + icon('circle-check') + '</div><b>WhatsApp подключён</b><div class="muted small">' + esc(s.phone_masked || '') + '</div>' +
-          '<button class="btn btn-primary" type="button" id="wa-done">Готово</button>';
-        S.$('#wa-done', d.el).addEventListener('click', d.close);
+        box.innerHTML = '<div class="st-empty-ic">' + icon('circle-check') + '</div><b>WhatsApp подключён</b><div class="muted small">' + esc(s.phone_masked || '') + '</div><div id="wa-scope" style="width:100%"></div>';
+        scopeStep(S.$('#wa-scope', d.el), '/whatsapp/settings', d.close);
         return;
       }
       box.innerHTML = (s.qr ? '<img src="' + esc(s.qr) + '" alt="QR-код">' : '<div class="skeleton" style="width:240px;height:240px"></div>') +
@@ -770,8 +823,8 @@
           call('/telegram-account/verify-password', { password: pw });
         });
       } else if (status === 'connected') {
-        box.innerHTML = '<div class="st-qr"><div class="st-empty-ic">' + icon('circle-check') + '</div><b>Telegram подключён</b><button class="btn btn-primary" type="button" id="tg-done">Готово</button></div>';
-        S.$('#tg-done', d.el).addEventListener('click', d.close);
+        box.innerHTML = '<div class="st-qr"><div class="st-empty-ic">' + icon('circle-check') + '</div><b>Telegram подключён</b><div id="tg-scope" style="width:100%"></div></div>';
+        scopeStep(S.$('#tg-scope', d.el), '/telegram-account/settings', d.close);
       } else {
         box.innerHTML = '<p class="muted" style="margin-top:0">Бот будет отвечать клиентам от имени вашего аккаунта. Введите номер телефона, к которому привязан Telegram.</p>' +
           '<div class="field"><label class="label">Номер телефона</label><input class="input" id="tg-phone" placeholder="+996 700 123 456" inputmode="tel"></div>' +
@@ -1006,47 +1059,76 @@
   }
 
   // ══════════════════════════════ ОПОВЕЩЕНИЯ ═══════════════════════════════
-  var tgBot = null;
+  // Как это работает: вы создаёте своего Telegram-бота у @BotFather и вставляете токен. Бот пишет ВАМ
+  // (в личку или в группу) о новых клиентах, итогах звонков и итогах дня. Куда именно писать, определяют
+  // привязанные чаты: привяжите свой Telegram кнопкой (нажать Start в боте) или добавьте chat_id вручную.
+  var tgBot = null, tgPoll = null;
   function loadNotify() {
     S.api('/telegram').then(function (r) { tgBot = r.ok ? r.data : null; drawNotify(); });
   }
 
   function drawNotify() {
+    clearInterval(tgPoll);
     var b = S.$('#b-notify'), t = tgBot;
     if (!t || !t.is_configured) {
-      b.innerHTML = '<p class="muted" style="margin-top:0">Создайте бота-уведомлялку в Telegram: напишите <b>@BotFather</b>, команда <code>/newbot</code>, и вставьте токен сюда.</p>' +
-        '<div class="field"><label class="label">Токен бота от @BotFather</label><input class="input" id="n-token" placeholder="123456:ABC…" autocomplete="off"></div>' +
+      b.innerHTML =
+        '<div class="note" style="margin-bottom:14px"><div>Оповещения приходят в Telegram от <b>вашего собственного бота</b>. Он нужен только для того, чтобы бот писал вам о клиентах. Создаётся за минуту.</div></div>' +
+        '<ol class="st-steps"><li>Откройте в Telegram <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>.</li>' +
+        '<li>Отправьте команду <code>/newbot</code>, придумайте имя и логин бота (логин заканчивается на <code>bot</code>).</li>' +
+        '<li>BotFather пришлёт токен вида <code>123456:ABC-DEF…</code>. Скопируйте его целиком и вставьте ниже.</li>' +
+        '<li>Нажмите «Подключить», затем «Подключить мой Telegram» и нажмите Start в боте.</li></ol>' +
+        '<div class="field"><label class="label">Токен бота</label><input class="input" id="n-token" placeholder="123456:ABC-DEF…" autocomplete="off"></div>' +
         '<button class="btn btn-primary" id="n-connect" type="button">Подключить</button>';
       on('n-connect', function () {
-        var tok = S.$('#n-token').value.trim(); if (!tok) return;
+        var tok = S.$('#n-token').value.trim(); if (!tok) { S.toast('Вставьте токен бота', 'error'); return; }
         this.disabled = true;
         S.api('/telegram', { method: 'PUT', body: { bot_token: tok } }).then(function (r) {
           if (!r.ok) { S.toast(S.apiError(r), 'error'); loadNotify(); return; }
-          tgBot = r.data; drawNotify(); S.toast('Бот подключён', 'success');
+          tgBot = r.data; drawNotify(); S.toast('Бот подключён. Теперь привяжите свой Telegram', 'success');
         });
       });
       return;
     }
     var n = t.notify || {};
-    var chats = (t.chat_ids || []);
+    var chats = t.chat_ids || [];
+    var noChats = !chats.length;
     b.innerHTML =
-      '<div class="st-switch-row" style="padding-top:0"><div class="t"><b>Оповещения включены</b><div>Бот: @' + esc(t.bot_username || '') + '. Откройте его в Telegram и нажмите Start, чтобы получать сообщения.</div></div>' +
+      (noChats
+        ? '<div class="note note-warning" style="margin-bottom:14px"><div><b>Оповещения пока некуда отправлять.</b> Привяжите свой Telegram: нажмите кнопку ниже, откроется бот, нажмите там Start.</div></div>'
+        : '') +
+      '<div class="st-row-card"><span class="logo" style="--c:#229ED9">' + icon('send') + '</span><div class="info"><b>@' + esc(t.bot_username || '') + '</b>' +
+      '<div>' + (noChats ? 'Чат не привязан' : 'Привязано чатов: ' + chats.length) + (t.enabled ? '' : ' · оповещения выключены') + '</div></div>' +
+      (t.link_url ? '<a class="btn btn-primary btn-sm" id="n-link" href="' + esc(t.link_url) + '" target="_blank" rel="noopener">' + icon('send') + '<span>Подключить мой Telegram</span></a>' : '') + '</div>' +
+
+      '<div class="st-switch-row" style="margin-top:14px"><div class="t"><b>Оповещения включены</b><div>Общий выключатель. Выключите, если пока не хотите получать сообщения.</div></div>' +
       '<label class="switch"><input type="checkbox" id="n-on"' + (t.enabled ? ' checked' : '') + '><span class="track"></span></label></div>' +
-      notifyRow('n-lead', 'Новый клиент', 'Когда кто-то впервые написал или позвонил.', n.new_lead) +
-      notifyRow('n-call', 'Итог звонка', 'Коротко, о чём поговорили и что решил бот.', n.call_summary) +
-      notifyRow('n-day', 'Итоги дня', 'Каждый вечер в 20:00: сколько обращений и звонков.', n.daily_digest) +
-      '<div class="st-sub-h" style="margin-top:18px">Чаты для оповещений</div>' +
+      '<div class="st-sub-h" style="margin-top:14px">Что присылать</div>' +
+      notifyRow('n-lead', 'Новый клиент', 'Когда кто-то впервые написал или позвонил: имя, телефон, первое сообщение.', n.new_lead) +
+      notifyRow('n-call', 'Итог звонка', 'После разговора: коротко, о чём поговорили и что решил бот.', n.call_summary) +
+      notifyRow('n-day', 'Итоги дня', 'Каждый вечер в 20:00 по Бишкеку: сколько обращений, звонков и сделок.', n.daily_digest) +
+
+      '<div class="st-sub-h" style="margin-top:18px">Куда присылать</div>' +
       (chats.length ? chats.map(function (c) {
-        return '<div class="row-between" style="padding:6px 0"><span>' + esc(c.title || c.chat_id) + ' <span class="muted small">· ' + esc(c.chat_id) + '</span></span><button class="btn btn-ghost btn-sm" data-rm="' + esc(c.chat_id) + '" type="button">Убрать</button></div>';
-      }).join('') : '<div class="muted small">Пока ни одного. Нажмите Start у бота, и чат добавится сам.</div>') +
-      '<div class="row" style="margin-top:14px;gap:8px"><button class="btn btn-sm" id="n-test" type="button">Отправить пробное сообщение</button>' +
+        return '<div class="row-between" style="padding:7px 0;border-bottom:1px solid var(--vf-border)"><span>' + esc(c.title || 'Чат') + ' <span class="muted small mono">· ' + esc(c.chat_id) + '</span></span><button class="btn btn-ghost btn-sm" data-rm="' + esc(c.chat_id) + '" type="button">Убрать</button></div>';
+      }).join('') : '<div class="muted small">Пока ни одного чата.</div>') +
+      '<details class="st-details"><summary>Добавить чат вручную (группа, канал или другой человек)</summary>' +
+      '<p class="muted small" style="margin:8px 0">Добавьте бота в группу или напишите ему, затем отправьте ему <code>/start</code>: он ответит номером чата (chat_id). Либо узнайте номер у <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>. Для групп номер начинается с минуса.</p>' +
+      '<div class="st-grid2"><div class="field"><label class="label">chat_id</label><input class="input" id="n-cid" placeholder="например 123456789 или -1001234567890"></div>' +
+      '<div class="field"><label class="label">Название</label><input class="input" id="n-ctitle" placeholder="Например: Отдел продаж"></div></div>' +
+      '<button class="btn btn-sm" id="n-cadd" type="button">' + icon('plus') + '<span>Добавить чат</span></button></details>' +
+
+      '<div class="row" style="margin-top:18px;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" id="n-test" type="button">Отправить пробное сообщение</button>' +
       '<button class="btn btn-ghost btn-sm" id="n-off" type="button">Отключить бота</button></div>';
+
     on('n-on', function () { patchTg('/telegram/enabled', { enabled: this.checked }); });
     on('n-lead', function () { patchTg('/telegram/notify', { new_lead: this.checked }); });
     on('n-call', function () { patchTg('/telegram/notify', { call_summary: this.checked }); });
     on('n-day', function () { patchTg('/telegram/notify', { daily_digest: this.checked }); });
     on('n-test', function () {
-      S.api('/telegram/test', { method: 'POST' }).then(function (r) { S.toast(r.ok ? 'Сообщение отправлено' : S.apiError(r), r.ok ? 'success' : 'error'); });
+      S.api('/telegram/test', { method: 'POST' }).then(function (r) {
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        S.toast(r.data.sent ? 'Сообщение отправлено в Telegram (' + r.data.sent + ' из ' + r.data.total + ')' : 'Не удалось доставить. Откройте бота в Telegram и нажмите Start', r.data.sent ? 'success' : 'error');
+      });
     });
     on('n-off', function () {
       S.confirm({ title: 'Отключить Telegram-бота?', message: 'Оповещения перестанут приходить.', confirmText: 'Отключить', danger: true }).then(function (ok) {
@@ -1054,10 +1136,31 @@
         S.api('/telegram', { method: 'DELETE' }).then(function (r) { if (r.ok) { tgBot = r.data; drawNotify(); } });
       });
     });
+    on('n-cadd', function () {
+      var cid = S.$('#n-cid').value.trim(); if (!cid) { S.toast('Введите chat_id', 'error'); return; }
+      S.api('/telegram/chats', { method: 'POST', body: { chat_id: cid, title: S.$('#n-ctitle').value.trim() || null } }).then(function (r) {
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        tgBot = r.data; drawNotify(); S.toast('Чат добавлен', 'success');
+      });
+    });
     S.$$('[data-rm]', b).forEach(function (x) {
       x.addEventListener('click', function () {
         S.api('/telegram/chats/' + encodeURIComponent(x.dataset.rm), { method: 'DELETE' }).then(function (r) { if (r.ok) { tgBot = r.data; drawNotify(); } });
       });
+    });
+    // После нажатия «Подключить мой Telegram» ждём, пока в боте нажмут Start: чат появится сам
+    var link = S.$('#n-link');
+    if (link) link.addEventListener('click', function () {
+      var before = chats.length, tries = 0;
+      clearInterval(tgPoll);
+      tgPoll = setInterval(function () {
+        if (++tries > 40) { clearInterval(tgPoll); return; }
+        S.api('/telegram').then(function (r) {
+          if (r.ok && (r.data.chat_ids || []).length > before) {
+            clearInterval(tgPoll); tgBot = r.data; drawNotify(); S.toast('Telegram привязан. Оповещения включены', 'success');
+          }
+        });
+      }, 3000);
     });
   }
   function notifyRow(id, title, sub, on_) {

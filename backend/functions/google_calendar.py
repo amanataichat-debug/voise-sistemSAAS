@@ -32,7 +32,7 @@ def _resolve_user_id(context: Dict[str, Any]) -> Optional[str]:
     db = context.get("db_session")
     if ac is None or db is None:
         return None
-    return composio_service.composio_user_id_for_assistant(db, ac)
+    return composio_service.composio_user_id_for_function(db, ac)
 
 
 @register_function
@@ -86,7 +86,7 @@ class GoogleCalendarCreateEventFunction(FunctionBase):
     async def execute(arguments: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
         user_id = _resolve_user_id(context)
         if not user_id:
-            return {"success": False, "error": "Не удалось определить владельца коннектора"}
+            return {"success": False, "error": "У владельца нет подключённого чат-бота с этим коннектором. Подключите Google в кабинете: «Чат-бот» → «Каналы»."}
 
         args = dict(arguments or {})
         args.setdefault("calendar_id", "primary")
@@ -139,7 +139,7 @@ class GoogleCalendarFindEventsFunction(FunctionBase):
     async def execute(arguments: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
         user_id = _resolve_user_id(context)
         if not user_id:
-            return {"success": False, "error": "Не удалось определить владельца коннектора"}
+            return {"success": False, "error": "У владельца нет подключённого чат-бота с этим коннектором. Подключите Google в кабинете: «Чат-бот» → «Каналы»."}
 
         args = dict(arguments or {})
         args.setdefault("calendar_id", "primary")

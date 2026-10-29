@@ -84,13 +84,13 @@ class SearchKnowledgeBaseFunction(FunctionBase):
 
         from backend.db.session import SessionLocal
         from backend.services import agent_knowledge_service as kb
-        from backend.services.agent_voice_context import resolve_agent_for_voice
+        from backend.services.agent_voice_context import resolve_agent_for_functions
 
         # Своя сессия: сессию звонка держит хендлер, и коммитить в неё из
         # функции нельзя — это чужая транзакция.
         db = SessionLocal()
         try:
-            agent = resolve_agent_for_voice(db, getattr(assistant_config, "id", None))
+            agent = resolve_agent_for_functions(db, assistant_config)
             if agent is None:
                 return {"ok": True, "total": 0, "results": [],
                         "note": "База знаний к этому ассистенту не привязана."}

@@ -725,6 +725,32 @@ def composio_user_id_for_assistant(db, assistant_config) -> Optional[str]:
     return composio_user_id_for_agent(agent.id) if agent else None
 
 
+def _owner_first_agent(db, assistant_config):
+    """Первый агент (бот) владельца ассистента: для обычных голосовых ассистентов без своего агента."""
+    uid = getattr(assistant_config, "user_id", None)
+    if not uid:
+        return None
+    from backend.models.agent_config import AgentConfig
+    return db.query(AgentConfig).filter(AgentConfig.user_id == uid).order_by(AgentConfig.created_at.asc()).first()
+
+
+def composio_user_id_for_function(db, assistant_config) -> Optional[str]:
+    """
+    Identity Composio для ИСПОЛНЕНИЯ функций (Google Календарь, Gmail) голосовым ассистентом.
+
+    Карточка голоса агента — коннекторы своего агента. Обычный голосовой ассистент (страница
+    «Голосовые ассистенты») своего агента не имеет: он пользуется коннекторами чат-бота
+    владельца, подключёнными в кабинете («Чат-бот» → «Каналы»). Функции включаются на ассистенте
+    вручную, поэтому автодобавления функций это не вызывает.
+    """
+    try:
+        agent = _resolve_owner_agent(db, assistant_config) or _owner_first_agent(db, assistant_config)
+    except Exception as e:
+        logger.warning(f"[COMPOSIO] composio_user_id_for_function failed: {e}")
+        return None
+    return composio_user_id_for_agent(agent.id) if agent else None
+
+
 def connected_toolkits_for_assistant(db, assistant_config) -> list:
     """
     Ключи toolkit'ов (google_calendar/gmail), подключённых к АГЕНТУ, которому

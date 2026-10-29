@@ -100,6 +100,10 @@
     .func.on { border-color: rgba(42, 92, 232, .35); background: var(--vf-accent-soft); }
     .f-name { font-size: 13.5px; font-weight: 600; }
     .f-desc { font-size: 12.5px; color: var(--vf-text-3); margin-top: 2px; }
+    .f-req { font-size: 12px; margin-top: 6px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+    .f-req.ok { color: var(--vf-success); }
+    .f-req.warn { color: var(--vf-warning); }
+    .f-req a { color: var(--vf-accent); text-decoration: underline; }
 
     /* Встраивание */
     .code-box { position: relative; }
@@ -275,6 +279,7 @@
 
             <!-- База знаний -->
             <div class="tab-pane" data-pane="knowledge">
+              <div class="block" id="botkb-block"></div>
               <div class="block">
                 <div class="block-title" data-i18n="va.kb_title">База знаний ассистента</div>
                 <p class="block-sub" data-i18n="va.kb_sub">У каждого ассистента своя база: цены, услуги, ответы на частые вопросы. Ассистент ищет в ней сам во время разговора — на сайте и по телефону.</p>

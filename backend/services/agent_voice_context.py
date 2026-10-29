@@ -130,6 +130,29 @@ def resolve_agent_for_voice(db, assistant_id) -> Optional[Any]:
         return None
 
 
+def resolve_agent_for_functions(db, assistant_config) -> Optional[Any]:
+    """
+    Чат-бот, чьи знания и клиентов видит функция голосового ассистента.
+
+    Карточка голоса агента → её агент (как resolve_agent_for_voice). Обычный голосовой
+    ассистент со страницы «Голосовые ассистенты» → первый бот владельца: так функции
+    «Поиск в базе знаний», «Каталог», «Узнать клиента» работают с той же базой, что и чат-бот.
+    В промпт звонка эти знания сами не подмешиваются — только когда функция включена.
+    """
+    agent = resolve_agent_for_voice(db, getattr(assistant_config, "id", None))
+    if agent is not None:
+        return agent
+    uid = getattr(assistant_config, "user_id", None)
+    if not uid:
+        return None
+    try:
+        from backend.models.agent_config import AgentConfig
+        return db.query(AgentConfig).filter(AgentConfig.user_id == uid).order_by(AgentConfig.created_at.asc()).first()
+    except Exception as e:
+        logger.warning(f"[VOICE-KB] бот владельца {uid} не найден: {e}")
+        return None
+
+
 # ============================================================================
 # ХЕЛПЕРЫ
 # ============================================================================

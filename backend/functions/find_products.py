@@ -84,12 +84,12 @@ class FindProductsFunction(FunctionBase):
 
         from backend.db.session import SessionLocal
         from backend.services import agent_knowledge_service as kb
-        from backend.services.agent_voice_context import resolve_agent_for_voice
+        from backend.services.agent_voice_context import resolve_agent_for_functions
 
         # Своя сессия: сессию звонка держит хендлер (см. search_knowledge_base).
         db = SessionLocal()
         try:
-            agent = resolve_agent_for_voice(db, getattr(assistant_config, "id", None))
+            agent = resolve_agent_for_functions(db, assistant_config)
             if agent is None:
                 return {"ok": True, "total": 0, "results": [],
                         "note": "Каталог к этому ассистенту не привязан."}

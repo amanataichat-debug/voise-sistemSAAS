@@ -407,6 +407,7 @@ export default {
       tel_in: 'входящие и по кнопке',
       tel_full: 'входящие и обзвон',
       reply: 'отвечает клиентам',
+      docs_reply: 'по просьбе клиента',
       credits: '20 000 в месяц',
       credits_start: '10 000 в месяц',
       credits_trial: '1 500 разово',

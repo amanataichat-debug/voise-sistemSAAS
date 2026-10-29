@@ -10,6 +10,15 @@ from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Функции, у которых нет работающего транспорта (Voximplant выключен): в каталоге не показываем,
+# чтобы владелец не включал то, что не сработает. У уже настроенных ассистентов они остаются.
+HIDDEN_FUNCTIONS = {"send_sms"}
+
+
+def _visible(definitions):
+    return [d for d in definitions if d.get("name") not in HIDDEN_FUNCTIONS]
+
+
 router = APIRouter()
 
 
@@ -28,7 +37,7 @@ async def get_public_functions_catalog():
     GET /api/functions/public/catalog
     """
     try:
-        definitions = get_all_definitions()
+        definitions = _visible(get_all_definitions())
         return [
             {
                 "name": d.get("name"),
@@ -62,7 +71,7 @@ async def get_functions(
         List[Dict[str, Any]]: Список определений функций
     """
     try:
-        return get_all_definitions()
+        return _visible(get_all_definitions())
     except Exception as e:
         logger.error(f"Error getting functions: {str(e)}")
         raise HTTPException(

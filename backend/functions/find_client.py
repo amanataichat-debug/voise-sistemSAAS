@@ -70,12 +70,12 @@ class FindClientFunction(FunctionBase):
 
         from backend.db.session import SessionLocal
         from backend.services import client_recognition
-        from backend.services.agent_voice_context import resolve_agent_for_voice
+        from backend.services.agent_voice_context import resolve_agent_for_functions
 
         # Своя сессия: сессию звонка держит хендлер, коммитить в неё из функции нельзя.
         db = SessionLocal()
         try:
-            agent = resolve_agent_for_voice(db, getattr(assistant_config, "id", None))
+            agent = resolve_agent_for_functions(db, assistant_config)
             if agent is None:
                 return {"ok": True, "confidence": "none", "found": 0,
                         "instruction": client_recognition.VOICE_INSTRUCTIONS["none"]}

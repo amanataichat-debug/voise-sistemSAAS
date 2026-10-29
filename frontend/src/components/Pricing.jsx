@@ -14,7 +14,7 @@ const PLANS = [
 ];
 
 // Колонки: Trial, AI Voice, Start, Profi. Start — агент только отвечает,
-// Profi — сам пишет, звонит и составляет документы.
+// Profi — сам пишет, звонит и составляет документы; Start собирает и отправляет документы по просьбе клиента.
 const ROWS = [
   ['assistants', ['a1', 'a3', 'a5', 'a10']],
   ['messengers', [true, false, 'reply', true]],
@@ -24,7 +24,7 @@ const ROWS = [
   ['knowledge', [true, true, true, true]],
   ['leads', [true, true, true, true]],
   ['selfcall', [true, false, false, true]],
-  ['documents', [true, false, false, true]],
+  ['documents', [true, false, 'docs_reply', true]],
   ['credits', ['credits_trial', false, 'credits_start', 'credits']],
   ['support', [null, null, 'priority', 'vip']],
 ];

@@ -38,7 +38,19 @@
     subscription_required: 'Нужна активная подписка',
     subscription_expired: 'Подписка истекла',
     insufficient_credits: 'Не хватает кредитов агента',
-    agent_limit_reached: 'На тарифе Старт доступен один бот'
+    agent_limit_reached: 'На тарифе Старт доступен один бот',
+    invalid_token: 'Неверный токен. Скопируйте его целиком у @BotFather',
+    token_already_used: 'Этот бот уже подключён к другому агенту. Создайте нового у @BotFather',
+    no_chat_ids_configured: 'Сначала привяжите чат: нажмите «Подключить мой Telegram»',
+    telegram_bot_not_configured: 'Сначала подключите Telegram-бота',
+    already_exists: 'Этот чат уже добавлен',
+    invalid_chat_type: 'Неверный тип чата',
+    chat_id_required: 'Введите chat_id',
+    not_configured: 'Не настроено на сервере. Напишите в поддержку',
+    already_connected: 'Уже подключено',
+    phone_invalid: 'Неверный номер телефона',
+    auth_not_started: 'Сначала запросите код',
+    password_not_expected: 'Пароль сейчас не нужен'
   };
   S.errText = function (v) {
     if (!v) return 'Что-то пошло не так';
