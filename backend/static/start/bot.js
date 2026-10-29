@@ -20,7 +20,7 @@
 
   var SECTIONS = [
     ['s-main', 'bot', 'Основное'], ['s-instr', 'file-text', 'Инструкции'], ['s-kb', 'book-open', 'База знаний'],
-    ['s-channels', 'messages-square', 'Каналы'], ['s-calls', 'phone', 'Входящие звонки'], ['s-notify', 'bell', 'Оповещения вам'],
+    ['s-channels', 'messages-square', 'Каналы'], ['s-voicemsg', 'mic', 'Голосовые сообщения'], ['s-docs', 'receipt', 'Документы бота'], ['s-calls', 'phone', 'Входящие звонки'], ['s-notify', 'bell', 'Оповещения вам'],
     ['s-sheet', 'layers', 'Google Таблица'], ['s-credits', 'coins', 'Кредиты']
   ];
 
@@ -131,13 +131,15 @@
       sec('s-instr', 'Инструкции для бота', 'Расскажите о бизнесе. На этом бот строит каждый ответ в переписке и по телефону.', '', 'b-instr') +
       sec('s-kb', 'База знаний', 'Точные ответы, цены и каталог. Бот берёт факты отсюда и не выдумывает.', '', 'b-kb') +
       sec('s-channels', 'Каналы', 'Где бот общается с клиентами. Подключите нужные.', '', 'b-channels') +
+      sec('s-voicemsg', 'Голосовые сообщения в переписке', 'Бот может отвечать голосом в WhatsApp и Telegram. Выберите, чем озвучивать и как часто.', '', 'b-voicemsg') +
+      sec('s-docs', 'Документы бота', 'Бот сам собирает коммерческие предложения, счета и памятки в PDF и отправляет клиенту. Здесь задаётся, как они выглядят.', '', 'b-docs') +
       sec('s-calls', 'Входящие звонки', 'Номер, на который клиенты звонят боту, и первая фраза.', '', 'b-calls') +
       sec('s-notify', 'Оповещения вам', 'Бот напишет вам в Telegram, когда придёт новый клиент или закончится звонок.', '', 'b-notify') +
       sec('s-sheet', 'Google Таблица', 'Заявки бот записывает на лист «Заявки», а прайс можно загрузить из таблицы в каталог.', '', 'b-sheet') +
       sec('s-credits', 'Кредиты бота', 'Расход на работу бота: ответы, разбор звонков, фото и голосовые клиентов.', '', 'b-credits') +
       '</div></div>';
     setupScroll();
-    fillMain(); fillInstr(); loadKb(); loadChannels(); loadCalls(); loadNotify(); loadSheet(); loadCredits();
+    fillMain(); fillInstr(); loadKb(); loadChannels(); loadVoiceMsg(); loadDocs(); loadCalls(); loadNotify(); loadSheet(); loadCredits();
   }
 
   function put(body) { return S.api('/', { method: 'PUT', body: body }); }
@@ -154,7 +156,10 @@
       '<label class="switch"><input type="checkbox" id="m-active"' + (A.is_active ? ' checked' : '') + '><span class="track"></span></label></div>' +
       '<div class="st-sub-h" style="margin-top:20px">Голос по телефону</div>' +
       '<div class="st-note" style="margin:0 0 10px">Сейчас: <b>' + esc(voice) + '</b>. Голос нужен только для входящих звонков, на переписку он не влияет.</div>' +
-      '<div id="voice-box"><div class="skeleton" style="height:60px"></div></div>';
+      '<div id="voice-box"><div class="skeleton" style="height:60px"></div></div>' +
+      '<div class="st-sub-h" style="margin-top:20px">Модель бота</div>' +
+      '<div class="st-note" style="margin:0 0 10px">Языковая модель, на которой бот думает и пишет ответы. Чем сильнее модель, тем больше кредитов уходит на ответ.</div>' +
+      '<div id="model-box"><div class="skeleton" style="height:50px"></div></div>';
     S.$('#m-save').addEventListener('click', function () {
       var name = S.$('#m-name').value.trim();
       if (!name) { S.toast('Укажите имя бота', 'error'); return; }
@@ -163,7 +168,7 @@
         A.name = name; S.toast('Сохранено', 'success');
       });
     });
-    loadVoiceBox();
+    loadVoiceBox(); loadModelBox();
     S.$('#m-active').addEventListener('change', function () {
       var on = this.checked, el = this;
       put({ is_active: on }).then(function (r) {
@@ -248,6 +253,29 @@
     toggle(); loadVoices();
   }
 
+  // ── Модель бота (оркестратор) ───────────────────────────────────────────
+  function loadModelBox() {
+    S.api('/orchestrator-models').then(function (r) {
+      var box = S.$('#model-box'); if (!box) return;
+      var list = (r.ok && r.data.models) || [];
+      if (!list.length) { box.innerHTML = '<div class="muted small">Не удалось загрузить список моделей.</div>'; return; }
+      var cur = A.orchestrator_model || r.data.default;
+      var curM = list.filter(function (m) { return m.slug === cur; })[0];
+      box.innerHTML = '<div class="field" style="margin-bottom:6px"><select class="select-native" id="mdl">' + list.map(function (m) {
+        return '<option value="' + esc(m.slug) + '"' + (m.slug === cur ? ' selected' : '') + '>' + esc(m.name) + (m.credits_per_call ? ' · ≈' + m.credits_per_call + ' кредитов за ответ' : '') + '</option>';
+      }).join('') + '</select></div><div class="hint" id="mdl-d">' + esc(curM ? curM.description || '' : '') + '</div>';
+      S.$('#mdl').addEventListener('change', function () {
+        var sel = this, slug = sel.value;
+        var m = list.filter(function (x) { return x.slug === slug; })[0];
+        S.$('#mdl-d').textContent = m ? m.description || '' : '';
+        put({ orchestrator_model: slug }).then(function (x) {
+          if (!x.ok) { sel.value = A.orchestrator_model || r.data.default; S.toast(S.apiError(x), 'error'); return; }
+          A.orchestrator_model = slug; S.toast('Модель бота изменена', 'success');
+        });
+      });
+    });
+  }
+
   // ══════════════════════════════ ИНСТРУКЦИИ ═══════════════════════════════
   function fillInstr() {
     var b = S.$('#b-instr');
@@ -275,26 +303,39 @@
   }
 
   // ══════════════════════════════ БАЗА ЗНАНИЙ ══════════════════════════════
-  var kb = { entries: [], counts: {}, voice: null, gaps: [], tab: 'qa' };
-  var KB_TABS = [['qa', 'Вопросы и ответы'], ['section', 'О компании'], ['product', 'Каталог'], ['gaps', 'Без ответа']];
+  // Всё, что у агента Profi в «Знаниях»: вопрос-ответ, о компании, каталог с фото и характеристиками,
+  // файлы с двумя ролями («бот отправляет клиентам» и «бот ищет ответы внутри»), пробелы.
+  var kb = { entries: [], counts: {}, voice: null, gaps: [], files: [], generated: [], storage: true, tab: 'qa' };
+  var KB_TABS = [['qa', 'Вопросы и ответы'], ['section', 'О компании'], ['product', 'Каталог'], ['files', 'Файлы'], ['gaps', 'Без ответа']];
+  var CURRENCIES = [['KGS', 'сом'], ['USD', 'долл.'], ['RUB', 'руб.'], ['KZT', 'тенге'], ['EUR', 'евро']];
 
   function loadKb() {
-    Promise.all([S.api('/knowledge'), S.api('/knowledge/gaps')]).then(function (res) {
+    return Promise.all([S.api('/knowledge'), S.api('/knowledge/gaps'), S.api('/files?source=library'), S.api('/files?source=generated')]).then(function (res) {
       var b = S.$('#b-kb');
       if (!res[0].ok) { b.innerHTML = '<div class="st-empty">' + esc(S.apiError(res[0])) + '</div>'; return; }
       kb.entries = res[0].data.entries || []; kb.counts = res[0].data.counts || {}; kb.voice = res[0].data.voice || null;
       kb.gaps = res[1].ok ? (res[1].data.gaps || []) : [];
+      kb.files = res[2].ok ? (res[2].data.files || []) : [];
+      kb.storage = res[2].ok ? res[2].data.storage_configured !== false : true;
+      kb.generated = res[3].ok ? (res[3].data.files || []) : [];
       drawKb();
     });
   }
 
+  function curWord(c) {
+    var f = CURRENCIES.filter(function (x) { return x[0] === (c || 'KGS'); })[0];
+    return f ? f[1] : c;
+  }
+  function priceText(e) { return e.price != null && e.price !== '' ? Number(e.price).toLocaleString('ru-RU') + ' ' + curWord(e.currency) : 'цена не указана'; }
+
   function drawKb() {
     var b = S.$('#b-kb');
-    var counts = { qa: kb.counts.qa || 0, section: kb.counts.section || 0, product: kb.counts.product || 0, gaps: kb.gaps.length };
+    var counts = { qa: kb.counts.qa || 0, section: kb.counts.section || 0, product: kb.counts.product || 0, files: kb.files.length, gaps: kb.gaps.length };
+    var v = kb.voice && kb.voice.chars ? '<div class="st-note" style="margin:0 0 12px">Бот знает наизусть на звонке: ' + Number(kb.voice.chars).toLocaleString('ru-RU') + ' из ' + Number(kb.voice.budget || 0).toLocaleString('ru-RU') + ' символов. Остальное он находит поиском, это чуть дольше.</div>' : '';
     b.innerHTML =
       '<div class="tabs" style="margin:-6px -8px 16px">' + KB_TABS.map(function (t) {
         return '<div class="tab' + (kb.tab === t[0] ? ' active' : '') + '" data-kt="' + t[0] + '"><span>' + t[1] + '</span><span class="st-count" style="margin-left:2px">' + counts[t[0]] + '</span></div>';
-      }).join('') + '</div><div id="kb-body"></div>' +
+      }).join('') + '</div>' + v + '<div id="kb-body"></div>' +
       '<div class="st-sub-h" style="margin-top:22px">Проверить как клиент</div>' +
       '<div class="st-toolbar"><div class="st-search" style="max-width:none">' + icon('search') + '<input class="input" id="kb-q" placeholder="Задайте вопрос, как клиент: «сколько стоит доставка?»"></div>' +
       '<button class="btn" id="kb-ask" type="button">Спросить</button></div><div id="kb-ans"></div>';
@@ -321,22 +362,36 @@
   function drawKbBody() {
     var box = S.$('#kb-body');
     if (kb.tab === 'gaps') { drawGaps(box); return; }
+    if (kb.tab === 'files') { drawFiles(box); return; }
     var items = kb.entries.filter(function (e) { return e.kind === kb.tab; });
     var addLabel = { qa: 'Добавить вопрос и ответ', section: 'Добавить раздел', product: 'Добавить позицию' }[kb.tab];
     var hint = {
       qa: 'Частые вопросы клиентов и ваши ответы. Бот отвечает на них сразу, без поиска.',
       section: 'Короткие блоки о компании: адрес, режим работы, условия доставки и оплаты.',
-      product: 'Услуги и товары с ценой. Бот называет цену и наличие.'
+      product: 'Услуги и товары с ценой, характеристиками и фото. Бот называет цену и наличие и может отправить фото клиенту.'
     }[kb.tab];
-    box.innerHTML = '<div class="row-between" style="margin-bottom:12px;gap:12px;flex-wrap:wrap"><span class="muted small" style="max-width:520px">' + hint + '</span>' +
-      '<button class="btn btn-primary btn-sm" id="kb-add" type="button">' + icon('plus') + '<span>' + addLabel + '</span></button></div>' +
-      (items.length ? items.map(function (e) {
-        return '<div class="st-qa" data-id="' + esc(e.id) + '"><div class="q">' + esc(e.title || '—') +
-          (e.kind === 'product' ? ' <span class="muted" style="font-weight:500">· ' + esc(e.price != null ? S.fmtMoney(e.price, e.currency) : 'цена не указана') + (e.in_stock === false ? ' · нет в наличии' : '') + '</span>' : '') + '</div>' +
+    var head = '<div class="row-between" style="margin-bottom:12px;gap:12px;flex-wrap:wrap"><span class="muted small" style="max-width:560px">' + hint + '</span>' +
+      '<button class="btn btn-primary btn-sm" id="kb-add" type="button">' + icon('plus') + '<span>' + addLabel + '</span></button></div>';
+    if (kb.tab === 'product') {
+      box.innerHTML = head + (items.length ? '<div class="st-catalog">' + items.map(function (e) {
+        var ph = (e.media || [])[0];
+        var thumb = ph && ph.url && !ph.is_video ? '<img src="' + esc(ph.url) + '" alt="" loading="lazy">' : '<span class="st-ph">' + icon('image') + '</span>';
+        var attrs = Object.keys(e.attributes || {}).slice(0, 3).map(function (k) { return '<span class="st-tag">' + esc(k) + ': ' + esc(e.attributes[k]) + '</span>'; }).join(' ');
+        return '<div class="st-prod' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="pic">' + thumb +
+          ((e.media || []).length > 1 ? '<span class="cnt">' + (e.media || []).length + '</span>' : '') + '</div>' +
+          '<div class="bd"><div class="t">' + esc(e.title || '—') + '</div><div class="pr">' + esc(priceText(e)) + (e.in_stock === false ? ' <span class="st-badge warn">нет в наличии</span>' : '') + '</div>' +
+          (attrs ? '<div class="at">' + attrs + '</div>' : '') +
+          '<div class="acts"><button class="btn btn-ghost btn-sm" data-edit="' + esc(e.id) + '" type="button">' + icon('pen') + '<span>Изменить</span></button>' +
+          '<button class="btn btn-ghost btn-icon btn-sm" data-del="' + esc(e.id) + '" type="button" aria-label="Удалить">' + icon('trash-2') + '</button></div></div></div>';
+      }).join('') + '</div>' : '<div class="st-empty">Каталог пуст. Добавьте позиции вручную или загрузите прайс из Google Таблицы (раздел ниже).</div>');
+    } else {
+      box.innerHTML = head + (items.length ? items.map(function (e) {
+        return '<div class="st-qa' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="q">' + esc(e.title || '—') + '</div>' +
           (e.body ? '<div class="a">' + esc(e.body) + '</div>' : '') +
           '<div class="acts"><button class="btn btn-ghost btn-sm" data-edit="' + esc(e.id) + '" type="button">' + icon('pen') + '<span>Изменить</span></button>' +
           '<button class="btn btn-ghost btn-sm" data-del="' + esc(e.id) + '" type="button">' + icon('trash-2') + '<span>Удалить</span></button></div></div>';
       }).join('') : '<div class="st-empty">Пока пусто.</div>');
+    }
     S.$('#kb-add').addEventListener('click', function () { entryDialog(kb.tab, null); });
     S.$$('[data-edit]', box).forEach(function (b) {
       b.addEventListener('click', function () { entryDialog(kb.tab, kb.entries.filter(function (e) { return e.id === b.dataset.edit; })[0]); });
@@ -354,38 +409,193 @@
     });
   }
 
-  function entryDialog(kind, e, prefill) {
+  // ── Запись базы знаний: вопрос-ответ / раздел / позиция каталога ──
+  function entryDialog(kind, e, prefill, gapId) {
     var src = e || prefill || null;
     var titles = { qa: ['Вопрос клиента', 'Ответ бота'], section: ['Название раздела', 'Текст'], product: ['Название', 'Описание'] }[kind];
+    var picked = (e && e.media_file_ids) ? e.media_file_ids.slice() : [];
+    var attrs = Object.keys((e && e.attributes) || {}).map(function (k) { return { k: k, v: String(e.attributes[k]) }; });
+    var isProd = kind === 'product';
     var d = S.dialog({
       title: (e ? 'Изменить' : 'Добавить') + ': ' + { qa: 'вопрос и ответ', section: 'раздел', product: 'позицию' }[kind], size: 'lg',
       body: '<div class="field"><label class="label">' + titles[0] + ' *</label><input class="input" id="e-title" value="' + esc(src ? src.title : '') + '"></div>' +
-        (kind === 'product'
-          ? '<div class="st-grid2"><div class="field"><label class="label">Цена, сом</label><input class="input" id="e-price" type="number" min="0" value="' + esc(e && e.price != null ? e.price : '') + '"></div>' +
+        (isProd
+          ? '<div class="st-grid3"><div class="field"><label class="label">Цена</label><input class="input" id="e-price" type="number" min="0" step="0.01" value="' + esc(e && e.price != null ? e.price : '') + '"></div>' +
+            '<div class="field"><label class="label">Валюта</label><select class="select-native" id="e-cur">' + CURRENCIES.map(function (c) { return '<option value="' + c[0] + '"' + ((e && e.currency === c[0]) ? ' selected' : '') + '>' + c[1] + '</option>'; }).join('') + '</select></div>' +
             '<div class="field"><label class="label">Наличие</label><select class="select-native" id="e-stock"><option value="1">Есть в наличии</option><option value="0"' + (e && e.in_stock === false ? ' selected' : '') + '>Нет в наличии</option></select></div></div>'
           : '') +
-        '<div class="field"><label class="label">' + titles[1] + '</label><textarea class="textarea" id="e-body" rows="5">' + esc(src ? src.body : '') + '</textarea></div>' +
+        '<div class="field"><label class="label">' + titles[1] + '</label><textarea class="textarea" id="e-body" rows="4">' + esc(src ? src.body : '') + '</textarea></div>' +
+        (isProd ? '<div class="field"><label class="label">Характеристики</label><div id="e-attrs"></div><button class="btn btn-ghost btn-sm" type="button" id="e-attr-add">' + icon('plus') + '<span>Добавить характеристику</span></button></div>' +
+          '<div class="field"><label class="label">Фото и видео</label><div class="hint" style="margin-bottom:8px">Бот покажет их клиенту, когда спросят про эту позицию.</div><div class="st-media" id="e-media"></div>' +
+          '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" id="e-up">' + icon('upload') + '<span>Загрузить фото</span></button></div></div>' : '') +
         '<div class="field"><label class="label">Ключевые слова</label><input class="input" id="e-kw" value="' + esc(src ? src.keywords || '' : '') + '" placeholder="через запятую: доставка, курьер">' +
-        '<div class="hint">По ним бот находит запись, если клиент спросил другими словами.</div></div>',
+        '<div class="hint">По ним бот находит запись, если клиент спросил другими словами.</div></div>' +
+        (!isProd ? '<div class="st-switch-row"><div class="t"><b>Знать наизусть</b><div>Бот отвечает сразу, без поиска. Подходит для частых вопросов.</div></div><label class="switch"><input type="checkbox" id="e-prompt"' + (!e || e.in_prompt !== false ? ' checked' : '') + '><span class="track"></span></label></div>' : '') +
+        '<div class="st-switch-row"><div class="t"><b>Запись активна</b><div>Выключенную запись бот не использует.</div></div><label class="switch"><input type="checkbox" id="e-active"' + (!e || e.is_active !== false ? ' checked' : '') + '><span class="track"></span></label></div>',
       foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" id="e-save">Сохранить</button>'
     });
     S.$('[data-c]', d.el).addEventListener('click', d.close);
+
+    function drawAttrs() {
+      var box = S.$('#e-attrs', d.el); if (!box) return;
+      box.innerHTML = attrs.map(function (a, i) {
+        return '<div class="st-attr"><input class="input" data-ak="' + i + '" placeholder="Например: Размер" value="' + esc(a.k) + '"><input class="input" data-av="' + i + '" placeholder="Например: 250 мл" value="' + esc(a.v) + '">' +
+          '<button class="btn btn-ghost btn-icon btn-sm" type="button" data-arm="' + i + '" aria-label="Убрать">' + icon('x') + '</button></div>';
+      }).join('');
+      S.$$('[data-ak]', box).forEach(function (el) { el.addEventListener('input', function () { attrs[+el.dataset.ak].k = el.value; }); });
+      S.$$('[data-av]', box).forEach(function (el) { el.addEventListener('input', function () { attrs[+el.dataset.av].v = el.value; }); });
+      S.$$('[data-arm]', box).forEach(function (el) { el.addEventListener('click', function () { attrs.splice(+el.dataset.arm, 1); drawAttrs(); }); });
+    }
+    function drawMedia() {
+      var box = S.$('#e-media', d.el); if (!box) return;
+      var pics = kb.files.filter(function (f) { return /^(image|video)\//.test(f.mime_type || ''); });
+      if (!pics.length) { box.innerHTML = '<div class="hint">Фото пока нет. Загрузите первое.</div>'; return; }
+      box.innerHTML = pics.map(function (f) {
+        var on = picked.indexOf(f.id) >= 0;
+        return '<div class="st-media-item' + (on ? ' on' : '') + '" data-mid="' + esc(f.id) + '">' + (f.preview_url && !/^video\//.test(f.mime_type) ? '<img src="' + esc(f.preview_url) + '" alt="" loading="lazy">' : '<span class="st-ph">' + icon('play') + '</span>') +
+          '<span class="chk">' + icon('check') + '</span></div>';
+      }).join('');
+      S.$$('[data-mid]', box).forEach(function (el) {
+        el.addEventListener('click', function () {
+          var i = picked.indexOf(el.dataset.mid);
+          if (i >= 0) { picked.splice(i, 1); el.classList.remove('on'); } else { picked.push(el.dataset.mid); el.classList.add('on'); }
+        });
+      });
+    }
+    if (isProd) {
+      drawAttrs(); drawMedia();
+      S.$('#e-attr-add', d.el).addEventListener('click', function () { attrs.push({ k: '', v: '' }); drawAttrs(); });
+      S.$('#e-up', d.el).addEventListener('click', function () {
+        pickFiles('image/*,video/*', true, function (rows) {
+          rows.forEach(function (f) { picked.push(f.id); });
+          S.api('/files?source=library').then(function (r) { if (r.ok) kb.files = r.data.files || []; drawMedia(); });
+        });
+      });
+    }
     S.$('#e-save', d.el).addEventListener('click', function () {
-      var body = { kind: kind, title: S.$('#e-title', d.el).value.trim(), body: S.$('#e-body', d.el).value.trim(), keywords: S.$('#e-kw', d.el).value.trim() };
+      var body = { kind: kind, title: S.$('#e-title', d.el).value.trim(), body: S.$('#e-body', d.el).value.trim(), keywords: S.$('#e-kw', d.el).value.trim(), is_active: S.$('#e-active', d.el).checked };
       if (!body.title && !body.body) { S.toast('Заполните запись', 'error'); return; }
-      if (kind === 'product') {
+      if (isProd) {
         var p = S.$('#e-price', d.el).value;
         body.price = p === '' ? null : Number(p);
+        body.currency = S.$('#e-cur', d.el).value;
         body.in_stock = S.$('#e-stock', d.el).value === '1';
+        body.media_file_ids = picked.slice();
+        var obj = {}; attrs.forEach(function (a) { var k = (a.k || '').trim(); if (k) obj[k] = (a.v || '').trim(); });
+        body.attributes = obj;
+        body.in_prompt = false; // каталог находится поиском, в инструкцию идёт только прайс
+      } else {
+        body.in_prompt = S.$('#e-prompt', d.el).checked;
       }
       var btn = this; btn.disabled = true;
       S.api(e ? '/knowledge/' + e.id : '/knowledge', { method: e ? 'PUT' : 'POST', body: body }).then(function (r) {
         btn.disabled = false;
         if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        if (gapId) S.api('/knowledge/gaps/' + gapId, { method: 'DELETE' });
         d.close(); S.toast('Сохранено', 'success'); loadKb();
       });
     });
     setTimeout(function () { var i = S.$('#e-title', d.el); if (i) i.focus(); }, 60);
+  }
+
+  // Выбор и загрузка файлов в библиотеку бота → cb(список созданных файлов)
+  function pickFiles(accept, multiple, cb) {
+    if (!kb.storage) { S.toast('Хранилище файлов не настроено на сервере', 'error'); return; }
+    var inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = accept || ''; inp.multiple = !!multiple;
+    inp.addEventListener('change', function () {
+      var list = Array.prototype.slice.call(inp.files || []);
+      if (!list.length) return;
+      var done = [];
+      (function next() {
+        if (!list.length) { cb(done); return; }
+        var f = list.shift();
+        S.toast('Загружаю: ' + f.name);
+        S.upload('/files', f).then(function (r) {
+          if (!r.ok) S.toast(S.errText(r.data.detail === 'file_too_large' ? 'Файл слишком большой' : r.data.detail === 'library_limit_reached' ? 'В библиотеке больше нельзя хранить файлов' : r.data.detail || r.data), 'error');
+          else done.push(r.data.file);
+          next();
+        });
+      })();
+    });
+    inp.click();
+  }
+
+  // ── Файлы бота ──
+  function fileIc(f) {
+    var m = f.mime_type || '';
+    return m.indexOf('image/') === 0 ? 'image' : m.indexOf('video/') === 0 ? 'play' : m.indexOf('audio/') === 0 ? 'volume-2' : 'file-text';
+  }
+  function openFile(id) {
+    S.api('/files/' + id + '/link').then(function (r) {
+      if (r.ok && r.data.url) window.open(r.data.url, '_blank', 'noopener'); else S.toast(S.apiError(r), 'error');
+    });
+  }
+
+  function drawFiles(box) {
+    var rows = function (arr, lib) {
+      return arr.map(function (f) {
+        var thumb = f.preview_url ? '<img src="' + esc(f.preview_url) + '" alt="" loading="lazy">' : icon(fileIc(f));
+        var meta = [S.fmtSize(f.size_bytes)];
+        if (f.used_in_catalog) meta.push('в каталоге');
+        if (f.knowledge_status === 'pending') meta.push('индексируется');
+        if (f.knowledge_status === 'failed') meta.push('ошибка индексации');
+        if (!lib) meta.push(S.fmtDate(f.created_at));
+        return '<div class="st-file" data-id="' + esc(f.id) + '"><div class="th">' + thumb + '</div>' +
+          '<div class="nm"><b>' + esc(f.title || f.filename || '') + '</b><div class="muted small">' + esc(meta.join(' · ')) + (f.description ? ' · ' + esc(f.description) : '') + '</div></div>' +
+          '<div class="rl">' + (lib ? '<label class="st-role' + (f.can_be_knowledge ? '' : ' dis') + '" title="' + (f.can_be_knowledge ? '' : 'В файле нет текста') + '"><span class="switch"><input type="checkbox" data-kbf="' + esc(f.id) + '"' + (f.in_knowledge ? ' checked' : '') + (f.can_be_knowledge ? '' : ' disabled') + (f.knowledge_entry_id ? ' data-entry="' + esc(f.knowledge_entry_id) + '"' : '') + '><span class="track"></span></span><span>Бот ищет ответы внутри</span></label>' : '') +
+          '<span class="acts">' + (lib ? '<button class="btn btn-ghost btn-icon btn-sm" data-fedit="' + esc(f.id) + '" type="button" aria-label="Изменить">' + icon('pen') + '</button>' : '') +
+          '<button class="btn btn-ghost btn-icon btn-sm" data-fdl="' + esc(f.id) + '" type="button" aria-label="Открыть">' + icon('download') + '</button>' +
+          '<button class="btn btn-ghost btn-icon btn-sm" data-fdel="' + esc(f.id) + '" type="button" aria-label="Удалить">' + icon('trash-2') + '</button></span></div></div>';
+      }).join('');
+    };
+    box.innerHTML = (kb.storage ? '' : '<div class="note note-warning" style="margin-bottom:12px">Хранилище файлов не настроено на сервере, загрузка недоступна.</div>') +
+      '<div class="row-between" style="margin-bottom:12px;gap:12px;flex-wrap:wrap"><span class="muted small" style="max-width:560px">Прайсы, презентации, договоры, фото. Бот отправляет их клиенту, когда тот просит. Включите «ищет ответы внутри», и бот будет брать факты из текста файла.</span>' +
+      '<button class="btn btn-primary btn-sm" id="f-up" type="button">' + icon('upload') + '<span>Загрузить файл</span></button></div>' +
+      (kb.files.length ? '<div class="st-files">' + rows(kb.files, true) + '</div>' : '<div class="st-empty">Файлов пока нет.</div>') +
+      '<div class="st-sub-h" style="margin-top:22px">Документы, которые бот собрал сам</div>' +
+      '<p class="muted small" style="margin:0 0 10px">Коммерческие предложения, счета и памятки: бот составляет их в PDF и отправляет клиенту в переписке. Оформление настраивается в разделе «Документы бота».</p>' +
+      (kb.generated.length ? '<div class="st-files">' + rows(kb.generated, false) + '</div>' : '<div class="st-empty" style="padding:16px">Пока бот ничего не собирал.</div>');
+    on('f-up', function () { pickFiles('', true, function () { loadKb(); }); });
+    S.$$('[data-fdl]', box).forEach(function (b) { b.addEventListener('click', function () { openFile(b.dataset.fdl); }); });
+    S.$$('[data-fdel]', box).forEach(function (b) {
+      b.addEventListener('click', function () {
+        S.confirm({ title: 'Удалить файл?', message: 'Файл исчезнет из библиотеки бота.', confirmText: 'Удалить', danger: true }).then(function (ok) {
+          if (!ok) return;
+          S.api('/files/' + b.dataset.fdel, { method: 'DELETE' }).then(function (r) { if (!r.ok) S.toast(S.apiError(r), 'error'); loadKb(); });
+        });
+      });
+    });
+    S.$$('[data-fedit]', box).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var f = kb.files.filter(function (x) { return x.id === b.dataset.fedit; })[0];
+        var d = S.dialog({
+          title: 'Файл', size: 'sm',
+          body: '<div class="field"><label class="label">Название</label><input class="input" id="fe-t" value="' + esc(f.title || f.filename || '') + '"></div>' +
+            '<div class="field"><label class="label">Когда отправлять</label><textarea class="textarea" id="fe-d" rows="3" placeholder="Например: когда клиент просит прайс">' + esc(f.description || '') + '</textarea><div class="hint">Бот читает это описание и понимает, когда файл уместен.</div></div>',
+          foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" id="fe-s">Сохранить</button>'
+        });
+        S.$('[data-c]', d.el).addEventListener('click', d.close);
+        S.$('#fe-s', d.el).addEventListener('click', function () {
+          S.api('/files/' + f.id, { method: 'PATCH', body: { title: S.$('#fe-t', d.el).value, description: S.$('#fe-d', d.el).value } }).then(function (r) {
+            if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+            d.close(); loadKb();
+          });
+        });
+      });
+    });
+    S.$$('[data-kbf]', box).forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        inp.disabled = true;
+        var req = inp.checked
+          ? S.api('/knowledge/document', { method: 'POST', body: { file_id: inp.dataset.kbf } })
+          : S.api('/knowledge/document/' + encodeURIComponent(inp.dataset.entry || ''), { method: 'DELETE' });
+        req.then(function (r) {
+          if (!r.ok) { inp.checked = !inp.checked; inp.disabled = false; S.toast(S.apiError(r), 'error'); return; }
+          S.toast(inp.checked ? 'Бот теперь ищет ответы в этом файле' : 'Файл больше не источник ответов', 'success'); loadKb();
+        });
+      });
+    });
   }
 
   function drawGaps(box) {
@@ -402,7 +612,7 @@
     S.$$('[data-ans]', box).forEach(function (b) {
       b.addEventListener('click', function () {
         var g = kb.gaps.filter(function (x) { return x.id === b.dataset.ans; })[0];
-        entryDialog('qa', null, { title: g.query, body: '', keywords: '' });
+        entryDialog('qa', null, { title: g.query, body: '', keywords: '' }, g.id);
       });
     });
     S.$$('[data-hide]', box).forEach(function (b) {
@@ -420,7 +630,8 @@
       ch.wa = res[0].ok ? res[0].data : null;
       ch.tg = res[1].ok ? res[1].data : null;
       var cons = res[2].ok ? (res[2].data.connectors || []) : [];
-      ch.ig = cons.filter(function (c) { return c.toolkit === 'instagram'; })[0] || null;
+      var byKit = function (k) { return cons.filter(function (c) { return c.toolkit === k; })[0] || null; };
+      ch.ig = byKit('instagram'); ch.gmail = byKit('gmail'); ch.gcal = byKit('google_calendar');
       ch.igCfg = res[2].ok ? !!res[2].data.configured : false;
       drawChannels();
     });
@@ -450,11 +661,22 @@
     if (!ig || !ch.igCfg || !ig.available) html += chRow('#E1306C', 'instagram', 'Instagram', 'Недоступно на сервере, напишите в поддержку', '');
     else if (ig.connected) html += chRow('#E1306C', 'instagram', 'Instagram', 'Подключён' + (ig.connected_email ? ': ' + esc(ig.connected_email) : ''), btn('ig-set', 'Настройки') + btn('ig-off', 'Отключить', 'btn-ghost'));
     else html += chRow('#E1306C', 'instagram', 'Instagram', 'Бот отвечает на сообщения в Direct', btn('ig-on', 'Подключить', 'btn-primary'));
+    // Gmail и Google Календарь (через Composio, как у агента Profi)
+    html += connRow('gmail', 'mail', '#EA4335', 'Gmail', 'Бот читает письма и отвечает клиентам с вашей почты', 'Подключить', ch.gmail);
+    html += connRow('gcal', 'calendar', '#4285F4', 'Google Календарь', 'Бот смотрит свободное время и записывает клиентов в ваш календарь', 'Подключить', ch.gcal);
     b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает только на сообщения клиентов. Писать первым и звонить по расписанию он на тарифе Старт не будет.</div>';
 
     on('wa-on', openWa); on('wa-set', function () { settingsDialog('WhatsApp', '/whatsapp/settings', ch.wa, true); }); on('wa-off', function () { disconnect('WhatsApp', '/whatsapp'); });
     on('tg-on', openTg); on('tg-set', function () { settingsDialog('Telegram', '/telegram-account/settings', ch.tg, false); }); on('tg-off', function () { disconnect('Telegram', '/telegram-account'); });
-    on('ig-on', connectIg); on('ig-set', function () { settingsDialog('Instagram', '/connectors/instagram/settings', ch.ig, false, true); }); on('ig-off', function () { disconnect('Instagram', '/connectors/instagram'); });
+    on('gmail-on', function () { connectToolkit('gmail'); }); on('gmail-off', function () { disconnect('Gmail', '/connectors/gmail'); });
+    on('gcal-on', function () { connectToolkit('google_calendar'); }); on('gcal-off', function () { disconnect('Google Календарь', '/connectors/google_calendar'); });
+    on('ig-on', function () { connectToolkit('instagram'); }); on('ig-set', function () { settingsDialog('Instagram', '/connectors/instagram/settings', ch.ig, false, true); }); on('ig-off', function () { disconnect('Instagram', '/connectors/instagram'); });
+  }
+  function connRow(id, ic, color, name, sub, label, c) {
+    if (!ch.igCfg || !c || !c.available) return chRow(color, ic, name, 'Недоступно на сервере, напишите в поддержку', '');
+    if (c.connected) return chRow(color, ic, name, 'Подключён' + (c.connected_email ? ': ' + esc(c.connected_email) : ''), btn(id + '-off', 'Отключить', 'btn-ghost'));
+    if (c.status === 'error') return chRow(color, ic, name, 'Подключение не удалось, попробуйте ещё раз', btn(id + '-on', label, 'btn-primary'));
+    return chRow(color, ic, name, sub, btn(id + '-on', label, 'btn-primary'));
   }
   function on(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
 
@@ -570,20 +792,180 @@
     step(ch.tg ? ch.tg.status : '', ch.tg ? ch.tg.phone_masked : '');
   }
 
-  // Instagram: OAuth через Composio
-  function connectIg() {
-    S.api('/connectors/instagram/connect', { method: 'POST' }).then(function (r) {
+  // Instagram, Gmail, Google Календарь: OAuth через Composio (окно входа, результат приходит сообщением)
+  function connectToolkit(toolkit) {
+    S.api('/connectors/' + toolkit + '/connect', { method: 'POST' }).then(function (r) {
       if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-      if (r.data.connected) { S.toast('Instagram подключён', 'success'); loadChannels(); return; }
-      if (r.data.redirect_url) {
-        var w = window.open(r.data.redirect_url, 'ig_connect', 'width=520,height=720');
-        var onMsg = function (e) {
-          if (e.data && e.data.type === 'connector_result') { window.removeEventListener('message', onMsg); loadChannels(); }
-        };
-        window.addEventListener('message', onMsg);
-        if (!w) location.href = r.data.redirect_url;
-      }
+      if (r.data.connected) { S.toast('Подключено', 'success'); loadChannels(); return; }
+      if (!r.data.redirect_url) { S.toast('Не удалось начать подключение', 'error'); return; }
+      var w = window.open(r.data.redirect_url, 'connect_' + toolkit, 'width=520,height=720');
+      var onMsg = function (e) {
+        if (e.data && e.data.type === 'connector_result') {
+          window.removeEventListener('message', onMsg);
+          S.toast(e.data.status === 'success' ? 'Подключено' : 'Подключение не удалось', e.data.status === 'success' ? 'success' : 'error');
+          loadChannels();
+        }
+      };
+      window.addEventListener('message', onMsg);
+      if (!w) location.href = r.data.redirect_url;
     });
+  }
+
+  // ══════════════════════════════ ГОЛОСОВЫЕ СООБЩЕНИЯ ══════════════════════
+  var vm = null, vmOpts = null, vmAudio = null;
+  var STAB = [[0, 'Creative: эмоциональнее'], [0.5, 'Natural: ровная речь'], [1, 'Robust: максимально стабильно']];
+  var MODES = [['on_voice', 'В ответ на голосовое клиента'], ['auto', 'Бот решает сам'], ['never', 'Никогда, только текст']];
+
+  function loadVoiceMsg() {
+    Promise.all([S.api('/voice-messages'), S.api('/api/eleven-assistants/options')]).then(function (res) {
+      var b = S.$('#b-voicemsg');
+      if (!res[0].ok) { b.innerHTML = '<div class="st-empty">' + esc(S.apiError(res[0])) + '</div>'; return; }
+      vm = res[0].data; vmOpts = res[1].ok ? res[1].data : {};
+      drawVoiceMsg();
+    });
+  }
+
+  function saveVm(body, quiet) {
+    return S.api('/voice-messages', { method: 'PUT', body: body }).then(function (r) {
+      if (!r.ok) { S.toast(S.apiError(r), 'error'); return r; }
+      vm = r.data; if (!quiet) S.toast('Сохранено', 'success');
+      return r;
+    });
+  }
+
+  function drawVoiceMsg() {
+    var b = S.$('#b-voicemsg');
+    if (!vm.configured) { b.innerHTML = '<div class="note note-warning">Озвучка не настроена на сервере. Напишите в поддержку.</div>'; return; }
+    var engine = vm.engine;
+    var chans = vm.channels || {};
+    var chRows = Object.keys(chans).map(function (k) {
+      return '<div class="field" style="margin-bottom:10px"><label class="label">' + (k === 'whatsapp' ? 'WhatsApp' : 'Telegram') + ': когда отвечать голосом</label><select class="select-native" data-vch="' + k + '">' +
+        MODES.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === chans[k] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select></div>';
+    }).join('');
+    b.innerHTML =
+      '<div class="st-engine">' + [['eleven', 'ElevenLabs', 'Живые голоса, кыргызский и русский'], ['openai', 'OpenAI GPT-Live', 'Голос ChatGPT, естественная интонация']].map(function (e) {
+        var avail = vm.engines ? vm.engines[e[0]] !== false : true;
+        return '<label class="st-engine-item' + (engine === e[0] ? ' on' : '') + (avail ? '' : ' dis') + '"><input type="radio" name="vm-engine" value="' + e[0] + '"' + (engine === e[0] ? ' checked' : '') + (avail ? '' : ' disabled') + '><b>' + e[1] + '</b><span>' + e[2] + '</span></label>';
+      }).join('') + '</div>' +
+      '<div id="vm-eleven" style="margin-top:14px"' + (engine === 'eleven' ? '' : ' hidden') + '>' +
+      '<div class="st-grid2"><div class="field"><label class="label">Язык</label><select class="select-native" id="vm-lang"><option value="">Как в звонках</option>' +
+      (vmOpts.languages || []).map(function (l) { return '<option value="' + esc(l.code) + '"' + (l.code === vm.language ? ' selected' : '') + '>' + esc(l.title) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label class="label">Подача</label><select class="select-native" id="vm-stab">' + STAB.map(function (x) {
+        var cur = vm.stability != null ? vm.stability : vm.default_stability;
+        return '<option value="' + x[0] + '"' + (Number(cur) === x[0] ? ' selected' : '') + '>' + x[1] + '</option>';
+      }).join('') + '</select></div></div>' +
+      '<div class="field"><label class="label">Голос</label><select class="select-native" id="vm-voice"><option value="">Как в звонках</option></select></div></div>' +
+      '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос GPT-Live</label><select class="select-native" id="vm-ovoice">' +
+      (vm.openai_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === vm.openai_voice ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div></div>' +
+      (chRows ? '<div class="st-sub-h">Когда бот отвечает голосом</div>' + chRows : '<div class="note" style="margin-top:12px">Подключите WhatsApp или Telegram в разделе «Каналы», и здесь появится выбор, когда отвечать голосом. Instagram голосовые не поддерживает.</div>') +
+      '<div class="field" id="vm-share-wrap"' + (Object.keys(chans).some(function (k) { return chans[k] === 'auto'; }) ? '' : ' hidden') + '><label class="label">Доля голосовых, когда бот решает сам</label><select class="select-native" id="vm-share">' +
+      (vm.auto_share_choices || [30, 40, 50]).map(function (v) { return '<option value="' + v + '"' + (v === vm.auto_share ? ' selected' : '') + '>около ' + v + '% ответов</option>'; }).join('') + '</select></div>' +
+      '<div class="row" style="gap:10px;margin-top:6px"><button class="btn" id="vm-play" type="button">' + icon('play') + '<span>Прослушать</span></button>' +
+      '<span class="muted small">Прослушивание и каждое голосовое списывают кредиты бота (≈' + (vm.credits_per_400_chars || 0) + ' за 400 знаков).</span></div>';
+
+    function loadVoices() {
+      var sel = S.$('#vm-voice'); if (!sel) return;
+      var lang = S.$('#vm-lang').value || (vm.call_voice && vm.call_voice.language) || 'ky';
+      S.api('/api/eleven-assistants/voices?language=' + lang).then(function (r) {
+        var v = (r.ok && r.data.voices) || [];
+        vmVoices = v;
+        sel.innerHTML = '<option value="">Как в звонках</option>' + v.slice(0, 100).map(function (x) {
+          return '<option value="' + esc(x.voice_id) + '" data-name="' + esc(x.name) + '"' + (x.voice_id === vm.voice_id ? ' selected' : '') + '>' + esc(x.name) + (x.recommended ? ' — подходит для языка' : '') + '</option>';
+        }).join('');
+      });
+    }
+    var vmVoices = [];
+    S.$$('input[name="vm-engine"]', b).forEach(function (r) {
+      r.addEventListener('change', function () {
+        saveVm({ engine: r.value }, true).then(function () { drawVoiceMsg(); S.toast('Озвучка переключена', 'success'); });
+      });
+    });
+    S.$('#vm-lang').addEventListener('change', function () { saveVm({ language: this.value || null }); loadVoices(); });
+    S.$('#vm-stab').addEventListener('change', function () { saveVm({ stability: Number(this.value) }); });
+    S.$('#vm-voice').addEventListener('change', function () {
+      var o = this.selectedOptions[0];
+      saveVm({ voice_id: this.value || null, voice_name: this.value ? (o.dataset.name || '') : null });
+    });
+    S.$('#vm-ovoice').addEventListener('change', function () { saveVm({ openai_voice: this.value }); });
+    var sh = S.$('#vm-share'); if (sh) sh.addEventListener('change', function () { saveVm({ auto_share: Number(this.value) }); });
+    S.$$('[data-vch]', b).forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var path = sel.dataset.vch === 'whatsapp' ? '/whatsapp/settings' : '/telegram-account/settings';
+        S.api(path, { method: 'PATCH', body: { voice_reply_mode: sel.value } }).then(function (r) {
+          if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+          vm.channels[sel.dataset.vch] = sel.value;
+          S.toast('Сохранено', 'success');
+          S.$('#vm-share-wrap').hidden = !Object.keys(vm.channels).some(function (k) { return vm.channels[k] === 'auto'; });
+        });
+      });
+    });
+    S.$('#vm-play').addEventListener('click', function () {
+      var btn = this; btn.disabled = true;
+      var body = { engine: S.$('input[name="vm-engine"]:checked', b).value };
+      if (body.engine === 'openai') body.openai_voice = S.$('#vm-ovoice').value;
+      else { body.voice_id = S.$('#vm-voice').value || null; body.language = S.$('#vm-lang').value || null; body.stability = Number(S.$('#vm-stab').value); }
+      var headers = { 'Content-Type': 'application/json' }; var t = S.token(); if (t) headers.Authorization = 'Bearer ' + t;
+      fetch('/api/agent/voice-messages/preview', { method: 'POST', headers: headers, body: JSON.stringify(body) }).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) {
+          var det = d.detail || d.message; throw new Error(det && det.provider_message ? det.provider_message : S.errText(det));
+        });
+        return r.blob();
+      }).then(function (blob) {
+        if (vmAudio) vmAudio.pause();
+        vmAudio = new Audio(URL.createObjectURL(blob)); vmAudio.play();
+      }).catch(function (e) { S.toast(e.message || 'Не удалось озвучить', 'error'); })
+        .then(function () { btn.disabled = false; });
+    });
+    loadVoices();
+  }
+
+  // ══════════════════════════════ ДОКУМЕНТЫ БОТА (фирменный стиль) ══════════
+  var BRAND_COLORS = [['#2a5ce8', 'Синий Voksy AI'], ['#0f766e', 'Изумрудный'], ['#b91c1c', 'Красный'], ['#7c3aed', 'Фиолетовый'], ['#c2410c', 'Оранжевый'], ['#1f2937', 'Графитовый']];
+
+  function loadDocs() {
+    var b = S.$('#b-docs'); if (!b) return;
+    var brand = { color: A.brand_color || '', company: A.brand_company_name || '', contacts: A.brand_contacts || '', logoId: A.brand_logo_file_id || null, logoUrl: null };
+    function draw() {
+      b.innerHTML =
+        '<div class="field"><label class="label">Логотип</label><div class="row" style="gap:14px">' +
+        '<div class="st-logo">' + (brand.logoUrl ? '<img src="' + esc(brand.logoUrl) + '" alt="Логотип">' : brand.logoId ? '<span class="muted small">Загружен</span>' : '<span class="muted small">Нет</span>') + '</div>' +
+        '<div><button class="btn btn-sm" id="br-up" type="button">' + icon('upload') + '<span>' + (brand.logoId ? 'Заменить' : 'Загрузить логотип') + '</span></button>' +
+        (brand.logoId ? ' <button class="btn btn-ghost btn-sm" id="br-rm" type="button">Убрать</button>' : '') +
+        '<div class="hint" style="margin-top:6px">PNG с прозрачным фоном выглядит лучше всего. Логотип встанет в шапку документа слева.</div></div></div></div>' +
+        '<div class="field"><label class="label">Цвет шапки</label><div class="st-swatches">' + BRAND_COLORS.map(function (c) {
+          return '<button type="button" class="st-swatch' + (brand.color.toLowerCase() === c[0] ? ' on' : '') + '" data-col="' + c[0] + '" style="background:' + c[0] + '" title="' + esc(c[1]) + '" aria-label="' + esc(c[1]) + '">' + icon('check') + '</button>';
+        }).join('') + '<input class="input" id="br-col" maxlength="7" placeholder="#2a5ce8" value="' + esc(brand.color) + '" style="width:120px"></div><div class="hint">Свой цвет в формате #RRGGBB. Пусто: синий Voksy AI.</div></div>' +
+        '<div class="st-grid2"><div class="field"><label class="label">Название компании</label><input class="input" id="br-name" maxlength="255" value="' + esc(brand.company) + '" placeholder="ОсОО «Ваша компания»"><div class="hint">В шапке рядом с логотипом и в подвале.</div></div>' +
+        '<div class="field"><label class="label">Контакты в подвале</label><input class="input" id="br-contacts" maxlength="500" value="' + esc(brand.contacts) + '" placeholder="сайт · телефон · почта"><div class="hint">Одной строкой, внизу каждой страницы.</div></div></div>' +
+        '<button class="btn btn-primary" id="br-save" type="button">Сохранить оформление</button>';
+      S.$$('[data-col]', b).forEach(function (x) { x.addEventListener('click', function () { brand.color = x.dataset.col; S.$('#br-col').value = brand.color; S.$$('.st-swatch', b).forEach(function (y) { y.classList.toggle('on', y === x); }); }); });
+      on('br-save', function () {
+        brand.color = S.$('#br-col').value.trim(); brand.company = S.$('#br-name').value.trim(); brand.contacts = S.$('#br-contacts').value.trim();
+        if (brand.color && !/^#[0-9a-fA-F]{6}$/.test(brand.color)) { S.toast('Цвет нужен в формате #RRGGBB', 'error'); return; }
+        var body = { brand_company_name: brand.company || null, brand_color: brand.color || null, brand_contacts: brand.contacts || null, brand_logo_file_id: brand.logoId || null };
+        put(body).then(function (r) {
+          if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+          Object.keys(body).forEach(function (k) { A[k] = body[k]; }); S.toast('Оформление сохранено', 'success');
+        });
+      });
+      on('br-rm', function () { brand.logoId = null; brand.logoUrl = null; draw(); });
+      on('br-up', function () {
+        var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp';
+        inp.addEventListener('change', function () {
+          var f = inp.files[0]; if (!f) return;
+          S.upload('/files', f, { title: 'Логотип компании', description: 'Логотип для шапки документов бота' }).then(function (r) {
+            if (!r.ok) { S.toast(S.errText(r.data.detail === 'storage_not_configured' ? 'Хранилище файлов не настроено' : r.data.detail || r.data), 'error'); return; }
+            brand.logoId = r.data.file.id; fetchLogo(); S.toast('Логотип загружен. Нажмите «Сохранить оформление»', 'success');
+          });
+        });
+        inp.click();
+      });
+    }
+    function fetchLogo() {
+      if (!brand.logoId) { draw(); return; }
+      S.api('/files/' + brand.logoId + '/link').then(function (r) { brand.logoUrl = r.ok ? r.data.url : null; draw(); });
+    }
+    fetchLogo();
   }
 
   // ══════════════════════════════ ВХОДЯЩИЕ ЗВОНКИ ══════════════════════════

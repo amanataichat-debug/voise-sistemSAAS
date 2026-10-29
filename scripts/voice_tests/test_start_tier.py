@@ -49,10 +49,10 @@ tools = [T(n) for n in ("create_agent_task", "trigger_immediate_call", "bulk_sch
 names = lambda ts: {t["function"]["name"] for t in ts}
 
 pc = names(agent_mode.filter_tools(tools, "postcall"))
-check("PostCall: нет планирования и документов",
-      not pc & {"create_agent_task", "trigger_immediate_call", "bulk_schedule_calls", "create_document"}, sorted(pc))
-check("PostCall: отвечать и вести CRM можно",
-      {"whatsapp_send_message", "send_voice_message", "append_contact_note", "move_contact_stage"} <= pc)
+check("PostCall: нет планирования и звонков первым",
+      not pc & {"create_agent_task", "trigger_immediate_call", "bulk_schedule_calls"}, sorted(pc))
+check("PostCall: отвечать, вести CRM и собирать документы можно",
+      {"whatsapp_send_message", "send_voice_message", "append_contact_note", "move_contact_stage", "create_document"} <= pc)
 oc = names(agent_mode.filter_tools(tools, "owner_chat"))
 check("Чат владельца: только чтение",
       oc == {"get_period_report", "search_contacts", "notify_owner_handoff"}, sorted(oc))

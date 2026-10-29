@@ -69,9 +69,10 @@
       .catch(function () { return { ok: false, status: 0, data: { detail: 'Нет связи с сервером' } }; });
   };
   // Загрузка файла (multipart): upload('/contacts/import/preview', file) → { ok, status, data }
-  S.upload = function (path, file, field) {
+  S.upload = function (path, file, extra) {
     var fd = new FormData();
-    fd.append(field || 'file', file);
+    fd.append('file', file);
+    if (extra && typeof extra === 'object') Object.keys(extra).forEach(function (k) { if (extra[k] != null) fd.append(k, extra[k]); });
     var headers = {};
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
@@ -139,6 +140,12 @@
     if (!sec) return '—';
     var m = Math.floor(sec / 60), s = sec % 60;
     return m ? m + ' мин ' + (s ? s + ' с' : '') : s + ' с';
+  };
+  S.fmtSize = function (b) {
+    b = Number(b) || 0;
+    if (b < 1024) return b + ' Б';
+    if (b < 1048576) return Math.round(b / 1024) + ' КБ';
+    return (b / 1048576).toFixed(1) + ' МБ';
   };
   S.initial = function (name) { return String(name || '?').trim().charAt(0).toUpperCase() || '?'; };
   S.debounce = function (fn, ms) {

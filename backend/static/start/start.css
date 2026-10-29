@@ -207,3 +207,59 @@
 .st-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 32px 16px; border: 2px dashed var(--vf-border-strong); border-radius: var(--vf-r-md); background: var(--vf-surface-2); cursor: pointer; text-align: center; transition: border-color var(--vf-fast), background var(--vf-fast); }
 .st-drop .ic { width: 28px; height: 28px; color: var(--vf-accent); }
 .st-drop:hover, .st-drop.over { border-color: var(--vf-accent); background: var(--vf-accent-soft); }
+
+/* ── Каталог (позиции с фото) ────────────────────────────────────────────── */
+.st-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.st-prod { border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); background: var(--vf-surface); overflow: hidden; display: flex; flex-direction: column; }
+.st-prod.off, .st-qa.off { opacity: .55; }
+.st-prod .pic { position: relative; aspect-ratio: 4 / 3; background: var(--vf-surface-3); display: flex; align-items: center; justify-content: center; }
+.st-prod .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-prod .pic .cnt { position: absolute; right: 8px; bottom: 8px; background: rgba(15,23,42,.7); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+.st-ph { display: inline-flex; color: var(--vf-text-4); }
+.st-ph .ic { width: 30px; height: 30px; }
+.st-prod .bd { padding: 11px 12px 8px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.st-prod .t { font-weight: 600; font-size: 13.5px; }
+.st-prod .pr { font-size: 13px; color: var(--vf-success); font-weight: 600; }
+.st-prod .at { display: flex; flex-wrap: wrap; gap: 4px; }
+.st-prod .acts { display: flex; gap: 4px; margin-top: auto; padding-top: 6px; }
+
+/* ── Выбор фото позиции, характеристики ──────────────────────────────────── */
+.st-media { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.st-media-item { position: relative; aspect-ratio: 1; border-radius: var(--vf-r-sm); overflow: hidden; border: 2px solid var(--vf-border); background: var(--vf-surface-3); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.st-media-item img { width: 100%; height: 100%; object-fit: cover; }
+.st-media-item .chk { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--vf-accent); color: #fff; display: none; align-items: center; justify-content: center; }
+.st-media-item .chk .ic { width: 12px; height: 12px; }
+.st-media-item.on { border-color: var(--vf-accent); }
+.st-media-item.on .chk { display: flex; }
+.st-attr { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+.st-grid3 { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 0 14px; }
+@media (max-width: 560px) { .st-grid3 { grid-template-columns: 1fr; } .st-attr { grid-template-columns: 1fr auto; } .st-attr input:nth-child(2) { grid-column: 1; } }
+
+/* ── Файлы бота ──────────────────────────────────────────────────────────── */
+.st-files { display: flex; flex-direction: column; gap: 8px; }
+.st-file { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); background: var(--vf-surface); flex-wrap: wrap; }
+.st-file .th { width: 46px; height: 46px; border-radius: 10px; background: var(--vf-surface-3); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--vf-text-3); flex: 0 0 auto; }
+.st-file .th img { width: 100%; height: 100%; object-fit: cover; }
+.st-file .th .ic { width: 22px; height: 22px; }
+.st-file .nm { flex: 1; min-width: 160px; }
+.st-file .nm b { font-size: 13.5px; overflow-wrap: anywhere; }
+.st-file .rl { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+.st-role { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--vf-text-2); cursor: pointer; }
+.st-role.dis { opacity: .5; cursor: not-allowed; }
+.st-file .acts { display: inline-flex; gap: 2px; }
+
+/* ── Голосовые сообщения и фирменный стиль ───────────────────────────────── */
+.st-engine { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .st-engine { grid-template-columns: 1fr; } }
+.st-engine-item { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); cursor: pointer; background: var(--vf-surface); }
+.st-engine-item input { position: absolute; opacity: 0; pointer-events: none; }
+.st-engine-item span { font-size: 12.5px; color: var(--vf-text-3); }
+.st-engine-item.on { border-color: var(--vf-accent); background: var(--vf-accent-soft); }
+.st-engine-item.dis { opacity: .5; cursor: not-allowed; }
+.st-logo { width: 96px; height: 64px; border: 1px dashed var(--vf-border-strong); border-radius: var(--vf-r-sm); display: flex; align-items: center; justify-content: center; background: var(--vf-surface-2); overflow: hidden; }
+.st-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.st-swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.st-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.st-swatch .ic { width: 14px; height: 14px; opacity: 0; }
+.st-swatch.on { border-color: var(--vf-text); }
+.st-swatch.on .ic { opacity: 1; }
