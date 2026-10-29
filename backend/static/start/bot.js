@@ -152,7 +152,9 @@
       '<button class="btn btn-primary" id="m-save" type="button">Сохранить</button></div>' +
       '<div class="st-switch-row" style="margin-top:14px"><div class="t"><b>Бот отвечает клиентам</b><div>Если выключить, бот перестанет отвечать в мессенджерах и по телефону. Данные и клиенты сохранятся.</div></div>' +
       '<label class="switch"><input type="checkbox" id="m-active"' + (A.is_active ? ' checked' : '') + '><span class="track"></span></label></div>' +
-      '<div class="st-note">Голос по телефону: <b>' + esc(voice) + '</b></div>';
+      '<div class="st-sub-h" style="margin-top:20px">Голос по телефону</div>' +
+      '<div class="st-note" style="margin:0 0 10px">Сейчас: <b>' + esc(voice) + '</b>. Голос нужен только для входящих звонков, на переписку он не влияет.</div>' +
+      '<div id="voice-box"><div class="skeleton" style="height:60px"></div></div>';
     S.$('#m-save').addEventListener('click', function () {
       var name = S.$('#m-name').value.trim();
       if (!name) { S.toast('Укажите имя бота', 'error'); return; }
@@ -161,6 +163,7 @@
         A.name = name; S.toast('Сохранено', 'success');
       });
     });
+    loadVoiceBox();
     S.$('#m-active').addEventListener('change', function () {
       var on = this.checked, el = this;
       put({ is_active: on }).then(function (r) {
@@ -168,6 +171,81 @@
         A.is_active = on; S.toast(on ? 'Бот включён' : 'Бот выключен', 'success');
       });
     });
+  }
+
+  // ── Голос по телефону: движок, язык, голос ──────────────────────────────
+  var voiceOpts = null;
+  function loadVoiceBox() {
+    S.api('/api/eleven-assistants/options').then(function (r) {
+      voiceOpts = r.ok ? r.data : null;
+      drawVoiceBox();
+    });
+  }
+
+  function drawVoiceBox() {
+    var box = S.$('#voice-box');
+    if (!box) return;
+    if (!voiceOpts) { box.innerHTML = '<div class="muted small">Не удалось загрузить список голосов.</div>'; return; }
+    var engine = A.eleven_voice_engine === 'gpt_live' ? 'gpt_live' : 'eleven';
+    var engines = voiceOpts.voice_engines || [];
+    box.innerHTML =
+      '<div class="st-grid2"><div class="field"><label class="label">Модель голоса</label><select class="select-native" id="v-engine">' +
+      engines.map(function (e) {
+        return '<option value="' + esc(e.id) + '"' + (e.id === engine ? ' selected' : '') + '>' + esc(e.title) + (e.som_per_minute ? ' · ' + e.som_per_minute + ' сом/мин' : '') + '</option>';
+      }).join('') + '</select></div>' +
+      '<div class="field" id="v-lang-wrap"><label class="label">Язык</label><select class="select-native" id="v-lang">' +
+      (voiceOpts.languages || []).map(function (l) {
+        return '<option value="' + esc(l.code) + '"' + (l.code === (A.eleven_language || 'ky') ? ' selected' : '') + '>' + esc(l.title) + '</option>';
+      }).join('') + '</select></div></div>' +
+      '<div class="field" id="v-eleven-wrap"><label class="label">Голос</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select class="select-native" id="v-voice"><option>Загрузка…</option></select>' +
+      '<button class="btn" id="v-play" type="button" aria-label="Прослушать">' + icon('play') + '</button></div><div class="hint">Голоса, подходящие для выбранного языка, показаны первыми.</div></div>' +
+      '<div class="field" id="v-live-wrap"><label class="label">Голос GPT-Live</label><select class="select-native" id="v-live">' +
+      (voiceOpts.live_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === (A.eleven_live_voice || voiceOpts.default_live_voice) ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div>' +
+      '<button class="btn btn-primary" id="v-save" type="button">Сохранить голос</button>';
+    var voices = [];
+    function toggle() {
+      var live = S.$('#v-engine').value === 'gpt_live';
+      S.$('#v-eleven-wrap').style.display = live ? 'none' : '';
+      S.$('#v-lang-wrap').style.display = live ? 'none' : '';
+      S.$('#v-live-wrap').style.display = live ? '' : 'none';
+    }
+    function loadVoices() {
+      var sel = S.$('#v-voice'); sel.innerHTML = '<option>Загрузка…</option>';
+      S.api('/api/eleven-assistants/voices?language=' + S.$('#v-lang').value).then(function (r) {
+        voices = (r.ok && r.data.voices) || [];
+        if (!voices.length) { sel.innerHTML = '<option value="">Голос по умолчанию</option>'; return; }
+        sel.innerHTML = voices.slice(0, 100).map(function (x) {
+          return '<option value="' + esc(x.voice_id) + '"' + (x.voice_id === A.eleven_voice_id ? ' selected' : '') + '>' + esc(x.name) + (x.recommended ? ' — подходит для языка' : '') + '</option>';
+        }).join('');
+      });
+    }
+    S.$('#v-engine').addEventListener('change', toggle);
+    S.$('#v-lang').addEventListener('change', loadVoices);
+    var audio = null;
+    S.$('#v-play').addEventListener('click', function () {
+      var v = voices.filter(function (x) { return x.voice_id === S.$('#v-voice').value; })[0];
+      if (!v || !v.preview_url) { S.toast('У этого голоса нет образца', 'info'); return; }
+      if (audio) audio.pause();
+      audio = new Audio(v.preview_url); audio.play().catch(function () { S.toast('Не удалось воспроизвести', 'error'); });
+    });
+    S.$('#v-save').addEventListener('click', function () {
+      var live = S.$('#v-engine').value === 'gpt_live';
+      var body = { eleven_voice_engine: live ? 'gpt_live' : 'eleven' };
+      if (live) body.eleven_live_voice = S.$('#v-live').value;
+      else {
+        var opt = S.$('#v-voice').selectedOptions[0];
+        body.eleven_language = S.$('#v-lang').value;
+        if (opt && opt.value) { body.eleven_voice_id = opt.value; body.eleven_voice_name = (opt.textContent || '').replace(' — подходит для языка', ''); }
+      }
+      var btn = this; btn.disabled = true;
+      put(body).then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        Object.keys(body).forEach(function (k) { A[k] = body[k]; });
+        S.toast('Голос сохранён', 'success'); fillMain();
+      });
+    });
+    toggle(); loadVoices();
   }
 
   // ══════════════════════════════ ИНСТРУКЦИИ ═══════════════════════════════

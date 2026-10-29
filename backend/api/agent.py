@@ -4428,7 +4428,8 @@ async def import_contacts_preview(
     )
 
     valid_rows = len(unique_rows)
-    credits_required = valid_rows * CREDITS_PER_CONTACT
+    # Тариф Старт: бот сам не звонит, кредиты на звонки по импортированным клиентам не нужны
+    credits_required = 0 if current_user.agent_mode() == "reactive" else valid_rows * CREDITS_PER_CONTACT
     credits_available = current_user.credits_balance or 0
 
     blocked_reasons: List[str] = []
@@ -4633,8 +4634,8 @@ async def import_contacts_execute(
     if not rows:
         raise HTTPException(status_code=400, detail="no_valid_rows")
 
-    # Финальная проверка баланса кредитов
-    credits_required = len(rows) * CREDITS_PER_CONTACT
+    # Финальная проверка баланса кредитов (на Старте звонков нет — кредиты не нужны)
+    credits_required = 0 if current_user.agent_mode() == "reactive" else len(rows) * CREDITS_PER_CONTACT
     if credits_required > (current_user.credits_balance or 0):
         raise HTTPException(status_code=402, detail={
             "error": "insufficient_credits",

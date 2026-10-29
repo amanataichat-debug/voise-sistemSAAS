@@ -202,3 +202,8 @@
 .st-empty-big p { color: var(--vf-text-3); margin: 0 0 6px; font-size: 14px; line-height: 1.55; }
 .st-empty-ic { width: 64px; height: 64px; border-radius: 20px; background: var(--vf-accent-soft); color: var(--vf-accent); display: inline-flex; align-items: center; justify-content: center; }
 .st-empty-ic .ic { width: 30px; height: 30px; }
+
+/* ── Загрузка файла (импорт клиентов) ────────────────────────────────────── */
+.st-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 32px 16px; border: 2px dashed var(--vf-border-strong); border-radius: var(--vf-r-md); background: var(--vf-surface-2); cursor: pointer; text-align: center; transition: border-color var(--vf-fast), background var(--vf-fast); }
+.st-drop .ic { width: 28px; height: 28px; color: var(--vf-accent); }
+.st-drop:hover, .st-drop.over { border-color: var(--vf-accent); background: var(--vf-accent-soft); }

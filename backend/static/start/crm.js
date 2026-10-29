@@ -36,7 +36,8 @@
     root.innerHTML =
       '<div class="st-head"><div><h2>Клиенты и сделки</h2>' +
       '<p>Бот записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.</p></div>' +
-      '<div class="st-toolbar"><button class="btn btn-primary" id="add-client" type="button">' + icon('plus') + '<span>Добавить клиента</span></button></div></div>' +
+      '<div class="st-toolbar"><button class="btn" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>' +
+      '<button class="btn btn-primary" id="add-client" type="button">' + icon('plus') + '<span>Добавить клиента</span></button></div></div>' +
       '<div class="card st-tabs-card">' +
       '<div class="tabs" id="tabs">' +
       tab('clients', 'users', 'Клиенты') + tab('pipeline', 'columns-2', 'Воронка') +
@@ -47,6 +48,7 @@
       '<div class="tab-pane" data-pane="tasks"><div class="st-pane" id="pane-tasks"></div></div>' +
       '</div>';
     document.getElementById('add-client').addEventListener('click', addClientDialog);
+    document.getElementById('import-clients').addEventListener('click', importDialog);
     S.initTabs(document.getElementById('tabs'), openPane);
     refreshCounts();
   }
@@ -169,6 +171,93 @@
       });
     });
     setTimeout(function () { var i = S.$('#n-phone', d.el); if (i) i.focus(); }, 60);
+  }
+
+  // ── Импорт из Excel / CSV ───────────────────────────────────────────────
+  var IMPORT_ERRORS = {
+    unsupported_format: 'Нужен файл .xlsx или .csv',
+    parse_failed: 'Не удалось прочитать файл. Проверьте, что он не повреждён',
+    exceed_limit: 'В файле больше 1000 строк. Разделите его на части',
+    preview_expired: 'Загрузка устарела, выберите файл заново'
+  };
+  function importError(r) {
+    var d = r && r.data && (r.data.detail || r.data.message);
+    return (typeof d === 'string' && IMPORT_ERRORS[d]) || S.apiError(r);
+  }
+
+  function importDialog() {
+    var preview = null;
+    var d = S.dialog({
+      title: 'Импорт клиентов', size: 'lg',
+      body: '<div id="imp-body"></div>',
+      foot: '<button class="btn" type="button" data-c>Закрыть</button><button class="btn btn-primary" type="button" id="imp-go" disabled>Импортировать</button>'
+    });
+    var body = S.$('#imp-body', d.el), go = S.$('#imp-go', d.el);
+    S.$('[data-c]', d.el).addEventListener('click', d.close);
+
+    function pick() {
+      go.disabled = true; preview = null;
+      body.innerHTML =
+        '<p class="muted" style="margin-top:0">Загрузите таблицу со списком клиентов: имя, телефон, компания, должность, заметка. Клиенты с номером, который уже есть в базе, будут пропущены.</p>' +
+        '<label class="st-drop" id="imp-drop" for="imp-file">' + icon('upload') +
+        '<b>Выберите файл или перетащите сюда</b><span class="muted small">.xlsx или .csv, до 1000 строк</span>' +
+        '<input id="imp-file" type="file" accept=".xlsx,.xls,.csv" hidden></label>' +
+        '<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="imp-tpl" type="button">' + icon('download') + '<span>Скачать шаблон</span></button></div>' +
+        '<p class="st-note" style="margin-top:10px">Колонки про задачи и «Когда звонить» на тарифе Старт не используются: бот сам не звонит.</p>';
+      var input = S.$('#imp-file', d.el), drop = S.$('#imp-drop', d.el);
+      input.addEventListener('change', function () { if (input.files[0]) upload(input.files[0]); });
+      ['dragover', 'dragenter'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+      ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+      drop.addEventListener('drop', function (e) { var f = e.dataTransfer.files[0]; if (f) upload(f); });
+      S.$('#imp-tpl', d.el).addEventListener('click', function () {
+        S.download('/contacts/import/template', 'clients_template.xlsx').catch(function () { S.toast('Не удалось скачать шаблон', 'error'); });
+      });
+    }
+
+    function upload(file) {
+      body.innerHTML = '<div class="st-empty"><div class="skeleton" style="height:60px"></div><p>Читаю файл…</p></div>';
+      S.upload('/contacts/import/preview', file).then(function (r) {
+        if (!r.ok) { S.toast(importError(r), 'error'); pick(); return; }
+        preview = r.data; showPreview(file.name);
+      });
+    }
+
+    function showPreview(name) {
+      var p = preview;
+      go.disabled = !p.valid_rows;
+      body.innerHTML =
+        '<p class="muted" style="margin-top:0">Файл: <b>' + esc(name) + '</b></p>' +
+        '<div class="st-kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+        '<div class="card st-kpi"><div class="lbl">Будет добавлено</div><div class="val" style="color:var(--vf-success)">' + p.valid_rows + '</div></div>' +
+        '<div class="card st-kpi"><div class="lbl">Уже есть в базе</div><div class="val">' + (p.duplicates || []).length + '</div></div>' +
+        '<div class="card st-kpi"><div class="lbl">С ошибками</div><div class="val"' + ((p.errors || []).length ? ' style="color:var(--vf-danger)"' : '') + '>' + (p.errors || []).length + '</div></div></div>' +
+        ((p.errors || []).length
+          ? '<div class="st-sub-h">Строки с ошибками</div><div class="st-actions" style="max-height:150px;overflow:auto">' +
+            p.errors.slice(0, 30).map(function (e) { return '<div><span class="mono">строка ' + esc(e.row) + '</span><span>' + esc(e.error) + '</span></div>'; }).join('') + '</div>' +
+            '<button class="btn btn-ghost btn-sm" id="imp-err" type="button" style="margin-top:8px">' + icon('download') + '<span>Скачать ошибки</span></button>'
+          : '') +
+        (!p.valid_rows ? '<div class="note note-warning" style="margin-top:12px">Нет ни одной подходящей строки для импорта.</div>' : '') +
+        '<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="imp-again" type="button">Выбрать другой файл</button></div>';
+      S.$('#imp-again', d.el).addEventListener('click', pick);
+      var er = S.$('#imp-err', d.el);
+      if (er) er.addEventListener('click', function () {
+        S.download('/contacts/import/errors/' + encodeURIComponent(p.preview_token), 'import_errors.xlsx').catch(function () { S.toast('Не удалось скачать', 'error'); });
+      });
+    }
+
+    go.addEventListener('click', function () {
+      if (!preview) return;
+      go.disabled = true; go.textContent = 'Импортирую…';
+      S.api('/contacts/import/execute', { method: 'POST', body: { preview_token: preview.preview_token, create_tasks: false } }).then(function (r) {
+        if (!r.ok) { go.disabled = false; go.textContent = 'Импортировать'; S.toast(importError(r), 'error'); return; }
+        var total = r.data.total || preview.valid_rows;
+        d.close();
+        S.toast('Импорт запущен: ' + total + ' клиентов. Список обновится через несколько секунд', 'success');
+        // импорт идёт в фоне: обновляем список после паузы, пропорциональной размеру
+        setTimeout(reloadAll, Math.min(15000, 2500 + total * 15));
+      });
+    });
+    pick();
   }
 
   function reloadAll() {

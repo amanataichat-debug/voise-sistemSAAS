@@ -68,6 +68,39 @@
       })
       .catch(function () { return { ok: false, status: 0, data: { detail: 'Нет связи с сервером' } }; });
   };
+  // Загрузка файла (multipart): upload('/contacts/import/preview', file) → { ok, status, data }
+  S.upload = function (path, file, field) {
+    var fd = new FormData();
+    fd.append(field || 'file', file);
+    var headers = {};
+    var t = S.token();
+    if (t) headers.Authorization = 'Bearer ' + t;
+    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    return fetch(url, { method: 'POST', headers: headers, body: fd })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (data) { return { ok: r.ok, status: r.status, data: data }; });
+      })
+      .catch(function () { return { ok: false, status: 0, data: { detail: 'Нет связи с сервером' } }; });
+  };
+
+  // Скачивание файла с токеном (ссылкой нельзя: нужен заголовок Authorization)
+  S.download = function (path, filename) {
+    var headers = {};
+    var t = S.token();
+    if (t) headers.Authorization = 'Bearer ' + t;
+    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    return fetch(url, { headers: headers }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    });
+  };
+
   S.apiError = function (res) { return S.errText(res && res.data && (res.data.detail || res.data.message)); };
 
   // ── Форматирование ─────────────────────────────────────────────────────
