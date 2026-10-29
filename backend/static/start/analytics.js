@@ -14,38 +14,37 @@
   document.addEventListener('DOMContentLoaded', function () {
     root = document.getElementById('page');
     S.initMobileMenu();
-    S.guard().then(function (ok) {
+    S.boot().then(function (ok) {
       if (!ok) return;
-      return Promise.all([S.loadAgent(), S.loadStages()]).then(function () {
-        if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
-        return load().then(function () { draw(); S.ready(); });
+      if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
+      // Повторный заход: цифры рисуются сразу из кэша, свежие подтягиваются в фоне
+      var cached = S.cacheGet('analytics');
+      if (cached) { data = cached; draw(); S.ready(); }
+      return load().then(function (fresh) {
+        if (cached && JSON.stringify(fresh) === JSON.stringify(cached)) return;
+        data = fresh; draw(); S.ready();
       });
     });
   });
 
-  // calls отдаёт максимум 100 за запрос — берём до трёх страниц
+  // calls отдаёт максимум 100 за запрос — берём до трёх страниц, все три сразу
   function loadCalls() {
-    var all = [];
-    function page(offset) {
-      return S.api('/calls?limit=100&offset=' + offset).then(function (r) {
-        if (!r.ok) return all;
-        var got = r.data.calls || [];
-        all = all.concat(got);
-        if (got.length === 100 && offset < 200) return page(offset + 100);
-        return all;
-      });
-    }
-    return page(0);
+    return Promise.all([0, 100, 200].map(function (offset) {
+      return S.api('/calls?limit=100&offset=' + offset).then(function (r) { return r.ok ? (r.data.calls || []) : []; });
+    })).then(function (pages) { return [].concat.apply([], pages); });
   }
 
   function load() {
+    var g = S.cacheGen();
     return Promise.all([S.api('/stats'), S.api('/contacts?limit=200&offset=0'), loadCalls()]).then(function (res) {
-      data = {
+      var fresh = {
         stats: res[0].ok ? res[0].data : {},
         contacts: res[1].ok ? (res[1].data.contacts || []) : [],
         contactsTotal: res[1].ok ? (res[1].data.total || 0) : 0,
         events: res[2]
       };
+      S.cacheSet('analytics', fresh, g);
+      return fresh;
     });
   }
 

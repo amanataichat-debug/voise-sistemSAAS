@@ -384,9 +384,29 @@
     }
   }
 
+  // Быстрые переходы: страницу из меню браузер готовит заранее. Prerender — когда пользователь навёл
+  // мышь на пункт (~200 мс): к моменту клика страница уже загружена, отрисована и открывается
+  // мгновенно. Prefetch — запасной вариант (нажатие), если prerender не разрешён. Работает в Chrome/Edge,
+  // в остальных браузерах правило игнорируется.
+  function addSpeculation() {
+    try {
+      if (!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules'))) return;
+      if (document.querySelector('script[type="speculationrules"]')) return;
+      var sel = { selector_matches: '#sidebar-nav a[href^="/static/"]:not([data-no-prefetch])' };
+      var sc = document.createElement('script');
+      sc.type = 'speculationrules';
+      sc.textContent = JSON.stringify({
+        prefetch: [{ where: sel, eagerness: 'conservative' }],
+        prerender: [{ where: sel, eagerness: 'moderate' }]
+      });
+      document.head.appendChild(sc);
+    } catch (e) { /* ignore */ }
+  }
+
   function init() {
     if (redirectStartPages()) return;
     var nav = renderNav();
+    addSpeculation();
     renderThemeToggle();
     renderLangSwitch();
     if (!nav) return;

@@ -7,7 +7,7 @@
 (function(){ try{
   var t = localStorage.getItem('vs_theme') || 'system';
   var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if(dark) document.documentElement.setAttribute('data-theme','dark');
+  if(dark){ document.documentElement.setAttribute('data-theme','dark'); document.documentElement.style.backgroundColor='#0a0f1b'; document.documentElement.style.colorScheme='dark'; }
 }catch(e){} })();
 </script>
   <meta charset="UTF-8">
@@ -21,10 +21,10 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2a5ce8">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap"></noscript>
   <style>
     /* ========================================
        ОСНОВНЫЕ СТИЛИ
@@ -1724,7 +1724,7 @@
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap"></noscript>
   <!-- Дизайн-система Voksy AI: ядро + мост для старых классов страницы (после инлайновых стилей) -->
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
@@ -2939,9 +2939,9 @@
       }
 
       // Загрузка информации о подписке
-      async function loadSubscriptionInfo() {
+      async function loadSubscriptionInfo(prefetched) {
         try {
-          const subscriptionInfo = await api.get('/subscriptions/my-subscription');
+          const subscriptionInfo = await (prefetched || api.get('/subscriptions/my-subscription'));
           subscriptionStatus = subscriptionInfo;
           
           // Сохраняем код текущего плана
@@ -3215,18 +3215,22 @@
       async function initializePage() {
         if (!checkAuth()) return;
 
-        // Подтягиваем актуальные цены тарифов (сомы, из БД)
-        await loadPlanPrices();
+        // Все три запроса уходят одновременно: раньше шли друг за другом, и главная
+        // открывалась после суммы трёх задержек. Подписку разбираем после данных пользователя
+        // (проверка админа читает его email), но запрос к серверу у неё уже в пути.
+        const subscriptionRequest = api.get('/subscriptions/my-subscription');
+        subscriptionRequest.catch(() => {});
+        const pricesRequest = loadPlanPrices();      // цены тарифов (сомы, из БД)
+        const userRequest = loadUserData();          // ошибка не блокирует дальнейшую инициализацию
 
-        // Инициализируем UI модальных окон
+        await pricesRequest;
         updatePaymentModalUI();
         updateExpiredModalUI();
-        
-        // 1. Загружаем данные пользователя (ошибка не блокирует дальнейшую инициализацию)
-        await loadUserData();
 
-        // 2. Загружаем информацию о подписке (всегда выполняется независимо от loadUserData)
-        await loadSubscriptionInfo();
+        await userRequest;
+
+        // Информация о подписке (выполняется независимо от результата loadUserData)
+        await loadSubscriptionInfo(subscriptionRequest);
 
         // 3. Проверяем результат оплаты — последней
         await checkPaymentResult();

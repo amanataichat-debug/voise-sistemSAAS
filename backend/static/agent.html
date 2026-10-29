@@ -12,7 +12,7 @@
 (function(){ try{
   var t = localStorage.getItem('vs_theme') || 'system';
   var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if(dark) document.documentElement.setAttribute('data-theme','dark');
+  if(dark){ document.documentElement.setAttribute('data-theme','dark'); document.documentElement.style.backgroundColor='#0a0f1b'; document.documentElement.style.colorScheme='dark'; }
 }catch(e){} })();
 </script>
 <title>Агент обзвона · Voksy AI</title>
@@ -20,10 +20,10 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <!-- Font Awesome — фолбэк: ui.js заменяет <i class="fa-…"> на иконки Lucide из /static/icons/ui.svg -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap"></noscript>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <link rel="stylesheet" href="/static/css/voksiai.css">

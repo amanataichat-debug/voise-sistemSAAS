@@ -114,7 +114,18 @@ html[data-theme="dark"] body {
    Заголовки и абзацы — через :where(), чтобы классы старых страниц
    (.empty-title, .section-title …) перебивали базовые размеры и отступы. */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; background-color: var(--vf-bg); }
+
+/* ---------- Переходы между страницами кабинета ----------
+   Браузер держит старую страницу на экране, пока новая не готова к показу, и плавно
+   сменяет её: нет белой вспышки и «пустого» кадра. Меню слева не мигает — оно
+   выделено в свой слой и остаётся на месте. Chrome/Edge/Safari 18+; в остальных
+   браузерах страницы просто переключаются как раньше. */
+@view-transition { navigation: auto; }
+.vf-sidebar { view-transition-name: vf-sidebar; }
+::view-transition-group(vf-sidebar) { animation: none; }
+::view-transition-old(vf-sidebar), ::view-transition-new(vf-sidebar) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 140ms; }
 body.vf {
   margin: 0; min-height: 100vh; background: var(--vf-bg); color: var(--vf-text);
   font-family: var(--vf-font); font-size: 14px; line-height: 1.5;

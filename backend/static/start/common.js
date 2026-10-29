@@ -67,6 +67,7 @@
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
     var url = path.indexOf('/api/') === 0 ? path : API + path;
+    if (opts.method && opts.method !== 'GET') S.bust();   // данные изменились: кэш страниц больше не верен
     return fetch(url, { method: opts.method || 'GET', headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
       .then(function (r) {
         if (r.status === 401) {
@@ -80,6 +81,44 @@
       })
       .catch(function () { return { ok: false, status: 0, data: { detail: 'Нет связи с сервером' } }; });
   };
+  // ── Кэш данных страниц ──────────────────────────────────────────────────
+  // Переход между страницами кабинета должен быть мгновенным: страница рисуется из данных,
+  // которые видели секунду назад (sessionStorage вкладки), а свежие подтягиваются в фоне
+  // и перерисовывают страницу, только если что-то изменилось. Любая запись (POST/PUT/PATCH/DELETE)
+  // сбрасывает кэш, поэтому после своих правок устаревших данных не видно.
+  var CK = 'st_c:';
+  function ckey(path) { return CK + (S.token() || '').slice(-12) + ':' + path; }
+  S.cacheGet = function (path) {
+    try { var v = sessionStorage.getItem(ckey(path)); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  };
+  var gen = 0;   // растёт при каждой записи: ответ на запрос, отправленный до записи, в кэш не попадает
+  S.cacheGen = function () { return gen; };
+  S.cacheSet = function (path, data, g) {
+    if (g !== undefined && g !== gen) return;
+    try { sessionStorage.setItem(ckey(path), JSON.stringify(data)); } catch (e) { /* квота: просто без кэша */ }
+  };
+  S.bust = function () {
+    gen++;
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf(CK) === 0) sessionStorage.removeItem(k);
+      }
+    } catch (e) { /* ignore */ }
+  };
+  // draw(result, fromCache) — сначала из кэша (если есть), затем со свежими данными, если они отличаются
+  S.apiSWR = function (path, draw) {
+    var cached = S.cacheGet(path), shown = null, g = gen;
+    if (cached) { shown = JSON.stringify(cached); draw({ ok: true, status: 200, data: cached }, true); }
+    return S.api(path).then(function (r) {
+      if (r.ok) {
+        S.cacheSet(path, r.data, g);
+        if (JSON.stringify(r.data) !== shown) draw(r, false);
+      } else if (!cached) draw(r, false);
+      return r;
+    });
+  };
+
   // Загрузка файла (multipart): upload('/contacts/import/preview', file) → { ok, status, data }
   S.upload = function (path, file, extra) {
     var fd = new FormData();
@@ -89,6 +128,7 @@
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
     var url = path.indexOf('/api/') === 0 ? path : API + path;
+    S.bust();
     return fetch(url, { method: 'POST', headers: headers, body: fd })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (data) { return { ok: r.ok, status: r.status, data: data }; });
@@ -187,10 +227,14 @@
   function indexStages() { S.stageMap = {}; S.stages.forEach(function (s) { S.stageMap[s.key] = s; }); }
   indexStages();
   S.loadStages = function () {
-    return S.api('/pipeline/stages').then(function (r) {
-      if (r.ok && r.data.stages && r.data.stages.length) { S.stages = r.data.stages; indexStages(); }
+    var cached = S.cacheGet('/pipeline/stages');
+    if (cached && cached.stages && cached.stages.length) { S.stages = cached.stages; indexStages(); }
+    var g = gen;
+    var p = S.api('/pipeline/stages').then(function (r) {
+      if (r.ok && r.data.stages && r.data.stages.length) { S.stages = r.data.stages; indexStages(); S.cacheSet('/pipeline/stages', r.data, g); }
       return S.stages;
     });
+    return cached ? Promise.resolve(S.stages) : p;
   };
   S.stageOf = function (key) { return S.stageMap[key] || { key: key, label: key || '—', color: '#6B7280', kind: 'open' }; };
   S.stageChip = function (key) {
@@ -279,29 +323,50 @@
     return Promise.resolve(window.confirm(o.message || o.title));
   };
 
-  // ── Допуск на страницу ─────────────────────────────────────────────────
+  // ── Допуск на страницу и бот ────────────────────────────────────────────
   // Страницы Старта показываем только тарифу Старт. Профи — на страницу агента, остальные — к тарифам.
   // ?preview=1 — для проверки админом.
-  S.guard = function () {
-    if (/[?&]preview=1/.test(location.search)) return Promise.resolve(true);
-    return S.api('/api/users/me').then(function (r) {
-      if (!r.ok) return true;
-      var mode = r.data.agent_mode || '';
+  // Одним запросом /list: он отдаёт и тариф (agent_mode), и самого бота (на Старте он один).
+  // Раньше было три запроса подряд (/users/me → /list → /), теперь один, а при повторном заходе
+  // страница стартует сразу из кэша, а запрос только проверяет, что ничего не изменилось.
+  S.agent = null;       // null — бот ещё не создан
+  S.boot = function (opts) {
+    opts = opts || {};
+    var preview = /[?&]preview=1/.test(location.search);
+    var cached = S.cacheGet('/list');
+    var stagesP = S.loadStages();
+
+    function apply(d) { S.agent = (d && d.agents && d.agents[0]) || null; }
+    function allowed(d) {
+      var mode = (d && d.agent_mode) || '';
       try { localStorage.setItem('vf_agent_mode', mode); } catch (e) { /* ignore */ }
-      if (mode === 'reactive') return true;
+      if (preview || mode === 'reactive') return true;
       location.replace(mode === 'full' ? '/static/agent.html' : '/static/dashboard.html#plans');
       return false;
-    });
-  };
+    }
 
-  // ── Бот (агент) ─────────────────────────────────────────────────────────
-  // На Старте бот один. null — ещё не создан.
-  S.agent = null;
-  S.loadAgent = function () {
-    return S.api('/list').then(function (r) {
-      var list = (r.ok && r.data.agents) || [];
-      S.agent = list.length ? list[0] : null;
-      return S.agent;
+    var g = gen;
+    var fresh = S.api('/list').then(function (r) {
+      if (r.ok) S.cacheSet('/list', r.data, g);
+      return r;
+    });
+
+    if (cached && cached.agent_mode === 'reactive' && cached.agents && cached.agents.length) {
+      apply(cached);
+      var shown = JSON.stringify(cached.agents);
+      fresh.then(function (r) {
+        if (!r.ok || !allowed(r.data)) return;
+        apply(r.data);
+        if (JSON.stringify(r.data.agents) !== shown && opts.onUpdate) opts.onUpdate(S.agent);
+      });
+      return stagesP.then(function () { return true; });
+    }
+    return Promise.all([fresh, stagesP]).then(function (res) {
+      var r = res[0];
+      if (!r.ok) { S.agent = null; return true; }
+      if (!allowed(r.data)) return false;
+      apply(r.data);
+      return true;
     });
   };
 

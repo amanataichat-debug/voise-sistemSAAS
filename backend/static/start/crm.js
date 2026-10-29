@@ -21,13 +21,11 @@
   document.addEventListener('DOMContentLoaded', function () {
     root = document.getElementById('page');
     S.initMobileMenu();
-    S.guard().then(function (ok) {
+    S.boot().then(function (ok) {
       if (!ok) return;
-      return Promise.all([S.loadAgent(), S.loadStages()]).then(function () {
-        if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
-        render();
-        S.ready();
-      });
+      if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
+      render();
+      S.ready();
     });
   });
 
@@ -99,16 +97,25 @@
 
   function loadClients(reset) {
     var c = st.clients, list = document.getElementById('c-list');
-    if (reset) { c.items = []; list.innerHTML = '<div class="skeleton" style="height:200px"></div>'; }
-    var q = 'limit=' + PAGE + '&offset=' + c.items.length;
+    var seq = c.seq = (c.seq || 0) + 1;
+    var q = 'limit=' + PAGE + '&offset=' + (reset ? 0 : c.items.length);
     if (c.search) q += '&search=' + encodeURIComponent(c.search);
     if (c.stage) q += '&status=' + encodeURIComponent(c.stage);
-    S.api('/contacts?' + q).then(function (r) {
+    function show(r) {
+      if (seq !== c.seq) return;            // пока шёл запрос, фильтр уже сменили
       if (!r.ok) { list.innerHTML = '<div class="st-empty">' + esc(S.apiError(r)) + '</div>'; return; }
-      c.items = c.items.concat(r.data.contacts || []);
+      var got = r.data.contacts || [];
+      c.items = reset ? got : c.items.concat(got);
       c.total = r.data.total || 0;
       drawClients();
-    });
+    }
+    if (reset) {
+      c.items = [];
+      // Первая страница без фильтров открывается мгновенно из кэша и обновляется в фоне
+      if (!c.search && !c.stage) { S.apiSWR('/contacts?' + q, show); return; }
+      list.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    }
+    S.api('/contacts?' + q).then(show);
   }
 
   function drawClients() {
@@ -470,13 +477,15 @@
   // ══════════════════════════════ ВОРОНКА ══════════════════════════════════
   function loadBoard() {
     var pane = document.getElementById('pane-pipeline');
-    pane.innerHTML = '<div class="skeleton" style="height:320px"></div>';
-    S.api('/contacts?limit=200&offset=0').then(function (r) {
-      if (!r.ok) { pane.innerHTML = '<div class="st-empty">' + esc(S.apiError(r)) + '</div>'; return; }
+    var shown = false;
+    S.apiSWR('/contacts?limit=200&offset=0', function (r) {
+      if (!r.ok) { if (!shown) pane.innerHTML = '<div class="st-empty">' + esc(S.apiError(r)) + '</div>'; return; }
+      shown = true;
       st.board = r.data.contacts || [];
       st.boardTotal = r.data.total || 0;
       drawBoard();
     });
+    if (!S.cacheGet('/contacts?limit=200&offset=0')) pane.innerHTML = '<div class="skeleton" style="height:320px"></div>';
   }
 
   function drawBoard() {

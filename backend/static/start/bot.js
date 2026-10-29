@@ -27,16 +27,18 @@
   document.addEventListener('DOMContentLoaded', function () {
     root = document.getElementById('page');
     S.initMobileMenu();
-    S.guard().then(function (ok) {
+    // Если владелец уже начал править форму, свежие данные из фона её не перерисовывают
+    var touched = false;
+    root.addEventListener('input', function () { touched = true; }, true);
+    root.addEventListener('change', function () { touched = true; }, true);
+    S.boot({
+      onUpdate: function (a) { if (touched || !A || !a) return; A = a; renderPage(); }
+    }).then(function (ok) {
       if (!ok) return;
-      return S.loadAgent().then(function (a) {
-        if (!a) { createView(); S.ready(); return; }
-        return S.api('/').then(function (r) {
-          A = r.ok ? r.data : a;
-          renderPage();
-          S.ready();
-        });
-      });
+      if (!S.agent) { createView(); S.ready(); return; }
+      A = S.agent;
+      renderPage();
+      S.ready();
     });
   });
 
@@ -44,6 +46,7 @@
   var TAB_ALIAS = { knowledge: 's-kb', channels: 's-channels', instructions: 's-instr', notify: 's-notify' };
   function showSection(id, push) {
     if (!document.getElementById(id)) id = 's-main';
+    startSection(id);
     S.$$('.st-bot-main > section').forEach(function (el) { el.classList.toggle('active', el.id === id); });
     S.$$('.st-nav a').forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + id); });
     try { if (push !== false) history.replaceState(null, '', '#' + id); } catch (e) { /* ignore */ }
@@ -131,8 +134,22 @@
       sec('s-sheet', 'Google Таблица', 'Заявки бот записывает на лист «Заявки», а прайс можно загрузить из таблицы в каталог.', '', 'b-sheet') +
       sec('s-credits', 'Кредиты бота', 'Расход на работу бота: ответы, разбор звонков, фото и голосовые клиентов.', '', 'b-credits') +
       '</div></div>';
-    setupScroll();
-    fillMain(); fillInstr(); loadKb(); loadChannels(); loadVoiceMsg(); loadDocs(); loadCalls(); loadNotify(); loadSheet(); loadCredits();
+    fillMain(); fillInstr();
+    started = {};
+    setupScroll();     // откроет нужную вкладку и запустит её загрузку
+  }
+
+  // Данные раздела грузятся, когда его впервые открыли. Раньше страница сразу запрашивала всё
+  // (около 20 запросов), хотя виден один раздел.
+  var started = {};
+  function startSection(id) {
+    if (started[id]) return;
+    started[id] = true;
+    var run = {
+      's-kb': loadKb, 's-channels': loadChannels, 's-voicemsg': loadVoiceMsg, 's-docs': loadDocs,
+      's-calls': loadCalls, 's-notify': loadNotify, 's-sheet': loadSheet, 's-credits': loadCredits
+    }[id];
+    if (run) run();
   }
 
   function put(body) { return S.api('/', { method: 'PUT', body: body }); }

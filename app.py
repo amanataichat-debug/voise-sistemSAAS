@@ -20,6 +20,7 @@ import gc
 from urllib.parse import urlencode
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
@@ -342,10 +343,35 @@ class _CabinetStaticFiles(StaticFiles):
         return response
 
 
+class _GzipTextAssets:
+    """
+    Сжатие страниц и скриптов кабинета (html/js/css/json/svg). bot.js — 100 КБ, conversations.html — 135 КБ:
+    без сжатия на медленном канале каждая страница тянет их заново. Картинки, видео и аудио не
+    трогаем: они уже сжаты, а gzip ломает Range-запросы. Запросы без Accept-Encoding: gzip — как раньше.
+    """
+
+    _EXT = (".html", ".js", ".css", ".json", ".svg")
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.gzip = GZipMiddleware(inner, minimum_size=1024)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "").lower()
+            if path.endswith(self._EXT) or path.endswith("/"):
+                return await self.gzip(scope, receive, send)
+        return await self.inner(scope, receive, send)
+
+    def __getattr__(self, name):
+        # Mount/StaticFiles ждут атрибуты внутреннего приложения (например, directory)
+        return getattr(self.inner, name)
+
+
 # Монтируем статику
 try:
-    app.mount("/static", _CabinetStaticFiles(directory=static_dir, html=True), name="static")
-    app.mount("/js", _CabinetStaticFiles(directory=js_dir), name="js")
+    app.mount("/static", _GzipTextAssets(_CabinetStaticFiles(directory=static_dir, html=True)), name="static")
+    app.mount("/js", _GzipTextAssets(_CabinetStaticFiles(directory=js_dir)), name="js")
 except Exception as e:
     logger.error(f"Error mounting static files: {e}")
 
