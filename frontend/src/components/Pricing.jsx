@@ -13,7 +13,7 @@ const PLANS = [
   { key: 'profi', chip: 'chip-accent', primary: true, col: 'hot' },
 ];
 
-// Колонки: Trial, AI Voice, Start, Profi. Start — агент только отвечает,
+// Колонки: Trial, AI Voice, Start, Profi. Start — агент по перепискам (пишет первым в мессенджерах, не звонит),
 // Profi — сам пишет, звонит и составляет документы; Start собирает и отправляет документы по просьбе клиента.
 const ROWS = [
   ['assistants', ['a1', 'a3', 'a5', 'a10']],
@@ -23,7 +23,7 @@ const ROWS = [
   ['crm', [true, false, true, true]],
   ['knowledge', [true, true, true, true]],
   ['leads', [true, true, true, true]],
-  ['selfcall', [true, false, false, true]],
+  ['selfcall', [true, false, 'msg_first', true]],
   ['documents', [true, false, 'docs_reply', true]],
   ['credits', ['credits_trial', false, 'credits_start', 'credits']],
   ['support', [null, null, 'priority', 'vip']],

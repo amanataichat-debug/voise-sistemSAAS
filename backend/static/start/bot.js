@@ -712,7 +712,7 @@
     // Gmail и Google Календарь (через Composio, как у агента Profi)
     html += connRow('gmail', 'mail', '#EA4335', 'Gmail', 'Бот читает письма и отвечает клиентам с вашей почты', 'Подключить', ch.gmail);
     html += connRow('gcal', 'calendar', '#4285F4', 'Google Календарь', 'Бот смотрит свободное время и записывает клиентов в ваш календарь', 'Подключить', ch.gcal);
-    b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает только на сообщения клиентов. Писать первым и звонить по расписанию он на тарифе Старт не будет.</div>';
+    b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает клиентам и может писать первым в WhatsApp и Telegram: по вашей команде в чате и в рамках суточного лимита новых чатов. В Instagram первым написать нельзя, только в диалог, который уже есть. Звонить клиентам и вести рассылки по расписанию бот на тарифе Старт не будет.</div>';
 
     on('wa-on', openWa); on('wa-set', function () { settingsDialog('WhatsApp', '/whatsapp/settings', ch.wa, true, false, 'wa'); }); on('wa-off', function () { disconnect('WhatsApp', '/whatsapp'); });
     on('tg-on', openTg); on('tg-set', function () { settingsDialog('Telegram', '/telegram-account/settings', ch.tg, false, false, 'tg'); }); on('tg-off', function () { disconnect('Telegram', '/telegram-account'); });
@@ -767,8 +767,9 @@
   var DELAYS = [5, 10, 15, 20, 30, 60];
 
   var CH_WARN = {
-    wa: '<b>Важно:</b> подключение неофициальное (как WhatsApp Web). WhatsApp может заблокировать номер за рассылки незнакомым людям. Не используйте холодную базу, лучше отдельный рабочий номер. На тарифе Старт бот только отвечает клиентам, сам первым не пишет.',
-    tg: '<b>Важно:</b> бот отвечает с вашего личного аккаунта. Telegram банит за сообщения незнакомым людям, поэтому для рабочего аккаунта выбирайте «Только клиентам из CRM». Вариант «Всем, кто написал» ответит и друзьям, и родным, если они напишут.'
+    wa: '<b>Важно:</b> подключение неофициальное (как WhatsApp Web). WhatsApp может заблокировать номер за рассылки незнакомым людям. Не используйте холодную базу, лучше отдельный рабочий номер. Бот может писать клиентам первым, но только в пределах суточного лимита новых чатов (поле ниже).',
+    tg: '<b>Важно:</b> бот отвечает с вашего личного аккаунта. Telegram банит за сообщения незнакомым людям, поэтому для рабочего аккаунта выбирайте «Только клиентам из CRM». Вариант «Всем, кто написал» ответит и друзьям, и родным, если они напишут. Первым бот пишет редко и в рамках часовых лимитов отправки.',
+    ig: 'Instagram не даёт писать первым: бот отвечает только в диалогах, которые клиент уже начал.'
   };
   var CH_POLL = {
     wa: '',
@@ -784,6 +785,8 @@
       body: (CH_WARN[kind] ? '<div class="note note-warning" style="margin-bottom:14px">' + CH_WARN[kind] + '</div>' : '') +
         (isIg ? '' : '<div class="st-switch-row" style="padding-top:0"><div class="t"><b>Автоответ</b><div>Бот отвечает на входящие сообщения.</div></div><label class="switch"><input type="checkbox" id="s-auto"' + (cur.auto_reply_enabled ? ' checked' : '') + '><span class="track"></span></label></div>') +
         (isIg ? '' : '<div class="field"><label class="label">Кому отвечать</label><select class="select-native" id="s-scope"><option value="contacts"' + (cur.reply_scope !== 'all' ? ' selected' : '') + '>Только клиентам из CRM</option><option value="all"' + (cur.reply_scope === 'all' ? ' selected' : '') + '>Всем, кто написал</option></select></div>') +
+        (kind === 'wa' ? '<div class="field"><label class="label">Новых чатов в сутки (бот пишет первым)</label><input class="input" type="number" min="0" max="100" id="s-limit" style="max-width:120px" value="' + Number(cur.daily_new_chats_limit != null ? cur.daily_new_chats_limit : 20) + '">' +
+          '<div class="hint">Для нового номера начинайте с 10–20 в сутки: так WhatsApp реже блокирует номер. 0 — бот только отвечает и сам первым не пишет.</div></div>' : '') +
         '<div class="field"><label class="label">Если вы написали клиенту сами, бот молчит</label><select class="select-native" id="s-pause">' + PAUSES.map(function (p) { return '<option value="' + p[0] + '"' + (p[0] === pause ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select>' +
         '<div class="hint">Вы сможете спокойно договориться с клиентом без бота.</div></div>' +
         '<div class="field"><label class="label">Отвечать через</label><select class="select-native" id="s-delay">' + DELAYS.map(function (v) { return '<option value="' + v + '"' + (v === delay ? ' selected' : '') + '>' + v + ' секунд</option>'; }).join('') + '</select>' +
@@ -795,6 +798,7 @@
     S.$('[data-c]', d.el).addEventListener('click', d.close);
     S.$('#s-save', d.el).addEventListener('click', function () {
       var body = { owner_pause_minutes: parseInt(S.$('#s-pause', d.el).value, 10), reply_delay_seconds: parseInt(S.$('#s-delay', d.el).value, 10) };
+      var lim = S.$('#s-limit', d.el); if (lim) body.daily_new_chats_limit = Math.max(0, Math.min(100, parseInt(lim.value || '0', 10) || 0));
       if (!isIg) { body.auto_reply_enabled = S.$('#s-auto', d.el).checked; body.reply_scope = S.$('#s-scope', d.el).value; }
       var v = S.$('#s-voice', d.el); if (v) body.voice_reply_mode = v.value;
       S.api(path, { method: 'PATCH', body: body }).then(function (r) {

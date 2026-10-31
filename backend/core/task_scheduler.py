@@ -402,7 +402,13 @@ class TaskScheduler:
 
             # ✅ Блокировка звонков при отсутствии доступа к агенту (триал истёк и
             #   тариф не profi). Дублирует scheduler-блокер.
-            if not user.has_active_agent_subscription():
+            # Старт (reactive) ставит отложенные сообщения в Telegram: для них достаточно доступа
+            # к чату агента, звонки по-прежнему только при полном доступе.
+            has_access = (
+                user.has_agent_chat_access() if (task.channel or "call") == "telegram"
+                else user.has_active_agent_subscription()
+            )
+            if not has_access:
                 task.status = TaskStatus.CANCELLED
                 task.call_result = json.dumps({"error": "subscription_expired"})
                 db.commit()
