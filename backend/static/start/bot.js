@@ -697,11 +697,13 @@
     if (!wa || !wa.configured) html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Недоступно на сервере, напишите в поддержку', '');
     else if (wa.status === 'connected') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Подключён: ' + esc(wa.phone_masked || '') + (wa.wa_name ? ' · ' + esc(wa.wa_name) : '') + scopeText(wa), btn('wa-set', 'Настройки') + btn('wa-off', 'Отключить', 'btn-ghost'));
     else if (wa.status === 'pending_qr') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Ждём сканирования QR-кода', btn('wa-on', 'Показать QR', 'btn-primary'));
+    else if (wa.status === 'disconnected') html += chRow('#25D366', 'message-circle', 'WhatsApp', '<span style="color:var(--vf-warning)">Номер вышел из WhatsApp Web (отключили на телефоне или WhatsApp завершил сессию). Нужен новый QR-код</span>', btn('wa-on', 'Переподключить', 'btn-primary'));
     else html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Бот отвечает клиентам на ваш номер WhatsApp', btn('wa-on', 'Подключить', 'btn-primary'));
     // Telegram личный
     if (!tg || !tg.configured) html += chRow('#229ED9', 'send', 'Telegram', 'Недоступно на сервере, напишите в поддержку', '');
     else if (tg.status === 'connected') html += chRow('#229ED9', 'send', 'Telegram', 'Подключён: ' + esc(tg.tg_username ? '@' + tg.tg_username : (tg.tg_first_name || tg.phone_masked || '')) + scopeText(tg), btn('tg-set', 'Настройки') + btn('tg-off', 'Отключить', 'btn-ghost'));
     else if (tg.status === 'pending_code' || tg.status === 'pending_password') html += chRow('#229ED9', 'send', 'Telegram', 'Подключение не завершено', btn('tg-on', 'Продолжить', 'btn-primary'));
+    else if (tg.status === 'error') html += chRow('#229ED9', 'send', 'Telegram', '<span style="color:var(--vf-warning)">Сессия недействительна' + (tg.last_error ? ' (' + esc(tg.last_error) + ')' : '') + '. Подключите аккаунт заново</span>', btn('tg-on', 'Переподключить', 'btn-primary'));
     else html += chRow('#229ED9', 'send', 'Telegram', 'Бот отвечает от имени вашего личного аккаунта Telegram', btn('tg-on', 'Подключить', 'btn-primary'));
     // Instagram
     if (!ig || !ch.igCfg || !ig.available) html += chRow('#E1306C', 'instagram', 'Instagram', 'Недоступно на сервере, напишите в поддержку', '');
@@ -712,11 +714,11 @@
     html += connRow('gcal', 'calendar', '#4285F4', 'Google Календарь', 'Бот смотрит свободное время и записывает клиентов в ваш календарь', 'Подключить', ch.gcal);
     b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает только на сообщения клиентов. Писать первым и звонить по расписанию он на тарифе Старт не будет.</div>';
 
-    on('wa-on', openWa); on('wa-set', function () { settingsDialog('WhatsApp', '/whatsapp/settings', ch.wa, true); }); on('wa-off', function () { disconnect('WhatsApp', '/whatsapp'); });
-    on('tg-on', openTg); on('tg-set', function () { settingsDialog('Telegram', '/telegram-account/settings', ch.tg, false); }); on('tg-off', function () { disconnect('Telegram', '/telegram-account'); });
+    on('wa-on', openWa); on('wa-set', function () { settingsDialog('WhatsApp', '/whatsapp/settings', ch.wa, true, false, 'wa'); }); on('wa-off', function () { disconnect('WhatsApp', '/whatsapp'); });
+    on('tg-on', openTg); on('tg-set', function () { settingsDialog('Telegram', '/telegram-account/settings', ch.tg, false, false, 'tg'); }); on('tg-off', function () { disconnect('Telegram', '/telegram-account'); });
     on('gmail-on', function () { connectToolkit('gmail'); }); on('gmail-off', function () { disconnect('Gmail', '/connectors/gmail'); });
     on('gcal-on', function () { connectToolkit('google_calendar'); }); on('gcal-off', function () { disconnect('Google Календарь', '/connectors/google_calendar'); });
-    on('ig-on', function () { connectToolkit('instagram'); }); on('ig-set', function () { settingsDialog('Instagram', '/connectors/instagram/settings', ch.ig, false, true); }); on('ig-off', function () { disconnect('Instagram', '/connectors/instagram'); });
+    on('ig-on', function () { connectToolkit('instagram'); }); on('ig-set', function () { settingsDialog('Instagram', '/connectors/instagram/settings', ch.ig, false, true, 'ig'); }); on('ig-off', function () { disconnect('Instagram', '/connectors/instagram'); });
   }
   // Кому отвечает бот. 'contacts' — только клиентам, уже заведённым в CRM: новые люди без ответа, поэтому подсвечиваем
   function scopeText(c) {
@@ -764,18 +766,28 @@
   var PAUSES = [[10, '10 минут'], [30, '30 минут'], [60, '1 час'], [1440, '1 день'], [-1, 'пока я сам не включу']];
   var DELAYS = [5, 10, 15, 20, 30, 60];
 
-  function settingsDialog(name, path, cur, hasScope, isIg) {
+  var CH_WARN = {
+    wa: '<b>Важно:</b> подключение неофициальное (как WhatsApp Web). WhatsApp может заблокировать номер за рассылки незнакомым людям. Не используйте холодную базу, лучше отдельный рабочий номер. На тарифе Старт бот только отвечает клиентам, сам первым не пишет.',
+    tg: '<b>Важно:</b> бот отвечает с вашего личного аккаунта. Telegram банит за сообщения незнакомым людям, поэтому для рабочего аккаунта выбирайте «Только клиентам из CRM». Вариант «Всем, кто написал» ответит и друзьям, и родным, если они напишут.'
+  };
+  var CH_POLL = {
+    wa: '',
+    tg: 'Личный Telegram проверяется раз в минуту, поэтому ответ придёт через указанное время + до 60 секунд.',
+    ig: 'Instagram проверяется раз в 90 секунд, поэтому ответ придёт через указанное время + до 90 секунд.'
+  };
+  function settingsDialog(name, path, cur, hasScope, isIg, kind) {
     cur = cur || {};
     var pause = cur.owner_pause_minutes != null ? Number(cur.owner_pause_minutes) : 30;
     var delay = cur.reply_delay_seconds != null ? Number(cur.reply_delay_seconds) : 15;
     var d = S.dialog({
       title: name + ': настройки', size: 'sm',
-      body: (isIg ? '' : '<div class="st-switch-row" style="padding-top:0"><div class="t"><b>Автоответ</b><div>Бот отвечает на входящие сообщения.</div></div><label class="switch"><input type="checkbox" id="s-auto"' + (cur.auto_reply_enabled ? ' checked' : '') + '><span class="track"></span></label></div>') +
+      body: (CH_WARN[kind] ? '<div class="note note-warning" style="margin-bottom:14px">' + CH_WARN[kind] + '</div>' : '') +
+        (isIg ? '' : '<div class="st-switch-row" style="padding-top:0"><div class="t"><b>Автоответ</b><div>Бот отвечает на входящие сообщения.</div></div><label class="switch"><input type="checkbox" id="s-auto"' + (cur.auto_reply_enabled ? ' checked' : '') + '><span class="track"></span></label></div>') +
         (isIg ? '' : '<div class="field"><label class="label">Кому отвечать</label><select class="select-native" id="s-scope"><option value="contacts"' + (cur.reply_scope !== 'all' ? ' selected' : '') + '>Только клиентам из CRM</option><option value="all"' + (cur.reply_scope === 'all' ? ' selected' : '') + '>Всем, кто написал</option></select></div>') +
         '<div class="field"><label class="label">Если вы написали клиенту сами, бот молчит</label><select class="select-native" id="s-pause">' + PAUSES.map(function (p) { return '<option value="' + p[0] + '"' + (p[0] === pause ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select>' +
         '<div class="hint">Вы сможете спокойно договориться с клиентом без бота.</div></div>' +
         '<div class="field"><label class="label">Отвечать через</label><select class="select-native" id="s-delay">' + DELAYS.map(function (v) { return '<option value="' + v + '"' + (v === delay ? ' selected' : '') + '>' + v + ' секунд</option>'; }).join('') + '</select>' +
-        '<div class="hint">Столько бот ждёт после последнего сообщения, чтобы ответить на всю серию сразу.</div></div>' +
+        '<div class="hint">Столько бот ждёт после последнего сообщения, чтобы ответить на всю серию сразу.' + (CH_POLL[kind] ? ' ' + CH_POLL[kind] : '') + '</div></div>' +
         (cur.voice_reply_mode !== undefined ? '<div class="field"><label class="label">Голосовые ответы</label><select class="select-native" id="s-voice">' +
           [['on_voice', 'В ответ на голосовое клиента'], ['auto', 'Бот решает сам'], ['never', 'Никогда, только текст']].map(function (p) { return '<option value="' + p[0] + '"' + (p[0] === cur.voice_reply_mode ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></div>' : ''),
       foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" id="s-save">Сохранить</button>'
@@ -908,10 +920,19 @@
     if (!vm.configured) { b.innerHTML = '<div class="note note-warning">Озвучка не настроена на сервере. Напишите в поддержку.</div>'; return; }
     var engine = vm.engine;
     var chans = vm.channels || {};
-    var chRows = Object.keys(chans).map(function (k) {
-      return '<div class="field" style="margin-bottom:10px"><label class="label">' + (k === 'whatsapp' ? 'WhatsApp' : 'Telegram') + ': когда отвечать голосом</label><select class="select-native" data-vch="' + k + '">' +
+    // Все три канала видны всегда (как у Profi): подключённый — с выбором режима, неподключённый — с подсказкой
+    var chRows = [['telegram', 'Telegram', 'send', '#229ED9'], ['whatsapp', 'WhatsApp', 'message-circle', '#25D366']].map(function (c) {
+      var k = c[0];
+      if (!(k in chans)) {
+        return '<div class="st-row-card" style="margin-bottom:10px"><span class="logo" style="--c:' + c[3] + '">' + icon(c[2]) + '</span>' +
+          '<div class="info"><b>' + c[1] + '</b><div>Не подключён. Подключите в разделе «Каналы», и здесь появится выбор.</div></div>' +
+          '<a class="btn btn-sm" href="#channels" data-goto="s-channels">Каналы</a></div>';
+      }
+      return '<div class="field" style="margin-bottom:10px"><label class="label">' + c[1] + ': когда отвечать голосом</label><select class="select-native" data-vch="' + k + '">' +
         MODES.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === chans[k] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select></div>';
-    }).join('');
+    }).join('') +
+      '<div class="st-row-card" style="margin-bottom:10px"><span class="logo" style="--c:#E1306C">' + icon('instagram') + '</span>' +
+      '<div class="info"><b>Instagram</b><div>Голосовые недоступны: Instagram через наш коннектор принимает только текст и фото.</div></div></div>';
     b.innerHTML =
       '<div class="st-engine">' + [['eleven', 'ElevenLabs', 'Живые голоса, кыргызский и русский'], ['openai', 'OpenAI GPT-Live', 'Голос ChatGPT, естественная интонация']].map(function (e) {
         var avail = vm.engines ? vm.engines[e[0]] !== false : true;
@@ -927,9 +948,11 @@
       '<div class="field"><label class="label">Голос</label><select class="select-native" id="vm-voice"><option value="">Как в звонках</option></select></div></div>' +
       '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос GPT-Live</label><select class="select-native" id="vm-ovoice">' +
       (vm.openai_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === vm.openai_voice ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div></div>' +
-      (chRows ? '<div class="st-sub-h">Когда бот отвечает голосом</div>' + chRows : '<div class="note" style="margin-top:12px">Подключите WhatsApp или Telegram в разделе «Каналы», и здесь появится выбор, когда отвечать голосом. Instagram голосовые не поддерживает.</div>') +
-      '<div class="field" id="vm-share-wrap"' + (Object.keys(chans).some(function (k) { return chans[k] === 'auto'; }) ? '' : ' hidden') + '><label class="label">Доля голосовых, когда бот решает сам</label><select class="select-native" id="vm-share">' +
-      (vm.auto_share_choices || [30, 40, 50]).map(function (v) { return '<option value="' + v + '"' + (v === vm.auto_share ? ' selected' : '') + '>около ' + v + '% ответов</option>'; }).join('') + '</select></div>' +
+      '<div class="st-sub-h">Когда бот отвечает голосом</div>' + chRows +
+      '<div class="field" id="vm-share-wrap"><label class="label">Доля голосовых, когда бот решает сам</label><select class="select-native" id="vm-share">' +
+      (vm.auto_share_choices || [30, 40, 50]).map(function (v) { return '<option value="' + v + '"' + (v === vm.auto_share ? ' selected' : '') + '>около ' + v + '% ответов</option>'; }).join('') + '</select>' +
+      '<div class="hint">В режиме «Бот решает сам» он чередует текст и голосовые примерно в этой пропорции. На голосовое клиента всегда отвечает голосом, короткие «да» и «минуту» текстом. Цены, адреса и списки вопросов присылает отдельным текстом.</div></div>' +
+      '<div class="field"><label class="label">Прослушать</label><textarea class="input" id="vm-text" rows="2" maxlength="400" placeholder="Свой текст для примера (необязательно). Можно метки: [softly] Так, смотрите… [short pause] доставка завтра."></textarea></div>' +
       '<div class="row" style="gap:10px;margin-top:6px"><button class="btn" id="vm-play" type="button">' + icon('play') + '<span>Прослушать</span></button>' +
       '<span class="muted small">Прослушивание и каждое голосовое списывают кредиты бота (≈' + (vm.credits_per_400_chars || 0) + ' за 400 знаков).</span></div>';
 
@@ -958,6 +981,9 @@
     });
     S.$('#vm-ovoice').addEventListener('change', function () { saveVm({ openai_voice: this.value }); });
     var sh = S.$('#vm-share'); if (sh) sh.addEventListener('change', function () { saveVm({ auto_share: Number(this.value) }); });
+    S.$$('[data-goto]', b).forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); showSection(a.dataset.goto); });
+    });
     S.$$('[data-vch]', b).forEach(function (sel) {
       sel.addEventListener('change', function () {
         var path = sel.dataset.vch === 'whatsapp' ? '/whatsapp/settings' : '/telegram-account/settings';
@@ -965,13 +991,13 @@
           if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
           vm.channels[sel.dataset.vch] = sel.value;
           S.toast('Сохранено', 'success');
-          S.$('#vm-share-wrap').hidden = !Object.keys(vm.channels).some(function (k) { return vm.channels[k] === 'auto'; });
         });
       });
     });
     S.$('#vm-play').addEventListener('click', function () {
       var btn = this; btn.disabled = true;
       var body = { engine: S.$('input[name="vm-engine"]:checked', b).value };
+      var txt = (S.$('#vm-text', b).value || '').trim(); if (txt) body.text = txt;
       if (body.engine === 'openai') body.openai_voice = S.$('#vm-ovoice').value;
       else { body.voice_id = S.$('#vm-voice').value || null; body.language = S.$('#vm-lang').value || null; body.stability = Number(S.$('#vm-stab').value); }
       var headers = { 'Content-Type': 'application/json' }; var t = S.token(); if (t) headers.Authorization = 'Bearer ' + t;
