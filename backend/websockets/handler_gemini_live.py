@@ -498,7 +498,12 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
             "language": assistant.language,
             "telephony_profile": telephony,
         })
-        call_log.add("session", f"Сессия начата: Google {GEMINI_LIVE_MODEL} (речь в речь), голос {voice}; "
+        from backend.websockets.gemini_client import EXTRAS_FULL, thinking_level
+        _tl = thinking_level(GEMINI_LIVE_MODEL)
+        thinking_note = ("" if not _tl else
+                         f", рассуждения {_tl}" if client.extras_level >= EXTRAS_FULL else
+                         ", рассуждения ВЫКЛ. (Google не принял thinkingConfig)")
+        call_log.add("session", f"Сессия начата: Google {GEMINI_LIVE_MODEL}{thinking_note} (речь в речь), голос {voice}; "
                                 f"подключение {connect_ms} мс; промпт {client.system_prompt_chars} симв. "
                                 f"(карточка + знания агента + правила манеры)",
                      functions=", ".join(client.enabled_functions) or "нет — агент не сможет искать в базе знаний")
