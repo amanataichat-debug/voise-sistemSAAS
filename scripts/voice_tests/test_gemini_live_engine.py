@@ -262,20 +262,27 @@ check("куски склеиваются в тот же текст для GPT",
 fn_list = [{"name": "search_knowledge_base", "description": "Ищет ответ в базе знаний компании. Возвращает текст."},
            {"name": "hangup_call", "description": "Завершает звонок."}]
 g = vh.build_gemini_voice_hints(fn_list, "Aoede", telephony=True)
-check("Gemini получает манеру: краткость, эмоции, живая речь, язык, кыргызский",
-      all(k in g for k in ("ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ", "ЭМОЦИИ И ЮМОР", "ЖИВАЯ РЕЧЬ", "ЯЗЫК.", "КЫРГЫЗСКИЙ.", "СТАБИЛЬНЫЙ ГОЛОС")))
+check("Gemini получает свою манеру: живой разговор, задача человека, переспрос обрывка, голос, язык, кыргызский",
+      all(k in g for k in ("ЖИВОЙ РАЗГОВОР, А НЕ АНКЕТА", "ПОНИМАЙ ЗАДАЧУ", "ЕСЛИ НЕ РАССЛЫШАЛ", "СТАБИЛЬНЫЙ ГОЛОС",
+                           "ЯЗЫК.", "КЫРГЫЗСКИЙ")))
+check("Gemini: не дежурный вопрос в каждой реплике (звонок 01.11.2026) и без правил GPT «одна мысль и спроси»",
+      "НЕ заканчивай каждую реплику вопросом" in g and lc.VOICE_MANNER_HINT not in g
+      and "спроси, интересно ли дальше" not in g and "ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ" not in g)
+check("Gemini: без противоречия «можно мм/угу» против «МОЛЧИ»", "можно одно тихое «мм»" not in g)
+check("Gemini: подсказки короче прежних 12 тыс. символов", len(g) < 9000, len(g))
+check("Gemini: список функций не слипается с правилами диалога", "- hangup_call: Завершает звонок\n" in g, g[g.index("- hangup_call"):][:60])
 check("Gemini получает правила диалога: перебивания, завершение, материалы, приветствие",
       all(k in g for k in ("Interruption policy", "ЗАВЕРШЕНИЕ", "МАТЕРИАЛЫ", "ПРИВЕТСТВИЕ")))
 check("Gemini: правило «не знаю» только после поиска и список функций",
       "не говори «не знаю»" in g and "- search_knowledge_base:" in g and "- hangup_call:" in g)
 check("Gemini: правило разговора под проактивный звук 3.8 (отвечай сразу, один язык, UNMISTAKABLY)",
-      "КАК ВЕСТИ РАЗГОВОР" in g and "UNMISTAKABLY" in g and "не молчи" in g
+      "ПОКА СОБЕСЕДНИК ГОВОРИТ" in g and "UNMISTAKABLY" in g and "не молчи" in g
       and vh.GEMINI_CONVERSATION_HINT not in lc.VOICE_DELEGATION_HINT)
 check("Gemini: язык держится как в промпте звонков агента — язык приветствия, не меняется из-за «алло»",
       "LANGUAGE OF YOUR GREETING" in g and "NOT a reason to switch" in g
       and "THE LANGUAGE THE CALLER SPEAKS" not in g)
 check("Gemini: инструкция карточки/агента главнее общих правил манеры (и стоит перед ними)",
-      "ПРИОРИТЕТ ИНСТРУКЦИЙ" in g and g.index("ПРИОРИТЕТ ИНСТРУКЦИЙ") < g.index("ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ")
+      "ПРИОРИТЕТ ИНСТРУКЦИЙ" in g and g.index("ПРИОРИТЕТ ИНСТРУКЦИЙ") < g.index("ЖИВОЙ РАЗГОВОР")
       and "следуй инструкции выше" in g)
 check("Gemini: пока клиент говорит — молчать (никаких «мм/угу» поверх речи)", "МОЛЧИ" in g and "поверх его речи" in g)
 _ln = vh.language_note("ky")
@@ -368,13 +375,24 @@ with_connect(fc, c.connect)
 st = last_setup(socks)
 check("карточка ElevenLabs: setup с возобновлением сессии и сжатием контекста",
       st.get("sessionResumption") == {} and st.get("contextWindowCompression") == {"slidingWindow": {}}, list(st.keys()))
-check("карточка ElevenLabs: транскрипция клиента по умолчанию как раньше (без непроверенных языков)",
-      st.get("inputAudioTranscription") == {}, st.get("inputAudioTranscription"))
-os.environ["GEMINI_INPUT_TRANSCRIPTION_LANGUAGES"] = "ru,ky"   # опция: подсказка языков для текста диалога
+check("карточка ElevenLabs: транскрипция клиента по умолчанию с языками ru,ky (без них — испанский/немецкий в «Диалогах»)",
+      st.get("inputAudioTranscription") == {"languageCodes": ["ru", "ky"]}, st.get("inputAudioTranscription"))
+check("gemini-3.8-live: thinkingConfig не передаётся", "thinkingConfig" not in st.get("generationConfig", {}))
+os.environ["GEMINI_INPUT_TRANSCRIPTION_LANGUAGES"] = "none"   # выключатель
 c, socks, fc = card_client()
 with_connect(fc, c.connect)
-check("опция GEMINI_INPUT_TRANSCRIPTION_LANGUAGES=ru,ky включает languageCodes",
-      last_setup(socks).get("inputAudioTranscription") == {"languageCodes": ["ru", "ky"]})
+check("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES=none выключает languageCodes",
+      last_setup(socks).get("inputAudioTranscription") == {})
+os.environ.pop("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", None)
+import backend.websockets.gemini_client as _gcm
+check("extended-thinking: уровень по умолчанию LOW, у обычной модели — нет",
+      _gcm.thinking_level("gemini-3.8-live-extended-thinking") == "LOW" and _gcm.thinking_level("gemini-3.8-live") is None)
+c, socks, fc = card_client()
+c.model = "gemini-3.8-live-extended-thinking"
+with_connect(fc, c.connect)
+check("extended-thinking: thinkingConfig.thinkingLevel в generationConfig",
+      last_setup(socks).get("generationConfig", {}).get("thinkingConfig") == {"thinkingLevel": "LOW"},
+      last_setup(socks).get("generationConfig"))
 check("Gemini-ассистент (не карточка): расширенных полей нет, setup как раньше",
       not any(k in sp2["setup"] for k in ("sessionResumption", "contextWindowCompression")) and sp2["setup"]["inputAudioTranscription"] == {})
 

@@ -8,8 +8,9 @@
 (`realtimeInputConfig.automaticActivityDetection`, профиль из env GEMINI_VAD_*).
 
 Особенности gemini-3.8-live (сентябрь 2026):
-- Настроек thinking нет: `thinkingConfig` в setup не передаётся (у модели он
-  не поддерживается; думающий вариант gemini-3.8-live-extended-thinking не используем).
+- У gemini-3.8-live `thinkingConfig` не передаётся (не поддерживается). Если GEMINI_LIVE_MODEL =
+  gemini-3.8-live-extended-thinking — в generationConfig уходит thinkingConfig.thinkingLevel (GEMINI_THINKING_LEVEL,
+  по умолчанию low; карточки ElevenLabs, отказ Google → повтор без него).
 - Функции асинхронные по умолчанию (`behavior: NON_BLOCKING`): модель продолжает
   говорить, пока функция выполняется; в `toolResponse.functionResponses[]` нужны
   `id`, `name`, `response` и `scheduling` (INTERRUPT | WHEN_IDLE | SILENT,
@@ -62,10 +63,23 @@ RECONNECT_ATTEMPTS = 3
 
 
 def input_transcription_languages() -> List[str]:
-    """Языки распознавания речи клиента для ТЕКСТА диалога (на понимание модели не влияют): env GEMINI_INPUT_TRANSCRIPTION_LANGUAGES
-    (например «ru,ky»). По умолчанию выключено: поле не проверено на живом Google, а транскрипт клиента кормит диалог и итог звонка."""
-    raw = os.getenv("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", "")  # по умолчанию выкл.: на живом Google не проверено
+    """Языки распознавания речи клиента для ТЕКСТА диалога (на понимание модели не влияют): env GEMINI_INPUT_TRANSCRIPTION_LANGUAGES,
+    по умолчанию «ru,ky»; «none» — выключить. Без подсказки языков живой звонок 01.11.2026 (b9f35de7) записал русскую и
+    кыргызскую речь как испанскую, немецкую и хинди («estuche», «Schön, schön», «मुझे जाता»), хотя модель сама слышала
+    правильно и отвечала по делу: а этот текст идёт в «Диалоги», итог звонка, память клиента и защиту hangup_call.
+    Если Google отвергнет поле — connect() повторит setup без него (уровень EXTRAS_BASIC), звонок не падает."""
+    raw = os.getenv("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", "ru,ky")
     return [x.strip() for x in raw.split(",") if x.strip() and x.strip().lower() not in ("none", "off", "0")]
+
+
+def thinking_level(model: str) -> Optional[str]:
+    """Уровень рассуждений — ТОЛЬКО для gemini-3.8-live-extended-thinking (у gemini-3.8-live поле thinking_level
+    не поддерживается, docs/gemini_live_3_8_reference.md). env GEMINI_THINKING_LEVEL: low (по умолчанию) | medium | high.
+    Больше рассуждений = умнее ответы, но дольше пауза перед ответом."""
+    if "thinking" not in (model or "").lower():
+        return None
+    level = os.getenv("GEMINI_THINKING_LEVEL", "low").strip().lower()
+    return level.upper() if level in ("low", "medium", "high") else "LOW"
 
 
 # Схема параметров функций для Gemini: он принимает только подмножество OpenAPI. Любое чужое поле (examples,
@@ -386,7 +400,8 @@ class GeminiLiveClient:
                     reason = (rejected or "").lower()
                     about_tools = any(k in reason for k in ("tools", "function_declarations", "functiondeclaration", "parameters"))
                     about_extras = any(k in reason for k in ("sessionresumption", "session_resumption", "contextwindow",
-                                                             "context_window", "inputaudiotranscription", "input_audio_transcription"))
+                                                             "context_window", "inputaudiotranscription", "input_audio_transcription",
+                                                             "thinking"))
                     if self.resume_handle:
                         # вероятнее всего устарела ручка возобновления — не отказываемся из-за неё от самой функции
                         self.resume_handle = None
@@ -659,6 +674,9 @@ class GeminiLiveClient:
             setup_payload["setup"]["sessionResumption"] = resumption
             setup_payload["setup"]["contextWindowCompression"] = {"slidingWindow": {}}
         if self.extras_level >= EXTRAS_FULL:
+            level = thinking_level(self.model)
+            if level:
+                generation_config["thinkingConfig"] = {"thinkingLevel": level}
             langs = input_transcription_languages()
             if langs:
                 # только текст диалога: модель слышит звук сама; подсказка языков помогает кыргызскому в записи
