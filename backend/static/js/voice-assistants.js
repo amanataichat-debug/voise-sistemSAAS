@@ -35,11 +35,13 @@
     block_voice: 'Голос',
     server_not_ready: 'На сервере не настроены ключи ElevenLabs: ассистент пока не сможет отвечать. Сообщите администратору.',
     server_not_ready_live: 'На сервере не настроен ключ OpenAI: ассистент на GPT-Live пока не сможет отвечать. Сообщите администратору.',
+    server_not_ready_gemini: 'Не задан ключ Google Gemini (GEMINI_API_KEY на сервере): ассистент на Gemini Live пока не сможет отвечать. Сообщите администратору.',
     language: 'Язык',
-    engine: 'Модель голоса', engine_eleven: 'ElevenLabs', engine_gpt_live: 'OpenAI GPT-Live',
+    engine: 'Модель голоса', engine_eleven: 'ElevenLabs', engine_gpt_live: 'OpenAI GPT-Live', engine_gemini_live: 'Google Gemini Live',
     engine_eleven_hint: 'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.',
     engine_gpt_live_hint: 'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по промпту и собеседнику.',
-    live_voice: 'Голос GPT-Live', per_min: '{price} сом', per_min_unit: '/ мин', price_chip: '{price} сом/мин',
+    engine_gemini_live_hint: 'Речь в речь (Gemini 3.8 Live): слушает и говорит одновременно, перебивания обрабатывает сам. Язык ответа выбирает по промпту и собеседнику. Кыргызский — на проверке.',
+    live_voice: 'Голос GPT-Live', gemini_voice: 'Голос Gemini Live', per_min: '{price} сом', per_min_unit: '/ мин', price_chip: '{price} сом/мин',
     tag_recommended: 'Рекомендуем', tag_kyrgyz: 'Кыргызский', tag_s2s: 'Речь в речь', tag_widget: 'Виджет', tag_phone: 'Телефония',
     engine_note: 'Цена модели списывается с кошелька за минуту разговора (посекундно). Минуты связи при звонках пока не списываются.',
     voice_settings: 'Голосовые настройки',
@@ -221,10 +223,10 @@
         '<div class="a-top">' + engineLogo(a.voice_engine, 20) +
         '<div class="a-main"><div class="a-name"><span class="truncate">' + esc(a.name || '—') + '</span>' +
         (a.is_active === false ? '<span class="dot" data-tip="' + esc(t('inactive_tip')) + '"></span>' : '') + '</div>' +
-        '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'GPT-Live · ' + (a.live_voice || 'marin') : (a.voice_name || 'ElevenLabs')) + '</div></div></div>' +
+        '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'GPT-Live · ' + (a.live_voice || 'marin') : a.voice_engine === 'gemini_live' ? 'Gemini Live · ' + (a.live_voice || 'aoede') : (a.voice_name || 'ElevenLabs')) + '</div></div></div>' +
         '<div class="a-desc">' + esc(desc) + '</div>' +
         '<div class="a-meta"><span class="chip">' + esc(t('price_chip', { price: fmtPrice(enginePrice(a.voice_engine || 'eleven')) })) + '</span>' +
-        (a.voice_engine === 'gpt_live' ? '' : '<span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span>') +
+        (isLiveEngine(a.voice_engine) ? '' : '<span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span>') +
         '<span class="faint" style="margin-left:auto">' + esc(fmtDate(a.created_at)) + '</span></div></div>';
     }).join('');
     Array.prototype.forEach.call(body.querySelectorAll('.a-card'), function (el) {
@@ -370,11 +372,14 @@
     b.disabled = !!busy;
     b.innerHTML = busy ? '<span class="spin"></span> ' + esc(t('saving')) : VF.icon('check') + esc(t('save'));
   }
+  // Движки «речь в речь»: слушают и говорят сами (GPT-Live, Gemini Live), голос лежит в live_voice
+  function isLiveEngine(id) { return id === 'gpt_live' || id === 'gemini_live'; }
   function renderServerNote() {
-    var st = state.status, live = state.form && state.form.voice_engine === 'gpt_live';
-    var bad = st && (live ? st.openai_key === false : st.ready === false);
+    var st = state.status, eng = state.form && state.form.voice_engine;
+    var bad = st && (eng === 'gemini_live' ? st.gemini_key === false : eng === 'gpt_live' ? st.openai_key === false : st.ready === false);
+    var key = eng === 'gemini_live' ? 'server_not_ready_gemini' : eng === 'gpt_live' ? 'server_not_ready_live' : 'server_not_ready';
     $('model-extra').innerHTML = bad
-      ? '<div class="note note-warning" style="margin-bottom:14px">' + VF.icon('triangle-alert') + '<span>' + esc(t(live ? 'server_not_ready_live' : 'server_not_ready')) + '</span></div>' : '';
+      ? '<div class="note note-warning" style="margin-bottom:14px">' + VF.icon('triangle-alert') + '<span>' + esc(t(key)) + '</span></div>' : '';
   }
 
   // ------------------------------------------------------------------
@@ -388,21 +393,24 @@
     var h = function () { fn(el.value); renderDirty(); };
     el.addEventListener('input', h); el.addEventListener('change', h);
   }
-  function engineTitle(id) { return id === 'gpt_live' ? t('engine_gpt_live') : t('engine_eleven'); }
+  function engineTitle(id) { return id === 'gpt_live' ? t('engine_gpt_live') : id === 'gemini_live' ? t('engine_gemini_live') : t('engine_eleven'); }
   // Плитки движков: логотип, цена минуты из кошелька, описание, теги
   var ENGINE_META = {
     eleven: { hint: 'engine_eleven_hint', tags: [['tag_recommended', 1], ['tag_kyrgyz'], ['tag_widget'], ['tag_phone']] },
-    gpt_live: { hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
+    gpt_live: { hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] },
+    gemini_live: { hint: 'engine_gemini_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
   };
   // ElevenLabs — прежний значок звуковой волны (audio-lines), GPT-Live — логотип OpenAI
-  function engineLogo(id, size) { return id === 'gpt_live' ? VF.logo('openai', { size: size || 20 }) : logo(size || 20); }
+  function engineLogo(id, size) {
+    return id === 'gpt_live' ? VF.logo('openai', { size: size || 20 }) : id === 'gemini_live' ? VF.logo('gemini', { size: size || 20 }) : logo(size || 20);
+  }
   function enginePrice(id) {
     var e = (state.options.voice_engines || []).filter(function (x) { return x.id === id; })[0];
     return e && e.som_per_minute != null ? e.som_per_minute : null;
   }
   function fmtPrice(v) { return v == null ? '—' : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 }); }
   function engineTilesHtml(cur) {
-    var list = (state.options.voice_engines || [{ id: 'eleven' }, { id: 'gpt_live' }]);
+    var list = (state.options.voice_engines || [{ id: 'eleven' }, { id: 'gpt_live' }, { id: 'gemini_live' }]);
     return '<div class="eng-grid" role="radiogroup" aria-label="' + esc(t('engine')) + '">' + list.map(function (e) {
       var m = ENGINE_META[e.id] || ENGINE_META.eleven, on = e.id === cur;
       return '<button type="button" class="eng-tile' + (on ? ' on' : '') + '" role="radio" aria-checked="' + on + '" data-engine="' + esc(e.id) + '">' +
@@ -422,21 +430,27 @@
         var v = b.getAttribute('data-engine');
         if (v === state.form.voice_engine) return;
         state.form.voice_engine = v;
+        // Голос живёт в одной колонке на оба движка «речь в речь»: при смене движка берём подходящий
+        var o = state.options, gem = (o.gemini_voices || ['Aoede']).map(function (x) { return String(x).toLowerCase(); });
+        var cur = String(state.form.live_voice || '').toLowerCase();
+        if (v === 'gemini_live' && gem.indexOf(cur) === -1) state.form.live_voice = String(o.default_gemini_voice || 'Aoede').toLowerCase();
+        if (v === 'gpt_live' && (o.live_voices || ['marin']).indexOf(cur) === -1) state.form.live_voice = o.default_live_voice || 'marin';
         renderVoiceSettings(); renderServerNote(); renderDirty();
       });
     });
   }
   function renderVoiceSettings() {
     var box = $('voice-settings'), d = state.form, o = state.options;
-    var live = d.voice_engine === 'gpt_live';
+    var live = isLiveEngine(d.voice_engine), gemini = d.voice_engine === 'gemini_live';
     var langs = (o.languages || [{ code: 'ky', title: 'Кыргызский' }, { code: 'ru', title: 'Русский' }]).map(function (x) { return { value: x.code, label: x.title + ' (' + x.code + ')' }; });
     var engineHtml = engineTilesHtml(d.voice_engine);
     if (live) {
-      var lv = (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: x }; });
+      var lv = (gemini ? (o.gemini_voices || ['Aoede', 'Kore']).map(function (x) { return { value: String(x).toLowerCase(), label: x }; })
+                       : (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: x }; }));
       if (lv.every(function (x) { return x.value !== d.live_voice; })) lv.unshift({ value: d.live_voice, label: d.live_voice });
-      // Язык карточки GPT-Live не использует: язык ответа модель выбирает по промпту и собеседнику
+      // Язык карточки движки «речь в речь» не используют: язык ответа модель выбирает по промпту и собеседнику
       box.innerHTML = engineHtml +
-        '<div class="field"><label class="label" for="ex-live-voice">' + esc(t('live_voice')) + '</label><select class="form-control" id="ex-live-voice">' + selectOptions(lv, d.live_voice) + '</select></div>';
+        '<div class="field"><label class="label" for="ex-live-voice">' + esc(t(gemini ? 'gemini_voice' : 'live_voice')) + '</label><select class="form-control" id="ex-live-voice">' + selectOptions(lv, d.live_voice) + '</select></div>';
       bindEngineTiles();
       bindVal('ex-live-voice', function (v) { d.live_voice = v; });
       return;
@@ -623,7 +637,7 @@
   function validate() {
     var f = state.form;
     if (!f.name.trim()) { VF.toast(t('need_name'), { type: 'warning' }); switchTab('settings'); $('f-name').focus(); return false; }
-    if (f.voice_engine !== 'gpt_live' && !f.voice_id) { VF.toast(t('eleven_voice_required'), { type: 'warning' }); switchTab('settings'); return false; }
+    if (!isLiveEngine(f.voice_engine) && !f.voice_id) { VF.toast(t('eleven_voice_required'), { type: 'warning' }); switchTab('settings'); return false; }
     return true;
   }
   function save() {

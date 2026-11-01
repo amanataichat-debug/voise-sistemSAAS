@@ -1,0 +1,192 @@
+"""Движок «Google Gemini Live» карточки ElevenLabs (websockets/handler_gemini_live.py), без сети и БД.
+
+Поддельный Gemini присылает события (setupComplete, звук, транскрипты, turnComplete) в настоящий
+разбор handle_gemini_messages; проверяем, что звук и реплики доходят до клиента, пары копятся в сессии,
+приветствие уходит после setupComplete, а Gemini-ассистенты без turn_saver ведут себя как раньше.
+"""
+import os
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import asyncio, audioop, base64, json, sys, types
+
+sys.path.insert(0, ROOT)
+os.environ.update(HOST_URL="https://example.com", DATABASE_URL="sqlite://", PRODUCTION="false", OPENAI_API_KEY="k")
+
+from backend.core.config import settings
+from backend.models import eleven_assistant as ea
+from backend.services import wallet_service
+from backend.websockets import handler_gemini, handler_gemini_live as gl
+from backend.websockets.gemini_client import GeminiLiveClient
+
+failures = 0
+def check(name, cond, extra=""):
+    global failures
+    print(("PASS " if cond else "FAIL ") + name + (f"  [{extra}]" if extra else ""))
+    failures += 0 if cond else 1
+
+
+# ---------- конфигурация движка ----------
+check("движок gemini_live в списке карточки", ea.VOICE_ENGINE_GEMINI_LIVE in ea.VOICE_ENGINE_IDS)
+check("колонка voice_engine вмещает 'gemini_live'", len("gemini_live") <= ea.ElevenAssistantConfig.voice_engine.type.length)
+check("цена минуты Gemini Live есть и ниже ElevenLabs",
+      0 < wallet_service.som_per_minute("gemini_live") < wallet_service.som_per_minute("eleven"),
+      wallet_service.som_per_minute("gemini_live"))
+check("Gemini Live в тарифах кошелька", any(t["engine"] == "gemini_live" for t in wallet_service.tariffs()))
+check("голос: регистр восстанавливается", gl.resolve_voice("aoede") == "Aoede" and gl.resolve_voice("KORE") == "Kore")
+check("голос GPT-Live (marin) → голос по умолчанию Gemini", gl.resolve_voice("marin") == ea.GEMINI_LIVE_DEFAULT_VOICE)
+check("пустой голос → по умолчанию", gl.resolve_voice(None) == ea.GEMINI_LIVE_DEFAULT_VOICE)
+
+settings.GEMINI_API_KEY = "server-key"
+check("ключ: серверный в приоритете", gl.resolve_api_key(None, types.SimpleNamespace(user_id=None)) == "server-key")
+settings.GEMINI_API_KEY = ""
+check("ключ: нигде нет → None", gl.resolve_api_key(None, types.SimpleNamespace(user_id=None)) is None)
+
+
+# ---------- подставной сокет и клиент ----------
+class FakeClientSocket:
+    """Куда сессия шлёт события клиенту (виджет / SIP-адаптер)."""
+    def __init__(self): self.sent = []
+    async def send_json(self, data, mode="text"): self.sent.append(data)
+    def types(self): return [m.get("type") for m in self.sent]
+
+
+class FakeGeminiWS:
+    """Сервер Gemini: выдаёт заготовленные события, запоминает всё, что ему отправили."""
+    def __init__(self, events):
+        self.events = [json.dumps(e) for e in events]
+        self.sent = []
+    async def send(self, data): self.sent.append(json.loads(data))
+    async def recv(self):
+        if self.events:
+            return self.events.pop(0)
+        await asyncio.sleep(3600)   # дальше тишина, пока задачу не отменят
+    async def close(self): pass
+
+
+def pcm24(ms=100):
+    return base64.b64encode(b"\x01\x00" * (24 * ms)).decode()
+
+
+def make_client(events, saver=None, realtime_text=True):
+    assistant = types.SimpleNamespace(
+        id="a1", user_id=None, name="Тест", greeting_message="Саламатсызбы!", google_sheet_id=None,
+        functions=None, voice=None, system_prompt="Ты ассистент.", live_voice="aoede")
+    c = GeminiLiveClient("key", assistant, "client-1", db_session=None, voice_override="Aoede", record_conversation=False,
+                         realtime_text=realtime_text)
+    c.ws = FakeGeminiWS(events)
+    c.is_connected = True
+    c.turn_saver = saver
+    return c
+
+
+def run(coro):
+    return asyncio.run(asyncio.wait_for(coro, 5))
+
+
+async def scenario(saver):
+    events = [
+        {"setupComplete": {}},
+        {"serverContent": {"outputTranscription": {"text": "Саламатсызбы! "}}},
+        {"serverContent": {"modelTurn": {"parts": [{"inlineData": {"mimeType": "audio/pcm;rate=24000", "data": pcm24()}}]}}},
+        {"serverContent": {"turnComplete": True}},
+        {"serverContent": {"inputTranscription": {"text": "Салам, баасы канча?"}}},
+        {"serverContent": {"outputTranscription": {"text": "Баасы 500 сом."}}},
+        {"serverContent": {"modelTurn": {"parts": [{"inlineData": {"mimeType": "audio/pcm;rate=24000", "data": pcm24()}}]}}},
+        {"serverContent": {"turnComplete": True}},
+    ]
+    client = make_client(events, saver)
+    sock = FakeClientSocket()
+    state = {"is_user_speaking": False, "is_assistant_speaking": False, "last_speech_start": 0, "last_speech_stop": 0,
+             "interruption_count": 0, "last_interruption_time": 0, "assistant_audio_ever": False, "greeting_retries": 0}
+    task = asyncio.create_task(handler_gemini.handle_gemini_messages(client, sock, state))
+    for _ in range(100):               # ждём, пока обработаны все заготовленные события
+        await asyncio.sleep(0.02)
+        if not client.ws.events:
+            await asyncio.sleep(0.1)
+            break
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    return client, sock, state
+
+
+# ---------- сценарий через настоящий handle_gemini_messages ----------
+pairs = []
+async def saver(user, assistant):
+    pairs.append((user, assistant))
+    return True
+
+client, sock, state = run(scenario(saver))
+check("звук ассистента дошёл до клиента", sock.types().count("response.audio.delta") == 2, sock.types())
+check("клиенту отправлено assistant.speech.started", "assistant.speech.started" in sock.types())
+check("assistant_audio_ever выставлен", state["assistant_audio_ever"] is True)
+check("реплики ушли в turn_saver двумя парами", len(pairs) == 2, pairs)
+check("первая пара — приветствие без реплики клиента", pairs and pairs[0][0] in ("", "[no user input]") and "Саламатсызбы" in pairs[0][1], pairs[:1])
+check("вторая пара — вопрос и ответ", len(pairs) == 2 and "баасы" in pairs[1][0] and "500" in pairs[1][1], pairs[1:] )
+greeting = [m for m in client.ws.sent if "realtimeInput" in m or "clientContent" in m]
+check("приветствие отправлено после setupComplete", len(greeting) == 1 and "Саламатсызбы!" in json.dumps(greeting[0], ensure_ascii=False), greeting)
+check("карточка ElevenLabs: приветствие через realtimeInput.text", "realtimeInput" in greeting[0] and "text" in greeting[0]["realtimeInput"], greeting)
+old_style = make_client([], realtime_text=False)
+check("Gemini-ассистент: приветствие прежним clientContent (не менялось)", "clientContent" in old_style._text_payload("x"))
+check("клиенту ушёл turn.saved", "turn.saved" in sock.types())
+
+
+# ---------- Gemini-ассистент без turn_saver: прежний путь (ConversationService) ----------
+calls = []
+async def fake_save(**kw):
+    calls.append(kw); return "saved"
+orig = handler_gemini.ConversationService.save_conversation
+handler_gemini.ConversationService.save_conversation = staticmethod(fake_save)
+try:
+    client2 = make_client([])
+    r = run(handler_gemini._save_turn(client2, db=None, assistant_id="a1", user_message="привет",
+                                      assistant_message="здравствуйте", session_id="s", caller_number=None, tokens_used=0))
+    check("без turn_saver реплика идёт в ConversationService", r == "saved" and len(calls) == 1)
+    client2.turn_saver = saver
+    n = len(calls)
+    run(handler_gemini._save_turn(client2, db=None, assistant_id="a1", user_message="привет", assistant_message="ок"))
+    check("с turn_saver ConversationService не трогаем", len(calls) == n)
+    check("с turn_saver Sheets пропускаются (пишет сессия)", run(handler_gemini._log_sheets(client2, sheet_id="x")) is True)
+finally:
+    handler_gemini.ConversationService.save_conversation = orig
+
+
+# ---------- сессия: заглушки, ресемплинг, вход ----------
+class DummyLog:
+    def __init__(self): self.rows = []
+    def add(self, kind, text, level="info", **d): self.rows.append((kind, text))
+
+asst = types.SimpleNamespace(id="a1", user_id=None, name="Тест")
+cl = make_client([])
+log = DummyLog()
+widget = gl.GeminiLiveVoiceSession(FakeClientSocket(), asst, cl, None, "c1", telephony=False, call_log=log)
+phone = gl.GeminiLiveVoiceSession(FakeClientSocket(), asst, cl, None, "c1", telephony=True, call_log=None)
+pcm = b"\x10\x00" * 2400   # 100 мс при 24 кГц
+check("виджет: вход 24 кГц сжимается до 16 кГц", len(widget._to_gemini(pcm)) in range(3190, 3210), len(widget._to_gemini(pcm)))
+check("телефон: вход уже 16 кГц, без пересчёта", phone._to_gemini(pcm) is pcm)
+
+run(widget.save_turn("[no user input]", "Здравствуйте"))
+run(widget.save_turn("Привет", "[no response]"))
+run(widget.save_turn("", ""))
+check("заглушки «[no …]» не попадают в диалог", widget.pairs == [{"user": "", "assistant": "Здравствуйте"}, {"user": "Привет", "assistant": ""}], widget.pairs)
+check("реплики попали в журнал звонка", [k for k, _ in log.rows] == ["assistant", "user"], log.rows)
+
+# цикл входа от клиента: звук уходит в Gemini как realtimeInput.audio, ping получает pong
+class ScriptSocket(FakeClientSocket):
+    def __init__(self, msgs): super().__init__(); self.msgs = list(msgs)
+    async def receive(self):
+        if self.msgs: return self.msgs.pop(0)
+        return {"type": "websocket.disconnect"}
+
+audio_msg = {"text": json.dumps({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode(), "event_id": "e1"})}
+sess = gl.GeminiLiveVoiceSession(ScriptSocket([{"text": json.dumps({"type": "ping"})}, audio_msg, {"bytes": pcm}]),
+                                 asst, cl, None, "c1", telephony=False, call_log=None)
+try:
+    run(sess.handle_client_messages())
+except Exception as exc:
+    check("конец цикла входа — отключение клиента", type(exc).__name__ == "WebSocketDisconnect", type(exc).__name__)
+sent_audio = [m for m in cl.ws.sent if "realtimeInput" in m and "audio" in m["realtimeInput"]]
+check("звук виджета ушёл в Gemini (текстом и бинарно)", len(sent_audio) == 2, len(cl.ws.sent))
+check("Gemini получает PCM 16 кГц", all(m["realtimeInput"]["audio"]["mimeType"] == "audio/pcm;rate=16000" for m in sent_audio))
+check("клиент получил pong и ack", {"pong", "input_audio_buffer.append.ack"} <= set(sess.websocket.types()), sess.websocket.types())
+
+print("ПРОВАЛОВ:", failures)
+sys.exit(1 if failures else 0)

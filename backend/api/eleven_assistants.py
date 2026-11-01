@@ -3,7 +3,8 @@
 REST API Eleven-ассистентов (OpenAI Realtime текстом + озвучка ElevenLabs).
 
 Движок голоса карточки (voice_engine): "eleven" — каскад с синтезом ElevenLabs,
-"gpt_live" — OpenAI GPT-Live (речь в речь, голос live_voice); оба на серверных ключах.
+"gpt_live" — OpenAI GPT-Live (речь в речь, голос live_voice); "gemini_live" — Google Gemini Live
+(речь в речь, голос Gemini в live_voice); все на серверных ключах.
 
 Ключи серверные: settings.OPENAI_API_KEY и settings.ELEVENLABS_API_KEY.
 Голоса берутся из аккаунта ElevenLabs по серверному ключу (/voices) и из
@@ -36,6 +37,8 @@ from backend.models.eleven_assistant import (
     ELEVEN_STABILITY_LEVELS,
     ELEVEN_TTS_MODEL_IDS,
     ELEVEN_TTS_MODELS,
+    GEMINI_LIVE_DEFAULT_VOICE,
+    GEMINI_LIVE_VOICES,
     VOICE_ENGINE_IDS,
     VOICE_ENGINES,
     ElevenAssistantConfig,
@@ -126,6 +129,7 @@ class ElevenAssistantResponse(BaseModel):
 class ElevenServerStatus(BaseModel):
     openai_key: bool
     elevenlabs_key: bool
+    gemini_key: bool = False   # серверный GEMINI_API_KEY или ключ владельца: нужен движку «Gemini Live»
     ready: bool
     ws_path: str = "/ws/eleven/"
 
@@ -151,8 +155,9 @@ def _validate(data) -> None:
     if engine is not None and engine not in VOICE_ENGINE_IDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown voice engine. Available: {VOICE_ENGINE_IDS}")
     live_voice = (getattr(data, "live_voice", None) or "").strip().lower()
-    if live_voice and live_voice not in LIVE_VOICE_SET:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown GPT-Live voice. Available: {LIVE_VOICES}")
+    if live_voice and live_voice not in LIVE_VOICE_SET and live_voice not in {v.lower() for v in GEMINI_LIVE_VOICES}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"Unknown live voice. GPT-Live: {LIVE_VOICES}; Gemini Live: {GEMINI_LIVE_VOICES}")
     language = getattr(data, "language", None)
     if language is not None and language.lower() not in LANGUAGE_CODES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown language. Available: {sorted(LANGUAGE_CODES)}")
@@ -273,6 +278,8 @@ async def get_eleven_options():
         "default_voice_engine": DEFAULT_VOICE_ENGINE,
         "live_voices": LIVE_VOICES,
         "default_live_voice": LIVE_DEFAULT_VOICE,
+        "gemini_voices": GEMINI_LIVE_VOICES,
+        "default_gemini_voice": GEMINI_LIVE_DEFAULT_VOICE,
         "default_greeting": DEFAULT_ELEVEN_GREETING,
     }
 
@@ -281,7 +288,9 @@ async def get_eleven_options():
 async def get_eleven_server_status(current_user: User = Depends(get_current_user)):
     openai_ok = bool(settings.OPENAI_API_KEY)
     eleven_ok = bool(settings.ELEVENLABS_API_KEY)
-    return ElevenServerStatus(openai_key=openai_ok, elevenlabs_key=eleven_ok, ready=openai_ok and eleven_ok)
+    gemini_ok = bool(settings.GEMINI_API_KEY or current_user.gemini_api_key)
+    return ElevenServerStatus(openai_key=openai_ok, elevenlabs_key=eleven_ok, gemini_key=gemini_ok,
+                              ready=openai_ok and eleven_ok)
 
 
 @router.get("/voices")

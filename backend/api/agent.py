@@ -145,7 +145,10 @@ def _valid_voice_engine(engine: Optional[str]) -> str:
 
 def _valid_live_voice(voice: Optional[str]) -> Optional[str]:
     v = (voice or "").strip().lower()
-    return v if v in LIVE_VOICE_SET else None
+    if v in LIVE_VOICE_SET:
+        return v
+    from backend.models.eleven_assistant import GEMINI_LIVE_VOICES  # голоса Gemini Live: тот же столбец live_voice
+    return v if v in {g.lower() for g in GEMINI_LIVE_VOICES} else None
 
 
 def _is_valid_voice(assistant_type: str, voice: str) -> bool:

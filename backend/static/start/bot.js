@@ -157,7 +157,8 @@
   // ══════════════════════════════ ОСНОВНОЕ ═════════════════════════════════
   function fillMain() {
     var b = S.$('#b-main');
-    var voice = A.eleven_voice_engine === 'gpt_live' ? 'GPT-Live · ' + (A.eleven_live_voice || 'marin') : (A.eleven_voice_name || 'ElevenLabs');
+    var voice = A.eleven_voice_engine === 'gpt_live' ? 'GPT-Live · ' + (A.eleven_live_voice || 'marin')
+      : A.eleven_voice_engine === 'gemini_live' ? 'Gemini Live · ' + (A.eleven_live_voice || 'aoede') : (A.eleven_voice_name || 'ElevenLabs');
     b.innerHTML =
       '<div class="st-bot-hero"><span class="st-avatar lg">' + esc(S.initial(A.name)) + '</span>' +
       '<div class="grow"><label class="label" for="m-name">Имя бота</label><input class="input" id="m-name" value="' + esc(A.name || '') + '" maxlength="80"></div>' +
@@ -197,11 +198,12 @@
     });
   }
 
+  function isLiveEngine(id) { return id === 'gpt_live' || id === 'gemini_live'; }
   function drawVoiceBox() {
     var box = S.$('#voice-box');
     if (!box) return;
     if (!voiceOpts) { box.innerHTML = '<div class="muted small">Не удалось загрузить список голосов.</div>'; return; }
-    var engine = A.eleven_voice_engine === 'gpt_live' ? 'gpt_live' : 'eleven';
+    var engine = isLiveEngine(A.eleven_voice_engine) ? A.eleven_voice_engine : 'eleven';
     var engines = voiceOpts.voice_engines || [];
     box.innerHTML =
       '<div class="st-grid2"><div class="field"><label class="label">Модель голоса</label><select class="select-native" id="v-engine">' +
@@ -214,15 +216,28 @@
       }).join('') + '</select></div></div>' +
       '<div class="field" id="v-eleven-wrap"><label class="label">Голос</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select class="select-native" id="v-voice"><option>Загрузка…</option></select>' +
       '<button class="btn" id="v-play" type="button" aria-label="Прослушать">' + icon('play') + '</button></div><div class="hint">Голоса, подходящие для выбранного языка, показаны первыми.</div></div>' +
-      '<div class="field" id="v-live-wrap"><label class="label">Голос GPT-Live</label><select class="select-native" id="v-live">' +
-      (voiceOpts.live_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === (A.eleven_live_voice || voiceOpts.default_live_voice) ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field" id="v-live-wrap"><label class="label" id="v-live-label">Голос GPT-Live</label><select class="select-native" id="v-live"></select></div>' +
       '<button class="btn btn-primary" id="v-save" type="button">Сохранить голос</button>';
     var voices = [];
+    // Голос «речь в речь» лежит в одной колонке на оба движка: список и подпись зависят от движка
+    function fillLive() {
+      var eng = S.$('#v-engine').value, gem = eng === 'gemini_live';
+      var list = gem ? (voiceOpts.gemini_voices || ['Aoede']) : (voiceOpts.live_voices || []);
+      var prev = String(S.$('#v-live').value || A.eleven_live_voice || '').toLowerCase();
+      var def = gem ? String(voiceOpts.default_gemini_voice || list[0]).toLowerCase() : voiceOpts.default_live_voice;
+      var values = list.map(function (v) { return gem ? String(v).toLowerCase() : v; });
+      var cur = values.indexOf(prev) !== -1 ? prev : def;
+      S.$('#v-live').innerHTML = list.map(function (v, i) {
+        return '<option value="' + esc(values[i]) + '"' + (values[i] === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+      }).join('');
+      S.$('#v-live-label').textContent = gem ? 'Голос Gemini Live' : 'Голос GPT-Live';
+    }
     function toggle() {
-      var live = S.$('#v-engine').value === 'gpt_live';
+      var live = isLiveEngine(S.$('#v-engine').value);
       S.$('#v-eleven-wrap').style.display = live ? 'none' : '';
       S.$('#v-lang-wrap').style.display = live ? 'none' : '';
       S.$('#v-live-wrap').style.display = live ? '' : 'none';
+      if (live) fillLive();
     }
     function loadVoices() {
       var sel = S.$('#v-voice'); sel.innerHTML = '<option>Загрузка…</option>';
@@ -244,8 +259,8 @@
       audio = new Audio(v.preview_url); audio.play().catch(function () { S.toast('Не удалось воспроизвести', 'error'); });
     });
     S.$('#v-save').addEventListener('click', function () {
-      var live = S.$('#v-engine').value === 'gpt_live';
-      var body = { eleven_voice_engine: live ? 'gpt_live' : 'eleven' };
+      var eng = S.$('#v-engine').value, live = isLiveEngine(eng);
+      var body = { eleven_voice_engine: live ? eng : 'eleven' };
       if (live) body.eleven_live_voice = S.$('#v-live').value;
       else {
         var opt = S.$('#v-voice').selectedOptions[0];

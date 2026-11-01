@@ -113,10 +113,28 @@ class GeminiLiveClient:
         assistant_config: GeminiAssistantConfig,
         client_id: str,
         db_session: Any = None,
-        user_agent: str = ""
+        user_agent: str = "",
+        voice_override: Optional[str] = None,
+        record_conversation: bool = True,
+        language: Optional[str] = None,
+        realtime_text: bool = False,
     ):
-        """Initialize the Gemini Live API client."""
+        """Initialize the Gemini Live API client.
+
+        voice_override / language / record_conversation — для карточек ElevenLabs с движком
+        «Gemini Live» (handler_gemini_live.py): голос из live_voice, инструкция языка в промпт,
+        диалоги пишет сама сессия в eleven_conversations (не в gemini_conversations).
+        """
         self.api_key = api_key
+        self.voice_override = (voice_override or "").strip() or None
+        self.record_conversation = record_conversation
+        # Текстовые реплики (приветствие) — через realtimeInput.text: у 3.x Live-моделей clientContent
+        # рассчитан на начальную историю. Включается только для карточек ElevenLabs; Gemini-ассистенты
+        # остаются на прежнем clientContent.
+        self.realtime_text = realtime_text
+        self.language = (language or "").strip().lower() or None
+        # Если задан — реплики (user, assistant) уходят сюда вместо ConversationService/Sheets
+        self.turn_saver = None
         self.assistant_config = assistant_config
         self.client_id = client_id
         self.db_session = db_session
@@ -208,8 +226,15 @@ class GeminiLiveClient:
             logger.info(f"[GEMINI-CLIENT] Model: {self.model}")
 
             # Get settings
-            voice = self.assistant_config.voice or DEFAULT_VOICE
+            voice = self.voice_override or getattr(self.assistant_config, "voice", None) or DEFAULT_VOICE
             system_message = getattr(self.assistant_config, "system_prompt", None) or DEFAULT_SYSTEM_MESSAGE
+            if self.language:
+                try:
+                    from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS
+                    if self.language in LANGUAGE_INSTRUCTIONS:
+                        system_message = f"{system_message}\n\n{LANGUAGE_INSTRUCTIONS[self.language]}"
+                except Exception as e:
+                    logger.warning(f"[GEMINI-CLIENT] language instruction skipped: {e}")
             functions = getattr(self.assistant_config, "functions", None)
 
             # Динамически домешиваем функции подключённых коннекторов (Composio):
@@ -443,8 +468,8 @@ class GeminiLiveClient:
             logger.error(traceback.format_exc())
             return False
 
-        # Create conversation record
-        if self.db_session:
+        # Create conversation record (карточки ElevenLabs пишут диалог сами — в eleven_conversations)
+        if self.db_session and self.record_conversation:
             try:
                 conv = GeminiConversation(
                     assistant_id=self.assistant_config.id,
@@ -461,6 +486,12 @@ class GeminiLiveClient:
                 logger.error(f"[GEMINI-CLIENT] Error creating conversation: {e}")
 
         return True
+
+    def _text_payload(self, text: str) -> Dict[str, Any]:
+        """Текстовая реплика пользователя в разговор (приветствие, send_text_message)."""
+        if self.realtime_text:
+            return {"realtimeInput": {"text": text}}
+        return {"clientContent": {"turns": [{"role": "user", "parts": [{"text": text}]}], "turnComplete": True}}
 
     async def send_initial_greeting(self) -> bool:
         """
@@ -493,17 +524,8 @@ class GeminiLiveClient:
             
             # Send as user message to trigger response
             # We instruct Gemini to say the greeting
-            payload = {
-                "clientContent": {
-                    "turns": [{
-                        "role": "user",
-                        "parts": [{
-                            "text": f"Поприветствуй пользователя голосом. Скажи именно это: \"{greeting_message}\""
-                        }]
-                    }],
-                    "turnComplete": True
-                }
-            }
+            greeting_text = f"Поприветствуй пользователя голосом. Скажи именно это: \"{greeting_message}\""
+            payload = self._text_payload(greeting_text)
             
             await self.ws.send(json.dumps(payload))
             self.greeting_sent = True
@@ -535,15 +557,7 @@ class GeminiLiveClient:
         try:
             logger.info(f"[GEMINI-CLIENT] 💬 Sending text message: {text[:100]}...")
             
-            payload = {
-                "clientContent": {
-                    "turns": [{
-                        "role": "user",
-                        "parts": [{"text": text}]
-                    }],
-                    "turnComplete": True
-                }
-            }
+            payload = self._text_payload(text)
             
             await self.ws.send(json.dumps(payload))
             logger.info(f"[GEMINI-CLIENT] ✅ Text message sent")

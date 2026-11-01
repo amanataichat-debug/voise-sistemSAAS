@@ -104,6 +104,22 @@ def log_to_render(message: str, level: str = "INFO"):
         logger.info(message)
 
 
+async def _save_turn(gemini_client, **kw):
+    """Реплика в БД. У карточек ElevenLabs (gemini_client.turn_saver) пишет сама сессия — в
+    eleven_conversations и журнал звонка; у Gemini-ассистентов — ConversationService, как раньше."""
+    saver = getattr(gemini_client, "turn_saver", None)
+    if saver is not None:
+        return await saver(kw.get("user_message") or "", kw.get("assistant_message") or "")
+    return await ConversationService.save_conversation(**kw)
+
+
+async def _log_sheets(gemini_client, **kw):
+    """Строка в Google Sheets; у карточек ElevenLabs её пишет сессия (turn_saver)."""
+    if getattr(gemini_client, "turn_saver", None) is not None:
+        return True
+    return await GoogleSheetsService.log_conversation(**kw)
+
+
 # 🆕 v1.5.1: Async function log save (FIX: создаём новую сессию внутри задачи)
 async def async_save_function_log(
     function_name: str,
@@ -780,7 +796,8 @@ async def handle_gemini_messages(
                             
                             # Save to DB
                             try:
-                                await ConversationService.save_conversation(
+                                await _save_turn(
+                                    gemini_client,
                                     db=gemini_client.db_session,
                                     assistant_id=str(gemini_client.assistant_config.id),
                                     user_message=user_msg or "[no user input]",
@@ -796,7 +813,8 @@ async def handle_gemini_messages(
                             # Save to Google Sheets
                             if gemini_client.assistant_config and gemini_client.assistant_config.google_sheet_id:
                                 try:
-                                    await GoogleSheetsService.log_conversation(
+                                    await _log_sheets(
+                                        gemini_client,
                                         sheet_id=gemini_client.assistant_config.google_sheet_id,
                                         user_message=user_msg or "[no user input]",
                                         assistant_message=assistant_msg or "[interrupted]",
@@ -920,7 +938,8 @@ async def handle_gemini_messages(
                             
                             # Save to DB
                             try:
-                                await ConversationService.save_conversation(
+                                await _save_turn(
+                                    gemini_client,
                                     db=gemini_client.db_session,
                                     assistant_id=str(gemini_client.assistant_config.id),
                                     user_message=user_msg or "[no user input]",
@@ -936,7 +955,8 @@ async def handle_gemini_messages(
                             # Save to Google Sheets
                             if gemini_client.assistant_config and gemini_client.assistant_config.google_sheet_id:
                                 try:
-                                    sheets_result = await GoogleSheetsService.log_conversation(
+                                    sheets_result = await _log_sheets(
+                                        gemini_client,
                                         sheet_id=gemini_client.assistant_config.google_sheet_id,
                                         user_message=user_msg or "[no user input]",
                                         assistant_message=assistant_msg or "[no response]",
@@ -1042,7 +1062,8 @@ async def handle_gemini_messages(
             
             # Save to DB
             try:
-                await ConversationService.save_conversation(
+                await _save_turn(
+                    gemini_client,
                     db=gemini_client.db_session,
                     assistant_id=str(gemini_client.assistant_config.id),
                     user_message=user_msg or "[no user input]",
@@ -1058,7 +1079,8 @@ async def handle_gemini_messages(
             # Save to Google Sheets
             if gemini_client.assistant_config.google_sheet_id:
                 try:
-                    sheets_result = await GoogleSheetsService.log_conversation(
+                    sheets_result = await _log_sheets(
+                        gemini_client,
                         sheet_id=gemini_client.assistant_config.google_sheet_id,
                         user_message=user_msg or "[no user input]",
                         assistant_message=assistant_msg or "[incomplete - disconnected]",
@@ -1078,7 +1100,8 @@ async def handle_gemini_messages(
         # Отправляем один итоговый webhook с полным диалогом из БД
         # ═══════════════════════════════════════════════════════════════
         try:
-            if gemini_client and gemini_client.assistant_config and gemini_client.assistant_config.user_id:
+            if (gemini_client and gemini_client.assistant_config and gemini_client.assistant_config.user_id
+                    and getattr(gemini_client, "turn_saver", None) is None):  # у карточек ElevenLabs webhook шлёт сессия
                 from backend.db.session import SessionLocal
                 from backend.models.user import User
                 from backend.services.webhook_notification import send_webhook_safe

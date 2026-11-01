@@ -31,12 +31,14 @@ logger = get_logger(__name__)
 FREE_EMAILS = {"amanat.aichat@gmail.com"}
 
 # Себестоимость минуты по движку голоса карточки (eleven_assistant_configs.voice_engine)
-ENGINE_TITLES = {"eleven": "ElevenLabs", "gpt_live": "OpenAI GPT-Live"}
+ENGINE_TITLES = {"eleven": "ElevenLabs", "gpt_live": "OpenAI GPT-Live", "gemini_live": "Google Gemini Live"}
 
 
 def _engine_cost_usd(engine: str) -> float:
     if engine == "gpt_live":
         return settings.VOICE_COST_USD_PER_MIN_GPT_LIVE
+    if engine == "gemini_live":
+        return settings.VOICE_COST_USD_PER_MIN_GEMINI_LIVE
     return settings.VOICE_COST_USD_PER_MIN_ELEVEN
 
 

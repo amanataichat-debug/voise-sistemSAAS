@@ -18,6 +18,7 @@ language_code, диалоговой модели дописывается инс
     → готовая фраза текстом → OpenAI Realtime (текст → текст) → ElevenLabs TTS.
 Если Scribe не подключился, звонок идёт по прежней схеме (звук напрямую в OpenAI).
 
+Карточка с voice_engine="gemini_live" обслуживается Google Gemini Live (handler_gemini_live.py).
 Карточка с voice_engine="gpt_live" обслуживается OpenAI GPT-Live (run_gpt_live_session →
 LiveVoiceSession из handler_live.py): речь в речь, голос live_voice, серверный OPENAI_API_KEY,
 модель функций LIVE_DELEGATION_MODEL; диалоги — в eleven_conversations, журнал звонка — как у Eleven.
@@ -38,6 +39,7 @@ from backend.core.logging import get_logger
 from backend.models.eleven_assistant import (
     DEFAULT_ELEVEN_GREETING,
     ELEVEN_SAMPLE_RATE,
+    VOICE_ENGINE_GEMINI_LIVE,
     VOICE_ENGINE_GPT_LIVE,
     ElevenAssistantConfig,
     ElevenConversation,
@@ -205,7 +207,9 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             _apply_agent_knowledge(db, assistant)
 
         # Минуты разговора оплачиваются из кошелька владельца (сом): пустой кошелёк — не начинаем
-        engine = "gpt_live" if (assistant.voice_engine or "") == VOICE_ENGINE_GPT_LIVE else "eleven"
+        voice_engine = assistant.voice_engine or ""
+        engine = ("gpt_live" if voice_engine == VOICE_ENGINE_GPT_LIVE
+                  else "gemini_live" if voice_engine == VOICE_ENGINE_GEMINI_LIVE else "eleven")
         meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)),
                             outbound=getattr(assistant, "sip_direction", None) == "outbound")
         if not await meter.prepare():
@@ -213,6 +217,11 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             return
         if engine == "gpt_live":
             await run_gpt_live_session(websocket, assistant, db, client_id, fail, meter)
+            return
+        if engine == "gemini_live":
+            # Импорт здесь: handler_gemini_live сам берёт _check_subscription из этого модуля
+            from backend.websockets.handler_gemini_live import run_gemini_live_session
+            await run_gemini_live_session(websocket, assistant, db, client_id, fail, meter)
             return
         if not (assistant.voice_id or "").strip():
             await fail("voice_not_set", "У агента не выбран голос ElevenLabs")

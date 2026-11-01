@@ -399,6 +399,9 @@ async def sip_media(
     # Карточка ElevenLabs на движке GPT-Live: звук идёт в реальном темпе, как у OpenAI —
     # адаптеру нужен тот же профиль (запас OUTBOUND_CUSHION_MS), приветствие приходит транскриптом.
     gpt_live = call.assistant_type == "eleven" and getattr(assistant, "voice_engine", None) == "gpt_live"
+    # Карточка ElevenLabs на движке Gemini Live: звук Gemini 16 кГц на вход, как у Gemini-ассистентов,
+    # приветствие и реплики приходят транскриптом
+    gemini_live = call.assistant_type == "eleven" and getattr(assistant, "voice_engine", None) == "gemini_live"
 
     # Знания агента в промпт звонка (ветка 1610-kb-calls). Раньше здесь
     # дописывался только контекст, и голосовая модель шла в звонок, не зная ни
@@ -472,7 +475,7 @@ async def sip_media(
         call.conversation_session_id = str(call.id)
         db.commit()
 
-    adapter_profile = "openai" if gpt_live else call.assistant_type
+    adapter_profile = "openai" if gpt_live else ("gemini" if gemini_live else call.assistant_type)
     # GPT-Live на телефоне — в G.711 μ-law 8 кГц без пересчёта частоты (LIVE_PHONE_G711): профиль
     # адаптера и кодек клиента Live включаются вместе (assistant.live_phone_g711 читает хендлер)
     if adapter_profile == "openai" and settings.LIVE_PHONE_G711 and G711_AVAILABLE:
@@ -482,12 +485,12 @@ async def sip_media(
 
     # Стенограмма звонка целиком. Приветствие Fish/Eleven озвучивается без текстовых событий.
     transcript = CallTranscript()
-    if call.assistant_type in ("fish", "eleven") and not gpt_live:
+    if call.assistant_type in ("fish", "eleven") and not gpt_live and not gemini_live:
         transcript.add_greeting(getattr(assistant, "greeting_message", None) or FISH_DEFAULT_GREETING)
 
     logger.info(
         f"[SIP-MEDIA] call {call_id} {direction}: did={call.did} caller={call.caller} to={call.to_number} "
-        f"assistant={call.assistant_type}/{assistant.id}{' (gpt-live)' if gpt_live else ''} "
+        f"assistant={call.assistant_type}/{assistant.id}{' (gpt-live)' if gpt_live else (' (gemini-live)' if gemini_live else '')} "
         f"greeting={'yes' if greeting else 'no'}"
     )
 

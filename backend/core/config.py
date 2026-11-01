@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     WALLET_MARKUP: float = float(os.getenv("WALLET_MARKUP", "1.25"))
     VOICE_COST_USD_PER_MIN_GPT_LIVE: float = float(os.getenv("VOICE_COST_USD_PER_MIN_GPT_LIVE", "0.05"))
     VOICE_COST_USD_PER_MIN_ELEVEN: float = float(os.getenv("VOICE_COST_USD_PER_MIN_ELEVEN", "0.05"))
+    # Gemini Live: аудио вход ≈ 0,005 $/мин + выход ≈ 0,018 $/мин (блоги, официальной цены 3.8 не нашли) — с запасом
+    VOICE_COST_USD_PER_MIN_GEMINI_LIVE: float = float(os.getenv("VOICE_COST_USD_PER_MIN_GEMINI_LIVE", "0.03"))
     # Минута оператора связи на ИСХОДЯЩЕМ звонке (O!: 1 сом/мин на свои номера), добавляется к цене голоса.
     # Входящие оператор не тарифицирует, на них надбавки нет.
     WALLET_OPERATOR_OUT_SOM_PER_MIN: float = float(os.getenv("WALLET_OPERATOR_OUT_SOM_PER_MIN", "1.0"))
@@ -294,6 +296,9 @@ class Settings(BaseSettings):
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.
     GEMINI_LIVE_MODEL: str = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
+    # Серверный ключ Google AI Studio: карточки ElevenLabs с движком «Gemini Live» говорят на нём
+    # (если ключа нет — берётся gemini_api_key владельца)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     # Как модель озвучивает результат асинхронной функции: WHEN_IDLE (договорить, потом озвучить),
     # INTERRUPT (сразу) или SILENT (молча учесть)
     GEMINI_TOOL_SCHEDULING: str = os.getenv("GEMINI_TOOL_SCHEDULING", "WHEN_IDLE")

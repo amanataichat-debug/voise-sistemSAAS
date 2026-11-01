@@ -240,12 +240,15 @@ const ELEVEN_STABILITY = [
 const VOICE_ENGINES = [
   { id:'eleven', title:'ElevenLabs', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
   { id:'gpt_live', title:'OpenAI GPT-Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
+  { id:'gemini_live', title:'Google Gemini Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь (Gemini 3.8 Live): слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке.' },
 ];
 // ElevenLabs — значок звуковой волны (как в кабинете), GPT-Live — логотип OpenAI
 function engineLogoHtml(id){
   const VF = window.VF;
   if(!VF) return '';
-  return id === 'gpt_live' ? VF.logo('openai', {size:16}) : `<span class="logo-wrap">${VF.icon('audio-lines')}</span>`;
+  return id === 'gpt_live' ? VF.logo('openai', {size:16})
+    : id === 'gemini_live' ? VF.logo('gemini', {size:16})
+    : `<span class="logo-wrap">${VF.icon('audio-lines')}</span>`;
 }
 // Цена минуты из кошелька (сом) — /api/eleven-assistants/options, грузится один раз
 let voiceEnginePrices = null;
@@ -267,6 +270,15 @@ async function loadVoiceEnginePrices(){
 }
 const LIVE_VOICES = ['marin','cedar','alloy','ash','ballad','coral','echo','sage','shimmer','verse',
   'quartz','ripple','vesper','willow','stone','gleam','meridian','bossa','tempo','beacon','delta','cinder'];
+// Голоса Gemini Live — зеркало GEMINI_LIVE_VOICES (backend/models/eleven_assistant.py); в БД — в нижнем регистре
+const GEMINI_LIVE_VOICE_NAMES = ['Aoede','Kore','Leda','Zephyr','Puck','Charon','Fenrir','Orus','Callirrhoe','Sulafat'];
+const LIVE_ENGINE_IDS = ['gpt_live','gemini_live'];
+function liveVoiceOptionsHtml(engine, cur){
+  const list = engine === 'gemini_live' ? GEMINI_LIVE_VOICE_NAMES.map(v => v.toLowerCase()) : LIVE_VOICES;
+  const names = engine === 'gemini_live' ? GEMINI_LIVE_VOICE_NAMES : LIVE_VOICES;
+  const sel = list.includes(cur) ? cur : list[0];
+  return list.map((v, i) => `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(names[i])}</option>`).join('');
+}
 let elevenVoicesCache = {};   // language → [voices]
 let elevenPreviewAudio = null;
 
@@ -277,11 +289,10 @@ function elevenVoiceControlHtml(cur, ids){
   const langOpts = ELEVEN_LANGUAGES.map(l => `<option value="${l.code}" ${l.code===lang?'selected':''}>${l.title}</option>`).join('');
   const modelOpts = ELEVEN_TTS_MODELS.map(m => `<option value="${m.id}" ${m.id===model?'selected':''}>${esc(m.title)}</option>`).join('');
   const stabOpts = ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${x.v===stab?'selected':''}>${esc(x.title)}</option>`).join('');
-  const engine = cur.eleven_voice_engine === 'gpt_live' ? 'gpt_live' : 'eleven';
-  const liveVoice = cur.eleven_live_voice || 'marin';
-  const liveOpts = [...(LIVE_VOICES.includes(liveVoice) ? [] : [liveVoice]), ...LIVE_VOICES]
-    .map(v => `<option value="${esc(v)}" ${v===liveVoice?'selected':''}>${esc(v)}</option>`).join('');
-  const isLive = engine === 'gpt_live';
+  const engine = LIVE_ENGINE_IDS.includes(cur.eleven_voice_engine) ? cur.eleven_voice_engine : 'eleven';
+  const liveVoice = String(cur.eleven_live_voice || '').toLowerCase();
+  const liveOpts = liveVoiceOptionsHtml(engine, liveVoice || 'marin');
+  const isLive = LIVE_ENGINE_IDS.includes(engine);
   // В inline-обработчик — имя глобальной константы: esc() не экранирует кавычки, JSON ломал атрибут
   const idsRef = ids === W_VOICE_IDS ? 'W_VOICE_IDS' : 'I_VOICE_IDS';
   const price = id => voiceEnginePrices && voiceEnginePrices[id] != null
@@ -301,7 +312,7 @@ function elevenVoiceControlHtml(cur, ids){
       <div class="form-hint">Цена модели списывается с кошелька за минуту разговора (посекундно).</div>
     </div>
     <div class="form-group" id="${ids.lbox}" style="${isLive ? '' : 'display:none'}">
-      <label class="form-label">Голос GPT-Live</label>
+      <label class="form-label" id="${ids.lvoice}-label">${engine === 'gemini_live' ? 'Голос Gemini Live' : 'Голос GPT-Live'}</label>
       <select class="form-select" id="${ids.lvoice}">${liveOpts}</select>
     </div>
     <div id="${ids.ebox}" style="${isLive ? 'display:none' : ''}">
@@ -327,10 +338,16 @@ function voiceEngineChanged(ids, value){
   if(input && value) input.value = value;
   document.querySelectorAll(`#${ids.eng}-tiles .eng-tile`).forEach(b => b.classList.toggle('on', b.dataset.engine === input?.value));
   const engine = input?.value || 'eleven';
-  const live = engine === 'gpt_live';
+  const live = LIVE_ENGINE_IDS.includes(engine);
   const lbox = document.getElementById(ids.lbox), ebox = document.getElementById(ids.ebox);
   if(lbox) lbox.style.display = live ? '' : 'none';
   if(ebox) ebox.style.display = live ? 'none' : '';
+  if(live){
+    // Голос в одной колонке на оба движка «речь в речь»: список и подпись меняем под движок
+    const sel = document.getElementById(ids.lvoice), label = document.getElementById(ids.lvoice + '-label');
+    if(sel) sel.innerHTML = liveVoiceOptionsHtml(engine, String(sel.value || '').toLowerCase());
+    if(label) label.textContent = engine === 'gemini_live' ? 'Голос Gemini Live' : 'Голос GPT-Live';
+  }
 }
 
 // Загрузить голоса аккаунта ElevenLabs для выбранного языка и заполнить селект.

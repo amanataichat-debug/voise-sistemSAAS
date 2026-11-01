@@ -78,11 +78,19 @@ ELEVEN_LLM_MODELS = ["gpt-realtime-2", "gpt-realtime-2.1-mini"]
 # Промпт, приветствие, функции, база знаний, номера и диалоги у обоих общие.
 VOICE_ENGINE_ELEVEN = "eleven"
 VOICE_ENGINE_GPT_LIVE = "gpt_live"
+VOICE_ENGINE_GEMINI_LIVE = "gemini_live"
+# Голоса Gemini Live (prebuilt voices); для движка gemini_live имя голоса лежит в колонке live_voice.
+GEMINI_LIVE_VOICES = ["Aoede", "Kore", "Leda", "Zephyr", "Puck", "Charon", "Fenrir", "Orus", "Callirrhoe", "Sulafat"]
+GEMINI_LIVE_DEFAULT_VOICE = "Aoede"
+# Движки «речь в речь»: слушают и говорят сами, без каскада ASR → текст → TTS.
+LIVE_VOICE_ENGINES = ("gpt_live", "gemini_live")
 VOICE_ENGINES = [
     {"id": VOICE_ENGINE_ELEVEN, "title": "ElevenLabs",
      "description": "Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос."},
     {"id": VOICE_ENGINE_GPT_LIVE, "title": "OpenAI GPT-Live",
      "description": "Речь в речь (gpt-live-1): слушает и говорит одновременно, сам обрабатывает перебивания."},
+    {"id": VOICE_ENGINE_GEMINI_LIVE, "title": "Google Gemini Live",
+     "description": "Речь в речь (gemini-3.8-live): слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке."},
 ]
 VOICE_ENGINE_IDS = [e["id"] for e in VOICE_ENGINES]
 DEFAULT_VOICE_ENGINE = VOICE_ENGINE_ELEVEN
@@ -111,7 +119,8 @@ class ElevenAssistantConfig(Base):
     tts_model = Column(String(50), default=DEFAULT_ELEVEN_TTS_MODEL, nullable=False)
     stability = Column(Float, default=DEFAULT_ELEVEN_STABILITY, nullable=True)
 
-    # Движок голоса: "eleven" | "gpt_live"; голос GPT-Live (marin, cedar, …) — для gpt_live
+    # Движок голоса: "eleven" | "gpt_live" | "gemini_live"; live_voice — голос GPT-Live (marin, cedar, …)
+    # или Gemini Live (Aoede, Kore, …) в зависимости от движка
     voice_engine = Column(String(20), default=DEFAULT_VOICE_ENGINE, server_default=DEFAULT_VOICE_ENGINE, nullable=False)
     live_voice = Column(String(50), nullable=True)
 
