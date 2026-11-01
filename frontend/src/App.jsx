@@ -4,9 +4,11 @@ import { useReferralTracker } from './hooks/useReferralTracker';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import ProductTour from './components/ProductTour';
+import Abilities from './components/Abilities';
+import AgentShowcase from './components/AgentShowcase';
+import CrmSection from './components/CrmSection';
 import AgentSection from './components/AgentSection';
 import Start from './components/Start';
-import Integration from './components/Integration';
 import Scenarios from './components/Scenarios';
 import Pricing from './components/Pricing';
 import Faq from './components/Faq';
@@ -94,10 +96,12 @@ function App() {
       <Navbar onOpenModal={openModal} />
       <main>
         <Hero onOpenModal={openModal} />
-        <ProductTour />
+        <Abilities />
+        <AgentShowcase onOpenModal={openModal} />
+        <CrmSection />
         <AgentSection onOpenModal={openModal} />
+        <ProductTour />
         <Start onOpenModal={openModal} />
-        <Integration />
         <Scenarios />
         <Pricing onOpenModal={openModal} />
         <Faq />

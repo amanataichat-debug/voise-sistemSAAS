@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useT } from '../i18n';
 import Icon from './Icon';
-import ModelLogo, { MODELS, MODEL_ORDER } from './ModelLogo';
 import CallCard from './CallCard';
 import { Stagger, Item } from './Reveal';
 import { PHONE, PHONE_DISPLAY, copyText } from './contacts';
@@ -13,6 +12,8 @@ function Hero({ onOpenModal }) {
   const { t } = useT();
   const [pop, setPop] = useState(false);
   const [copied, setCopied] = useState(false);
+  const channels = t('hero.channels');
+  const floaters = t('hero.floaters');
 
   const onCall = (e) => {
     if (!isDesktop()) return;
@@ -28,20 +29,25 @@ function Hero({ onOpenModal }) {
 
   return (
     <section className="hero sec-grid" id="top">
+      <div className="hero-aurora" aria-hidden="true">
+        <i />
+        <i />
+      </div>
       <div className="lp-container">
         <div className="hero-grid">
           <Stagger className="hero-copy" stagger={0.09} amount={0.1}>
             <Item as="p" className="hero-kicker" y={10}>
+              <span className="hero-kicker-dot" />
               {t('hero.kicker')}
             </Item>
             <Item as="h1" y={22}>
-              {t('hero.title')}
+              {t('hero.title_a')} <span className="hl">{t('hero.title_hl')}</span>
             </Item>
             <Item as="p" className="hero-lead">
               {t('hero.lead')}
             </Item>
             <Item className="hero-actions">
-              <button type="button" className="btn btn-primary btn-lg" onClick={() => onOpenModal('register')}>
+              <button type="button" className="btn btn-primary btn-lg btn-glow" onClick={() => onOpenModal('register')}>
                 {t('hero.cta_create')}
                 <Icon name="arrow-right" />
               </button>
@@ -79,22 +85,33 @@ function Hero({ onOpenModal }) {
           <Stagger className="hero-visual" delay={0.3} amount={0.1}>
             <Item x={40} y={0} rotate={1.5} duration={0.8} className="cc-wrap">
               <CallCard />
+              {floaters.map(([icon, text], i) => (
+                <span key={text} className={`float-chip float-chip-${i + 1}`} aria-hidden="true">
+                  <Icon name={icon} className="ic-sm" />
+                  {text}
+                </span>
+              ))}
             </Item>
           </Stagger>
         </div>
 
-        <Stagger className="models" stagger={0.06} delay={0.45} amount={0.3}>
-          <Item className="models-label" y={10}>
-            {t('hero.models_label')}
-            <em>{t('hero.models_sub')}</em>
-          </Item>
-          {MODEL_ORDER.map((code) => (
-            <Item key={code} className="models-item" y={10}>
-              <ModelLogo code={code} size={18} wrap={false} />
-              {MODELS[code].name}
-            </Item>
-          ))}
-        </Stagger>
+        <div className="marquee" role="group" aria-label={t('hero.channels_label')}>
+          <span className="marquee-label">{t('hero.channels_label')}</span>
+          <div className="marquee-viewport">
+            <div className="marquee-track">
+              {[0, 1].map((copy) => (
+                <ul key={copy} className="marquee-list" aria-hidden={copy === 1 ? 'true' : undefined}>
+                  {channels.map(([icon, name]) => (
+                    <li key={name} className="marquee-item">
+                      <Icon name={icon} className="ic-sm" />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );

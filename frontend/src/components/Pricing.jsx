@@ -48,7 +48,7 @@ function Pricing({ onOpenModal }) {
   return (
     <section className="sec sec-tint tint-blue" id="pricing">
       <div className="lp-container">
-        <SectionHead index="06" title={t('pricing.title')} lead={t('pricing.lead')} />
+        <SectionHead index="08" title={t('pricing.title')} lead={t('pricing.lead')} />
         <Reveal className="plans-card" y={20}>
           <div className="plans-wrap table-wrap">
             <table className="plans">

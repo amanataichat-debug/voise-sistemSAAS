@@ -72,7 +72,7 @@ export function head(lang) {
         operatingSystem: 'Web',
         inLanguage: lang,
         description,
-        featureList: t('tour.rows').map((r) => r.title),
+        featureList: t('abilities.items').map((r) => r[0]),
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'KGS', description: t('seo.offer_description') },
         publisher: { '@id': `${SITE_URL}/#org` },
       },

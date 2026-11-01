@@ -13,7 +13,7 @@ function Scenarios() {
   return (
     <section className="sec sec-tint tint-sand" id="cases">
       <div className="lp-container">
-        <SectionHead index="05" title={t('scenarios.title')} lead={t('scenarios.lead')} />
+        <SectionHead index="07" title={t('scenarios.title')} lead={t('scenarios.lead')} />
         <Stagger as="ul" className="cases" stagger={0.1}>
           {t('scenarios.rows').map(([who, title, text, kind]) => (
             <Item as="li" key={who}>

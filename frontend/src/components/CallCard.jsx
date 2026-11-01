@@ -2,19 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { useT } from '../i18n';
 import Icon from './Icon';
-import ModelLogo, { MODELS } from './ModelLogo';
 
 // Анимированный «экран звонка» в hero. Четыре сцены проигрываются по кругу,
 // реплики уже лежат в DOM (opacity: 0) и только проявляются — раскладка не прыгает.
 // Порядок сцен перемешивается после монтирования, чтобы пререндер и гидрация совпали.
 const SCENES = [
-  { key: 'salon', dir: 'in', model: 'gemini', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'sheets', 'telegram']] },
-  { key: 'clinic', dir: 'in', model: 'fish', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'task']] },
-  { key: 'showroom', dir: 'out', model: 'openai', who: ['bot', 'user', 'bot', 'user'], tags: [[], [], [], ['crm', 'task']] },
-  { key: 'service', dir: 'out', model: 'grok', who: ['bot', 'user', 'bot'], tags: [[], [], ['crm', 'sheets', 'task']] },
+  { key: 'whatsapp', kind: 'chat', who: ['bot', 'user', 'bot', 'user'], tags: [[], [], ['doc'], ['crm', 'task']] },
+  { key: 'salon', kind: 'in', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'sheets', 'telegram']] },
+  { key: 'showroom', kind: 'out', who: ['bot', 'user', 'bot', 'user'], tags: [[], [], [], ['crm', 'task']] },
+  { key: 'service', kind: 'out', who: ['bot', 'user', 'bot'], tags: [[], [], ['crm', 'sheets', 'task']] },
 ];
 
-const TAG_ICONS = { crm: 'square-check', sheets: 'file-text', telegram: 'send', task: 'calendar' };
+const SCENE_ICON = { in: 'phone-incoming', out: 'phone-outgoing', chat: 'message-circle' };
+const STATUS_KEY = { in: 'status_incoming', out: 'status_outgoing', chat: 'status_message' };
+
+const TAG_ICONS = { crm: 'square-check', sheets: 'layout-grid', telegram: 'send', task: 'calendar', doc: 'file-text', voice: 'mic' };
 
 const STEP = 1500;
 const FIRST = 700;
@@ -95,32 +97,36 @@ function CallCard() {
             className={`cc-scene${s.key === sceneKey ? ' on' : ''}`}
             onClick={() => pick(s.key)}
           >
-            <Icon name={s.dir === 'in' ? 'phone-incoming' : 'phone-outgoing'} className="ic-sm" />
+            <Icon name={SCENE_ICON[s.kind]} className="ic-sm" />
             {t(`call_card.scenes.${s.key}.label`)}
           </button>
         ))}
       </div>
       <div className="cc" aria-hidden="true">
         <div className="cc-head">
-          <div className="cc-avatar">
-            <span className="vf-wave">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
+          <div className={`cc-avatar${scene.kind === 'chat' ? ' cc-avatar-chat' : ''}`}>
+            {scene.kind === 'chat' ? (
+              <Icon name="message-circle" />
+            ) : (
+              <span className="vf-wave">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
           </div>
           <div className="cc-who">
             <div className="cc-name">{t(`call_card.scenes.${sceneKey}.name`)}</div>
             <div className="cc-sub">
               <span className="cc-live" />
-              {scene.dir === 'in' ? t('call_card.status_incoming') : t('call_card.status_outgoing')} · {fmt(secs)}
+              {t(`call_card.${STATUS_KEY[scene.kind]}`)} · {fmt(secs)}
             </div>
           </div>
           <span className="chip chip-success">
-            <Icon name="phone-call" />
-            {t('call_card.on_line')}
+            <Icon name={scene.kind === 'chat' ? 'message-circle' : 'phone-call'} />
+            {scene.kind === 'chat' ? t('call_card.in_chat') : t('call_card.on_line')}
           </span>
         </div>
         <div className="cc-msgs">
@@ -132,8 +138,8 @@ function CallCard() {
         </div>
         <div className="cc-foot">
           <span className="cc-model">
-            <ModelLogo code={scene.model} size={14} wrap={false} />
-            {MODELS[scene.model].name}
+            <Icon name={scene.kind === 'chat' ? 'message-circle' : 'phone'} className="ic-sm" />
+            {scene.kind === 'chat' ? t('call_card.channel_whatsapp') : t('call_card.channel_phone')}
           </span>
           <div className="cc-tags">
             {allTags.map((tag) => (

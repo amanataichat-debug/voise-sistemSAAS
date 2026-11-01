@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useT } from '../i18n';
 import Icon from './Icon';
-import ModelLogo from './ModelLogo';
 import SectionHead from './SectionHead';
 import { Reveal, Stagger, Item } from './Reveal';
 import { PHONE, PHONE_DISPLAY, copyText } from './contacts';
@@ -19,7 +18,7 @@ function Start({ onOpenModal }) {
   return (
     <section className="sec" id="how">
       <div className="lp-container">
-        <SectionHead index="03" title={t('start.title')} lead={t('start.lead')} />
+        <SectionHead index="06" title={t('start.title')} lead={t('start.lead')} />
         <Stagger as="ol" className="steps" stagger={0.12}>
           {t('start.steps').map(([title, text], i) => (
             <Item as="li" key={title}>
@@ -44,8 +43,8 @@ function Start({ onOpenModal }) {
             <p>{t('start.call_text')}</p>
             <div className="call-tags">
               <span className="chip">
-                <ModelLogo code="gemini" size={14} wrap={false} />
-                {t('start.call_chip_model')}
+                <Icon name="globe" />
+                {t('start.call_chip_lang')}
               </span>
               <span className="chip">
                 <Icon name="mic" />

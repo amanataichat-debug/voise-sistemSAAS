@@ -7,13 +7,12 @@ import LangSwitch from './LangSwitch';
 import { SUPPORT_URL } from './contacts';
 
 const LINKS = [
-  { href: '#platform', key: 'nav.platform' },
+  { href: '#abilities', key: 'nav.abilities' },
   { href: '#agent', key: 'nav.agent' },
+  { href: '#crm', key: 'nav.crm' },
+  { href: '#platform', key: 'nav.platform' },
   { href: '#how', key: 'nav.how' },
-  { href: '#integration', key: 'nav.integration' },
   { href: '#pricing', key: 'nav.pricing' },
-  { href: '/static/prompts-wiki.html', key: 'nav.knowledge' },
-  { href: '/static/api-docs.html', key: 'nav.api' },
   { href: SUPPORT_URL, key: 'nav.support', external: true },
 ];
 

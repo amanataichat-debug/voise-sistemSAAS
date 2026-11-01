@@ -3,9 +3,9 @@ import { useT } from '../i18n';
 import Icon from './Icon';
 import SectionHead from './SectionHead';
 import { Reveal, Parallax } from './Reveal';
-import { MockAssistant, MockTelephony, MockDialogs, MockCrm, MockKnowledge } from './Mockups';
+import { MockAssistant, MockTelephony, MockDialogs, MockKnowledge } from './Mockups';
 
-const MOCKS = [MockAssistant, MockTelephony, MockDialogs, MockCrm, MockKnowledge];
+const MOCKS = [MockAssistant, MockTelephony, MockDialogs, MockKnowledge];
 
 function ProductTour() {
   const { t } = useT();
@@ -13,7 +13,7 @@ function ProductTour() {
   return (
     <section className="sec sec-grid" id="platform">
       <div className="lp-container">
-        <SectionHead index="01" title={t('tour.title')} lead={t('tour.lead')} />
+        <SectionHead index="05" title={t('tour.title')} lead={t('tour.lead')} />
         <div className="tour">
           {rows.map((row, i) => {
             const Mock = MOCKS[i];

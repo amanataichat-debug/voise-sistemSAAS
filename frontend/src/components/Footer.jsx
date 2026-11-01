@@ -17,8 +17,9 @@ function Footer() {
           </div>
           <div className="lp-footer-col">
             <h4>{t('footer.product_title')}</h4>
-            <a href="#platform">{t('footer.product_features')}</a>
+            <a href="#abilities">{t('footer.product_features')}</a>
             <a href="#agent">{t('footer.product_agent')}</a>
+            <a href="#crm">{t('footer.product_crm')}</a>
             <a href="#pricing">{t('footer.product_pricing')}</a>
             <a href="/static/api-docs.html">{t('footer.product_api')}</a>
             <a href="/static/prompts-wiki.html">{t('footer.product_knowledge')}</a>

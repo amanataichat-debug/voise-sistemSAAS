@@ -10,7 +10,7 @@ function Faq() {
   return (
     <section className="sec" id="faq">
       <div className="lp-container">
-        <SectionHead index="07" title={t('faq.title')} />
+        <SectionHead index="09" title={t('faq.title')} />
         <Stagger as="dl" className="faq" stagger={0.06}>
           {t('faq.items').map(([q, a]) => (
             <Item as="div" key={q} y={14}>
