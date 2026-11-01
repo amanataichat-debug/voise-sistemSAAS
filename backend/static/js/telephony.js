@@ -43,9 +43,6 @@
     bind_empty: 'Нет ассистентов', bind_empty_text: 'Создайте ассистента на странице «Голосовые ассистенты» или агента обзвона.',
     bind_saved: 'Привязка сохранена', bind_failed: 'Не удалось привязать', unbound: 'Номер отвязан', unbind_failed: 'Не удалось отвязать',
     current_binding: 'текущая привязка',
-    group_gemini: 'Gemini 3.8 Live (тест)', gemini_sub: 'Gemini 3.8 Live · речь в речь',
-    gemini_create: 'Создать тестового Gemini-ассистента', gemini_creating: 'Создаём…',
-    gemini_created: 'Gemini-ассистент создан, выберите его и привяжите', gemini_create_failed: 'Не удалось создать Gemini-ассистента',
     st_queued: 'В очереди', st_dialing: 'Набор номера', st_ringing: 'Вызов', st_answered: 'Разговор', st_completed: 'Завершён', st_failed: 'Не состоялся',
     er_completed: 'завершён', er_hangup: 'абонент положил трубку', er_assistant_hangup: 'ассистент завершил', er_busy: 'занято',
     er_no_answer: 'нет ответа', er_cancelled: 'отменён', er_channel_limit: 'все каналы заняты', er_congestion: 'сеть перегружена',
@@ -60,7 +57,7 @@
   // Оператор пропускает исходящие только на номера O!. Тот же список на бэкенде:
   // O_MOBILE_PREFIXES в backend/models/sip_gateway.py.
   var O_PREFIXES = ['050', '070', '099'];
-  var TYPE_LABELS = { openai: 'OpenAI', gemini: 'Gemini Live', fish: 'Fish Audio', eleven: 'ElevenLabs' };
+  var TYPE_LABELS = { openai: 'OpenAI', gemini: 'Gemini', fish: 'Fish Audio', eleven: 'ElevenLabs' };
   var SIP_TYPES = ['openai', 'gemini', 'fish', 'eleven'];   // SIP_SUPPORTED_ASSISTANT_TYPES
   var ACTIVE = ['queued', 'dialing', 'ringing', 'answered'];
 
@@ -200,9 +197,8 @@
     var safe = function (p, pick) { return p.then(pick, function () { return []; }); };
     return Promise.all([
       safe(api('/eleven-assistants?include_agent_voices=false'), function (d) { return (d && d.assistants) || []; }),
-      safe(api('/agent/list'), function (d) { return (d && d.agents) || []; }),
-      safe(api('/gemini-assistants'), function (d) { return Array.isArray(d) ? d : ((d && d.assistants) || []); })
-    ]).then(function (r) { targets = { eleven: r[0], agents: r[1], gemini: r[2] }; return targets; });
+      safe(api('/agent/list'), function (d) { return (d && d.agents) || []; })
+    ]).then(function (r) { targets = { eleven: r[0], agents: r[1] }; return targets; });
   }
   function agentOk(a) { return SIP_TYPES.indexOf(a.assistant_type) !== -1 && a.assistant_id; }
 
@@ -232,8 +228,7 @@
       }
       var eleven = c.eleven.slice();
       // Номер привязан к ассистенту другого провайдера — показываем его, чтобы привязку можно было оставить
-      var geminiHas = function (id) { return c.gemini.some(function (g) { return String(g.id) === String(id); }); };
-      if (!n.agent_config_id && n.assistant_id && n.assistant_type !== 'eleven' && n.assistant_name && !(n.assistant_type === 'gemini' && geminiHas(n.assistant_id))) {
+      if (!n.agent_config_id && n.assistant_id && n.assistant_type !== 'eleven' && n.assistant_name) {
         parts.push('<div class="bind-group">' + esc(t('current_binding')) + '</div>');
         parts.push(opt('assistant', n.assistant_type, n.assistant_id, n.assistant_name, TYPE_LABELS[n.assistant_type] || n.assistant_type, 'audio-lines', false));
       }
@@ -241,12 +236,8 @@
         parts.push('<div class="bind-group">' + esc(t('group_assistants')) + '</div>');
         eleven.forEach(function (a) { parts.push(opt('assistant', 'eleven', a.id, a.name, a.is_active === false ? t('inactive') : (a.voice_name || 'ElevenLabs'), 'audio-lines', false)); });
       }
-      parts.push('<div class="bind-group">' + esc(t('group_gemini')) + '</div>');
-      c.gemini.forEach(function (a) { parts.push(opt('assistant', 'gemini', a.id, a.name, a.is_active === false ? t('inactive') : (t('gemini_sub') + (a.voice ? ' · ' + a.voice : '')), 'audio-lines', false)); });
-      parts.push('<button class="btn" type="button" id="gemini-create" style="margin-top:8px">' + esc(t('gemini_create')) + '</button>');
+      if (!parts.length) { list.innerHTML = emptyBox('audio-lines', t('bind_empty'), t('bind_empty_text')); return; }
       list.innerHTML = parts.join('');
-      var gc = $('gemini-create');
-      if (gc) gc.addEventListener('click', createGeminiTest);
       Array.prototype.forEach.call(list.querySelectorAll('.bind-opt'), function (el) {
         if (el.hasAttribute('data-disabled')) return;
         var pick = function () {
@@ -258,24 +249,6 @@
         if (el.classList.contains('selected')) { selected = { kind: el.getAttribute('data-kind'), type: el.getAttribute('data-type'), id: el.getAttribute('data-id') }; $('bind-btn').disabled = false; }
         el.addEventListener('click', pick);
       });
-    });
-  }
-  // Тестовый Gemini-ассистент: промпт на кыргызском, чтобы сразу проверить речь по телефону.
-  // Ключ Google: свой в настройках или серверный GEMINI_API_KEY.
-  var GEMINI_TEST_PROMPT = 'Сен Voksy AI компаниясынын телефон жардамчысысың. Кардар менен таза адабий кыргыз тилинде, жылуу жана кыска сүйлөш (1–2 сүйлөм). ' +
-    'Эгер кардар орусча сүйлөсө, орусча жооп бер. Билбеген нерсени ойлоп чыгарба, билбесең ачык айт. Тизме жана белгилерсиз, жөн гана жандуу сүйлөө тилинде жооп бер.';
-  function createGeminiTest() {
-    var btn = $('gemini-create');
-    if (btn) { btn.disabled = true; btn.textContent = t('gemini_creating'); }
-    api('/gemini-assistants', { method: 'POST', body: {
-      name: 'Gemini Live тест', system_prompt: GEMINI_TEST_PROMPT, voice: 'Aoede', language: 'ky',
-      greeting_message: 'Саламатсызбы! Мен Voksy AI жардамчысымын. Сизге кандай жардам бере алам?'
-    } }).then(function () {
-      VF.toast(t('gemini_created'), { type: 'success' });
-      if (bindNumber) openBind(bindNumber.id);
-    }).catch(function (e) {
-      VF.toast(e.message || t('gemini_create_failed'), { type: 'error' });
-      if (btn) { btn.disabled = false; btn.textContent = t('gemini_create'); }
     });
   }
   function patchNumber(body, okMsg, failMsg) {
@@ -313,19 +286,13 @@
           return '<option value="' + esc(a.assistant_type + ':' + a.assistant_id) + '"' + (isSel('agent', a.id) ? ' selected' : '') + '>' + esc(a.name + ' (' + TYPE_LABELS[a.assistant_type] + ')') + '</option>';
         }).join('') + '</optgroup>';
       }
-      var geminiHas2 = function (id) { return c.gemini.some(function (g) { return String(g.id) === String(id); }); };
-      if (n && !n.agent_config_id && n.assistant_id && n.assistant_type !== 'eleven' && n.assistant_name && !(n.assistant_type === 'gemini' && geminiHas2(n.assistant_id))) {
+      if (n && !n.agent_config_id && n.assistant_id && n.assistant_type !== 'eleven' && n.assistant_name) {
         html += '<optgroup label="' + esc(t('current_binding')) + '"><option value="' + esc(n.assistant_type + ':' + n.assistant_id) + '" selected>' +
           esc(n.assistant_name + ' (' + (TYPE_LABELS[n.assistant_type] || n.assistant_type) + ')') + '</option></optgroup>';
       }
       if (c.eleven.length) {
         html += '<optgroup label="' + esc(t('group_assistants')) + '">' + c.eleven.map(function (a) {
           return '<option value="eleven:' + esc(a.id) + '"' + (isSel('assistant', a.id) ? ' selected' : '') + '>' + esc(a.name) + '</option>';
-        }).join('') + '</optgroup>';
-      }
-      if (c.gemini.length) {
-        html += '<optgroup label="' + esc(t('group_gemini')) + '">' + c.gemini.map(function (a) {
-          return '<option value="gemini:' + esc(a.id) + '"' + (isSel('assistant', a.id) ? ' selected' : '') + '>' + esc(a.name) + '</option>';
         }).join('') + '</optgroup>';
       }
       sel.innerHTML = html || '<option value="">' + esc(t('no_assistants')) + '</option>';

@@ -282,9 +282,6 @@ async def handle_gemini_websocket_connection(
                 api_key = user.gemini_api_key
                 if api_key:
                     log_to_render(f"🔑 Gemini API key loaded: {api_key[:10]}...{api_key[-5:]}")
-                elif getattr(settings, "GEMINI_API_KEY", ""):
-                    api_key = settings.GEMINI_API_KEY
-                    log_to_render("🔑 No user Gemini key: using the server GEMINI_API_KEY")
                 else:
                     log_to_render(f"⚠️ No Gemini API key for user", "WARNING")
         

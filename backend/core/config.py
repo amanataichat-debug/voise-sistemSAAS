@@ -294,9 +294,6 @@ class Settings(BaseSettings):
     # Google Gemini Live — голосовой транспорт Gemini-ассистентов (backend/websockets/gemini_client.py).
     # Ключ — у владельца ассистента (user.google_api_key / gemini). Только быстрая модель без thinking.
     GEMINI_LIVE_MODEL: str = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
-    # Серверный ключ Google AI Studio: используется, только если у владельца ассистента нет
-    # своего ключа (проверка Gemini Live по телефону без ввода ключа в настройках).
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     # Как модель озвучивает результат асинхронной функции: WHEN_IDLE (договорить, потом озвучить),
     # INTERRUPT (сразу) или SILENT (молча учесть)
     GEMINI_TOOL_SCHEDULING: str = os.getenv("GEMINI_TOOL_SCHEDULING", "WHEN_IDLE")
