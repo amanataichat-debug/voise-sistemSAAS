@@ -568,6 +568,11 @@ async def sip_media(
             # хендлер без журнала сессии (OpenAI / Gemini): привязываем к звонку
             call_log.session_id = f"sip:{call_uuid}"
         await call_log.save()
+        # Гарантия видимости в «Диалогах»: eleven-звонок (каскад / GPT-Live / Gemini Live) должен оставить
+        # карточку диалога, даже если хендлер не создал ни одной реплики (Gemini не соединился или молчал) —
+        # иначе владелец не видит ни звонка, ни журнала с причиной. Своей сессией БД, под id журнала.
+        if call.assistant_type == "eleven":
+            _ensure_eleven_dialog_row(str(assistant.id), call_log.session_id, socket, bool(gemini_live))
         # 7. Пост-обработка
         try:
             db.rollback()
@@ -591,6 +596,40 @@ async def sip_media(
                 AgentCallFinalizer.on_media_finished(db, fresh, number, transcript.has_user_speech)
         except Exception as exc:
             logger.warning(f"[SIP-MEDIA] call {call_id}: post-processing failed: {exc}")
+
+
+def _ensure_eleven_dialog_row(assistant_id: str, session_id: str, socket, gemini: bool) -> None:
+    """
+    Если за eleven-звонок не записалось НИ ОДНОЙ реплики — создать пустую карточку диалога, чтобы звонок
+    и его журнал были видны в «Диалогах». Своя сессия БД (сессию звонка мог испортить сбой). Идемпотентно:
+    если реплики уже есть, ничего не делает.
+    """
+    if not session_id:
+        return
+    from backend.models.eleven_assistant import ElevenConversation
+    db = SessionLocal()
+    try:
+        aid = uuid.UUID(str(assistant_id))
+        exists = db.query(ElevenConversation.id).filter(
+            ElevenConversation.assistant_id == aid, ElevenConversation.session_id == session_id
+        ).first()
+        if exists:
+            return
+        reason = socket.end_reason or "—"
+        note = ("⚠ Звонок без диалога: Gemini Live не прислал ни речи, ни текста. "
+                if gemini else "⚠ Звонок без диалога. ")
+        db.add(ElevenConversation(assistant_id=aid, session_id=session_id, user_message="",
+                                  assistant_message=note + f"Причина завершения: {reason}. Подробности — в журнале звонка."))
+        db.commit()
+        logger.info(f"[SIP-MEDIA] guaranteed eleven dialog row for session {session_id}")
+    except Exception as exc:
+        logger.warning(f"[SIP-MEDIA] ensure dialog row failed for {session_id}: {exc}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 # =============================================================================

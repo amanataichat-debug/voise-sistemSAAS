@@ -744,5 +744,45 @@ check("сбой открытия Gemini: запись диалога созда�
 check("обычная запись диалога по-прежнему пустая (к ней цепляются function_logs)",
       (gl._create_conversation_record(_db, types.SimpleNamespace(id="a1"), "call-2") and _db.added[1].assistant_message == ""))
 
+# ---------- заголовки websocket: fallback extra_headers → additional_headers (websockets >= 14 на Render) ----------
+# Это была ПРИЧИНА «Gemini молчит и сбрасывает через 3 с»: на новой версии websockets extra_headers → TypeError,
+# и КАЖДЫЙ звонок Gemini падал на открытии сокета. У GPT-Live этот запасной путь был, у Gemini — нет.
+class _FakeConn:
+    def __init__(self): self.sent = []
+    async def recv(self): return json.dumps({"setupComplete": {}})
+    async def send(self, d): self.sent.append(d)
+    async def close(self): pass
+
+def _connect_capturing(reject_extra):
+    seen = {"extra": False, "additional": False}
+    async def fake_connect(url, **kw):
+        if "extra_headers" in kw:
+            seen["extra"] = True
+            if reject_extra:
+                raise TypeError("connect() got an unexpected keyword argument 'extra_headers'")
+        if "additional_headers" in kw:
+            seen["additional"] = True
+        return _FakeConn()
+    asst = types.SimpleNamespace(id="a1", user_id=None, name="T", greeting_message="Салам", google_sheet_id=None,
+                                 functions=None, voice=None, system_prompt="p", live_voice="aoede")
+    c = GeminiLiveClient("key", asst, "c", db_session=None, voice_override="Aoede", record_conversation=False,
+                         realtime_text=True, await_setup=True)
+    orig = gc_mod.websockets.connect
+    gc_mod.websockets.connect = fake_connect
+    try:
+        ok = run(c.connect())
+    finally:
+        gc_mod.websockets.connect = orig
+    return ok, seen
+
+_ok_old, _seen_old = _connect_capturing(reject_extra=False)
+check("websockets < 14: соединение открывается через extra_headers", _ok_old is True and _seen_old["extra"] and not _seen_old["additional"])
+_ok_new, _seen_new = _connect_capturing(reject_extra=True)
+check("websockets >= 14: extra_headers отверг TypeError → открытие через additional_headers (звонок не падает)",
+      _ok_new is True and _seen_new["extra"] and _seen_new["additional"], _seen_new)
+_live = open(os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read()
+check("в коде Gemini есть оба варианта заголовков (как у GPT-Live)",
+      "extra_headers" in _live and "additional_headers" in _live)
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

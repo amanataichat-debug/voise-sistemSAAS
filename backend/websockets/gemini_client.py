@@ -294,19 +294,20 @@ class GeminiLiveClient:
         try:
             logger.info(f"[GEMINI-CLIENT] Opening WebSocket connection (timeout: 30s)...")
             
-            self.ws = await asyncio.wait_for(
-                websockets.connect(
-                    self.gemini_url,
-                    max_size=15*1024*1024,
-                    ping_interval=30,
-                    ping_timeout=120,
-                    close_timeout=15,
-                    extra_headers={
-                        'User-Agent': 'Voksy AI/2.0'
-                    }
-                ),
-                timeout=30
-            )
+            # Заголовки: в websockets < 14 параметр extra_headers, в >= 14 — additional_headers.
+            # На Render (Python 3.14) старый pin не ставится и приходит новая версия: с extra_headers
+            # websockets.connect падал TypeError → КАЖДЫЙ звонок Gemini обрывался за 3 с (GPT-Live жил,
+            # потому что у него этот запасной путь уже был — live_client.py). Теперь так же у Gemini.
+            _ws_kwargs = dict(max_size=15 * 1024 * 1024, ping_interval=30, ping_timeout=120, close_timeout=15)
+            _headers = {"User-Agent": "Voksy AI/2.0"}
+            try:
+                self.ws = await asyncio.wait_for(
+                    websockets.connect(self.gemini_url, extra_headers=_headers, **_ws_kwargs), timeout=30)
+            except TypeError as te:
+                if "extra_headers" not in str(te):
+                    raise
+                self.ws = await asyncio.wait_for(
+                    websockets.connect(self.gemini_url, additional_headers=_headers, **_ws_kwargs), timeout=30)
             
             self.is_connected = True
             logger.info(f"[GEMINI-CLIENT] ✅ WebSocket CONNECTED successfully")

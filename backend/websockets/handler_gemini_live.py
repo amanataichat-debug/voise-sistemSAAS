@@ -386,6 +386,35 @@ def _create_conversation_record(db: Session, assistant, session_id: str, assista
         return None
 
 
+def _record_failed_dialog(assistant_id: str, session_id: str, message: str) -> Optional[str]:
+    """
+    Запись диалога о НЕсостоявшемся звонке — СВОЕЙ сессией БД.
+
+    Сессию звонка (db SIP-роута) к этому моменту мог испортить предыдущий сбой (aborted transaction):
+    запись в неё молча падала, и в «Диалогах» не появлялось ничего — владелец не видел ни звонка, ни
+    причины (01.11.2026). Отдельная сессия не зависит от состояния звонка.
+    """
+    from backend.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        conv = ElevenConversation(assistant_id=uuid.UUID(str(assistant_id)), session_id=session_id,
+                                  user_message="", assistant_message=message)
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+        return str(conv.id)
+    except Exception as exc:
+        _log(f"failed-dialog record failed: {exc}", "ERROR")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        db.close()
+
+
 async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, client_id: str, fail,
                                   meter: Optional[WalletMeter] = None) -> None:
     """
@@ -447,8 +476,8 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
             call_log_early.assistant_type = "eleven"
             call_log_early.assistant_id = str(assistant.id)
             call_log_early.meta.update({"engine": "gemini_live", "llm_model": GEMINI_LIVE_MODEL})
-            await asyncio.to_thread(_create_conversation_record, db, assistant, failed_session,
-                                    f"⚠ Звонок не соединился: Gemini Live не открылся — {reason}")
+            await asyncio.to_thread(_record_failed_dialog, str(assistant.id), failed_session,
+                                    f"⚠ Звонок не соединился: Gemini Live ({GEMINI_LIVE_MODEL}) не открылся — {reason}")
         await fail("gemini_connection_failed", f"Gemini Live ({GEMINI_LIVE_MODEL}) не открылся: {reason}", 1011)
         return
     connect_ms = int((time.monotonic() - t_start) * 1000)
