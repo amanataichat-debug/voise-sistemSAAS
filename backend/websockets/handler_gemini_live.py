@@ -368,11 +368,11 @@ class GeminiLiveVoiceSession:
             _log(f"webhook error: {exc}", "ERROR")
 
 
-def _create_conversation_record(db: Session, assistant, session_id: str) -> Optional[str]:
+def _create_conversation_record(db: Session, assistant, session_id: str, assistant_message: str = "") -> Optional[str]:
     """Пустая запись диалога: к ней привязываются function_logs этой сессии (как у GPT-Live)."""
     try:
         conv = ElevenConversation(assistant_id=assistant.id, session_id=session_id,
-                                  user_message="", assistant_message="")
+                                  user_message="", assistant_message=assistant_message)
         db.add(conv)
         db.commit()
         db.refresh(conv)
@@ -440,6 +440,15 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
         reason = client.connect_error or "нет связи с Google"
         if call_log_early := CallLogRecorder.current():
             call_log_early.add("session", f"Gemini Live не открылся: {reason}", level="error")
+            # Звонок оборвётся, а диалога не будет — владелец не увидит ни звонка, ни журнала (01.11.2026: «Анри»
+            # сбрасывался через 3 с без единой записи). Оставляем запись диалога с причиной, журнал привязываем к ней.
+            failed_session = getattr(assistant, "sip_session_id", None) or client.session_id
+            call_log_early.session_id = failed_session
+            call_log_early.assistant_type = "eleven"
+            call_log_early.assistant_id = str(assistant.id)
+            call_log_early.meta.update({"engine": "gemini_live", "llm_model": GEMINI_LIVE_MODEL})
+            await asyncio.to_thread(_create_conversation_record, db, assistant, failed_session,
+                                    f"⚠ Звонок не соединился: Gemini Live не открылся — {reason}")
         await fail("gemini_connection_failed", f"Gemini Live ({GEMINI_LIVE_MODEL}) не открылся: {reason}", 1011)
         return
     connect_ms = int((time.monotonic() - t_start) * 1000)

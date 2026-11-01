@@ -68,6 +68,45 @@ def input_transcription_languages() -> List[str]:
     return [x.strip() for x in raw.split(",") if x.strip() and x.strip().lower() not in ("none", "off", "0")]
 
 
+# Схема параметров функций для Gemini: он принимает только подмножество OpenAPI. Любое чужое поле (examples,
+# additionalProperties, $schema, …) Google считает ошибкой всего setup и закрывает сессию (код 1007) — звонок
+# рвётся через секунды. 01.11.2026: у «Анри» подключён hangup_call с `examples` у farewell_message, звонок
+# сбрасывался через 3 с; у тестового агента этой функции не было, и там всё открывалось.
+_GEMINI_SCHEMA_KEYS = {"type", "format", "description", "nullable", "enum", "items", "properties", "required",
+                       "minimum", "maximum", "minItems", "maxItems"}
+
+
+def gemini_schema(node: Any) -> Any:
+    """JSON Schema функции → то, что принимает Gemini. Смысл не теряется: примеры, значение по умолчанию и предел
+    длины уходят в description, а не выбрасываются."""
+    if not isinstance(node, dict):
+        return node
+    out: Dict[str, Any] = {}
+    notes: List[str] = []
+    for key, value in node.items():
+        if key == "properties" and isinstance(value, dict):
+            out["properties"] = {name: gemini_schema(sub) for name, sub in value.items()}
+        elif key == "items":
+            out["items"] = gemini_schema(value)
+        elif key in _GEMINI_SCHEMA_KEYS:
+            out[key] = value
+        elif key == "examples" and isinstance(value, list) and value:
+            notes.append("Примеры: " + "; ".join(str(x) for x in value[:3]) + ".")
+        elif key == "default" and value is not None:
+            notes.append(f"По умолчанию: {value}.")
+        elif key == "maxLength":
+            notes.append(f"Не длиннее {value} символов.")
+    # type: ["string", "null"] → "string" + nullable
+    if isinstance(out.get("type"), list):
+        kinds = [t for t in out["type"] if t != "null"]
+        if "null" in out["type"]:
+            out["nullable"] = True
+        out["type"] = kinds[0] if kinds else "string"
+    if notes:
+        out["description"] = " ".join(x for x in [str(out.get("description") or "").strip(), *notes] if x)
+    return out
+
+
 GEMINI_TOOL_SCHEDULING = (getattr(settings, "GEMINI_TOOL_SCHEDULING", None) or "WHEN_IDLE").upper()
 if GEMINI_TOOL_SCHEDULING not in ("INTERRUPT", "WHEN_IDLE", "SILENT"):
     GEMINI_TOOL_SCHEDULING = "WHEN_IDLE"
@@ -173,6 +212,7 @@ class GeminiLiveClient:
         self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
         # Долгие звонки: ручка возобновления сессии, уровень расширенных полей setup, счётчики обрывов
         self.resume_handle: Optional[str] = None
+        self.tools_enabled = True          # Google отверг функции целиком → звонок идёт без них (см. connect)
         self.extras_level = EXTRAS_FULL if (await_setup and os.getenv("GEMINI_LONG_CALLS", "1") != "0") else EXTRAS_NONE
         self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
         self.reconnect_count = 0
@@ -338,17 +378,30 @@ class GeminiLiveClient:
 
             if self.await_setup and not await self._wait_setup_reply():
                 await self.close()
-                if self.setup_closed and self.extras_level > EXTRAS_NONE and "api key" not in (self.connect_error or "").lower():
+                if (self.setup_closed and (self.extras_level > EXTRAS_NONE or self.tools_enabled or self.resume_handle)
+                        and "api key" not in (self.connect_error or "").lower()):
                     # Google закрыл сессию на setup, возможно из-за расширенных полей: пробуем проще
                     rejected = self.connect_error
+                    reason = (rejected or "").lower()
+                    about_tools = any(k in reason for k in ("tools", "function_declarations", "functiondeclaration", "parameters"))
+                    about_extras = any(k in reason for k in ("sessionresumption", "session_resumption", "contextwindow",
+                                                             "context_window", "inputaudiotranscription", "input_audio_transcription"))
                     if self.resume_handle:
                         # вероятнее всего устарела ручка возобновления — не отказываемся из-за неё от самой функции
                         self.resume_handle = None
                         self._note_session(f"Google не принял ручку возобновления ({rejected}); начинаю сессию заново", "warning")
-                    else:
+                    elif about_tools and not about_extras and self.tools_enabled:
+                        # Google ругается на функции: лучше звонок без функций (знания и прощание работают через промпт
+                        # и страж завершения), чем сброс через пару секунд
+                        self.tools_enabled = False
+                        self._note_session(f"Google не принял функции ({rejected}); звонок идёт БЕЗ функций", "error")
+                    elif self.extras_level > EXTRAS_NONE:
                         self.extras_level -= 1
                         self._note_session(f"Google не принял настройку сессии ({rejected}); "
                                            f"повторяю с урезанным набором полей (уровень {self.extras_level})", "warning")
+                    else:
+                        self.tools_enabled = False
+                        self._note_session(f"Google не принял настройку сессии ({rejected}); последняя попытка без функций", "error")
                     self._pending.clear()
                     self.connect_error = None
                     return await self.connect()
@@ -513,7 +566,7 @@ class GeminiLiveClient:
             return False
         
         # Build tools
-        normalized_functions = normalize_functions(functions)
+        normalized_functions = normalize_functions(functions) if self.tools_enabled else []
         tools = []
         
         for func_def in normalized_functions:
@@ -521,7 +574,7 @@ class GeminiLiveClient:
                 "function_declarations": [{
                     "name": func_def["name"],
                     "description": func_def["description"],
-                    "parameters": func_def["parameters"],
+                    "parameters": gemini_schema(func_def["parameters"]),
                     # gemini-3.8-live: NON_BLOCKING — модель продолжает говорить, пока функция работает;
                     # BLOCKING (карточки ElevenLabs) — ждёт результата и отвечает по нему
                     "behavior": "BLOCKING" if self.blocking_tools else "NON_BLOCKING",

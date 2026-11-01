@@ -653,5 +653,96 @@ _js = open(os.path.join(ROOT, "backend/static/agent/instructions-voice.js"), enc
 check("окно настроек агента шлёт движок только если его меняли (data-initial), иначе старая вкладка затирает выбор",
       'data-initial="${engine}"' in _js and "engChanged" in _js and "dataset.initial" in _js)
 
+# ---------- схемы функций под Gemini: чужие поля Google считает ошибкой всей настройки (звонок «Анри» рвался через 3 с) ----------
+from backend.functions import get_function_definitions
+from backend.websockets.gemini_client import gemini_schema
+
+_ALLOWED_KEYS = {"type", "format", "description", "nullable", "enum", "items", "properties", "required",
+                 "minimum", "maximum", "minItems", "maxItems"}
+def _foreign_keys(node, path="", found=None):
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        is_props = path.endswith("properties")
+        for k, v in node.items():
+            if not is_props and k not in _ALLOWED_KEYS:
+                found.append(path + "." + k)
+            _foreign_keys(v, path + "." + k, found)
+    elif isinstance(node, list):
+        for i, v in enumerate(node): _foreign_keys(v, path + f"[{i}]", found)
+    return found
+
+_defs = {d["name"]: d for d in get_function_definitions()}
+check("в реестре есть hangup_call с примерами в схеме (источник сброса звонка «Анри»)",
+      "examples" in json.dumps(_defs["hangup_call"]["parameters"]))
+check("ДО очистки в схемах реестра есть поля, которых нет у Gemini",
+      any(_foreign_keys(d["parameters"], d["name"]) for d in _defs.values()))
+_dirty = {n: _foreign_keys(gemini_schema(d["parameters"]), n) for n, d in _defs.items()}
+check("ПОСЛЕ очистки у ВСЕХ функций платформы схема содержит только поля Gemini", not any(_dirty.values()),
+      {k: v for k, v in _dirty.items() if v})
+_h = gemini_schema(_defs["hangup_call"]["parameters"])
+_fm = _h["properties"]["farewell_message"]["description"]
+check("пример прощания не потерян — переехал в описание параметра", "До свидания" in _fm and "200" in _fm, _fm[:120])
+check("тип-список превращается в тип + nullable",
+      gemini_schema({"type": ["string", "null"]}) == {"type": "string", "nullable": True})
+check("параметр с именем «default» не принимается за служебное поле",
+      "default" in gemini_schema({"type": "object", "properties": {"default": {"type": "string", "default": "x"}}})["properties"])
+
+c, socks, fc = card_client()
+c.assistant_config.functions = [{"name": n} for n in ("hangup_call", "search_knowledge_base", "find_products", "find_client", "send_telegram_notification")]
+with_connect(fc, c.connect)
+_tools = last_setup(socks).get("tools", [])
+_bad = [k for t in _tools for k in _foreign_keys(t["function_declarations"][0]["parameters"], t["function_declarations"][0]["name"])]
+check("setup карточки: функции переданы, схемы чистые", len(_tools) == 5 and not _bad, (len(_tools), _bad[:3]))
+
+# Google всё равно отверг функции → звонок идёт без них (а не сбрасывается), расширения сохраняются
+_tools_msg = 'Invalid JSON payload received. Unknown name "examples" at setup.tools[0].function_declarations[0].parameters: Cannot find field.'
+class ToolRejectWS(RecWS):
+    async def recv(self):
+        setup = [m for m in self.sent if "setup" in m][-1]["setup"]
+        if not self._answered and setup.get("tools"):
+            raise _ws.exceptions.ConnectionClosedError(Close(1007, _tools_msg), None)
+        return await super().recv()
+socks2 = []
+async def fc2(*a, **kw):
+    socks2.append(ToolRejectWS(lambda s: False)); return socks2[-1]
+c2 = card_client()[0]
+c2.assistant_config.functions = [{"name": "hangup_call"}, {"name": "search_knowledge_base"}]
+ok = with_connect(fc2, c2.connect)
+st2 = [m for m in socks2[-1].sent if "setup" in m][-1]["setup"]
+check("Google отверг функции: звонок открылся без них с ОДНОЙ повторной попыткой (не три)",
+      ok is True and len(socks2) == 2 and not st2.get("tools") and c2.tools_enabled is False, (ok, len(socks2)))
+check("после отката функций возобновление сессии осталось включённым", "sessionResumption" in st2 and c2.extras_level == 2)
+
+# причина не названа → сначала расширения, потом функции, в итоге звонок всё равно открывается
+class VagueWS(RecWS):
+    async def recv(self):
+        setup = [m for m in self.sent if "setup" in m][-1]["setup"]
+        if not self._answered and (setup.get("tools") or "sessionResumption" in setup):
+            raise _ws.exceptions.ConnectionClosedError(Close(1011, "Internal error"), None)
+        return await super().recv()
+socks3 = []
+async def fc3(*a, **kw):
+    socks3.append(VagueWS(lambda s: False)); return socks3[-1]
+c3 = card_client()[0]
+c3.assistant_config.functions = [{"name": "hangup_call"}]
+ok3 = with_connect(fc3, c3.connect)
+st3 = [m for m in socks3[-1].sent if "setup" in m][-1]["setup"]
+check("неназванная причина: ступенями (расширения → функции) звонок всё же открывается",
+      ok3 is True and not st3.get("tools") and "sessionResumption" not in st3, (ok3, len(socks3), list(st3.keys())))
+
+# сбой открытия Gemini оставляет запись диалога с причиной (раньше звонок рвался без следа в «Диалогах»)
+class RecDB:
+    def __init__(self): self.added = []
+    def add(self, o): self.added.append(o)
+    def commit(self): pass
+    def refresh(self, o): o.id = "11111111-1111-1111-1111-111111111111"
+    def rollback(self): pass
+_db = RecDB()
+_rid = gl._create_conversation_record(_db, types.SimpleNamespace(id="a1"), "call-1", "⚠ Звонок не соединился: Gemini Live не открылся — причина")
+check("сбой открытия Gemini: запись диалога создана и содержит причину",
+      _rid and len(_db.added) == 1 and "не открылся — причина" in _db.added[0].assistant_message and _db.added[0].session_id == "call-1")
+check("обычная запись диалога по-прежнему пустая (к ней цепляются function_logs)",
+      (gl._create_conversation_record(_db, types.SimpleNamespace(id="a1"), "call-2") and _db.added[1].assistant_message == ""))
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
