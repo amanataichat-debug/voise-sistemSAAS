@@ -35,6 +35,16 @@ from backend.websockets.live_client import (
     voice_gender_hint,
 )
 
+# Инструкция карточки/агента (роль, цель, язык, порядок разговора, знания, правила звонка) ГЛАВНАЯ. Эти подсказки
+# стоят в конце промпта, а модель сильнее слушает последнее, поэтому без явного приоритета они перебивали
+# собственные правила агента (звонок 01.11.2026: агент заговорил по-русски после «алло», хотя в его промпте стоит
+# «держись языка приветствия, не меняй язык из-за короткого «алло»»).
+GEMINI_PRIORITY_NOTE = (
+    "\n\nПРИОРИТЕТ ИНСТРУКЦИЙ. Всё, что написано выше (твоя роль, цель звонка, язык, порядок разговора, "
+    "знания о компании, правила звонка и завершения), — главное и выполняется дословно. Ниже только общие правила "
+    "манеры речи; если они хоть в чём-то расходятся с инструкцией выше, следуй инструкции выше."
+)
+
 # Разговорное поведение под особенности 3.8 Live: проактивный звук включён всегда и не отключается, поэтому
 # модель отвечает не на каждую услышанную речь; язык фиксируется только промптом (по совету Google — словом
 # «unmistakably»); лишнее эхо и дежурные вопросы Google прямо называет «DO NOT repeat… NO PLATITUDES».
@@ -46,21 +56,27 @@ GEMINI_CONVERSATION_HINT = (
     "без долгого молчания. Не начинай ответ с пересказа его слов и не заканчивай каждую реплику дежурным "
     "«чем ещё могу помочь?» — вопрос задавай по делу, один. На одну реплику собеседника — одна твоя, "
     "короткая; продолжай мысль только когда он подтвердил, что интересно. "
-    "YOU MUST RESPOND UNMISTAKABLY IN THE LANGUAGE THE CALLER SPEAKS (Russian or Kyrgyz). "
-    "Stay in that language until the caller clearly asks to switch or says a whole phrase in another language."
+    "YOU MUST SPEAK UNMISTAKABLY IN THE LANGUAGE OF YOUR GREETING (Russian or Kyrgyz) AND STAY IN IT. "
+    "Switch to the other language ONLY when the caller says a whole phrase in it or asks you to; "
+    "a single word, an accent or a short «алло» is NOT a reason to switch."
 )
 
 _LANGUAGE_NAMES = {"ky": "кыргызском", "kk": "казахском", "uz": "узбекском", "en": "английском", "tr": "турецком", "ru": "русском"}
 
 
 def language_note(language: str) -> str:
-    """Язык карточки для Gemini Live: только язык приветствия, дальше — язык собеседника."""
+    """
+    Язык карточки для Gemini Live — тот же порядок, что в промпте звонков агента (VOICE_AGENT_PROMPT_BASE):
+    начни на языке приветствия и держись его; смени язык, только если собеседник целой фразой заговорил на другом
+    (русский или кыргызский) или попросил; одно слово, акцент и короткое «алло» — не повод.
+    """
     name = _LANGUAGE_NAMES.get((language or "").strip().lower()[:2])
     if not name:
         return ""
-    return (f"\n\nЯЗЫК РАЗГОВОРА. Приветствие — на {name} языке. Дальше отвечай на том языке, на котором говорит "
-            "собеседник (русский или кыргызский), и меняй язык вместе с ним; не навязывай свой язык. Никогда не "
-            "говори, что плохо владеешь русским или кыргызским: не расслышал — мягко переспроси на его языке.")
+    return (f"\n\nЯЗЫК РАЗГОВОРА. Начни на {name} языке (приветствие) и держись его. Смени язык (русский или "
+            "кыргызский), только если собеседник целой фразой заговорил на другом языке или попросил об этом, а "
+            "вернулся обратно — вернись и ты. Не меняй язык из-за акцента, одного слова или короткого «алло». "
+            "Никогда не говори, что плохо владеешь русским или кыргызским: не расслышал — мягко переспроси на его языке.")
 
 
 # Правило функций Gemini. Главное — «не знаю» только ПОСЛЕ поиска: без этого модель на вопрос о цене,
@@ -95,7 +111,7 @@ def gemini_tools_hint(functions: Optional[List[Dict[str, Any]]]) -> str:
 
 def build_gemini_voice_hints(functions: Optional[List[Dict[str, Any]]], voice: str, telephony: bool) -> str:
     """Всё, что дописывается к промпту карточки для Gemini Live (порядок как у GPT-Live)."""
-    out = VOICE_MANNER_HINT + GEMINI_CONVERSATION_HINT + GEMINI_TOOLS_POLICY + gemini_tools_hint(functions) + VOICE_DIALOG_RULES + VOICE_GREETING_RULE
+    out = GEMINI_PRIORITY_NOTE + VOICE_MANNER_HINT + GEMINI_CONVERSATION_HINT + GEMINI_TOOLS_POLICY + gemini_tools_hint(functions) + VOICE_DIALOG_RULES + VOICE_GREETING_RULE
     if telephony:
         out += VOICE_TELEPHONY_HINT
     out += voice_gender_hint(voice)

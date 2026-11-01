@@ -271,11 +271,20 @@ check("Gemini: правило «не знаю» только после поис
 check("Gemini: правило разговора под проактивный звук 3.8 (отвечай сразу, один язык, UNMISTAKABLY)",
       "КАК ВЕСТИ РАЗГОВОР" in g and "UNMISTAKABLY" in g and "не молчи" in g
       and vh.GEMINI_CONVERSATION_HINT not in lc.VOICE_DELEGATION_HINT)
+check("Gemini: язык держится как в промпте звонков агента — язык приветствия, не меняется из-за «алло»",
+      "LANGUAGE OF YOUR GREETING" in g and "NOT a reason to switch" in g
+      and "THE LANGUAGE THE CALLER SPEAKS" not in g)
+check("Gemini: инструкция карточки/агента главнее общих правил манеры (и стоит перед ними)",
+      "ПРИОРИТЕТ ИНСТРУКЦИЙ" in g and g.index("ПРИОРИТЕТ ИНСТРУКЦИЙ") < g.index("ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ")
+      and "следуй инструкции выше" in g)
 check("Gemini: пока клиент говорит — молчать (никаких «мм/угу» поверх речи)", "МОЛЧИ" in g and "поверх его речи" in g)
 _ln = vh.language_note("ky")
-check("Gemini: язык карточки — только язык приветствия, дальше язык собеседника, без отказа от русского",
-      "Приветствие" in _ln and "на том языке, на котором говорит" in _ln and "плохо владеешь" in _ln
-      and "Начинай разговор" not in _ln and vh.language_note("") == "")
+check("Gemini: язык карточки — язык приветствия, держится его; смена только целой фразой; без отказа от русского",
+      "Начни на кыргызском языке" in _ln and "держись его" in _ln and "целой фразой" in _ln and "«алло»" in _ln
+      and "плохо владеешь" in _ln and "меняй язык вместе с ним" not in _ln and vh.language_note("") == "")
+_pc = open(os.path.join(ROOT, "backend/services/agent_prompts.py"), encoding="utf-8").read()
+check("правило языка Gemini не противоречит промпту звонков агента (оба: держись приветствия, не меняй из-за «алло»)",
+      "держись его" in _pc and "короткого «алло»" in _pc and "короткого «алло»" in _ln)
 check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
 check("Gemini: без правил про бэкенд делегирования GPT",
       "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
@@ -353,13 +362,19 @@ def with_connect(fake_connect, coro_fn):
 def last_setup(sockets):
     return [m for m in sockets[-1].sent if "setup" in m][-1]["setup"]
 
+os.environ.pop("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", None)
 c, socks, fc = card_client()
 with_connect(fc, c.connect)
 st = last_setup(socks)
 check("карточка ElevenLabs: setup с возобновлением сессии и сжатием контекста",
       st.get("sessionResumption") == {} and st.get("contextWindowCompression") == {"slidingWindow": {}}, list(st.keys()))
-check("карточка ElevenLabs: языки распознавания речи клиента для текста диалога (ru, ky)",
-      st.get("inputAudioTranscription") == {"languageCodes": ["ru", "ky"]}, st.get("inputAudioTranscription"))
+check("карточка ElevenLabs: транскрипция клиента по умолчанию как раньше (без непроверенных языков)",
+      st.get("inputAudioTranscription") == {}, st.get("inputAudioTranscription"))
+os.environ["GEMINI_INPUT_TRANSCRIPTION_LANGUAGES"] = "ru,ky"   # опция: подсказка языков для текста диалога
+c, socks, fc = card_client()
+with_connect(fc, c.connect)
+check("опция GEMINI_INPUT_TRANSCRIPTION_LANGUAGES=ru,ky включает languageCodes",
+      last_setup(socks).get("inputAudioTranscription") == {"languageCodes": ["ru", "ky"]})
 check("Gemini-ассистент (не карточка): расширенных полей нет, setup как раньше",
       not any(k in sp2["setup"] for k in ("sessionResumption", "contextWindowCompression")) and sp2["setup"]["inputAudioTranscription"] == {})
 
@@ -418,6 +433,97 @@ async def drain_s():
 run(drain_s())
 check("обработчик: ручка принята, клиенту служебное не пересылается", c.resume_handle == "HH" and sock_s.sent == [], sock_s.sent)
 
+
+# ---------- стенограмма звонка: поток transcript.delta у карточки, без дублей; у Gemini-ассистента прежние события ----------
+from backend.services.call_transcript import CallTranscript
+
+async def transcript_run(saver):
+    events = [
+        {"setupComplete": {}},
+        {"serverContent": {"outputTranscription": {"text": "Саламатсызбы! "}}},
+        {"serverContent": {"turnComplete": True}},
+        {"serverContent": {"inputTranscription": {"text": "Алло, "}}},
+        {"serverContent": {"inputTranscription": {"text": "сколько стоит?"}}},
+        {"serverContent": {"interrupted": True}},               # перебивание: реплика не должна потеряться
+        {"serverContent": {"outputTranscription": {"text": "Пятьсот сом."}}},
+        {"serverContent": {"turnComplete": True}},
+    ]
+    c = make_client(events, saver)
+    sock = FakeClientSocket()
+    tr = CallTranscript()
+    orig_send = sock.send_json
+    async def tap(data, mode="text"):
+        tr.on_event(data); await orig_send(data, mode)
+    sock.send_json = tap
+    stt = dict(state_r)
+    t = asyncio.create_task(handler_gemini.handle_gemini_messages(c, sock, stt))
+    for _ in range(100):
+        await asyncio.sleep(0.02)
+        if not c.ws.events:
+            await asyncio.sleep(0.1); break
+    t.cancel(); await asyncio.gather(t, return_exceptions=True)
+    return c, sock, tr
+
+c_card, sock_card, tr_card = run(transcript_run(saver))
+turns = tr_card.finish()
+check("карточка: стенограмма звонка собрана потоком transcript.delta", "transcript.delta" in sock_card.types(), sock_card.types())
+check("карточка: в стенограмме приветствие, вопрос клиента (в т.ч. при перебивании) и ответ",
+      [t["role"] for t in turns] == ["assistant", "user", "assistant"] and "Алло, сколько стоит?" in turns[1]["text"]
+      and "Пятьсот" in turns[2]["text"], turns)
+check("карточка: без дублей — завершённые реплики вторым разом не отправляются",
+      "input.transcription.complete" not in sock_card.types() and "output.transcription.complete" not in sock_card.types())
+check("стенограмма видит речь клиента (звонок засчитывается как отвеченный)", tr_card.has_user_speech)
+check("счётчик событий Google ведётся (для журнала звонка)",
+      c_card.census["serverContent.inputTranscription"] == 2 and c_card.census["serverContent.outputTranscription"] == 2
+      and c_card.census["serverContent.turnComplete"] == 2 and c_card.census["serverContent.interrupted"] == 1, dict(c_card.census))
+
+c_old = make_client([{"setupComplete": {}}, {"serverContent": {"inputTranscription": {"text": "Привет"}}},
+                     {"serverContent": {"outputTranscription": {"text": "Здравствуйте"}}}, {"serverContent": {"turnComplete": True}}])
+c_old.assistant_config.greeting_message = None
+sock_old = FakeClientSocket()
+async def old_run():
+    t = asyncio.create_task(handler_gemini.handle_gemini_messages(c_old, sock_old, dict(state_r)))
+    await asyncio.sleep(0.4); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+orig_save = handler_gemini.ConversationService.save_conversation
+async def _noop(**kw): return "ok"
+handler_gemini.ConversationService.save_conversation = staticmethod(_noop)
+try:
+    run(old_run())
+finally:
+    handler_gemini.ConversationService.save_conversation = orig_save
+check("Gemini-ассистент: события как раньше (*.complete), без transcript.delta",
+      "input.transcription.complete" in sock_old.types() and "transcript.delta" not in sock_old.types(), sock_old.types())
+
+# ---------- вызов функции базы знаний: toolCall → результат в Gemini → клиенту function_call.completed ----------
+from backend.websockets import function_calls as fcalls
+async def kb_call():
+    c = make_client([{"setupComplete": {}},
+                     {"toolCall": {"functionCalls": [{"id": "kb1", "name": "search_knowledge_base", "args": {"query": "цена"}}]}}])
+    c.assistant_config.greeting_message = None
+    c.enabled_functions = ["search_knowledge_base"]
+    c.blocking_tools = True
+    sock = FakeClientSocket()
+    seen = {}
+    async def fake_exec(name, arguments, context=None):
+        seen.update(name=name, args=arguments, has_cfg=bool(context and context.get("assistant_config")))
+        return {"found": True, "answer": "Тариф «Старт» — 7500 сом"}
+    orig = fcalls.execute_function
+    fcalls.execute_function = fake_exec
+    try:
+        t = asyncio.create_task(handler_gemini.handle_gemini_messages(c, sock, dict(state_r)))
+        await asyncio.sleep(0.5); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+    finally:
+        fcalls.execute_function = orig
+    return c, sock, seen
+ck, sk, seen = run(kb_call())
+tool_resp = [m for m in ck.ws.sent if "toolResponse" in m]
+check("функция базы знаний: вызвана с аргументами и карточкой ассистента", seen.get("name") == "search_knowledge_base"
+      and seen.get("args") == {"query": "цена"} and seen.get("has_cfg"), seen)
+check("функция базы знаний: результат ушёл обратно в Gemini (toolResponse с id и именем)",
+      len(tool_resp) == 1 and tool_resp[0]["toolResponse"]["functionResponses"][0]["id"] == "kb1"
+      and tool_resp[0]["toolResponse"]["functionResponses"][0]["name"] == "search_knowledge_base"
+      and "7500" in json.dumps(tool_resp[0], ensure_ascii=False), tool_resp)
+check("функция базы знаний: клиенту ушло function_call.completed", "function_call.completed" in sk.types(), sk.types())
 
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

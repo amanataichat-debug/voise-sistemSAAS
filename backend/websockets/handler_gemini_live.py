@@ -244,6 +244,23 @@ class GeminiLiveVoiceSession:
              f"interruptions={self.interruption_state['interruption_count']}, "
              f"dialog_pairs={len(self.pairs)} saved={saved}")
         if self.call_log:
+            census = self.client.census
+            n_in = census.get("serverContent.inputTranscription", 0) + census.get("inputTranscription", 0)
+            n_out = census.get("serverContent.outputTranscription", 0) + census.get("outputTranscription", 0)
+            self.call_log.add(
+                "session",
+                "События Gemini за звонок: " + (", ".join(f"{k}×{v}" for k, v in sorted(census.items())) or "ничего не пришло")
+                + f"; переподключений {self.client.reconnect_count}, goAway {self.client.go_away_seen}",
+            )
+            if self.audio_chunks_in > 50 and n_in == 0:
+                self.call_log.add(
+                    "session",
+                    "Gemini не прислал расшифровку речи клиента (inputTranscription): диалог, память и итог звонка для "
+                    "агента-оркестратора будут пустыми, звонок засчитается как «не ответил». Проверьте поле "
+                    "inputAudioTranscription в setup и GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", level="error")
+            elif self.audio_chunks_in > 50 and self.interruption_state["assistant_audio_ever"] and n_out == 0:
+                self.call_log.add("session", "Gemini не прислал расшифровку речи агента (outputTranscription): "
+                                             "реплики агента не попадут в диалог", level="warning")
             self.call_log.add(
                 "session",
                 f"Сессия завершена ({reason}): {elapsed:.1f} с, прерываний {self.interruption_state['interruption_count']}, "

@@ -36,6 +36,7 @@ import time
 import websockets
 import re
 import traceback
+from collections import Counter
 from websockets.exceptions import ConnectionClosed
 from typing import Optional, List, Dict, Any, Union, AsyncGenerator
 
@@ -61,8 +62,9 @@ RECONNECT_ATTEMPTS = 3
 
 
 def input_transcription_languages() -> List[str]:
-    """Языки распознавания речи клиента для ТЕКСТА диалога (на понимание модели не влияют): env GEMINI_INPUT_TRANSCRIPTION_LANGUAGES."""
-    raw = os.getenv("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", "ru,ky")
+    """Языки распознавания речи клиента для ТЕКСТА диалога (на понимание модели не влияют): env GEMINI_INPUT_TRANSCRIPTION_LANGUAGES
+    (например «ru,ky»). По умолчанию выключено: поле не проверено на живом Google, а транскрипт клиента кормит диалог и итог звонка."""
+    raw = os.getenv("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", "")  # по умолчанию выкл.: на живом Google не проверено
     return [x.strip() for x in raw.split(",") if x.strip() and x.strip().lower() not in ("none", "off", "0")]
 
 
@@ -175,6 +177,7 @@ class GeminiLiveClient:
         self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
         self.reconnect_count = 0
         self.go_away_seen = 0
+        self.census: Counter = Counter()   # какие события и сколько раз прислал Google (для журнала звонка)
         self.language = (language or "").strip().lower() or None
         # Если задан — реплики (user, assistant) уходят сюда вместо ConversationService/Sheets
         self.turn_saver = None

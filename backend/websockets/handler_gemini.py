@@ -104,6 +104,33 @@ def log_to_render(message: str, level: str = "INFO"):
         logger.info(message)
 
 
+def _card_mode(gemini_client) -> bool:
+    """Карточка ElevenLabs (реплики пишет сама сессия через turn_saver): стенограмма звонка идёт потоком
+    transcript.delta, как у GPT-Live, а не по концу реплики — перебивания и обрыв связи её не теряют."""
+    return getattr(gemini_client, "turn_saver", None) is not None
+
+
+async def _emit_transcript(gemini_client, websocket, role: str, text: str) -> None:
+    if _card_mode(gemini_client) and text:
+        await websocket.send_json({"type": "transcript.delta", "role": role, "delta": text})
+
+
+def _count_events(gemini_client, data: dict) -> None:
+    """Счётчик событий Google за сессию (в журнал звонка в конце): что именно прислала модель."""
+    census = getattr(gemini_client, "census", None)
+    if census is None:
+        return
+    for key in data:
+        census[key] += 1
+    content = data.get("serverContent")
+    if isinstance(content, dict):
+        for key in content:
+            census["serverContent." + key] += 1
+        for part in (content.get("modelTurn") or {}).get("parts", []) or []:
+            for key in part:
+                census["part." + key] += 1
+
+
 async def _save_turn(gemini_client, **kw):
     """Реплика в БД. У карточек ElevenLabs (gemini_client.turn_saver) пишет сама сессия — в
     eleven_conversations и журнал звонка; у Gemini-ассистентов — ConversationService, как раньше."""
@@ -657,6 +684,8 @@ async def handle_gemini_messages(
                     log_to_render(f"   Keys: {list(response_data.keys())}")
                     log_to_render(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 
+                _count_events(gemini_client, response_data)
+
                 # Служебное: ручка возобновления сессии, goAway (скорое закрытие соединения)
                 if gemini_client.handle_service_event(response_data):
                     continue
@@ -744,6 +773,7 @@ async def handle_gemini_messages(
                                 "text": transcript_text,
                                 "is_chunk": True
                             })
+                            await _emit_transcript(gemini_client, websocket, "user", transcript_text)
                     
                     # ═══════════════════════════════════════════════════════════════
                     # 🔥 v1.6.1: ТРАНСКРИПЦИЯ ОТВЕТА МОДЕЛИ (ассистента)
@@ -770,6 +800,7 @@ async def handle_gemini_messages(
                                 "text": transcript_text,
                                 "is_chunk": True
                             })
+                            await _emit_transcript(gemini_client, websocket, "assistant", transcript_text)
                     
                     # ═══════════════════════════════════════════════════════════════
                     # Check for interruption
@@ -917,15 +948,16 @@ async def handle_gemini_messages(
                                 "timestamp": time.time()
                             })
                         
-                        # Отправляем завершённые транскрипты клиенту
-                        if current_user_transcript.strip():
+                        # Отправляем завершённые транскрипты клиенту (у карточек ElevenLabs стенограмма
+                        # уже ушла потоком transcript.delta — второй раз её слать нельзя, получатся дубли)
+                        if current_user_transcript.strip() and not _card_mode(gemini_client):
                             await websocket.send_json({
                                 "type": "input.transcription.complete",
                                 "text": current_user_transcript.strip(),
                                 "turn_number": turn_count
                             })
                         
-                        if current_assistant_transcript.strip():
+                        if current_assistant_transcript.strip() and not _card_mode(gemini_client):
                             await websocket.send_json({
                                 "type": "output.transcription.complete",
                                 "text": current_assistant_transcript.strip(),
@@ -1010,6 +1042,7 @@ async def handle_gemini_messages(
                             "text": transcript_text,
                             "is_chunk": True
                         })
+                        await _emit_transcript(gemini_client, websocket, "user", transcript_text)
                 
                 if "outputTranscription" in response_data and "serverContent" not in response_data:
                     output_trans = response_data["outputTranscription"]
@@ -1024,6 +1057,7 @@ async def handle_gemini_messages(
                             "text": transcript_text,
                             "is_chunk": True
                         })
+                        await _emit_transcript(gemini_client, websocket, "assistant", transcript_text)
 
             except ConnectionClosed as e:
                 log_to_render(f"⚠️ Gemini connection closed: {e}", "WARNING")
