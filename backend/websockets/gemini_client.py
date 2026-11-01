@@ -47,6 +47,11 @@ DEFAULT_VOICE = "Aoede"
 GEMINI_LIVE_MODEL = getattr(settings, "GEMINI_LIVE_MODEL", None) or "gemini-3.8-live"
 # Как модель озвучивает результат асинхронной функции: WHEN_IDLE — договорить и
 # затем озвучить, INTERRUPT — сразу, SILENT — молча учесть.
+def language_note_for_gemini(language: str) -> str:
+    from backend.websockets.voice_hints import language_note
+    return language_note(language)
+
+
 GEMINI_TOOL_SCHEDULING = (getattr(settings, "GEMINI_TOOL_SCHEDULING", None) or "WHEN_IDLE").upper()
 if GEMINI_TOOL_SCHEDULING not in ("INTERRUPT", "WHEN_IDLE", "SILENT"):
     GEMINI_TOOL_SCHEDULING = "WHEN_IDLE"
@@ -246,7 +251,13 @@ class GeminiLiveClient:
             # Get settings
             voice = self.voice_override or getattr(self.assistant_config, "voice", None) or DEFAULT_VOICE
             system_message = getattr(self.assistant_config, "system_prompt", None) or DEFAULT_SYSTEM_MESSAGE
-            if self.language:
+            if self.language and self.voice_hints:
+                # Карточка ElevenLabs на Gemini Live. Общая инструкция «начни по-кыргызски, даже если промпт
+                # русский» (для каскада) тут вредна: Gemini сам определяет язык по речи, и звонок 01.11.2026
+                # шёл с отказом говорить по-русски и «я плохо знаю кыргызский». Язык карточки — только язык
+                # приветствия; дальше — язык собеседника.
+                system_message = f"{system_message}{language_note_for_gemini(self.language)}"
+            elif self.language:
                 try:
                     from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS
                     if self.language in LANGUAGE_INSTRUCTIONS:
@@ -471,21 +482,22 @@ class GeminiLiveClient:
         # отвечает с большой задержкой, на телефонном звуке с шумом — иногда не отвечает вовсе.
         # Один профиль для виджета и телефонии. Настраивается через окружение:
         #   GEMINI_VAD_PROFILE=default        — отключить и вернуть поведение Gemini по умолчанию
-        #   GEMINI_VAD_SILENCE_MS             — пауза, после которой фраза считается законченной (500)
+        #   GEMINI_VAD_SILENCE_MS             — пауза, после которой фраза считается законченной (800: 500 перебивало
+        #                                       человека на паузе посреди фразы, 01.11.2026; Google советует 500–800)
         #   GEMINI_VAD_START_SENSITIVITY      — low|high: насколько легко Gemini решает, что человек
         #                                       НАЧАЛ говорить. high на телефонной линии срабатывает
         #                                       на шум и обрывает приветствие, поэтому по умолчанию low
-        #   GEMINI_VAD_END_SENSITIVITY        — low|high: насколько быстро считает, что человек ЗАКОНЧИЛ
+        #   GEMINI_VAD_END_SENSITIVITY        — low|high: насколько быстро считает, что человек ЗАКОНЧИЛ (low — ждёт дольше)
         vad_profile = os.getenv("GEMINI_VAD_PROFILE", "fast").lower()
         if vad_profile != "default":
             try:
-                silence_ms = int(os.getenv("GEMINI_VAD_SILENCE_MS", "500"))
+                silence_ms = int(os.getenv("GEMINI_VAD_SILENCE_MS", "800"))
             except ValueError:
-                silence_ms = 500
+                silence_ms = 800
             start_sens = os.getenv("GEMINI_VAD_START_SENSITIVITY", "low").strip().lower()
-            end_sens = os.getenv("GEMINI_VAD_END_SENSITIVITY", "high").strip().lower()
+            end_sens = os.getenv("GEMINI_VAD_END_SENSITIVITY", "low").strip().lower()
             start_value = "START_SENSITIVITY_HIGH" if start_sens == "high" else "START_SENSITIVITY_LOW"
-            end_value = "END_SENSITIVITY_HIGH" if end_sens != "low" else "END_SENSITIVITY_LOW"
+            end_value = "END_SENSITIVITY_HIGH" if end_sens == "high" else "END_SENSITIVITY_LOW"
             setup_payload["setup"]["realtimeInputConfig"] = {
                 "automaticActivityDetection": {
                     "disabled": False,

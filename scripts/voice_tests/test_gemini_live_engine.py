@@ -271,6 +271,11 @@ check("Gemini: правило «не знаю» только после поис
 check("Gemini: правило разговора под проактивный звук 3.8 (отвечай сразу, один язык, UNMISTAKABLY)",
       "КАК ВЕСТИ РАЗГОВОР" in g and "UNMISTAKABLY" in g and "не молчи" in g
       and vh.GEMINI_CONVERSATION_HINT not in lc.VOICE_DELEGATION_HINT)
+check("Gemini: пока клиент говорит — молчать (никаких «мм/угу» поверх речи)", "МОЛЧИ" in g and "поверх его речи" in g)
+_ln = vh.language_note("ky")
+check("Gemini: язык карточки — только язык приветствия, дальше язык собеседника, без отказа от русского",
+      "Приветствие" in _ln and "на том языке, на котором говорит" in _ln and "плохо владеешь" in _ln
+      and "Начинай разговор" not in _ln and vh.language_note("") == "")
 check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
 check("Gemini: без правил про бэкенд делегирования GPT",
       "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
@@ -290,6 +295,10 @@ async def setup_payload(blocking):
 
 cb, sp = run(setup_payload(True))
 beh = sp["setup"]["tools"][0]["function_declarations"][0]["behavior"]
+_vad = sp["setup"]["realtimeInputConfig"]["automaticActivityDetection"]
+check("VAD по умолчанию: ждёт дольше (800 мс, конец речи LOW, начало LOW) — не вступает на паузе клиента",
+      _vad["silenceDurationMs"] == 800 and _vad["endOfSpeechSensitivity"] == "END_SENSITIVITY_LOW"
+      and _vad["startOfSpeechSensitivity"] == "START_SENSITIVITY_LOW", str(_vad))
 check("карточка ElevenLabs: функции BLOCKING", beh == "BLOCKING", beh)
 _flat = json.dumps(sp)
 check("setup 3.8: нет enableAffectiveDialog, thinkingConfig, proactivity и languageCode (модель их не принимает)",
