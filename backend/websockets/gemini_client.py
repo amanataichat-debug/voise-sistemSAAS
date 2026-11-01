@@ -49,6 +49,7 @@ from backend.functions import get_function_definitions, get_enabled_functions, n
 logger = get_logger(__name__)
 
 DEFAULT_VOICE = "Aoede"
+STABLE_LIVE_MODEL = "gemini-3.8-live"   # запасная модель, если выбранная в env не открылась
 GEMINI_LIVE_MODEL = getattr(settings, "GEMINI_LIVE_MODEL", None) or "gemini-3.8-live"
 # Как модель озвучивает результат асинхронной функции: WHEN_IDLE — договорить и
 # затем озвучить, INTERRUPT — сразу, SILENT — молча учесть.
@@ -228,6 +229,8 @@ class GeminiLiveClient:
         self.resume_handle: Optional[str] = None
         self.tools_enabled = True          # Google отверг функции целиком → звонок идёт без них (см. connect)
         self.extras_level = EXTRAS_FULL if (await_setup and os.getenv("GEMINI_LONG_CALLS", "1") != "0") else EXTRAS_NONE
+        self._initial_extras_level = self.extras_level
+        self._model_fallback_done = False   # повтор на стабильной модели уже был (см. connect)
         self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
         self.reconnect_count = 0
         self.go_away_seen = 0
@@ -290,6 +293,26 @@ class GeminiLiveClient:
                 logger.info(f"[GEMINI-CLIENT] Webhook configured")
 
     async def connect(self) -> bool:
+        """Подключение к Gemini Live. Если выбранная в env модель (например gemini-3.8-live-extended-thinking)
+        не открылась — один повтор на стабильной gemini-3.8-live: звонок не должен обрываться из-за эксперимента
+        с моделью (01.11.2026: GEMINI_LIVE_MODEL=…extended-thinking → звонок сбросился сразу)."""
+        ok = await self._connect_once()
+        if (ok or not self.await_setup or self.model == STABLE_LIVE_MODEL or self._model_fallback_done
+                or "api key" in (self.connect_error or "").lower()):
+            return ok
+        self._model_fallback_done = True
+        failed_model, reason = self.model, self.connect_error
+        self.model = STABLE_LIVE_MODEL
+        self.extras_level = self._initial_extras_level
+        self.tools_enabled = True
+        self.resume_handle = None
+        self._pending.clear()
+        self.connect_error = None
+        self._note_session(f"Модель {failed_model} не открылась ({reason or 'без причины от Google'}); "
+                           f"звонок идёт на {STABLE_LIVE_MODEL}", "warning")
+        return await self._connect_once()
+
+    async def _connect_once(self) -> bool:
         """Establish WebSocket connection to Gemini Live API."""
         if not self.api_key:
             logger.error("[GEMINI-CLIENT] ❌ Google API key not provided")
@@ -420,7 +443,7 @@ class GeminiLiveClient:
                         self._note_session(f"Google не принял настройку сессии ({rejected}); последняя попытка без функций", "error")
                     self._pending.clear()
                     self.connect_error = None
-                    return await self.connect()
+                    return await self._connect_once()
                 return False
 
             logger.info(f"[GEMINI-CLIENT] ✅ Session initialized successfully")

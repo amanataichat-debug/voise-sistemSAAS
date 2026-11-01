@@ -400,6 +400,16 @@ with_connect(fc, c.connect)
 check("extended-thinking: thinkingConfig.thinkingLevel в generationConfig",
       last_setup(socks).get("generationConfig", {}).get("thinkingConfig") == {"thinkingLevel": "LOW"},
       last_setup(socks).get("generationConfig"))
+# выбранная модель не открылась (нет на ключе) → звонок не рвётся, идёт на стабильной gemini-3.8-live
+c, socks, fc = card_client(reject=lambda s: "extended-thinking" in s.get("model", ""))
+c.model = "gemini-3.8-live-extended-thinking"
+ok = with_connect(fc, c.connect)
+check("модель extended-thinking не открылась → повтор на gemini-3.8-live, звонок идёт",
+      ok is True and c.model == "gemini-3.8-live" and last_setup(socks)["model"] == "models/gemini-3.8-live"
+      and "thinkingConfig" not in last_setup(socks).get("generationConfig", {}), (ok, c.model, len(socks)))
+c, socks, fc = card_client(reject=lambda s: True)
+ok = with_connect(fc, c.connect)
+check("стабильная модель не открылась → без бесконечных повторов", ok is False and len(socks) <= 4, (ok, len(socks)))
 check("Gemini-ассистент (не карточка): расширенных полей нет, setup как раньше",
       not any(k in sp2["setup"] for k in ("sessionResumption", "contextWindowCompression")) and sp2["setup"]["inputAudioTranscription"] == {})
 
