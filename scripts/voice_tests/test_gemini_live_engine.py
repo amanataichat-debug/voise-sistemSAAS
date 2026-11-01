@@ -268,6 +268,9 @@ check("Gemini получает правила диалога: перебиван
       all(k in g for k in ("Interruption policy", "ЗАВЕРШЕНИЕ", "МАТЕРИАЛЫ", "ПРИВЕТСТВИЕ")))
 check("Gemini: правило «не знаю» только после поиска и список функций",
       "не говори «не знаю»" in g and "- search_knowledge_base:" in g and "- hangup_call:" in g)
+check("Gemini: правило разговора под проактивный звук 3.8 (отвечай сразу, один язык, UNMISTAKABLY)",
+      "КАК ВЕСТИ РАЗГОВОР" in g and "UNMISTAKABLY" in g and "не молчи" in g
+      and vh.GEMINI_CONVERSATION_HINT not in lc.VOICE_DELEGATION_HINT)
 check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
 check("Gemini: без правил про бэкенд делегирования GPT",
       "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
@@ -288,6 +291,9 @@ async def setup_payload(blocking):
 cb, sp = run(setup_payload(True))
 beh = sp["setup"]["tools"][0]["function_declarations"][0]["behavior"]
 check("карточка ElevenLabs: функции BLOCKING", beh == "BLOCKING", beh)
+_flat = json.dumps(sp)
+check("setup 3.8: нет enableAffectiveDialog, thinkingConfig, proactivity и languageCode (модель их не принимает)",
+      not any(k in _flat for k in ("ffectiveDialog", "affective_dialog", "thinkingConfig", "thinking_level", "proactiv", "languageCode")))
 cn, sp2 = run(setup_payload(False))
 check("Gemini-ассистент: функции NON_BLOCKING как раньше", sp2["setup"]["tools"][0]["function_declarations"][0]["behavior"] == "NON_BLOCKING")
 run(cb.send_function_result("id1", {"ok": True}))

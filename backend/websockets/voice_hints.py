@@ -10,13 +10,19 @@ VOICE_GREETING_RULE, VOICE_TELEPHONY_HINT, voice_gender_hint) читают об�
 кусок про функции: у GPT-Live это делегирование бэкенду, у Gemini — собственные вызовы.
 
 По рекомендациям Google для Gemini Live (docs «Best practices with Gemini Live API», «Gemini 3.8 Live»;
-сами страницы из сервера недоступны, опора на выдержки из поиска):
+полный разбор страниц — docs/gemini_live_3_8_reference.md, собран 01.11.2026):
 - системная инструкция: роль → нормы диалога → ограничения (промпт карточки идёт первым, ниже — правила);
 - у функций указывать, когда их вызывать; не больше двух вызовов подряд без реплики пользователю;
 - «думающих» указаний («рассуждай по шагам») не давать — у 3.8 Live нет thinking;
 - темп речи промптом не регулируется (Google это прямо пишет), поэтому здесь только «ровно и чётко»;
 - язык модель определяет по речи сама, фиксируется инструкцией (она в VOICE_MANNER_HINT).
-Эмоциональный диалог (affective dialog) и проактивный звук у 3.8 включены всегда — полей в setup нет.
+Проактивный звук у 3.8 включён всегда и не отключается (proactive_audio=false → ошибка): модель сама решает,
+не фоновая ли это речь, и на телефоне может промолчать там, где человек ждёт ответа — отсюда правило
+GEMINI_CONVERSATION_HINT. Эмоциональный диалог (affective dialog) в 3.8 УДАЛЁН из API (страница модели:
+«Affective dialogue is removed»), поля enable_affective_dialog в setup нет и быть не должно; смех, вдохи,
+паузы, темп и аудио-теги документация Live не описывает — это только слова в промпте (VOICE_MANNER_HINT).
+Языка как поля нет (native audio сам выбирает язык, languageCode не поддерживается) — язык держит промпт;
+Google советует усиливать капризные правила словом «unmistakably».
 """
 
 from typing import Any, Dict, List, Optional
@@ -27,6 +33,20 @@ from backend.websockets.live_client import (
     VOICE_MANNER_HINT,
     VOICE_TELEPHONY_HINT,
     voice_gender_hint,
+)
+
+# Разговорное поведение под особенности 3.8 Live: проактивный звук включён всегда и не отключается, поэтому
+# модель отвечает не на каждую услышанную речь; язык фиксируется только промптом (по совету Google — словом
+# «unmistakably»); лишнее эхо и дежурные вопросы Google прямо называет «DO NOT repeat… NO PLATITUDES».
+GEMINI_CONVERSATION_HINT = (
+    "\n\nКАК ВЕСТИ РАЗГОВОР. Это разговор один на один: всё, что говорит собеседник, обращено к тебе, "
+    "посторонней речью считай только явный шум, музыку и чужие голоса рядом. Как только человек закончил "
+    "фразу или задал вопрос — отвечай сразу, не молчи и не жди, что он повторит. Не начинай ответ с "
+    "пересказа его слов и не заканчивай каждую реплику дежурным «чем ещё могу помочь?» — вопрос задавай "
+    "по делу, один. На одну реплику собеседника — одна твоя, короткая; продолжай мысль только когда он "
+    "подтвердил, что интересно. "
+    "YOU MUST RESPOND UNMISTAKABLY IN THE LANGUAGE THE CALLER SPEAKS (Russian or Kyrgyz). "
+    "Stay in that language until the caller clearly asks to switch or says a whole phrase in another language."
 )
 
 # Правило функций Gemini. Главное — «не знаю» только ПОСЛЕ поиска: без этого модель на вопрос о цене,
@@ -61,7 +81,7 @@ def gemini_tools_hint(functions: Optional[List[Dict[str, Any]]]) -> str:
 
 def build_gemini_voice_hints(functions: Optional[List[Dict[str, Any]]], voice: str, telephony: bool) -> str:
     """Всё, что дописывается к промпту карточки для Gemini Live (порядок как у GPT-Live)."""
-    out = VOICE_MANNER_HINT + GEMINI_TOOLS_POLICY + gemini_tools_hint(functions) + VOICE_DIALOG_RULES + VOICE_GREETING_RULE
+    out = VOICE_MANNER_HINT + GEMINI_CONVERSATION_HINT + GEMINI_TOOLS_POLICY + gemini_tools_hint(functions) + VOICE_DIALOG_RULES + VOICE_GREETING_RULE
     if telephony:
         out += VOICE_TELEPHONY_HINT
     out += voice_gender_hint(voice)

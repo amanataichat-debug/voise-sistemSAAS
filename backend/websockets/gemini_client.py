@@ -14,7 +14,9 @@
   говорить, пока функция выполняется; в `toolResponse.functionResponses[]` нужны
   `id`, `name`, `response` и `scheduling` (INTERRUPT | WHEN_IDLE | SILENT,
   env GEMINI_TOOL_SCHEDULING, по умолчанию WHEN_IDLE — договорить и озвучить результат).
-- Proactive audio включён всегда: модель сама решает, обращались ли к ней.
+- Proactive audio включён всегда: модель сама решает, обращались ли к ней (false → ошибка setup).
+- Affective dialog в 3.8 удалён из API: `enableAffectiveDialog` в setup не передаём. Поля языка (`languageCode`)
+  у native-audio моделей тоже нет — язык держит промпт. Справочник: docs/gemini_live_3_8_reference.md.
 - Одно событие serverContent может нести несколько parts (аудио + текст).
 - Лимиты без сжатия контекста: аудио-сессия 15 мин, соединение ~10 мин
   (contextWindowCompression / sessionResumption не включены — осознанно).
