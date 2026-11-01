@@ -45,6 +45,9 @@
     current_binding: 'текущая привязка',
     group_gemini: 'Gemini 3.8 Live (тест)', gemini_sub: 'Gemini 3.8 Live · речь в речь',
     gemini_create: 'Создать тестового Gemini-ассистента', gemini_creating: 'Создаём…',
+    gemini_key_label: 'Ключ Google Gemini (AI Studio)', gemini_key_set: 'Ключ сохранён', gemini_key_none: 'Ключ не задан',
+    gemini_key_hint: 'Получить: aistudio.google.com/apikey. Без своего ключа берётся серверный.', gemini_key_save: 'Сохранить ключ',
+    gemini_key_saved: 'Ключ Gemini сохранён', gemini_key_failed: 'Не удалось сохранить ключ', gemini_key_empty: 'Вставьте ключ',
     gemini_created: 'Gemini-ассистент создан, выберите его и привяжите', gemini_create_failed: 'Не удалось создать Gemini-ассистента',
     st_queued: 'В очереди', st_dialing: 'Набор номера', st_ringing: 'Вызов', st_answered: 'Разговор', st_completed: 'Завершён', st_failed: 'Не состоялся',
     er_completed: 'завершён', er_hangup: 'абонент положил трубку', er_assistant_hangup: 'ассистент завершил', er_busy: 'занято',
@@ -201,8 +204,9 @@
     return Promise.all([
       safe(api('/eleven-assistants?include_agent_voices=false'), function (d) { return (d && d.assistants) || []; }),
       safe(api('/agent/list'), function (d) { return (d && d.agents) || []; }),
-      safe(api('/gemini-assistants'), function (d) { return Array.isArray(d) ? d : ((d && d.assistants) || []); })
-    ]).then(function (r) { targets = { eleven: r[0], agents: r[1], gemini: r[2] }; return targets; });
+      safe(api('/gemini-assistants'), function (d) { return Array.isArray(d) ? d : ((d && d.assistants) || []); }),
+      api('/users/me').then(function (u) { return !!(u && u.has_gemini_api_key); }, function () { return false; })
+    ]).then(function (r) { targets = { eleven: r[0], agents: r[1], gemini: r[2], geminiKey: r[3] }; return targets; });
   }
   function agentOk(a) { return SIP_TYPES.indexOf(a.assistant_type) !== -1 && a.assistant_id; }
 
@@ -244,9 +248,15 @@
       parts.push('<div class="bind-group">' + esc(t('group_gemini')) + '</div>');
       c.gemini.forEach(function (a) { parts.push(opt('assistant', 'gemini', a.id, a.name, a.is_active === false ? t('inactive') : (t('gemini_sub') + (a.voice ? ' · ' + a.voice : '')), 'audio-lines', false)); });
       parts.push('<button class="btn" type="button" id="gemini-create" style="margin-top:8px">' + esc(t('gemini_create')) + '</button>');
+      parts.push('<div style="margin-top:12px"><div class="sub" id="gemini-key-status">' + esc(t('gemini_key_label') + ': ' + (c.geminiKey ? t('gemini_key_set') : t('gemini_key_none'))) + '</div>' +
+        '<div class="row" style="gap:8px;margin-top:6px"><input class="input" type="password" id="gemini-key" autocomplete="off" placeholder="AIza…" style="flex:1">' +
+        '<button class="btn" type="button" id="gemini-key-save">' + esc(t('gemini_key_save')) + '</button></div>' +
+        '<div class="sub" style="margin-top:4px">' + esc(t('gemini_key_hint')) + '</div></div>');
       list.innerHTML = parts.join('');
       var gc = $('gemini-create');
       if (gc) gc.addEventListener('click', createGeminiTest);
+      var ks = $('gemini-key-save');
+      if (ks) ks.addEventListener('click', saveGeminiKey);
       Array.prototype.forEach.call(list.querySelectorAll('.bind-opt'), function (el) {
         if (el.hasAttribute('data-disabled')) return;
         var pick = function () {
@@ -277,6 +287,18 @@
       VF.toast(e.message || t('gemini_create_failed'), { type: 'error' });
       if (btn) { btn.disabled = false; btn.textContent = t('gemini_create'); }
     });
+  }
+  function saveGeminiKey() {
+    var inp = $('gemini-key'), key = inp ? inp.value.trim() : '';
+    if (!key) return VF.toast(t('gemini_key_empty'), { type: 'warning' });
+    var btn = $('gemini-key-save'); btn.disabled = true;
+    api('/users/me', { method: 'PUT', body: { gemini_api_key: key } }).then(function () {
+      if (targets) targets.geminiKey = true;
+      inp.value = '';
+      $('gemini-key-status').textContent = t('gemini_key_label') + ': ' + t('gemini_key_set');
+      VF.toast(t('gemini_key_saved'), { type: 'success' });
+    }).catch(function (e) { VF.toast(e.message || t('gemini_key_failed'), { type: 'error' }); })
+      .then(function () { btn.disabled = false; });
   }
   function patchNumber(body, okMsg, failMsg) {
     var b1 = $('bind-btn'), b2 = $('unbind-btn');
