@@ -42,7 +42,7 @@ check("Старт: чат-доступ есть, автономного нет",
 
 # ---------- набор инструментов ----------
 def T(name): return {"type": "function", "function": {"name": name}}
-tools = [T(n) for n in ("create_agent_task", "trigger_immediate_call", "bulk_schedule_calls",
+tools = [T(n) for n in ("create_agent_task", "trigger_immediate_call", "bulk_schedule_calls", "schedule_telegram_message",
                         "create_document", "whatsapp_send_message", "send_voice_message",
                         "append_contact_note", "move_contact_stage", "get_period_report",
                         "search_contacts", "delete_agent_contact", "notify_owner_handoff")]
@@ -53,9 +53,11 @@ check("PostCall: нет планирования и звонков первым"
       not pc & {"create_agent_task", "trigger_immediate_call", "bulk_schedule_calls"}, sorted(pc))
 check("PostCall: отвечать, вести CRM и собирать документы можно",
       {"whatsapp_send_message", "send_voice_message", "append_contact_note", "move_contact_stage", "create_document"} <= pc)
+check("PostCall: отложенное сообщение в Telegram доступно", "schedule_telegram_message" in pc)
 oc = names(agent_mode.filter_tools(tools, "owner_chat"))
-check("Чат владельца: только чтение",
-      oc == {"get_period_report", "search_contacts", "notify_owner_handoff"}, sorted(oc))
+check("Чат владельца: чтение + сообщения клиентам, без правки CRM и звонков",
+      oc == {"get_period_report", "search_contacts", "notify_owner_handoff", "whatsapp_send_message",
+             "send_voice_message", "schedule_telegram_message"}, sorted(oc))
 
 # ---------- проверка при выполнении ----------
 reactive_user = make_user("start")
@@ -76,15 +78,23 @@ check("Старт: написать другому клиенту из PostCall 
       agent_mode.check_tool(reactive_user, "telegram_send_message", {"agent_contact_id": "c-other"}, ctx_pc, None)
       == agent_mode.REFUSAL_FIRST_MESSAGE)
 recent.add("c-old")
-check("Старт: даже недавнему клиенту не из своего диалога — нельзя",
+check("Старт: даже недавнему клиенту не из своего диалога — из PostCall нельзя",
       agent_mode.check_tool(reactive_user, "whatsapp_send_file", {"agent_contact_id": "c-old"}, ctx_pc, None)
       == agent_mode.REFUSAL_FIRST_MESSAGE)
 ctx_silent = {"surface": "postcall", "current_contact_id": "c-silent"}
-check("Старт: клиент молчит 24 ч — первым не пишем",
-      agent_mode.check_tool(reactive_user, "whatsapp_send_message", {}, ctx_silent, None) == agent_mode.REFUSAL_FIRST_MESSAGE)
-check("Старт: чат владельца — команда отправки запрещена",
-      agent_mode.check_tool(reactive_user, "whatsapp_send_message", {"agent_contact_id": "c-recent"},
-                            {"surface": "owner_chat"}, None) == agent_mode.REFUSAL_OWNER_CHAT)
+check("Старт: клиент молчит больше 24 ч — писать первым можно (лимит держит функция отправки)",
+      agent_mode.check_tool(reactive_user, "whatsapp_send_message", {}, ctx_silent, None) is None)
+check("Старт: чат владельца — команда написать клиенту первым разрешена",
+      agent_mode.check_tool(reactive_user, "whatsapp_send_message", {"agent_contact_id": "c-silent"},
+                            {"surface": "owner_chat"}, None) is None)
+check("Старт: чат владельца — звонок по-прежнему запрещён",
+      agent_mode.check_tool(reactive_user, "trigger_immediate_call", {"agent_contact_id": "c-recent"},
+                            {"surface": "owner_chat"}, None) == agent_mode.REFUSAL_INITIATIVE)
+check("Старт: чат владельца — правка CRM запрещена",
+      agent_mode.check_tool(reactive_user, "update_contact_info", {}, {"surface": "owner_chat"}, None)
+      == agent_mode.REFUSAL_OWNER_CHAT)
+check("Старт: отложенное сообщение в Telegram разрешено",
+      agent_mode.check_tool(reactive_user, "schedule_telegram_message", {}, {"surface": "owner_chat"}, None) is None)
 check("Старт: чат владельца — отчёт разрешён",
       agent_mode.check_tool(reactive_user, "get_period_report", {}, {"surface": "owner_chat"}, None) is None)
 

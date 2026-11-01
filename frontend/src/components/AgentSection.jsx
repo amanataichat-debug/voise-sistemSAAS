@@ -8,10 +8,11 @@ import { MockAgent } from './Mockups';
 function AgentSection({ onOpenModal }) {
   const { t } = useT();
   const flowWho = ['orch', 'voice', 'orch'];
+  const flowIcon = ['brain', 'audio-lines', 'square-check'];
   return (
-    <section className="sec sec-tint tint-lavender" id="agent">
+    <section className="sec sec-tint tint-blue" id="day">
       <div className="lp-container">
-        <SectionHead index="02" title={t('agent_section.title')} lead={t('agent_section.lead')} />
+        <SectionHead index="04" title={t('agent_section.title')} lead={t('agent_section.lead')} />
 
         <Parallax className="agent-mock" amount={30}>
           <Reveal className="stack" y={28}>
@@ -59,15 +60,15 @@ function AgentSection({ onOpenModal }) {
 
         <Reveal className="brains" y={16}>
           <div className="brains-head">
-            <h3>{t('agent_section.brains_title')}</h3>
-            <p>{t('agent_section.brains_lead')}</p>
+            <h3>{t('agent_section.flow_title')}</h3>
+            <p>{t('agent_section.flow_lead')}</p>
           </div>
           <div className="brains-flow">
-            {t('agent_section.flow').map(([stage, text], i) => (
+            {t('agent_section.flow').map(([who, stage, text], i) => (
               <div key={stage} className="flow-step">
                 <span className={`flow-who ${flowWho[i]}`}>
-                  <Icon name={flowWho[i] === 'orch' ? 'brain' : 'audio-lines'} className="ic-sm" />
-                  {flowWho[i] === 'orch' ? t('agent_section.role_orchestrator') : t('agent_section.role_voice')}
+                  <Icon name={flowIcon[i]} className="ic-sm" />
+                  {who}
                 </span>
                 <b>{stage}</b>
                 <p>{text}</p>

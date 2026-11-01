@@ -3,7 +3,6 @@ import LoginForm from './AuthSection/LoginForm';
 import RegisterForm from './AuthSection/RegisterForm';
 import Icon from './Icon';
 import Logo from './Logo';
-import ModelLogo, { MODELS, MODEL_ORDER } from './ModelLogo';
 import { readFirstName } from '../utils/rememberedName';
 import { useT } from '../i18n';
 
@@ -104,12 +103,12 @@ function AuthModal({ isOpen, onClose, activeTab, setActiveTab }) {
             {isLogin ? <BrandLogin t={t} name={name} /> : <BrandRegister t={t} />}
           </div>
           <div className="lp-auth-models">
-            <span className="lp-auth-models-label">{t('auth.models_label')}</span>
+            <span className="lp-auth-models-label">{t('auth.channels_label')}</span>
             <div className="lp-auth-models-row">
-              {MODEL_ORDER.map((code) => (
-                <span key={code} className={`lp-auth-model lp-auth-model-${code}`}>
-                  <ModelLogo code={code} size={16} wrap={false} />
-                  {MODELS[code].name}
+              {t('auth.channels').map(([icon, name]) => (
+                <span key={name} className="lp-auth-model">
+                  <Icon name={icon} className="ic-sm" />
+                  {name}
                 </span>
               ))}
             </div>

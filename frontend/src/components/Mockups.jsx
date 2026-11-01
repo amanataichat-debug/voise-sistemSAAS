@@ -1,7 +1,6 @@
 import React from 'react';
 import { useT } from '../i18n';
 import Icon from './Icon';
-import ModelLogo, { MODELS } from './ModelLogo';
 import { Stagger, Item } from './Reveal';
 import { PHONE_DISPLAY } from './contacts';
 
@@ -51,17 +50,14 @@ export function Frame({ active, title, children }) {
 
 export function MockAssistant() {
   const { t } = useT();
-  const models = [
-    ['gemini', 'key_own', true],
-    ['openai', 'key_own', false],
-    ['fish', 'key_platform', false],
-    ['grok', 'key_own', false],
-  ];
+  const voices = t('mock.voices');
   return (
     <Frame active="assistants" title={t('frame.title_assistants')}>
       <Stagger className="m-editor" stagger={0.07} amount={0.3}>
         <Item className="m-editor-head" y={10}>
-          <ModelLogo code="gemini" size={14} />
+          <span className="m-ava bot">
+            <Icon name="bot" className="ic-sm" />
+          </span>
           <b>{t('mock.assistant_name')}</b>
           <span className="chip chip-success">
             <span className="dot dot-success" />
@@ -88,16 +84,18 @@ export function MockAssistant() {
           </div>
         </Item>
         <Item className="m-field" y={10}>
-          <label>{t('mock.model_label')}</label>
+          <label>{t('mock.voice_label')}</label>
           <div className="m-models">
-            {models.map(([code, key, on]) => (
-              <div key={code} className={`m-model${on ? ' on' : ''}`}>
-                <ModelLogo code={code} size={14} />
+            {voices.map(([name, desc], i) => (
+              <div key={name} className={`m-model${i === 0 ? ' on' : ''}`}>
+                <span className="m-ava bot">
+                  <Icon name="volume-2" className="ic-sm" />
+                </span>
                 <div>
-                  <b>{MODELS[code].name}</b>
-                  <span>{t(`mock.${key}`)}</span>
+                  <b>{name}</b>
+                  <span>{desc}</span>
                 </div>
-                {on && <Icon name="circle-check" className="ic-sm" />}
+                {i === 0 && <Icon name="circle-check" className="ic-sm" />}
               </div>
             ))}
           </div>
@@ -204,47 +202,6 @@ export function MockDialogs() {
             {t('mock.dialogs_result')}
           </div>
         </Item>
-      </Stagger>
-    </Frame>
-  );
-}
-
-export function MockCrm() {
-  const { t } = useT();
-  const names = t('mock.crm_names');
-  const cols = t('mock.crm_cols');
-  const groups = [
-    [0, 1],
-    [2, 3, 4],
-    [5, 6],
-    [7],
-  ];
-  return (
-    <Frame active="crm" title={t('frame.title_crm')}>
-      <Stagger className="m-kanban" stagger={0.07} amount={0.3}>
-        {groups.map((idx, c) => (
-          <Item key={cols[c]} className="m-col" y={10}>
-            <div className="m-col-head">
-              <b>{cols[c]}</b>
-              <span>{idx.length}</span>
-            </div>
-            {idx.map((n) => (
-              <div key={n} className={`m-contact${n === 2 ? ' on' : ''}`}>
-                <b>{names[n]}</b>
-                <span className="mono muted">{t('mock.crm_phone')}</span>
-                {n === 2 && (
-                  <div className="m-facts">
-                    {t('mock.crm_facts').map((f) => (
-                      <span key={f} className="chip chip-outline">
-                        {f}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </Item>
-        ))}
       </Stagger>
     </Frame>
   );

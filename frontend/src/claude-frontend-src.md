@@ -18,10 +18,15 @@
 сохраняет `vs_lang` (общий ключ с кабинетом) и переходит между `/` и `/ru/`.
 
 ## components/
-Секции: `Navbar` (+`LangSwitch`), `Hero` (+`CallCard`), `ProductTour` (+`Mockups`),
-`AgentSection`, `Start`, `Integration`, `Scenarios`, `Pricing`, `Faq`, `FinalCta`, `Footer`.
+Секции по порядку (ноябрь 2026, текст для владельца бизнеса, не для программиста): `Navbar` (+`LangSwitch`),
+`Hero` (+`CallCard`: сцены звонок/исходящий/первым в WhatsApp, лента каналов вместо «моделей»),
+`Abilities` (01, bento из шести умений), `AgentShowcase` (02, #agent: телефон со сценами звонок /
+первым в мессенджер / голосовое / КП под клиента, автопереключение по CSS-анимации полоски),
+`CrmSection` (03, #crm: живая воронка с `layoutId`-переездом карточки + карточка клиента),
+`AgentSection` (04, #day: день агента), `ProductTour` (05, #platform, `Mockups`), `Start` (06),
+`Scenarios` (07), `Pricing` (08), `Faq` (09), `FinalCta`, `Footer`.
 Общие: `Reveal.jsx` (Reveal/Stagger/Item/Parallax на motion), `SectionHead`, `Icon` (спрайт),
-`ModelLogo` (OpenAI, Gemini, Grok, Fish Audio, ElevenLabs), `Logo`, `contacts.js`
+`Logo`, `contacts.js`
 (номер демо-ассистента, Telegram, домен). Авторизация: `AuthModal` + `AuthSection/`
 (`LoginForm`, `RegisterForm`, `PasswordField`, `EmailVerificationSection`, `ForgotPasswordForm`),
 `InlineNotification`.
@@ -30,3 +35,11 @@
 `useAuth`, `useEmailVerification`, `useReferralTracker`, `utils/api.js` — бизнес-логика
 без изменений. `utils/rememberedName.js` — имя из регистрации (localStorage `vs_first_name`)
 для приветствия в модалке входа.
+
+## Правила текста лендинга
+- Названия голосовых движков и моделей (GPT-Live, OpenAI, Gemini, Grok, Fish) на лендинге не
+  упоминаем; ElevenLabs можно. Нет слов «промпт», «ключи», «оркестратор», «SIP-шлюз».
+- Новые секции подключают ключи обоих словарей сразу: `ru.js` и `ky.js` должны совпадать по
+  структуре (проверка: сравнить ключи и длины массивов).
+- Блоки с `useReducedMotion` не должны менять разметку между сервером и клиентом (иначе ошибка
+  гидрации #418): отключать анимацию через `@media (prefers-reduced-motion)` в CSS.
