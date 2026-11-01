@@ -416,7 +416,12 @@ class HandlerSocket:
             # не ждём речи — сразу завершаем.
             if not self.hangup_sent and self._hangup_task is None:
                 logger.info(f"[SIP-MEDIA] call {self.call_id}: handler requested hangup ({data.get('reason')})")
-                self._hangup_task = asyncio.create_task(self.hangup("assistant_auto_hangup"))
+                if data.get("drain"):
+                    # Gemini отдаёт звук быстрее реального времени: прощание ещё в очереди моста —
+                    # сначала дожидаемся, пока оно проиграно, и только потом кладём трубку
+                    self._hangup_task = asyncio.create_task(self._hangup_after_drain("assistant_auto_hangup"))
+                else:
+                    self._hangup_task = asyncio.create_task(self.hangup("assistant_auto_hangup"))
             return
 
         if mtype in ("function_call.started", "function_call.executing"):
@@ -480,6 +485,21 @@ class HandlerSocket:
             pass
 
     # ------------------------------------------------------------- hangup flow
+    async def _hangup_after_drain(self, reason: str) -> None:
+        """Дождаться, пока мост проиграет очередь звука (метка hangup), и положить трубку."""
+        try:
+            await self._send_text({"type": "mark", "name": "hangup"})
+            try:
+                await asyncio.wait_for(self._mark_hangup.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                pass
+            await self.hangup(reason)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning(f"[SIP-MEDIA] call {self.call_id}: drain hangup error: {exc}")
+            await self.hangup(reason)
+
     async def _hangup_after_farewell(self) -> None:
         """Дать ассистенту договорить прощание, дождаться, пока мост его проиграет, и положить трубку."""
         try:

@@ -585,6 +585,12 @@ async def _launch_function_call(
         return
     if not isinstance(arguments, dict):
         arguments = {}
+    gate = getattr(gemini_client, "function_gate", None)
+    refusal = gate(normalized, arguments) if gate else None
+    if refusal:
+        log_to_render(f"⛔ function {normalized} rejected: {refusal[:90]}", "WARNING")
+        await gemini_client.send_function_result(call_id, {"success": False, "status": "rejected", "message": refusal})
+        return
     log_to_render(f"🚀 function {normalized}({json.dumps(arguments, ensure_ascii=False)[:200]}) id={call_id}")
     await websocket.send_json({"type": "function_call.started", "function": normalized, "function_call_id": call_id})
     await websocket.send_json({"type": "function_call.executing", "function": normalized,

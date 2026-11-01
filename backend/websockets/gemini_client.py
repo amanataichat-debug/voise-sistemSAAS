@@ -177,6 +177,7 @@ class GeminiLiveClient:
         self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
         self.reconnect_count = 0
         self.go_away_seen = 0
+        self.function_gate = None          # callable(name, args) -> текст отказа | None (защита hangup_call, call_guard.py)
         self.census: Counter = Counter()   # какие события и сколько раз прислал Google (для журнала звонка)
         self.language = (language or "").strip().lower() or None
         # Если задан — реплики (user, assistant) уходят сюда вместо ConversationService/Sheets

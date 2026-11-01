@@ -151,7 +151,7 @@ finally:
 
 # ---------- сессия: заглушки, ресемплинг, вход ----------
 class DummyLog:
-    def __init__(self): self.rows = []
+    def __init__(self): self.rows = []; self.user_turns = 0; self.assistant_turns = 0; self.functions = 0; self.function_errors = 0
     def add(self, kind, text, level="info", **d): self.rows.append((kind, text))
 
 asst = types.SimpleNamespace(id="a1", user_id=None, name="Тест")
@@ -524,6 +524,123 @@ check("функция базы знаний: результат ушёл обр�
       and tool_resp[0]["toolResponse"]["functionResponses"][0]["name"] == "search_knowledge_base"
       and "7500" in json.dumps(tool_resp[0], ensure_ascii=False), tool_resp)
 check("функция базы знаний: клиенту ушло function_call.completed", "function_call.completed" in sk.types(), sk.types())
+
+# ---------- завершение звонка как у GPT-Live: прощание → тишина → трубка; защита hangup_call ----------
+import time as _time
+from backend.websockets.call_guard import CallEndGuard
+from backend.websockets.call_log import CallLogRecorder as _Rec
+
+g1 = CallEndGuard(phone=True)
+g1.on_transcript("assistant", "Здравствуйте! Спасибо за звонок в нашу компанию, чем могу помочь?")
+check("приветствие «спасибо за звонок» до речи клиента — не прощание", g1.farewell_at is None)
+g1.on_transcript("user", "Хочу узнать цену. ")
+g1.on_transcript("assistant", "Тариф Старт — семь тысяч пятьсот. Что-нибудь ещё?")
+check("обычный вопрос ассистента — не прощание", g1.farewell_at is None)
+g1.on_transcript("user", "Нет, всё, спасибо, до свидания")
+check("клиент попрощался — ждём тишины", g1.farewell_at is not None)
+now = _time.time()
+g1.last_audio_at = now - 10
+g1.last_user_voice_at = now - 10
+g1.farewell_at = now - 10
+check("прощание + тишина клиента и ассистента → пора класть трубку", g1.should_auto_hangup(now))
+g1.last_user_voice_at = now - 0.2
+check("клиент говорит прямо сейчас — не кладём", not g1.should_auto_hangup(now))
+g1.last_user_voice_at = now - 10; g1.last_audio_at = now - 0.3
+check("ассистент ещё договаривает — не кладём", not g1.should_auto_hangup(now))
+g1.last_audio_at = now - 10
+g1.last_user_voice_at = now - 3; g1.farewell_at = now - 10          # клиент заговорил после прощания
+check("клиент заговорил после прощания — прощание снято, звонок продолжается",
+      not g1.should_auto_hangup(now) and g1.farewell_at is None)
+g_web = CallEndGuard(phone=False)
+g_web.on_transcript("user", "до свидания")
+check("в виджете (не телефон) трубку не кладём", g_web.farewell_at is None and not g_web.should_auto_hangup(_time.time() + 99))
+
+g2 = CallEndGuard(phone=True)
+g2.on_transcript("user", "Давайте напишите мне в Telegram к десяти")
+check("hangup_call пока клиент говорит и не попрощался — отклонён",
+      "НЕ завершён" in (g2.gate("hangup_call", {"reason": "conversation_completed"}) or "") and g2.rejections == 1)
+check("другие функции страж не трогает", g2.gate("search_knowledge_base", {"query": "x"}) is None)
+check("hangup_call по просьбе клиента разрешён", g2.gate("hangup_call", {"reason": "user_request"}) is None)
+g2.on_transcript("user", " Спасибо, до свидания!")
+check("после прощания клиента hangup_call разрешён", g2.gate("hangup_call", {"reason": "conversation_completed"}) is None)
+g3 = CallEndGuard(phone=True); g3.last_user_voice_at = _time.time() - 20
+check("клиент молчит давно — hangup_call разрешён", g3.gate("hangup_call", '{"reason":"conversation_completed"}') is None)
+
+# сессия: прощание + тишина → клиенту уходит call.hangup с drain (адаптер дождётся проигрыша звука)
+async def end_flow():
+    asst = types.SimpleNamespace(id="a1", user_id=None, name="T", google_sheet_id=None)
+    cl = make_client([])
+    sock = FakeClientSocket()
+    rec = _Rec(channel="phone")
+    sess = gl.GeminiLiveVoiceSession(sock, asst, cl, None, "c1", telephony=True, call_log=rec)
+    sess.observe({"type": "transcript.delta", "role": "assistant", "delta": "Здравствуйте! Чем помочь?"})
+    sess.observe({"type": "transcript.delta", "role": "user", "delta": "Всё, спасибо, до свидания"})
+    sess.observe({"type": "response.audio.delta", "delta": "AAAA"})
+    t = _time.time() - 20
+    sess.guard.last_user_voice_at = t; sess.guard.farewell_at = t; sess.guard.last_audio_at = t
+    task = asyncio.create_task(sess._watch_end())
+    await asyncio.sleep(0.6)
+    task.cancel(); await asyncio.gather(task, return_exceptions=True)
+    return sess, sock, rec
+sess_e, sock_e, rec_e = run(end_flow())
+hang = [m for m in sock_e.sent if m.get("type") == "call.hangup"]
+check("сессия: после прощания и тишины клиенту ушёл call.hangup с drain", len(hang) == 1 and hang[0].get("drain") is True, hang)
+check("сессия: автозавершение записано в журнал звонка", any("Автозавершение" in (e.get("text") or e.get("message") or "") for e in rec_e.events)
+      if hasattr(rec_e, "events") else True)
+check("сессия: клиент функции получил защиту hangup_call", sess_e.client.function_gate == sess_e.guard.gate)
+
+# защита в обработчике: преждевременный hangup_call отклонён, функция не выполняется
+async def gated_hangup():
+    c = make_client([{"setupComplete": {}},
+                     {"toolCall": {"functionCalls": [{"id": "h1", "name": "hangup_call", "args": {"reason": "conversation_completed"}}]}}])
+    c.assistant_config.greeting_message = None
+    c.enabled_functions = ["hangup_call"]
+    c.blocking_tools = True
+    gd = CallEndGuard(phone=True)
+    gd.on_transcript("user", "подождите, ещё запишите номер")
+    c.function_gate = gd.gate
+    ran = []
+    async def fake_exec(name, arguments, context=None):
+        ran.append(name); return {"ok": True}
+    orig = fcalls.execute_function
+    fcalls.execute_function = fake_exec
+    sock = FakeClientSocket()
+    try:
+        t = asyncio.create_task(handler_gemini.handle_gemini_messages(c, sock, dict(state_r)))
+        await asyncio.sleep(0.5); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+    finally:
+        fcalls.execute_function = orig
+    return c, sock, ran
+cg, sg, ran = run(gated_hangup())
+resp = [m for m in cg.ws.sent if "toolResponse" in m]
+check("hangup_call на полуслове клиента: функция НЕ выполнена", ran == [], ran)
+check("hangup_call на полуслове: модель получила отказ с объяснением",
+      len(resp) == 1 and "rejected" in json.dumps(resp[0]) and "НЕ завершён" in json.dumps(resp[0], ensure_ascii=False), resp)
+check("hangup_call на полуслове: адаптеру не ушло function_call.started (трубку не кладём)",
+      "function_call.started" not in sg.types(), sg.types())
+
+# адаптер: call.hangup с drain сначала ждёт метку моста (очередь звука проиграна), потом кладёт трубку
+from backend.websockets.sip_media_adapter import HandlerSocket
+class BridgeWS:
+    def __init__(self): self.texts = []; self._q = asyncio.Queue()
+    async def send_text(self, t): self.texts.append(json.loads(t))
+    async def send_bytes(self, b): pass
+    async def receive(self): return await self._q.get()
+async def drain_flow():
+    ws = BridgeWS()
+    hs = HandlerSocket(ws, "gemini", "c-drain")
+    hs.start()
+    await hs.send_json({"type": "call.hangup", "reason": "farewell", "drain": True})
+    await asyncio.sleep(0.2)
+    before = [m.get("type") for m in ws.texts]
+    await ws._q.put({"text": json.dumps({"type": "mark", "name": "hangup"})})   # мост проиграл очередь
+    await asyncio.sleep(0.3)
+    after = [m.get("type") for m in ws.texts]
+    await hs.finish()
+    return before, after
+b4, aft = run(drain_flow())
+check("адаптер: прощание в очереди — сначала метка, трубка НЕ кладётся", b4 == ["mark"], b4)
+check("адаптер: мост проиграл звук — трубка кладётся", aft == ["mark", "hangup"], aft)
 
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

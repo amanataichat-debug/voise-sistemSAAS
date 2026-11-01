@@ -42,6 +42,7 @@ from backend.models.eleven_assistant import (
     ElevenConversation,
 )
 from backend.models.user import User
+from backend.websockets.call_guard import CallEndGuard
 from backend.websockets.call_log import CallLogRecorder
 from backend.websockets.gemini_client import GEMINI_LIVE_MODEL, GeminiLiveClient
 from backend.websockets.handler_gemini import handle_gemini_messages
@@ -88,6 +89,25 @@ def resolve_api_key(db: Session, assistant) -> Optional[str]:
     return None
 
 
+class _ObserveSocket:
+    """Прокладка между хендлером событий Gemini и клиентом: всё уходит как есть, а сессия видит события
+    (стенограмма → прощание, звук → тишина, функции → журнал звонка)."""
+
+    def __init__(self, websocket, session) -> None:
+        self._ws = websocket
+        self._session = session
+
+    async def send_json(self, data, mode: str = "text"):
+        try:
+            self._session.observe(data)
+        except Exception as exc:  # наблюдение не должно ронять звонок
+            _log(f"observe failed: {exc}", "WARNING")
+        return await self._ws.send_json(data, mode=mode)
+
+    def __getattr__(self, name):
+        return getattr(self._ws, name)
+
+
 class GeminiLiveVoiceSession:
     """Один разговор: клиент (виджет / SIP-адаптер) ↔ Gemini Live."""
 
@@ -107,6 +127,9 @@ class GeminiLiveVoiceSession:
         self.audio_chunks_in = 0
         self.started_at = time.time()
         self.on_session_end = None
+        # Завершение звонка как у GPT-Live: прощание + тишина → трубка; защита hangup_call от обрыва на полуслове
+        self.guard = CallEndGuard(telephony, call_log)
+        self.client.function_gate = self.guard.gate
         self.interruption_state: Dict[str, Any] = {
             "is_user_speaking": False,
             "is_assistant_speaking": False,
@@ -123,6 +146,48 @@ class GeminiLiveVoiceSession:
         # у звонка диалог пишется под id звонка (SIP-роут связывает по нему звонок и реплики)
         return getattr(self.assistant, "sip_session_id", None) or self.client.session_id
 
+    # ------------------------------------------------------------------ наблюдение за событиями
+    def observe(self, data: Dict[str, Any]) -> None:
+        """События, идущие клиенту: стенограмма и звук — в страж прощания, функции — в журнал звонка."""
+        mtype = data.get("type")
+        if mtype == "transcript.delta":
+            self.guard.on_transcript("user" if data.get("role") == "user" else "assistant", data.get("delta") or "")
+        elif mtype == "response.audio.delta":
+            self.guard.on_audio()
+        elif self.call_log is not None:
+            name = data.get("function")
+            if mtype == "function_call.executing":
+                self.call_log.functions += 1
+                self.call_log.add("function", f"Вызов функции {name}",
+                                  arguments=json.dumps(data.get("arguments"), ensure_ascii=False, default=str)[:500])
+            elif mtype == "function_call.completed":
+                result = data.get("result")
+                failed = isinstance(result, dict) and bool(result.get("error"))
+                if failed:
+                    self.call_log.function_errors += 1
+                secs = data.get("execution_time")
+                self.call_log.add(
+                    "function",
+                    f"Функция {name} {'вернула ошибку' if failed else 'выполнена'}"
+                    + (f" за {secs:.2f} с" if isinstance(secs, (int, float)) else ""),
+                    level="warning" if failed else "info",
+                    result=(json.dumps(result, ensure_ascii=False, default=str)[:500] if result is not None else None))
+            elif mtype in ("function_call.error", "function_call.delivery_error"):
+                self.call_log.function_errors += 1
+                self.call_log.add("function", f"Функция {name or data.get('function_call_id')} не выполнена: "
+                                              f"{data.get('error')}", level="error")
+
+    async def _watch_end(self) -> None:
+        """Раз в четверть секунды: прощание было и все молчат → просим адаптер положить трубку (после проигрыша звука)."""
+        try:
+            while True:
+                await asyncio.sleep(0.25)
+                if self.guard.should_auto_hangup(time.time()):
+                    self.guard.mark_hangup_sent("прощание и тишина")
+                    await self.websocket.send_json({"type": "call.hangup", "reason": "farewell", "drain": True})
+        except asyncio.CancelledError:
+            pass
+
     # ------------------------------------------------------------------ реплики
     async def save_turn(self, user: str, assistant: str) -> bool:
         """gemini_client.turn_saver: реплика закончилась — копим пару и пишем в журнал звонка."""
@@ -133,8 +198,10 @@ class GeminiLiveVoiceSession:
         self.pairs.append({"user": user, "assistant": assistant})
         if self.call_log:
             if user:
+                self.call_log.user_turns += 1
                 self.call_log.add("user", f"Клиент: «{user}»")
             if assistant:
+                self.call_log.assistant_turns += 1
                 self.call_log.add("assistant", f"Агент: «{assistant}»")
         return True
 
@@ -191,8 +258,9 @@ class GeminiLiveVoiceSession:
     async def run(self) -> None:
         self.client.turn_saver = self.save_turn
         gemini_task = asyncio.create_task(
-            handle_gemini_messages(self.client, self.websocket, self.interruption_state))
+            handle_gemini_messages(self.client, _ObserveSocket(self.websocket, self), self.interruption_state))
         client_task = asyncio.create_task(self.handle_client_messages())
+        watch_task = asyncio.create_task(self._watch_end()) if self.telephony else None
         reason = "unknown"
         try:
             done, _ = await asyncio.wait({gemini_task, client_task}, return_when=asyncio.FIRST_COMPLETED)
@@ -214,10 +282,11 @@ class GeminiLiveVoiceSession:
                     await self.on_session_end()
                 except Exception as exc:
                     _log(f"on_session_end failed: {exc}", "ERROR")
-            for task in (gemini_task, client_task):
+            tasks = [t for t in (gemini_task, client_task, watch_task) if t is not None]
+            for task in tasks:
                 if not task.done():
                     task.cancel()
-            await asyncio.gather(gemini_task, client_task, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
             try:
                 await self.client.close()
             except Exception as exc:
