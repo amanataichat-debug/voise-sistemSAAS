@@ -18,8 +18,11 @@
 - Affective dialog в 3.8 удалён из API: `enableAffectiveDialog` в setup не передаём. Поля языка (`languageCode`)
   у native-audio моделей тоже нет — язык держит промпт. Справочник: docs/gemini_live_3_8_reference.md.
 - Одно событие serverContent может нести несколько parts (аудио + текст).
-- Лимиты без сжатия контекста: аудио-сессия 15 мин, соединение ~10 мин
-  (contextWindowCompression / sessionResumption не включены — осознанно).
+- Лимиты без сжатия контекста: аудио-сессия 15 мин, соединение ~10 мин. Для карточек ElevenLabs
+  (await_setup=True) включены sessionResumption (ручка сессии: после обрыва соединения разговор
+  продолжается с того же места, приветствие не повторяется) и contextWindowCompression.slidingWindow
+  (сессия не упирается в 15 минут). Эти поля не проверены на живом Google, поэтому при отказе setup
+  клиент сам откатывается на урезанный набор (EXTRAS_FULL → EXTRAS_BASIC → EXTRAS_NONE), а не молчит.
 
 Модель задаётся env GEMINI_LIVE_MODEL (backend/core/config.py).
 """
@@ -50,6 +53,17 @@ GEMINI_LIVE_MODEL = getattr(settings, "GEMINI_LIVE_MODEL", None) or "gemini-3.8-
 def language_note_for_gemini(language: str) -> str:
     from backend.websockets.voice_hints import language_note
     return language_note(language)
+
+
+# Уровни «расширенных» полей setup для долгих звонков (если Google отверг setup — спускаемся ниже)
+EXTRAS_NONE, EXTRAS_BASIC, EXTRAS_FULL = 0, 1, 2
+RECONNECT_ATTEMPTS = 3
+
+
+def input_transcription_languages() -> List[str]:
+    """Языки распознавания речи клиента для ТЕКСТА диалога (на понимание модели не влияют): env GEMINI_INPUT_TRANSCRIPTION_LANGUAGES."""
+    raw = os.getenv("GEMINI_INPUT_TRANSCRIPTION_LANGUAGES", "ru,ky")
+    return [x.strip() for x in raw.split(",") if x.strip() and x.strip().lower() not in ("none", "off", "0")]
 
 
 GEMINI_TOOL_SCHEDULING = (getattr(settings, "GEMINI_TOOL_SCHEDULING", None) or "WHEN_IDLE").upper()
@@ -155,6 +169,12 @@ class GeminiLiveClient:
         self.system_prompt_chars = 0   # длина итогового промпта сессии (карточка + знания + правила) — для журнала звонка
         self.connect_error: Optional[str] = None   # причина отказа Google (код и текст) для сообщения клиенту
         self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
+        # Долгие звонки: ручка возобновления сессии, уровень расширенных полей setup, счётчики обрывов
+        self.resume_handle: Optional[str] = None
+        self.extras_level = EXTRAS_FULL if (await_setup and os.getenv("GEMINI_LONG_CALLS", "1") != "0") else EXTRAS_NONE
+        self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
+        self.reconnect_count = 0
+        self.go_away_seen = 0
         self.language = (language or "").strip().lower() or None
         # Если задан — реплики (user, assistant) уходят сюда вместо ConversationService/Sheets
         self.turn_saver = None
@@ -314,6 +334,20 @@ class GeminiLiveClient:
 
             if self.await_setup and not await self._wait_setup_reply():
                 await self.close()
+                if self.setup_closed and self.extras_level > EXTRAS_NONE and "api key" not in (self.connect_error or "").lower():
+                    # Google закрыл сессию на setup, возможно из-за расширенных полей: пробуем проще
+                    rejected = self.connect_error
+                    if self.resume_handle:
+                        # вероятнее всего устарела ручка возобновления — не отказываемся из-за неё от самой функции
+                        self.resume_handle = None
+                        self._note_session(f"Google не принял ручку возобновления ({rejected}); начинаю сессию заново", "warning")
+                    else:
+                        self.extras_level -= 1
+                        self._note_session(f"Google не принял настройку сессии ({rejected}); "
+                                           f"повторяю с урезанным набором полей (уровень {self.extras_level})", "warning")
+                    self._pending.clear()
+                    self.connect_error = None
+                    return await self.connect()
                 return False
 
             logger.info(f"[GEMINI-CLIENT] ✅ Session initialized successfully")
@@ -366,12 +400,24 @@ class GeminiLiveClient:
             logger.error(traceback.format_exc())
             return False
 
+    def _note_session(self, text: str, level: str = "info") -> None:
+        """Строка в журнал звонка (если он есть) и в обычный лог."""
+        (logger.warning if level == "warning" else logger.info)(f"[GEMINI-CLIENT] {text}")
+        try:
+            from backend.websockets.call_log import CallLogRecorder
+            rec = CallLogRecorder.current()
+            if rec is not None:
+                rec.add("session", text, level=level)
+        except Exception:
+            pass
+
     async def _wait_setup_reply(self, timeout: float = 15.0) -> bool:
         """
         Дождаться первого ответа Google на setup (setupComplete). Закрытие сессии или тишина —
         отказ: причина (код и текст Google) в connect_error и в журнале как ERROR. Прочитанное
         сообщение кладётся в _pending: цикл событий хендлера разберёт его первым (setupComplete → приветствие).
         """
+        self.setup_closed = False
         try:
             raw = await asyncio.wait_for(self.ws.recv(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -379,6 +425,7 @@ class GeminiLiveClient:
         except ConnectionClosed as e:
             code = getattr(e, "code", None) or getattr(getattr(e, "rcvd", None), "code", None)
             reason = getattr(e, "reason", None) or getattr(getattr(e, "rcvd", None), "reason", None)
+            self.setup_closed = True
             self.connect_error = f"Google закрыл сессию: код {code}, причина «{reason}» (модель {self.model})"
         else:
             self._pending.append(raw)
@@ -387,32 +434,68 @@ class GeminiLiveClient:
         return False
 
     async def reconnect(self) -> bool:
-        """Reconnect to Gemini Live API."""
-        logger.info(f"[GEMINI-CLIENT] Attempting reconnection...")
-        try:
-            if self.ws:
-                try:
-                    await self.ws.close()
-                except:
-                    pass
-            
-            self.is_connected = False
-            self.ws = None
-            
-            # Reset states
-            self.is_assistant_speaking = False
-            self.current_response_id = None
-            self.current_audio_samples = 0
-            self.interruption_occurred = False
-            self.greeting_sent = False  # Reset greeting state for reconnection
-            
-            result = await self.connect()
-            if result:
-                logger.info(f"[GEMINI-CLIENT] ✅ Reconnection successful")
-            return result
-        except Exception as e:
-            logger.error(f"[GEMINI-CLIENT] Reconnection error: {e}")
-            return False
+        """
+        Переподключиться к Gemini посреди разговора (Google обрывает соединение примерно раз в ~10 минут).
+        Есть ручка возобновления — разговор продолжается с того же места; приветствие второй раз не звучит
+        (клиент его уже слышал). Старая ручка не принята — следующая попытка идёт без неё.
+        """
+        greeted = self.greeting_sent    # close() при неудачной попытке сбрасывает флаг: восстанавливаем
+        for attempt in range(1, RECONNECT_ATTEMPTS + 1):
+            logger.info(f"[GEMINI-CLIENT] Attempting reconnection {attempt}/{RECONNECT_ATTEMPTS} "
+                        f"(resume={'yes' if self.resume_handle else 'no'})...")
+            try:
+                if self.ws:
+                    try:
+                        await self.ws.close()
+                    except Exception:
+                        pass
+                self.is_connected = False
+                self.ws = None
+                self._pending.clear()
+
+                # Reset states
+                self.is_assistant_speaking = False
+                self.current_response_id = None
+                self.current_audio_samples = 0
+                self.interruption_occurred = False
+                # карточки ElevenLabs: клиент приветствие уже слышал; Gemini-ассистенты — прежнее поведение
+                self.greeting_sent = greeted if self.await_setup else False
+
+                if await self.connect():
+                    self.greeting_sent = greeted if self.await_setup else False
+                    self.reconnect_count += 1
+                    self._note_session(
+                        f"Соединение с Gemini восстановлено (попытка {attempt}, "
+                        f"{'с продолжением разговора' if self.resume_handle else 'без ручки возобновления — контекст начат заново'})",
+                        "info" if self.resume_handle else "warning")
+                    return True
+            except Exception as e:
+                logger.error(f"[GEMINI-CLIENT] Reconnection error: {e}")
+            self.resume_handle = None       # возможно, ручка устарела: дальше — с чистой сессии
+            await asyncio.sleep(0.4 * attempt)
+        self._note_session("Не удалось восстановить соединение с Gemini", "warning")
+        return False
+
+    def handle_service_event(self, data: Dict[str, Any]) -> bool:
+        """
+        Служебные сообщения Google в течение разговора. True — сообщение разобрано.
+        sessionResumptionUpdate: запоминаем свежую ручку (если сессию можно возобновить).
+        goAway: Google предупреждает, что соединение скоро закроется — ручка уже есть, переподключимся после закрытия.
+        """
+        update = data.get("sessionResumptionUpdate")
+        if update is not None:
+            if update.get("resumable") and update.get("newHandle"):
+                if self.resume_handle is None:
+                    logger.info("[GEMINI-CLIENT] Session resumption handle received")
+                self.resume_handle = update["newHandle"]
+            return True
+        if "goAway" in data:
+            self.go_away_seen += 1
+            self._note_session(f"Gemini предупредил о закрытии соединения (осталось {data['goAway'].get('timeLeft', '?')}); "
+                               f"{'разговор продолжится по ручке возобновления' if self.resume_handle else 'ручки возобновления нет'}",
+                               "info")
+            return True
+        return False
 
     async def setup_session(
         self,
@@ -509,6 +592,19 @@ class GeminiLiveClient:
             }
             logger.info(f"[GEMINI-CLIENT] VAD profile '{vad_profile}': start={start_value}, "
                         f"end={end_value}, {silence_ms} ms silence")
+
+        # Долгие звонки (карточки ElevenLabs). Уровень можно снизить, если Google отверг setup (см. connect()).
+        if self.extras_level >= EXTRAS_BASIC:
+            resumption: Dict[str, Any] = {}
+            if self.resume_handle:
+                resumption["handle"] = self.resume_handle
+            setup_payload["setup"]["sessionResumption"] = resumption
+            setup_payload["setup"]["contextWindowCompression"] = {"slidingWindow": {}}
+        if self.extras_level >= EXTRAS_FULL:
+            langs = input_transcription_languages()
+            if langs:
+                # только текст диалога: модель слышит звук сама; подсказка языков помогает кыргызскому в записи
+                setup_payload["setup"]["inputAudioTranscription"] = {"languageCodes": langs}
 
         # Add tools if any
         if tools:

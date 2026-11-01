@@ -312,5 +312,112 @@ run(cn.send_function_result("id2", {"ok": True}))
 fr2 = [m for m in cn.ws.sent if "toolResponse" in m][0]["toolResponse"]["functionResponses"][0]
 check("NON_BLOCKING: scheduling передаётся", "scheduling" in fr2, fr2)
 
+# ---------- долгие звонки: возобновление сессии, откат setup, переподключение без повторного приветствия ----------
+class RecWS(FakeGeminiWS):
+    """Google: отвечает на последний setup — отказом (reject(setup) истина) или setupComplete."""
+    def __init__(self, reject):
+        super().__init__([])
+        self.reject = reject
+        self._answered = False
+    async def recv(self):
+        setup = [m for m in self.sent if "setup" in m][-1]["setup"]
+        if not self._answered and self.reject(setup):
+            raise _ws.exceptions.ConnectionClosedError(Close(1007, "Invalid argument"), None)
+        if self._answered:
+            await asyncio.sleep(3600)
+        self._answered = True
+        return json.dumps({"setupComplete": {}})
+
+
+def card_client(reject=lambda s: False, handle=None, greeted=False):
+    sockets = []
+    async def fake_connect(*a, **kw):
+        sockets.append(RecWS(reject)); return sockets[-1]
+    asst = types.SimpleNamespace(id="a1", user_id=None, name="T", greeting_message="Салам", google_sheet_id=None,
+                                 functions=None, voice=None, system_prompt="p", live_voice="aoede")
+    c = GeminiLiveClient("key", asst, "c", db_session=None, voice_override="Aoede", record_conversation=False,
+                         realtime_text=True, await_setup=True)
+    c.resume_handle = handle
+    c.greeting_sent = greeted
+    c.ws = FakeGeminiWS([])
+    return c, sockets, fake_connect
+
+def with_connect(fake_connect, coro_fn):
+    orig = gc_mod.websockets.connect
+    gc_mod.websockets.connect = fake_connect
+    try:
+        return run(coro_fn())
+    finally:
+        gc_mod.websockets.connect = orig
+
+def last_setup(sockets):
+    return [m for m in sockets[-1].sent if "setup" in m][-1]["setup"]
+
+c, socks, fc = card_client()
+with_connect(fc, c.connect)
+st = last_setup(socks)
+check("карточка ElevenLabs: setup с возобновлением сессии и сжатием контекста",
+      st.get("sessionResumption") == {} and st.get("contextWindowCompression") == {"slidingWindow": {}}, list(st.keys()))
+check("карточка ElevenLabs: языки распознавания речи клиента для текста диалога (ru, ky)",
+      st.get("inputAudioTranscription") == {"languageCodes": ["ru", "ky"]}, st.get("inputAudioTranscription"))
+check("Gemini-ассистент (не карточка): расширенных полей нет, setup как раньше",
+      not any(k in sp2["setup"] for k in ("sessionResumption", "contextWindowCompression")) and sp2["setup"]["inputAudioTranscription"] == {})
+
+# Google отверг языки распознавания → повтор без них, но с возобновлением
+c, socks, fc = card_client(reject=lambda s: "languageCodes" in s.get("inputAudioTranscription", {}))
+ok = with_connect(fc, c.connect)
+st = last_setup(socks)
+check("отказ на языках распознавания: повтор с возобновлением, без языков", ok is True and len(socks) == 2
+      and "sessionResumption" in st and st["inputAudioTranscription"] == {}, (ok, len(socks), list(st.keys())))
+# Google отверг и возобновление → повтор без всех расширений
+c, socks, fc = card_client(reject=lambda s: "sessionResumption" in s or "languageCodes" in s.get("inputAudioTranscription", {}))
+ok = with_connect(fc, c.connect)
+st = last_setup(socks)
+check("отказ и на возобновлении: сессия открывается с минимальным setup (не тишина)",
+      ok is True and len(socks) == 3 and "sessionResumption" not in st and "contextWindowCompression" in st or
+      (ok is True and "sessionResumption" not in st and "contextWindowCompression" not in st), (ok, len(socks), list(st.keys())))
+check("при откате клиент помнит, на каком уровне работает", c.extras_level == 0 or c.extras_level == 1, c.extras_level)
+# неверный ключ не вызывает лишних повторов
+c, socks, fc = card_client()
+check("служебные сообщения: ручка возобновления сохраняется", c.handle_service_event(
+    {"sessionResumptionUpdate": {"newHandle": "H1", "resumable": True}}) is True and c.resume_handle == "H1")
+c.handle_service_event({"sessionResumptionUpdate": {"newHandle": "H2", "resumable": False}})
+check("служебные сообщения: невозобновляемая ручка игнорируется", c.resume_handle == "H1", c.resume_handle)
+check("служебные сообщения: goAway учитывается и не ломает цикл", c.handle_service_event({"goAway": {"timeLeft": "10s"}}) is True and c.go_away_seen == 1)
+check("служебные сообщения: чужие события не поглощаются", c.handle_service_event({"serverContent": {}}) is False)
+
+# переподключение посреди разговора: по ручке, без повторного приветствия
+c, socks, fc = card_client(handle="H1", greeted=True)
+ok = with_connect(fc, c.reconnect)
+st = last_setup(socks)
+check("обрыв посреди звонка: setup с ручкой возобновления", ok is True and st.get("sessionResumption") == {"handle": "H1"}, st.get("sessionResumption"))
+check("обрыв посреди звонка: приветствие второй раз не звучит", c.greeting_sent is True and c.reconnect_count == 1)
+sock_r = FakeClientSocket()
+state_r = {"is_user_speaking": False, "is_assistant_speaking": False, "last_speech_start": 0, "last_speech_stop": 0,
+           "interruption_count": 0, "last_interruption_time": 0, "assistant_audio_ever": True, "greeting_retries": 0}
+async def drain_r():
+    t = asyncio.create_task(handler_gemini.handle_gemini_messages(c, sock_r, state_r))
+    await asyncio.sleep(0.3); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+run(drain_r())
+check("после переподключения setupComplete не запускает приветствие", not any("realtimeInput" in m for m in c.ws.sent), c.ws.sent[-1:])
+# устаревшая ручка отвергнута → следующая попытка с чистой сессией
+c, socks, fc = card_client(reject=lambda s: bool(s.get("sessionResumption", {}).get("handle")), handle="OLD", greeted=True)
+async def rec():
+    return await c.reconnect()
+ok = with_connect(fc, rec)
+check("устаревшая ручка: повтор без неё, звонок продолжается",
+      ok is True and c.resume_handle is None and "handle" not in last_setup(socks).get("sessionResumption", {}), (ok, c.resume_handle))
+check("и тогда приветствие тоже не повторяется", c.greeting_sent is True)
+
+# обработчик событий принимает служебные сообщения молча
+c = make_client([{"sessionResumptionUpdate": {"newHandle": "HH", "resumable": True}}, {"goAway": {"timeLeft": "5s"}}])
+sock_s = FakeClientSocket()
+async def drain_s():
+    t = asyncio.create_task(handler_gemini.handle_gemini_messages(c, sock_s, dict(state_r)))
+    await asyncio.sleep(0.3); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+run(drain_s())
+check("обработчик: ручка принята, клиенту служебное не пересылается", c.resume_handle == "HH" and sock_s.sent == [], sock_s.sent)
+
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

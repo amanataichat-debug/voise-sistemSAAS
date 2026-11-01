@@ -657,6 +657,10 @@ async def handle_gemini_messages(
                     log_to_render(f"   Keys: {list(response_data.keys())}")
                     log_to_render(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 
+                # Служебное: ручка возобновления сессии, goAway (скорое закрытие соединения)
+                if gemini_client.handle_service_event(response_data):
+                    continue
+
                 # Setup complete
                 if "setupComplete" in response_data:
                     log_to_render(f"✅ Gemini setup complete (v1.6.1 - turnComplete-based)")
