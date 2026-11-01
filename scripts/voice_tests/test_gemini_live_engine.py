@@ -246,5 +246,56 @@ async def drain():
 run(drain())
 check("отложенный setupComplete → приветствие отправлено", any("realtimeInput" in m for m in c3.ws.sent), c3.ws.sent)
 
+
+# ---------- промпт: GPT-Live не изменился, Gemini получил те же правила манеры ----------
+import hashlib
+from backend.websockets import live_client as lc, voice_hints as vh
+
+hint = lc.VOICE_DELEGATION_HINT
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски)",
+      hashlib.sha256(hint.encode()).hexdigest() == "28eb639a49388dd8be476d7c5a20430ae40823d49ba99201afdf7815cd70b286", len(hint))
+check("GPT-Live: телефонная подсказка прежняя",
+      hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
+check("куски склеиваются в тот же текст для GPT",
+      hint == lc.VOICE_MANNER_HINT + lc.VOICE_DELEGATION_POLICY + lc.VOICE_DIALOG_RULES + lc.VOICE_ALREADY_KNOW_HINT + lc.VOICE_GREETING_RULE)
+
+fn_list = [{"name": "search_knowledge_base", "description": "Ищет ответ в базе знаний компании. Возвращает текст."},
+           {"name": "hangup_call", "description": "Завершает звонок."}]
+g = vh.build_gemini_voice_hints(fn_list, "Aoede", telephony=True)
+check("Gemini получает манеру: краткость, эмоции, живая речь, язык, кыргызский",
+      all(k in g for k in ("ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ", "ЭМОЦИИ И ЮМОР", "ЖИВАЯ РЕЧЬ", "ЯЗЫК.", "КЫРГЫЗСКИЙ.", "СТАБИЛЬНЫЙ ГОЛОС")))
+check("Gemini получает правила диалога: перебивания, завершение, материалы, приветствие",
+      all(k in g for k in ("Interruption policy", "ЗАВЕРШЕНИЕ", "МАТЕРИАЛЫ", "ПРИВЕТСТВИЕ")))
+check("Gemini: правило «не знаю» только после поиска и список функций",
+      "не говори «не знаю»" in g and "- search_knowledge_base:" in g and "- hangup_call:" in g)
+check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
+check("Gemini: без правил про бэкенд делегирования GPT",
+      "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
+check("Gemini: голос Puck → мужской род; на сайте без телефона нет телефонной подсказки",
+      "мужском роде" in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False)
+      and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
+check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
+
+# ---------- функции карточки: BLOCKING, без scheduling; у Gemini-ассистентов прежнее NON_BLOCKING ----------
+async def setup_payload(blocking):
+    c = make_client([], realtime_text=True)
+    c.blocking_tools = blocking
+    c.assistant_config.functions = [{"name": "search_knowledge_base", "description": "d", "parameters": {"type": "object", "properties": {}}}]
+    await c.setup_session(voice="Aoede", system_message="p", functions=c.assistant_config.functions)
+    sent = [m for m in c.ws.sent if "setup" in m][0]
+    return c, sent
+
+cb, sp = run(setup_payload(True))
+beh = sp["setup"]["tools"][0]["function_declarations"][0]["behavior"]
+check("карточка ElevenLabs: функции BLOCKING", beh == "BLOCKING", beh)
+cn, sp2 = run(setup_payload(False))
+check("Gemini-ассистент: функции NON_BLOCKING как раньше", sp2["setup"]["tools"][0]["function_declarations"][0]["behavior"] == "NON_BLOCKING")
+run(cb.send_function_result("id1", {"ok": True}))
+fr = [m for m in cb.ws.sent if "toolResponse" in m][0]["toolResponse"]["functionResponses"][0]
+check("BLOCKING: в toolResponse нет scheduling", "scheduling" not in fr, fr)
+run(cn.send_function_result("id2", {"ok": True}))
+fr2 = [m for m in cn.ws.sent if "toolResponse" in m][0]["toolResponse"]["functionResponses"][0]
+check("NON_BLOCKING: scheduling передаётся", "scheduling" in fr2, fr2)
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

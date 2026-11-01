@@ -91,7 +91,11 @@ def setups(model, voice):
                 "realtimeInputConfig": {"automaticActivityDetection": {
                     "disabled": False, "startOfSpeechSensitivity": "START_SENSITIVITY_LOW",
                     "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH", "prefixPaddingMs": 100, "silenceDurationMs": 500}}}
-    return [("минимальная", base), ("+ транскрипция", with_tr), ("как в приложении (VAD + промпт)", app_like)]
+    # Поля для долгих звонков (лимит сессии без них ~15 мин аудио / ~10 мин соединения). В приложение они НЕ
+    # включены, пока этот вариант не пройдёт на вашем ключе: принято → можно включать, отклонено → видна причина.
+    long_calls = {**app_like, "sessionResumption": {}, "contextWindowCompression": {"slidingWindow": {}}}
+    return [("минимальная", base), ("+ транскрипция", with_tr), ("как в приложении (VAD + промпт)", app_like),
+            ("долгие звонки (sessionResumption + contextWindowCompression)", long_calls)]
 
 
 async def connect(key):

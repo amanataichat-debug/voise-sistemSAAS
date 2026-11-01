@@ -329,7 +329,7 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
     sub_task = asyncio.create_task(_check_subscription(assistant))
     client = GeminiLiveClient(api_key, assistant, client_id, db, user_agent,
                               voice_override=voice, record_conversation=False, realtime_text=True,
-                              await_setup=True)
+                              await_setup=True, voice_hints=True, telephony=telephony, blocking_tools=True)
     connect_task = asyncio.create_task(client.connect())
 
     sub = await sub_task
@@ -375,8 +375,9 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
             "telephony_profile": telephony,
         })
         call_log.add("session", f"Сессия начата: Google {GEMINI_LIVE_MODEL} (речь в речь), голос {voice}; "
-                                f"подключение {connect_ms} мс",
-                     functions=", ".join(client.enabled_functions) or None)
+                                f"подключение {connect_ms} мс; промпт {client.system_prompt_chars} симв. "
+                                f"(карточка + знания агента + правила манеры)",
+                     functions=", ".join(client.enabled_functions) or "нет — агент не сможет искать в базе знаний")
 
     await websocket.send_json({
         "type": "connection_status",

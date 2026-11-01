@@ -119,6 +119,9 @@ class GeminiLiveClient:
         language: Optional[str] = None,
         realtime_text: bool = False,
         await_setup: bool = False,
+        voice_hints: bool = False,
+        telephony: bool = False,
+        blocking_tools: bool = False,
     ):
         """Initialize the Gemini Live API client.
 
@@ -136,6 +139,13 @@ class GeminiLiveClient:
         # await_setup: connect() дожидается ответа Google на setup. Иначе неверный ключ / модель / поле
         # настройки открывают сокет и тут же закрываются, звонок идёт в полной тишине (так и было).
         self.await_setup = await_setup
+        # voice_hints: дописать к промпту те же правила манеры и диалога, что читает GPT-Live (voice_hints.py)
+        self.voice_hints = voice_hints
+        self.telephony = telephony
+        # blocking_tools: функции BLOCKING — модель ждёт результата и только потом отвечает. При NON_BLOCKING
+        # она отвечает сразу и, запрещённая «сейчас посмотрю», говорила «не знаю» ещё до результата поиска.
+        self.blocking_tools = blocking_tools
+        self.system_prompt_chars = 0   # длина итогового промпта сессии (карточка + знания + правила) — для журнала звонка
         self.connect_error: Optional[str] = None   # причина отказа Google (код и текст) для сообщения клиенту
         self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
         self.language = (language or "").strip().lower() or None
@@ -270,6 +280,15 @@ class GeminiLiveClient:
             if "send_webhook" in self.enabled_functions:
                 self.webhook_url = extract_webhook_url_from_prompt(system_message)
 
+            if self.voice_hints:
+                try:
+                    from backend.websockets.voice_hints import build_gemini_voice_hints
+                    system_message += build_gemini_voice_hints(normalize_functions(functions), voice, self.telephony)
+                except Exception as e:
+                    logger.warning(f"[GEMINI-CLIENT] voice hints skipped: {e}")
+
+            self.system_prompt_chars = len(system_message)
+
             # Send setup message
             if not await self.setup_session(
                 voice=voice,
@@ -403,8 +422,9 @@ class GeminiLiveClient:
                     "name": func_def["name"],
                     "description": func_def["description"],
                     "parameters": func_def["parameters"],
-                    # gemini-3.8-live: асинхронный вызов, модель не ждёт результата молча
-                    "behavior": "NON_BLOCKING",
+                    # gemini-3.8-live: NON_BLOCKING — модель продолжает говорить, пока функция работает;
+                    # BLOCKING (карточки ElevenLabs) — ждёт результата и отвечает по нему
+                    "behavior": "BLOCKING" if self.blocking_tools else "NON_BLOCKING",
                 }]
             })
         
@@ -674,8 +694,9 @@ class GeminiLiveClient:
             function_response: Dict[str, Any] = {
                 "id": function_call_id,
                 "response": result,
-                "scheduling": GEMINI_TOOL_SCHEDULING,
             }
+            if not self.blocking_tools:
+                function_response["scheduling"] = GEMINI_TOOL_SCHEDULING  # у BLOCKING-функций его нет
             name = self.call_names.pop(function_call_id, None) or self.last_function_name
             if name:
                 function_response["name"] = name
