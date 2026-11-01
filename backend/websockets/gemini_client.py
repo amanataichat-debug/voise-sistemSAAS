@@ -493,17 +493,11 @@ class GeminiLiveClient:
             
             # Send as user message to trigger response
             # We instruct Gemini to say the greeting
-            payload = {
-                "clientContent": {
-                    "turns": [{
-                        "role": "user",
-                        "parts": [{
-                            "text": f"Поприветствуй пользователя голосом. Скажи именно это: \"{greeting_message}\""
-                        }]
-                    }],
-                    "turnComplete": True
-                }
-            }
+            # gemini-3.8-live: текст в живой разговор подаётся через realtimeInput.text;
+            # clientContent у новых Live-моделей годится только для начальной истории
+            # (после setup его игнорируют или закрывают сессию — агент молчал на звонке).
+            greeting_text = f"Поприветствуй пользователя голосом. Скажи именно это: \"{greeting_message}\""
+            payload = {"realtimeInput": {"text": greeting_text}}
             
             await self.ws.send(json.dumps(payload))
             self.greeting_sent = True
@@ -535,15 +529,7 @@ class GeminiLiveClient:
         try:
             logger.info(f"[GEMINI-CLIENT] 💬 Sending text message: {text[:100]}...")
             
-            payload = {
-                "clientContent": {
-                    "turns": [{
-                        "role": "user",
-                        "parts": [{"text": text}]
-                    }],
-                    "turnComplete": True
-                }
-            }
+            payload = {"realtimeInput": {"text": text}}
             
             await self.ws.send(json.dumps(payload))
             logger.info(f"[GEMINI-CLIENT] ✅ Text message sent")

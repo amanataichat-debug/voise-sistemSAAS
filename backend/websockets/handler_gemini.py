@@ -628,6 +628,14 @@ async def handle_gemini_messages(
                     log_to_render(f"❌ JSON decode error: {raw[:200]}", "ERROR")
                     continue
                 
+                # Ошибки и служебные сообщения Gemini (отказ setup, лимит ключа, goAway) раньше
+                # молча терялись — агент просто молчал. WARNING попадает и в журнал звонка.
+                if isinstance(response_data, dict) and ("error" in response_data or "goAway" in response_data):
+                    log_to_render(
+                        f"⚠️ Gemini service message: {json.dumps(response_data, ensure_ascii=False)[:500]}",
+                        "WARNING"
+                    )
+                
                 # Detailed logging
                 should_log = (
                     ENABLE_DETAILED_LOGGING and (
