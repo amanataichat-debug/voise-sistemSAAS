@@ -188,9 +188,18 @@ function readVoiceBody(type, ids){
       eleven_language: document.getElementById(ids.elang)?.value || null,
       eleven_tts_model: document.getElementById(ids.emodel)?.value || null,
       eleven_stability: parseFloat(document.getElementById(ids.estab)?.value),
-      eleven_voice_engine: document.getElementById(ids.eng)?.value || null,
-      eleven_live_voice: document.getElementById(ids.lvoice)?.value || null,
     };
+    // Движок и голос «речь в речь» шлём, только если их меняли в этом окне. Раньше они уходили при ЛЮБОМ
+    // сохранении настроек в том виде, как страница загрузила их при открытии: вкладка, открытая до переключения
+    // Gemini → GPT-Live в другой вкладке, молча возвращала старый движок (01.11.2026). Мастер создания
+    // (data-initial нет) отправляет всё.
+    const engEl = document.getElementById(ids.eng), lvEl = document.getElementById(ids.lvoice);
+    const engChanged = !engEl || engEl.dataset.initial === undefined || engEl.value !== engEl.dataset.initial;
+    const lvChanged = !lvEl || lvEl.dataset.initial === undefined || lvEl.value.toLowerCase() !== lvEl.dataset.initial.toLowerCase();
+    if(engChanged || lvChanged){
+      body.eleven_voice_engine = engEl?.value || null;
+      body.eleven_live_voice = lvEl?.value || null;
+    }
     if(isNaN(body.eleven_stability)) delete body.eleven_stability;
     // Голос отправляем, только когда список загрузился (иначе не затираем текущий)
     if(vEl && !vEl.disabled && vEl.value){ body.eleven_voice_id = vEl.value; body.eleven_voice_name = opt ? (opt.dataset.name || opt.textContent) : null; }
@@ -307,13 +316,13 @@ function elevenVoiceControlHtml(cur, ids){
   setTimeout(loadVoiceEnginePrices, 0);
   return `<div class="form-group">
       <label class="form-label">Модель голоса</label>
-      <input type="hidden" id="${ids.eng}" value="${engine}">
+      <input type="hidden" id="${ids.eng}" value="${engine}" data-initial="${engine}">
       <div class="eng-grid" id="${ids.eng}-tiles">${tiles}</div>
       <div class="form-hint">Цена модели списывается с кошелька за минуту разговора (посекундно).</div>
     </div>
     <div class="form-group" id="${ids.lbox}" style="${isLive ? '' : 'display:none'}">
       <label class="form-label" id="${ids.lvoice}-label">${engine === 'gemini_live' ? 'Голос Gemini Live' : 'Голос GPT-Live'}</label>
-      <select class="form-select" id="${ids.lvoice}">${liveOpts}</select>
+      <select class="form-select" id="${ids.lvoice}" data-initial="${esc(liveVoice)}">${liveOpts}</select>
     </div>
     <div id="${ids.ebox}" style="${isLive ? 'display:none' : ''}">
     <div class="form-group">

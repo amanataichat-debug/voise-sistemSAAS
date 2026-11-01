@@ -506,6 +506,11 @@ async def sip_media(
     call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
                         f"наш номер {call.did or '—'}, шлюз {gateway_id}",
                  greeting="своё" if greeting else None)
+    # Какой движок голоса реально обслуживает звонок (берётся из карточки в момент звонка)
+    call_log.add("session",
+                 f"Движок голоса карточки «{getattr(assistant, 'name', '')}» ({str(assistant.id)[:8]}): "
+                 f"{getattr(assistant, 'voice_engine', None) or 'eleven'}"
+                 + (f", голос {getattr(assistant, 'live_voice', None)}" if (gpt_live or gemini_live) else ""))
     # Что агент знает наизусть в этом звонке: владельцу видно, доехали ли
     # знания до модели, без чтения логов сервера.
     if gpt_live and LIVE_VOICE_INSTRUCTIONS_MAX_CHARS < 20000:

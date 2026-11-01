@@ -151,6 +151,18 @@ def _valid_live_voice(voice: Optional[str]) -> Optional[str]:
     return v if v in {g.lower() for g in GEMINI_LIVE_VOICES} else None
 
 
+def _live_voice_for_engine(engine: Optional[str], voice: Optional[str]) -> Optional[str]:
+    """Голос «речь в речь» под движок: у GPT-Live и Gemini Live общая колонка, но свои списки голосов.
+    Чужой голос (после смены движка) → None, хендлер возьмёт голос по умолчанию своего движка."""
+    from backend.models.eleven_assistant import GEMINI_LIVE_VOICES
+    v = (voice or "").strip().lower()
+    if engine == "gemini_live":
+        return v if v in {g.lower() for g in GEMINI_LIVE_VOICES} else None
+    if engine == "gpt_live":
+        return v if v in LIVE_VOICE_SET else None
+    return v or None
+
+
 def _is_valid_voice(assistant_type: str, voice: str) -> bool:
     """Проверка имени голоса для select-провайдеров (gemini/openai/yandex/cascade)."""
     if assistant_type == "gemini":
@@ -1302,8 +1314,10 @@ async def update_agent(
                     va.stability = _valid_eleven_stability(update_data["eleven_stability"])
                 if update_data.get("eleven_voice_engine"):
                     va.voice_engine = _valid_voice_engine(update_data["eleven_voice_engine"])
-                if "eleven_live_voice" in update_data:
-                    va.live_voice = _valid_live_voice(update_data["eleven_live_voice"])
+                if "eleven_live_voice" in update_data or update_data.get("eleven_voice_engine"):
+                    # голос — под итоговый движок карточки (чужой голос не остаётся после смены движка)
+                    wanted = update_data["eleven_live_voice"] if "eleven_live_voice" in update_data else va.live_voice
+                    va.live_voice = _live_voice_for_engine(va.voice_engine, _valid_live_voice(wanted))
 
     # ── Регенерация промпта через gpt-4o-mini — ТОЛЬКО для старых агентов ──
     if docs_changed and not agent.uses_hardcoded_prompt:

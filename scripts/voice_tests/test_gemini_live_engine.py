@@ -642,5 +642,16 @@ b4, aft = run(drain_flow())
 check("адаптер: прощание в очереди — сначала метка, трубка НЕ кладётся", b4 == ["mark"], b4)
 check("адаптер: мост проиграл звук — трубка кладётся", aft == ["mark", "hangup"], aft)
 
+# ---------- смена движка голоса: голос согласуется с движком, старая вкладка не возвращает прежний ----------
+from backend.api import agent as agent_api
+_lv = agent_api._live_voice_for_engine
+check("смена Gemini → GPT-Live: голос Gemini не остаётся на карточке GPT-Live", _lv("gpt_live", "aoede") is None)
+check("GPT-Live: свой голос сохраняется", _lv("gpt_live", "marin") == "marin")
+check("смена GPT-Live → Gemini: голос GPT не остаётся на карточке Gemini", _lv("gemini_live", "marin") is None)
+check("Gemini Live: свой голос сохраняется", _lv("gemini_live", "Aoede") == "aoede")
+_js = open(os.path.join(ROOT, "backend/static/agent/instructions-voice.js"), encoding="utf-8").read()
+check("окно настроек агента шлёт движок только если его меняли (data-initial), иначе старая вкладка затирает выбор",
+      'data-initial="${engine}"' in _js and "engChanged" in _js and "dataset.initial" in _js)
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
