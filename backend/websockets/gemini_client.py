@@ -462,6 +462,16 @@ class GeminiLiveClient:
 
         return True
 
+    def _text_turn_payload(self, text: str) -> Dict[str, Any]:
+        """
+        Текстовая реплика в живой разговор. Модель 2.5 native audio (на ней Gemini работал
+        до 19.09.2026) принимает её как clientContent; у 3.x — realtimeInput.text.
+        Модель переключается env GEMINI_LIVE_MODEL.
+        """
+        if "2.5" in (self.model or ""):
+            return {"clientContent": {"turns": [{"role": "user", "parts": [{"text": text}]}], "turnComplete": True}}
+        return {"realtimeInput": {"text": text}}
+
     async def send_initial_greeting(self) -> bool:
         """
         Send initial greeting prompt to trigger voice greeting from Gemini.
@@ -497,7 +507,7 @@ class GeminiLiveClient:
             # clientContent у новых Live-моделей годится только для начальной истории
             # (после setup его игнорируют или закрывают сессию — агент молчал на звонке).
             greeting_text = f"Поприветствуй пользователя голосом. Скажи именно это: \"{greeting_message}\""
-            payload = {"realtimeInput": {"text": greeting_text}}
+            payload = self._text_turn_payload(greeting_text)
             
             await self.ws.send(json.dumps(payload))
             self.greeting_sent = True
@@ -529,7 +539,7 @@ class GeminiLiveClient:
         try:
             logger.info(f"[GEMINI-CLIENT] 💬 Sending text message: {text[:100]}...")
             
-            payload = {"realtimeInput": {"text": text}}
+            payload = self._text_turn_payload(text)
             
             await self.ws.send(json.dumps(payload))
             logger.info(f"[GEMINI-CLIENT] ✅ Text message sent")
