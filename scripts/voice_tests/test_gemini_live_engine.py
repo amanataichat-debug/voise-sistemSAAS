@@ -188,5 +188,63 @@ check("звук виджета ушёл в Gemini (текстом и бинар�
 check("Gemini получает PCM 16 кГц", all(m["realtimeInput"]["audio"]["mimeType"] == "audio/pcm;rate=16000" for m in sent_audio))
 check("клиент получил pong и ack", {"pong", "input_audio_buffer.append.ack"} <= set(sess.websocket.types()), sess.websocket.types())
 
+
+# ---------- отказ Google на setup: больше не тишина, а понятная причина ----------
+import websockets as _ws
+from websockets.frames import Close
+from backend.websockets import gemini_client as gc_mod
+
+
+class FakeSetupWS(FakeGeminiWS):
+    """Google на setup: закрывает сессию с кодом и причиной ИЛИ молчит ИЛИ отвечает setupComplete."""
+    def __init__(self, mode):
+        super().__init__([])
+        self.mode = mode
+    async def recv(self):
+        if self.mode == "closed":
+            raise _ws.exceptions.ConnectionClosedError(Close(1007, "API key not valid. Please pass a valid API key."), None)
+        if self.mode == "silent" or getattr(self, "_answered", False):
+            await asyncio.sleep(3600)   # Google ответил один раз, дальше тишина
+        self._answered = True
+        return json.dumps({"setupComplete": {}})
+
+
+def connect_with(mode, timeout=None):
+    holder = {}
+    async def fake_connect(*a, **kw):
+        holder["ws"] = FakeSetupWS(mode)
+        return holder["ws"]
+    orig = gc_mod.websockets.connect
+    gc_mod.websockets.connect = fake_connect
+    try:
+        asst = types.SimpleNamespace(id="a1", user_id=None, name="T", greeting_message="Салам", google_sheet_id=None,
+                                     functions=None, voice=None, system_prompt="p", live_voice="aoede")
+        c = GeminiLiveClient("bad-key", asst, "c", db_session=None, voice_override="Aoede", record_conversation=False,
+                             realtime_text=True, await_setup=True)
+        if timeout is not None:
+            orig_wait = c._wait_setup_reply
+            c._wait_setup_reply = lambda t=timeout: orig_wait(t)
+        return c, run(c.connect())
+    finally:
+        gc_mod.websockets.connect = orig
+
+c1, ok1 = connect_with("closed")
+check("неверный ключ: connect() возвращает False, а не тишину", ok1 is False)
+check("причина Google попала в connect_error (код и текст)", "1007" in (c1.connect_error or "") and "API key not valid" in (c1.connect_error or ""), c1.connect_error)
+c2, ok2 = connect_with("silent", timeout=0.2)
+check("тишина Google на setup: отказ с понятной причиной", ok2 is False and "не ответил" in (c2.connect_error or ""), c2.connect_error)
+c3, ok3 = connect_with("ok")
+check("setupComplete: сессия открыта", ok3 is True and c3.connect_error is None)
+check("прочитанный setupComplete сохранён для цикла событий", len(c3._pending) == 1 and "setupComplete" in c3._pending[0])
+# цикл событий разбирает сохранённый setupComplete и шлёт приветствие
+sock3 = FakeClientSocket()
+st3 = {"is_user_speaking": False, "is_assistant_speaking": False, "last_speech_start": 0, "last_speech_stop": 0,
+       "interruption_count": 0, "last_interruption_time": 0, "assistant_audio_ever": False, "greeting_retries": 0}
+async def drain():
+    t = asyncio.create_task(handler_gemini.handle_gemini_messages(c3, sock3, st3))
+    await asyncio.sleep(0.3); t.cancel(); await asyncio.gather(t, return_exceptions=True)
+run(drain())
+check("отложенный setupComplete → приветствие отправлено", any("realtimeInput" in m for m in c3.ws.sent), c3.ws.sent)
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

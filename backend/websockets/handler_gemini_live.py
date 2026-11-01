@@ -328,7 +328,8 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
 
     sub_task = asyncio.create_task(_check_subscription(assistant))
     client = GeminiLiveClient(api_key, assistant, client_id, db, user_agent,
-                              voice_override=voice, record_conversation=False, realtime_text=True)
+                              voice_override=voice, record_conversation=False, realtime_text=True,
+                              await_setup=True)
     connect_task = asyncio.create_task(client.connect())
 
     sub = await sub_task
@@ -349,7 +350,11 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
             pass
         return
     if not await connect_task:
-        await fail("gemini_connection_failed", f"Не удалось открыть сессию Gemini Live ({GEMINI_LIVE_MODEL})", 1011)
+        # Причина от Google (неверный ключ, нет такой модели, отклонённое поле) — клиенту и в журнал звонка
+        reason = client.connect_error or "нет связи с Google"
+        if call_log_early := CallLogRecorder.current():
+            call_log_early.add("session", f"Gemini Live не открылся: {reason}", level="error")
+        await fail("gemini_connection_failed", f"Gemini Live ({GEMINI_LIVE_MODEL}) не открылся: {reason}", 1011)
         return
     connect_ms = int((time.monotonic() - t_start) * 1000)
 

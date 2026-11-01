@@ -118,6 +118,7 @@ class GeminiLiveClient:
         record_conversation: bool = True,
         language: Optional[str] = None,
         realtime_text: bool = False,
+        await_setup: bool = False,
     ):
         """Initialize the Gemini Live API client.
 
@@ -132,6 +133,11 @@ class GeminiLiveClient:
         # рассчитан на начальную историю. Включается только для карточек ElevenLabs; Gemini-ассистенты
         # остаются на прежнем clientContent.
         self.realtime_text = realtime_text
+        # await_setup: connect() дожидается ответа Google на setup. Иначе неверный ключ / модель / поле
+        # настройки открывают сокет и тут же закрываются, звонок идёт в полной тишине (так и было).
+        self.await_setup = await_setup
+        self.connect_error: Optional[str] = None   # причина отказа Google (код и текст) для сообщения клиенту
+        self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
         self.language = (language or "").strip().lower() or None
         # Если задан — реплики (user, assistant) уходят сюда вместо ConversationService/Sheets
         self.turn_saver = None
@@ -274,6 +280,10 @@ class GeminiLiveClient:
                 await self.close()
                 return False
 
+            if self.await_setup and not await self._wait_setup_reply():
+                await self.close()
+                return False
+
             logger.info(f"[GEMINI-CLIENT] ✅ Session initialized successfully")
 
             return True
@@ -323,6 +333,26 @@ class GeminiLiveClient:
             logger.error(f"[GEMINI-CLIENT] Traceback:")
             logger.error(traceback.format_exc())
             return False
+
+    async def _wait_setup_reply(self, timeout: float = 15.0) -> bool:
+        """
+        Дождаться первого ответа Google на setup (setupComplete). Закрытие сессии или тишина —
+        отказ: причина (код и текст Google) в connect_error и в журнале как ERROR. Прочитанное
+        сообщение кладётся в _pending: цикл событий хендлера разберёт его первым (setupComplete → приветствие).
+        """
+        try:
+            raw = await asyncio.wait_for(self.ws.recv(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self.connect_error = f"Google не ответил на настройку сессии за {int(timeout)} с (модель {self.model})"
+        except ConnectionClosed as e:
+            code = getattr(e, "code", None) or getattr(getattr(e, "rcvd", None), "code", None)
+            reason = getattr(e, "reason", None) or getattr(getattr(e, "rcvd", None), "reason", None)
+            self.connect_error = f"Google закрыл сессию: код {code}, причина «{reason}» (модель {self.model})"
+        else:
+            self._pending.append(raw)
+            return True
+        logger.error(f"[GEMINI-CLIENT] ❌ {self.connect_error}")
+        return False
 
     async def reconnect(self) -> bool:
         """Reconnect to Gemini Live API."""

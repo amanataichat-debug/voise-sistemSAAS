@@ -632,7 +632,8 @@ async def handle_gemini_messages(
         
         while True:
             try:
-                raw = await gemini_client.ws.recv()
+                # сообщение, уже прочитанное при ожидании setup (await_setup), разбираем первым
+                raw = gemini_client._pending.pop(0) if gemini_client._pending else await gemini_client.ws.recv()
                 event_count += 1
                 
                 try:
