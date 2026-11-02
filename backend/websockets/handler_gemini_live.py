@@ -24,6 +24,8 @@ import asyncio
 import audioop
 import base64
 import json
+import math
+import os
 import time
 import traceback
 import uuid
@@ -54,6 +56,10 @@ logger = get_logger(__name__)
 GEMINI_IN_RATE = 16000        # Gemini Live принимает PCM16 16 кГц
 WIDGET_IN_RATE = 24000        # микрофон виджета в full-duplex (как у GPT-Live)
 GEMINI_OUT_RATE = 24000
+# Клиент заговорил, пока ответ ещё доигрывается (Google считает ход законченным) → обрываем доигрывание,
+# если осталось больше этого (сек). GEMINI_PLAYBACK_BARGE_IN=0 — выключатель.
+PLAYBACK_BARGE_IN = os.getenv("GEMINI_PLAYBACK_BARGE_IN", "1").strip().lower() not in ("0", "false", "no", "off")
+PLAYBACK_BARGE_MIN_LEFT_S = 0.35
 _PLACEHOLDERS = {"[no user input]", "[no response]", "[interrupted]", "[incomplete - disconnected]"}
 
 
@@ -89,6 +95,81 @@ def resolve_api_key(db: Session, assistant) -> Optional[str]:
     return None
 
 
+class PhoneInputLevel:
+    """Выравнивание громкости голоса звонящего перед Gemini (только телефон).
+
+    Запись звонка 02.11.2026 (953a3a6c): голос клиента в линии −30…−40 dBFS, голос агента −20 — клиент на
+    10–18 дБ тише. Приложение Gemini получает с микрофона телефона ровный громкий звук, а мы — тихую узкую
+    полосу 8 кГц: VAD с низкой чувствительностью ловил начало фразы с опозданием, слова доходили обрывками
+    («Слушай, баба», «Schwarze Panther»). Здесь медленная АРУ: усиление считается только по кадрам речи
+    (выше шумового пола), вниз меняется быстро, вверх — плавно. Применяется только к кадрам речи и только
+    пока агент молчит: шум пауз и эхо голоса агента не раздуваем (детектор речи Google обрывал бы агента).
+    GEMINI_PHONE_AGC=0 — выключить, GEMINI_PHONE_AGC_TARGET_DBFS (−22), GEMINI_PHONE_AGC_MAX_DB (12).
+    """
+
+    def __init__(self) -> None:
+        self.enabled = os.getenv("GEMINI_PHONE_AGC", "1").strip().lower() not in ("0", "false", "no", "off")
+        try:
+            target_db = float(os.getenv("GEMINI_PHONE_AGC_TARGET_DBFS", "-22"))
+        except ValueError:
+            target_db = -22.0
+        try:
+            max_db = float(os.getenv("GEMINI_PHONE_AGC_MAX_DB", "12"))
+        except ValueError:
+            max_db = 12.0
+        self.target = 32768.0 * (10 ** (min(-6.0, target_db) / 20))
+        self.max_gain = 10 ** (max(0.0, min(24.0, max_db)) / 20)
+        self.gain = 1.0           # усиление речи, к которому идём
+        self.applied = 1.0        # усиление, применённое к последнему кадру (плавный переход речь ↔ пауза)
+        self.floor = 0.0          # шумовой пол линии (RMS)
+        self.speech_frames = 0
+
+    def process(self, pcm: bytes, assistant_playing: bool) -> bytes:
+        if not self.enabled or not pcm:
+            return pcm
+        out = []
+        step = 640   # 20 мс при 16 кГц
+        for i in range(0, len(pcm), step):
+            out.append(self._frame(pcm[i:i + step], assistant_playing))
+        return b"".join(out)
+
+    def _frame(self, pcm: bytes, assistant_playing: bool) -> bytes:
+        try:
+            rms = audioop.rms(pcm, 2)
+        except Exception:
+            return pcm
+        # шумовой пол: быстро вниз; вверх — по кадрам без речи, а во время речи лишь ползёт (+2,5 %/с), чтобы
+        # длинный монолог не стал «шумом», но выросший шум линии со временем всё же учёлся
+        is_speech = self.floor > 0 and rms > max(self.floor * 2.5, 120)
+        if self.floor <= 0 or rms < self.floor:
+            self.floor = rms if self.floor <= 0 else self.floor * 0.7 + rms * 0.3
+        elif is_speech:
+            self.floor *= 1.0005
+        else:
+            self.floor = self.floor * 0.98 + rms * 0.02
+        if is_speech:
+            self.speech_frames += 1
+            wanted = max(1.0, min(self.max_gain, self.target / max(rms, 1.0)))
+            if wanted < self.gain:
+                self.gain = self.gain * 0.7 + wanted * 0.3
+            elif not assistant_playing:
+                self.gain = self.gain * 0.97 + wanted * 0.03
+        # Усиливаем только речь и только когда агент молчит: шум пауз и эхо агента остаются как были,
+        # иначе детектор речи Google «услышал» бы клиента там, где его нет, и оборвал агента.
+        target = self.gain if (is_speech and not assistant_playing) else 1.0
+        self.applied = self.applied * 0.5 + target * 0.5
+        if self.applied <= 1.01:
+            return pcm
+        try:
+            return audioop.mul(pcm, 2, self.applied)
+        except Exception:
+            return pcm
+
+    @property
+    def gain_db(self) -> float:
+        return round(20 * math.log10(max(self.gain, 1e-6)), 1)
+
+
 class _ObserveSocket:
     """Прокладка между хендлером событий Gemini и клиентом: всё уходит как есть, а сессия видит события
     (стенограмма → прощание, звук → тишина, функции → журнал звонка)."""
@@ -98,6 +179,13 @@ class _ObserveSocket:
         self._session = session
 
     async def send_json(self, data, mode: str = "text"):
+        if isinstance(data, dict) and data.get("type") == "gemini.voice_activity":
+            # служебный сигнал детектора речи Google: решает сессия, клиенту (мост/виджет) не нужен
+            try:
+                await self._session.on_voice_activity(data.get("activity") or "")
+            except Exception as exc:
+                _log(f"voice activity handling failed: {exc}", "WARNING")
+            return None
         try:
             self._session.observe(data)
         except Exception as exc:  # наблюдение не должно ронять звонок
@@ -152,6 +240,11 @@ class GeminiLiveVoiceSession:
         self._greet_first_audio: Optional[float] = None
         self._greet_generated = False
         self._greet_notes = 0
+        # Доигрывание ответа у клиента: Gemini отдаёт звук быстрее реального времени, поэтому «говорит» агент
+        # для собеседника до _play_until, а не до turnComplete
+        self._play_until = 0.0
+        self.playback_barge_ins = 0
+        self.input_level = PhoneInputLevel() if telephony else None
 
     @property
     def dialog_session_id(self) -> str:
@@ -162,6 +255,15 @@ class GeminiLiveVoiceSession:
     def observe(self, data: Dict[str, Any]) -> None:
         """События, идущие клиенту: стенограмма и звук — в страж прощания, функции — в журнал звонка."""
         mtype = data.get("type")
+        if mtype == "response.audio.delta":
+            try:
+                secs = len(base64.b64decode(data.get("delta") or "")) / 2 / GEMINI_OUT_RATE
+            except Exception:
+                secs = 0.0
+            now = time.time()
+            self._play_until = max(now, self._play_until) + secs
+        elif mtype == "conversation.interrupted" and not self.greeting_protected():
+            self._play_until = 0.0
         if not self._greet_generated:
             if mtype == "response.audio.delta":
                 if self._greet_first_audio is None:
@@ -244,11 +346,43 @@ class GeminiLiveVoiceSession:
             self._greet_notes += 1
             self.call_log.add("session", text)
 
+    def playback_left(self, now: Optional[float] = None) -> float:
+        """Сколько секунд ответа агента ещё не доиграно у собеседника."""
+        return max(0.0, self._play_until - (now or time.time()))
+
+    async def on_voice_activity(self, activity: str) -> None:
+        """Детектор речи Google увидел начало речи собеседника. Если ответ агента ещё доигрывается (Google уже
+        закончил ход и сам `interrupted` не пришлёт) — обрываем доигрывание, как это делает живой человек:
+        иначе агент договаривает 5–10 с поверх клиента, а потом отвечает на его новую фразу (звонок 02.11.2026)."""
+        if activity != "start" or not PLAYBACK_BARGE_IN:
+            return
+        now = time.time()
+        left = self.playback_left(now)
+        if left < PLAYBACK_BARGE_MIN_LEFT_S or self.greeting_protected(now):
+            return
+        self._play_until = 0.0
+        self.playback_barge_ins += 1
+        self.interruption_state["interruption_count"] += 1
+        self.interruption_state["last_interruption_time"] = now
+        self.interruption_state["is_assistant_speaking"] = False
+        try:
+            self.client.set_assistant_speaking(False)
+        except Exception:
+            pass
+        if self.call_log is not None:
+            self.call_log.interruptions += 1
+            self.call_log.add("barge_in", f"Клиент заговорил поверх ответа — агент замолчал (не доиграно {left:.1f} с)")
+        _log(f"playback barge-in: {left:.1f}s of reply dropped")
+        await self.websocket.send_json({"type": "conversation.interrupted", "timestamp": now,
+                                        "reason": "caller_speech_during_playback"})
+
     async def _feed(self, pcm: bytes) -> None:
         """Звук линии в Gemini; на приветствии — тишина той же длины (поток не прерывается, VAD не срабатывает)."""
         if not pcm or not self.client.is_connected:
             return
         data = self._to_gemini(pcm)
+        if self.input_level is not None:
+            data = self.input_level.process(data, assistant_playing=self.playback_left() > 0)
         if self.greeting_protected():
             data = b"\x00" * len(data)
         await self.client.process_audio(data)
@@ -380,6 +514,9 @@ class GeminiLiveVoiceSession:
                 "session",
                 f"Сессия завершена ({reason}): {elapsed:.1f} с, прерываний {self.interruption_state['interruption_count']}, "
                 f"реплик в диалоге {len(self.pairs)}"
+                + (f", из них клиент оборвал доигрывание {self.playback_barge_ins}" if self.playback_barge_ins else "")
+                + (f"; громкость линии клиента +{self.input_level.gain_db} дБ"
+                   if self.input_level is not None and self.input_level.enabled and self.input_level.speech_frames else "")
                 + ("" if self.interruption_state["assistant_audio_ever"] else
                    ". Gemini не прислал ни одного звука — смотрите предупреждения выше"),
                 level="info" if self.interruption_state["assistant_audio_ever"] else "warning",

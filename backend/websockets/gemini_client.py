@@ -681,6 +681,13 @@ class GeminiLiveClient:
                 silence_ms = 800
             start_sens = os.getenv("GEMINI_VAD_START_SENSITIVITY", "low").strip().lower()
             end_sens = os.getenv("GEMINI_VAD_END_SENSITIVITY", "low").strip().lower()
+            # Сколько речи нужно, чтобы Google засчитал «собеседник начал говорить». С 02.11.2026 начало речи
+            # обрывает и доигрывание ответа агента (handler_gemini_live.on_voice_activity), поэтому 100 мс мало —
+            # кашель, «м» или щелчок линии обрывали бы агента; 200 мс — короткое слово («стоп», «подождите») проходит.
+            try:
+                prefix_ms = max(20, min(1000, int(os.getenv("GEMINI_VAD_PREFIX_MS", "200"))))
+            except ValueError:
+                prefix_ms = 200
             start_value = "START_SENSITIVITY_HIGH" if start_sens == "high" else "START_SENSITIVITY_LOW"
             end_value = "END_SENSITIVITY_HIGH" if end_sens == "high" else "END_SENSITIVITY_LOW"
             setup_payload["setup"]["realtimeInputConfig"] = {
@@ -688,7 +695,7 @@ class GeminiLiveClient:
                     "disabled": False,
                     "startOfSpeechSensitivity": start_value,
                     "endOfSpeechSensitivity": end_value,
-                    "prefixPaddingMs": 100,
+                    "prefixPaddingMs": prefix_ms,
                     "silenceDurationMs": silence_ms,
                 }
             }

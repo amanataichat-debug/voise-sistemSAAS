@@ -131,6 +131,21 @@ def _count_events(gemini_client, data: dict) -> None:
                 census["part." + key] += 1
 
 
+def _voice_activity_kind(payload) -> str:
+    """voiceActivity Google → "start" / "end" / "" (поле типа в разных версиях API называется по-разному)."""
+    if isinstance(payload, dict):
+        raw = (payload.get("voiceActivityType") or payload.get("voice_activity_type")
+               or payload.get("type") or payload.get("activity") or "")
+    else:
+        raw = payload or ""
+    raw = str(raw).upper()
+    if "START" in raw or "BEGIN" in raw:
+        return "start"
+    if "END" in raw or "STOP" in raw:
+        return "end"
+    return ""
+
+
 async def _save_turn(gemini_client, **kw):
     """Реплика в БД. У карточек ElevenLabs (gemini_client.turn_saver) пишет сама сессия — в
     eleven_conversations и журнал звонка; у Gemini-ассистентов — ConversationService, как раньше."""
@@ -749,6 +764,19 @@ async def handle_gemini_messages(
                         "timestamp": time.time()
                     })
                     continue
+
+                # Детектор речи Google: собеседник начал / закончил говорить. Ответ Gemini генерируется быстрее
+                # реального времени и доигрывается у клиента (мост, браузер) уже ПОСЛЕ turnComplete — в это время
+                # Google считает ход законченным и `interrupted` не шлёт, а ответ продолжает звучать поверх
+                # собеседника (звонок 02.11.2026, 953a3a6c: 14 событий voiceActivity, 0 прерываний). Сигнал
+                # отдаём наверх: сессия карточки сама решает, обрывать ли доигрывание.
+                if "voiceActivity" in response_data:
+                    activity = _voice_activity_kind(response_data.get("voiceActivity"))
+                    if activity:
+                        await websocket.send_json({"type": "gemini.voice_activity", "activity": activity,
+                                                   "timestamp": time.time()})
+                    if len(response_data) == 1:
+                        continue
 
                 # Server content (main response container)
                 if "serverContent" in response_data:

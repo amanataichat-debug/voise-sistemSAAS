@@ -866,5 +866,81 @@ check("после приветствия звук линии идёт как е�
 _sw = gl.GeminiLiveVoiceSession(_SentWS(), types.SimpleNamespace(id="a"), _gc, None, "c", False, None)
 check("в виджете защиты приветствия нет", not _sw.greeting_protected())
 
+
+# ---------- клиент перебивает доигрывание (звонок 02.11.2026, 953a3a6c: 14 voiceActivity, 0 прерываний) ----------
+from backend.websockets import handler_gemini as _hg
+check("voiceActivity: ACTIVITY_START → start", _hg._voice_activity_kind({"voiceActivityType": "ACTIVITY_START"}) == "start")
+check("voiceActivity: ACTIVITY_END → end", _hg._voice_activity_kind({"voiceActivityType": "ACTIVITY_END"}) == "end")
+check("voiceActivity: непонятное → пусто", _hg._voice_activity_kind({"x": 1}) == "")
+
+class _Log:
+    def __init__(self): self.rows = []; self.interruptions = 0
+    def add(self, kind, text, **kw): self.rows.append((kind, text))
+_gc2 = types.SimpleNamespace(is_connected=True, process_audio=_pa, function_gate=None, session_id="s",
+                             set_assistant_speaking=lambda v: None)
+_ws2 = _SentWS(); _log2 = _Log()
+_s2 = gl.GeminiLiveVoiceSession(_ws2, types.SimpleNamespace(id="a"), _gc2, None, "c", True, _log2)
+_o2 = gl._ObserveSocket(_ws2, _s2)
+_s2._greet_first_audio = _time.time() - 30; _s2._greet_generated = True   # приветствие давно позади
+run(_o2.send_json({"type": "response.audio.delta", "delta": base64.b64encode(b"\x01\x00" * 24000 * 6).decode()}))
+run(_o2.send_json({"type": "assistant.speech.ended"}))   # Google закончил ход, у клиента ещё ~6 с звука
+check("ответ сгенерирован быстрее реального времени — доигрывание учтено", _s2.playback_left() > 5, _s2.playback_left())
+run(_o2.send_json({"type": "gemini.voice_activity", "activity": "start"}))
+check("клиент заговорил во время доигрывания → адаптеру уходит conversation.interrupted (очистка очереди)",
+      any(d.get("type") == "conversation.interrupted" for d in _ws2.sent))
+check("служебный gemini.voice_activity клиенту не пересылается", not any(d.get("type") == "gemini.voice_activity" for d in _ws2.sent))
+check("перебивание в журнале звонка", _log2.interruptions == 1 and any(k == "barge_in" for k, _ in _log2.rows))
+check("после обрыва доигрывания не осталось", _s2.playback_left() == 0)
+_n = len(_ws2.sent)
+run(_o2.send_json({"type": "gemini.voice_activity", "activity": "start"}))
+check("агент молчит — начало речи клиента ничего не обрывает", len(_ws2.sent) == _n)
+run(_o2.send_json({"type": "gemini.voice_activity", "activity": "end"}))
+check("конец речи клиента ничего не обрывает", len(_ws2.sent) == _n)
+# на приветствии голос клиента доигрывание не обрывает
+_ws3 = _SentWS()
+_s3 = gl.GeminiLiveVoiceSession(_ws3, types.SimpleNamespace(id="a"), _gc2, None, "c", True, None)
+_o3 = gl._ObserveSocket(_ws3, _s3)
+run(_o3.send_json({"type": "response.audio.delta", "delta": base64.b64encode(b"\x01\x00" * 24000 * 3).decode()}))
+run(_o3.send_json({"type": "gemini.voice_activity", "activity": "start"}))
+check("приветствие voiceActivity не обрывает", not any(d.get("type") == "conversation.interrupted" for d in _ws3.sent))
+_src = open(os.path.join(ROOT, "backend/websockets/handler_gemini.py"), encoding="utf-8").read()
+check("разбор событий Google пересылает voiceActivity наверх", '"voiceActivity" in response_data' in _src and "gemini.voice_activity" in _src)
+
+# ---------- громкость голоса звонящего (клиент на 10–18 дБ тише агента) ----------
+import math as _m
+def _tone(amp, n=1600):
+    return b"".join(int(amp * _m.sin(i / 3)).to_bytes(2, "little", signed=True) for i in range(n))
+_lvl = gl.PhoneInputLevel()
+_quiet = _tone(600)
+for _ in range(3):
+    _lvl.process(_tone(30), False)        # тишина линии — шумовой пол
+for _ in range(80):
+    _out = _lvl.process(_quiet, False)
+check("тихая речь клиента усилена (до +12 дБ)", 6 <= _lvl.gain_db <= 12.1 and audioop.rms(_out, 2) > audioop.rms(_quiet, 2) * 2, _lvl.gain_db)
+_loud = _tone(12000)
+for _ in range(30):
+    _out = _lvl.process(_loud, False)
+check("громкая речь не перегружается (усиление сброшено)", _lvl.gain_db < 1.5, _lvl.gain_db)
+_lvl2 = gl.PhoneInputLevel()
+for _ in range(3):
+    _lvl2.process(_tone(30), False)
+for _ in range(80):
+    _lvl2.process(_quiet, True)
+check("пока агент говорит, усиление не растёт (эхо не подтягиваем)", _lvl2.gain_db < 0.5, _lvl2.gain_db)
+_hum = _tone(30)
+for _ in range(80):
+    _lvl.process(_quiet, False)
+_lvl.process(_hum, False); _lvl.process(_hum, False)
+check("шум пауз не раздуваем", audioop.rms(_lvl.process(_hum, False), 2) <= audioop.rms(_hum, 2) * 1.1)
+check("пока агент говорит, речь линии (эхо) не усиливается", audioop.rms(_lvl.process(_quiet, True), 2) <= audioop.rms(_quiet, 2) * 1.6)
+check("виджет без выравнивания громкости",
+      gl.GeminiLiveVoiceSession(_SentWS(), types.SimpleNamespace(id="a"), _gc2, None, "c", False, None).input_level is None)
+check("Gemini VAD: prefixPaddingMs из GEMINI_VAD_PREFIX_MS, по умолчанию 200", 'GEMINI_VAD_PREFIX_MS", "200"' in _live)
+_ky = vh.language_note("ky")
+check("кыргызская карточка: кыргызский — основной язык линии, русские слова в кыргызской речи — норма",
+      "ОСНОВНОЙ ЯЗЫК" in _ky and "РУССКИЕ СЛОВА" in _ky)
+check("язык карточки: никогда не говорить собеседнику, какие языки понимаешь", "НИКОГДА НЕ ГОВОРИ О ЯЗЫКАХ" in vh.language_note("ru"))
+check("русская карточка без кыргызского приоритета", "ОСНОВНОЙ ЯЗЫК" not in vh.language_note("ru"))
+
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
