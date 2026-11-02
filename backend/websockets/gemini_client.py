@@ -230,6 +230,7 @@ class GeminiLiveClient:
         self.tools_enabled = True          # Google отверг функции целиком → звонок идёт без них (см. connect)
         self.extras_level = EXTRAS_FULL if (await_setup and os.getenv("GEMINI_LONG_CALLS", "1") != "0") else EXTRAS_NONE
         self._initial_extras_level = self.extras_level
+        self.sent_transcription_languages: List[str] = []   # что ушло в inputAudioTranscription.languageCodes
         self._model_fallback_done = False   # повтор на стабильной модели уже был (см. connect)
         self.setup_closed = False        # Google закрыл сокет в ответ на setup (а не промолчал)
         self.reconnect_count = 0
@@ -291,6 +292,12 @@ class GeminiLiveClient:
             self.webhook_url = extract_webhook_url_from_prompt(assistant_config.system_prompt)
             if self.webhook_url:
                 logger.info(f"[GEMINI-CLIENT] Webhook configured")
+
+    @property
+    def use_blocking_tools(self) -> bool:
+        """BLOCKING-функции, если просили и модель их умеет. gemini-3.8-live-extended-thinking их не принимает
+        (звонок 02.11.2026: «BLOCKING function calls are not supported for this model», код 1007)."""
+        return bool(self.blocking_tools) and not thinking_level(self.model)
 
     async def connect(self) -> bool:
         """Подключение к Gemini Live. Если выбранная в env модель (например gemini-3.8-live-extended-thinking)
@@ -423,8 +430,7 @@ class GeminiLiveClient:
                     reason = (rejected or "").lower()
                     about_tools = any(k in reason for k in ("tools", "function_declarations", "functiondeclaration", "parameters"))
                     about_extras = any(k in reason for k in ("sessionresumption", "session_resumption", "contextwindow",
-                                                             "context_window", "inputaudiotranscription", "input_audio_transcription",
-                                                             "thinking"))
+                                                             "context_window", "inputaudiotranscription", "input_audio_transcription"))
                     if self.resume_handle:
                         # вероятнее всего устарела ручка возобновления — не отказываемся из-за неё от самой функции
                         self.resume_handle = None
@@ -616,7 +622,7 @@ class GeminiLiveClient:
                     "parameters": gemini_schema(func_def["parameters"]),
                     # gemini-3.8-live: NON_BLOCKING — модель продолжает говорить, пока функция работает;
                     # BLOCKING (карточки ElevenLabs) — ждёт результата и отвечает по нему
-                    "behavior": "BLOCKING" if self.blocking_tools else "NON_BLOCKING",
+                    "behavior": "BLOCKING" if self.use_blocking_tools else "NON_BLOCKING",
                 }]
             })
         
@@ -696,14 +702,18 @@ class GeminiLiveClient:
                 resumption["handle"] = self.resume_handle
             setup_payload["setup"]["sessionResumption"] = resumption
             setup_payload["setup"]["contextWindowCompression"] = {"slidingWindow": {}}
+        # Думающей модели уровень рассуждений ОБЯЗАТЕЛЕН («Thinking level must be specified for this model»,
+        # 02.11.2026) — поэтому не зависит от уровня расширенных полей и не снимается лестницей отката.
+        level = thinking_level(self.model)
+        if level:
+            generation_config["thinkingConfig"] = {"thinkingLevel": level}
+        self.sent_transcription_languages = []
         if self.extras_level >= EXTRAS_FULL:
-            level = thinking_level(self.model)
-            if level:
-                generation_config["thinkingConfig"] = {"thinkingLevel": level}
             langs = input_transcription_languages()
             if langs:
                 # только текст диалога: модель слышит звук сама; подсказка языков помогает кыргызскому в записи
                 setup_payload["setup"]["inputAudioTranscription"] = {"languageCodes": langs}
+                self.sent_transcription_languages = list(langs)
 
         # Add tools if any
         if tools:
@@ -904,7 +914,7 @@ class GeminiLiveClient:
                 "id": function_call_id,
                 "response": result,
             }
-            if not self.blocking_tools:
+            if not self.use_blocking_tools:
                 function_response["scheduling"] = GEMINI_TOOL_SCHEDULING  # у BLOCKING-функций его нет
             name = self.call_names.pop(function_call_id, None) or self.last_function_name
             if name:

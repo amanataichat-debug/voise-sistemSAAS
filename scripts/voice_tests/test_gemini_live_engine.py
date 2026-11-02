@@ -404,6 +404,21 @@ check("extended-thinking: thinkingConfig.thinkingLevel в generationConfig",
 c, socks, fc = card_client(reject=lambda s: "extended-thinking" in s.get("model", ""))
 c.model = "gemini-3.8-live-extended-thinking"
 ok = with_connect(fc, c.connect)
+c, socks, fc = card_client()
+c.model = "gemini-3.8-live-extended-thinking"
+c.blocking_tools = True
+c.extras_level = 0
+c.assistant_config.functions = [{"name": "search_knowledge_base", "description": "d", "parameters": {"type": "object", "properties": {}}}]
+with_connect(fc, c.connect)
+_st = last_setup(socks)
+_decl = [d for t in _st.get("tools", []) for d in t.get("functionDeclarations", [])]
+check("extended-thinking: уровень рассуждений есть даже на минимальном setup (Google требует)",
+      _st.get("generationConfig", {}).get("thinkingConfig") == {"thinkingLevel": "LOW"}, _st.get("generationConfig"))
+check("extended-thinking: функции NON_BLOCKING (BLOCKING эта модель не принимает)",
+      c.use_blocking_tools is False and all(d.get("behavior") != "BLOCKING" for d in _decl), _decl)
+c, socks, fc = card_client(reject=lambda s: "extended-thinking" in s.get("model", ""))
+c.model = "gemini-3.8-live-extended-thinking"
+ok = with_connect(fc, c.connect)
 check("модель extended-thinking не открылась → повтор на gemini-3.8-live, звонок идёт",
       ok is True and c.model == "gemini-3.8-live" and last_setup(socks)["model"] == "models/gemini-3.8-live"
       and "thinkingConfig" not in last_setup(socks).get("generationConfig", {}), (ok, c.model, len(socks)))
