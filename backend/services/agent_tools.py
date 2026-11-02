@@ -4164,9 +4164,7 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
         None — без ограничения по времени);
       * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
       * недозвон сегодня (по факту, строки sip_calls; нужен db) — на этот день
-        звонок больше не ставим, пока клиент сам не вышел на связь;
-      * оба запрета снимает сам клиент: после звонка он написал в любом
-        мессенджере или позвонил сам («позвоните сейчас») — _client_came_back.
+        звонок больше не ставим, пока клиент сам не вышел на связь.
 
     allow_shift=True: если время вне окна, предложим ближайший момент внутри окна
     и вернём его в scheduled_utc. False — просто ошибка «вне окна».
@@ -4227,7 +4225,7 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     if last_called is not None:
         if last_called.tzinfo is None:
             last_called = last_called.replace(tzinfo=timezone.utc)
-        if last_called.astimezone(BISHKEK).date() == today_local and not _client_came_back(db, contact, last_called):
+        if last_called.astimezone(BISHKEK).date() == today_local:
             return {
                 "ok": False,
                 "error": "already_called_today",
@@ -4245,10 +4243,6 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     if db is not None and today_local <= _bishkek_now().date():
         from backend.services.agent_contact_phones import missed_call_today
         missed = missed_call_today(db, contact, user_id or contact.user_id, today_local)
-        if missed is not None and _client_came_back(db, contact, missed.created_at):
-            # Клиент после недозвона сам написал / позвонил («позвоните сейчас») —
-            # это уже не дозвон вслепую: звонок по его просьбе разрешён.
-            missed = None
         if missed is not None:
             when = missed.created_at
             if when is not None and when.tzinfo is None:
@@ -4264,22 +4258,6 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             }
 
     return {"ok": True, "scheduled_utc": scheduled_utc}
-
-
-def _client_came_back(db: Optional[Session], contact, since) -> bool:
-    """
-    Клиент вышел на связь после звонка since: написал в WhatsApp / Telegram /
-    Instagram или позвонил сам. Тогда «один звонок в день» и «недозвон сегодня»
-    звонок по его просьбе не держат (клиент в переписке: «позвоните сейчас»).
-    """
-    if db is None or contact is None or since is None:
-        return False
-    try:
-        from backend.services.agent_mode import client_contacted_since
-        return client_contacted_since(db, contact.id, since)
-    except Exception as e:
-        logger.warning(f"[AGENT-TOOLS] _client_came_back: {e}")
-        return False
 
 
 # Насколько «в прошлом» может быть время звонка, чтобы считаться «сейчас»

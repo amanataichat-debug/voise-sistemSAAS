@@ -320,59 +320,10 @@ def _ts(value) -> datetime:
         return datetime.utcnow()
 
 
-def _ad_source(source_url: str, source_app: str) -> str:
-    hay = f"{source_url} {source_app}".lower()
-    if "instagram" in hay:
-        return "Instagram"
-    if "facebook" in hay or "fb.me" in hay or "fb.com" in hay:
-        return "Facebook"
-    return "Instagram/Facebook"
-
-
-def ad_referral(message: dict, item: Optional[dict] = None) -> Optional[Dict[str, str]]:
-    """
-    Клиент пришёл из рекламы Meta «Click-to-WhatsApp»: WhatsApp кладёт в первое
-    сообщение карточку объявления (contextInfo.externalAdReply: заголовок, текст,
-    ссылка на пост Instagram / Facebook). Возвращает {source, title, body, url}
-    или None.
-    """
-    contexts = []
-    if isinstance(item, dict) and isinstance(item.get("contextInfo"), dict):
-        contexts.append(item["contextInfo"])
-    for value in (message or {}).values():
-        if isinstance(value, dict) and isinstance(value.get("contextInfo"), dict):
-            contexts.append(value["contextInfo"])
-    for ctx in contexts:
-        ad = ctx.get("externalAdReply")
-        if not isinstance(ad, dict):
-            continue
-        url = str(ad.get("sourceUrl") or "").strip()
-        source_app = str(ad.get("sourceApp") or ctx.get("entryPointConversionApp") or "")
-        return {
-            "source": _ad_source(url, source_app),
-            "title": str(ad.get("title") or "").strip()[:200],
-            "body": str(ad.get("body") or "").strip()[:300],
-            "url": url[:300],
-        }
-    return None
-
-
-def ad_referral_text(ad: Dict[str, str]) -> str:
-    """Строка для треда и оркестратора: откуда клиент и какое объявление видел."""
-    parts = [f"[Клиент пришёл из рекламы {ad['source']}"]
-    about = " — ".join(x for x in (ad.get("title"), ad.get("body")) if x)
-    if about:
-        parts.append(f": «{about}»")
-    parts.append("]")
-    return "".join(parts)
-
-
 def parse_incoming(item: dict) -> Optional[Dict[str, Any]]:
     """
     Элемент messages.upsert → {id, remote_jid, phone, from_me, push_name, ts,
-    text, media|None, ad|None}. None — служебное/групповое/неподдерживаемое.
-    Пришёл из рекламы Instagram / Facebook — в начало text добавляется строка
-    «[Клиент пришёл из рекламы …]», ad = карточка объявления.
+    text, media|None}. None — служебное/групповое/неподдерживаемое.
     """
     if not isinstance(item, dict):
         return None
@@ -423,12 +374,8 @@ def parse_incoming(item: dict) -> Optional[Dict[str, Any]]:
             text = f"👤 Контакт: {message['contactMessage'].get('displayName') or ''}".strip()
         elif isinstance(message.get("stickerMessage"), dict):
             text = "[стикер]"
-        elif ad_referral(message, item) is None:
+        else:
             return None  # реакции, удаления, правки, системные
-
-    ad = ad_referral(message, item)
-    if ad is not None:
-        text = f"{ad_referral_text(ad)}\n{text}".strip() if text else ad_referral_text(ad)
 
     return {
         "id": key.get("id"),
@@ -439,7 +386,6 @@ def parse_incoming(item: dict) -> Optional[Dict[str, Any]]:
         "ts": _ts(item.get("messageTimestamp")),
         "text": (text or "").strip(),
         "media": media,
-        "ad": ad,
     }
 
 
