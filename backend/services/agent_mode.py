@@ -136,9 +136,19 @@ def _owner_chat_allowed(name: str) -> bool:
 
 def client_contacted_recently(db: Session, agent_contact_id) -> bool:
     """Был ли за последние 24 часа контакт по инициативе клиента: сообщение в любом канале или разговор по телефону."""
-    if agent_contact_id is None:
+    return client_contacted_since(db, agent_contact_id, datetime.utcnow() - REPLY_WINDOW)
+
+
+def client_contacted_since(db: Session, agent_contact_id, since: datetime) -> bool:
+    """
+    Выходил ли клиент на связь после момента since (naive UTC): написал в любом
+    мессенджере, позвонил сам или поговорил по телефону.
+    """
+    if agent_contact_id is None or since is None:
         return False
-    since = datetime.utcnow() - REPLY_WINDOW
+    if since.tzinfo is not None:
+        from datetime import timezone as _tz
+        since = since.astimezone(_tz.utc).replace(tzinfo=None)
     from backend.models.agent_call import AgentCall
     from backend.models.agent_instagram import AgentInstagramMessage
     from backend.models.agent_telegram_account import AgentTelegramMessage
@@ -148,7 +158,7 @@ def client_contacted_recently(db: Session, agent_contact_id) -> bool:
         if db.query(model.id).filter(
             model.agent_contact_id == agent_contact_id,
             model.direction == "inbound",
-            model.created_at >= since,
+            model.created_at > since,
         ).first() is not None:
             return True
     # Звонок: входящий, либо исходящий, который набрал владелец и клиент взял трубку
@@ -156,7 +166,7 @@ def client_contacted_recently(db: Session, agent_contact_id) -> bool:
     from sqlalchemy import or_
     return db.query(AgentCall.id).filter(
         AgentCall.agent_contact_id == agent_contact_id,
-        AgentCall.created_at >= since,
+        AgentCall.created_at > since,
         or_(AgentCall.direction == "inbound", AgentCall.duration_seconds > 0),
     ).first() is not None
 
