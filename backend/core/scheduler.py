@@ -7,7 +7,6 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, text
-from backend.db.session import SessionLocal
 from backend.models.user import User
 from backend.core.logging import get_logger
 
@@ -28,6 +27,13 @@ async def check_expired_subscriptions():
         return
     
     _scheduler_running = True
+    # Импорт здесь, а не наверху файла: backend/core/__init__.py импортирует этот модуль, а
+    # backend/db/session.py импортирует backend.core.config — импорт SessionLocal на уровне
+    # модуля создавал цикл, который рвался в зависимости от того, что процесс импортировал
+    # первым (02.11.2026: voice_selfcheck.py падал с «cannot import name 'SessionLocal' from
+    # partially initialized module», хотя сам сервер на Render запускается в другом порядке
+    # и той же проблемы не показывал).
+    from backend.db.session import SessionLocal
     db = SessionLocal()
     lock_acquired = False
     

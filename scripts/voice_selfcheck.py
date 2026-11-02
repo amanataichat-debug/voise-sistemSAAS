@@ -289,6 +289,14 @@ def load_questions(path: Optional[str]) -> List[Dict[str, str]]:
 
 
 async def run(args) -> int:
+    # backend.core должен загрузиться ПЕРВЫМ: backend/core/__init__.py тянет планировщики, а
+    # они (и многое другое транзитивно) импортируют backend.db.session — если backend.db.session
+    # окажется первым модулем backend/*, который трогает процесс, он сам попросит
+    # backend.core.config, backend.core начнёт грузиться и по цепочке запросит обратно
+    # backend.db.session, застав его НЕ ДОГРУЖЕННЫМ (02.11.2026: «cannot import name
+    # 'SessionLocal' from partially initialized module» в Render Shell). app.py на проде
+    # всегда стартует с backend.core.config первым строкой — та же защита здесь.
+    from backend.core.config import settings  # noqa: F401
     from backend.db.session import SessionLocal
     from backend.services import agent_knowledge_vectors as vectors
 

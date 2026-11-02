@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, Tuple
 
 from backend.core.logging import get_logger
-from backend.db.session import SessionLocal
 from backend.models.task import Task, TaskStatus
 from backend.models.contact import Contact
 from backend.models.user import User
@@ -122,6 +121,10 @@ class TaskScheduler:
     
     async def check_and_execute_tasks(self):
         """Проверка и выполнение задач (agent + regular)"""
+        # Импорт здесь, а не наверху файла — см. комментарий в backend/core/scheduler.py
+        # (02.11.2026): цикл backend.core ↔ backend.db.session рвался по-разному в
+        # зависимости от того, какой модуль процесс импортировал первым.
+        from backend.db.session import SessionLocal
         db = SessionLocal()
 
         try:
