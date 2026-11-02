@@ -271,14 +271,17 @@ check("Gemini: не дежурный вопрос в каждой реплике
       "НЕ заканчивай каждую реплику вопросом" in g and lc.VOICE_MANNER_HINT not in g
       and "спроси, интересно ли дальше" not in g and "ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ" not in g)
 check("Gemini: без противоречия «можно мм/угу» против «МОЛЧИ»", "можно одно тихое «мм»" not in g)
-# Потолок поднят 02.11.2026: добавлен абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» (та же причина, что у GPT-Live).
-check("Gemini: подсказки не длиннее 13 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 13000, len(g))
+# Потолок поднят 02.11.2026: абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» + пункт 5 продаж «не отдавай инициативу»
+# (звонок 822daa6f: агент на вопрос о документах просто передал клиента менеджеру и замолчал).
+check("Gemini: подсказки не длиннее 13,2 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 13200, len(g))
 check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
       "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
       "КАК ПОНИМАТЬ КЫРГЫЗСКУЮ РЕЧЬ" in g and "смешивать" in g and "канча турат" in g and "ойлонуп көрөйүн" in g)
 check("Gemini: продажи — понять, предложить под задачу, сомнения («подумаю»), закрыть шагом со временем",
       all(k in g for k in ("ПОЙМИ", "КОНСУЛЬТИРУЙ, А НЕ НАВЯЗЫВАЙ", "какие варианты есть", "СОМНЕНИЯ", "ЗАКРЫВАЙ ШАГОМ", "«Подумаю»")))
+check("Gemini: продажи — не отдавать инициативу на вопросах про документы/оформление (звонок 822daa6f)",
+      "НЕ ОТДАВАЙ ИНИЦИАТИВУ" in g)
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
 check("шаблон Анри не требует вопроса в каждой реплике (инструкция карточки главнее подсказок)",
       "любой ответ заканчивай коротким вопросом" not in _anri and "НЕ заканчивай каждую реплику вопросом" in _anri)
@@ -875,6 +878,9 @@ from backend.websockets import handler_gemini as _hg
 check("voiceActivity: ACTIVITY_START → start", _hg._voice_activity_kind({"voiceActivityType": "ACTIVITY_START"}) == "start")
 check("voiceActivity: ACTIVITY_END → end", _hg._voice_activity_kind({"voiceActivityType": "ACTIVITY_END"}) == "end")
 check("voiceActivity: непонятное → пусто", _hg._voice_activity_kind({"x": 1}) == "")
+check("Gemini без слов: «...» не считается словами (звонок 822daa6f)", not _hg._has_words("..."))
+check("Gemini без слов: пробелы/пунктуация не считаются словами", not _hg._has_words("  ... — !"))
+check("Gemini без слов: обычный ответ считается словами", _hg._has_words("Ооба, албетте!"))
 
 class _Log:
     def __init__(self): self.rows = []; self.interruptions = 0
@@ -908,6 +914,31 @@ run(_o3.send_json({"type": "gemini.voice_activity", "activity": "start"}))
 check("приветствие voiceActivity не обрывает", not any(d.get("type") == "conversation.interrupted" for d in _ws3.sent))
 _src = open(os.path.join(ROOT, "backend/websockets/handler_gemini.py"), encoding="utf-8").read()
 check("разбор событий Google пересылает voiceActivity наверх", '"voiceActivity" in response_data' in _src and "gemini.voice_activity" in _src)
+
+# ---------- прощание не обрывается на полуслове (звонок 02.11.2026, 822daa6f: "он затыкался, как будто
+# на полслова отключался" — hangup_call сработал, но шум/обрывок речи клиента во время прощания запускал
+# тот же барж-ин, что и обычное перебивание, и clear резал фразу прощания) ----------
+_ws4 = _SentWS(); _log4 = _Log()
+_s4 = gl.GeminiLiveVoiceSession(_ws4, types.SimpleNamespace(id="a"), _gc2, None, "c", True, _log4)
+_o4 = gl._ObserveSocket(_ws4, _s4)
+_s4._greet_first_audio = _time.time() - 30; _s4._greet_generated = True   # приветствие давно позади
+run(_o4.send_json({"type": "function_call.completed", "function": "hangup_call",
+                   "result": {"success": True, "status": "call_ending"}, "execution_time": 0.0}))
+check("hangup_call замечен сессией", _s4._hangup_in_progress)
+check("страж CallEndGuard тоже узнал о hangup_call (не напишет «модель hangup_call не вызвала»)", _s4.guard.hangup_sent)
+run(_o4.send_json({"type": "response.audio.delta", "delta": base64.b64encode(b"\x01\x00" * 24000 * 2).decode()}))
+run(_o4.send_json({"type": "gemini.voice_activity", "activity": "start"}))
+check("во время прощания voiceActivity не обрывает фразу (нет conversation.interrupted)",
+      not any(d.get("type") == "conversation.interrupted" for d in _ws4.sent))
+check("доигрывание прощания не сброшено", _s4.playback_left() > 0)
+# неудачный hangup_call (ошибка) сессию не отмечает — страж продолжает следить сам
+_ws5 = _SentWS()
+_s5 = gl.GeminiLiveVoiceSession(_ws5, types.SimpleNamespace(id="a"), _gc2, None, "c", True, None)
+run(gl._ObserveSocket(_ws5, _s5).send_json({"type": "function_call.completed", "function": "hangup_call",
+                                            "result": {"success": False, "error": "x"}}))
+check("отклонённый hangup_call доигрывание не защищает", not _s5._hangup_in_progress)
+_live_src = open(os.path.join(ROOT, "backend/websockets/handler_gemini_live.py"), encoding="utf-8").read()
+check("защита прощания реализована в коде", "_note_hangup_started" in _live_src and "_hangup_in_progress" in _live_src)
 
 # ---------- громкость голоса звонящего (клиент на 10–18 дБ тише агента) ----------
 import math as _m

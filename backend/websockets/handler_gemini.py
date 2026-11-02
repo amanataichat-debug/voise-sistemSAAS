@@ -51,6 +51,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 import json
 import asyncio
+import re
 import uuid
 import base64
 import traceback
@@ -129,6 +130,14 @@ def _count_events(gemini_client, data: dict) -> None:
         for part in (content.get("modelTurn") or {}).get("parts", []) or []:
             for key in part:
                 census["part." + key] += 1
+
+
+_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+
+
+def _has_words(text: str) -> bool:
+    """Есть ли хоть одна буква (не только пунктуация/пробелы/цифры)."""
+    return bool(_LETTER_RE.search(text or ""))
 
 
 def _voice_activity_kind(payload) -> str:
@@ -1003,7 +1012,22 @@ async def handle_gemini_messages(
                         # ═══════════════════════════════════════════════════════════
                         user_msg = current_user_transcript.strip()
                         assistant_msg = current_assistant_transcript.strip()
-                        
+                        # Звонок 02.11.2026 (822daa6f): на прямой вопрос клиента «хорошо, когда?» Gemini
+                        # ответила без единого слова (outputTranscription = «...»), 15 с мёртвого эфира —
+                        # клиент переспрашивал сам. Своего текста модель не прислала, аудио было (звонок не
+                        # обрывался), поэтому turn сохраняется как обычно; здесь только диагностика в журнал.
+                        if assistant_msg and user_msg and not _has_words(assistant_msg):
+                            log_to_render(f"⚠️ Turn #{turn_count}: Gemini ответила без слов ('{assistant_msg}') "
+                                         f"на вопрос клиента «{user_msg[:60]}»", "WARNING")
+                            try:
+                                from backend.websockets.call_log import CallLogRecorder
+                                _cl = CallLogRecorder.current()
+                                if _cl is not None:
+                                    _cl.add("session", f"Gemini ответила без слов на вопрос клиента «{user_msg[:60]}» "
+                                                       f"— возможная пауза в разговоре", level="warning")
+                            except Exception:
+                                pass
+
                         if user_msg or assistant_msg:
                             log_to_render(f"💾 Saving turn #{turn_count} to DB and Sheets...")
                             

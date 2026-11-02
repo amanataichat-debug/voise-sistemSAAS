@@ -245,6 +245,7 @@ class GeminiLiveVoiceSession:
         self._play_until = 0.0
         self.playback_barge_ins = 0
         self.input_level = PhoneInputLevel() if telephony else None
+        self._hangup_in_progress = False   # hangup_call сработал — доигрывание прощания больше не перебиваем
 
     @property
     def dialog_session_id(self) -> str:
@@ -278,8 +279,14 @@ class GeminiLiveVoiceSession:
             self.guard.on_transcript("user" if data.get("role") == "user" else "assistant", data.get("delta") or "")
         elif mtype == "response.audio.delta":
             self.guard.on_audio()
-        elif self.call_log is not None:
+        else:
             name = data.get("function")
+            if mtype == "function_call.completed" and name == "hangup_call":
+                result = data.get("result")
+                if not (isinstance(result, dict) and result.get("error")):
+                    self._note_hangup_started()
+            if self.call_log is None:
+                return
             if mtype == "function_call.executing":
                 self.call_log.functions += 1
                 self.call_log.add("function", f"Вызов функции {name}",
@@ -346,6 +353,18 @@ class GeminiLiveVoiceSession:
             self._greet_notes += 1
             self.call_log.add("session", text)
 
+    def _note_hangup_started(self) -> None:
+        """hangup_call реально сработал (звонок 02.11.2026, 822daa6f): страж CallEndGuard об этом не знал и
+        1) писал в журнал неверное «модель hangup_call не вызвала», 2) мог обрывать доигрывание прощания
+        по voiceActivity (шум/обрывок фразы клиента на самом конце звонка резал агента на полуслове вместо
+        аккуратного «попрощался → трубка»)."""
+        if self._hangup_in_progress:
+            return
+        self._hangup_in_progress = True
+        self.guard.hangup_sent = True
+        if self.call_log is not None:
+            self.call_log.add("session", "Прощание: hangup_call выполнен, звонок завершается")
+
     def playback_left(self, now: Optional[float] = None) -> float:
         """Сколько секунд ответа агента ещё не доиграно у собеседника."""
         return max(0.0, self._play_until - (now or time.time()))
@@ -358,7 +377,7 @@ class GeminiLiveVoiceSession:
             return
         now = time.time()
         left = self.playback_left(now)
-        if left < PLAYBACK_BARGE_MIN_LEFT_S or self.greeting_protected(now):
+        if left < PLAYBACK_BARGE_MIN_LEFT_S or self.greeting_protected(now) or self._hangup_in_progress:
             return
         self._play_until = 0.0
         self.playback_barge_ins += 1
