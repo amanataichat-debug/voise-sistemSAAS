@@ -44,7 +44,7 @@ Gemini 3.8 Live реально работает: setupComplete, 280 кусков
 - «Schwarze Panther» → агент ответил «я говорю только по-русски и по-кыргызски» → правило «не говори о языках»,
   у кыргызской карточки — кыргызский как основной язык линии.
 - Проверить на следующем звонке: в журнале строки «Клиент заговорил поверх ответа — агент замолчал» и
-  «громкость линии клиента +N дБ»; нет ли ложных обрывов агента (эхо/шум). Если есть — `GEMINI_VAD_PREFIX_MS=300`
+  «громкость линии клиента +N дБ»; нет ли ложных обрывов агента (эхо/шум). По умолчанию уже `300` (02.11.2026, звонок 6811616a — поднято с 200); если всё ещё обрывает — `GEMINI_VAD_PREFIX_MS=400`
   или `GEMINI_PLAYBACK_BARGE_IN=0`.
 
 ## ЧТО НЕ ПРОВЕРЕНО (было главным до первого звонка)
@@ -77,7 +77,7 @@ Gemini 3.8 Live реально работает: setupComplete, 280 кусков
 - `GEMINI_LONG_CALLS` — `1`/`0` (возобновление сессии + сжатие контекста).
 - `GEMINI_INPUT_TRANSCRIPTION_LANGUAGES` — по умолчанию `ru,ky`, `none` — выкл.
 - `GEMINI_THINKING_LEVEL` — `low`/`medium`/`high`, только при `GEMINI_LIVE_MODEL=gemini-3.8-live-extended-thinking`.
-- `GEMINI_PLAYBACK_BARGE_IN` (1) / `GEMINI_VAD_PREFIX_MS` (200) / `GEMINI_PHONE_AGC` (1) — обрыв доигрывания голосом клиента, мин. длительность речи для старта, АРУ линии.
+- `GEMINI_PLAYBACK_BARGE_IN` (1) / `GEMINI_VAD_PREFIX_MS` (300) / `GEMINI_PHONE_AGC` (1) — обрыв доигрывания голосом клиента, мин. длительность речи для старта, АРУ линии.
 - `GEMINI_VAD_PROFILE` / `GEMINI_VAD_SILENCE_MS` — детектор речи (по умолчанию `fast` / `800`).
 - `VOICE_COST_USD_PER_MIN_GEMINI_LIVE` — себестоимость минуты (default 0.03$).
 

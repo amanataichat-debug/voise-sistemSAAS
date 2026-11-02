@@ -685,7 +685,10 @@ class GeminiLiveClient:
             # обрывает и доигрывание ответа агента (handler_gemini_live.on_voice_activity), поэтому 100 мс мало —
             # кашель, «м» или щелчок линии обрывали бы агента; 200 мс — короткое слово («стоп», «подождите») проходит.
             try:
-                prefix_ms = max(20, min(1000, int(os.getenv("GEMINI_VAD_PREFIX_MS", "200"))))
+                # 200 → 300 (02.11.2026, звонок 6811616a): шум/невнятная фраза клиента во время
+                # ответа агента («in der Sitze») засчиталась началом речи и оборвала 4 с
+                # настоящего ответа; 300 мс пока оставляет запас против кашля/щелчка линии.
+                prefix_ms = max(20, min(1000, int(os.getenv("GEMINI_VAD_PREFIX_MS", "300"))))
             except ValueError:
                 prefix_ms = 200
             start_value = "START_SENSITIVITY_HIGH" if start_sens == "high" else "START_SENSITIVITY_LOW"

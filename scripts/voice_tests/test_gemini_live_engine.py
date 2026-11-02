@@ -1008,7 +1008,7 @@ check("шум пауз не раздуваем", audioop.rms(_lvl.process(_hum, 
 check("пока агент говорит, речь линии (эхо) не усиливается", audioop.rms(_lvl.process(_quiet, True), 2) <= audioop.rms(_quiet, 2) * 1.6)
 check("виджет без выравнивания громкости",
       gl.GeminiLiveVoiceSession(_SentWS(), types.SimpleNamespace(id="a"), _gc2, None, "c", False, None).input_level is None)
-check("Gemini VAD: prefixPaddingMs из GEMINI_VAD_PREFIX_MS, по умолчанию 200", 'GEMINI_VAD_PREFIX_MS", "200"' in _live)
+check("Gemini VAD: prefixPaddingMs из GEMINI_VAD_PREFIX_MS, по умолчанию 300 (поднят 02.11.2026)", 'GEMINI_VAD_PREFIX_MS", "300"' in _live)
 _ky = vh.language_note("ky")
 check("кыргызская карточка: кыргызский — основной язык линии, русские слова в кыргызской речи — норма",
       "ОСНОВНОЙ ЯЗЫК" in _ky and "РУССКИЕ СЛОВА" in _ky)
