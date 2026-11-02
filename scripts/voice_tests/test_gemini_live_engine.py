@@ -252,8 +252,10 @@ import hashlib
 from backend.websockets import live_client as lc, voice_hints as vh
 
 hint = lc.VOICE_DELEGATION_HINT
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски)",
-      hashlib.sha256(hint.encode()).hexdigest() == "28eb639a49388dd8be476d7c5a20430ae40823d49ba99201afdf7815cd70b286", len(hint))
+# Хеш меняется осознанно 02.11.2026: добавлен абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» (владелец:
+# звонок звучал «скован, как будто цепями» — слишком много точных запретов подряд).
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски; обновлён 02.11.2026)",
+      hashlib.sha256(hint.encode()).hexdigest() == "3f6f3468567d5d19db0dc06e686670cfc3efcf7a7884710ff8b4ed3839e4f1d8", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("куски склеиваются в тот же текст для GPT",
@@ -269,7 +271,8 @@ check("Gemini: не дежурный вопрос в каждой реплике
       "НЕ заканчивай каждую реплику вопросом" in g and lc.VOICE_MANNER_HINT not in g
       and "спроси, интересно ли дальше" not in g and "ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ" not in g)
 check("Gemini: без противоречия «можно мм/угу» против «МОЛЧИ»", "можно одно тихое «мм»" not in g)
-check("Gemini: подсказки не длиннее прежних 12 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 12500, len(g))
+# Потолок поднят 02.11.2026: добавлен абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» (та же причина, что у GPT-Live).
+check("Gemini: подсказки не длиннее 13 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 13000, len(g))
 check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
       "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
