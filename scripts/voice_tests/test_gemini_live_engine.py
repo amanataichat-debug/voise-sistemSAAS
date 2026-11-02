@@ -286,6 +286,14 @@ check("Gemini: продажи — не отдавать инициативу н�
       "НЕ ОТДАВАЙ ИНИЦИАТИВУ" in g)
 check("Gemini: сотрудник, а не фильтр к менеджеру — отвечает сам из инструкции/базы, менеджер не вместо ответа",
       "ТЫ — ПОЛНОЦЕННЫЙ СОТРУДНИК, А НЕ ФИЛЬТР" in g and "а не вместо ответа" in g)
+
+# ---------- после hangup_call модель не озвучивает по-английски мысли о том, что ответ не нужен
+# (звонок 02.11.2026, 6811616a: на шум после прощания Gemini сказала вслух «The call is already
+# ending, so no further response is needed.») ----------
+from backend.functions.hangup_call import HangupCallFunction
+_hc = run(HangupCallFunction.execute({"reason": "conversation_completed", "farewell_message": "Жакшы калыңыз!"}))
+check("hangup_call: явный запрет озвучивать по-английски мысли о завершении звонка",
+      _hc["success"] is True and "переходи на английский" in _hc["message"] and "просто молчи" in _hc["message"])
 check("Gemini: живая речь — вдох и «хм…»/«так…» перед непростым ответом (владелец: вдохи, выдохи)",
       "естественный вдох" in g and "«хм…»" in g)
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
