@@ -293,6 +293,29 @@ check("шаблон Анри не требует вопроса в каждой 
       "любой ответ заканчивай коротким вопросом" not in _anri and "НЕ заканчивай каждую реплику вопросом" in _anri)
 check("шаблон Анри: полноценный сотрудник, не отправляет на менеджера то, что знает (звонок 822daa6f)",
       "полноценный сотрудник" in _anri and "называй, только когда клиент решил подключаться" not in _anri)
+
+# ---------- у Gemini Live ТА ЖЕ база знаний и те же живые функции, что у GPT-Live/Eleven
+# (владелец 02.11.2026: «ощущение, что они не читают базу знаний») ----------
+_sip_src = open(os.path.join(ROOT, "backend/api/sip_gateway.py"), encoding="utf-8").read()
+_he_src = open(os.path.join(ROOT, "backend/websockets/handler_eleven.py"), encoding="utf-8").read()
+# build_call_system_prompt / apply_live_kb_functions вызываются один раз, БЕЗ ветвления по
+# voice_engine — gpt_live влияет только на max_chars (обрезка под лимит GPT-Live), не на то,
+# подмешиваются ли знания и функции вообще.
+for _src, _name in ((_sip_src, "sip_gateway.py"), (_he_src, "handler_eleven.py")):
+    check(f"{_name}: знания и функции подмешиваются ОДИН РАЗ, без ветвления по voice_engine",
+          _src.count("apply_live_kb_functions(") == 1 and _src.count("build_call_system_prompt(") == 1)
+_skb_src = open(os.path.join(ROOT, "backend/functions/search_knowledge_base.py"), encoding="utf-8").read()
+_fp_src = open(os.path.join(ROOT, "backend/functions/find_products.py"), encoding="utf-8").read()
+check("search_knowledge_base не смотрит на провайдера (один код для Gemini/GPT-Live/Eleven)",
+      "provider" not in _skb_src and "gemini" not in _skb_src.lower())
+check("find_products не смотрит на провайдера (один код для Gemini/GPT-Live/Eleven)",
+      "provider" not in _fp_src and "gemini" not in _fp_src.lower())
+check("Gemini Live: max_chars не передаётся (знания не обрезаются, в отличие от GPT-Live)",
+      "max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None" in _sip_src
+      and "max_chars=LIVE_VOICE_INSTRUCTIONS_MAX_CHARS if gpt_live else None" in _he_src)
+check("Gemini Live (карточка): функции знаний включены в setup — search_knowledge_base реально попадает в Google",
+      "self.enabled_functions = [normalize_function_name(tool" in open(
+          os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read())
 check("Gemini: список функций не слипается с правилами диалога", "- hangup_call: Завершает звонок\n" in g, g[g.index("- hangup_call"):][:60])
 check("Gemini получает правила диалога: перебивания, завершение, материалы, приветствие",
       all(k in g for k in ("Interruption policy", "ЗАВЕРШЕНИЕ", "МАТЕРИАЛЫ", "ПРИВЕТСТВИЕ")))
