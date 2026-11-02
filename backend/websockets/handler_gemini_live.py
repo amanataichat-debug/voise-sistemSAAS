@@ -102,6 +102,10 @@ class _ObserveSocket:
             self._session.observe(data)
         except Exception as exc:  # наблюдение не должно ронять звонок
             _log(f"observe failed: {exc}", "WARNING")
+        if isinstance(data, dict) and data.get("type") == "conversation.interrupted" and self._session.greeting_protected():
+            # перебивание на приветствии не чистит очередь звука: иначе уже готовое приветствие пропадает целиком
+            self._session.note_greeting_guard("Gemini оборвал приветствие (шум линии) — очередь звука сохранена")
+            return None
         return await self._ws.send_json(data, mode=mode)
 
     def __getattr__(self, name):
@@ -140,6 +144,14 @@ class GeminiLiveVoiceSession:
             "assistant_audio_ever": False,
             "greeting_retries": 0,
         }
+        # Защита приветствия. Звонок 02.11.2026 (9d508d88): Gemini сгенерировал приветствие за доли секунды
+        # (быстрее реального времени), шум линии при снятии трубки сработал как «перебивание», адаптер очистил
+        # очередь звука — клиент 10 с слышал тишину и переспрашивал «алло?». Пока приветствие не проиграно,
+        # Gemini получает тишину вместо звука линии, а «перебивание» очередь не чистит.
+        self._greet_audio_s = 0.0
+        self._greet_first_audio: Optional[float] = None
+        self._greet_generated = False
+        self._greet_notes = 0
 
     @property
     def dialog_session_id(self) -> str:
@@ -150,6 +162,16 @@ class GeminiLiveVoiceSession:
     def observe(self, data: Dict[str, Any]) -> None:
         """События, идущие клиенту: стенограмма и звук — в страж прощания, функции — в журнал звонка."""
         mtype = data.get("type")
+        if not self._greet_generated:
+            if mtype == "response.audio.delta":
+                if self._greet_first_audio is None:
+                    self._greet_first_audio = time.time()
+                try:
+                    self._greet_audio_s += len(base64.b64decode(data.get("delta") or "")) / 2 / GEMINI_OUT_RATE
+                except Exception:
+                    pass
+            elif mtype in ("assistant.speech.ended", "turn.saved") and self._greet_first_audio is not None:
+                self._greet_generated = True
         if mtype == "transcript.delta":
             self.guard.on_transcript("user" if data.get("role") == "user" else "assistant", data.get("delta") or "")
         elif mtype == "response.audio.delta":
@@ -205,6 +227,32 @@ class GeminiLiveVoiceSession:
                 self.call_log.add("assistant", f"Агент: «{assistant}»")
         return True
 
+    # ------------------------------------------------------------------ защита приветствия
+    def greeting_protected(self, now: Optional[float] = None) -> bool:
+        """Идёт приветствие: ещё не началось (до 8 с от старта) или его звук не доигран (+0,4 с, не дольше 15 с)."""
+        if not self.telephony:
+            return False   # в виджете эхо гасит браузер, шума снятия трубки нет
+        now = now or time.time()
+        if self._greet_first_audio is None:
+            return now - self.started_at < 8.0
+        if now - self._greet_first_audio > 15.0:
+            return False
+        return (not self._greet_generated) or now < self._greet_first_audio + self._greet_audio_s + 0.4
+
+    def note_greeting_guard(self, text: str) -> None:
+        if self.call_log is not None and self._greet_notes < 2:
+            self._greet_notes += 1
+            self.call_log.add("session", text)
+
+    async def _feed(self, pcm: bytes) -> None:
+        """Звук линии в Gemini; на приветствии — тишина той же длины (поток не прерывается, VAD не срабатывает)."""
+        if not pcm or not self.client.is_connected:
+            return
+        data = self._to_gemini(pcm)
+        if self.greeting_protected():
+            data = b"\x00" * len(data)
+        await self.client.process_audio(data)
+
     # ------------------------------------------------------------------ вход от клиента
     def _to_gemini(self, pcm: bytes) -> bytes:
         if self.in_rate == GEMINI_IN_RATE:
@@ -237,8 +285,7 @@ class GeminiLiveVoiceSession:
                     except Exception:
                         continue
                     self.audio_chunks_in += 1
-                    if pcm and self.client.is_connected:
-                        await self.client.process_audio(self._to_gemini(pcm))
+                    await self._feed(pcm)
                     await self.websocket.send_json({"type": "input_audio_buffer.append.ack",
                                                     "event_id": data.get("event_id")})
                 elif msg_type == "response.cancel":
@@ -251,8 +298,7 @@ class GeminiLiveVoiceSession:
                 # speech.user_started/stopped: сервер Google сам определяет речь и перебивания
             elif message.get("bytes") is not None:
                 self.audio_chunks_in += 1
-                if self.client.is_connected:
-                    await self.client.process_audio(self._to_gemini(message["bytes"]))
+                await self._feed(message["bytes"])
 
     # ------------------------------------------------------------------ жизненный цикл
     async def run(self) -> None:

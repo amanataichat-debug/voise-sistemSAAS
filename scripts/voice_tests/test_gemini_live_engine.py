@@ -275,7 +275,7 @@ check("Gemini: никогда не говорит на других языках
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
       "КАК ПОНИМАТЬ КЫРГЫЗСКУЮ РЕЧЬ" in g and "смешивать" in g and "канча турат" in g and "ойлонуп көрөйүн" in g)
 check("Gemini: продажи — понять, предложить под задачу, сомнения («подумаю»), закрыть шагом со временем",
-      all(k in g for k in ("ПОЙМИ", "ПРЕДЛОЖИ ПОД ЗАДАЧУ", "СОМНЕНИЯ", "ЗАКРЫВАЙ ШАГОМ", "«Подумаю»")))
+      all(k in g for k in ("ПОЙМИ", "КОНСУЛЬТИРУЙ, А НЕ НАВЯЗЫВАЙ", "какие варианты есть", "СОМНЕНИЯ", "ЗАКРЫВАЙ ШАГОМ", "«Подумаю»")))
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
 check("шаблон Анри не требует вопроса в каждой реплике (инструкция карточки главнее подсказок)",
       "любой ответ заканчивай коротким вопросом" not in _anri and "НЕ заканчивай каждую реплику вопросом" in _anri)
@@ -835,6 +835,36 @@ check("websockets >= 14: extra_headers отверг TypeError → открыти
 _live = open(os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read()
 check("в коде Gemini есть оба варианта заголовков (как у GPT-Live)",
       "extra_headers" in _live and "additional_headers" in _live)
+
+
+# ---------- защита приветствия на телефоне (звонок 02.11.2026: шум линии «перебил» приветствие, клиент 10 с слышал тишину) ----------
+class _SentWS:
+    def __init__(self): self.sent = []
+    async def send_json(self, d, mode="text"): self.sent.append(d)
+_fed = []
+async def _pa(b): _fed.append(b)
+_gc = types.SimpleNamespace(is_connected=True, process_audio=_pa, function_gate=None, session_id="s")
+_ws = _SentWS()
+_sess = gl.GeminiLiveVoiceSession(_ws, types.SimpleNamespace(id="a"), _gc, None, "c", True, None)
+_obs = gl._ObserveSocket(_ws, _sess)
+check("приветствие ещё не началось — защищено (до 8 с)", _sess.greeting_protected())
+run(_sess._feed(b"\x10\x20" * 160))
+check("на приветствии в Gemini идёт тишина, а не звук линии", _fed and set(_fed[-1]) == {0}, _fed[-1][:8] if _fed else None)
+run(_obs.send_json({"type": "response.audio.delta", "delta": base64.b64encode(b"\x01\x00" * 24000).decode()}))
+run(_obs.send_json({"type": "conversation.interrupted"}))
+check("«перебивание» на приветствии не уходит в адаптер (очередь звука не чистится)",
+      not any(d.get("type") == "conversation.interrupted" for d in _ws.sent))
+run(_obs.send_json({"type": "assistant.speech.ended"}))
+_now = _time.time()
+check("пока звук приветствия (1 с) не доигран — защищено", _sess.greeting_protected(_now + 0.5))
+check("после проигрыша приветствия — обычный разговор", not _sess.greeting_protected(_now + 2.0))
+_sess._greet_first_audio -= 5   # приветствие давно доиграно
+run(_sess._feed(b"\x10\x20" * 160))
+run(_obs.send_json({"type": "conversation.interrupted"}))
+check("после приветствия звук линии идёт как есть, перебивание доходит",
+      set(_fed[-1]) != {0} and any(d.get("type") == "conversation.interrupted" for d in _ws.sent))
+_sw = gl.GeminiLiveVoiceSession(_SentWS(), types.SimpleNamespace(id="a"), _gc, None, "c", False, None)
+check("в виджете защиты приветствия нет", not _sw.greeting_protected())
 
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
