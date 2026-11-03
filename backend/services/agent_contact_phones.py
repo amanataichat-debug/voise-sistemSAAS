@@ -142,6 +142,64 @@ def voice_call_since(db: Session, contact, user_id, since_utc) -> Optional[bool]
     return False
 
 
+def voice_calls_since(db: Session, contact, user_id, since_utc) -> Optional[list]:
+    """
+    Настоящие звонки с клиентом начиная с since_utc (aware UTC), старые → новые:
+    исходящие, реально набранные (или в очереди), и входящие, на которые ответили.
+    None — проверить не удалось (нет номеров или ошибка БД).
+    """
+    from backend.models.sip_gateway import SipCall
+
+    numbers = contact_phone_digits(contact)
+    if not numbers or user_id is None:
+        return None
+    try:
+        rows = (
+            db.query(SipCall)
+            .filter(
+                SipCall.user_id == user_id,
+                SipCall.created_at >= since_utc,
+                or_(
+                    (SipCall.direction == "outbound") & SipCall.to_number.in_(numbers),
+                    (SipCall.direction == "inbound") & SipCall.caller.in_(numbers),
+                ),
+            )
+            .order_by(SipCall.created_at.asc())
+            .all()
+        )
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] voice_calls_since: sip_calls не прочитаны: {e}")
+        return None
+    return [
+        c for c in rows
+        if (c.direction == "outbound" and _was_dialed(c))
+        or (c.direction == "inbound" and c.answered_at is not None)
+    ]
+
+
+def today_call_stats(db: Session, contact, user_id, local_date) -> Optional[dict]:
+    """
+    Звонки с клиентом за бишкекский день (ветка 0311-call-guard):
+      answered   — был ли разговор (клиент взял трубку или звонил сам);
+      dialed_out — сколько исходящих набрали;
+      last_answered — последний звонок дня состоялся (разговор, а не недозвон).
+    None — проверить не удалось.
+
+    Нужен, чтобы «один звонок в день» не мешал перезвону, о котором договорились:
+    клиент взял трубку и сказал «перезвоните через 2 часа» — это его согласие,
+    а не дозвон вслепую.
+    """
+    start, _end = bishkek_day_bounds_utc(local_date)
+    rows = voice_calls_since(db, contact, user_id, start)
+    if rows is None:
+        return None
+    return {
+        "answered": any(c.answered_at is not None for c in rows),
+        "dialed_out": sum(1 for c in rows if c.direction == "outbound"),
+        "last_answered": bool(rows) and rows[-1].answered_at is not None,
+    }
+
+
 def voice_call_today(db: Session, contact, user_id, local_date) -> Optional[bool]:
     """voice_call_since за бишкекский день local_date (см. выше)."""
     start, _end = bishkek_day_bounds_utc(local_date)

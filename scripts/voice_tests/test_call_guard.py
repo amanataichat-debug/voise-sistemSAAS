@@ -58,11 +58,44 @@ check("без db → прежняя логика (отказ)", r.get("error") =
 # --- планировщик: кулдаун 3 ч не держит звонок после сообщения ---
 sched = TaskScheduler.__new__(TaskScheduler)
 naive_now = now_utc.replace(tzinfo=None)
-acp.voice_call_since = lambda *a, **k: False
+acp.voice_calls_since = lambda *a, **k: []
 check("кулдаун: переписка → звонок сейчас", sched._dial_gate(contact, naive_now, None, db=object()) is None)
-acp.voice_call_since = lambda *a, **k: True
+acp.voice_calls_since = lambda *a, **k: [types.SimpleNamespace(answered_at=None, direction="outbound")]
 check("кулдаун: был звонок → перенос", sched._dial_gate(contact, naive_now, None, db=object()) is not None)
 check("кулдаун без db → прежняя логика", sched._dial_gate(contact, naive_now, None) is not None)
+
+# --- перезвон по договорённости в тот же день ---
+real_called = contact.last_called_at
+acp.voice_call_today = lambda *a, **k: True
+acp.today_call_stats = lambda *a, **k: {"answered": True, "dialed_out": 1, "last_answered": True}
+r = at._check_call_guards(contact, when, window=None, db=object())
+check("клиент взял трубку и попросил «через 2 часа» → звонок сегодня разрешён", r.get("ok"), r)
+acp.today_call_stats = lambda *a, **k: {"answered": False, "dialed_out": 1, "last_answered": False}
+r = at._check_call_guards(contact, when, window=None, db=object())
+check("сегодня только недозвон → already_called_today", r.get("error") == "already_called_today", r)
+acp.today_call_stats = lambda *a, **k: {"answered": True, "dialed_out": 3, "last_answered": True}
+r = at._check_call_guards(contact, when, window=None, db=object())
+check("3 набора за день → daily_call_limit", r.get("error") == "daily_call_limit", r)
+acp.today_call_stats = lambda *a, **k: None
+r = at._check_call_guards(contact, when, window=None, db=object())
+check("статистику не прочитать → прежний отказ", r.get("error") == "already_called_today", r)
+
+# --- планировщик: после разговора пауза 15 мин, а не 3 часа ---
+from backend.core import task_scheduler as ts
+answered = types.SimpleNamespace(answered_at=naive_now, direction="outbound")
+missed_row = types.SimpleNamespace(answered_at=None, direction="outbound")
+contact.last_called_at = (now_utc - timedelta(minutes=20)).replace(tzinfo=None)
+acp.voice_calls_since = lambda *a, **k: [answered]
+check("после разговора 20 мин назад → звонок сейчас", sched._dial_gate(contact, naive_now, None, db=object()) is None)
+acp.voice_calls_since = lambda *a, **k: [missed_row]
+check("после недозвона 20 мин назад → перенос", sched._dial_gate(contact, naive_now, None, db=object()) is not None)
+acp.voice_calls_since = lambda *a, **k: []
+check("звонков не было (переписка) → звонок сейчас", sched._dial_gate(contact, naive_now, None, db=object()) is None)
+contact.last_called_at = real_called
+
+src_prompt = open(ao.__file__, encoding="utf-8").read()
+check("промпт PostCall: просьба клиента о времени → РОВНО на это время, в том числе сегодня",
+      "РОВНО на это время, в том числе СЕГОДНЯ" in src_prompt)
 
 # --- строки сообщений помечены каналом сразу при создании ---
 src = open(ao.__file__, encoding="utf-8").read()

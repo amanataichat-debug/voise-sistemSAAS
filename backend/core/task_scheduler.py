@@ -50,6 +50,9 @@ DEFAULT_TIMEZONE = "Asia/Bishkek"
 # набираем сейчас, а переносим. Клиент сбросил/не ответил → агент не долбит
 # подряд, перезвонит позже (во второй половине дня, в рабочем окне).
 CALL_RETRY_COOLDOWN = timedelta(hours=3)
+# После СОСТОЯВШЕГОСЯ разговора (клиент попросил перезвонить «через час») пауза
+# короткая: 3 часа держали бы «через 2 часа» до вечера (0311-call-guard).
+CALLBACK_AFTER_TALK_COOLDOWN = timedelta(minutes=15)
 
 # Провайдеры со своим исходящим сценарием. Каскаду нужна цепочка
 # vox-turn-taking + outbound_cascade, Fish — прокси синтеза (/ws/fish/tts/…);
@@ -281,17 +284,23 @@ class TaskScheduler:
 
         # B1 — анти-долбёж: не раньше, чем через CALL_RETRY_COOLDOWN после прошлого звонка.
         last = getattr(agent_contact, "last_called_at", None)
+        cooldown = CALL_RETRY_COOLDOWN
         if last is not None:
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
             if db is not None and last + CALL_RETRY_COOLDOWN > now_utc.replace(tzinfo=timezone.utc):
                 # Сверка с фактом (0311-call-guard): last_called_at мог поставить
-                # разбор сообщения из мессенджера — тогда это не звонок.
-                from backend.services.agent_contact_phones import voice_call_since
-                if voice_call_since(db, agent_contact, agent_contact.user_id, last - timedelta(hours=2)) is False:
+                # разбор сообщения из мессенджера — тогда это не звонок; а если
+                # последний звонок — состоявшийся разговор, перезвон по просьбе
+                # клиента ждёт только короткую паузу.
+                from backend.services.agent_contact_phones import voice_calls_since
+                rows = voice_calls_since(db, agent_contact, agent_contact.user_id, last - timedelta(hours=2))
+                if rows is not None and not rows:
                     last = None
+                elif rows and rows[-1].answered_at is not None:
+                    cooldown = CALLBACK_AFTER_TALK_COOLDOWN
         if last is not None:
-            cooldown_until = last.astimezone(BISHKEK) + CALL_RETRY_COOLDOWN
+            cooldown_until = last.astimezone(BISHKEK) + cooldown
             if cooldown_until > earliest:
                 earliest = cooldown_until
 

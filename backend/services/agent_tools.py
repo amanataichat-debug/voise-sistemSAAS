@@ -4112,6 +4112,11 @@ async def fn_bulk_schedule_calls(args: dict, user_id: str, agent_config_id: str,
 # только через промпт. Теперь любое планирование звонка проходит через этот
 # shared-guard (чтобы в trigger_immediate_call и в create_agent_task(channel=call)
 # логика была единой).
+# Предел исходящих наборов одному клиенту за день — даже когда он сам просил
+# перезвонить (0311-call-guard): «перезвоните через 2 часа» разрешено, но не
+# бесконечная череда звонков.
+MAX_CALLS_PER_DAY = 3
+
 CALL_WINDOW_START_HOUR = 9   # 09:00 Бишкек — по умолчанию, если окно агента не задано
 CALL_WINDOW_END_HOUR = 20    # 20:00 Бишкек (не включительно)
 
@@ -4163,7 +4168,9 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
       * окно звонков агента (call_window: настройка «Звонки», по умолчанию 09–20;
         None — без ограничения по времени);
       * один звонок в день на клиента (last_called_at < сегодня-Бишкек; с db —
-        сверяется со строками sip_calls: переписка звонком не считается);
+        сверяется со строками sip_calls: переписка звонком не считается; если
+        сегодня клиент взял трубку — перезвон по его просьбе разрешён);
+      * не больше MAX_CALLS_PER_DAY исходящих наборов за день;
       * недозвон сегодня (по факту, строки sip_calls; нужен db) — на этот день
         звонок больше не ставим, пока клиент сам не вышел на связь;
       * оба запрета снимает сам клиент: после звонка он написал в любом
@@ -4241,6 +4248,19 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
                     "но звонков в sip_calls нет — это была переписка, звонок разрешён"
                 )
                 called_today = False
+        if called_today and db is not None:
+            # Перезвон по договорённости (0311-call-guard): сегодня клиент взял трубку
+            # и сам попросил перезвонить («через 2 часа», «после обеда») — это не
+            # дозвон вслепую, его просьбу выполняем сегодня же. Недозвон ПОСЛЕ
+            # разговора по-прежнему держит проверка ниже, общий предел — MAX_CALLS_PER_DAY.
+            from backend.services.agent_contact_phones import today_call_stats
+            stats = today_call_stats(db, contact, user_id or contact.user_id, today_local)
+            if stats and stats["answered"]:
+                logger.info(
+                    f"[AGENT-TOOLS] contact {contact.id}: сегодня был разговор — "
+                    "перезвон по договорённости в тот же день разрешён"
+                )
+                called_today = False
         if called_today:
             return {
                 "ok": False,
@@ -4250,6 +4270,21 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
                     f"Ближайший разрешённый звонок: завтра {call_window_text(window)}."
                 ),
                 "last_called_at": last_called.astimezone(BISHKEK).strftime("%Y-%m-%d %H:%M"),
+            }
+
+    # --- предел звонков в день (даже по договорённости) ---
+    if db is not None:
+        from backend.services.agent_contact_phones import today_call_stats
+        stats = today_call_stats(db, contact, user_id or contact.user_id, today_local)
+        if stats and stats["dialed_out"] >= MAX_CALLS_PER_DAY:
+            return {
+                "ok": False,
+                "error": "daily_call_limit",
+                "hint": (
+                    f"Сегодня этому клиенту уже набирали {stats['dialed_out']} раза — это предел "
+                    f"({MAX_CALLS_PER_DAY} в день), чтобы номер не попал в спам у оператора. "
+                    f"Напиши клиенту в мессенджер или позвони завтра {call_window_text(window)}."
+                ),
             }
 
     # --- недозвон сегодня (по факту) ---
