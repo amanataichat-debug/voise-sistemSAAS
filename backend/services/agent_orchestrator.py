@@ -256,6 +256,19 @@ def _after_merge(db, result_str: str, agent_contact, agent_call):
     return main
 
 
+# Направления PostCall, которые НЕ звонок: переписка и SMS. Только остальные
+# («outbound» / «inbound» голосом) считаются попыткой звонка.
+MESSAGE_DIRECTIONS = frozenset({
+    "sms_inbound", "telegram_inbound", "telegram_outbound",
+    "instagram_inbound", "whatsapp_inbound",
+})
+
+
+def is_voice_direction(call_direction) -> bool:
+    """True — событие PostCall было голосовым звонком, а не сообщением."""
+    return (call_direction or "outbound").lower() not in MESSAGE_DIRECTIONS
+
+
 def build_conversation_timeline(
     db, agent_contact, exclude_call_id=None,
     max_events=TIMELINE_MAX_EVENTS, days_window=TIMELINE_DAYS_WINDOW,
@@ -1596,6 +1609,10 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         ]
 
         is_tg_out = (call_direction or "").lower() == "telegram_outbound"
+        # Попытка звонка и last_called_at — только для настоящих звонков. Раньше
+        # сюда попадали и сообщения WhatsApp/Telegram/Instagram/SMS: клиент написал,
+        # а антиспам «один звонок в день» думал, что ему уже звонили.
+        is_voice = is_voice_direction(call_direction)
 
         try:
             client = get_openrouter_client()
@@ -1718,9 +1735,10 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             # Запланированная отправка в Telegram — не попытка дозвона: счётчик
             # попыток и авто-маппинг стадии (SUCCESS → success) к ней не применяем.
             # Стадию при отправке сообщения меняет только явный move_contact_stage.
-            if not is_tg_out:
+            if is_voice:
                 agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
                 agent_contact.last_called_at = datetime.utcnow()
+            if not is_tg_out:
                 # Обязательная стадия воронки: если оркестратор не двинул контакт
                 # тулзой move_contact_stage — применяем детерминированный маппинг
                 # от post_call_decision (стадия проставляется ВСЕГДА).
@@ -1752,7 +1770,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             agent_call.completed_at = datetime.utcnow()
             agent_call.transcript = transcript
             agent_call.duration_seconds = int(duration_seconds)
-            if not is_tg_out:
+            if is_voice:
                 agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
                 agent_contact.last_called_at = datetime.utcnow()
             # Стадия воронки по решению — только если есть основание её менять
@@ -1936,8 +1954,9 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             }
 
             # Update AgentContact
-            agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-            agent_contact.last_called_at = datetime.utcnow()
+            if is_voice_direction(call_direction):
+                agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
+                agent_contact.last_called_at = datetime.utcnow()
             # Обязательная стадия воронки: если оркестратор не двинул контакт
             # тулзой move_contact_stage — применяем детерминированный маппинг.
             if not stage_moved_by_tool:
@@ -1971,8 +1990,9 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             agent_call.completed_at = datetime.utcnow()
             agent_call.transcript = transcript
             agent_call.duration_seconds = int(duration_seconds)
-            agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
-            agent_contact.last_called_at = datetime.utcnow()
+            if is_voice_direction(call_direction):
+                agent_contact.attempts_count = (agent_contact.attempts_count or 0) + 1
+                agent_contact.last_called_at = datetime.utcnow()
             # Стадия воронки по решению — только если есть основание её менять.
             _new_stage = stage_from_decision(agent_call.post_call_decision, agent_contact.status)
             if _new_stage:
@@ -3100,6 +3120,10 @@ async def handle_inbound_sms(sms_message_id: str):
             status="calling",
             direction="inbound",
             started_at=datetime.utcnow(),
+            # Канал — сразу, а не в конце PostCall: если разбор упадёт или его прервёт
+            # деплой, строка без пометки читалась как «Звонок (входящий)» и агент
+            # считал, что клиенту уже звонили (ветка 0311-call-guard).
+            postcall_log={"call_direction": "sms_inbound"},
         )
         db.add(inbound_call)
         db.commit()
@@ -3189,6 +3213,10 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
             status="calling",
             direction="inbound",
             started_at=datetime.utcnow(),
+            # Канал — сразу, а не в конце PostCall: если разбор упадёт или его прервёт
+            # деплой, строка без пометки читалась как «Звонок (входящий)» и агент
+            # считал, что клиенту уже звонили (ветка 0311-call-guard).
+            postcall_log={"call_direction": "telegram_inbound"},
         )
         db.add(inbound_call)
         db.commit()
@@ -3270,6 +3298,10 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
             status="calling",
             direction="inbound",
             started_at=datetime.utcnow(),
+            # Канал — сразу, а не в конце PostCall: если разбор упадёт или его прервёт
+            # деплой, строка без пометки читалась как «Звонок (входящий)» и агент
+            # считал, что клиенту уже звонили (ветка 0311-call-guard).
+            postcall_log={"call_direction": "instagram_inbound"},
         )
         db.add(inbound_call)
         db.commit()
@@ -3357,6 +3389,10 @@ async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, messag
             status="calling",
             direction="inbound",
             started_at=datetime.utcnow(),
+            # Канал — сразу, а не в конце PostCall: если разбор упадёт или его прервёт
+            # деплой, строка без пометки читалась как «Звонок (входящий)» и агент
+            # считал, что клиенту уже звонили (ветка 0311-call-guard).
+            postcall_log={"call_direction": "whatsapp_inbound"},
         )
         db.add(inbound_call)
         db.commit()

@@ -100,6 +100,54 @@ def missed_call_today(db: Session, contact, user_id, local_date) -> Optional[obj
     return missed
 
 
+def voice_call_since(db: Session, contact, user_id, since_utc) -> Optional[bool]:
+    """
+    Был ли с клиентом настоящий звонок начиная с since_utc (aware UTC): исходящий,
+    реально набранный (или стоящий в очереди), либо входящий, на который ответили.
+
+    True / False — по строкам sip_calls; None — проверить не удалось (нет номеров
+    или ошибка БД): тогда вызывающий код остаётся на прежней логике.
+
+    Зачем (ветка 0311-call-guard): last_called_at долго ставил и разбор сообщения
+    WhatsApp/Telegram — клиент написал, а антиспам «один звонок в день» отвечал
+    агенту «сегодня уже звонили». Старые записи так и остались в базе, поэтому
+    last_called_at теперь сверяется с фактом.
+    """
+    from backend.models.sip_gateway import SipCall
+
+    numbers = contact_phone_digits(contact)
+    if not numbers or user_id is None:
+        return None
+    try:
+        rows = (
+            db.query(SipCall)
+            .filter(
+                SipCall.user_id == user_id,
+                SipCall.created_at >= since_utc,
+                or_(
+                    (SipCall.direction == "outbound") & SipCall.to_number.in_(numbers),
+                    (SipCall.direction == "inbound") & SipCall.caller.in_(numbers),
+                ),
+            )
+            .all()
+        )
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] voice_call_since: sip_calls не прочитаны: {e}")
+        return None
+    for call in rows:
+        if call.direction == "outbound" and _was_dialed(call):
+            return True
+        if call.direction == "inbound" and call.answered_at is not None:
+            return True
+    return False
+
+
+def voice_call_today(db: Session, contact, user_id, local_date) -> Optional[bool]:
+    """voice_call_since за бишкекский день local_date (см. выше)."""
+    start, _end = bishkek_day_bounds_utc(local_date)
+    return voice_call_since(db, contact, user_id, start)
+
+
 # ---------------------------------------------------------------------------
 # Второй номер клиента и поиск карточки по любому его номеру
 # ---------------------------------------------------------------------------

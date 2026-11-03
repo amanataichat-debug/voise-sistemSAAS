@@ -4162,7 +4162,8 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
       * оператор клиента — O! (050 / 070);
       * окно звонков агента (call_window: настройка «Звонки», по умолчанию 09–20;
         None — без ограничения по времени);
-      * один звонок в день на клиента (last_called_at < сегодня-Бишкек);
+      * один звонок в день на клиента (last_called_at < сегодня-Бишкек; с db —
+        сверяется со строками sip_calls: переписка звонком не считается);
       * недозвон сегодня (по факту, строки sip_calls; нужен db) — на этот день
         звонок больше не ставим, пока клиент сам не вышел на связь;
       * оба запрета снимает сам клиент: после звонка он написал в любом
@@ -4227,7 +4228,20 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     if last_called is not None:
         if last_called.tzinfo is None:
             last_called = last_called.replace(tzinfo=timezone.utc)
-        if last_called.astimezone(BISHKEK).date() == today_local and not _client_came_back(db, contact, last_called):
+        called_today = (last_called.astimezone(BISHKEK).date() == today_local
+                        and not _client_came_back(db, contact, last_called))
+        if called_today and db is not None:
+            # Сверка с фактом: last_called_at раньше ставил и разбор сообщения из
+            # мессенджера — клиенту не звонили, а агент получал «уже звонили».
+            from backend.services.agent_contact_phones import voice_call_today
+            fact = voice_call_today(db, contact, user_id or contact.user_id, today_local)
+            if fact is False:
+                logger.info(
+                    f"[AGENT-TOOLS] contact {contact.id}: last_called_at={last_called} сегодня, "
+                    "но звонков в sip_calls нет — это была переписка, звонок разрешён"
+                )
+                called_today = False
+        if called_today:
             return {
                 "ok": False,
                 "error": "already_called_today",

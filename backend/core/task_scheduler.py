@@ -261,7 +261,7 @@ class TaskScheduler:
 
         return assistant_id, assistant_name, assistant_type
 
-    def _dial_gate(self, agent_contact, now_utc: datetime, agent_config=None) -> Optional[datetime]:
+    def _dial_gate(self, agent_contact, now_utc: datetime, agent_config=None, db=None) -> Optional[datetime]:
         """
         Детерминированный предохранитель перед исходящим дозвоном (карта, баги B1+B2).
         НЕ зависит от решений оркестратора — работает всегда, на уровне кода:
@@ -284,6 +284,13 @@ class TaskScheduler:
         if last is not None:
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
+            if db is not None and last + CALL_RETRY_COOLDOWN > now_utc.replace(tzinfo=timezone.utc):
+                # Сверка с фактом (0311-call-guard): last_called_at мог поставить
+                # разбор сообщения из мессенджера — тогда это не звонок.
+                from backend.services.agent_contact_phones import voice_call_since
+                if voice_call_since(db, agent_contact, agent_contact.user_id, last - timedelta(hours=2)) is False:
+                    last = None
+        if last is not None:
             cooldown_until = last.astimezone(BISHKEK) + CALL_RETRY_COOLDOWN
             if cooldown_until > earliest:
                 earliest = cooldown_until
@@ -376,7 +383,7 @@ class TaskScheduler:
             # идут своим путём (сообщение, а не звонок). Задача остаётся SCHEDULED
             # и переносится на разрешённое время.
             if (task.channel or "call") != "telegram":
-                postpone_to = self._dial_gate(agent_contact, datetime.utcnow(), agent_config)
+                postpone_to = self._dial_gate(agent_contact, datetime.utcnow(), agent_config, db)
                 if postpone_to is None:
                     postpone_to = self._missed_today_gate(agent_contact, task, agent_config, db)
                 if postpone_to is not None:
@@ -619,6 +626,7 @@ class TaskScheduler:
                 direction="outbound",
                 scheduled_at=task.scheduled_time,
                 started_at=datetime.utcnow(),
+                postcall_log={"call_direction": "telegram_outbound"},  # не звонок (0311-call-guard)
             )
             db.add(agent_call)
             db.flush()
