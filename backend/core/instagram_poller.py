@@ -464,7 +464,9 @@ def _claim_agent_echo(db, agent_config_id, conv_id, m) -> bool:
         AgentInstagramMessage.ig_conversation_id == conv_id,
         AgentInstagramMessage.direction == "outbound",
         AgentInstagramMessage.ig_message_id.is_(None),
-        AgentInstagramMessage.sent_by.is_(None),
+        # sent_by не фильтруем: строка без id — всегда наша отправка (агент или
+        # владелец из инбокса, ветка 0411-inbox); сообщения с телефона владельца
+        # приходят уже с id и сюда не попадают.
         AgentInstagramMessage.created_at >= m["ts"] - timedelta(minutes=5),
         AgentInstagramMessage.created_at <= m["ts"] + timedelta(minutes=5),
     ).order_by(AgentInstagramMessage.created_at.asc()).all()

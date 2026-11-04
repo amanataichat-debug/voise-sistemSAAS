@@ -247,6 +247,8 @@ app.include_router(agent_telegram.router, prefix="/api/agent/telegram", tags=["A
 app.include_router(agent_telegram_account.router, prefix="/api/agent/telegram-account", tags=["Agent Telegram Account"])  # ✅ Личный TG-аккаунт агента
 app.include_router(agent_whatsapp.router, prefix="/api/agent/whatsapp", tags=["Agent WhatsApp"])  # ✅ WhatsApp агента (QR, настройки)
 app.include_router(agent_whatsapp.webhook_router, prefix="/api/whatsapp", tags=["WhatsApp Webhook"])  # ✅ Webhook Evolution API
+from backend.api import inbox as inbox_api  # инбокс: общий чат по WhatsApp/Telegram/Instagram (ветка 0411-inbox)
+app.include_router(inbox_api.router, prefix="/api/inbox", tags=["Inbox"])
 from backend.api import wallet as wallet_api  # кошелёк в сомах (prefix /api/wallet встроен)
 app.include_router(wallet_api.router, tags=["Wallet"])
 app.include_router(credits.router, tags=["Credits"])  # ✅ Кредиты оркестратора (prefix /api/credits встроен)
@@ -1650,6 +1652,38 @@ def ensure_wallet_columns():
         logger.error(f"❌ ensure_wallet_columns error: {e}")
 
 
+def ensure_inbox_schema():
+    """
+    Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
+    owner / NULL = агент) и таблицы inbox_read_state, inbox_translations,
+    inbox_settings. Идёт в начале старта, в каждом воркере: строку tasks ORM
+    выбирает планировщик на каждом тике и страница CRM, без колонки всё падает
+    с UndefinedColumn (правило после инцидента 11.10). Идемпотентно.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.inbox import InboxReadState, InboxTranslation, InboxSettings
+        inspector = inspect(engine)
+        existing = set(inspector.get_table_names())
+        if "tasks" in existing:
+            cols = {c["name"] for c in inspector.get_columns("tasks")}
+            if "created_by" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by VARCHAR(16)"))
+                logger.info("✅ ensure_inbox_schema: tasks.created_by added")
+        if not {"users", "agent_contacts"} <= existing:
+            return  # пустая база: таблицы создаст общий create_all
+        ModelsBase.metadata.create_all(
+            bind=engine,
+            tables=[InboxReadState.__table__, InboxTranslation.__table__, InboxSettings.__table__],
+            checkfirst=True,
+        )
+    except Exception as e:
+        logger.error(f"❌ ensure_inbox_schema: {e}")
+
+
 def ensure_crm_v2_columns():
     """
     CRM v2 (ветка 2510-crm-v2):
@@ -2776,6 +2810,7 @@ async def startup_event():
         ensure_branding_columns()
         ensure_knowledge_v2_tables()
         ensure_crm_v2_columns()
+        ensure_inbox_schema()
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.

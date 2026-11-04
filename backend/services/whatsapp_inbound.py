@@ -120,7 +120,9 @@ def _claim_agent_echo(db, chat, wa_message_id: str) -> bool:
         AgentWhatsAppMessage.chat_id == chat.id,
         AgentWhatsAppMessage.direction == "outbound",
         AgentWhatsAppMessage.wa_message_id.is_(None),
-        AgentWhatsAppMessage.sent_by.is_(None),
+        # sent_by не фильтруем: строка без id — всегда наша отправка (агент или
+        # владелец из инбокса, ветка 0411-inbox); сообщения с телефона владельца
+        # приходят уже с id и сюда не попадают.
         AgentWhatsAppMessage.created_at >= datetime.utcnow() - timedelta(minutes=2),
     ).order_by(AgentWhatsAppMessage.created_at.asc()).first()
     if row is None:

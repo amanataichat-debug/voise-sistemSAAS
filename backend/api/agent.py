@@ -3496,6 +3496,7 @@ def _agent_task_dict(t: Task) -> dict:
         "title": t.title,
         "description": t.description,
         "channel": t.channel or "call",
+        "created_by": getattr(t, "created_by", None) or "agent",
         "scheduled_time": iso_utc(t.scheduled_time),
         "status": t.status.value if hasattr(t.status, "value") else t.status,
     }
@@ -3984,6 +3985,7 @@ async def create_agent_contact_task(
         scheduled_time=scheduled_time,
         title=title,
         description="",
+        created_by="owner",
         **assistant_task_kwargs(agent),
     )
     db.add(task)

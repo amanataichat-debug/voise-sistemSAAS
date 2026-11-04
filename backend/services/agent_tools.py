@@ -1535,7 +1535,8 @@ def _streak_block(count: int) -> Optional[dict]:
 
 
 async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: Session,
-                                    file_row=None, skip_rate_limit: bool = False) -> dict:
+                                    file_row=None, skip_rate_limit: bool = False,
+                                    sent_by: Optional[str] = None) -> dict:
     """
     Отправка DM с бизнес-аккаунта Instagram владельца (через Composio).
     Только ответ в существующем треде (IGSID резолвится из
@@ -1618,7 +1619,7 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error")}
 
-    instagram_service.store_message(
+    msg_row = instagram_service.store_message(
         db, agent_config.id, "outbound", body,
         agent_contact_id=contact.id,
         ig_conversation_id=conversation.ig_conversation_id,
@@ -1626,11 +1627,13 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         sent_at=datetime.utcnow(),
         attachment_id=(file_row.id if file_row is not None else None),
     )
+    if sent_by and msg_row is not None:
+        msg_row.sent_by = sent_by   # инбокс: написал владелец, а не агент
     db.commit()
 
     to_label = ("@" + conversation.ig_username) if conversation.ig_username else conversation.igsid
     logger.info(f"[AGENT-TOOLS] instagram_send_{'file' if file_row is not None else 'message'} → {to_label}")
-    out = {"ok": True, "to": to_label}
+    out = {"ok": True, "to": to_label, "message_row_id": str(msg_row.id) if msg_row is not None else None}
     if sent_as:
         out["sent_as"] = sent_as
     return out
@@ -1665,7 +1668,8 @@ def _augment_with_whatsapp(base_tools: list, agent_config, db: Session) -> list:
 
 async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: Session,
                                    file_row=None, skip_rate_limit: bool = False,
-                                   typing_ms: Optional[int] = None, voice: Optional[dict] = None) -> dict:
+                                   typing_ms: Optional[int] = None, voice: Optional[dict] = None,
+                                   sent_by: Optional[str] = None, attachment_id=None) -> dict:
     """
     Отправка в WhatsApp с номера владельца (Evolution API). Получатель:
     существующий чат контакта → номер телефона контакта / phone (новый чат).
@@ -1688,7 +1692,7 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
         return err("not_connected")
 
     text = (args.get("text") or "").strip()
-    if not text and file_row is None:
+    if not text and file_row is None and voice is None:
         return err("empty_text")
 
     # Контакт: по id, иначе по номеру (создаём, если такого нет)
@@ -1804,17 +1808,19 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
                 db.commit()
         return err(code)
 
-    whatsapp_service.store_message(
+    msg_row = whatsapp_service.store_message(
         db, account, "outbound", body,
         chat=chat, agent_contact_id=contact.id,
         wa_message_id=result.get("message_id"), sent_at=datetime.utcnow(),
-        attachment_id=(file_row.id if file_row is not None else None),
+        attachment_id=(file_row.id if file_row is not None else attachment_id),
     )
+    if sent_by:
+        msg_row.sent_by = sent_by   # инбокс: написал владелец, а не агент
     db.commit()
 
     to_label = contact.name or ("+" + chat.phone if chat.phone else to)
     logger.info(f"[AGENT-TOOLS] whatsapp_send_{'file' if file_row is not None else 'message'} → {to_label}")
-    return {"ok": True, "to": to_label, "agent_contact_id": str(contact.id)}
+    return {"ok": True, "to": to_label, "agent_contact_id": str(contact.id), "message_row_id": str(msg_row.id)}
 
 
 async def fn_whatsapp_send_file(args: dict, user_id: str, agent_config, db: Session) -> dict:
@@ -1845,7 +1851,8 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
                                    file_row=None, file_bytes: Optional[bytes] = None,
                                    skip_rate_limit: bool = False,
                                    typing_seconds: Optional[float] = None,
-                                   voice: Optional[dict] = None) -> dict:
+                                   voice: Optional[dict] = None,
+                                   sent_by: Optional[str] = None, attachment_id=None) -> dict:
     """
     Отправка сообщения с личного Telegram владельца. Анти-бан меры:
     - почасовой лимит (TG_SEND_HOURLY_LIMIT, ответ на свежее входящее —
@@ -1869,7 +1876,7 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
 
     text = (args.get("text") or "").strip()
-    if not text and file_bytes is None:
+    if not text and file_bytes is None and voice is None:
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
     hour_ago = datetime.utcnow() - timedelta(hours=1)
@@ -1936,7 +1943,8 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         contact_name=(contact.name if contact else None),
         file_bytes=(voice["data"] if voice is not None else file_bytes),
         file_name=(voice["filename"] if voice is not None else (file_row.filename if file_row is not None else None)),
-        force_document=(file_row is None or file_row.kind != "image"),
+        # Фото и видео — как медиа (с превью в чате), остальное — документом
+        force_document=(file_row is None or file_row.kind not in ("image", "video")),
         typing_seconds=typing_seconds,
         voice_note=bool(voice is not None and voice.get("is_ogg")),
         voice_duration=int((voice or {}).get("duration") or 0),
@@ -1979,19 +1987,22 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
     elif file_row is not None:
         body = (f"📎 Отправлен файл «{file_row.filename}» [file_id={file_row.id}]"
                 + (f"\n{text}" if text else ""))
-    telegram_user_service.store_message(
+    msg_row = telegram_user_service.store_message(
         db, account, "outbound", body,
         agent_contact_id=(contact.id if contact else (dialog.agent_contact_id if dialog else None)),
         tg_peer_id=res_peer,
         tg_message_id=result.get("tg_message_id"),
-        attachment_id=(file_row.id if file_row is not None else None),
+        attachment_id=(file_row.id if file_row is not None else attachment_id),
     )
+    if sent_by and msg_row is not None:
+        msg_row.sent_by = sent_by   # инбокс: написал владелец, а не агент
     db.commit()
 
     to_label = result.get("name") or (f"@{result['username']}" if result.get("username") else str(res_peer))
     what = f"file {file_row.filename}" if file_row is not None else "message"
     logger.info(f"[AGENT-TOOLS] telegram_send_{'file' if file_row is not None else 'message'} ({what}) → {to_label} via {result.get('resolved_via')}")
-    return {"ok": True, "to": to_label, "resolved_via": result.get("resolved_via")}
+    return {"ok": True, "to": to_label, "resolved_via": result.get("resolved_via"),
+            "message_row_id": str(msg_row.id) if msg_row is not None else None}
 
 
 async def fn_telegram_get_thread(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
@@ -4901,6 +4912,25 @@ _TOOL_MAP = {
 }
 
 
+PAUSED_SEND_REFUSAL = (
+    "Владелец сейчас сам ведёт переписку с этим клиентом (бот на паузе) — не пиши клиенту. "
+    "Если нужно, оставь заметку в карточке (append_contact_note)."
+)
+
+
+def _paused_send_refusal(db: Session, contact_id) -> Optional[str]:
+    """Текст отказа, если клиент на паузе бота; None — можно отправлять."""
+    if not contact_id:
+        return None
+    from backend.services import agent_pause
+    try:
+        contact = db.query(AgentContact).filter(AgentContact.id == contact_id).first()
+    except Exception:
+        db.rollback()  # кривой UUID от модели — не наш случай, пусть решает сама тулза
+        return None
+    return PAUSED_SEND_REFUSAL if agent_pause.is_paused(contact) else None
+
+
 async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Session) -> str:
     """
     Execute an agent tool by name.
@@ -4914,6 +4944,18 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
 
     # Тариф Старт: агент только отвечает (services/agent_mode.py)
     from backend.services import agent_mode
+
+    # Пауза переписки (ветка 0411-inbox): владелец ответил клиенту сам (инбокс,
+    # телефон) или остановил бота — ответ, который агент начал готовить ДО паузы,
+    # клиенту не уходит. Только клиентский контур (postcall); прямую команду
+    # владельца из его чата с агентом пауза не останавливает (как и раньше).
+    if context.get("surface") == "postcall" and tool_name in agent_mode.SEND_TOOLS:
+        paused_refusal = _paused_send_refusal(db, (tool_args or {}).get("agent_contact_id")
+                                              or context.get("current_contact_id"))
+        if paused_refusal:
+            logger.info(f"[AGENT-TOOLS] {tool_name} blocked: contact paused (owner is talking)")
+            return json.dumps({"ok": False, "error": paused_refusal}, ensure_ascii=False)
+
     refusal = agent_mode.check_tool(user, tool_name, tool_args, context, db)
     if refusal:
         logger.info(f"[AGENT-TOOLS] reactive mode blocked {tool_name} for user {user_id}")

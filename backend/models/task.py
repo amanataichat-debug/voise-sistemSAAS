@@ -165,6 +165,12 @@ class Task(Base):
     #                составляет оркестратор в момент отправки
     channel = Column(String(20), default="call", nullable=False)
 
+    # Кто поставил задачу (ветка 0411-inbox): "owner" — владелец сам (кнопка
+    # «Позвонить» / «Напоминание» в инбоксе, ручная задача в CRM); NULL — агент.
+    # Задачи владельца исполняются и на тарифе Старт (там агент сам не звонит,
+    # а ручная команда владельца — можно). Колонка — app.ensure_inbox_schema().
+    created_by = Column(String(16), nullable=True)
+
     # Agent orchestrator fields
     pre_call_response_id = Column(String(255), nullable=True)
     post_call_decision = Column(String(50), nullable=True)

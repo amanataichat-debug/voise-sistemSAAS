@@ -372,7 +372,11 @@ class TaskScheduler:
             # окно 09–20 Бишкек + анти-долбёж. Только для звонков; telegram-задачи
             # идут своим путём (сообщение, а не звонок). Задача остаётся SCHEDULED
             # и переносится на разрешённое время.
-            if (task.channel or "call") != "telegram":
+            # Звонок по прямой команде владельца (кнопка «Позвонить» в инбоксе, ветка
+            # 0411-inbox) — владелец сам решил звонить сейчас: окно звонков агента и
+            # анти-долбёж его не переносят (они ограничивают инициативу агента).
+            owner_command = getattr(task, "created_by", None) == "owner"
+            if (task.channel or "call") != "telegram" and not owner_command:
                 postpone_to = self._dial_gate(agent_contact, datetime.utcnow(), agent_config)
                 if postpone_to is None:
                     postpone_to = self._missed_today_gate(agent_contact, task, agent_config, db)
@@ -402,7 +406,12 @@ class TaskScheduler:
 
             # ✅ Блокировка звонков при отсутствии доступа к агенту (триал истёк и
             #   тариф не profi). Дублирует scheduler-блокер.
-            if not user.has_active_agent_subscription():
+            # Тариф Старт («только отвечает»): агент сам не звонит, но звонок по
+            # команде владельца разрешён — достаточно доступа к боту (chat access).
+            allowed = user.has_active_agent_subscription() or (
+                owner_command and user.has_agent_chat_access()
+            )
+            if not allowed:
                 task.status = TaskStatus.CANCELLED
                 task.call_result = json.dumps({"error": "subscription_expired"})
                 db.commit()

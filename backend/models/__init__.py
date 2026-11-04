@@ -96,6 +96,9 @@ from .agent_file import AgentFile
 # документы — в одной таблице; плюс пробелы (о чём спрашивают, а база молчит)
 from .agent_knowledge import AgentKnowledgeEntry, AgentKnowledgeGap
 
+# Инбокс (ветка 0411-inbox): прочитанность диалогов, переводы, настройки
+from .inbox import InboxReadState, InboxTranslation, InboxSettings
+
 # ✅ НОВОЕ v3.0: Импортируем Voximplant Partner модели
 from .voximplant_child import (
     VoximplantChildAccount,
