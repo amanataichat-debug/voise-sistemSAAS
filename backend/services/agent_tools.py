@@ -1552,7 +1552,8 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
     if connector is None:
         return {"ok": False, "error": "Коннектор Instagram не подключён"}
 
-    text = (args.get("text") or "").strip()
+    from backend.services.message_style import clean_client_text
+    text = clean_client_text((args.get("text") or "").strip())
     if not text and file_row is None:
         return {"ok": False, "error": "Пустой текст сообщения"}
 
@@ -1687,7 +1688,8 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
     if account is None:
         return err("not_connected")
 
-    text = (args.get("text") or "").strip()
+    from backend.services.message_style import clean_client_text
+    text = clean_client_text((args.get("text") or "").strip())
     if not text and file_row is None:
         return err("empty_text")
 
@@ -1868,7 +1870,8 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
     if account is None:
         return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
 
-    text = (args.get("text") or "").strip()
+    from backend.services.message_style import clean_client_text
+    text = clean_client_text((args.get("text") or "").strip())
     if not text and file_bytes is None:
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
@@ -2377,6 +2380,15 @@ async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: S
     flag_modified(contact, "memory")
     db.commit()
 
+    # 3b. Воронка v3 (0311-call-guard): КП ушло → «Думает» и дожим тремя касаниями
+    # (sales_funnel.run_nurture). Свой быстрый напоминатель тогда не ставим.
+    funnel_stage = None
+    try:
+        from backend.services import sales_funnel
+        funnel_stage = sales_funnel.on_proposal_sent(db, agent_config, contact)
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] send_proposal: funnel stage failed: {e}")
+
     # 4. Напоминание 60–90 мин, с переносом на 10:00 следующего дня, если за окно.
     reminder_delay = _clamp_reminder_to_working_hours(_proposal_reminder_delay_min())
     reminder_text = (args.get("reminder_text") or "").strip() or (
@@ -2390,7 +2402,10 @@ async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: S
         telegram_user_service.is_configured()
         and telegram_user_service.account_connected(db, agent_config_id)
     )
-    if tg_account_ok and channel == "telegram":
+    if funnel_stage:
+        reminder_note = ("Карточка переведена в «Думает». Дожим ведёт система: касание через сутки "
+                         "тишины, всего три, затем «Отказ». Отдельное напоминание не ставь.")
+    elif tg_account_ok and channel == "telegram":
         reminder_result = await fn_create_agent_task(
             {
                 "agent_contact_id": agent_contact_id,
@@ -2401,7 +2416,7 @@ async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: S
             user_id, agent_config_id, db, channel="telegram",
         )
         reminder_scheduled = reminder_result.get("ok", False)
-    if not reminder_scheduled:
+    if not reminder_scheduled and not funnel_stage:
         reminder_note = (
             f"Напоминание не поставлено автоматически (канал={channel}, telegram-аккаунт "
             f"{'подключён' if tg_account_ok else 'не подключён'}). "
@@ -2415,7 +2430,9 @@ async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: S
         if niche:
             parts.append(niche)
         parts.append(f"КП отправлено ({channel})")
-        if reminder_scheduled:
+        if funnel_stage:
+            parts.append("в «Думает», дожим 3 касания")
+        elif reminder_scheduled:
             parts.append(f"напомню через {reminder_delay} мин")
         else:
             parts.append("напоминание не запланировано")

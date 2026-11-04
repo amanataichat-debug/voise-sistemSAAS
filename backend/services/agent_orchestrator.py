@@ -260,7 +260,7 @@ def _after_merge(db, result_str: str, agent_contact, agent_call):
 # («outbound» / «inbound» голосом) считаются попыткой звонка.
 MESSAGE_DIRECTIONS = frozenset({
     "sms_inbound", "telegram_inbound", "telegram_outbound",
-    "instagram_inbound", "whatsapp_inbound",
+    "instagram_inbound", "whatsapp_inbound", "followup_outbound",
 })
 
 
@@ -1120,7 +1120,8 @@ class PostCallOrchestrator:
         is_tg = (call_direction or "").lower() == "telegram_inbound"
         is_ig = (call_direction or "").lower() == "instagram_inbound"
         is_wa = (call_direction or "").lower() == "whatsapp_inbound"
-        is_tg_out = (call_direction or "").lower() == "telegram_outbound"
+        is_followup = (call_direction or "").lower() == "followup_outbound"
+        is_tg_out = (call_direction or "").lower() in ("telegram_outbound", "followup_outbound")
         is_inbound = (call_direction or "outbound").lower() == "inbound"
 
         # B4 (карта): передача владельцу из ПЕРЕПИСКИ. Раньше в правилах каналов
@@ -1166,7 +1167,17 @@ class PostCallOrchestrator:
             "   ответ клиенту в том же канале."
         )
 
-        if is_tg_out:
+        if is_followup:
+            direction_line = (
+                "СОБЫТИЕ: ДОЖИМ ПОСЛЕ КП (этап «Думает»). Клиент получил презентацию и "
+                "КП и молчит больше суток. Это не звонок и не входящее сообщение: "
+                "инициатива твоя, по цепочке воронки (касание 1, 2 или 3 из 3)."
+            )
+            callback_rule = ""
+            transcript_label = "ЧТО НАПИСАТЬ В ЭТОМ КАСАНИИ (инструкция, НЕ готовый текст)"
+            status_label = "СТАТУС"
+            analyze_line = ""
+        elif is_tg_out:
             direction_line = (
                 "СОБЫТИЕ: ЗАПЛАНИРОВАННАЯ ОТПРАВКА СООБЩЕНИЯ В TELEGRAM (личный "
                 "аккаунт владельца) — наступило время написать клиенту. Это не "
@@ -1321,7 +1332,18 @@ class PostCallOrchestrator:
                 + materials_rule
             )
 
-        if is_tg_out:
+        if is_followup:
+            action_block = """Сделай касание дожима:
+1. Сверься с хронологией: если клиент уже ответил, отказался, подключился или
+   разговор ушёл дальше — НЕ пиши, обнови память update_contact_memory с пометкой.
+2. Иначе напиши ОДНО короткое сообщение (1–2 строки) тем каналом, где идёт
+   переписка (указан в начале инструкции): whatsapp_send_message,
+   telegram_send_message или instagram_send_message; файл — *_send_file.
+   Как живой менеджер: без тире, звёздочек, списков и смайлов, без давления.
+   Не повторяй прошлые касания (смотри хронологию), каждое несёт новое.
+3. update_contact_memory — что написал.
+4. Этап НЕ меняй и задач не ставь: следующее касание и закрытие сделает система."""
+        elif is_tg_out:
             action_block = """Составь и отправь сообщение клиенту:
 1. Сверься с хронологией и памятью выше: если договорённость из инструкции уже
    закрыта (клиент сам ответил, состоялся звонок, вопрос решён) и сообщение
@@ -1342,7 +1364,10 @@ class PostCallOrchestrator:
 1. ОБЯЗАТЕЛЬНО вызови update_contact_memory — обнови память о контакте.
 2. Смени стадию через move_contact_stage ТОЛЬКО если для этого есть реальное
    основание. Менять стадию каждый раз НЕ нужно:
-   - цель достигнута / клиент согласился → success
+   - клиент согласился подключаться → отправь ему ссылку на регистрацию на
+     платформе из базы знаний (выбрать тариф, оплатить, админ свяжется),
+     notify_owner_handoff(reason=ready_to_connect) и только тогда → success.
+     «Звонок прошёл хорошо», «подумаю», «пришлите КП» — это НЕ success
    - явный отказ → rejected
    - просил больше не звонить → do_not_call
    - впервые вышли на живой контакт и продолжаем работу → active
@@ -1586,7 +1611,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
         # Подставляем стратегию PreCall в текст (симуляция цепочки). Для входящего
         # SMS/Telegram и запланированной отправки в Telegram PreCall не было —
         # блок стратегии не добавляем.
-        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound", "whatsapp_inbound"):
+        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound", "whatsapp_inbound", "followup_outbound"):
             post_call_input += f"""
 
 СТРАТЕГИЯ КОТОРУЮ ТЫ ПЛАНИРОВАЛ ПЕРЕД ЗВОНКОМ:
@@ -1617,7 +1642,16 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
             {"role": "user", "content": post_call_input},
         ]
 
-        is_tg_out = (call_direction or "").lower() == "telegram_outbound"
+        is_tg_out = (call_direction or "").lower() in ("telegram_outbound", "followup_outbound")
+        # Клиент сам вышел на связь из «Отказа (нет ответа)» → снова «В работе» (воронка v3).
+        if (call_direction or "").lower() in ("inbound", "whatsapp_inbound", "telegram_inbound",
+                                              "instagram_inbound", "sms_inbound"):
+            try:
+                from backend.services import sales_funnel
+                sales_funnel.on_client_message(db, agent_config, agent_contact)
+            except Exception as e:
+                logger.warning(f"[AGENT-POSTCALL] funnel on_client_message: {e}")
+        _prev_channel = (agent_call.postcall_log or {}).get("channel") if isinstance(agent_call.postcall_log, dict) else None
         # Попытка звонка и last_called_at — только для настоящих звонков. Раньше
         # сюда попадали и сообщения WhatsApp/Telegram/Instagram/SMS: клиент написал,
         # а антиспам «один звонок в день» думал, что ему уже звонили.
@@ -1688,7 +1722,9 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                         except Exception:
                             pass
 
-                    if tool_name in ("telegram_send_message", "telegram_send_file"):
+                    if tool_name in ("telegram_send_message", "telegram_send_file",
+                                     "whatsapp_send_message", "whatsapp_send_file",
+                                     "instagram_send_message", "instagram_send_file"):
                         try:
                             if json.loads(result_str).get("ok"):
                                 message_sent = True
@@ -1740,6 +1776,8 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}
                 # Для UI: было ли сообщение реально отправлено (оркестратор мог
                 # осознанно не отправлять, если договорённость уже закрыта).
                 agent_call.postcall_log["message_sent"] = message_sent
+            if _prev_channel:
+                agent_call.postcall_log["channel"] = _prev_channel
 
             # Запланированная отправка в Telegram — не попытка дозвона: счётчик
             # попыток и авто-маппинг стадии (SUCCESS → success) к ней не применяем.

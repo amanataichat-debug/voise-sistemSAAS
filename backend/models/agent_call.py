@@ -118,6 +118,8 @@ class AgentCall(Base):
                 return "instagram"
             if post.get("call_direction") == "whatsapp_inbound":
                 return "whatsapp"
+            if post.get("call_direction") == "followup_outbound":
+                return post.get("channel") or "whatsapp"
         if self.transcript:
             t = self.transcript.strip()
             if t.startswith("Клиент прислал SMS"):

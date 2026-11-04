@@ -284,6 +284,13 @@ async def _tick() -> None:
                     await run_daily_digest(db, today_local)
                 finally:
                     _mark_ran("daily_digest", today_local)
+        # Воронка v3: дожим «Думает» (касания и закрытие молчунов) — каждый тик,
+        # внутри только 10:00–19:00 Бишкек; брони касаний атомарные в БД.
+        try:
+            from backend.services import sales_funnel
+            await sales_funnel.run_nurture(db)
+        except Exception as e:
+            logger.warning(f"[FUNNEL] run_nurture failed: {e}")
         # Понедельник 10:00–10:15 Бишкек
         if now_local.weekday() == 0 and now_local.hour == 10 and now_local.minute < 15:
             if not _already_ran_today("monday_nurture", today_local):

@@ -39,16 +39,61 @@ WARMUP_WINDOW_MIN = 25
 WARMUP_WINDOW_MAX = 35
 
 WARMUP_TEMPLATE = (
-    "{greeting}! У нас созвон через полчаса. Вы на связи? "
-    "Если неудобно — скажите, когда будет лучше, перенесу."
+    "{greeting}! Через полчаса созвонимся, как договаривались. Вам удобно? "
+    "Если нет, напишите, когда лучше, перенесу."
 )
 
 
 def _greeting(contact: AgentContact) -> str:
-    name = (contact.name or "").strip()
+    # «Клиент 0700…», компания и т.п. — не имя: 04.11.2026 ушло «Клиент, здравствуйте!»
+    from backend.services.sip_gateway_service import first_name
+    name = first_name(contact.name)
     if name:
         return f"{name}, здравствуйте"
     return "Здравствуйте"
+
+
+def _claim(db: Session, contact_id, task_id) -> bool:
+    """
+    Атомарно забронировать прогрев задачи (0311-call-guard). True — этот воркер шлёт.
+
+    Планировщик крутится в КАЖДОМ воркере gunicorn (их 4): все видели «ещё не
+    отправлено» в memory и слали одновременно — 04.11.2026 клиент получил четыре
+    одинаковых сообщения за одну секунду. Бронь — один UPDATE с условием, выигрывает
+    ровно один воркер.
+    """
+    from sqlalchemy import text as _sql
+    try:
+        row = db.execute(_sql(
+            "UPDATE agent_contacts SET memory = jsonb_set("
+            "  COALESCE(memory, '{}'::jsonb), '{warmed_up_task_ids}',"
+            "  COALESCE(memory->'warmed_up_task_ids', '[]'::jsonb) || to_jsonb(CAST(:tid AS text))) "
+            "WHERE id = :cid AND NOT (COALESCE(memory->'warmed_up_task_ids', '[]'::jsonb) "
+            "  @> to_jsonb(ARRAY[CAST(:tid AS text)])) "
+            "RETURNING id"
+        ), {"cid": str(contact_id), "tid": str(task_id)}).first()
+        db.commit()
+        return row is not None
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[WARMUP] claim failed for task {task_id}: {e}")
+        return False
+
+
+def _release(db: Session, contact_id, task_id) -> None:
+    """Снять бронь, если отправить не удалось (следующий тик попробует снова)."""
+    from sqlalchemy import text as _sql
+    try:
+        db.execute(_sql(
+            "UPDATE agent_contacts SET memory = jsonb_set(memory, '{warmed_up_task_ids}', "
+            "  COALESCE((SELECT jsonb_agg(x) FROM jsonb_array_elements(memory->'warmed_up_task_ids') x "
+            "            WHERE x <> to_jsonb(CAST(:tid AS text))), '[]'::jsonb)) "
+            "WHERE id = :cid AND memory->'warmed_up_task_ids' IS NOT NULL"
+        ), {"cid": str(contact_id), "tid": str(task_id)})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[WARMUP] release failed for task {task_id}: {e}")
 
 
 def _already_warmed(contact: AgentContact, task_id) -> bool:
@@ -151,22 +196,23 @@ async def scan_and_send(db: Session) -> int:
                 db.commit()
                 continue
 
+            if not _claim(db, contact.id, task.id):
+                continue  # другой воркер уже отправил или отправляет
+            db.refresh(contact)
             text = WARMUP_TEMPLATE.format(greeting=_greeting(contact))
             ok = await _send_warmup_message(
                 channel, text, contact.id, contact.user_id, agent_config, db,
             )
             if ok:
-                _mark_warmed(contact, task.id)
-                db.commit()
                 sent += 1
                 logger.info(
                     f"[WARMUP] sent to {channel} for task {task.id} "
                     f"(contact {contact.id}, call at {task.scheduled_time.isoformat()})"
                 )
             else:
-                # Не отправилось — на следующем тике попробуем ещё раз, пока
-                # не выйдем из окна. Не помечаем как warmed, чтобы retry был.
-                pass
+                # Не отправилось — снимаем бронь, следующий тик попробует снова,
+                # пока задача в окне.
+                _release(db, contact.id, task.id)
         except Exception as e:
             logger.warning(f"[WARMUP] task {task.id}: {e}")
             try:

@@ -143,9 +143,19 @@ def stage_from_decision(decision, current_stage=None):
         двигаем его автоматически, только вручную или явным tool агента.
 
     Возвращает ключ стадии только при определённом исходе:
-      SUCCESS → success, REJECTED → rejected, DO_NOT_CALL → do_not_call,
-      FOLLOWUP → active.
+      REJECTED → rejected, DO_NOT_CALL → do_not_call, FOLLOWUP → active (только
+      из «Новый»). SUCCESS → None: «Успех» ставится только явно.
     """
     if current_stage in _TERMINAL_KEYS:
         return None
-    return _DECISION_TO_STAGE.get(decision)
+    # 04.11.2026 (0311-call-guard): «SUCCESS» у разбора значит лишь «звонок
+    # обработан, задач не ставили» — так любой отвеченный звонок с «я подумаю»
+    # уезжал в «Успех» (тестовый звонок 03.11). «Успех» ставит только агент явно
+    # (move_contact_stage, клиент согласился подключаться) или владелец.
+    if decision == "SUCCESS":
+        return None
+    target = _DECISION_TO_STAGE.get(decision)
+    # FOLLOWUP → «В работе» только из «Новый»: клиента из «Думает» не откатываем.
+    if target == "active" and current_stage not in (None, "", "new"):
+        return None
+    return target
