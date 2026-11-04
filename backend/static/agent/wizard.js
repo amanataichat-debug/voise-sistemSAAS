@@ -68,8 +68,8 @@ function drawStep0(c){
     <div class="type-card selected" style="cursor:default">
       <div class="type-radio"></div>
       <div class="type-info">
-        <div class="type-name">Голос ElevenLabs</div>
-        <div class="type-desc">Живые голоса Eleven v3, кыргызский и русский. Диалог ведёт OpenAI, озвучивает ElevenLabs — всё на ключах Voksy AI, свои ключи не нужны. Голос и язык выберете на последнем шаге.</div>
+        <div class="type-name">Голос Voksy Voice</div>
+        <div class="type-desc">Живые голоса, кыргызский и русский. Голосовой движок Voksy AI — свои ключи не нужны. Голос и язык выберете на последнем шаге.</div>
         <div style="margin-top:8px"><span class="key-pill ok"><i class="fas fa-check"></i> Готово к работе</span></div>
       </div>
     </div>
@@ -138,7 +138,7 @@ function submitCreate(){
 }
 
 async function renderCreation(c){
-  const typeName = 'ElevenLabs';
+  const typeName = 'Voksy Voice';
   c.innerHTML = `<h2>Создание агента</h2><p class="hint">Настройка вашего агента...</p>
     <ul class="creation-list">
       <li class="creation-item pending" id="cr-docs"><div class="creation-icon"></div>Сохранение документов</li>

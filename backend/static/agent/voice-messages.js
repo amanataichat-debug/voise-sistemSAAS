@@ -15,8 +15,8 @@
 const VOICE_MSG_API = API + '/voice-messages';
 const VOICE_MODE_LABELS = { never: 'никогда', on_voice: 'в ответ на голосовое клиента', auto: 'агент решает сам' };
 const VOICE_MSG_ENGINES = [
-  { id: 'eleven', title: 'ElevenLabs', hint: 'Лучший кыргызский. Вздохи, паузы и спокойная подача — метками в тексте.' },
-  { id: 'openai', title: 'GPT-Live · как голосовой режим ChatGPT', hint: 'Самый живой голос: эмоции, спокойная интонация. Лучше всего на русском, кыргызский слабее.' },
+  { id: 'eleven', title: 'Voksy Voice', hint: 'Лучший кыргызский. Вздохи, паузы и спокойная подача — метками в тексте.' },
+  { id: 'openai', title: 'Voksy Live', hint: 'Самый живой голос: эмоции, спокойная интонация. Лучше всего на русском, кыргызский слабее.' },
 ];
 let voiceMsgState = null;
 let voiceMsgAudio = null;
@@ -77,10 +77,10 @@ function renderVoiceMessages(){
       <label class="form-label">Чем озвучивать</label>
       <div class="eng-grid">${tiles}</div>
     </div>
-    ${noVoice ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>${isOpenai ? 'OpenAI-озвучка не настроена на сервере.' : 'Голос не выбран ни здесь, ни для звонков — агент будет отвечать только текстом. Выберите голос ниже.'}</span></div>` : ''}
+    ${noVoice ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>${isOpenai ? 'Voksy Live-озвучка не настроена на сервере.' : 'Голос не выбран ни здесь, ни для звонков — агент будет отвечать только текстом. Выберите голос ниже.'}</span></div>` : ''}
     <div id="vm-eleven" style="${isOpenai ? 'display:none' : ''}">
       <div class="form-group">
-        <label class="form-label">Голос ElevenLabs <span class="hint" tabindex="0" data-hint="По умолчанию — тот же голос, что в звонках. Можно выбрать отдельный, в том числе клон голоса живого человека из вашего аккаунта ElevenLabs."><i class="far fa-circle-question"></i></span></label>
+        <label class="form-label">Голос Voksy Voice <span class="hint" tabindex="0" data-hint="По умолчанию — тот же голос, что в звонках. Можно выбрать отдельный, в том числе клон голоса живого человека из библиотеки голосов Voksy."><i class="far fa-circle-question"></i></span></label>
         <select class="form-select" id="vm-voice" disabled><option>Загрузка голосов…</option></select>
         <div class="voice-preview" id="vm-voice-desc" style="display:none"></div>
       </div>
@@ -91,9 +91,9 @@ function renderVoiceMessages(){
     </div>
     <div id="vm-openai" style="${isOpenai ? '' : 'display:none'}">
       <div class="form-group">
-        <label class="form-label">Голос GPT-Live</label>
+        <label class="form-label">Голос Voksy Live</label>
         <select class="form-select" id="vm-oa-voice" onchange="saveVoiceMessages({openai_voice: this.value})">${oaVoices}</select>
-        <div class="form-hint">Голосовое наговаривает сама модель GPT-Live — спокойно, негромко, с паузами. Готовится в реальном времени: 20-секундное голосовое — около 20 секунд.</div>
+        <div class="form-hint">Голосовое наговаривает сама модель Voksy Live — спокойно, негромко, с паузами. Готовится в реальном времени: 20-секундное голосовое — около 20 секунд.</div>
       </div>
     </div>
     <div class="form-group">
@@ -175,7 +175,7 @@ function _vmShowVoice(){
   const desc = [v.accent, v.age, v.description].filter(Boolean).join(' · ');
   box.style.display = 'flex';
   box.innerHTML = `<span class="voice-ava ${g.cls}"><i class="fas ${g.icon}"></i></span>
-    <div class="voice-pv-txt"><b>${esc(v.name || '')} · ${g.label} голос${sel.value ? '' : ' · как в звонках'}</b><span>${esc(desc || (v.recommended ? 'Подтверждён для выбранного языка' : 'Голос из аккаунта ElevenLabs'))}</span></div>`;
+    <div class="voice-pv-txt"><b>${esc(v.name || '')} · ${g.label} голос${sel.value ? '' : ' · как в звонках'}</b><span>${esc(desc || (v.recommended ? 'Подтверждён для выбранного языка' : 'Голос из библиотеки голосов Voksy'))}</span></div>`;
 }
 
 async function vmLangChanged(){

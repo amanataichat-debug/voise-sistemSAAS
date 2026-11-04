@@ -2430,7 +2430,7 @@
     // Кошелёк: /api/wallet/balance + /api/wallet/transactions (пополнение — модалка из sidebar.js)
     (function () {
       var LABELS = { topup: 'Пополнение', bonus: 'Подарок на тест', admin: 'Начисление администратором', charge: 'Разговор' };
-      var ENGINES = { eleven: 'ElevenLabs', gpt_live: 'OpenAI GPT-Live' };
+      var ENGINES = { eleven: 'Voksy Voice', gpt_live: 'Voksy Live' };
       var offset = 0, LIMIT = 30;
       function money(v, sign) { var n = Number(v) || 0; return (sign && n > 0 ? '+' : '') + n.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' сом'; }
       function esc(v) { var d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML; }

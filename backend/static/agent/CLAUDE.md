@@ -103,6 +103,7 @@ mobile drawer, ~13 модалок). Стили вынесены в `agent.css`, 
 | `wizard.js` | Мастер создания агента (9 шагов 0..8), всегда ElevenLabs | `showWizard` (→ `startOnboarding` → `openWizardSteps`), `renderWizard`, `renderStep0` (голос ElevenLabs + статус номера), `submitCreate`, `renderCreation`, `persistWizard`; состояние `wizardData`, `wizardStep` | `/api/agent/create`, `/api/agent/phone-numbers` |
 | `phone.js` | Номер агента (собственная телефония) | `loadPhoneNumbers`, `renderPhoneBlock`, `fillPhoneSelect`, `savePhoneSelection`, `formatPhone`; состояние `phoneState` | `/api/agent/phone-numbers`, `/api/agent/phone-number` |
 | `panels.js` | Шторки «Работа»/«Агент» | `initPanels`, `togglePanel`, `applyPanels`; `PANELS_KEY`, `panelsState` | — |
+| `inbox-overlay.js` | Инбокс поверх страницы агента (ветка `0411-inbox`): кнопка `#inbox-btn` в топбаре, iframe `/static/inbox.html?embed=1` создаётся заранее и только показывается/прячется (Esc, клавиша `I`), бейдж `#inbox-badge`, «Открыть в CRM» → `switchTab('clients')` + `openContactDetailsModal`. IIFE, глобально только `window.VoksyInbox` | `VoksyInbox.open/close/toggle`; сообщения `inbox:close`, `inbox:unread`, `inbox:open-crm` | `/api/inbox/*` (внутри iframe) |
 | `init.js` | **Точки входа. Грузится последним.** | главный `DOMContentLoaded`, `window 'focus'` (рефреш кредитов), `keydown Esc` (закрыть модалки) | — |
 
 \* `VOICE_META`/`OPENAI_VOICES`/`GEMINI_VOICES` физически лежат в `instructions-voice.js`

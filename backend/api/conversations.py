@@ -1099,7 +1099,13 @@ async def get_conversation_call_log(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call log not found")
 
-    text_log = render_text(row)
+    # Клиент видит журнал с нашими названиями движков (Voksy Voice / Voksy Live),
+    # без моделей и провайдеров; админ — как есть.
+    if getattr(current_user, "is_admin", False):
+        meta, events, text_log = (row.meta or {}), (row.events or []), render_text(row)
+    else:
+        from backend.utils.white_label import brand_call_log
+        meta, events, text_log = brand_call_log(row)
     if format == "txt":
         stamp = row.started_at.strftime("%Y%m%d-%H%M%S") if row.started_at else "log"
         return PlainTextResponse(
@@ -1113,9 +1119,9 @@ async def get_conversation_call_log(
         "sip_call_id": str(row.sip_call_id) if row.sip_call_id else None,
         "started_at": row.started_at.isoformat() + "Z" if row.started_at else None,
         "duration_sec": row.duration_sec,
-        "meta": row.meta or {},
+        "meta": meta,
         "summary": row.summary or {},
-        "events": row.events or [],
+        "events": events,
         "text": text_log,
     }
 

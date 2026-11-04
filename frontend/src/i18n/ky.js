@@ -1,6 +1,6 @@
 // Voksy AI — кыргызский словарь лендинга (тил демейки боюнча).
 // Ачкычтар ru.js менен бирдей. Тон: урматтоо формасы («сиз»), иштиктүү стиль.
-// Бизнес ээсине арналган текст: моделдердин аттары жок (ElevenLabs гана), «промпт» жана «ачкыч» дегендер жок.
+// Бизнес ээсине арналган текст: моделдердин аттары жок (Voksy Voice / Voksy Live гана), «промпт» жана «ачкыч» дегендер жок.
 export default {
   seo: {
     title: 'Voksy AI — сатуу боюнча автономдуу ИИ‑агенттер: чалуулар, мессенджерлер жана CRM',
@@ -63,7 +63,7 @@ export default {
       ['mail', 'Gmail'],
       ['calendar', 'Google Календарь'],
       ['file-text', 'Google Таблицалар'],
-      ['audio-lines', 'ElevenLabs үнү'],
+      ['audio-lines', 'Voksy Voice үнү'],
     ],
     floaters: [
       ['square-check', 'CRMге жазды'],
@@ -526,7 +526,7 @@ export default {
     extra_models_title: 'Сүйлөшүү мүнөттөрү',
     extra_models_text: 'Сүйлөшкөн убакыт үчүн гана төлөйсүз, секунда боюнча. Капчыкты кабинетте сом менен толуктайсыз.',
     extra_models: [
-      ['audio-lines', 'ElevenLabs, кыргыз тили', '5,47 {currency}/мүн'],
+      ['audio-lines', 'Voksy Voice · эң мыкты кыргызча', '5,47 {currency}/мүн'],
       ['refresh-cw', 'Биринчи сыноого белек', '120 {currency}'],
     ],
     extra_comm_title: 'Байланыш',

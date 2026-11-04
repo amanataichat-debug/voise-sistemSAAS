@@ -157,8 +157,8 @@
   // ══════════════════════════════ ОСНОВНОЕ ═════════════════════════════════
   function fillMain() {
     var b = S.$('#b-main');
-    var voice = A.eleven_voice_engine === 'gpt_live' ? 'GPT-Live · ' + (A.eleven_live_voice || 'marin')
-      : A.eleven_voice_engine === 'gemini_live' ? 'Gemini Live · ' + (A.eleven_live_voice || 'aoede') : (A.eleven_voice_name || 'ElevenLabs');
+    var voice = A.eleven_voice_engine === 'gpt_live' ? 'Voksy Live · ' + (A.eleven_live_voice || 'marin')
+      : A.eleven_voice_engine === 'gemini_live' ? 'Voksy Live Go · ' + (A.eleven_live_voice || 'aoede') : (A.eleven_voice_name || 'Voksy Voice');
     b.innerHTML =
       '<div class="st-bot-hero"><span class="st-avatar lg">' + esc(S.initial(A.name)) + '</span>' +
       '<div class="grow"><label class="label" for="m-name">Имя бота</label><input class="input" id="m-name" value="' + esc(A.name || '') + '" maxlength="80"></div>' +
@@ -216,7 +216,7 @@
       }).join('') + '</select></div></div>' +
       '<div class="field" id="v-eleven-wrap"><label class="label">Голос</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select class="select-native" id="v-voice"><option>Загрузка…</option></select>' +
       '<button class="btn" id="v-play" type="button" aria-label="Прослушать">' + icon('play') + '</button></div><div class="hint">Голоса, подходящие для выбранного языка, показаны первыми.</div></div>' +
-      '<div class="field" id="v-live-wrap"><label class="label" id="v-live-label">Голос GPT-Live</label><select class="select-native" id="v-live"></select></div>' +
+      '<div class="field" id="v-live-wrap"><label class="label" id="v-live-label">Голос Voksy Live</label><select class="select-native" id="v-live"></select></div>' +
       '<button class="btn btn-primary" id="v-save" type="button">Сохранить голос</button>';
     var voices = [];
     // Голос «речь в речь» лежит в одной колонке на оба движка: список и подпись зависят от движка
@@ -230,7 +230,7 @@
       S.$('#v-live').innerHTML = list.map(function (v, i) {
         return '<option value="' + esc(values[i]) + '"' + (values[i] === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
       }).join('');
-      S.$('#v-live-label').textContent = gem ? 'Голос Gemini Live' : 'Голос GPT-Live';
+      S.$('#v-live-label').textContent = gem ? 'Голос Voksy Live Go' : 'Голос Voksy Live';
     }
     function toggle() {
       var live = isLiveEngine(S.$('#v-engine').value);
@@ -953,7 +953,7 @@
       '<div class="st-row-card" style="margin-bottom:10px"><span class="logo" style="--c:#E1306C">' + icon('instagram') + '</span>' +
       '<div class="info"><b>Instagram</b><div>Голосовые недоступны: Instagram через наш коннектор принимает только текст и фото.</div></div></div>';
     b.innerHTML =
-      '<div class="st-engine">' + [['eleven', 'ElevenLabs', 'Живые голоса, кыргызский и русский'], ['openai', 'OpenAI GPT-Live', 'Голос ChatGPT, естественная интонация']].map(function (e) {
+      '<div class="st-engine">' + [['eleven', 'Voksy Voice', 'Живые голоса, кыргызский и русский'], ['openai', 'Voksy Live', 'Самый живой голос, естественная интонация']].map(function (e) {
         var avail = vm.engines ? vm.engines[e[0]] !== false : true;
         return '<label class="st-engine-item' + (engine === e[0] ? ' on' : '') + (avail ? '' : ' dis') + '"><input type="radio" name="vm-engine" value="' + e[0] + '"' + (engine === e[0] ? ' checked' : '') + (avail ? '' : ' disabled') + '><b>' + e[1] + '</b><span>' + e[2] + '</span></label>';
       }).join('') + '</div>' +
@@ -965,7 +965,7 @@
         return '<option value="' + x[0] + '"' + (Number(cur) === x[0] ? ' selected' : '') + '>' + x[1] + '</option>';
       }).join('') + '</select></div></div>' +
       '<div class="field"><label class="label">Голос</label><select class="select-native" id="vm-voice"><option value="">Как в звонках</option></select></div></div>' +
-      '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос GPT-Live</label><select class="select-native" id="vm-ovoice">' +
+      '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос Voksy Live</label><select class="select-native" id="vm-ovoice">' +
       (vm.openai_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === vm.openai_voice ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div></div>' +
       '<div class="st-sub-h">Когда бот отвечает голосом</div>' + chRows +
       '<div class="field" id="vm-share-wrap"><label class="label">Доля голосовых, когда бот решает сам</label><select class="select-native" id="vm-share">' +

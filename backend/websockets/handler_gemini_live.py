@@ -679,8 +679,8 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
             call_log_early.assistant_id = str(assistant.id)
             call_log_early.meta.update({"engine": "gemini_live", "llm_model": GEMINI_LIVE_MODEL})
             await asyncio.to_thread(_record_failed_dialog, str(assistant.id), failed_session,
-                                    f"⚠ Звонок не соединился: Gemini Live ({GEMINI_LIVE_MODEL}) не открылся — {reason}")
-        await fail("gemini_connection_failed", f"Gemini Live ({GEMINI_LIVE_MODEL}) не открылся: {reason}", 1011)
+                                    "⚠ Звонок не соединился: голосовой движок Voksy Live Go не ответил")
+        await fail("gemini_connection_failed", "Голосовой движок Voksy Live Go не ответил", 1011)
         return
     connect_ms = int((time.monotonic() - t_start) * 1000)
 
@@ -718,7 +718,7 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
         "engine": "gemini_live",
         "transport": client.model,
         "model": client.model,
-        "message": f"Connected to Google {client.model} (full-duplex)",
+        "message": "Connected: Voksy Live Go (full-duplex)",
         "full_duplex": True,
         "audio_rate": GEMINI_OUT_RATE,
         "voice": voice,

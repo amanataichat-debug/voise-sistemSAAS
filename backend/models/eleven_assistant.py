@@ -33,14 +33,14 @@ from backend.models.base import Base
 ELEVEN_TTS_MODELS = [
     {
         "id": "eleven_v3_conversational",
-        "title": "Eleven v3 Conversational",
+        "title": "Voksy Voice Fast",  # под капотом ElevenLabs eleven_v3_conversational
         "description": "Для живого диалога: первый звук ≈ 280 мс. Один голос на соединение.",
         "price": "$0.05 за 1000 символов",
         "price_per_1k_chars_usd": 0.05,
     },
     {
         "id": "eleven_v3",
-        "title": "Eleven v3",
+        "title": "Voksy Voice HD",  # под капотом ElevenLabs eleven_v3
         "description": "Максимальное качество и выразительность, задержка выше.",
         "price": "$0.10 за 1000 символов",
         "price_per_1k_chars_usd": 0.10,
@@ -85,12 +85,13 @@ GEMINI_LIVE_DEFAULT_VOICE = "Aoede"
 # Движки «речь в речь»: слушают и говорят сами, без каскада ASR → текст → TTS.
 LIVE_VOICE_ENGINES = ("gpt_live", "gemini_live")
 VOICE_ENGINES = [
-    {"id": VOICE_ENGINE_ELEVEN, "title": "ElevenLabs",
-     "description": "Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос."},
-    {"id": VOICE_ENGINE_GPT_LIVE, "title": "OpenAI GPT-Live",
-     "description": "Речь в речь (gpt-live-1): слушает и говорит одновременно, сам обрабатывает перебивания."},
-    {"id": VOICE_ENGINE_GEMINI_LIVE, "title": "Google Gemini Live",
-     "description": "Речь в речь (gemini-3.8-live): слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке."},
+    # title — то, что видит клиент (white-label, backend/utils/white_label.py): провайдеров не называем.
+    {"id": VOICE_ENGINE_ELEVEN, "title": "Voksy Voice",
+     "description": "Слышит клиента, думает и отвечает живым голосом. Лучший кыргызский голос."},
+    {"id": VOICE_ENGINE_GPT_LIVE, "title": "Voksy Live",
+     "description": "Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания."},
+    {"id": VOICE_ENGINE_GEMINI_LIVE, "title": "Voksy Live Go",
+     "description": "Речь в речь: слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке."},
 ]
 VOICE_ENGINE_IDS = [e["id"] for e in VOICE_ENGINES]
 DEFAULT_VOICE_ENGINE = VOICE_ENGINE_ELEVEN

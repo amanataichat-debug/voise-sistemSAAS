@@ -62,8 +62,10 @@ async def check_expired_agent_subscriptions():
                 Task.status == TaskStatus.SCHEDULED,
             )
             # Тариф Старт: агент сам не звонит, но напоминания владельцу (channel="owner") остаются
+            # Звонок по команде владельца (created_by="owner", кнопка «Позвонить» в инбоксе) — тоже остаётся.
             if user.has_agent_chat_access():
                 query = query.filter(or_(Task.channel.is_(None), Task.channel != "owner"))
+                query = query.filter(or_(Task.created_by.is_(None), Task.created_by != "owner"))
             tasks_cancelled = query.update({"status": TaskStatus.CANCELLED}, synchronize_session=False)
             if tasks_cancelled:
                 affected += 1

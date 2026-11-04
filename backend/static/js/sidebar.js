@@ -46,6 +46,8 @@
     // файлы» в шторке агента, а меню подсвечивает «Агент обзвона» (alias).
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item',
       aliases: ['/static/agent-knowledge.html'] },
+    // Инбокс (ветка 0411-inbox): общий чат с клиентами — только тем, у кого есть агент (mode: 'full')
+    { href: '/static/inbox.html', lucide: 'inbox', label: 'sidebar.inbox', def: 'Инбокс', id: 'inbox-nav-item', mode: 'full' },
     { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
       aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
@@ -63,6 +65,8 @@
   var START_MENU = [
     { section: 'sidebar.section_main', def: 'Основное' },
     { href: '/static/dashboard.html', lucide: 'house', label: 'sidebar.dashboard', def: 'Дашборд', id: 'dashboard-nav-item' },
+    // Инбокс — сразу после дашборда: на Старте с переписки начинается рабочий день
+    { href: '/static/inbox.html', lucide: 'inbox', label: 'sidebar.inbox', def: 'Инбокс', id: 'inbox-nav-item' },
     { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
       aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
@@ -134,7 +138,11 @@
     var nav = document.getElementById('sidebar-nav') || document.querySelector('.sidebar-nav');
     if (!nav) return null;
     nav.innerHTML = '';
-    currentMenu().forEach(function (item) { nav.appendChild(renderItem(item)); });
+    var mode = cachedMode();
+    currentMenu().forEach(function (item) {
+      if (item.mode && item.mode !== mode) return;   // пункт только для режима агента (инбокс — у Profi)
+      nav.appendChild(renderItem(item));
+    });
     return nav;
   }
 

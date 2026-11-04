@@ -24,8 +24,12 @@
     S.boot().then(function (ok) {
       if (!ok) return;
       if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
+      // Переход из инбокса: ?contact=<id> — открыть карточку, ?stage=<key> — фильтр по стадии
+      var qp = new URLSearchParams(location.search);
+      if (qp.get('stage')) st.clients.stage = qp.get('stage');
       render();
       S.ready();
+      if (qp.get('contact')) openClient(qp.get('contact'));
     });
   });
 
@@ -83,7 +87,7 @@
       '<div class="st-toolbar" style="margin-bottom:14px">' +
       '<div class="st-search">' + icon('search') + '<input class="input" id="c-search" type="search" placeholder="Имя, телефон или компания"></div>' +
       '<select class="select-native" id="c-stage" style="width:auto;min-width:160px"><option value="">Все стадии</option>' +
-      S.stages.map(function (s) { return '<option value="' + esc(s.key) + '">' + esc(s.label) + '</option>'; }).join('') + '</select>' +
+      S.stages.map(function (s) { return '<option value="' + esc(s.key) + '"' + (s.key === st.clients.stage ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>' +
       '<span class="muted small" id="c-total"></span></div>' +
       '<div id="c-list"></div>';
     document.getElementById('c-search').addEventListener('input', S.debounce(function (e) {
@@ -318,7 +322,8 @@
     dr.body.innerHTML =
       '<div class="st-sec"><div class="row-between" style="gap:12px;flex-wrap:wrap">' +
       '<div><div class="label" style="margin-bottom:6px">Стадия</div><select class="select-native" id="cl-stage" style="min-width:190px">' + stageOpts + '</select></div>' +
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' + pauseHtml + '</div></div></div>' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' + pauseHtml +
+      '<a class="btn btn-sm" href="/static/inbox.html?contact=' + esc(c.id) + '">' + icon('inbox') + '<span>Написать в инбоксе</span></a></div></div></div>' +
       memHtml +
       '<div class="st-sec"><h4>Данные клиента</h4>' +
       '<div class="st-grid2">' +

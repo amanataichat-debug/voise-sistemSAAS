@@ -157,7 +157,7 @@ def _validate(data) -> None:
     live_voice = (getattr(data, "live_voice", None) or "").strip().lower()
     if live_voice and live_voice not in LIVE_VOICE_SET and live_voice not in {v.lower() for v in GEMINI_LIVE_VOICES}:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"Unknown live voice. GPT-Live: {LIVE_VOICES}; Gemini Live: {GEMINI_LIVE_VOICES}")
+                            f"Unknown live voice. Voksy Live: {LIVE_VOICES}; Voksy Live Go: {GEMINI_LIVE_VOICES}")
     language = getattr(data, "language", None)
     if language is not None and language.lower() not in LANGUAGE_CODES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown language. Available: {sorted(LANGUAGE_CODES)}")
@@ -185,7 +185,7 @@ async def verify_assistant_access(assistant_id: str, user_id: str, db: Session) 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid assistant ID format")
     assistant = db.query(ElevenAssistantConfig).filter(ElevenAssistantConfig.id == assistant_uuid).first()
     if not assistant:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Eleven assistant not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assistant not found")
     if str(assistant.user_id) != user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to access this assistant")
     return assistant
@@ -193,7 +193,7 @@ async def verify_assistant_access(assistant_id: str, user_id: str, db: Session) 
 
 def _require_key() -> str:
     if not settings.ELEVENLABS_API_KEY:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ELEVENLABS_API_KEY is not configured on the server")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Голосовой движок Voksy Voice не настроен на сервере")
     return settings.ELEVENLABS_API_KEY
 
 
@@ -203,7 +203,7 @@ async def _eleven_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         resp = await client.get(f"{ELEVEN_API}{path}", params=params, headers={"xi-api-key": key})
     if resp.status_code >= 400:
         logger.warning(f"[ELEVEN-API] GET {path} → {resp.status_code}: {resp.text[:300]}")
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"ElevenLabs API error {resp.status_code}: {resp.text[:200]}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Библиотека голосов Voksy временно недоступна (код {resp.status_code})")
     return resp.json()
 
 
@@ -371,7 +371,7 @@ async def add_library_voice(body: LibraryVoiceAdd, current_user: User = Depends(
         if "already" in detail.lower():
             return {"voice_id": body.voice_id, "name": payload["new_name"], "already_added": True}
         logger.warning(f"[ELEVEN-API] add voice → {resp.status_code}: {detail}")
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"ElevenLabs API error {resp.status_code}: {detail[:200]}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Не удалось добавить голос в библиотеку Voksy (код {resp.status_code})")
     data = resp.json()
     return {"voice_id": data.get("voice_id") or body.voice_id, "name": payload["new_name"], "already_added": False}
 
@@ -430,7 +430,7 @@ async def create_eleven_assistant(
     except Exception as e:
         db.rollback()
         logger.error(f"[ELEVEN-API] create failed: {e}")
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create Eleven assistant")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create assistant")
 
 
 @router.get("/{assistant_id}", response_model=ElevenAssistantResponse)
@@ -462,7 +462,7 @@ async def update_eleven_assistant(assistant_id: str, data: ElevenAssistantUpdate
     except Exception as e:
         db.rollback()
         logger.error(f"[ELEVEN-API] update failed {assistant_id}: {e}")
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update Eleven assistant")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update assistant")
 
 
 @router.delete("/{assistant_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -487,4 +487,4 @@ async def delete_eleven_assistant(assistant_id: str, db: Session = Depends(get_d
     except Exception as e:
         db.rollback()
         logger.error(f"[ELEVEN-API] delete failed {assistant_id}: {e}")
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to delete Eleven assistant")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to delete assistant")

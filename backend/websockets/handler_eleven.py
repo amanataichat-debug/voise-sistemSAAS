@@ -224,7 +224,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             await run_gemini_live_session(websocket, assistant, db, client_id, fail, meter)
             return
         if not (assistant.voice_id or "").strip():
-            await fail("voice_not_set", "У агента не выбран голос ElevenLabs")
+            await fail("voice_not_set", "У агента не выбран голос")
             return
 
         if not settings.OPENAI_API_KEY:
@@ -391,7 +391,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             return
 
         if not await tts_task:
-            await abort("elevenlabs_connection_failed", "Failed to connect to ElevenLabs")
+            await abort("elevenlabs_connection_failed", "Voice engine connection failed")
             return
         if greet_task is None and use_chat and greeting_text:
             await session.greet()  # история чат-модели локальная — приветствие можно положить до подключения
@@ -418,7 +418,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             if ok and session.greeting_started:
                 await llm.add_assistant_message(greeting_text)  # приветствие уже прозвучало — в контекст
         if not ok:
-            await abort("openai_connection_failed", "Failed to connect to OpenAI")
+            await abort("openai_connection_failed", "Voice engine connection failed")
             return
         if stt is not None:
             if not use_chat:
@@ -429,7 +429,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             "type": "connection_status",
             "status": "connected",
             "provider": "eleven",
-            "message": f"Connected: {'Scribe ASR + ' if stt else ''}OpenAI {llm.model} (text) + ElevenLabs {tts.model}",
+            "message": "Connected: Voksy Voice",
             "asr": "scribe" if stt else None,
             "model": llm.model,
             "tts_model": tts.model,
@@ -546,7 +546,7 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         "transport": LIVE_MODEL,
         "model": LIVE_MODEL,
         "backend_model": client.delegation_model,
-        "message": f"Connected to OpenAI {LIVE_MODEL} (full-duplex)",
+        "message": "Connected: Voksy Live (full-duplex)",
         "full_duplex": True,
         "audio_rate": client.io_rate,
         "voice": client.voice,

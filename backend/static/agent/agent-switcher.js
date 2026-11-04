@@ -27,7 +27,7 @@ async function initAgents(){
   }catch(e){ showWizard(); }
 }
 
-const AGENT_TYPE_NAMES = { eleven:'ElevenLabs', gemini:'Gemini', openai:'OpenAI', cartesia:'Cartesia', yandex:'Yandex', cascade:'Cascade', fish:'Fish' };
+const AGENT_TYPE_NAMES = { eleven:'Voksy Voice', gemini:'Voksy Live Go', openai:'Voksy Live', cartesia:'Voksy Voice', yandex:'Voksy Voice', cascade:'Voksy Voice', fish:'Voksy Voice' };
 
 function renderAgentSwitcher(){
   const sw = document.getElementById('agent-switch');

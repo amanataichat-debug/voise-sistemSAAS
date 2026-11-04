@@ -80,6 +80,12 @@
     return '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="' + SPRITE + '#i-' + name + '"></use></svg>';
   }
 
+  // Значок голосового движка Voksy (white-label: вместо логотипов провайдеров)
+  function voiceMark(name, size) {
+    size = size || 20;
+    return '<span class="logo-wrap" style="width:' + (size + 14) + 'px;height:' + (size + 14) + 'px">' + icon(name) + '</span>';
+  }
+
   function logo(code, opts) {
     opts = opts || {};
     var m = MODEL_LOGOS[code];
@@ -695,7 +701,7 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', faShim);
   else faShim();
 
-  var VF = { icon: icon, logo: logo, faSweep: faSweep, FA_MAP: FA_MAP, enhanceSelect: enhanceSelect, esc: esc, loader: loader, progress: progress, toast: toast, confirm: confirm, alert: alertDialog, modal: modal, select: select, menu: menu, skeleton: skeleton, ready: ready, MODEL_LOGOS: MODEL_LOGOS };
+  var VF = { icon: icon, logo: logo, voiceMark: voiceMark, faSweep: faSweep, FA_MAP: FA_MAP, enhanceSelect: enhanceSelect, esc: esc, loader: loader, progress: progress, toast: toast, confirm: confirm, alert: alertDialog, modal: modal, select: select, menu: menu, skeleton: skeleton, ready: ready, MODEL_LOGOS: MODEL_LOGOS };
   global.VF = VF;
 
   // Автозапуск: загрузчик сразу, каркас после DOM. Страховка: спрятать через 6 с.

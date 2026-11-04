@@ -1,6 +1,6 @@
 // Voksy AI — русский словарь лендинга.
 // Текст для владельца бизнеса, а не для программиста: без названий движков и моделей
-// (кроме ElevenLabs), без «промптов», «ключей» и «оркестраторов». Плейсхолдеры: {currency}, {n}, {name}…
+// (только наши Voksy Voice / Voksy Live), без «промптов», «ключей» и «оркестраторов». Плейсхолдеры: {currency}, {n}, {name}…
 // Массивы (факты, реплики, строки таблиц) читаются через t() целиком.
 export default {
   seo: {
@@ -64,7 +64,7 @@ export default {
       ['mail', 'Gmail'],
       ['calendar', 'Google Календарь'],
       ['file-text', 'Google Таблицы'],
-      ['audio-lines', 'Голос ElevenLabs'],
+      ['audio-lines', 'Голос Voksy Voice'],
     ],
     floaters: [
       ['square-check', 'Записал в CRM'],
@@ -527,7 +527,7 @@ export default {
     extra_models_title: 'Минуты разговора',
     extra_models_text: 'Платите только за время разговора, по секундам. Пополняйте кошелёк в сомах прямо в кабинете.',
     extra_models: [
-      ['audio-lines', 'ElevenLabs, кыргызский язык', '5,47 {currency}/мин'],
+      ['audio-lines', 'Voksy Voice · лучший кыргызский', '5,47 {currency}/мин'],
       ['refresh-cw', 'Подарок на первый тест', '120 {currency}'],
     ],
     extra_comm_title: 'Связь',

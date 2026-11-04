@@ -157,7 +157,7 @@ function voiceControlHtml(type, cur, ids){
   if(type==='cartesia'){
     const spd = (cur.voice_speed!=null) ? cur.voice_speed : 1.0;
     return `<div class="form-group">
-        <label class="form-label">Cartesia Voice ID</label>
+        <label class="form-label">ID голоса</label>
         <input type="text" class="form-input" id="${ids.vid}" value="${esc(cur.cartesia_voice_id||'')}" placeholder="a0e99841-438c-4a64-b679-ae501e7d6091">
         <div class="form-hint">ID голоса из <a href="https://play.cartesia.ai/" target="_blank">play.cartesia.ai</a></div>
       </div>
@@ -234,8 +234,8 @@ const W_VOICE_IDS = { voice:'w-voice', vid:'w-cartesia-voice-id', spd:'w-voice-s
 // Зеркала справочников backend/models/eleven_assistant.py (ELEVEN_TTS_MODELS, ELEVEN_LANGUAGES,
 // ELEVEN_STABILITY_LEVELS). Голоса — из аккаунта ElevenLabs: /api/eleven-assistants/voices.
 const ELEVEN_TTS_MODELS = [
-  { id:'eleven_v3_conversational', title:'Eleven v3 Conversational · быстрее, $0.05 / 1000 символов' },
-  { id:'eleven_v3', title:'Eleven v3 · выразительнее, $0.10 / 1000 символов' },
+  { id:'eleven_v3_conversational', title:'Voksy Voice Fast · быстрее, $0.05 / 1000 символов' },
+  { id:'eleven_v3', title:'Voksy Voice HD · выразительнее, $0.10 / 1000 символов' },
 ];
 const ELEVEN_LANGUAGES = [
   { code:'ky', title:'Кыргызский' }, { code:'ru', title:'Русский' }, { code:'kk', title:'Казахский' },
@@ -247,16 +247,16 @@ const ELEVEN_STABILITY = [
 // Движок голоса (eleven_assistant_configs.voice_engine) и голоса GPT-Live — зеркала
 // VOICE_ENGINES (backend/models/eleven_assistant.py) и LIVE_VOICES (backend/websockets/live_client.py).
 const VOICE_ENGINES = [
-  { id:'eleven', title:'ElevenLabs', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.' },
-  { id:'gpt_live', title:'OpenAI GPT-Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
-  { id:'gemini_live', title:'Google Gemini Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь (Gemini 3.8 Live): слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке.' },
+  { id:'eleven', title:'Voksy Voice', tags:['Рекомендуем','Кыргызский','Телефония'], hint:'Слышит клиента, думает и отвечает живым голосом. Лучший кыргызский голос.' },
+  { id:'gpt_live', title:'Voksy Live', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по инструкциям и собеседнику.' },
+  { id:'gemini_live', title:'Voksy Live Go', tags:['Речь в речь','Телефония'], hint:'Речь в речь: слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке.' },
 ];
 // ElevenLabs — значок звуковой волны (как в кабинете), GPT-Live — логотип OpenAI
 function engineLogoHtml(id){
   const VF = window.VF;
   if(!VF) return '';
-  return id === 'gpt_live' ? VF.logo('openai', {size:16})
-    : id === 'gemini_live' ? VF.logo('gemini', {size:16})
+  return id === 'gpt_live' ? VF.voiceMark('zap', 16)
+    : id === 'gemini_live' ? VF.voiceMark('sparkles', 16)
     : `<span class="logo-wrap">${VF.icon('audio-lines')}</span>`;
 }
 // Цена минуты из кошелька (сом) — /api/eleven-assistants/options, грузится один раз
@@ -321,7 +321,7 @@ function elevenVoiceControlHtml(cur, ids){
       <div class="form-hint">Цена модели списывается с кошелька за минуту разговора (посекундно).</div>
     </div>
     <div class="form-group" id="${ids.lbox}" style="${isLive ? '' : 'display:none'}">
-      <label class="form-label" id="${ids.lvoice}-label">${engine === 'gemini_live' ? 'Голос Gemini Live' : 'Голос GPT-Live'}</label>
+      <label class="form-label" id="${ids.lvoice}-label">${engine === 'gemini_live' ? 'Голос Voksy Live Go' : 'Голос Voksy Live'}</label>
       <select class="form-select" id="${ids.lvoice}" data-initial="${esc(liveVoice)}">${liveOpts}</select>
     </div>
     <div id="${ids.ebox}" style="${isLive ? 'display:none' : ''}">
@@ -330,7 +330,7 @@ function elevenVoiceControlHtml(cur, ids){
       <select class="form-select" id="${ids.elang}" onchange="elevenLoadVoices(${idsRef}, null)">${langOpts}</select>
     </div>
     <div class="form-group">
-      <label class="form-label">Голос ElevenLabs</label>
+      <label class="form-label">Голос Voksy Voice</label>
       <select class="form-select" id="${ids.voice}" disabled data-current="${esc(cur.eleven_voice_id||'')}" data-current-name="${esc(cur.eleven_voice_name||'')}"><option value="">Загрузка голосов…</option></select>
       <div class="voice-preview" id="${ids.desc}" style="display:none"></div>
     </div>
@@ -355,7 +355,7 @@ function voiceEngineChanged(ids, value){
     // Голос в одной колонке на оба движка «речь в речь»: список и подпись меняем под движок
     const sel = document.getElementById(ids.lvoice), label = document.getElementById(ids.lvoice + '-label');
     if(sel) sel.innerHTML = liveVoiceOptionsHtml(engine, String(sel.value || '').toLowerCase());
-    if(label) label.textContent = engine === 'gemini_live' ? 'Голос Gemini Live' : 'Голос GPT-Live';
+    if(label) label.textContent = engine === 'gemini_live' ? 'Голос Voksy Live Go' : 'Голос Voksy Live';
   }
 }
 
@@ -404,7 +404,7 @@ function elevenShowPreview(ids){
   const desc = [v.accent, v.age, v.description].filter(Boolean).join(' · ');
   box.style.display = 'flex';
   box.innerHTML = `<span class="voice-ava ${g.cls}"><i class="fas ${g.icon}"></i></span>
-    <div class="voice-pv-txt"><b>${esc(v.name || '')} · ${g.label} голос</b><span>${esc(desc || (v.recommended ? 'Подтверждён для выбранного языка' : 'Голос из аккаунта ElevenLabs'))}</span></div>
+    <div class="voice-pv-txt"><b>${esc(v.name || '')} · ${g.label} голос</b><span>${esc(desc || (v.recommended ? 'Подтверждён для выбранного языка' : 'Голос из библиотеки голосов Voksy'))}</span></div>
     ${v.preview_url ? `<button class="voice-play" type="button" title="Прослушать" onclick="elevenPlayPreview('${esc(v.preview_url)}')"><i class="fas fa-play"></i></button>` : ''}`;
 }
 
@@ -435,7 +435,7 @@ function openInstructionsModal(section){
   fillCallWindow();
   const vType = agentData.assistant_type || 'eleven';
   const legacy = vType !== 'eleven'
-    ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Агент создан на старом голосовом движке (${esc(AGENT_TYPE_NAMES[vType] || vType)}). Новые агенты работают на ElevenLabs — перевести этого можно, создав нового агента.</span></div>`
+    ? `<div class="note warn"><i class="fas fa-triangle-exclamation"></i><span>Агент создан на старом голосовом движке (${esc(AGENT_TYPE_NAMES[vType] || vType)}). Новые агенты работают на Voksy Voice — перевести этого можно, создав нового агента.</span></div>`
     : '';
   document.getElementById('i-voice-group').innerHTML = legacy + voiceControlHtml(
     vType,

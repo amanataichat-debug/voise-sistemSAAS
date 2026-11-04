@@ -1,8 +1,8 @@
 /**
- * WellcomeAI Widget Loader Script
- * Версия: 5.0 - OpenAI GPT-Live (gpt-live-1) full-duplex
+ * Voksy AI Widget Loader Script
+ * Версия: 5.0 - Voksy Live full-duplex
  *
- * ✅ OpenAI-ассистенты: handler_live.py (gpt-live-1). Fish/другие: тот же протокол виджета.
+ * ✅ Голосовые движки Voksy Voice / Voksy Live: один протокол виджета.
  * ✅ Автоматический захват DOM каждые 3 секунды
  *
  * ✨ v5.0 changes (режим full_duplex, включается сервером в connection_status):
@@ -204,7 +204,7 @@
   const ASSISTANT_ID = getAssistantId();
   const WIDGET_POSITION = getWidgetPosition();
 
-  // Путь голосового сокета. По умолчанию /ws/ (OpenAI-ассистенты); другие
+  // Путь голосового сокета. По умолчанию /ws/ (голосовые ассистенты); другие
   // провайдеры с тем же протоколом задают свой: data-ws-path="/ws/fish/".
   const getWsPath = () => {
     const scriptTags = document.querySelectorAll('script');
@@ -1081,7 +1081,7 @@
     let isPlayingAudio = false;
     let lastPlaybackEndTime = 0;
     const PLAYBACK_ECHO_TAIL_MS = 300; // пауза после окончания воспроизведения
-    // v5.0: full-duplex (GPT-Live) — сервер включает флагом connection_status.full_duplex
+    // v5.0: full-duplex (Voksy Live) — сервер включает флагом connection_status.full_duplex
     let fullDuplexMode = false;
     let liveAudioRate = 24000;
     const LIVE_PLAYBACK_CUSHION_SEC = 0.2; // запас перед стартом реплики против сетевого джиттера
@@ -2181,7 +2181,7 @@
                   // ✅ Читаем флаги от сервера
                   window._visionEnabled = data.enable_vision === true;
                   widgetLog(`[v4.0] Vision AI: ${window._visionEnabled ? 'включен' : 'выключен'}`);
-                  // v5.0: full-duplex (GPT-Live) — непрерывный микрофон + gapless-воспроизведение
+                  // v5.0: full-duplex (Voksy Live) — непрерывный микрофон + gapless-воспроизведение
                   fullDuplexMode = data.full_duplex === true;
                   if (data.audio_rate) liveAudioRate = Number(data.audio_rate) || 24000;
                   liveNextPlayTime = 0;
@@ -2290,7 +2290,7 @@
                 return;
               }
               
-              // Игнорируем служебные события OpenAI gpt-realtime-2, которые виджету не нужны
+              // Игнорируем служебные события голосового движка, которые виджету не нужны
               const IGNORED_PREFIXES = [
                 '.ack',
                 'conversation.item.added',
@@ -2304,7 +2304,7 @@
                 'input_audio_buffer.committed',
                 'input_audio_buffer.cleared',
                 'rate_limits.updated',
-                // v5.0: служебные события GPT-Live
+                // v5.0: служебные события Voksy Live
                 'transcript.delta',
                 'usage',
                 'delegation.',
@@ -2502,7 +2502,7 @@
     
     widgetLog('[v4.0] ✅ Widget initialization complete');
     widgetLog('[v4.0] ⚡ Features: Streaming audio, Instant UI feedback, Clean UX');
-    widgetLog('[v5.0] 🔗 Compatible with: backend handler_live.py (gpt-live-1, full-duplex) and Fish/half-duplex handlers');
+    widgetLog('[v5.0] 🔗 Voksy AI voice engine: full-duplex and half-duplex modes');
   }
   
   // Проверяем, есть ли уже виджет на странице
