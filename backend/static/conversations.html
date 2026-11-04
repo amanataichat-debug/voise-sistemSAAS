@@ -3080,18 +3080,18 @@
           : assistantType === 'fish' ? 'assistant-avatar fish'
           : assistantType === 'eleven' ? 'assistant-avatar eleven' : 'assistant-avatar';
         const typeBadge = assistantType === 'gemini'
-          ? '<span class="assistant-type-badge gemini">Gemini</span>'
+          ? '<span class="assistant-type-badge gemini">Voksy Live Go</span>'
           : assistantType === 'cartesia'
-          ? '<span class="assistant-type-badge cartesia">Cartesia</span>'
+          ? '<span class="assistant-type-badge cartesia">Voksy Voice</span>'
           : assistantType === 'yandex'
-          ? '<span class="assistant-type-badge yandex">Яндекс</span>'
+          ? '<span class="assistant-type-badge yandex">Voksy Voice</span>'
           : assistantType === 'cascade'
-          ? '<span class="assistant-type-badge cascade">Cascade</span>'
+          ? '<span class="assistant-type-badge cascade">Voksy Voice</span>'
           : assistantType === 'fish'
-          ? '<span class="assistant-type-badge fish">Fish</span>'
+          ? '<span class="assistant-type-badge fish">Voksy Voice</span>'
           : assistantType === 'eleven'
-          ? '<span class="assistant-type-badge eleven">ElevenLabs</span>'
-          : '<span class="assistant-type-badge openai">OpenAI</span>';
+          ? '<span class="assistant-type-badge eleven">Voksy AI</span>'
+          : '<span class="assistant-type-badge openai">Voksy Live</span>';
         
         let metaItems = '';
         
@@ -3227,7 +3227,7 @@
 
         if (elevenAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
-          optgroup.label = 'ElevenLabs';
+          optgroup.label = 'Голосовые ассистенты';
           elevenAssistants.forEach(assistant => {
             const option = document.createElement('option');
             option.value = assistant.id;
@@ -3239,7 +3239,7 @@
 
         if (openaiAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
-          optgroup.label = '🤖 OpenAI';
+          optgroup.label = '🤖 Voksy Live';
           openaiAssistants.forEach(assistant => {
             const option = document.createElement('option');
             option.value = assistant.id;
@@ -3251,7 +3251,7 @@
 
         if (geminiAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
-          optgroup.label = '✨ Gemini';
+          optgroup.label = '✨ Voksy Live Go';
           geminiAssistants.forEach(assistant => {
             const option = document.createElement('option');
             option.value = assistant.id;
@@ -3263,7 +3263,7 @@
 
         if (cartesiaAssistants.length > 0) {
           const optgroup = document.createElement('optgroup');
-          optgroup.label = '🎙️ Cartesia';
+          optgroup.label = '🎙️ Voksy Voice';
           cartesiaAssistants.forEach(assistant => {
             const option = document.createElement('option');
             option.value = assistant.id;
@@ -3396,18 +3396,18 @@
           
           const type = dialog.client_info?.assistant_type || assistantType || 'openai';
           const typeBadge = type === 'gemini'
-            ? '<span class="assistant-type-badge gemini" style="margin-left: 0.5rem;">Gemini</span>'
+            ? '<span class="assistant-type-badge gemini" style="margin-left: 0.5rem;">Voksy Live Go</span>'
             : type === 'cartesia'
-            ? '<span class="assistant-type-badge cartesia" style="margin-left: 0.5rem;">Cartesia</span>'
+            ? '<span class="assistant-type-badge cartesia" style="margin-left: 0.5rem;">Voksy Voice</span>'
             : type === 'yandex'
-            ? '<span class="assistant-type-badge yandex" style="margin-left: 0.5rem;">Яндекс</span>'
+            ? '<span class="assistant-type-badge yandex" style="margin-left: 0.5rem;">Voksy Voice</span>'
             : type === 'cascade'
-            ? '<span class="assistant-type-badge cascade" style="margin-left: 0.5rem;">Cascade</span>'
+            ? '<span class="assistant-type-badge cascade" style="margin-left: 0.5rem;">Voksy Voice</span>'
             : type === 'fish'
-            ? '<span class="assistant-type-badge fish" style="margin-left: 0.5rem;">Fish</span>'
+            ? '<span class="assistant-type-badge fish" style="margin-left: 0.5rem;">Voksy Voice</span>'
             : type === 'eleven'
-            ? '<span class="assistant-type-badge eleven" style="margin-left: 0.5rem;">ElevenLabs</span>'
-            : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">OpenAI</span>';
+            ? '<span class="assistant-type-badge eleven" style="margin-left: 0.5rem;">Voksy AI</span>'
+            : '<span class="assistant-type-badge openai" style="margin-left: 0.5rem;">Voksy Live</span>';
           
           modalTitle.innerHTML = `${escapeHtmlForModal(dialog.assistant_name || '')} ${typeBadge}`;
           
@@ -3538,7 +3538,7 @@
               </div>
               <div class="footer-item">
                 <i class="${type === 'gemini' ? 'fas fa-gem' : type === 'cartesia' ? 'fas fa-microphone-alt' : type === 'yandex' ? 'fas fa-microphone' : 'fas fa-robot'}"></i>
-                <span>${type === 'gemini' ? 'Gemini AI' : type === 'cartesia' ? 'Cartesia' : type === 'yandex' ? 'Яндекс SpeechKit' : type === 'eleven' ? 'ElevenLabs' : type === 'fish' ? 'Fish Audio' : 'OpenAI'}</span>
+                <span>${type === 'gemini' ? 'Voksy Live Go' : type === 'cartesia' ? 'Voksy Voice' : type === 'yandex' ? 'Voksy Voice' : type === 'eleven' ? 'Voksy AI' : type === 'fish' ? 'Voksy Voice' : 'Voksy Live'}</span>
               </div>
               ${costFormatted ? `
                 <div class="footer-item cost">
@@ -3646,7 +3646,7 @@
         const chips = [];
         chips.push(`<span class="call-log-chip">${log.channel === 'phone' ? '📞 Телефон' : '🌐 Виджет'}</span>`);
         if (log.duration_sec != null) chips.push(`<span class="call-log-chip">${Number(log.duration_sec).toFixed(1)} с</span>`);
-        if (meta.asr) chips.push(`<span class="call-log-chip">${escapeHtmlForModal(meta.asr)}</span>`);
+        if (meta.engine_title || meta.asr) chips.push(`<span class="call-log-chip">${escapeHtmlForModal(meta.engine_title || meta.asr)}</span>`);
         if (sm.latency_avg_ms != null) {
           const slow = sm.latency_max_ms >= 2500;
           chips.push(`<span class="call-log-chip ${slow ? 'warn' : ''}">Задержка ответа: ср. ${sm.latency_avg_ms} мс, макс. ${sm.latency_max_ms} мс</span>`);

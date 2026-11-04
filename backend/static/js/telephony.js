@@ -38,7 +38,7 @@
     th_time: 'Время', th_direction: 'Направление', th_peer: 'Абонент', th_our: 'Наш номер', th_assistant: 'Ассистент', th_call_status: 'Статус',
     th_duration: 'Длит.', th_result: 'Итог', inbound: 'Входящий', outbound: 'Исходящий',
     no_calls: 'Звонков ещё не было', calls_failed: 'Не удалось загрузить журнал',
-    bind_title: 'Привязать к номеру {phone}', group_agents: 'Агенты обзвона', group_assistants: 'Ассистенты ElevenLabs',
+    bind_title: 'Привязать к номеру {phone}', group_agents: 'Агенты обзвона', group_assistants: 'Голосовые ассистенты',
     agent_unsupported: 'тип «{type}» не поддерживается телефонией',
     bind_empty: 'Нет ассистентов', bind_empty_text: 'Создайте ассистента на странице «Голосовые ассистенты» или агента обзвона.',
     bind_saved: 'Привязка сохранена', bind_failed: 'Не удалось привязать', unbound: 'Номер отвязан', unbind_failed: 'Не удалось отвязать',
@@ -57,7 +57,7 @@
   // Оператор пропускает исходящие только на номера O!. Тот же список на бэкенде:
   // O_MOBILE_PREFIXES в backend/models/sip_gateway.py.
   var O_PREFIXES = ['050', '070', '099'];
-  var TYPE_LABELS = { openai: 'OpenAI', gemini: 'Gemini', fish: 'Fish Audio', eleven: 'ElevenLabs' };
+  var TYPE_LABELS = { openai: 'Voksy Live', gemini: 'Voksy Live Go', fish: 'Voksy Voice', eleven: 'Voksy AI' };
   var SIP_TYPES = ['openai', 'gemini', 'fish', 'eleven'];   // SIP_SUPPORTED_ASSISTANT_TYPES
   var ACTIVE = ['queued', 'dialing', 'ringing', 'answered'];
 
@@ -234,7 +234,7 @@
       }
       if (eleven.length) {
         parts.push('<div class="bind-group">' + esc(t('group_assistants')) + '</div>');
-        eleven.forEach(function (a) { parts.push(opt('assistant', 'eleven', a.id, a.name, a.is_active === false ? t('inactive') : (a.voice_name || 'ElevenLabs'), 'audio-lines', false)); });
+        eleven.forEach(function (a) { parts.push(opt('assistant', 'eleven', a.id, a.name, a.is_active === false ? t('inactive') : (a.voice_name || 'Voksy Voice'), 'audio-lines', false)); });
       }
       if (!parts.length) { list.innerHTML = emptyBox('audio-lines', t('bind_empty'), t('bind_empty_text')); return; }
       list.innerHTML = parts.join('');

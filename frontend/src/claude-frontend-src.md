@@ -21,7 +21,7 @@
 Секции: `Navbar` (+`LangSwitch`), `Hero` (+`CallCard`), `ProductTour` (+`Mockups`),
 `AgentSection`, `Start`, `Integration`, `Scenarios`, `Pricing`, `Faq`, `FinalCta`, `Footer`.
 Общие: `Reveal.jsx` (Reveal/Stagger/Item/Parallax на motion), `SectionHead`, `Icon` (спрайт),
-`ModelLogo` (OpenAI, Gemini, Grok, Fish Audio, ElevenLabs), `Logo`, `contacts.js`
+`ModelLogo` (white-label: Voksy Voice, Voksy Live, Voksy Live Go — провайдеров не показываем), `Logo`, `contacts.js`
 (номер демо-ассистента, Telegram, домен). Авторизация: `AuthModal` + `AuthSection/`
 (`LoginForm`, `RegisterForm`, `PasswordField`, `EmailVerificationSection`, `ForgotPasswordForm`),
 `InlineNotification`.

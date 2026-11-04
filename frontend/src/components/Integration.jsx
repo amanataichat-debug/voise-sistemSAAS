@@ -12,7 +12,7 @@ function widgetCode(assistantId) {
 <script>
   (function () {
     var script = document.createElement('script');
-    script.src = '${SITE_URL}/static/gemini-widget.js';
+    script.src = '${SITE_URL}/static/widget.js';
     script.setAttribute('data-assistantId', '${assistantId}');
     script.setAttribute('data-server', '${SITE_URL}');
     script.setAttribute('data-position', 'bottom-right');

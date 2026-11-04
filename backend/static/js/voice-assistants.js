@@ -33,19 +33,19 @@
     f_prompt_ph: 'Кто ассистент, как он говорит, что делает и чего не делает', chars: '{n} символов',
     default_greeting: 'Здравствуйте! Чем я могу вам помочь?',
     block_voice: 'Голос',
-    server_not_ready: 'На сервере не настроены ключи ElevenLabs: ассистент пока не сможет отвечать. Сообщите администратору.',
-    server_not_ready_live: 'На сервере не настроен ключ OpenAI: ассистент на GPT-Live пока не сможет отвечать. Сообщите администратору.',
+    server_not_ready: 'Голосовой движок Voksy Voice пока не настроен на сервере: ассистент пока не сможет отвечать. Сообщите администратору.',
+    server_not_ready_live: 'Голосовой движок Voksy Live пока не настроен на сервере: ассистент пока не сможет отвечать. Сообщите администратору.',
     language: 'Язык',
-    engine: 'Модель голоса', engine_eleven: 'ElevenLabs', engine_gpt_live: 'OpenAI GPT-Live',
-    engine_eleven_hint: 'Распознавание речи → текстовая модель → синтез ElevenLabs. Лучший кыргызский голос.',
+    engine: 'Модель голоса', engine_eleven: 'Voksy Voice', engine_gpt_live: 'Voksy Live',
+    engine_eleven_hint: 'Слышит клиента, думает и отвечает живым голосом. Лучший кыргызский голос.',
     engine_gpt_live_hint: 'Речь в речь: слушает и говорит одновременно, сам обрабатывает перебивания. Язык ответа модель выбирает по промпту и собеседнику.',
-    live_voice: 'Голос GPT-Live', per_min: '{price} сом', per_min_unit: '/ мин', price_chip: '{price} сом/мин',
+    live_voice: 'Голос Voksy Live', per_min: '{price} сом', per_min_unit: '/ мин', price_chip: '{price} сом/мин',
     tag_recommended: 'Рекомендуем', tag_kyrgyz: 'Кыргызский', tag_s2s: 'Речь в речь', tag_widget: 'Виджет', tag_phone: 'Телефония',
     engine_note: 'Цена модели списывается с кошелька за минуту разговора (посекундно). Минуты связи при звонках пока не списываются.',
     voice_settings: 'Голосовые настройки',
     eleven_tts: 'Модель синтеза', eleven_voice: 'Голос', eleven_voice_empty: 'Выберите голос', eleven_stability: 'Стабильность голоса',
     eleven_group_rec: 'Рекомендованы для языка', eleven_group_other: 'Остальные голоса', eleven_missing: '(нет в аккаунте)',
-    eleven_voices_failed: 'Не удалось загрузить голоса ElevenLabs', eleven_reload: 'Обновить список', eleven_library: 'Найти в библиотеке',
+    eleven_voices_failed: 'Не удалось загрузить голоса Voksy', eleven_reload: 'Обновить список', eleven_library: 'Найти в библиотеке',
     eleven_voice_required: 'Выберите голос — без него ассистент не сможет говорить',
     lib_search_ph: 'Имя или стиль голоса', lib_any_gender: 'Любой пол', lib_female: 'Женский', lib_male: 'Мужской', lib_search: 'Найти',
     lib_more: 'Показать ещё', lib_add: 'Добавить', lib_select: 'Выбрать', lib_added: 'Голос «{name}» добавлен и выбран', lib_empty: 'Ничего не найдено',
@@ -221,7 +221,7 @@
         '<div class="a-top">' + engineLogo(a.voice_engine, 20) +
         '<div class="a-main"><div class="a-name"><span class="truncate">' + esc(a.name || '—') + '</span>' +
         (a.is_active === false ? '<span class="dot" data-tip="' + esc(t('inactive_tip')) + '"></span>' : '') + '</div>' +
-        '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'GPT-Live · ' + (a.live_voice || 'marin') : (a.voice_name || 'ElevenLabs')) + '</div></div></div>' +
+        '<div class="faint small truncate">' + esc(a.voice_engine === 'gpt_live' ? 'Voksy Live · ' + (a.live_voice || 'marin') : (a.voice_name || 'Voksy Voice')) + '</div></div></div>' +
         '<div class="a-desc">' + esc(desc) + '</div>' +
         '<div class="a-meta"><span class="chip">' + esc(t('price_chip', { price: fmtPrice(enginePrice(a.voice_engine || 'eleven')) })) + '</span>' +
         (a.voice_engine === 'gpt_live' ? '' : '<span class="chip chip-accent">' + esc(langTitle(a.language)) + '</span>') +
@@ -394,8 +394,12 @@
     eleven: { hint: 'engine_eleven_hint', tags: [['tag_recommended', 1], ['tag_kyrgyz'], ['tag_widget'], ['tag_phone']] },
     gpt_live: { hint: 'engine_gpt_live_hint', tags: [['tag_s2s', 1], ['tag_widget'], ['tag_phone']] }
   };
-  // ElevenLabs — прежний значок звуковой волны (audio-lines), GPT-Live — логотип OpenAI
-  function engineLogo(id, size) { return id === 'gpt_live' ? VF.logo('openai', { size: size || 20 }) : logo(size || 20); }
+  // Voksy Voice — значок звуковой волны (audio-lines), Voksy Live — молния (свои значки, без логотипов провайдеров)
+  function engineLogo(id, size) {
+    if (id !== 'gpt_live') return logo(size || 20);
+    size = size || 20;
+    return '<span class="logo-wrap" style="width:' + (size + 14) + 'px;height:' + (size + 14) + 'px">' + VF.icon('zap') + '</span>';
+  }
   function enginePrice(id) {
     var e = (state.options.voice_engines || []).filter(function (x) { return x.id === id; })[0];
     return e && e.som_per_minute != null ? e.som_per_minute : null;

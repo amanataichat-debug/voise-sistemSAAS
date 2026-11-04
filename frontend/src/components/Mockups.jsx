@@ -52,16 +52,14 @@ export function Frame({ active, title, children }) {
 export function MockAssistant() {
   const { t } = useT();
   const models = [
-    ['gemini', 'key_own', true],
-    ['openai', 'key_own', false],
-    ['fish', 'key_platform', false],
-    ['grok', 'key_own', false],
+    ['voice', 'key_platform', true],
+    ['live', 'key_own', false],
   ];
   return (
     <Frame active="assistants" title={t('frame.title_assistants')}>
       <Stagger className="m-editor" stagger={0.07} amount={0.3}>
         <Item className="m-editor-head" y={10}>
-          <ModelLogo code="gemini" size={14} />
+          <ModelLogo code="voice" size={14} />
           <b>{t('mock.assistant_name')}</b>
           <span className="chip chip-success">
             <span className="dot dot-success" />

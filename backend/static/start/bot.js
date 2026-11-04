@@ -157,7 +157,7 @@
   // ══════════════════════════════ ОСНОВНОЕ ═════════════════════════════════
   function fillMain() {
     var b = S.$('#b-main');
-    var voice = A.eleven_voice_engine === 'gpt_live' ? 'GPT-Live · ' + (A.eleven_live_voice || 'marin') : (A.eleven_voice_name || 'ElevenLabs');
+    var voice = A.eleven_voice_engine === 'gpt_live' ? 'Voksy Live · ' + (A.eleven_live_voice || 'marin') : (A.eleven_voice_name || 'Voksy Voice');
     b.innerHTML =
       '<div class="st-bot-hero"><span class="st-avatar lg">' + esc(S.initial(A.name)) + '</span>' +
       '<div class="grow"><label class="label" for="m-name">Имя бота</label><input class="input" id="m-name" value="' + esc(A.name || '') + '" maxlength="80"></div>' +
@@ -214,7 +214,7 @@
       }).join('') + '</select></div></div>' +
       '<div class="field" id="v-eleven-wrap"><label class="label">Голос</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select class="select-native" id="v-voice"><option>Загрузка…</option></select>' +
       '<button class="btn" id="v-play" type="button" aria-label="Прослушать">' + icon('play') + '</button></div><div class="hint">Голоса, подходящие для выбранного языка, показаны первыми.</div></div>' +
-      '<div class="field" id="v-live-wrap"><label class="label">Голос GPT-Live</label><select class="select-native" id="v-live">' +
+      '<div class="field" id="v-live-wrap"><label class="label">Голос Voksy Live</label><select class="select-native" id="v-live">' +
       (voiceOpts.live_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === (A.eleven_live_voice || voiceOpts.default_live_voice) ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div>' +
       '<button class="btn btn-primary" id="v-save" type="button">Сохранить голос</button>';
     var voices = [];
@@ -913,7 +913,7 @@
         MODES.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === chans[k] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select></div>';
     }).join('');
     b.innerHTML =
-      '<div class="st-engine">' + [['eleven', 'ElevenLabs', 'Живые голоса, кыргызский и русский'], ['openai', 'OpenAI GPT-Live', 'Голос ChatGPT, естественная интонация']].map(function (e) {
+      '<div class="st-engine">' + [['eleven', 'Voksy Voice', 'Живые голоса, кыргызский и русский'], ['openai', 'Voksy Live', 'Самый живой голос, естественная интонация']].map(function (e) {
         var avail = vm.engines ? vm.engines[e[0]] !== false : true;
         return '<label class="st-engine-item' + (engine === e[0] ? ' on' : '') + (avail ? '' : ' dis') + '"><input type="radio" name="vm-engine" value="' + e[0] + '"' + (engine === e[0] ? ' checked' : '') + (avail ? '' : ' disabled') + '><b>' + e[1] + '</b><span>' + e[2] + '</span></label>';
       }).join('') + '</div>' +
@@ -925,7 +925,7 @@
         return '<option value="' + x[0] + '"' + (Number(cur) === x[0] ? ' selected' : '') + '>' + x[1] + '</option>';
       }).join('') + '</select></div></div>' +
       '<div class="field"><label class="label">Голос</label><select class="select-native" id="vm-voice"><option value="">Как в звонках</option></select></div></div>' +
-      '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос GPT-Live</label><select class="select-native" id="vm-ovoice">' +
+      '<div id="vm-openai" style="margin-top:14px"' + (engine === 'openai' ? '' : ' hidden') + '><div class="field"><label class="label">Голос Voksy Live</label><select class="select-native" id="vm-ovoice">' +
       (vm.openai_voices || []).map(function (v) { return '<option value="' + esc(v) + '"' + (v === vm.openai_voice ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></div></div>' +
       (chRows ? '<div class="st-sub-h">Когда бот отвечает голосом</div>' + chRows : '<div class="note" style="margin-top:12px">Подключите WhatsApp или Telegram в разделе «Каналы», и здесь появится выбор, когда отвечать голосом. Instagram голосовые не поддерживает.</div>') +
       '<div class="field" id="vm-share-wrap"' + (Object.keys(chans).some(function (k) { return chans[k] === 'auto'; }) ? '' : ' hidden') + '><label class="label">Доля голосовых, когда бот решает сам</label><select class="select-native" id="vm-share">' +

@@ -8,10 +8,10 @@ import ModelLogo, { MODELS } from './ModelLogo';
 // реплики уже лежат в DOM (opacity: 0) и только проявляются — раскладка не прыгает.
 // Порядок сцен перемешивается после монтирования, чтобы пререндер и гидрация совпали.
 const SCENES = [
-  { key: 'salon', dir: 'in', model: 'gemini', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'sheets', 'telegram']] },
-  { key: 'clinic', dir: 'in', model: 'fish', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'task']] },
-  { key: 'showroom', dir: 'out', model: 'openai', who: ['bot', 'user', 'bot', 'user'], tags: [[], [], [], ['crm', 'task']] },
-  { key: 'service', dir: 'out', model: 'grok', who: ['bot', 'user', 'bot'], tags: [[], [], ['crm', 'sheets', 'task']] },
+  { key: 'salon', dir: 'in', model: 'voice', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'sheets', 'telegram']] },
+  { key: 'clinic', dir: 'in', model: 'voice', who: ['user', 'bot', 'user', 'bot'], tags: [[], [], [], ['crm', 'task']] },
+  { key: 'showroom', dir: 'out', model: 'live', who: ['bot', 'user', 'bot', 'user'], tags: [[], [], [], ['crm', 'task']] },
+  { key: 'service', dir: 'out', model: 'voice', who: ['bot', 'user', 'bot'], tags: [[], [], ['crm', 'sheets', 'task']] },
 ];
 
 const TAG_ICONS = { crm: 'square-check', sheets: 'file-text', telegram: 'send', task: 'calendar' };

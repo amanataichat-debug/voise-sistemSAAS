@@ -44,7 +44,7 @@ function Start({ onOpenModal }) {
             <p>{t('start.call_text')}</p>
             <div className="call-tags">
               <span className="chip">
-                <ModelLogo code="gemini" size={14} wrap={false} />
+                <ModelLogo code="voice" size={14} wrap={false} />
                 {t('start.call_chip_model')}
               </span>
               <span className="chip">

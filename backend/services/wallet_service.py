@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 FREE_EMAILS = {"amanat.aichat@gmail.com"}
 
 # Себестоимость минуты по движку голоса карточки (eleven_assistant_configs.voice_engine)
-ENGINE_TITLES = {"eleven": "ElevenLabs", "gpt_live": "OpenAI GPT-Live"}
+ENGINE_TITLES = {"eleven": "Voksy Voice", "gpt_live": "Voksy Live"}  # white-label: клиент видит наши названия
 
 
 def _engine_cost_usd(engine: str) -> float:

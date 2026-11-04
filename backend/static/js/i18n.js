@@ -22,7 +22,7 @@
 
   var LANGS = ['ru', 'ky'];
   var STORAGE_KEY = 'vs_lang';
-  var DICT_VERSION = '9';   // sidebar.inbox: инбокс, ветка 0411-inbox
+  var DICT_VERSION = '10';  // white-label: Voksy Voice / Voksy Live вместо названий провайдеров
   // Подстановки по умолчанию для {currency} и {tz} в строках словаря
   var DEFAULTS = { currency: 'сом', tz: 'Бишкек' };
 

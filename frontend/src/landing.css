@@ -403,7 +403,6 @@ html.lenis, html.lenis body { height: auto; }
 .lp-auth-models-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .lp-auth-model { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px 0 7px; border-radius: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); font-size: 12px; font-weight: 500; color: rgba(255,255,255,.9); white-space: nowrap; }
 .lp-auth-model .logo { display: block; }
-.lp-auth-model-openai .logo { filter: invert(1); }
 .lp-auth-model-cascade .logo { filter: brightness(1.9); }
 
 /* Правая панель */
@@ -473,7 +472,7 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
 /* На тёмной панели модалки знак ставим на белую плашку, иначе синий тонет в градиенте */
 .lp .lp-auth-logo .mark-img { width: 34px; height: 34px; padding: 4px; border-radius: 10px; background: #fff; box-shadow: 0 4px 14px rgba(15,23,42,.25); }
 
-/* Логотипы моделей без картинки (Grok, ElevenLabs): иконка из спрайта */
+/* Значки голосовых движков Voksy: иконка из спрайта */
 .logo-ic { display: inline-flex; align-items: center; justify-content: center; color: var(--vf-text); flex: 0 0 auto; }
 .logo-ic .ic { width: 100%; height: 100%; vertical-align: 0; }
 .lp-auth-model .logo-ic { color: rgba(255,255,255,.9); }
