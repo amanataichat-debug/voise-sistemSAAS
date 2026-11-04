@@ -1142,7 +1142,14 @@ class PostCallOrchestrator:
             "   через whatsapp_send_file (WhatsApp по номеру клиента) или telegram_send_file;\n"
             "   готового файла нет — собери create_document и отправь его. Сопроводи одним\n"
             "   коротким сообщением. Ни одного канала нет — сообщи владельцу через\n"
-            "   send_telegram_notification, что клиент ждёт материалы."
+            "   send_telegram_notification, что клиент ждёт материалы.\n"
+            "   ДРУГОЙ НОМЕР: клиент на звонке продиктовал второй номер («у меня другой\n"
+            "   WhatsApp, отправьте туда», «пишите на этот номер») — СНАЧАЛА\n"
+            "   add_contact_phone(phone=…, use_for_whatsapp=true; use_for_calls=true, если\n"
+            "   просил и звонить туда), ПОТОМ отправь обещанное: whatsapp_send_message /\n"
+            "   whatsapp_send_file по agent_contact_id сами уйдут на этот номер. Первым\n"
+            "   сообщением на новый номер напомни, кто ты и о чём договорились. Ссылку на\n"
+            "   регистрацию, если обещал, отправь сразу, не завтра."
         )
 
         # ВРЕМЯ, названное на звонке (звонок 25.10.2026, сессия 043c4070): клиент сказал «давайте к десяти
@@ -1380,7 +1387,10 @@ class PostCallOrchestrator:
         alt = alt_phone_list(agent_contact)
         phones_line = f"{agent_contact.phone}" + (
             f"; другие номера: {', '.join('+' + p for p in alt)}" if alt else ""
-        ) + (f"; звоним на +{agent_contact.call_phone}" if agent_contact.call_phone else "")
+        ) + (f"; звоним на +{agent_contact.call_phone}" if agent_contact.call_phone else "") + (
+            f"; WhatsApp пишем на +{(agent_contact.memory or {}).get('whatsapp_phone')}"
+            if isinstance(agent_contact.memory, dict) and agent_contact.memory.get("whatsapp_phone") else ""
+        )
         return f"""{direction_line}
 КОНТАКТ: {agent_contact.name or 'Неизвестный'} ({phones_line})
 КОМПАНИЯ: {agent_contact.company or 'Не указана'}

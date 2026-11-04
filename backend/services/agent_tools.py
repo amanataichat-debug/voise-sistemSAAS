@@ -311,7 +311,9 @@ ADD_CONTACT_PHONE_TOOL = {
         "use_for_calls=true — звонить на этот номер (например, WhatsApp на Beeline, а звонить "
         "можно только на O!). call_now=true — сразу и позвонить на него, если клиент просит "
         "позвонить сейчас (действуют обычные правила: только O!, окно звонков, не больше "
-        "одного недозвона в день). Если номер уже у другой карточки — ответ подскажет склейку."
+        "одного недозвона в день). use_for_whatsapp=true — клиент просит писать в WhatsApp на этот "
+        "номер: все сообщения и файлы в WhatsApp пойдут туда. Если номер уже у другой карточки — "
+        "ответ подскажет склейку."
     ),
     "parameters": {
         "type": "object",
@@ -319,6 +321,9 @@ ADD_CONTACT_PHONE_TOOL = {
             "agent_contact_id": {"type": "string", "description": "UUID карточки клиента"},
             "phone": {"type": "string", "description": "Номер в любом формате: 0700 123 456, +996700123456"},
             "use_for_calls": {"type": "boolean", "description": "Звонить клиенту на этот номер"},
+            "use_for_whatsapp": {"type": "boolean", "description": (
+                "Писать клиенту в WhatsApp на этот номер («у меня второй WhatsApp, отправьте туда»). "
+                "Дальше whatsapp_send_message / whatsapp_send_file по agent_contact_id сами идут на него.")},
             "call_now": {"type": "boolean", "description": "Сразу позвонить на этот номер"},
         },
         "required": ["agent_contact_id", "phone"],
@@ -1068,7 +1073,7 @@ WHATSAPP_SEND_MESSAGE_TOOL = {
         "type": "object",
         "properties": {
             "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
-            "phone": {"type": "string", "description": "Номер телефона получателя (если нет agent_contact_id), например +996700123456"},
+            "phone": {"type": "string", "description": "Номер телефона получателя, например +996700123456. Без agent_contact_id — новый клиент; вместе с agent_contact_id — написать этому клиенту на другой его номер WhatsApp"},
             "text": {"type": "string", "description": "Текст сообщения"},
         },
         "required": ["text"],
@@ -1735,11 +1740,30 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
     if hit == "per_contact":
         return {"ok": False, "error": CHAT_PER_CONTACT_ERROR}
 
-    chat = whatsapp_service.chat_for_contact(db, account.id, contact.id)
+    # Номер для WhatsApp (04.11.2026): клиент на звонке попросил писать на второй WhatsApp —
+    # раньше сообщение всё равно уходило в старый чат основного номера. Приоритет: номер
+    # из вызова → «номер для WhatsApp» карточки (add_contact_phone use_for_whatsapp) → чат.
+    preferred = None
+    if args.get("agent_contact_id"):
+        mem = contact.memory if isinstance(contact.memory, dict) else {}
+        pref_raw = phone_arg or mem.get("whatsapp_phone")
+        if pref_raw:
+            preferred = whatsapp_service.phone_digits(normalize_phone_e164(pref_raw) or pref_raw) or None
+    if preferred:
+        from sqlalchemy import or_ as _or
+        chat = db.query(AgentWhatsAppChat).filter(
+            AgentWhatsAppChat.account_id == account.id,
+            _or(AgentWhatsAppChat.phone == preferred,
+                AgentWhatsAppChat.remote_jid.like(preferred + "@%")),
+        ).first()
+    else:
+        chat = whatsapp_service.chat_for_contact(db, account.id, contact.id)
     if chat is not None:
         to = chat.remote_jid
+        if chat.agent_contact_id is None:
+            chat.agent_contact_id = contact.id
     else:
-        raw_phone = phone_arg or contact.phone or ""
+        raw_phone = preferred or phone_arg or contact.phone or ""
         if raw_phone.startswith(("tg:", "ig:", "wa:")):
             raw_phone = ""
         digits = whatsapp_service.phone_digits(normalize_phone_e164(raw_phone) or raw_phone)
@@ -4595,6 +4619,12 @@ async def fn_add_contact_phone(args: dict, user_id: str, agent_config_id: str, d
     use_for_calls = bool(args.get("use_for_calls") or args.get("call_now"))
     if use_for_calls and can_call:
         contact.call_phone = digits
+    use_for_wa = bool(args.get("use_for_whatsapp"))
+    if use_for_wa:
+        mem = dict(contact.memory or {})
+        mem["whatsapp_phone"] = digits
+        contact.memory = mem
+        flag_modified(contact, "memory")
     db.commit()
     logger.info(
         f"[AGENT-TOOLS] add_contact_phone: контакт {contact.id} +{digits} "
@@ -4608,7 +4638,11 @@ async def fn_add_contact_phone(args: dict, user_id: str, agent_config_id: str, d
         "already_known": not added and has_phone(contact, digits),
         "can_call": can_call,
         "call_phone": ("+" + contact.call_phone) if contact.call_phone else None,
+        "whatsapp_phone": ("+" + digits) if use_for_wa else None,
     }
+    if use_for_wa:
+        result["next"] = ("Номер для WhatsApp записан. Если обещал что-то прислать — отправь СЕЙЧАС "
+                          "через whatsapp_send_message / whatsapp_send_file (уйдёт на этот номер).")
     if use_for_calls and not can_call:
         result["hint"] = ("Номер записан, но он не на O! — звонить на него мы не можем. "
                           "Попроси номер O! (050 / 070) или продолжай переписку.")

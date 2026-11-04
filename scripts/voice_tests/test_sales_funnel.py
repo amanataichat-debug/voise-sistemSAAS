@@ -128,5 +128,15 @@ from backend.models.agent_call import AgentCall
 ac = AgentCall(postcall_log={"call_direction": "followup_outbound", "channel": "instagram"})
 check("касание видно в истории как сообщение канала", ac._resolve_channel() == "instagram")
 
+# --- второй номер WhatsApp (звонок 04.11.2026: «отправьте на другой WhatsApp») ---
+from backend.services import agent_tools as at
+schema = at.ADD_CONTACT_PHONE_TOOL if hasattr(at, "ADD_CONTACT_PHONE_TOOL") else None
+src_tools = open(at.__file__, encoding="utf-8").read()
+check("add_contact_phone умеет use_for_whatsapp", '"use_for_whatsapp"' in src_tools and 'mem["whatsapp_phone"] = digits' in src_tools)
+check("whatsapp_send_message идёт на «номер для WhatsApp» карточки, а не в старый чат",
+      'pref_raw = phone_arg or mem.get("whatsapp_phone")' in src_tools)
+check("промпт разбора: ДРУГОЙ НОМЕР → add_contact_phone(use_for_whatsapp) и сразу отправить",
+      "ДРУГОЙ НОМЕР" in src and "use_for_whatsapp=true" in src)
+
 print(f"\n{'OK' if not failures else 'FAILED'}: {failures} failures")
 sys.exit(1 if failures else 0)
