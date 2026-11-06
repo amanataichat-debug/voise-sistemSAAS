@@ -36,7 +36,8 @@ def activate_agent_trial(db: Session, user: User) -> bool:
     ВАЖНО (v3.1): тестовый период больше НЕ переключает базовый тариф
     пользователя на `agent`. Базовый тариф (free/ai_voice/start/profi)
     сохраняется — мы только запускаем окно триала через
-    agent_trial_started_at. Доступ во время триала даёт User.agent_trial_active().
+    agent_trial_started_at. Во время триала User.agent_mode() = reactive (уровень Старта,
+    06.11.2026): автономного агента Profi на пробе нет.
 
     Идемпотентно: если agent_trial_used уже True — ничего не делает и
     возвращает False. Возвращает True если trial выдан.

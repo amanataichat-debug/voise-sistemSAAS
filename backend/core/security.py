@@ -12,6 +12,8 @@ from typing import Dict, Optional, Union, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import hashlib
+import hmac
+import secrets
 import uuid
 
 from .config import settings
@@ -113,30 +115,46 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
             detail="Failed to decode token"
         )
 
+# Пароли (06.11.2026): PBKDF2-HMAC-SHA256 с солью вместо несолёного SHA-256 — при утечке базы
+# старые хэши подбирались по готовым таблицам за минуты. Формат: pbkdf2_sha256$<итерации>$<соль>$<хэш>.
+# Старые 64-символьные SHA-256 хэши по-прежнему принимаются; при входе хэш тихо обновляется
+# (needs_rehash → AuthService.login_user).
+PBKDF2_ITERATIONS = 310_000
+_PBKDF2_PREFIX = "pbkdf2_sha256"
+
+
+def _pbkdf2(password: str, salt: str, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iterations).hex()
+
+
 def hash_password(password: str) -> str:
-    """
-    Create a hash of a password using SHA-256
-    
-    Args:
-        password: Plain text password to hash
-        
-    Returns:
-        Hashed password
-    """
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Хэш пароля: PBKDF2-HMAC-SHA256, соль 16 байт."""
+    salt = secrets.token_hex(16)
+    return f"{_PBKDF2_PREFIX}${PBKDF2_ITERATIONS}${salt}${_pbkdf2(password, salt, PBKDF2_ITERATIONS)}"
+
+
+def needs_rehash(hashed_password: Optional[str]) -> bool:
+    """True для старого формата (SHA-256 без соли) или меньшего числа итераций."""
+    if not hashed_password or not hashed_password.startswith(_PBKDF2_PREFIX + "$"):
+        return True
+    try:
+        return int(hashed_password.split("$")[1]) < PBKDF2_ITERATIONS
+    except (IndexError, ValueError):
+        return True
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a password against a hash
-    
-    Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password to compare against
-        
-    Returns:
-        True if password matches hash, False otherwise
-    """
-    return hash_password(plain_password) == hashed_password
+    """Проверка пароля (constant-time) для нового и старого формата."""
+    if not hashed_password:
+        return False
+    if hashed_password.startswith(_PBKDF2_PREFIX + "$"):
+        try:
+            _, iterations, salt, digest = hashed_password.split("$", 3)
+            return hmac.compare_digest(_pbkdf2(plain_password, salt, int(iterations)), digest)
+        except (ValueError, TypeError):
+            return False
+    legacy = hashlib.sha256(plain_password.encode()).hexdigest()
+    return hmac.compare_digest(legacy, hashed_password)
 
 async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security)

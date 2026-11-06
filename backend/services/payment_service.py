@@ -298,6 +298,14 @@ class FinikPaymentService:
             except Exception as credit_error:
                 logger.error(f"❌ [FINIK] Failed to grant {plan_code} agent credits: {credit_error}", exc_info=True)
 
+        # Разовый бонус в кошелёк минут за первую оплату Старта (на пробном периоде кошелёк пустой)
+        try:
+            from backend.services.wallet_service import WalletService
+            if WalletService.grant_paid_plan_bonus(db, user.id, plan_code):
+                db.refresh(user)
+        except Exception as bonus_error:
+            logger.error(f"❌ [FINIK] Failed to grant wallet bonus: {bonus_error}", exc_info=True)
+
         logger.info(
             f"✅ [FINIK] Subscription {plan_code} activated for user {user.id}: "
             f"{duration_months} months ({subscription_days} days), until {user.subscription_end_date}"

@@ -1457,7 +1457,7 @@ async def admin_reset_password(
     """
     Reset password for a specific user.
     Admin only endpoint.
-    Uses SHA-256 hashing (same as backend/core/security.py hash_password).
+    Uses PBKDF2 hashing (backend/core/security.py hash_password).
     """
     import hashlib
 
@@ -1470,7 +1470,8 @@ async def admin_reset_password(
                 detail="Password must be at least 6 characters"
             )
 
-        user.password_hash = hashlib.sha256(request.new_password.encode()).hexdigest()
+        from backend.core.security import hash_password
+        user.password_hash = hash_password(request.new_password)
         db.commit()
 
         logger.info(f"Admin {current_user.email} reset password for user {user.email}")

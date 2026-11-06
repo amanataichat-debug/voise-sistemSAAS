@@ -344,7 +344,9 @@ async def subscribe_to_plan(
     db: Session = Depends(get_db)
 ):
     """
-    Subscribe user to a plan.
+    Subscribe user to a plan. ТОЛЬКО АДМИН (06.11.2026): раньше любой вошедший
+    пользователь мог этим запросом бесплатно включить себе любой тариф на любой срок.
+    Оплата идёт через /api/payments/create-payment → webhook Finik.
     
     Args:
         plan_code: Plan code to subscribe to
@@ -355,6 +357,8 @@ async def subscribe_to_plan(
     Returns:
         Updated user subscription information
     """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     try:
         # Find plan by code
         plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == plan_code).first()

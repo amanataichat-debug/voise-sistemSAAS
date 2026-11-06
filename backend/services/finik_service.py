@@ -295,11 +295,15 @@ class FinikService:
             return True
 
         if not settings.FINIK_PUBLIC_KEY:
-            logger.warning(
-                "⚠️ [FINIK] FINIK_PUBLIC_KEY is not set — webhook signature NOT verified. "
-                "Запросите публичный ключ у Finik и добавьте его в env."
+            # 06.11.2026: раньше без ключа webhook принимался без проверки — любой, зная номер своего
+            # заказа (он приходит в ответе create-payment), мог прислать поддельное «оплачено» и
+            # получить тариф бесплатно. Теперь без ключа — отказ; осознанно отключить проверку
+            # можно только флагом FINIK_VERIFY_WEBHOOK_SIGNATURE=False.
+            logger.error(
+                "❌ [FINIK] FINIK_PUBLIC_KEY is not set — webhook REJECTED. "
+                "Добавьте публичный ключ Finik в env (платёж остаётся в БД, его можно зачислить вручную)."
             )
-            return True
+            return False
 
         if not signature_b64:
             logger.error("❌ [FINIK] Webhook has no 'signature' header")

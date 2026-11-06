@@ -789,8 +789,10 @@ async def get_payment_status(
 # =============================================================================
 
 @router.get("/config-check")
-async def check_finik_config():
-    """🔍 Проверка конфигурации Finik (без секретов)."""
+async def check_finik_config(current_user: User = Depends(get_current_user)):
+    """🔍 Проверка конфигурации Finik (без секретов). Только админ."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     try:
         return {
             "status": "ok" if FinikService.is_configured() else "error",

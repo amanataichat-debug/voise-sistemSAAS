@@ -41,8 +41,14 @@ async def healthcheck():
         "environment": "development" if settings.DEBUG else "production"
     }
 
+def _admin_user():
+    """Зависимость «только админ» (импорт внутри — healthcheck грузится раньше остального)."""
+    from backend.core.dependencies import check_admin_access
+    return check_admin_access
+
+
 @router.get("/api/health/smtp", tags=["Health"])
-async def smtp_diagnose():
+async def smtp_diagnose(current_user=Depends(_admin_user())):
     """
     ✅ DEBUG: Диагностика SMTP — DNS, TCP-соединение и логин по шагам.
     Показывает, какие EMAIL_* переменные реально подхватились и на каком

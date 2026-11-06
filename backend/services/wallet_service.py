@@ -9,8 +9,11 @@ wallet_transactions. Все изменения баланса идут чере�
 0,05 × 1,25 / 0,01143392 ≈ 5,47 сом/мин. Списание посекундное, вверх до тыйына.
 
 Кто платит: владелец ассистента (у агента обзвона — владелец агента). Админ и
-служебный аккаунт не платят (как с подпиской). Новый пользователь один раз получает
-подарок WALLET_WELCOME_BONUS сом на тест (выдаётся при первом обращении к кошельку).
+служебный аккаунт не платят (как с подпиской). Подарка при регистрации и на пробном
+периоде нет (06.11.2026: тестовые аккаунты тратили минуты на серверных ключах). После
+первой оплаты тарифа из WALLET_PAID_BONUS_PLANS (по умолчанию Старт) один раз
+зачисляется WALLET_PAID_BONUS сом (150) — grant_paid_plan_bonus. Остальным владелец
+пополняет кошелёк сам в админке.
 
 Подписка остаётся доступом к кабинету; минуты связи оператора пока не списываются.
 """
@@ -115,10 +118,29 @@ class WalletService:
         user = db.query(User).filter(User.id == uid).first()
         if user is None:
             return 0
-        if not user.wallet_bonus_granted:  # блокировка строки — только пока подарок не выдан
-            cls.ensure_welcome_bonus(db, uid)
+        if not user.wallet_bonus_granted and int(settings.WALLET_WELCOME_BONUS or 0) > 0:
+            cls.ensure_welcome_bonus(db, uid)  # только если подарок включён в env (по умолчанию 0)
             db.refresh(user)
         return int(user.wallet_balance or 0)
+
+    @classmethod
+    def grant_paid_plan_bonus(cls, db: Session, user_id, plan_code: str) -> bool:
+        """Один раз зачислить бонус после оплаты тарифа (Старт). True — зачислено сейчас.
+        Флаг wallet_bonus_granted общий с прежним подарком: кто уже получал 120 сом, второй
+        раз не получит."""
+        plans = {p.strip() for p in (settings.WALLET_PAID_BONUS_PLANS or "").split(",") if p.strip()}
+        bonus = int(settings.WALLET_PAID_BONUS or 0) * 100
+        if plan_code not in plans or bonus <= 0:
+            return False
+        user = cls._lock_user(db, user_id)
+        if user is None or user.wallet_bonus_granted:
+            db.rollback()
+            return False
+        user.wallet_bonus_granted = True
+        cls._add(db, user, WalletTransactionType.BONUS, bonus, note=f"Бонус за оплату тарифа {plan_code}")
+        db.commit()
+        logger.info(f"[WALLET] paid-plan bonus {bonus / 100} KGS ({plan_code}) → user {user.id}")
+        return True
 
     @classmethod
     def can_start_call(cls, db: Session, user_id) -> bool:

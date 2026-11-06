@@ -92,8 +92,14 @@ app = FastAPI(
     description="API for managing personalized voice assistants based on OpenAI, Google Gemini and xAI Grok",
     version="3.0.0",  # 🆕 Обновлена версия
     docs_url="/api/docs" if not settings.PRODUCTION else None,
-    redoc_url="/api/redoc" if not settings.PRODUCTION else None
+    redoc_url="/api/redoc" if not settings.PRODUCTION else None,
+    # Схема всех эндпоинтов (/openapi.json) в проде не публикуется: это карта всего API
+    openapi_url="/openapi.json" if not settings.PRODUCTION else None,
 )
+
+if settings.PRODUCTION and settings.JWT_SECRET_KEY in ("", "change-this-in-production"):
+    # С ключом по умолчанию любой может подписать себе токен входа под чужим аккаунтом
+    get_logger(__name__).critical("🚨 JWT_SECRET_KEY не задан в env — токены можно подделать! Задайте длинный случайный ключ.")
 
 # ============================================================================
 # EXCEPTION HANDLERS
@@ -101,9 +107,15 @@ app = FastAPI(
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    if exc.status_code >= 500 and settings.PRODUCTION:
+        # Текст внутренних ошибок (str(e): SQL, пути, имена сервисов) наружу не отдаём — только в лог
+        logger.error(f"{exc.status_code} on {request.method} {request.url.path}: {detail}")
+        detail = "Internal server error"
     return JSONResponse(
         status_code=exc.status_code,
-        content={"message": exc.detail}
+        content={"message": detail},
+        headers=getattr(exc, "headers", None),
     )
 
 @app.exception_handler(RequestValidationError)
@@ -144,6 +156,70 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+# ---------------------------------------------------------------------------
+# Безопасность (06.11.2026): заголовки ответа и ограничение частоты попыток входа
+# ---------------------------------------------------------------------------
+# Страницы, которые встраиваются на чужие сайты во фрейм — им запрет фреймов не ставим
+_FRAMEABLE = re.compile(r"^/(embed/|static/(widget|[a-z-]*-test)\.html)")
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    path = request.url.path
+    if settings.PRODUCTION:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    # Кабинет нельзя показать в чужом фрейме (защита от «кликджекинга»)
+    if (path.startswith("/static/") and path.endswith(".html") or path == "/") and not _FRAMEABLE.match(path):
+        h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    return response
+
+
+# Попытки входа / регистрации / сброса пароля / кода из письма: не больше N за окно с одного IP.
+# Счётчик в памяти воркера (их несколько) — это защита от перебора, а не точный лимит.
+_AUTH_LIMITS = {
+    "/api/auth/login": (20, 300),
+    "/api/auth/register": (10, 3600),
+    "/api/auth/reset-password": (5, 900),
+    "/api/auth/reset-password-confirm": (10, 900),
+    "/api/email-verification/verify": (20, 900),
+    "/api/email-verification/send": (6, 900),
+    "/api/email-verification/resend": (6, 900),
+}
+_auth_hits = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+@app.middleware("http")
+async def auth_rate_limit(request: Request, call_next):
+    if request.method == "POST":
+        rule = _AUTH_LIMITS.get(request.url.path.rstrip("/"))
+        if rule:
+            limit, window = rule
+            now = time.monotonic()
+            key = (request.url.path, _client_ip(request))
+            hits = [t for t in _auth_hits.get(key, ()) if now - t < window]
+            if len(hits) >= limit:
+                retry = int(window - (now - hits[0])) + 1
+                logger.warning(f"🚫 Rate limit {request.url.path} for {key[1]}")
+                return JSONResponse(status_code=429, headers={"Retry-After": str(retry)},
+                                    content={"message": "Слишком много попыток. Попробуйте через несколько минут."})
+            hits.append(now)
+            _auth_hits[key] = hits
+            if len(_auth_hits) > 20000:  # не даём словарю расти бесконечно
+                _auth_hits.clear()
+    return await call_next(request)
+
 
 # ✅ DEBUG: API access log — uvicorn access-логи отключены в logging.py,
 # поэтому без этого middleware в логах Render не видно даже факта прихода запроса.
@@ -251,6 +327,8 @@ from backend.api import inbox as inbox_api  # инбокс: общий чат п
 app.include_router(inbox_api.router, prefix="/api/inbox", tags=["Inbox"])
 from backend.api import wallet as wallet_api  # кошелёк в сомах (prefix /api/wallet встроен)
 app.include_router(wallet_api.router, tags=["Wallet"])
+from backend.api import dashboard as dashboard_api  # сводка для главной кабинета (prefix /api/dashboard встроен)
+app.include_router(dashboard_api.router, tags=["Dashboard"])
 app.include_router(credits.router, tags=["Credits"])  # ✅ Кредиты оркестратора (prefix /api/credits встроен)
 
 # ============================================================================
@@ -334,6 +412,23 @@ class _CabinetStaticFiles(StaticFiles):
 
     _HASHED = re.compile(r"-[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg)$", re.I)
     _REVALIDATE = (".html", ".js", ".css", ".json")
+
+    # Служебные файлы, которые лежат в папке статики, но наружу отдаваться не должны:
+    # заметки для ИИ-агентов с архитектурой (CLAUDE.md, claude-*.md), тестовые и старые страницы.
+    # agent-api.md — публичная документация API, ссылка на неё есть в agent-api-docs.html.
+    _DENY = re.compile(
+        r"(^|/)(claude[^/]*\.md|[^/]*\.(py|pyc|sh|env|bak|log|map)|test[_-][^/]*|[^/]*_old[^/]*"
+        r"|[^/]*_original[^/]*|yarik\.html|outbound-calls\.html|README[^/]*)$",
+        re.I,
+    )
+    _ALLOW = {"agent-api.md"}
+
+    async def get_response(self, path, scope):
+        name = path.replace("\\", "/").lstrip("/")
+        if name not in self._ALLOW and self._DENY.search(name):
+            from starlette.exceptions import HTTPException as _StarletteHTTPException
+            raise _StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
 
     def file_response(self, full_path, stat_result, scope, status_code=200):
         response = super().file_response(full_path, stat_result, scope, status_code=status_code)

@@ -44,8 +44,10 @@
     // агент доступен только по тарифу (profi/триал, User.has_agent_access).
     // Своего пункта в меню у неё поэтому нет — заходят из карточки «Знания и
     // файлы» в шторке агента, а меню подсвечивает «Агент обзвона» (alias).
+    // profi: true — пункт виден всегда, но без оплаченного Profi (agent_mode !== 'full') стоит
+    // с замком и ведёт к выбору тарифа (06.11.2026: пробного периода у Profi нет).
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item',
-      aliases: ['/static/agent-knowledge.html'] },
+      aliases: ['/static/agent-knowledge.html'], profi: true },
     // Инбокс (ветка 0411-inbox): общий чат с клиентами — только тем, у кого есть агент (mode: 'full')
     { href: '/static/inbox.html', lucide: 'inbox', label: 'sidebar.inbox', def: 'Инбокс', id: 'inbox-nav-item', mode: 'full' },
     { href: '/static/voice-assistants.html', lucide: 'audio-lines', label: 'sidebar.assistants', def: 'Голосовые ассистенты', id: 'assistants-nav-item',
@@ -74,6 +76,8 @@
     { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item' },
     { href: '/static/start-analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
+    // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
+    { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
@@ -114,6 +118,21 @@
     return '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="/static/icons/ui.svg#i-' + name + '"></use></svg>';
   }
 
+  // Ссылка на выбор тарифа с выделенным Profi (дашборд открывает модалку по #plans)
+  var PLANS_URL = '/static/dashboard.html#plans';
+  var LOCK_STYLE = [
+    '.sidebar-nav-item.vf-profi-locked{position:relative;color:var(--vf-text-3,#63738b)}',
+    '.sidebar-nav-item.vf-profi-locked>.ic:first-child{opacity:.7}',
+    '.vf-profi-pill{margin-left:auto;display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 6px;border-radius:999px;',
+    'font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#8a5a00;background:linear-gradient(135deg,#fff4d6,#ffe7a8);border:1px solid #f3d58a}',
+    '.vf-profi-pill .ic{width:11px;height:11px}',
+    '.sidebar-nav-item.vf-profi-locked:hover .vf-profi-pill{border-color:#e0b84f}'
+  ].join('');
+
+  function profiLocked(item) {
+    return !!item.profi && cachedMode() !== 'full';
+  }
+
   function renderItem(item) {
     if (item.section) {
       var s = document.createElement('div');
@@ -129,6 +148,29 @@
     if (item.id) a.id = item.id;
     if (item.feature) a.setAttribute('data-feature', item.feature);
     if (item.admin) a.setAttribute('data-admin', '1');
+    if (profiLocked(item)) {
+      if (!document.getElementById('vf-profi-lock-style')) {
+        var st = document.createElement('style');
+        st.id = 'vf-profi-lock-style';
+        st.textContent = LOCK_STYLE;
+        document.head.appendChild(st);
+      }
+      a.href = PLANS_URL;
+      a.className = 'sidebar-nav-item vf-profi-locked';
+      a.setAttribute('data-no-prefetch', '1');
+      a.title = T('sidebar.profi_only', 'Автономный агент: сам звонит и пишет клиентам. Доступен после оплаты тарифа Profi');
+      a.innerHTML = icon(item.lucide) + '<span>' + T(item.label, item.def) + '</span>' +
+        '<span class="vf-profi-pill">' + icon('lock') + 'Profi</span>';
+      a.addEventListener('click', function (e) {
+        // Уже на дашборде: смена хэша не перезагружает страницу — дашборд слушает hashchange
+        if (currentPath() === '/static/dashboard.html') {
+          e.preventDefault();
+          if (location.hash === '#plans') history.replaceState(null, '', location.pathname);
+          location.hash = 'plans';
+        }
+      });
+      return a;
+    }
     a.innerHTML = icon(item.lucide) + '<span>' + T(item.label, item.def) + '</span>' +
       (item.feature ? icon('lock', 'lock') : '');
     return a;
@@ -310,31 +352,6 @@
   }
 
   // ---------------------------------------------------------------------
-  // Переключатель темы ☀/☾: ставим в топбаре слева от переключателя языка.
-  // Логика самого переключения — в /static/js/theme.js (слушает клики по
-  // .theme-toggle и обновляет data-theme на <html>).
-  // ---------------------------------------------------------------------
-  function renderThemeToggle() {
-    if (document.querySelector('.theme-toggle')) return;
-    var bar = document.querySelector('.vf-topbar-right') || document.querySelector('.top-nav');
-    if (!bar) return;
-    var btn = document.createElement('button');
-    btn.className = 'icon-btn theme-toggle';
-    btn.id = 'theme-toggle';
-    btn.type = 'button';
-    btn.title = 'Переключить тему';
-    btn.setAttribute('aria-pressed', 'false');
-    // Иконки — inline-svg: на страницах кабинета нет Font Awesome, и кнопка была пустым квадратом.
-    // Какая из двух видна, решает css по data-theme на <html>.
-    var svg = '<svg class="ic ic-%s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">%s</svg>';
-    btn.innerHTML = svg.replace('%s', 'moon').replace('%s', '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>') +
-      svg.replace('%s', 'sun').replace('%s', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>');
-    var userMenu = bar.querySelector('.user-menu');
-    if (userMenu) userMenu.parentNode.insertBefore(btn, userMenu);
-    else bar.insertBefore(btn, bar.firstChild);
-  }
-
-  // ---------------------------------------------------------------------
   // Переключатель языка RU | KY: в топбаре перед меню пользователя
   // ---------------------------------------------------------------------
   function renderLangSwitch() {
@@ -430,7 +447,6 @@
     if (redirectStartPages()) return;
     var nav = renderNav();
     addSpeculation();
-    renderThemeToggle();
     renderLangSwitch();
     if (!nav) return;
 

@@ -271,6 +271,14 @@ class AuthService:
                     detail="Invalid email or password"
                 )
             
+            # Старый хэш (SHA-256 без соли) → переводим на PBKDF2, пока пароль у нас в руках
+            try:
+                from backend.core.security import needs_rehash
+                if needs_rehash(user.password_hash):
+                    user.password_hash = hash_password(login_data.password)
+            except Exception as rehash_error:
+                logger.warning(f"Password rehash skipped: {rehash_error}")
+
             # Update last login timestamp
             user.last_login = datetime.now(timezone.utc)
             db.commit()

@@ -160,7 +160,12 @@ class Settings(BaseSettings):
     WALLET_OPERATOR_OUT_SOM_PER_MIN: float = float(os.getenv("WALLET_OPERATOR_OUT_SOM_PER_MIN", "1.0"))
     WALLET_MIN_TOPUP: int = int(os.getenv("WALLET_MIN_TOPUP", "10"))
     WALLET_MAX_TOPUP: int = int(os.getenv("WALLET_MAX_TOPUP", "100000"))
-    WALLET_WELCOME_BONUS: int = int(os.getenv("WALLET_WELCOME_BONUS", "120"))
+    # Подарка при регистрации больше нет (06.11.2026): на пробном периоде кошелёк пустой,
+    # нужным клиентам владелец пополняет вручную в админке. 0 = выключено.
+    WALLET_WELCOME_BONUS: int = int(os.getenv("WALLET_WELCOME_BONUS", "0"))
+    # Разовый бонус в кошелёк после ПЕРВОЙ оплаты тарифа из WALLET_PAID_BONUS_PLANS (сом)
+    WALLET_PAID_BONUS: int = int(os.getenv("WALLET_PAID_BONUS", "150"))
+    WALLET_PAID_BONUS_PLANS: str = os.getenv("WALLET_PAID_BONUS_PLANS", "start")
     AGENT_MEDIA_MAX_MB: int = int(os.getenv("AGENT_MEDIA_MAX_MB", "20"))
     AGENT_VOICE_MAX_SECONDS: int = int(os.getenv("AGENT_VOICE_MAX_SECONDS", "600"))
     REALTIME_WS_URL: str = os.getenv(

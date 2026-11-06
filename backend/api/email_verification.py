@@ -6,6 +6,7 @@ Handles sending, resending, and verifying email verification codes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from backend.core.dependencies import check_admin_access
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -355,7 +356,8 @@ async def get_verification_status(
 
 @router.delete("/cleanup-expired", response_model=VerificationResponse, status_code=status.HTTP_200_OK)
 async def cleanup_expired_codes(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin=Depends(check_admin_access),
 ):
     """
     Admin endpoint: Clean up expired verification codes.

@@ -1089,12 +1089,12 @@ async def create_agent(
     db.commit()
     db.refresh(agent)
 
-    # 8. Активируем бесплатный trial тарифа agent при ПЕРВОМ создании
-    #    (3 дня + 1500 кредитов). Если trial уже был — не выдаём повторно.
+    # 8. Пробный период бота при ПЕРВОМ создании: 3 дня уровня Старт (режим reactive) +
+    #    1500 кредитов. Если trial уже был — не выдаём повторно. Оплаченные Старт и Profi
+    #    его не получают: у них свои кредиты в месяц. Автономного агента (Profi) на пробе нет.
     trial_activated = False
     try:
-        # Тариф Старт не получает тест полного агента: у него свои 10 000 кредитов в месяц
-        if current_user.agent_mode() != "reactive":
+        if not (current_user.is_start_plan() or current_user.has_agent_access()):
             trial_activated = activate_agent_trial(db, current_user)
         if trial_activated:
             db.refresh(current_user)

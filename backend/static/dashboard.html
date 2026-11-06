@@ -5,12 +5,10 @@
 <head>
 <script>
 (function(){ try{
-  var t = localStorage.getItem('vs_theme') || 'system';
-  var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if(dark){ document.documentElement.setAttribute('data-theme','dark'); document.documentElement.style.backgroundColor='#0a0f1b'; document.documentElement.style.colorScheme='dark'; }
+  // Тёмная тема убрана (06.11.2026): кабинет только светлый; старый выбор темы стираем
+  localStorage.removeItem('vs_theme');
 }catch(e){} })();
 </script>
-<style>html[data-theme="dark"]{background-color:#0a0f1b;color-scheme:dark}</style>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Панель управления — Voksy AI</title>
@@ -1727,6 +1725,7 @@
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <link rel="stylesheet" href="/static/css/dashboard-home.css">
   <script defer src="/static/js/i18n.js"></script>
   <script defer src="/static/js/ui.js"></script>
 </head>
@@ -1751,6 +1750,7 @@
   </aside>
   <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/sidebar.js"></script>
+  <script defer src="/static/js/dashboard-home.js"></script>
   
   <!-- Основной контент -->
   <main class="main-content" id="main-content">
@@ -1783,26 +1783,82 @@
     
     <!-- Контейнер для содержимого -->
     <div class="content-container" id="content-container">
-      <!-- Секция приветствия -->
-      <div class="welcome-section">
-        <h2 class="welcome-title" id="welcome-message">Добро пожаловать, Александр!</h2>
-        <p class="welcome-subtitle">Управляйте своими голосовыми ассистентами и создавайте новых.</p>
-      </div>
-      
-      <!-- Статистика -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-header">
-            <div class="stat-icon">
-              <i class="fas fa-robot"></i>
+      <!-- Главная кабинета: виджеты рисует /static/js/dashboard-home.js из /api/dashboard/summary -->
+      <section class="dh-hero">
+        <div class="dh-hero-main">
+          <div class="dh-hero-date" id="dh-date"></div>
+          <h2 class="welcome-title dh-hero-title" id="welcome-message">Добро пожаловать!</h2>
+          <p class="dh-hero-sub" id="dh-hero-sub">Сводка по звонкам, клиентам и кошельку за последние дни.</p>
+        </div>
+        <div class="dh-hero-side">
+          <div class="dh-plan" id="dh-plan"><span class="dh-skel" style="width:140px"></span></div>
+          <div class="dh-hero-actions">
+            <button type="button" class="dh-btn dh-btn-light" id="dh-topup">Пополнить кошелёк</button>
+            <button type="button" class="dh-btn dh-btn-white" id="dh-upgrade">Тарифы</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="dh-kpis" id="dh-kpis">
+        <div class="dh-kpi"><span class="dh-skel"></span></div>
+        <div class="dh-kpi"><span class="dh-skel"></span></div>
+        <div class="dh-kpi"><span class="dh-skel"></span></div>
+        <div class="dh-kpi"><span class="dh-skel"></span></div>
+      </section>
+
+      <section class="dh-grid">
+        <div class="dh-card dh-span-2">
+          <div class="dh-card-head">
+            <div>
+              <h3 class="dh-card-title">Активность за 14 дней</h3>
+              <div class="dh-card-sub" id="dh-chart-sub">Звонки по дням, время Бишкека</div>
+            </div>
+            <div class="dh-seg" id="dh-chart-tabs" hidden>
+              <button type="button" class="active" data-k="calls">Звонки</button>
+              <button type="button" data-k="messages">Сообщения</button>
             </div>
           </div>
-          <div class="stat-value" id="bots-count">0</div>
-          <div class="stat-title">Активных ассистентов</div>
-          <div class="stat-breakdown" id="bots-breakdown"></div>
+          <div class="dh-legend" id="dh-legend"></div>
+          <div class="dh-chart" id="dh-chart"></div>
         </div>
-      </div>
-      
+        <div class="dh-card" id="dh-side-card">
+          <div class="dh-card-head"><h3 class="dh-card-title" id="dh-side-title">Воронка клиентов</h3></div>
+          <div id="dh-side-body"><span class="dh-skel"></span></div>
+        </div>
+      </section>
+
+      <section class="dh-grid">
+        <div class="dh-card dh-span-2">
+          <div class="dh-card-head">
+            <h3 class="dh-card-title">Последние звонки</h3>
+            <a class="dh-link" href="/static/conversations.html">Все диалоги →</a>
+          </div>
+          <div id="dh-recent"><span class="dh-skel"></span></div>
+        </div>
+        <div class="dh-card">
+          <div class="dh-card-head"><h3 class="dh-card-title">Подключения</h3></div>
+          <div id="dh-connect"><span class="dh-skel"></span></div>
+        </div>
+      </section>
+
+      <section class="dh-grid">
+        <div class="dh-card" id="dh-setup-card">
+          <div class="dh-card-head">
+            <h3 class="dh-card-title">Запуск платформы</h3>
+            <span class="dh-card-sub" id="dh-setup-progress"></span>
+          </div>
+          <div id="dh-setup"><span class="dh-skel"></span></div>
+        </div>
+        <div class="dh-card" id="dh-tasks-card">
+          <div class="dh-card-head"><h3 class="dh-card-title">Ассистенты</h3></div>
+          <div id="dh-tasks"><span class="dh-skel"></span></div>
+        </div>
+        <div class="dh-card dh-profi" id="dh-profi" hidden></div>
+      </section>
+
+      <!-- Старый счётчик ассистентов: его заполняет код страницы (loadStats), на экране не нужен -->
+      <div hidden><span id="bots-count">0</span><span id="bots-breakdown"></span></div>
+
       <!-- Секция для информации о подписке -->
       <div class="subscription-section">
         <div class="section-header">
@@ -3098,13 +3154,17 @@
 
       // Ссылка /static/dashboard.html#plans (например, «Profi» на странице агента
       // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi.
-      if (location.hash === '#plans') {
+      function openPlansFromHash() {
+        if (location.hash !== '#plans') return;
         setTimeout(function () {
           showPaymentModal();
           selectedPlan = 'profi';
           updatePaymentModalUI();
         }, 300);
       }
+      openPlansFromHash();
+      // Пункт «Агент обзвона» с замком в меню (sidebar.js) на самом дашборде меняет только хэш
+      window.addEventListener('hashchange', openPlansFromHash);
       
       paymentModalClose.addEventListener('click', hidePaymentModal);
       paymentCancelBtn.addEventListener('click', hidePaymentModal);

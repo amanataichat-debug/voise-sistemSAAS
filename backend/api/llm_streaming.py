@@ -49,7 +49,11 @@ class LLMStreamRequest(BaseModel):
 # ============================================================================
 
 @router.post("/api/llm/stream")
-async def stream_llm_response(request: LLMStreamRequest):
+async def stream_llm_response(request: LLMStreamRequest, current_user: User = Depends(get_current_user)):
+    # 06.11.2026: эндпоинт был открыт без входа — любой мог тратить серверный ключ OpenAI.
+    # Теперь только для админа (интерфейсом кабинета не используется).
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     """
     Stream ChatGPT response in real-time.
     
