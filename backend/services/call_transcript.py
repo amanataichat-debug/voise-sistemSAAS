@@ -25,11 +25,16 @@ class CallTranscript:
         self.started = time.time()
         self.turns: List[Dict[str, Any]] = []
         self._pending_assistant = ""  # дельты ответа, для которого ещё не пришёл *.done
+        # Последняя речь любой стороны (текст стенограммы): сторож тишины звонка
+        # кладёт трубку, если на линии давно никто не говорит (api/sip_gateway.py).
+        self.last_activity_at = self.started
 
     # ------------------------------------------------------------------ input
     def add(self, role: str, text: Optional[str], merge: bool = False) -> None:
         """Добавить ход. merge=True — дописать фрагмент к последнему ходу той же роли (GPT-Live)."""
         text = text or ""
+        if text.strip():
+            self.last_activity_at = time.time()
         if merge and self.turns and self.turns[-1]["role"] == role:
             self.turns[-1]["text"] += text
             return
@@ -50,6 +55,9 @@ class CallTranscript:
 
     def on_event(self, data: Dict[str, Any]) -> None:
         mtype = data.get("type") or ""
+        if mtype in ("input.transcription", "output.transcription") and any(
+                isinstance(data.get(k), str) and data.get(k).strip() for k in ("transcript", "text", "delta")):
+            self.last_activity_at = time.time()
         if mtype == "input.transcription":
             # Fish/Eleven шлют готовую фразу; Gemini — промежуточные куски (у него есть *.complete)
             if "transcript" in data:
@@ -61,6 +69,8 @@ class CallTranscript:
         elif mtype == "output.transcription.complete":
             self.add("assistant", data.get("text"))
         elif mtype == "response.text.delta":
+            if (data.get("delta") or "").strip():
+                self.last_activity_at = time.time()
             self._pending_assistant += data.get("delta") or ""
         elif mtype == "response.text.done":
             text = data.get("text")

@@ -4611,6 +4611,11 @@ async def fn_add_contact_phone(args: dict, user_id: str, agent_config_id: str, d
     if len(digits) != 12 or not digits.startswith("996"):
         return {"ok": False, "error": "bad_phone",
                 "hint": "Номер не похож на кыргызский (ждём 0XXX XXX XXX или +996…). Уточни у клиента."}
+    from backend.services.sip_gateway_service import SipGatewayService
+    if SipGatewayService.is_platform_number(db, digits):
+        return {"ok": False, "error": "platform_number",
+                "hint": ("Это НАШ номер (номер агента/компании), его клиенту отправил владелец или ты сам. "
+                         "Это не номер клиента: не записывай и не звони на него.")}
 
     other = find_contact_by_phone(db, agent_config_id, digits)
     if other is not None and other.id != contact.id:

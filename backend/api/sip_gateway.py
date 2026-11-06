@@ -308,6 +308,39 @@ def _sweep_stale_calls(db: Session, gateway_id: str) -> None:
 # =============================================================================
 
 
+# Сторож звонка (ветка 0611-ig-voice-fix). 05.11.2026 агент позвонил на СВОЙ же
+# номер и час говорил сам с собой: мост кладёт трубку только через 3600 с
+# (MAX_CALL_SECONDS на VPS). Теперь бэкенд сам завершает звонок: жёсткий предел
+# длительности и тишина — никто на линии ничего не сказал (по стенограмме) дольше
+# SIP_IDLE_HANGUP_SECONDS. 0 = выключено.
+SIP_MAX_CALL_SECONDS = int(os.getenv("SIP_MAX_CALL_SECONDS", "1500"))
+SIP_IDLE_HANGUP_SECONDS = int(os.getenv("SIP_IDLE_HANGUP_SECONDS", "150"))
+
+
+async def _call_watchdog(socket: HandlerSocket, transcript: CallTranscript, call_id: str) -> None:
+    started = time.time()
+    while not socket.closed and not socket.ended_by_bridge:
+        await asyncio.sleep(5)
+        now = time.time()
+        reason = None
+        if SIP_MAX_CALL_SECONDS and now - started > SIP_MAX_CALL_SECONDS:
+            reason = "max_duration"
+            text = f"Звонок длится дольше {SIP_MAX_CALL_SECONDS // 60} мин — бэкенд завершает его"
+        elif SIP_IDLE_HANGUP_SECONDS and now - transcript.last_activity_at > SIP_IDLE_HANGUP_SECONDS:
+            reason = "idle_silence"
+            text = f"На линии {SIP_IDLE_HANGUP_SECONDS} с никто не говорит — бэкенд завершает звонок"
+        if reason is None:
+            continue
+        logger.warning(f"[SIP-MEDIA] call {call_id}: watchdog {reason}")
+        call_log = CallLogRecorder.current()
+        if call_log is not None:
+            call_log.add("sip", text, level="warning")
+        await socket.hangup(reason)
+        # Хендлер выходит по закрытию входного потока (receive → WebSocketDisconnect).
+        await socket._queue.put(None)
+        return
+
+
 @router.websocket("/ws/sip/{call_id}")
 async def sip_media(
     websocket: WebSocket,
@@ -548,11 +581,13 @@ async def sip_media(
     socket.start()
     started_at = datetime.utcnow()
     handler = SIP_HANDLERS[call.assistant_type]
+    watchdog = asyncio.create_task(_call_watchdog(socket, transcript, call_id))
     try:
         await handler(socket, str(assistant.id), db)
     except Exception as exc:
         logger.error(f"[SIP-MEDIA] call {call_id}: handler crashed: {exc}", exc_info=True)
     finally:
+        watchdog.cancel()
         await socket.finish()
         lat = socket.reply_latencies
         call_log.add(

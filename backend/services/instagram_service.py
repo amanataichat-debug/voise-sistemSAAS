@@ -93,18 +93,41 @@ def parse_ig_time(value) -> Optional[datetime]:
 
 
 async def get_me(composio_user_id: str) -> Dict[str, Any]:
-    """Свой IG Business аккаунт: {ok, id, username}."""
+    """
+    Свой IG-аккаунт: {ok, id, ids, username}.
+
+    У Instagram API два id одного аккаунта: `id` (app-scoped) и `user_id`
+    (professional account id) — в сообщениях DM `from.id` своего аккаунта
+    совпадает со ВТОРЫМ. Раньше брался только `id`, свои сообщения не
+    узнавались: ответы владельца клиентам считались сообщениями клиента, все
+    треды склеивались в одну карточку с именем своего аккаунта, агент
+    отвечал «сам себе» (05.11.2026). Поэтому возвращаем все id.
+    """
     res = await composio_service.execute(
-        "INSTAGRAM_GET_USER_INFO", {"ig_user_id": "me"}, composio_user_id
+        "INSTAGRAM_GET_USER_INFO", {"ig_user_id": "me", "fields": "id,user_id,username"},
+        composio_user_id,
     )
+    if not res.get("ok"):
+        res = await composio_service.execute(
+            "INSTAGRAM_GET_USER_INFO", {"ig_user_id": "me"}, composio_user_id
+        )
     if not res.get("ok"):
         return {"ok": False, "error": res.get("error")}
     d = _data_dict(res)
     body = d.get("data") if isinstance(d.get("data"), dict) else d
+    ids = []
+    for key in ("user_id", "id", "ig_id", "instagram_business_account_id"):
+        val = body.get(key)
+        if isinstance(val, dict):
+            val = val.get("id")
+        if val and str(val) not in ids:
+            ids.append(str(val))
     return {
-        "ok": True,
-        "id": str(body.get("id") or body.get("user_id") or ""),
+        "ok": bool(ids),
+        "id": ids[0] if ids else "",
+        "ids": ids,
         "username": body.get("username"),
+        "error": None if ids else "no id in INSTAGRAM_GET_USER_INFO",
     }
 
 

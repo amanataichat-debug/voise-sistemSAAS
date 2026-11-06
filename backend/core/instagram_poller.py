@@ -31,6 +31,7 @@ ig_message_id), написал владелец из приложения Instag
 """
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_
@@ -56,6 +57,8 @@ OWNER_ECHO_GRACE_SECONDS = 20
 
 # Максимум запусков оркестратора с одного коннектора за тик.
 MAX_CONVERSATION_RUNS_PER_TICK = 5
+# Максимум тредов, у которых за тик снимаем сообщения.
+MAX_CONVERSATION_FETCH_PER_TICK = 10
 
 # Тред без watermark (первый раз видим): обрабатываем только сообщения свежее
 # этого окна, остальные — baseline. Поллер ходит каждые ~90с, так что живые
@@ -126,34 +129,179 @@ def _claim(db, connector_id) -> bool:
     return bool(claimed)
 
 
-async def _ensure_own_account_id(db, connector) -> str:
+# Свой аккаунт: id из INSTAGRAM_GET_USER_INFO живут в external_account_id
+# (через запятую), username — в памяти процесса (обновление раз в час).
+_OWN_CACHE: dict = {}
+OWN_REFRESH_SECONDS = 3600
+
+
+def _stored_own_ids(connector) -> set:
+    return {x.strip() for x in (connector.external_account_id or "").split(",") if x.strip()}
+
+
+def _persist_own_ids(connector, ids) -> None:
+    current = _stored_own_ids(connector)
+    if not ids or set(ids) <= current:
+        return
+    ordered = [x for x in (connector.external_account_id or "").split(",") if x.strip()]
+    ordered += [x for x in ids if x not in current]
+    out = ""
+    for x in ordered:
+        cand = f"{out},{x}" if out else x
+        if len(cand) <= 64:
+            out = cand
+    connector.external_account_id = out
+    logger.info(f"[IG-POLLER] own IG ids for connector {connector.id}: {out}")
+
+
+async def _own_identity(db, connector):
     """
-    Свой IG User ID (для отличения своих сообщений от входящих). Лениво
-    резолвится через INSTAGRAM_GET_USER_INFO('me') и кэшируется в строке
-    коннектора (external_account_id). Пустая строка — резолв не удался.
+    (множество своих id, свой username в нижнем регистре).
+
+    05.11.2026: свой id брался один (`id` из INSTAGRAM_GET_USER_INFO), а в DM
+    `from.id` своего аккаунта — другой (`user_id`). Ответы владельца клиентам
+    считались входящими «от клиента», все треды склеились в карточку с именем
+    своего аккаунта, агент отвечал сам себе и позвонил на номер, который
+    владелец отправил клиенту. Теперь «свой» = любой из id аккаунта ИЛИ свой
+    username, плюс id, выученные по переписке (_learn_own_ids).
     """
-    if connector.external_account_id:
-        return connector.external_account_id
-    composio_user_id = connector.composio_user_id or f"agent_{connector.agent_config_id}"
-    me = await ig.get_me(composio_user_id)
-    if me.get("ok") and me.get("id"):
-        connector.external_account_id = me["id"]
-        if me.get("username") and not connector.connected_email:
-            connector.connected_email = f"@{me['username']}"
+    ids = _stored_own_ids(connector)
+    username = ""
+    if (connector.connected_email or "").startswith("@"):
+        username = connector.connected_email[1:]
+    key = str(connector.id)
+    cached = _OWN_CACHE.get(key)
+    if cached and time.time() - cached[0] < OWN_REFRESH_SECONDS:
+        ids |= cached[1]
+        username = cached[2] or username
+    else:
+        composio_user_id = connector.composio_user_id or f"agent_{connector.agent_config_id}"
+        me = await ig.get_me(composio_user_id)
+        me_ids = set(me.get("ids") or ([me["id"]] if me.get("id") else []))
+        me_user = (me.get("username") or "").lstrip("@")
+        _OWN_CACHE[key] = (time.time(), me_ids, me_user)
+        if me.get("ok"):
+            ids |= me_ids
+            username = me_user or username
+            if me_user and not connector.connected_email:
+                connector.connected_email = f"@{me_user}"
+            _persist_own_ids(connector, me_ids)
+            db.commit()
+        else:
+            logger.warning(f"[IG-POLLER] failed to resolve own IG account for connector {connector.id}: {me.get('error')}")
+    return ids, username.lower()
+
+
+def _parse_messages(messages) -> list:
+    """Graph-сообщения → [{mid, ts, from_id, from_username, to:[(id, username)], text, attachments}], старые → новые."""
+    parsed = []
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        frm = m.get("from") or {}
+        to_raw = m.get("to") or {}
+        to_list = to_raw.get("data") if isinstance(to_raw, dict) else to_raw
+        to = []
+        for t in to_list or []:
+            if isinstance(t, dict) and t.get("id"):
+                to.append((str(t.get("id")), t.get("username")))
+        parsed.append({
+            "mid": str(m.get("id") or ""),
+            "ts": ig.parse_ig_time(m.get("created_time")),
+            "from_id": str(frm.get("id") or ""),
+            "from_username": frm.get("username"),
+            "to": to,
+            "text": (m.get("message") or "").strip(),
+            "attachments": ig.parse_attachments(m),
+        })
+    parsed = [m for m in parsed if m["mid"] and m["ts"]]
+    parsed.sort(key=lambda m: m["ts"])
+    return parsed
+
+
+def _is_own(m, own_ids, own_username) -> bool:
+    if m["from_id"] and m["from_id"] in own_ids:
+        return True
+    return bool(own_username and (m.get("from_username") or "").lstrip("@").lower() == own_username)
+
+
+def _learn_own_ids(db, connector, own_ids, own_username, fetched, rows) -> set:
+    """
+    Доучить свои id по переписке:
+      • from.username == свой username → from.id свой;
+      • mid совпал с нашей отправкой (агент или владелец из инбокса) → from.id свой;
+      • id участвует в ≥2 разных тредах (свой аккаунт есть в каждом, клиент — в своём);
+      • один igsid у ≥2 сохранённых тредов — это свой аккаунт (след старой ошибки).
+    """
+    from backend.models.agent_instagram import AgentInstagramMessage
+
+    learned = set()
+    all_mids = []
+    by_mid = {}
+    conv_participants = {}
+    for conv_id, _row, parsed in fetched:
+        parts = set()
+        for m in parsed:
+            all_mids.append(m["mid"])
+            by_mid[m["mid"]] = m
+            if m["from_id"]:
+                parts.add(m["from_id"])
+            for tid, _tu in m["to"]:
+                parts.add(tid)
+            if own_username and (m.get("from_username") or "").lstrip("@").lower() == own_username and m["from_id"]:
+                learned.add(m["from_id"])
+            for tid, tu in m["to"]:
+                if own_username and (tu or "").lstrip("@").lower() == own_username:
+                    learned.add(tid)
+        conv_participants[conv_id] = parts
+
+    if all_mids:
+        agent_sent = db.query(AgentInstagramMessage.ig_message_id).filter(
+            AgentInstagramMessage.agent_config_id == connector.agent_config_id,
+            AgentInstagramMessage.ig_message_id.in_(all_mids),
+            AgentInstagramMessage.direction == "outbound",
+        ).all()
+        for (mid,) in agent_sent:
+            m = by_mid.get(mid)
+            if m and m["from_id"]:
+                learned.add(m["from_id"])
+
+    counts = {}
+    for parts in conv_participants.values():
+        for pid in parts:
+            counts[pid] = counts.get(pid, 0) + 1
+    learned |= {pid for pid, c in counts.items() if c >= 2}
+
+    igsid_counts = {}
+    for r in rows:
+        if r.igsid:
+            igsid_counts[r.igsid] = igsid_counts.get(r.igsid, 0) + 1
+    learned |= {i for i, c in igsid_counts.items() if c >= 2}
+
+    new = learned - own_ids
+    if new:
+        logger.warning(f"[IG-POLLER] connector {connector.id}: learned own IG ids {sorted(new)}")
+        _persist_own_ids(connector, new)
         db.commit()
-        logger.info(f"[IG-POLLER] resolved own IG id {me['id']} for connector {connector.id}")
-        return me["id"]
-    logger.warning(f"[IG-POLLER] failed to resolve own IG id for connector {connector.id}: {me.get('error')}")
-    return ""
+    return own_ids | learned
+
+
+def _row_broken(row, own_ids, own_username) -> bool:
+    """Тред привязан к СВОЕМУ аккаунту вместо клиента (след ошибки до 06.11.2026)."""
+    if row is None:
+        return False
+    if row.igsid and row.igsid in own_ids:
+        return True
+    return bool(own_username and (row.ig_username or "").lstrip("@").lower() == own_username)
 
 
 async def _poll_connector(db, connector):
     from backend.models.agent_instagram import AgentInstagramConversation
     from backend.services.agent_orchestrator import handle_inbound_instagram
 
-    own_id = await _ensure_own_account_id(db, connector)
-    if not own_id:
-        return  # без своего id не отличить направление — пропускаем тик
+    own_ids, own_username = await _own_identity(db, connector)
+    if not own_ids and not own_username:
+        return  # не знаем свой аккаунт — направление не отличить, пропускаем тик
 
     composio_user_id = connector.composio_user_id or f"agent_{connector.agent_config_id}"
     convs = await ig.list_conversations(composio_user_id, limit=POLL_CONVERSATIONS_LIMIT)
@@ -166,7 +314,9 @@ async def _poll_connector(db, connector):
     ).all()
     by_conv_id = {r.ig_conversation_id: r for r in rows}
 
-    runs = 0
+    # Сначала снимаем сообщения изменившихся тредов, потом по ним доучиваем
+    # свои id и только после этого разбираем направление.
+    fetched = []
     for conv in convs.get("conversations", []):
         conv_id = str(conv.get("id") or "")
         if not conv_id:
@@ -174,12 +324,14 @@ async def _poll_connector(db, connector):
         row = by_conv_id.get(conv_id)
         updated_at = ig.parse_ig_time(conv.get("updated_time"))
 
-        # Тред не менялся с последней обработки — сообщений не дёргаем.
+        # Тред не менялся с последней обработки — сообщений не дёргаем
+        # (кроме сломанных: их надо перепривязать к настоящему клиенту).
         if row is not None and row.last_processed_at and updated_at \
-                and updated_at <= row.last_processed_at:
+                and updated_at <= row.last_processed_at \
+                and not _row_broken(row, own_ids, own_username):
             continue
-        if runs >= MAX_CONVERSATION_RUNS_PER_TICK:
-            continue
+        if len(fetched) >= MAX_CONVERSATION_FETCH_PER_TICK:
+            break
 
         msgs = await ig.list_messages(
             composio_user_id, conv_id, limit=POLL_MESSAGES_PER_CONVERSATION
@@ -187,9 +339,21 @@ async def _poll_connector(db, connector):
         if not msgs.get("ok"):
             logger.warning(f"[IG-POLLER] list_messages failed conv={conv_id}: {msgs.get('error')}")
             continue
+        parsed = _parse_messages(msgs.get("messages", []))
+        if parsed:
+            fetched.append((conv_id, row, parsed))
 
+    if not fetched:
+        db.commit()
+        return
+    own_ids = _learn_own_ids(db, connector, own_ids, own_username, fetched, rows)
+
+    runs = 0
+    for conv_id, row, parsed in fetched:
+        if runs >= MAX_CONVERSATION_RUNS_PER_TICK:
+            break  # watermark не двигали — тред разберём в следующий тик
         processed = await _process_conversation(
-            db, connector, row, conv_id, msgs.get("messages", []), own_id,
+            db, connector, row, conv_id, parsed, own_ids, own_username,
             handle_inbound_instagram,
         )
         if processed:
@@ -198,56 +362,87 @@ async def _poll_connector(db, connector):
     db.commit()
 
 
-async def _process_conversation(db, connector, row, conv_id, messages, own_id,
+async def _process_conversation(db, connector, row, conv_id, parsed, own_ids, own_username,
                                 handle_inbound_instagram) -> bool:
     """
     Обработать один тред: сохранить новые сообщения, привязать/создать контакт,
     продвинуть watermark и (для входящих) запустить оркестратор.
+    parsed — результат _parse_messages (старые → новые).
     Возвращает True, если оркестратор был запущен.
     """
     from backend.models.agent_contact import AgentContact
-    from backend.models.agent_instagram import AgentInstagramConversation
+    from backend.models.agent_instagram import AgentInstagramConversation, AgentInstagramMessage
 
-    # Нормализуем сообщения: (mid, время, from_id, from_username, текст),
-    # старые → новые (Graph отдаёт новые первыми).
-    parsed = []
-    for m in messages:
-        if not isinstance(m, dict):
-            continue
-        frm = m.get("from") or {}
-        parsed.append({
-            "mid": str(m.get("id") or ""),
-            "ts": ig.parse_ig_time(m.get("created_time")),
-            "from_id": str(frm.get("id") or ""),
-            "from_username": frm.get("username"),
-            "text": (m.get("message") or "").strip(),
-            "attachments": ig.parse_attachments(m),
-        })
-    parsed = [m for m in parsed if m["mid"] and m["ts"]]
-    parsed.sort(key=lambda m: m["ts"])
     if not parsed:
         return False
+    for m in parsed:
+        m["own"] = _is_own(m, own_ids, own_username)
 
     newest_ts = parsed[-1]["ts"]
 
-    # Собеседник (не мы) — igsid/username из любого его сообщения.
-    peer = next((m for m in reversed(parsed) if m["from_id"] and m["from_id"] != own_id), None)
+    # Собеседник (клиент) — автор любого НЕ своего сообщения; если в треде пока
+    # пишет только владелец — получатель его сообщения.
+    peer = None
+    other = next((m for m in reversed(parsed) if not m["own"] and m["from_id"]), None)
+    if other is not None:
+        peer = (other["from_id"], other["from_username"])
+    else:
+        for m in reversed(parsed):
+            for tid, tu in m["to"]:
+                if tid not in own_ids and (tu or "").lstrip("@").lower() != own_username:
+                    peer = (tid, tu)
+                    break
+            if peer:
+                break
+
+    # Ремонт треда, привязанного к своему же аккаунту (ошибка до 06.11.2026):
+    # igsid → настоящий клиент, карточку «своего аккаунта» отвязываем, ниже
+    # сообщения треда переедут в карточку клиента.
+    if _row_broken(row, own_ids, own_username):
+        logger.warning(
+            f"[IG-POLLER] conv {conv_id}: тред был привязан к своему аккаунту "
+            f"({row.igsid} @{row.ig_username}) — перепривязываю к клиенту {peer}"
+        )
+        row.igsid = peer[0] if peer else None
+        row.ig_username = peer[1] if peer else None
+        move_from_contact_id = row.agent_contact_id
+        row.agent_contact_id = None
+        target = _contact_for_row(db, connector, row, create=True)
+        if move_from_contact_id and target is not None and target.id != move_from_contact_id:
+            moved = db.query(AgentInstagramMessage).filter(
+                AgentInstagramMessage.agent_config_id == connector.agent_config_id,
+                AgentInstagramMessage.ig_conversation_id == conv_id,
+                AgentInstagramMessage.agent_contact_id == move_from_contact_id,
+            ).update({"agent_contact_id": target.id}, synchronize_session=False)
+            logger.warning(f"[IG-POLLER] conv {conv_id}: {moved} сообщений перенесены в карточку клиента {target.id}")
+        db.commit()
 
     if row is None:
         row = AgentInstagramConversation(
             agent_config_id=connector.agent_config_id,
             ig_conversation_id=conv_id,
-            igsid=(peer["from_id"] if peer else None),
-            ig_username=(peer["from_username"] if peer else None),
+            igsid=(peer[0] if peer else None),
+            ig_username=(peer[1] if peer else None),
         )
         db.add(row)
         db.flush()
-    else:
-        if peer:
-            if peer["from_id"] and not row.igsid:
-                row.igsid = peer["from_id"]
-            if peer["from_username"]:
-                row.ig_username = peer["from_username"]
+    elif peer:
+        if peer[0] and not row.igsid:
+            row.igsid = peer[0]
+        if peer[1]:
+            row.ig_username = peer[1]
+
+    # Свои сообщения, ошибочно сохранённые как входящие «от клиента», — это
+    # писал владелец: исправляем направление.
+    own_mids = [m["mid"] for m in parsed if m["own"]]
+    if own_mids:
+        fixed = db.query(AgentInstagramMessage).filter(
+            AgentInstagramMessage.agent_config_id == connector.agent_config_id,
+            AgentInstagramMessage.ig_message_id.in_(own_mids),
+            AgentInstagramMessage.direction == "inbound",
+        ).update({"direction": "outbound", "sent_by": "owner"}, synchronize_session=False)
+        if fixed:
+            logger.warning(f"[IG-POLLER] conv {conv_id}: {fixed} сообщений владельца были записаны как входящие — исправлено")
 
     # Порог «новизны»: watermark; для незнакомого треда — короткое окно,
     # чтобы не отвечать на старую переписку после подключения.
@@ -261,8 +456,8 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
         # что и watermark, иначе терялось; дубли отсекает not_seen по mid.
         if m["ts"] >= threshold and not_seen(db, connector.agent_config_id, m["mid"])
     ]
-    inbound = [m for m in fresh if m["from_id"] != own_id and (m["text"] or m["attachments"])]
-    outbound = [m for m in fresh if m["from_id"] == own_id and (m["text"] or m["attachments"])]
+    inbound = [m for m in fresh if not m["own"] and (m["text"] or m["attachments"])]
+    outbound = [m for m in fresh if m["own"] and (m["text"] or m["attachments"])]
     # Свои сообщения без mid в базе: эхо отправки агента (Composio не вернул
     # mid) получает mid, остальное написал владелец сам.
     outbound = [m for m in outbound if not _claim_agent_echo(db, connector.agent_config_id, conv_id, m)]
@@ -286,30 +481,7 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
         db.commit()
         return False
 
-    # Контакт: существующая привязка → по igsid среди контактов агента → создать.
-    contact = None
-    if row.agent_contact_id:
-        contact = db.query(AgentContact).filter(
-            AgentContact.id == row.agent_contact_id
-        ).first()
-    if contact is None and row.igsid:
-        contact = db.query(AgentContact).filter(
-            AgentContact.agent_config_id == connector.agent_config_id,
-            AgentContact.phone == f"ig:{row.igsid}",
-        ).first()
-    if contact is None and (inbound or outbound):
-        contact = AgentContact(
-            agent_config_id=connector.agent_config_id,
-            user_id=connector.user_id,
-            phone=f"ig:{row.igsid or conv_id[:40]}",
-            name=(("@" + row.ig_username) if row.ig_username else "Instagram"),
-            status="new",
-        )
-        db.add(contact)
-        db.flush()
-        logger.info(f"[IG-POLLER] 🆕 Создан AgentContact {contact.id} для входящего IG {row.igsid}")
-    if contact is not None and row.agent_contact_id is None:
-        row.agent_contact_id = contact.id
+    contact = _contact_for_row(db, connector, row, create=bool(inbound or outbound))
 
     # Сохраняем сообщения ДО запуска оркестратора. Исходящие владельца (из
     # приложения Instagram) — в тред и пауза агента с этим клиентом.
@@ -353,6 +525,34 @@ async def _process_conversation(db, connector, row, conv_id, messages, own_id,
             str(connector.agent_config_id), str(contact.id), text_joined
         ))
     return True
+
+
+def _contact_for_row(db, connector, row, create: bool):
+    """Карточка клиента треда: привязка → по igsid среди контактов агента → создать (create=True)."""
+    from backend.models.agent_contact import AgentContact
+
+    contact = None
+    if row.agent_contact_id:
+        contact = db.query(AgentContact).filter(AgentContact.id == row.agent_contact_id).first()
+    if contact is None and row.igsid:
+        contact = db.query(AgentContact).filter(
+            AgentContact.agent_config_id == connector.agent_config_id,
+            AgentContact.phone == f"ig:{row.igsid}",
+        ).first()
+    if contact is None and create and row.igsid:
+        contact = AgentContact(
+            agent_config_id=connector.agent_config_id,
+            user_id=connector.user_id,
+            phone=f"ig:{row.igsid}",
+            name=(("@" + row.ig_username) if row.ig_username else "Instagram"),
+            status="new",
+        )
+        db.add(contact)
+        db.flush()
+        logger.info(f"[IG-POLLER] 🆕 Создан AgentContact {contact.id} для IG {row.igsid}")
+    if contact is not None and row.agent_contact_id is None:
+        row.agent_contact_id = contact.id
+    return contact
 
 
 def _placeholder(m, processing: bool = True) -> str:

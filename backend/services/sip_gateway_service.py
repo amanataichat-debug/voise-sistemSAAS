@@ -246,6 +246,20 @@ class SipGatewayService:
 
     # ------------------------------------------------------------------ calls
     @staticmethod
+    def is_platform_number(db: Session, number: str) -> bool:
+        """Номер — один из наших SIP-номеров (любого владельца)."""
+        digits = normalize_sip_number(number or "")
+        if not digits:
+            return False
+        try:
+            for (raw,) in db.query(SipPhoneNumber.phone_number).all():
+                if normalize_sip_number(raw or "") == digits:
+                    return True
+        except Exception as exc:
+            logger.warning(f"[SIP] platform number check failed: {exc}")
+        return False
+
+    @staticmethod
     def queue_outbound_call(
         db: Session,
         *,
@@ -267,6 +281,15 @@ class SipGatewayService:
         if not is_o_number(to_digits):
             raise ValueError(
                 "Исходящие возможны только на номера O! (префиксы " + ", ".join(O_MOBILE_PREFIXES) + ")"
+            )
+        # Свой номер платформы — никогда не набираем (05.11.2026 агент принял номер,
+        # который владелец отправил клиенту в Instagram, за номер клиента, позвонил
+        # сам себе и час говорил сам с собой). Касается ВСЕХ наших номеров, не только
+        # номера, с которого звоним.
+        if SipGatewayService.is_platform_number(db, to_digits):
+            logger.warning(f"[SIP] отклонён исходящий на собственный номер платформы {to_digits} (user {user_id})")
+            raise ValueError(
+                "Это номер самой платформы (номер агента), а не номер клиента — звонить на него нельзя."
             )
         # Жёсткий анти-долбёж: не ставим второй исходящий на тот же номер, если по
         # нему уже был звонок за последние OUTBOUND_MIN_GAP_PER_NUMBER. Срабатывает
