@@ -710,6 +710,15 @@ async def run_gemini_live_session(websocket: WebSocket, assistant, db: Session, 
                                 f"подключение {connect_ms} мс; промпт {client.system_prompt_chars} симв. "
                                 f"(карточка + знания агента + правила манеры)",
                      functions=", ".join(client.enabled_functions) or "нет — агент не сможет искать в базе знаний")
+        # Мужской персонаж + женский голос (или наоборот): Gemini «играет» персонажа и меняет тембр посреди
+        # звонка (05.11.2026, d4229a5f: «Анри» на голосе Kore — то мужской, то женский голос)
+        try:
+            from backend.websockets.voice_hints import persona_gender_conflict
+            _conflict = persona_gender_conflict(getattr(assistant, "system_prompt", None) or "", voice)
+            if _conflict:
+                call_log.add("session", _conflict, level="warning")
+        except Exception as exc:
+            _log(f"persona gender check failed: {exc}", "WARNING")
 
     await websocket.send_json({
         "type": "connection_status",

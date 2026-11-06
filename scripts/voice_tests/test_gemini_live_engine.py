@@ -264,7 +264,10 @@ check("куски склеиваются в тот же текст для GPT",
 
 fn_list = [{"name": "search_knowledge_base", "description": "Ищет ответ в базе знаний компании. Возвращает текст."},
            {"name": "hangup_call", "description": "Завершает звонок."}]
-g = vh.build_gemini_voice_hints(fn_list, "Aoede", telephony=True)
+g_tail = vh.build_gemini_voice_hints(fn_list, "Aoede", telephony=True)
+# 06.11.2026: голос и язык — в НАЧАЛЕ промпта (gemini_prompt_head), остальное — после карточки
+g_head = vh.gemini_prompt_head("Aoede", "ru", "Добрый день")
+g = g_head + "<КАРТОЧКА>" + g_tail
 check("Gemini получает свою манеру: живой разговор, задача человека, переспрос обрывка, голос, язык, кыргызский",
       all(k in g for k in ("ЖИВОЙ РАЗГОВОР, А НЕ АНКЕТА", "ПОНИМАЙ ЗАДАЧУ", "ЕСЛИ НЕ РАССЛЫШАЛ", "СТАБИЛЬНЫЙ ГОЛОС",
                            "ЯЗЫК.", "КЫРГЫЗСКИЙ")))
@@ -277,7 +280,8 @@ check("Gemini: без противоречия «можно мм/угу» про
 # менеджера то, что сам знает). Gemini не режет system_message по длине (в отличие от GPT-Live), так что
 # предел здесь — только защита от случайного разбухания, не продуктовое ограничение.
 # 04.11.2026: 14 → 16 тыс. — в общие правила диалога добавлены ПРОДАЖИ / ГОРЯЧИЙ КЛИЕНТ и поддакивание.
-check("Gemini: подсказки не длиннее 16 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 16000, len(g))
+# 06.11.2026: 16 → 10 тыс. — промпт звонка был 34 тыс., правила противоречили друг другу и терялись.
+check("Gemini: подсказки не длиннее 10 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 10000, len(g))
 check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
       "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
@@ -296,8 +300,24 @@ from backend.functions.hangup_call import HangupCallFunction
 _hc = run(HangupCallFunction.execute({"reason": "conversation_completed", "farewell_message": "Жакшы калыңыз!"}))
 check("hangup_call: явный запрет озвучивать по-английски мысли о завершении звонка",
       _hc["success"] is True and "переходи на английский" in _hc["message"] and "просто молчи" in _hc["message"])
-check("Gemini: живая речь — вдох и «хм…»/«так…» перед непростым ответом (владелец: вдохи, выдохи)",
-      "естественный вдох" in g and "«хм…»" in g)
+# 06.11.2026 (звонок d4229a5f): голос прыгал между мужским и женским — «посмейся, вздохни, вдохни» у native audio
+# раскачивает тембр. Эмоции — словами и интонацией, звуки не изображаем.
+check("Gemini: один и тот же голос, смех/вздохи вслух не изображать (звонок d4229a5f)",
+      "одним и тем же" in g_head and "смех, вздохи и вдохи вслух не изображай" in g_head and "естественный вдох" not in g)
+check("Gemini: голос и язык — в начале промпта, до карточки; напоминание — в конце",
+      g.index("ГОЛОС И ЯЗЫК") < g.index("<КАРТОЧКА>") < g.index("НАПОМИНАНИЕ") and g.index("ЯЗЫК.") < g.index("<КАРТОЧКА>"))
+check("Gemini: явная просьба о языке держится до конца звонка, русские вставки её не отменяют (звонок d4229a5f)",
+      "ДО КОНЦА звонка" in g_head and "НЕ просьба сменить язык" in g_head)
+check("Gemini: факты — только из инструкции или поиска, документы не додумывать (звонок d4229a5f)",
+      "ДОКУМЕНТЫ" in g and "НИЧЕГО НЕ ДОДУМЫВАЙ" in g and g.index("ЗНАНИЯ — ТОЛЬКО") < g.index("ЖИВОЙ РАЗГОВОР"))
+check("Gemini: приветствие по-русски на кыргызской карточке → начать по-русски, линия всё равно кыргызская",
+      "Начни на русском" in vh.gemini_prompt_head("Kore", "ky", "Добрый день. Чем могу помочь?")
+      and "ОСНОВНОЙ ЯЗЫК" in vh.gemini_prompt_head("Kore", "ky", "Добрый день")
+      and "Начни на кыргызском" in vh.gemini_prompt_head("Kore", "ky", "Саламатсызбы! Кантип жардам берем?"))
+check("журнал звонка: мужской персонаж на женском голосе → предупреждение",
+      vh.persona_gender_conflict("Ты — Анри. О себе — в мужском роде: я рад помочь.", "Kore") is not None
+      and vh.persona_gender_conflict("Ты — Анри. О себе — в мужском роде.", "Puck") is None
+      and vh.persona_gender_conflict("Ты — Алия, я рада помочь.", "Kore") is None)
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
 check("шаблон Анри не требует вопроса в каждой реплике (инструкция карточки главнее подсказок)",
       "любой ответ заканчивай коротким вопросом" not in _anri and "НЕ заканчивай каждую реплику вопросом" in _anri)
@@ -354,6 +374,12 @@ check("Gemini: без правил про бэкенд делегировани�
 check("Gemini: голос Puck → мужской род; на сайте без телефона нет телефонной подсказки",
       "мужском роде" in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False)
       and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
+_lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
+check("GPT-Live: произношение носителя (ударения, редукция, без английского акцента) — в самом начале инструкций голоса",
+      "VOICE_PRONUNCIATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
+      and "native Russian speaker" in lc.VOICE_PRONUNCIATION_HEAD and "speak it until the end" in lc.VOICE_PRONUNCIATION_HEAD)
+check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
+      "до конца звонка" in _pc and "не додумывай" in _pc)
 check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
 
 # ---------- функции карточки: BLOCKING, без scheduling; у Gemini-ассистентов прежнее NON_BLOCKING ----------

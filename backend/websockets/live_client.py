@@ -237,6 +237,24 @@ VOICE_MANNER_HINT = (
 
 )
 
+# Произношение — в САМОМ НАЧАЛЕ инструкций голосового слоя (06.11.2026, владелец: «как англичанин, который
+# только учит русский»). Правило «без акцента» стояло в середине 6 тыс. символов манеры ПОСЛЕ промпта карточки,
+# где модель держит его хуже всего. OpenAI live-prompting: стиль и акцент задаются только словами в instructions,
+# отдельной секцией и с описанием конкретных признаков (ударения, редукция, интонация), а не одним «без акцента».
+VOICE_PRONUNCIATION_HEAD = (
+    "# Pronunciation and accent — highest priority for the whole call\n"
+    "- Russian: speak exactly like a native Russian speaker. Natural Russian intonation and rhythm, correct word stress, "
+    "reduced unstressed vowels (молоко sounds like «малако»), soft and hard consonants, clear Russian «р» and «ы». "
+    "NO English or American accent, no English vowels or intonation, no foreign-learner sound.\n"
+    "- Kyrgyz: speak like a native speaker from Bishkek: Kyrgyz vowels ө, ү, ы and vowel harmony, Kyrgyz stress "
+    "(usually the last syllable), NOT with a Russian or English accent.\n"
+    "- Same voice, accent, pitch and pace from the first word to the last; never switch accent mid-call.\n"
+    "- Language: if the caller ASKS for a language («кыргызча», «на кыргызском», «по-русски»), speak it until the end "
+    "of the call — Russian words or short Russian phrases after that are normal Bishkek speech, not a request to switch.\n"
+    "ПРОИЗНОШЕНИЕ: по-русски — как носитель русского языка, по-кыргызски — как носитель из Бишкека; без английского "
+    "акцента, с правильными ударениями.\n\n"
+)
+
 # Только GPT-Live: правило делегирования бэкенду (у Gemini бэкенда нет, его правила — voice_hints.py).
 VOICE_DELEGATION_POLICY = (
     # Делегирование — по шаблону OpenAI live-prompting (docs/openai_gpt_live_audio_reference.md §5.1/5.2):
@@ -583,7 +601,7 @@ class OpenAILiveClient:
                 f"{LIVE_VOICE_INSTRUCTIONS_MAX_CHARS}, backend gets the full prompt"
             )
             voice_instructions = voice_instructions[:LIVE_VOICE_INSTRUCTIONS_MAX_CHARS]
-        voice_instructions += VOICE_DELEGATION_HINT
+        voice_instructions = VOICE_PRONUNCIATION_HEAD + voice_instructions + VOICE_DELEGATION_HINT
         voice_instructions += backend_tools_hint(self.tools)
         if self.telephony:
             voice_instructions += VOICE_TELEPHONY_HINT

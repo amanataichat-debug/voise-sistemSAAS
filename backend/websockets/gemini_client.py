@@ -360,12 +360,11 @@ class GeminiLiveClient:
             # Get settings
             voice = self.voice_override or getattr(self.assistant_config, "voice", None) or DEFAULT_VOICE
             system_message = getattr(self.assistant_config, "system_prompt", None) or DEFAULT_SYSTEM_MESSAGE
-            if self.language and self.voice_hints:
-                # Карточка ElevenLabs на Gemini Live. Общая инструкция «начни по-кыргызски, даже если промпт
-                # русский» (для каскада) тут вредна: Gemini сам определяет язык по речи, и звонок 01.11.2026
-                # шёл с отказом говорить по-русски и «я плохо знаю кыргызский». Язык карточки — только язык
-                # приветствия; дальше — язык собеседника.
-                system_message = f"{system_message}{language_note_for_gemini(self.language)}"
+            if self.voice_hints:
+                # Карточка ElevenLabs на Gemini Live: правило языка (язык карточки = язык приветствия, явная
+                # просьба клиента держится до конца звонка) идёт в НАЧАЛО промпта вместе с голосом —
+                # gemini_prompt_head ниже, при сборке подсказок.
+                pass
             elif self.language:
                 try:
                     from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS
@@ -404,8 +403,12 @@ class GeminiLiveClient:
 
             if self.voice_hints:
                 try:
-                    from backend.websockets.voice_hints import build_gemini_voice_hints
-                    system_message += build_gemini_voice_hints(normalize_functions(functions), voice, self.telephony)
+                    from backend.websockets.voice_hints import build_gemini_voice_hints, gemini_prompt_head
+                    # 06.11.2026: голос и язык — в начале, до инструкции карточки (модель держит начало и конец
+                    # промпта; в середине 34 тыс. символов эти правила терялись)
+                    system_message = (gemini_prompt_head(voice, self.language, getattr(self.assistant_config, "greeting_message", None))
+                                      + system_message
+                                      + build_gemini_voice_hints(normalize_functions(functions), voice, self.telephony))
                 except Exception as e:
                     logger.warning(f"[GEMINI-CLIENT] voice hints skipped: {e}")
 
