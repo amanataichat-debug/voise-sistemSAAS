@@ -2641,6 +2641,9 @@ AGENT_CHAT_TOOLS = [
         "name": "search_contacts",
         "description": (
             "Найти контакты по подстроке имени/телефона/компании и/или по стадии воронки. "
+            "Номер можно передавать в ЛЮБОМ виде (+996 706 555 531, 0706555531, 706555531): "
+            "ищем по последним 9 цифрам в карточках, чатах WhatsApp и журнале звонков. "
+            "Если карточки нет, но номер писал или звонил — это придёт в no_card_but_found. "
             "Используй вместо get_agent_contacts, когда пользователь ищет конкретных людей "
             "('найди Иванова', 'контакты из компании X', 'покажи отказников'). "
             "Все аргументы опциональны; без аргументов вернёт последние контакты."
@@ -3744,24 +3747,47 @@ async def fn_search_contacts(args: dict, user_id: str, agent_config_id: str, db:
     if company:
         q = q.filter(AgentContact.company.ilike(f"%{company}%"))
 
-    query = args.get("query")
-    if query:
-        like = f"%{query}%"
-        q = q.filter(or_(
-            AgentContact.name.ilike(like),
-            AgentContact.phone.ilike(like),
-            AgentContact.alt_phones.ilike(like),
-            AgentContact.company.ilike(like),
-        ))
-
     try:
         limit = max(1, min(int(args.get("limit") or 30), 100))
     except (ValueError, TypeError):
         limit = 30
 
-    contacts = q.order_by(AgentContact.created_at.desc()).limit(limit).all()
+    query = args.get("query")
+    traces = None
+    from backend.services.agent_contact_phones import (
+        find_contacts_by_phone_any, phone_traces, query_phone_tail,
+    )
+    if query and query_phone_tail(query):
+        # Номер в любом формате: +996 706 555 531 / 0706555531 / 706-555-531
+        contacts, tail = find_contacts_by_phone_any(db, user_id, agent_config_id, query, limit=limit)
+        if stage and is_valid_stage(stage):
+            contacts = [c for c in contacts if c.status == stage]
+        if not contacts:
+            traces = phone_traces(db, user_id, agent_config_id, tail)
+    else:
+        if query:
+            like = f"%{query}%"
+            q = q.filter(or_(
+                AgentContact.name.ilike(like),
+                AgentContact.phone.ilike(like),
+                AgentContact.alt_phones.ilike(like),
+                AgentContact.company.ilike(like),
+            ))
+        contacts = q.order_by(AgentContact.created_at.desc()).limit(limit).all()
+
+    result_extra = {}
+    if traces:
+        result_extra = {
+            "no_card_but_found": traces,
+            "hint": ("Карточки клиента с этим номером нет, но номер есть в переписке WhatsApp и/или в "
+                     "журнале звонков (no_card_but_found). Расскажи владельцу, что там было, и предложи "
+                     "завести карточку. НЕ говори «ничего не знаю»."),
+        }
+    elif query and query_phone_tail(query) and not contacts:
+        result_extra = {"hint": "Номер искали по последним 9 цифрам в карточках, WhatsApp и звонках — нигде нет."}
     return {
         "ok": True,
+        **result_extra,
         "count": len(contacts),
         "contacts": [
             {

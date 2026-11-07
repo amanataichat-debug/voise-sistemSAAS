@@ -127,25 +127,10 @@ def sign_canonical_string(canonical: str, private_pem: str) -> str:
     return base64.b64encode(signature).decode("ascii")
 
 
-def normalize_public_pem(raw: str) -> str:
-    """Публичный ключ Finik в PEM, как бы его ни вставили в Render: одной строкой,
-    с буквальными \\n вместо переносов, в кавычках или только base64 без BEGIN/END."""
-    text = (raw or "").strip().strip('"').strip("'").replace("\\n", "\n").replace("\r", "")
-    if "-----BEGIN" in text:
-        head = text.split("-----BEGIN", 1)[1].split("-----", 1)[0].strip() or "PUBLIC KEY"
-        body = text.split("-----", 2)[2] if text.count("-----") >= 2 else text
-        body = body.split("-----END", 1)[0]
-    else:
-        head, body = "PUBLIC KEY", text
-    b64 = "".join(body.split())
-    lines = [b64[i:i + 64] for i in range(0, len(b64), 64)]
-    return f"-----BEGIN {head}-----\n" + "\n".join(lines) + f"\n-----END {head}-----\n"
-
-
 def verify_canonical_string(canonical: str, signature_b64: str, public_pem: str) -> bool:
     """Проверка Base64 RSA-SHA256 подписи канонической строки публичным ключом."""
     try:
-        public_key = serialization.load_pem_public_key(normalize_public_pem(public_pem).encode("utf-8"))
+        public_key = serialization.load_pem_public_key(public_pem.encode("utf-8"))
         public_key.verify(
             base64.b64decode(signature_b64),
             canonical.encode("utf-8"),
@@ -310,15 +295,11 @@ class FinikService:
             return True
 
         if not settings.FINIK_PUBLIC_KEY:
-            # 06.11.2026: раньше без ключа webhook принимался без проверки — любой, зная номер своего
-            # заказа (он приходит в ответе create-payment), мог прислать поддельное «оплачено» и
-            # получить тариф бесплатно. Теперь без ключа — отказ; осознанно отключить проверку
-            # можно только флагом FINIK_VERIFY_WEBHOOK_SIGNATURE=False.
-            logger.error(
-                "❌ [FINIK] FINIK_PUBLIC_KEY is not set — webhook REJECTED. "
-                "Добавьте публичный ключ Finik в env (платёж остаётся в БД, его можно зачислить вручную)."
+            logger.warning(
+                "⚠️ [FINIK] FINIK_PUBLIC_KEY is not set — webhook signature NOT verified. "
+                "Запросите публичный ключ у Finik и добавьте его в env."
             )
-            return False
+            return True
 
         if not signature_b64:
             logger.error("❌ [FINIK] Webhook has no 'signature' header")

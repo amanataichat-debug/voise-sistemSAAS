@@ -12,7 +12,7 @@ AgentContact.last_called_at, а его PostCall пишет в КОНЦЕ ана�
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import or_, true
 from sqlalchemy.orm import Session
 
 from backend.core.logging import get_logger
@@ -244,12 +244,20 @@ def find_contact_by_phone(db: Session, agent_config_id, phone):
     cond = phone_condition(phone)
     if cond is None or not agent_config_id:
         return None
-    return (
+    hit = (
         db.query(AgentContact)
         .filter(AgentContact.agent_config_id == agent_config_id, cond)
         .order_by(AgentContact.updated_at.desc())
         .first()
     )
+    if hit is None:
+        # номер в карточке записан с пробелами / плюсом / дефисами или привязан только через чат WhatsApp
+        try:
+            found, _ = find_contacts_by_phone_any(db, None, agent_config_id, phone, limit=1)
+            hit = found[0] if found else None
+        except Exception as e:
+            logger.warning(f"[PHONES] fallback lookup failed: {e}")
+    return hit
 
 
 def has_phone(contact, phone) -> bool:
@@ -288,3 +296,153 @@ def dial_number(contact) -> str:
         if is_o_number(alt):
             return alt
     return main or (getattr(contact, "phone", None) or "")
+
+
+# ---------------------------------------------------------------------------
+# Поиск клиента по номеру в любом формате (07.11.2026)
+# ---------------------------------------------------------------------------
+# Владелец пишет оркестратору «+996 706 555 531» / «0706555531» / «706-555-531», а search_contacts
+# сравнивал строку буква в букву (ILIKE '%+996 706 555 531%') и не находил клиента, хотя тот
+# писал в WhatsApp и звонил. Здесь — сравнение по последним 9 цифрам, без учёта пробелов, плюса,
+# скобок и дефисов в базе, плюс поиск через чаты WhatsApp и журнал звонков.
+
+def query_phone_tail(query) -> str:
+    """Последние 9 цифр, если запрос похож на номер (в нём ≥ 7 цифр и почти нет букв)."""
+    text = str(query or "")
+    digits = "".join(ch for ch in text if ch.isdigit())
+    letters = sum(ch.isalpha() for ch in text)
+    if len(digits) < 7 or letters > 2:
+        return ""
+    return digits[-PHONE_TAIL_DIGITS:]
+
+
+def _digits_sql(column, db: Session):
+    """Колонка без нецифровых символов (Postgres); на других БД — как есть."""
+    from sqlalchemy import func
+    try:
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            return func.regexp_replace(column, r"[^0-9]", "", "g")
+    except Exception:
+        pass
+    return column
+
+
+def find_contacts_by_phone_any(db: Session, user_id, agent_config_id, phone, limit: int = 10):
+    """
+    Карточки агента с этим номером: основной / второй / «звонить на» (в любом формате),
+    а также карточки, к которым привязан чат WhatsApp с этим номером.
+    Возвращает (contacts, tail).
+    """
+    from backend.models.agent_contact import AgentContact
+    tail = query_phone_tail(phone)
+    if not tail or not agent_config_id:
+        return [], tail
+    like = f"%{tail}%"
+    found = (
+        db.query(AgentContact)
+        .filter(
+            AgentContact.agent_config_id == agent_config_id,
+            (AgentContact.user_id == user_id) if user_id else true(),
+            or_(
+                _digits_sql(AgentContact.phone, db).like(like),
+                _digits_sql(AgentContact.alt_phones, db).like(like),
+                _digits_sql(AgentContact.call_phone, db).like(like),
+            ),
+        )
+        .order_by(AgentContact.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    ids = {c.id for c in found}
+    try:
+        from backend.models.agent_whatsapp import AgentWhatsAppAccount, AgentWhatsAppChat
+        chats = (
+            db.query(AgentWhatsAppChat)
+            .join(AgentWhatsAppAccount, AgentWhatsAppAccount.id == AgentWhatsAppChat.account_id)
+            .filter(
+                AgentWhatsAppAccount.agent_config_id == agent_config_id,
+                AgentWhatsAppChat.agent_contact_id.isnot(None),
+                or_(AgentWhatsAppChat.phone.like(like), AgentWhatsAppChat.remote_jid.like(like)),
+            )
+            .limit(limit)
+            .all()
+        )
+        extra = [c.agent_contact_id for c in chats if c.agent_contact_id not in ids]
+        if extra:
+            q = db.query(AgentContact).filter(AgentContact.id.in_(extra))
+            if user_id:
+                q = q.filter(AgentContact.user_id == user_id)
+            found += q.all()
+    except Exception as e:
+        logger.warning(f"[PHONES] whatsapp lookup failed: {e}")
+        db.rollback()
+    return found, tail
+
+
+def phone_traces(db: Session, user_id, agent_config_id, tail: str) -> dict:
+    """
+    Следы номера БЕЗ карточки клиента: чат WhatsApp (незнакомец — бот ему не отвечает при
+    reply_scope=contacts) и звонки в журнале телефонии. Чтобы оркестратор не говорил
+    «ничего не знаю», когда клиент на самом деле писал и звонил.
+    """
+    out: dict = {}
+    if not tail:
+        return out
+    like = f"%{tail}%"
+    try:
+        from backend.models.agent_whatsapp import (
+            AgentWhatsAppAccount, AgentWhatsAppChat, AgentWhatsAppMessage,
+        )
+        chats = (
+            db.query(AgentWhatsAppChat)
+            .join(AgentWhatsAppAccount, AgentWhatsAppAccount.id == AgentWhatsAppChat.account_id)
+            .filter(AgentWhatsAppAccount.agent_config_id == agent_config_id,
+                    or_(AgentWhatsAppChat.phone.like(like), AgentWhatsAppChat.remote_jid.like(like)))
+            .limit(3).all()
+        )
+        wa = []
+        for chat in chats:
+            msgs = (db.query(AgentWhatsAppMessage)
+                    .filter(AgentWhatsAppMessage.chat_id == chat.id)
+                    .order_by(AgentWhatsAppMessage.created_at.desc())
+                    .limit(8).all())
+            wa.append({
+                "chat_id": str(chat.id),
+                "phone": ("+" + chat.phone) if chat.phone else None,
+                "name_in_whatsapp": chat.push_name,
+                "linked_contact_id": str(chat.agent_contact_id) if chat.agent_contact_id else None,
+                "messages_count": db.query(AgentWhatsAppMessage)
+                                    .filter(AgentWhatsAppMessage.chat_id == chat.id).count(),
+                "last_messages": [{
+                    "at": m.created_at.isoformat() if m.created_at else None,
+                    "from": "клиент" if m.direction == "inbound" else (m.sent_by or "агент"),
+                    "text": (m.body or "")[:300],
+                } for m in reversed(msgs)],
+            })
+        if wa:
+            out["whatsapp_chats"] = wa
+    except Exception as e:
+        logger.warning(f"[PHONES] whatsapp traces failed: {e}")
+        db.rollback()
+    try:
+        from backend.models.sip_gateway import SipCall
+        calls = (
+            db.query(SipCall)
+            .filter(SipCall.user_id == user_id,
+                    or_(SipCall.caller.like(like), SipCall.to_number.like(like)))
+            .order_by(SipCall.created_at.desc())
+            .limit(5).all()
+        )
+        if calls:
+            out["phone_calls"] = [{
+                "call_id": str(c.id),
+                "at": c.created_at.isoformat() if c.created_at else None,
+                "direction": "входящий" if c.direction == "inbound" else "исходящий",
+                "answered": c.answered_at is not None,
+                "duration_sec": int(c.duration_sec or 0),
+                "has_recording": bool(c.recording_url),
+            } for c in calls]
+    except Exception as e:
+        logger.warning(f"[PHONES] call traces failed: {e}")
+        db.rollback()
+    return out
