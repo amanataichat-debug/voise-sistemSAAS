@@ -211,11 +211,11 @@ async def voiced():
     for _ in range(5):
         g._gate_input(loud, 0.02)                                       # клиент говорит
     check("эхо-ворота: пока агент молчит, звук идёт как есть", g._gate_input(echo, 0.02) == echo)
-    g.assistant_speaking = True; g._last_audio_at = time.time(); g._gate_open_until = 0.0
+    g.assistant_speaking = True; g._last_audio_at = time.time(); g.echo_gate.open_until = 0.0
     check("эхо-ворота: агент говорит — тихое эхо/шум заменяются тишиной", g._gate_input(echo, 0.02) == zero)
     check("эхо-ворота: громкая речь клиента поверх агента проходит (можно перебить)", g._gate_input(loud, 0.02) == loud)
     check("эхо-ворота: хвост слова после громкого куска проходит", g._gate_input(echo, 0.02) == echo)
-    g._gate_open_until = 0.0; g.assistant_speaking = False; g._last_audio_at = time.time() - 0.3
+    g.echo_gate.open_until = 0.0; g.assistant_speaking = False; g._last_audio_at = time.time() - 0.3
     check("эхо-ворота: ещё 0,8 с после речи агента эхо глушится", g._gate_input(echo, 0.02) == zero)
     g._last_audio_at = time.time() - 2.0
     check("эхо-ворота: потом снова всё проходит", g._gate_input(echo, 0.02) == echo)
@@ -228,9 +228,21 @@ async def voiced():
         q._gate_input(pcm(560), 0.02)                                   # тихий клиент: речь ≈ −42 dBFS
     q.assistant_speaking = True; q._last_audio_at = time.time()
     check("эхо-ворота: тихий клиент (−42 dBFS) всё равно может перебить агента", q._gate_input(pcm(560), 0.02) == pcm(560))
-    q._gate_open_until = 0.0
+    q.echo_gate.open_until = 0.0
     check("эхо-ворота: у тихого клиента эхо втрое тише его речи глушится", q._gate_input(pcm(120), 0.02) != pcm(120))
-    g.gated_seconds = 3.0; g.reply_durations = [4.0, 18.5]; g.call_log = gcl
+    from backend.websockets.echo_gate import LineEchoGate
+    eg = LineEchoGate()
+    raw = lambda amp: base64.b64decode(pcm(amp))
+    for _ in range(10):
+        eg.process(raw(40), False, 0.02)
+    for _ in range(250):                                            # клиент говорит 5 секунд подряд
+        eg.process(raw(4000), False, 0.02)
+    check("эхо-ворота: долгая речь клиента не поднимает «пол» шума — его речь поверх агента проходит",
+          eg.process(raw(4000), True, 0.02) == raw(4000) and (eg.floor or 0) < 100, f"floor={eg.floor}")
+    eg2 = LineEchoGate()
+    eg2.process(raw(9000), False, 0.02)
+    check("эхо-ворота: громкое «алло» первым кадром не задирает «пол»", (eg2.floor or 0) <= 250, f"floor={eg2.floor}")
+    g.echo_gate.gated_seconds = 3.0; g.reply_durations = [4.0, 18.5]; g.call_log = gcl
     g._log_diagnostics(60)
     texts = " | ".join(e["text"] for e in gcl.events)
     check("диагностика: монолог дольше 15 с и подавленный шум линии — в журнале",

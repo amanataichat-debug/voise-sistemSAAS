@@ -46,6 +46,7 @@ from backend.models.eleven_assistant import (
 from backend.models.user import User
 from backend.websockets.call_guard import CallEndGuard
 from backend.websockets.call_log import CallLogRecorder
+from backend.websockets.echo_gate import ECHO_TAIL_SEC, LineEchoGate
 from backend.websockets.gemini_client import GEMINI_LIVE_MODEL, GeminiLiveClient
 from backend.websockets.handler_gemini import handle_gemini_messages
 from backend.websockets.handler_live import _save_dialog, async_save_to_google_sheets
@@ -245,6 +246,9 @@ class GeminiLiveVoiceSession:
         self._play_until = 0.0
         self.playback_barge_ins = 0
         self.input_level = PhoneInputLevel() if telephony else None
+        # Эхо и шум линии, пока агент доигрывает ответ (07.11.2026, общий с GPT-Live echo_gate.py): на громкой связи
+        # детектор речи Google слышал эхо голоса агента и обрывал его же фразу (on_voice_activity → barge-in)
+        self.echo_gate = LineEchoGate(enabled=bool(telephony) and bool(getattr(settings, "LIVE_PHONE_ECHO_GATE", True)))
         self._hangup_in_progress = False   # hangup_call сработал — доигрывание прощания больше не перебиваем
 
     @property
@@ -402,6 +406,10 @@ class GeminiLiveVoiceSession:
         data = self._to_gemini(pcm)
         if self.input_level is not None:
             data = self.input_level.process(data, assistant_playing=self.playback_left() > 0)
+        if self.echo_gate.enabled:
+            now = time.time()
+            data = self.echo_gate.process(data, agent_active=self._play_until + ECHO_TAIL_SEC > now,
+                                          dur=len(data) / 2 / GEMINI_IN_RATE, now=now)
         if self.greeting_protected():
             data = b"\x00" * len(data)
         await self.client.process_audio(data)
@@ -536,6 +544,7 @@ class GeminiLiveVoiceSession:
                 + (f", из них клиент оборвал доигрывание {self.playback_barge_ins}" if self.playback_barge_ins else "")
                 + (f"; громкость линии клиента +{self.input_level.gain_db} дБ"
                    if self.input_level is not None and self.input_level.enabled and self.input_level.speech_frames else "")
+                + (f"; {self.echo_gate.summary()}" if self.echo_gate.summary() else "")
                 + ("" if self.interruption_state["assistant_audio_ever"] else
                    ". Gemini не прислал ни одного звука — смотрите предупреждения выше"),
                 level="info" if self.interruption_state["assistant_audio_ever"] else "warning",

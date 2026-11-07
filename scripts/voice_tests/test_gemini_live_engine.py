@@ -163,6 +163,25 @@ pcm = b"\x10\x00" * 2400   # 100 мс при 24 кГц
 check("виджет: вход 24 кГц сжимается до 16 кГц", len(widget._to_gemini(pcm)) in range(3190, 3210), len(widget._to_gemini(pcm)))
 check("телефон: вход уже 16 кГц, без пересчёта", phone._to_gemini(pcm) is pcm)
 
+# 07.11.2026: эхо и шум линии во время доигрывания ответа агента не доходят до детектора речи Google
+import math as _m, struct as _st, time as _t
+def _tone(amp, n=320):
+    return b"".join(_st.pack("<h", int(amp * _m.sin(i / 3))) for i in range(n))
+check("эхо-ворота: на телефоне включены, в виджете нет", phone.echo_gate.enabled and not widget.echo_gate.enabled)
+for _ in range(10):
+    phone.echo_gate.process(_tone(40), agent_active=False, dur=0.02)
+for _ in range(5):
+    phone.echo_gate.process(_tone(9000), agent_active=False, dur=0.02)
+_eg_sent = []
+phone.client = types.SimpleNamespace(is_connected=True, process_audio=lambda d: _eg_sent.append(d) or asyncio.sleep(0))
+phone.greeting_protected = lambda now=None: False
+phone.input_level = None
+phone._play_until = _t.time() + 2.0
+run(phone._feed(_tone(500)))
+run(phone._feed(_tone(9000)))
+check("эхо-ворота Gemini: пока агент доигрывает ответ, тихое эхо уходит тишиной, громкая речь клиента проходит",
+      len(_eg_sent) == 2 and not any(_eg_sent[0]) and _eg_sent[1] == _tone(9000))
+
 run(widget.save_turn("[no user input]", "Здравствуйте"))
 run(widget.save_turn("Привет", "[no response]"))
 run(widget.save_turn("", ""))

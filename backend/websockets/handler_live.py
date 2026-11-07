@@ -52,6 +52,7 @@ from websockets.exceptions import ConnectionClosed
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
+from backend.websockets.echo_gate import ECHO_TAIL_SEC, LineEchoGate, update_floor
 from backend.functions import normalize_function_name
 from backend.models.assistant import AssistantConfig
 from backend.models.conversation import Conversation
@@ -85,20 +86,8 @@ INPUT_VOICED_RMS = 300
 INPUT_FLOOR_FACTOR = 4.0
 # Порог «медленного ответа» в диагностике (по звуку клиент слышит паузу уже от ~2 с)
 SLOW_REPLY_MS = 2500
-# Подавление эха и шума линии, пока агент говорит (телефон, LIVE_PHONE_ECHO_GATE). GPT-Live full-duplex слышит
-# линию всё время: эхо его же голоса на громкой связи, шум улицы и кашель он принимал за речь клиента —
-# сбивался, начинал фразу заново («Да-… да, я вас слушаю»), отвечал на шум. Пока агент говорит и ещё
-# ECHO_TAIL_SEC после (звук доходит до телефона и обратно с задержкой), в модель уходит тишина, если кусок
-# звука тише порога; громкая речь клиента открывает «ворота» сразу и держит их ECHO_GATE_HOLD_SEC (хвосты слов).
-# Порог: не ниже ECHO_GATE_MIN_RMS и ECHO_GATE_SPEECH_SHARE от обычной громкости речи ЭТОГО клиента
-# (меряется, пока агент молчит), и в ECHO_GATE_FLOOR_FACTOR раз выше шума линии.
-ECHO_TAIL_SEC = 0.8
-ECHO_GATE_HOLD_SEC = 0.6
-# 250 ≈ −42 dBFS: у части клиентов голос в линии на 10–18 дБ тише агента (заметка Gemini AGC, 02.11.2026),
-# поэтому главный порог — относительный (доля обычной громкости ЭТОГО клиента), абсолютный — только пол.
-ECHO_GATE_MIN_RMS = 250
-ECHO_GATE_SPEECH_SHARE = 0.3
-ECHO_GATE_FLOOR_FACTOR = 6.0
+# Подавление эха и шума линии, пока агент говорит (телефон, LIVE_PHONE_ECHO_GATE) — общий с Gemini модуль
+# echo_gate.py: тихий звук линии во время речи агента (эхо громкой связи, шум улицы) уходит в модель тишиной.
 ECHO_GATE_ENABLED = bool(getattr(settings, "LIVE_PHONE_ECHO_GATE", True))
 # Монолог: один ответ дольше этого — клиент перестаёт слушать (диагностика в журнале звонка)
 LONG_REPLY_SEC = 15.0
@@ -445,12 +434,8 @@ class LiveVoiceSession:
         self._last_user_audio_at: float = 0.0
         self._input_floor: Optional[float] = None
         self._reply_started_at: float = 0.0
-        # Подавление эха/шума линии, пока агент говорит (см. ECHO_TAIL_SEC): громкость речи клиента (EMA),
-        # до какого момента «ворота» открыты, сколько секунд звука заменено тишиной
-        self._caller_speech_rms: float = 0.0
-        self._gate_open_until: float = 0.0
-        self.gated_seconds: float = 0.0
-        self.passed_during_speech: float = 0.0
+        # Подавление эха/шума линии, пока агент говорит (echo_gate.py; только телефон)
+        self.echo_gate = LineEchoGate(enabled=ECHO_GATE_ENABLED)
         # Длинные ответы (монологи): длительность каждого ответа, когда он закончился
         self.reply_durations: List[float] = []
         # Автозавершение звонка: последняя речь клиента (не обнуляется), прощание — когда и чьё,
@@ -570,35 +555,17 @@ class LiveVoiceSession:
         return int((now - last) * 1000)
 
     def _gate_input(self, audio_b64: str, dur: float) -> str:
-        """
-        Телефон: пока агент говорит (и ECHO_TAIL_SEC после), тихий звук линии → тишина того же размера.
-        Громкая речь клиента проходит и открывает «ворота» на ECHO_GATE_HOLD_SEC. Пока агент молчит —
-        всё проходит как есть, заодно меряется обычная громкость речи клиента.
-        """
-        if audioop is None or not ECHO_GATE_ENABLED or not self._is_phone():
+        """Телефон: пока агент говорит (и ECHO_TAIL_SEC после), тихий звук линии → тишина (echo_gate.py)."""
+        if not self.echo_gate.enabled or not self._is_phone():
             return audio_b64
         try:
             pcm = base64.b64decode(audio_b64)
-            rms = audioop.rms(pcm, 2)
         except Exception:
             return audio_b64
         now = time.time()
-        agent_active = self.assistant_speaking or (self._last_audio_at and now - self._last_audio_at < ECHO_TAIL_SEC)
-        if not agent_active:
-            floor = self._input_floor or 0.0
-            if rms >= max(INPUT_VOICED_RMS, floor * INPUT_FLOOR_FACTOR):
-                ema = self._caller_speech_rms
-                self._caller_speech_rms = rms if ema == 0.0 else ema * 0.9 + rms * 0.1
-            return audio_b64
-        threshold = max(ECHO_GATE_MIN_RMS, self._caller_speech_rms * ECHO_GATE_SPEECH_SHARE,
-                        (self._input_floor or 0.0) * ECHO_GATE_FLOOR_FACTOR)
-        if rms >= threshold:
-            self._gate_open_until = now + ECHO_GATE_HOLD_SEC
-        if now < self._gate_open_until:
-            self.passed_during_speech += dur
-            return audio_b64
-        self.gated_seconds += dur
-        return base64.b64encode(b"\x00" * len(pcm)).decode()
+        agent_active = bool(self.assistant_speaking or (self._last_audio_at and now - self._last_audio_at < ECHO_TAIL_SEC))
+        out = self.echo_gate.process(pcm, agent_active, dur, now)
+        return audio_b64 if out is pcm else base64.b64encode(out).decode()
 
     def _track_input_level(self, audio_b64: str) -> None:
         """Вход клиента, пока ассистент молчит: громкий кусок над шумом линии = клиент ещё говорит."""
@@ -609,9 +576,9 @@ class LiveVoiceSession:
         except Exception:
             return
         floor = self._input_floor
-        # шум линии: вниз сразу, вверх медленно (речь не должна поднимать «пол»)
-        self._input_floor = rms if (floor is None or rms < floor) else floor + (rms - floor) * 0.01
-        if rms >= max(INPUT_VOICED_RMS, (floor or 0.0) * INPUT_FLOOR_FACTOR):
+        is_speech = rms >= max(INPUT_VOICED_RMS, (floor or 0.0) * INPUT_FLOOR_FACTOR)
+        self._input_floor = update_floor(floor, rms, is_speech)   # речь не поднимает «пол» (echo_gate.py)
+        if is_speech:
             self._last_user_audio_at = time.time()
 
     @staticmethod
@@ -755,9 +722,8 @@ class LiveVoiceSession:
         if long_replies:
             issues.append(f"{len(long_replies)} ответ(ов) длиннее {int(LONG_REPLY_SEC)} с (самый длинный "
                           f"{int(max(long_replies))} с) — монолог, клиент перестаёт слушать")
-        if self.gated_seconds >= 1.0:
-            info.append(f"шум и эхо линии во время речи агента не пропущены в модель: {int(self.gated_seconds)} с "
-                        f"(речь клиента поверх агента прошла: {self.passed_during_speech:.1f} с)")
+        if self.echo_gate.summary():
+            info.append(self.echo_gate.summary())
 
         if elapsed > 20 and self.voiced_bytes:
             talk = self.voiced_bytes / (self.client.io_rate * 2)
