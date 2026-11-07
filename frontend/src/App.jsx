@@ -36,6 +36,13 @@ function App() {
 
   const closeModal = useCallback(() => setIsModalOpen(false), []);
 
+  // Ссылка «Попробовать бесплатно» со страниц услуг (/voice-agent/ и т.п.) ведёт на ?signup=1
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('signup') === '1') openModal('register');
+    } catch (e) { /* ignore */ }
+  }, [openModal]);
+
   // Плавная прокрутка Lenis (отключена при prefers-reduced-motion)
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;

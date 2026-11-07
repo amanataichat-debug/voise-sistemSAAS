@@ -2644,6 +2644,7 @@ AGENT_CHAT_TOOLS = [
             "Номер можно передавать в ЛЮБОМ виде (+996 706 555 531, 0706555531, 706555531): "
             "ищем по последним 9 цифрам в карточках, чатах WhatsApp и журнале звонков. "
             "Если карточки нет, но номер писал или звонил — это придёт в no_card_but_found. "
+            "Имя и @ник ищутся и в Telegram-диалогах (там номер клиента часто скрыт). "
             "Используй вместо get_agent_contacts, когда пользователь ищет конкретных людей "
             "('найди Иванова', 'контакты из компании X', 'покажи отказников'). "
             "Все аргументы опциональны; без аргументов вернёт последние контакты."
@@ -3766,13 +3767,26 @@ async def fn_search_contacts(args: dict, user_id: str, agent_config_id: str, db:
             traces = phone_traces(db, user_id, agent_config_id, tail)
     else:
         if query:
-            like = f"%{query}%"
-            q = q.filter(or_(
+            like = f"%{query.strip().lstrip('@')}%"
+            conds = [
                 AgentContact.name.ilike(like),
                 AgentContact.phone.ilike(like),
                 AgentContact.alt_phones.ilike(like),
                 AgentContact.company.ilike(like),
-            ))
+            ]
+            # Telegram: номер у клиента часто скрыт — ищем по @нику и имени в Telegram
+            try:
+                from backend.models.agent_telegram_account import AgentTelegramDialog
+                tg_ids = [r[0] for r in db.query(AgentTelegramDialog.agent_contact_id).filter(
+                    AgentTelegramDialog.agent_contact_id.isnot(None),
+                    or_(AgentTelegramDialog.tg_username.ilike(like), AgentTelegramDialog.tg_name.ilike(like)),
+                ).limit(50).all()]
+                if tg_ids:
+                    conds.append(AgentContact.id.in_(tg_ids))
+            except Exception as e:
+                logger.warning(f"[AGENT-TOOLS] telegram name lookup failed: {e}")
+                db.rollback()
+            q = q.filter(or_(*conds))
         contacts = q.order_by(AgentContact.created_at.desc()).limit(limit).all()
 
     result_extra = {}

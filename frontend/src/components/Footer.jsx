@@ -3,9 +3,12 @@ import { useT } from '../i18n';
 import Logo from './Logo';
 import LangSwitch from './LangSwitch';
 import { TELEGRAM_URL, SUPPORT_URL } from './contacts';
+import { SERVICES, SERVICE_SLUGS } from '../seo/services';
+import { LANG_PATH } from '../i18n';
 
 function Footer() {
-  const { t } = useT();
+  const { t, lang } = useT();
+  const L = lang === 'ru' ? 'ru' : 'ky';
   return (
     <footer className="lp-footer">
       <div className="lp-container">
@@ -23,6 +26,12 @@ function Footer() {
             <a href="#pricing">{t('footer.product_pricing')}</a>
             <a href="/static/api-docs.html">{t('footer.product_api')}</a>
             <a href="/static/prompts-wiki.html">{t('footer.product_knowledge')}</a>
+          </div>
+          <div className="lp-footer-col">
+            <h4>{t('footer.services_title')}</h4>
+            {SERVICE_SLUGS.map((slug) => (
+              <a key={slug} href={`${LANG_PATH[L]}${slug}/`}>{SERVICES[slug][L].nav}</a>
+            ))}
           </div>
           <div className="lp-footer-col">
             <h4>{t('footer.docs_title')}</h4>

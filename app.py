@@ -176,6 +176,10 @@ async def security_headers(request: Request, call_next):
     # Кабинет нельзя показать в чужом фрейме (защита от «кликджекинга»)
     if (path.startswith("/static/") and path.endswith(".html") or path == "/") and not _FRAMEABLE.match(path):
         h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    # Кабинет, тестовые страницы и виджеты не должны попадать в Google/Яндекс (SEO 07.11.2026)
+    if (path.startswith("/static/") and path.endswith(".html") and path not in PUBLIC_STATIC_PAGES) \
+            or path.startswith("/embed/") or path.startswith("/api/"):
+        h.setdefault("X-Robots-Tag", "noindex, nofollow")
     return response
 
 
@@ -3296,6 +3300,100 @@ async def serve_landing_ru():
     Serve Russian version of the React landing page (prerendered, `/` is Kyrgyz).
     """
     return FileResponse("backend/static/landing/ru/index.html")
+
+
+# ============================================================================
+# SEO: страницы услуг, robots.txt, sitemap.xml, llms.txt (07.11.2026)
+# ============================================================================
+# Страницы услуг пререндерит frontend/scripts/prerender.mjs (список — frontend/src/seo/services.js):
+#   ky: /<slug>/ → backend/static/landing/<slug>/index.html, ru: /ru/<slug>/ → landing/ru/<slug>/index.html
+SEO_SERVICE_SLUGS = ("voice-agent", "whatsapp-chatbot", "crm", "analytics", "sales-agent")
+_LANDING_DIR = "backend/static/landing"
+
+
+def _service_page(path: str):
+    full = os.path.join(_LANDING_DIR, path, "index.html")
+    if not os.path.isfile(full):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(full, headers={"Cache-Control": "no-cache"})
+
+
+def _page_route(rel: str):
+    # Без параметров у обработчика: иначе FastAPI взял бы их из ?query
+    async def handler():
+        return _service_page(rel)
+    return handler
+
+
+def _redirect_route(target: str):
+    async def handler():
+        return RedirectResponse(url=target, status_code=301)
+    return handler
+
+
+for _slug in SEO_SERVICE_SLUGS:
+    app.add_api_route(f"/{_slug}/", _page_route(_slug), methods=["GET", "HEAD"], include_in_schema=False)
+    app.add_api_route(f"/ru/{_slug}/", _page_route(os.path.join("ru", _slug)), methods=["GET", "HEAD"],
+                      include_in_schema=False)
+    app.add_api_route(f"/{_slug}", _redirect_route(f"/{_slug}/"), methods=["GET", "HEAD"], include_in_schema=False)
+    app.add_api_route(f"/ru/{_slug}", _redirect_route(f"/ru/{_slug}/"), methods=["GET", "HEAD"],
+                      include_in_schema=False)
+
+# Публичные страницы в /static, которые можно индексировать; остальные (кабинет) — noindex
+PUBLIC_STATIC_PAGES = {
+    "/static/privacy-policy.html", "/static/terms-of-service.html", "/static/public-offer.html",
+    "/static/payment-terms.html", "/static/prompts-wiki.html", "/static/api-docs.html",
+    "/static/agent-api-docs.html",
+}
+
+# ИИ-краулеры: явно разрешаем (ChatGPT, Gemini/Google, Perplexity, Claude, Яндекс, Bing) —
+# правила те же, что для всех, просто отдельной группой, чтобы сайт попадал в ИИ-поиск.
+_AI_BOTS = ("GPTBot", "OAI-SearchBot", "ChatGPT-User", "Google-Extended", "PerplexityBot",
+            "ClaudeBot", "Claude-SearchBot", "Applebot-Extended", "YandexBot", "Bingbot")
+
+
+def _robots_rules() -> str:
+    lines = ["Allow: /"]
+    lines += [f"Allow: {p}" for p in sorted(PUBLIC_STATIC_PAGES)]
+    lines += ["Disallow: /api/", "Disallow: /ws/", "Disallow: /embed/", "Disallow: /static/*.html"]
+    return "\n".join(lines)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    from fastapi.responses import PlainTextResponse
+    rules = _robots_rules()
+    groups = [f"User-agent: *\n{rules}"]
+    groups += [f"User-agent: {bot}\n{rules}" for bot in _AI_BOTS]
+    body = "\n\n".join(groups)
+    # Яндекс: не плодить дубли из-за меток рекламы и реферальных ссылок
+    body += "\n\nUser-agent: Yandex\n" + rules + "\nClean-param: utm_source&utm_medium&utm_campaign&utm_content&utm_term&ref&signup /"
+    body += "\n\nSitemap: https://voksyai.online/sitemap.xml\n"
+    return PlainTextResponse(body, headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    return FileResponse(os.path.join(_LANDING_DIR, "sitemap.xml"), media_type="application/xml",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/llms.txt", include_in_schema=False)
+async def llms_txt():
+    return FileResponse(os.path.join(_LANDING_DIR, "llms.txt"), media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+# IndexNow (Яндекс и Bing; поиск ChatGPT опирается на индекс Bing): ключ в env INDEXNOW_KEY,
+# файл-подтверждение /<ключ>.txt; отправка адресов — scripts/indexnow_ping.py после деплоя.
+@app.get("/{key}.txt", include_in_schema=False)
+async def indexnow_key(key: str):
+    from fastapi.responses import PlainTextResponse
+    expected = os.getenv("INDEXNOW_KEY", "").strip()
+    if expected and key == expected:
+        return PlainTextResponse(expected)
+    from starlette.exceptions import HTTPException as _HTTPExc
+    raise _HTTPExc(status_code=404)
 
 
 @app.get("/health")
