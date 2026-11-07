@@ -16,7 +16,7 @@ Payment API endpoints for WellcomeAI application.
   Источник истины — SUBSCRIPTION_PLANS_CONFIG ниже (цены в сомах). При старте
   приложения app.ensure_plan_prices() записывает эти цены в subscription_plans,
   поэтому смена цены = правка base_price здесь и деплой.
-  Цены с 27.10.2026: AI Voice 1 990, Старт 7 500 (агент отвечает на обращения), Profi 15 000 (автономный агент).
+  Цены с 27.10.2026: AI Voice 1 990, Старт 7 500 (агент отвечает на обращения), Profi 12 500 (автономный агент, с 07.11.2026; было 15 000).
   Пакеты кредитов: UPDATE credit_packages SET price_rub = <сом> WHERE code = '<код>';
 """
 
@@ -96,7 +96,7 @@ SUBSCRIPTION_PLANS_CONFIG = {
     },
     "profi": {
         "name": "Profi",
-        "base_price": 15000.0,   # сом/мес
+        "base_price": 12500.0,   # сом/мес
         "max_assistants": 10,
         "description": "Автономный агент: переписка, звонки, CRM и воронка",
         "features": [

@@ -267,7 +267,7 @@ async def get_subscription_plans(
                 {
                     "code": "profi",
                     "name": "Profi",
-                    "price": 15000,
+                    "price": 12500,
                     "max_assistants": 10,
                     "description": "Professional plan with all features",
                     "is_active": True
@@ -329,7 +329,7 @@ async def get_subscription_plans(
             {
                 "code": "profi",
                 "name": "Profi (Default)",
-                "price": 15000,
+                "price": 12500,
                 "max_assistants": 10,
                 "description": "Professional plan with all features",
                 "is_active": True
@@ -392,7 +392,7 @@ async def subscribe_to_plan(
                 "referral_trial": 0,
                 "ai_voice": 1990,
                 "start": 7500,
-                "profi": 15000
+                "profi": 12500
             }
             
             plan = SubscriptionPlan(
