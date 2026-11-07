@@ -27,6 +27,7 @@ from backend.websockets.handler_live import (
     HANGUP_ASSISTANT_QUIET_SEC,
     HANGUP_GUARD_SILENCE_SEC,
     HANGUP_SILENCE_SEC,
+    hangup_refusal_text,
     is_assistant_closing,
     is_caller_closing,
 )
@@ -41,6 +42,8 @@ class CallEndGuard:
         self.last_user_voice_at = 0.0     # последняя речь клиента (по стенограмме)
         self.last_audio_at = 0.0          # последний кусок звука ассистента
         self.farewell_at: Optional[float] = None
+        self.caller_farewell_at: Optional[float] = None   # прощание именно клиента (для hangup_call)
+        self.last_user_text = ""                           # последняя реплика клиента целиком
         self.hangup_sent = False
         self.rejections = 0
         self._buf = {"user": "", "assistant": ""}
@@ -62,6 +65,7 @@ class CallEndGuard:
             return
         if role == "user":
             self.last_user_voice_at = time.time()
+            self.last_user_text = self._buf["user"]
         if AUTO_HANGUP:
             self._scan(role, self._buf[role])
 
@@ -87,6 +91,8 @@ class CallEndGuard:
                 self._note(f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
                            f"ждём тишины, чтобы завершить звонок")
             self.farewell_at = time.time()
+            if role == "user":
+                self.caller_farewell_at = self.farewell_at
 
     # ------------------------------------------------------------------ решение
     def should_auto_hangup(self, now: float) -> bool:
@@ -106,10 +112,11 @@ class CallEndGuard:
         self.hangup_sent = True
         self._note(f"Автозавершение звонка: {reason} (модель hangup_call не вызвала)")
 
-    def gate(self, name: str, arguments: Any) -> Optional[str]:
+    def gate(self, name: str, arguments: Any, agent_quiet_since: Optional[float] = None) -> Optional[str]:
         """
         Перед выполнением функции: None — можно; строка — почему нельзя (её прочтёт модель).
-        Сейчас защищается только hangup_call (см. docstring модуля).
+        Сейчас защищается только hangup_call (см. docstring модуля и handler_live.hangup_refusal_text).
+        agent_quiet_since — когда агент замолчал ДЛЯ КЛИЕНТА (у Gemini — конец доигрывания, а не приход звука).
         """
         if name != "hangup_call" or not self.phone:
             return None
@@ -119,20 +126,11 @@ class CallEndGuard:
                 args = json.loads(arguments) if arguments.strip() else {}
             except json.JSONDecodeError:
                 args = {}
-        if str(args.get("reason") or "") in ("user_request", "time_limit_reached", "emergency"):
-            return None
-        now = time.time()
-        silent = (now - self.last_user_voice_at) if self.last_user_voice_at else 999.0
-        spoke_after_farewell = self.farewell_at is not None and self.last_user_voice_at > self.farewell_at + 1.5
-        if self.farewell_at is not None and not spoke_after_farewell:
-            return None
-        if silent >= HANGUP_GUARD_SILENCE_SEC:
-            return None
-        self.rejections += 1
-        self._note("Завершение звонка отклонено: клиент ещё не попрощался и недавно говорил — звонок продолжается",
-                   "warning")
-        return (
-            f"Звонок НЕ завершён: клиент ещё не попрощался и говорил {silent:.0f} с назад. Не прощайся и не "
-            f"вызывай hangup_call сейчас. Коротко подтверди, о чём договорились (время, канал, действие), "
-            f"и дождись ответа клиента. Когда клиент сам попрощается — вызови hangup_call снова."
-        )
+        quiet = self.last_audio_at if agent_quiet_since is None else max(self.last_audio_at, agent_quiet_since)
+        refusal = hangup_refusal_text(str(args.get("reason") or ""), self.last_user_text, self.caller_farewell_at,
+                                      self.last_user_voice_at, quiet)
+        if refusal:
+            self.rejections += 1
+            self._note("Завершение звонка отклонено: клиент не прощался и не просил закончить — звонок продолжается",
+                       "warning")
+        return refusal

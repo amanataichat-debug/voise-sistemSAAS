@@ -74,11 +74,22 @@ async def hangup_guard():
     s, out, _ = session(); s._last_user_voice_at = time.time() - 8
     check("hangup: клиент молчит 8 с → разрешено", s._hangup_refusal(hangup()["arguments"]) is None)
     s, out, _ = session(); s._last_user_voice_at = time.time() - 1; s._farewell_at = time.time() - 1.2
+    s._caller_farewell_at = s._farewell_at
     check("hangup: клиент попрощался → разрешено", s._hangup_refusal(hangup()["arguments"]) is None)
+    # 07.11.2026 (d08c06f4): агент сам сказал «до свидания» и положил трубку жалующемуся клиенту
+    s, out, _ = session(); s._last_user_voice_at = time.time() - 1; s._farewell_at = time.time() - 0.5
+    check("hangup: попрощался только агент, клиент говорил секунду назад → отклонено",
+          s._hangup_refusal(hangup()["arguments"]) is not None)
     s, out, _ = session(); s._farewell_at = time.time() - 5; s._last_user_voice_at = time.time() - 1
     check("hangup: прощание было, но клиент заговорил снова → отклонено", s._hangup_refusal(hangup()["arguments"]) is not None)
     s, out, _ = session(); s._last_user_voice_at = time.time() - 1
-    check("hangup: просьба клиента (user_request) → разрешено", s._hangup_refusal(hangup("user_request")["arguments"]) is None)
+    s.transcript.add("user", "Нет, спасибо, мне не интересно, не звоните больше", 0, 1)
+    check("hangup: user_request и клиент правда просит закончить → разрешено",
+          s._hangup_refusal(hangup("user_request")["arguments"]) is None)
+    s, out, _ = session(); s._last_user_voice_at = time.time() - 1
+    s.transcript.add("user", "Сен соны айтпасың, тастаймын деп айтпадың, айтпайсың", 0, 1)
+    check("hangup: user_request, а клиент жалуется «ты не объясняешь» → отклонено (звонок d08c06f4)",
+          s._hangup_refusal(hangup("user_request")["arguments"]) is not None)
     s, out, _ = session()
     check("hangup: клиент не говорил вовсе → разрешено", s._hangup_refusal(hangup()["arguments"]) is None)
     s, out, _ = session(phone=False); s._last_user_voice_at = time.time() - 1

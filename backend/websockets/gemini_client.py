@@ -403,11 +403,15 @@ class GeminiLiveClient:
 
             if self.voice_hints:
                 try:
-                    from backend.websockets.voice_hints import build_gemini_voice_hints, gemini_prompt_head
+                    from backend.websockets.voice_hints import (build_gemini_voice_hints, call_context_block,
+                                                                 gemini_prompt_head, split_call_context)
                     # 06.11.2026: голос и язык — в начале, до инструкции карточки (модель держит начало и конец
-                    # промпта; в середине 34 тыс. символов эти правила терялись)
+                    # промпта; в середине 34 тыс. символов эти правила терялись). 07.11.2026: туда же — контекст
+                    # звонка (кто звонит, прошлые звонки и переписка): из конца карточки он «не доходил» до модели.
+                    card, call_ctx = split_call_context(system_message)
                     system_message = (gemini_prompt_head(voice, self.language, getattr(self.assistant_config, "greeting_message", None))
-                                      + system_message
+                                      + call_context_block(call_ctx)
+                                      + card
                                       + build_gemini_voice_hints(normalize_functions(functions), voice, self.telephony))
                 except Exception as e:
                     logger.warning(f"[GEMINI-CLIENT] voice hints skipped: {e}")

@@ -450,6 +450,7 @@ async def sip_media(
     agent_cfg = None
     kb_stats: Dict[str, int] = {}
     kb_error: Optional[str] = None
+    client_note: Optional[str] = None   # узнан ли клиент и дошла ли его история до модели (строка журнала звонка)
     prompt = f"{base_prompt}\n\n[Контекст звонка] {context}".strip()
     try:
         agent_cfg = agent_voice_context.resolve_agent_for_voice(db, assistant.id)
@@ -466,9 +467,15 @@ async def sip_media(
         # незнакомого номера голосовой агент узнаёт клиента функцией find_client.
         inbound_hint = SipGatewayService.inbound_known_contact_block(call, agent_cfg, db)
         unknown_caller = False
+        if inbound_hint:
+            client_note = (f"Клиент узнан по номеру в CRM: карточка и история общения ушли агенту в начало разговора "
+                           f"({len(inbound_hint)} симв.)")
         if not inbound_hint:
             inbound_hint = SipGatewayService.inbound_recent_contacts_hint(call, agent_cfg, db)
             unknown_caller = bool(inbound_hint)
+            if direction == "inbound" and agent_cfg is not None:
+                client_note = ("Номер не найден в CRM — агент спросит имя и поищет клиента (find_client)" if unknown_caller
+                               else "Номер не найден в CRM и недавних клиентов нет — для агента это новый клиент")
         # Подсказка про материалы — раньше истории клиента: при нехватке места история
         # обрезается с конца (agent_voice_context.build_call_system_prompt)
         followup_hint = SipGatewayService.messenger_followup_hint(agent_cfg, db)
@@ -550,6 +557,8 @@ async def sip_media(
         call_log.add("kb", f"Лимит промпта голоса {LIVE_VOICE_INSTRUCTIONS_MAX_CHARS} символов мал (норма 24000): "
                            f"знания агента не помещаются. Удалите переменную LIVE_VOICE_INSTRUCTIONS_MAX_CHARS "
                            f"в Render — по умолчанию стоит нужное значение", level="warning")
+    if client_note:
+        call_log.add("kb", client_note)
     if kb_error:
         call_log.add("kb", f"Знания агента не подмешаны, звонок идёт без них: {kb_error}", level="error")
     elif agent_cfg is not None and kb_stats.get("dropped"):

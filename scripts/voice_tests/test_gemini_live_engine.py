@@ -302,7 +302,9 @@ check("Gemini: без противоречия «можно мм/угу» про
 # 06.11.2026: 16 → 10 тыс. — промпт звонка был 34 тыс., правила противоречили друг другу и терялись.
 # 07.11.2026: 10 → 11 тыс. — в начало добавлен общий с GPT-Live блок «Живой разговор» (не эхо, не повторять себя,
 # вау-пример, темп продажи): владелец — «агент занудный, повторяет за клиентом».
-check("Gemini: подсказки не длиннее 11 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 11000, len(g))
+# 07.11.2026 (ветка 0711-gemini-live, звонок d08c06f4): 11 → 13 тыс. — свой блок Gemini в начале (характер, объяснять
+# голосом вместо «пришлю», извиниться и исправиться, память о клиенте); дубли в манере ужаты.
+check("Gemini: подсказки не длиннее 13 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 13000, len(g))
 check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
       "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
@@ -729,7 +731,19 @@ g2.on_transcript("user", "Давайте напишите мне в Telegram к 
 check("hangup_call пока клиент говорит и не попрощался — отклонён",
       "НЕ завершён" in (g2.gate("hangup_call", {"reason": "conversation_completed"}) or "") and g2.rejections == 1)
 check("другие функции страж не трогает", g2.gate("search_knowledge_base", {"query": "x"}) is None)
-check("hangup_call по просьбе клиента разрешён", g2.gate("hangup_call", {"reason": "user_request"}) is None)
+# 07.11.2026 (d08c06f4): модель ставила reason=user_request, когда клиент жаловался, и клала трубку
+check("hangup_call с «по просьбе клиента», когда клиент не просил, — отклонён",
+      g2.gate("hangup_call", {"reason": "user_request"}) is not None)
+g2b = CallEndGuard(phone=True)
+g2b.on_transcript("user", "Не надо, мне не интересно, спасибо")
+check("hangup_call по настоящей просьбе клиента разрешён", g2b.gate("hangup_call", {"reason": "user_request"}) is None)
+g2c = CallEndGuard(phone=True)
+g2c.on_transcript("user", "Сен соны айтпасың, тастаймын деп айтпадың")
+g2c.on_transcript("assistant", "Кечиресиз, толук маалыматты WhatsApp'ка жөнөтөм. Жакшы калыңыз!")
+check("агент сам попрощался, клиент только что жаловался — трубку не кладём",
+      g2c.farewell_at is not None and g2c.gate("hangup_call", {"reason": "conversation_completed"}) is not None)
+check("тишина для защиты — от конца доигрывания ответа Gemini, а не от прихода звука",
+      CallEndGuard(phone=True).gate("hangup_call", {"reason": "x"}, agent_quiet_since=_time.time() + 3) is not None)
 g2.on_transcript("user", " Спасибо, до свидания!")
 check("после прощания клиента hangup_call разрешён", g2.gate("hangup_call", {"reason": "conversation_completed"}) is None)
 g3 = CallEndGuard(phone=True); g3.last_user_voice_at = _time.time() - 20
@@ -756,7 +770,11 @@ hang = [m for m in sock_e.sent if m.get("type") == "call.hangup"]
 check("сессия: после прощания и тишины клиенту ушёл call.hangup с drain", len(hang) == 1 and hang[0].get("drain") is True, hang)
 check("сессия: автозавершение записано в журнал звонка", any("Автозавершение" in (e.get("text") or e.get("message") or "") for e in rec_e.events)
       if hasattr(rec_e, "events") else True)
-check("сессия: клиент функции получил защиту hangup_call", sess_e.client.function_gate == sess_e.guard.gate)
+sess_e.guard.caller_farewell_at = _time.time() - 10   # прощание было давно, клиент заговорил снова
+sess_e.guard.on_transcript("user", "подождите, а сколько стоит?")
+check("сессия: клиент функции получил защиту hangup_call",
+      callable(sess_e.client.function_gate)
+      and sess_e.client.function_gate("hangup_call", {"reason": "user_request"}) is not None)
 
 # защита в обработчике: преждевременный hangup_call отклонён, функция не выполняется
 async def gated_hangup():
@@ -1086,6 +1104,30 @@ check("кыргызская карточка: кыргызский — осно�
       "ОСНОВНОЙ ЯЗЫК" in _ky and "РУССКИЕ СЛОВА" in _ky)
 check("язык карточки: никогда не говорить собеседнику, какие языки понимаешь", "НИКОГДА НЕ ГОВОРИ О ЯЗЫКАХ" in vh.language_note("ru"))
 check("русская карточка без кыргызского приоритета", "ОСНОВНОЙ ЯЗЫК" not in vh.language_note("ru"))
+
+# ---------- 07.11.2026, ветка 0711-gemini-live, звонок d08c06f4: «без души, только «отправлю», не помнит» ----------
+_h = vh.gemini_prompt_head("Charon", "ky", "Саламатсызбы!")
+check("Gemini: в начале — характер, объяснять голосом, исправиться, переспросить, память",
+      all(k in _h for k in ("ХАРАКТЕР", "ОБЪЯСНЯЙ САМ ГОЛОСОМ", "НЕДОВОЛЕН — ИСПРАВЬСЯ", "НЕ ПОНЯЛ — ПЕРЕСПРОСИ", "ПАМЯТЬ"))
+      and "не больше одного раза за звонок" in _h)
+check("Gemini: «пришлю» — не ответ; материалы только после объяснения (и в правилах звонка)",
+      "НЕ ответ" in _h and "сначала объясни сам" in vh.GEMINI_CALL_RULES
+      and "предложи прислать материалы" not in vh.GEMINI_SALES_HINT)
+_card = "Ты Анри.\n\n# ЗНАНИЯ\nПрофи — 12 500 сом.\n\n[Контекст звонка] Это входящий звонок. Звонит клиент, который уже есть в CRM. Имя: Айбек.\nХРОНОЛОГИЯ: 07.11 звонок — спрашивал про цену."
+_rest, _ctx = vh.split_call_context(_card)
+check("Gemini: контекст звонка отделяется от карточки", "[Контекст звонка]" not in _rest and _ctx.startswith("Это входящий"))
+check("Gemini: блок контекста с заголовком, пустой — пусто",
+      vh.call_context_block(_ctx).startswith("# КОНТЕКСТ ЗВОНКА И КЛИЕНТ") and vh.call_context_block("") == "")
+_gc_src = open(os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read()
+check("Gemini: контекст звонка с историей клиента идёт сразу после головы, до карточки",
+      "+ call_context_block(call_ctx)\n                                      + card" in _gc_src)
+_lk = vh.language_note("ru")
+check("Gemini: просьба о кыргызском — сразу и без комментария о смене языка",
+      "давай по-кыргызски" in _lk and "СРАЗУ" in _lk and "без комментариев о смене языка" in _lk)
+check("Gemini: кыргызская дикция — законченные фразы, окончания полностью", "окончания слов проговаривай" in vh.KYRGYZ_LINE_NOTE)
+_sg = open(os.path.join(ROOT, "backend/api/sip_gateway.py"), encoding="utf-8").read()
+check("журнал звонка: узнан ли клиент по номеру и ушла ли его история агенту",
+      "Клиент узнан по номеру в CRM" in _sg and "Номер не найден в CRM" in _sg)
 
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

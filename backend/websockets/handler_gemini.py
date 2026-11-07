@@ -1074,7 +1074,8 @@ async def handle_gemini_messages(
                                 "assistant_message": assistant_msg[:200] + "..." if len(assistant_msg) > 200 else assistant_msg
                             })
                         else:
-                            log_to_render(f"⚠️ Turn #{turn_count} skipped: no content to save", "WARNING")
+                            # ход без текста (обычно — клиент перебил агента) — норма, не предупреждение в журнале звонка
+                            log_to_render(f"Turn #{turn_count} skipped: no content to save")
                         
                         # ═══════════════════════════════════════════════════════════
                         # 🔥 КРИТИЧЕСКИ ВАЖНО: ОЧИЩАЕМ БУФЕРЫ ПОСЛЕ СОХРАНЕНИЯ!

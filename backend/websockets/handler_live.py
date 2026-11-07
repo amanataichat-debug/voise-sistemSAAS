@@ -238,6 +238,61 @@ def is_assistant_closing(text: str) -> bool:
         return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
     return "?" not in tail[m.end():]
 
+# Клиент сам хочет закончить: прощание / «всё, спасибо» или явный отказ продолжать разговор.
+_END_INTENT_RE = re.compile(
+    r"не\s+(?:надо|нужно|интересно|интересует|звоните|звони|беспокойте)|хватит|положи(?:те)?\s+трубку|"
+    r"заканчива|отключа(?:юсь|йтесь)|до\s+свидани|"
+    r"керек\s+эмес|кызыкпайм|кызыкпайт|кызыгым\s+жок|чалбаңыз|чалбагыла|тынчымды\s+алба",
+    re.IGNORECASE)
+
+
+def caller_wants_to_end(text: str) -> bool:
+    """Клиент хочет закончить: решают ПОСЛЕДНИЕ его слова. «До свидания… подождите, а сколько стоит?» — нет."""
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    last = None
+    for rx in (_END_INTENT_RE, _FAREWELL_RE):
+        for m in rx.finditer(t):
+            if last is None or m.end() > last.end():
+                last = m
+    if last is not None:
+        after = t[last.end():]
+        return "?" not in after and len(after.split()) < 4
+    return is_caller_closing(t)
+
+
+def hangup_refusal_text(reason: str, last_user_text: str, caller_farewell_at: Optional[float],
+                        last_user_voice_at: float, agent_quiet_since: float,
+                        now: Optional[float] = None) -> Optional[str]:
+    """
+    Можно ли модели положить трубку (hangup_call на телефоне). None — можно, строка — отказ для модели.
+    Общая для GPT-Live и Gemini Live (call_guard.py).
+
+    Звонок 07.11.2026 (d08c06f4, Gemini): клиент возмущался «ты только говоришь „отправлю“, не объясняешь», агент
+    ответил «отправлю в WhatsApp, до свидания» и сам положил трубку — защита пропускала и reason=user_request (модель
+    сама решила, что клиент «попросил»), и СОБСТВЕННОЕ прощание агента. Теперь трубку кладут, только если:
+    лимит времени / экстренный случай; клиент сам попрощался; клиент просил закончить (user_request подтверждается
+    словами клиента); на линии тишина HANGUP_GUARD_SILENCE_SEC после того, как и клиент, и агент замолчали.
+    Агент попрощался, а клиент молчит, — звонок положит автозавершение (прощание + тишина), без модели.
+    """
+    if reason in ("time_limit_reached", "emergency"):
+        return None
+    if caller_farewell_at is not None and last_user_voice_at <= caller_farewell_at + 1.5:
+        return None
+    if reason == "user_request" and caller_wants_to_end(last_user_text):
+        return None
+    now = now or time.time()
+    if now - max(last_user_voice_at, agent_quiet_since) >= HANGUP_GUARD_SILENCE_SEC:
+        return None
+    return (
+        "Звонок НЕ завершён: клиент не прощался и не просил закончить — он ещё в разговоре. Если клиент что-то "
+        "спросил, возразил или недоволен — ответь ему по сути, сам, голосом (не обещай «пришлю» вместо ответа). "
+        "Если ты уже попрощался, а клиент молчит, — просто молчи: звонок завершится сам. hangup_call — только "
+        "когда клиент сам попрощается или попросит закончить."
+    )
+
+
 # Активные соединения по ассистенту (для статистики /ws/status)
 active_live_connections: Dict[str, List[Any]] = {}
 
@@ -442,6 +497,7 @@ class LiveVoiceSession:
         # отправлена ли команда «положить трубку»
         self._last_user_voice_at: float = 0.0
         self._farewell_at: Optional[float] = None
+        self._caller_farewell_at: Optional[float] = None   # прощание именно клиента (для hangup_call)
         self._hangup_sent = False
         # Пейсинг входящего аудио (token bucket): GPT-Live принимает не быстрее 1.2x
         # реального темпа всплесками до ~5 с. Мост копит аудио в очередь при задержке
@@ -621,6 +677,8 @@ class LiveVoiceSession:
                                   f"Прощание ({'клиент' if role == 'user' else 'ассистент'}): "
                                   f"ждём тишины, чтобы завершить звонок")
             self._farewell_at = time.time()
+            if role == "user":
+                self._caller_farewell_at = self._farewell_at
 
     def _should_auto_hangup(self, now: float) -> bool:
         """
@@ -899,6 +957,7 @@ class LiveVoiceSession:
                 if self.call_log:
                     self.call_log.add("session", "Прощание клиента (Decisions): ждём тишины, чтобы завершить звонок")
                 self._farewell_at = now
+                self._caller_farewell_at = now
         elif intent in INTENT_HINTS and intent not in self._intents_done:
             self._intents_done.add(intent)
             _log(f"decisions: intent {intent}")
@@ -944,9 +1003,8 @@ class LiveVoiceSession:
 
         Звонок 25.10.2026: клиент говорил «давайте к десяти напиши мне… на этом номере есть Telegram», а
         модель в это время вызвала hangup_call(conversation_completed) — через 12 с связь оборвалась на
-        полуслове. Завершаем только если клиент попрощался (или прощание было от ассистента и клиент
-        после него молчит), либо клиент молчит дольше HANGUP_GUARD_SILENCE_SEC, либо это просьба клиента /
-        лимит времени / экстренный случай.
+        полуслове. Правила — hangup_refusal_text (07.11.2026: прощание самого агента и reason=user_request без
+        слов клиента больше не дают положить трубку).
         """
         if not self._is_phone():
             return None
@@ -957,21 +1015,13 @@ class LiveVoiceSession:
             except json.JSONDecodeError:
                 args = {}
         reason = str((args or {}).get("reason") or "")
-        if reason in ("user_request", "time_limit_reached", "emergency"):
-            return None
-        now = time.time()
-        last_user = self._last_user_voice_at
-        silent = (now - last_user) if last_user else 999.0
-        spoke_after_farewell = (self._farewell_at is not None and last_user > self._farewell_at + 1.5)
-        if self._farewell_at is not None and not spoke_after_farewell:
-            return None
-        if silent >= HANGUP_GUARD_SILENCE_SEC:
-            return None
-        return (
-            f"Звонок НЕ завершён: клиент ещё не попрощался и говорил {silent:.0f} с назад. Не прощайся и не "
-            f"вызывай hangup_call сейчас. Коротко подтверди, о чём договорились (время, канал, действие), "
-            f"и дождись ответа клиента. Когда клиент сам попрощается — вызови hangup_call снова."
-        )
+        last_user_text = ""
+        for t in reversed(self.transcript.turns()):
+            if t["role"] == "user":
+                last_user_text = t["text"]
+                break
+        return hangup_refusal_text(reason, last_user_text, self._caller_farewell_at, self._last_user_voice_at,
+                                   self._last_audio_at)
 
     async def _on_function_call(self, event: Dict[str, Any]) -> None:
         name = event.get("name") or ""

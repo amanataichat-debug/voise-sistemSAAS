@@ -222,7 +222,9 @@ class GeminiLiveVoiceSession:
         self.on_session_end = None
         # Завершение звонка как у GPT-Live: прощание + тишина → трубка; защита hangup_call от обрыва на полуслове
         self.guard = CallEndGuard(telephony, call_log)
-        self.client.function_gate = self.guard.gate
+        # Тишина для защиты hangup_call считается с конца ДОИГРЫВАНИЯ ответа у клиента (звук Gemini приходит
+        # быстрее реального времени: «агент молчит» по приходу звука ≠ клиент уже дослушал)
+        self.client.function_gate = lambda name, args: self.guard.gate(name, args, agent_quiet_since=self._play_until)
         self.interruption_state: Dict[str, Any] = {
             "is_user_speaking": False,
             "is_assistant_speaking": False,
