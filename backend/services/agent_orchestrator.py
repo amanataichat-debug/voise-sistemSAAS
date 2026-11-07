@@ -2672,12 +2672,19 @@ class ChatOrchestrator:
         Публичный stateless-канал (HTTP-приём заявок, сервер-к-серверу).
 
         В отличие от run(): история НЕ читается и НЕ пишется — каждый запрос
-        независим, личный chat_history владельца не засоряется. Использует тот
-        же набор AGENT_CHAT_TOOLS, поэтому оркестратор сам решает, что сделать
-        с входящим текстом (создать контакт, поставить звонок, ответить и т.д.).
+        независим, личный chat_history владельца не засоряется.
+
+        С 07.11.2026 у канала ОДНА задача — завести заявку (services/public_intake.py):
+        инструменты только «завести клиента / заметка / звонок этому клиенту»,
+        текст заявки — данные, а не команды владельца, наружу уходит не текст
+        модели, а сводка сделанного («Заявка принята: клиент сохранён в CRM…»).
+        Раньше здесь был полный чат владельца: с ключом можно было выгрузить CRM,
+        а текст с формы сайта мог скомандовать агенту удалить или разослать.
 
         Поддерживаются только v3-агенты (uses_hardcoded_prompt + OpenRouter).
         """
+        from backend.services import public_intake
+
         if not getattr(agent_config, "uses_hardcoded_prompt", False):
             raise ValueError("public_channel_requires_v3_agent")
 
@@ -2686,13 +2693,21 @@ class ChatOrchestrator:
         total_prompt = 0
         total_completion = 0
 
-        system_prompt = build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
+        message = public_intake.clip_message(message)
+        known_contacts = public_intake.find_known_contacts(db, agent_config.id, message)
+        guard = public_intake.IntakeGuard(c.id for c in known_contacts)
+
+        system_prompt = (
+            build_orchestrator_prompt(agent_config, include_time_block=False, db=db)
+            + public_intake.PUBLIC_INTAKE_PROMPT
+        )
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message + build_time_block(round_to_minutes=0)},
+            {"role": "user", "content": public_intake.wrap_request(message, known_contacts)
+                                        + build_time_block(round_to_minutes=0)},
         ]
 
-        tools = await build_chat_tools(agent_config, db)
+        tools = public_intake.limit_tools(await build_chat_tools(agent_config, db))
         context = {
             "agent_config_id": str(agent_config.id),
             "user_id": str(user.id),
@@ -2701,8 +2716,7 @@ class ChatOrchestrator:
         }
 
         client = get_openrouter_client()
-        final_text = ""
-        max_iterations = 10
+        max_iterations = public_intake.MAX_ITERATIONS
         iteration = 0
 
         while iteration < max_iterations:
@@ -2720,7 +2734,6 @@ class ChatOrchestrator:
             tool_calls = msg.get("tool_calls") or []
 
             if not tool_calls:
-                final_text = msg.get("content") or ""
                 break
 
             messages.append({
@@ -2736,10 +2749,12 @@ class ChatOrchestrator:
                     tool_args = json.loads(fn.get("arguments") or "{}")
                 except json.JSONDecodeError:
                     tool_args = {}
+                if not isinstance(tool_args, dict):
+                    tool_args = {}
 
                 logger.info(f"[AGENT-PUBLIC] Executing tool: {tool_name}")
                 try:
-                    result_str = await execute_tool(tool_name, tool_args, context, db)
+                    result_str = await public_intake.run_tool(tool_name, tool_args, context, db, guard)
                 except Exception as e:
                     result_str = json.dumps({"ok": False, "error": str(e)})
 
@@ -2749,8 +2764,9 @@ class ChatOrchestrator:
                     "content": result_str,
                 })
 
-        if not final_text:
-            final_text = "Готово."
+        # Отправителю — только сводка сделанного сервером, не текст модели:
+        # в нём могли бы оказаться сведения из инструкций владельца.
+        final_text = guard.summary()
 
         # Списываем кредиты за весь цикл обработки
         if total_prompt or total_completion:
@@ -2765,7 +2781,7 @@ class ChatOrchestrator:
             except Exception as ce:
                 logger.error(f"[AGENT-PUBLIC] Charge failed: {ce}", exc_info=True)
 
-        return {"reply": final_text}
+        return {"reply": final_text, "actions": list(guard.actions)}
 
     async def run_stream(
         self,

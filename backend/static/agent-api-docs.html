@@ -164,7 +164,14 @@
           <i class="fas fa-info-circle"></i>
           <div>
             <div class="title">Область действия ключа</div>
-            <div class="desc">По ключу доступны только эндпоинты этой страницы: чтение, создание и редактирование агентов + справочник моделей. Остальное API Voksy AI по ключу недоступно.</div>
+            <div class="desc">По ключу доступны только эндпоинты этой страницы: чтение, создание и редактирование агентов + справочник моделей. Клиенты CRM, звонки, переписка, файлы, оплата и сам ключ (перевыпуск, отзыв) по ключу недоступны — только из кабинета.</div>
+          </div>
+        </div>
+        <div class="info-box warn">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <div class="title">Ключ — как пароль от кабинета</div>
+            <div class="desc">С ним можно переписать инструкции агента и адрес вебхука. Не вставляйте ключ в код сайта и не пересылайте в чатах. Если он мог утечь — перевыпустите его в настройках: старый перестанет работать сразу.</div>
           </div>
         </div>
       </div>
@@ -318,8 +325,9 @@
             <thead><tr><th>Функция</th><th>Что делает</th><th>Условие</th></tr></thead>
             <tbody>
               <tr><td><span class="param-name">hangup_call</span></td><td>Завершить звонок с прощальной фразой</td><td></td></tr>
-              <tr><td><span class="param-name">send_sms</span></td><td>SMS клиенту прямо во время звонка (адрес, ссылка, код)</td><td></td></tr>
-              <tr><td><span class="param-name">search_pinecone</span></td><td>Поиск по базе знаний во время разговора</td><td>создана база</td></tr>
+              <tr><td><span class="param-name">search_knowledge_base</span></td><td>Поиск по базе знаний агента во время разговора</td><td>в базе есть записи</td></tr>
+              <tr><td><span class="param-name">find_products</span></td><td>Подбор по каталогу: цена, наличие</td><td>в каталоге есть позиции</td></tr>
+              <tr><td><span class="param-name">find_client</span></td><td>Узнать клиента, который звонит с незнакомого номера</td><td>входящий звонок</td></tr>
               <tr><td><span class="param-name">google_calendar_create_event / find_events</span></td><td>Записать на встречу / посмотреть календарь</td><td>коннектор</td></tr>
               <tr><td><span class="param-name">gmail_send_email / fetch_emails</span></td><td>Отправить/прочитать письмо с Gmail владельца</td><td>коннектор</td></tr>
             </tbody>
@@ -391,9 +399,9 @@
       <div class="section-body">
         <p>Через API не настраивается — всё делается в кабинете, но полезно для ответов пользователям:</p>
         <ul>
-          <li><b>Доступ к агенту:</b> тестовый период 3 дня (единожды, +1500 кредитов) или тариф profi (+10 000 кредитов). Без доступа — <code>402 subscription_required</code>.</li>
+          <li><b>Доступ к агенту:</b> автономный агент (звонки, задачи, инициатива) — тариф Profi (20 000 кредитов в месяц). Тариф Старт и пробный период — агент по перепискам: отвечает и пишет клиентам в мессенджерах, но не звонит первым. Без доступа — <code>402 subscription_required</code>.</li>
           <li><b>Кредиты</b> — валюта работы оркестратора: списываются за токены каждого вызова (PreCall, PostCall, чат, входящие) по ставкам выбранной модели. Баланс ниже 100 — оркестратор не запускается (<code>402 insufficient_credits</code>). Пакеты пополнения — на странице агента.</li>
-          <li><b>Голосовая часть оплачивается отдельно:</b> минуты голосовых движков Voksy списываются с кошелька, телефония — по тарифу номера.</li>
+          <li><b>Голос</b> работает на ресурсах платформы — свои ключи провайдеров не нужны. Минуты разговора списываются с кошелька в сомах; номера — свои номера Voksy на странице «Телефония».</li>
           <li><b>Telegram-бот агента:</b> уведомления владельцу + чат с оркестратором в Telegram.</li>
           <li><b>Личный Telegram-аккаунт:</b> агент пишет клиентам от имени владельца и отвечает на входящие; встроены анти-бан лимиты.</li>
           <li><b>Коннекторы</b> (Google Calendar, Gmail): OAuth-подключение на странице агента.</li>
@@ -455,7 +463,7 @@
   -H "Content-Type: application/json" \
   -d '{
     "name": "Алёна",
-    "assistant_type": "openai",
+    "assistant_type": "eleven",
     "doc_who_am_i": "Компания «АкваЛето», Иркутск...",
     "doc_who_we_call": "Частные домовладельцы, дачники...",
     "doc_how_we_talk": "Дружелюбно, на «вы»...",
@@ -465,23 +473,28 @@
     "inbound_first_phrase": "Здравствуйте! Компания АкваЛето, меня зовут Алёна.",
     "working_hours_start": 9,
     "working_hours_end": 21,
-    "voice": "marin"
+    "eleven_voice_engine": "eleven",
+    "eleven_language": "ky"
   }'</pre></div>
         <div class="table-scroll">
           <table class="params-table">
             <thead><tr><th>Поле</th><th>Тип</th><th>Обяз.</th><th>Описание</th></tr></thead>
             <tbody>
               <tr><td><span class="param-name">name</span></td><td><span class="param-type">string</span></td><td class="req">Да</td><td>Имя агента (1–255)</td></tr>
-              <tr><td><span class="param-name">assistant_type</span></td><td><span class="param-type">string</span></td><td class="req">Да</td><td><code>gemini</code> | <code>openai</code> | <code>cartesia</code> | <code>yandex</code></td></tr>
+              <tr><td><span class="param-name">assistant_type</span></td><td><span class="param-type">string</span></td><td class="req">Да</td><td>Всегда <code>eleven</code> — другие значения дают <code>400 invalid_assistant_type</code></td></tr>
               <tr><td><span class="param-name">doc_who_am_i … doc_rules_and_goals</span></td><td><span class="param-type">string</span></td><td class="req">Да (все 5)</td><td>Документы компании для оркестратора</td></tr>
               <tr><td><span class="param-name">additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции оркестратора</td></tr>
               <tr><td><span class="param-name">voice_additional_instructions</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Доп. инструкции голосового агента</td></tr>
               <tr><td><span class="param-name">inbound_first_phrase</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Приветствие входящих (≤500)</td></tr>
-              <tr><td><span class="param-name">working_hours_start / _end</span></td><td><span class="param-type">int 0–23</span></td><td class="opt">Нет</td><td>Рабочие часы (Бишкек), по умолчанию 9–21</td></tr>
+              <tr><td><span class="param-name">working_hours_start / _end</span></td><td><span class="param-type">int 0–23 / 1–24</span></td><td class="opt">Нет</td><td>Окно звонков (Бишкек), «до» не включительно; по умолчанию 9–20</td></tr>
+              <tr><td><span class="param-name">call_window_enabled</span></td><td><span class="param-type">bool</span></td><td class="opt">Нет</td><td><code>false</code> — звонит в любое время суток</td></tr>
               <tr><td><span class="param-name">orchestrator_model</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Slug из /orchestrator-models</td></tr>
-              <tr><td><span class="param-name">voice</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Голос для gemini/openai/yandex (см. списки ниже)</td></tr>
-              <tr><td><span class="param-name">cartesia_voice_id</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>ID голоса Cartesia (только cartesia)</td></tr>
-              <tr><td><span class="param-name">voice_speed</span></td><td><span class="param-type">float 0.5–1.5</span></td><td class="opt">Нет</td><td>Скорость речи (только cartesia)</td></tr>
+              <tr><td><span class="param-name">eleven_voice_engine</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td><code>eleven</code> — Voksy Voice (по умолчанию, лучший кыргызский) или <code>gpt_live</code> — Voksy Live (речь в речь)</td></tr>
+              <tr><td><span class="param-name">eleven_live_voice</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Голос Voksy Live (см. «Голоса»), по умолчанию <code>marin</code></td></tr>
+              <tr><td><span class="param-name">eleven_language</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Язык Voksy Voice: <code>ky</code> (по умолчанию), <code>ru</code>, <code>kk</code>, <code>uz</code>, <code>en</code>, <code>tr</code></td></tr>
+              <tr><td><span class="param-name">eleven_voice_id / eleven_voice_name</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td>Голос из «Библиотеки голосов Voksy» (выбирается в кабинете)</td></tr>
+              <tr><td><span class="param-name">eleven_tts_model</span></td><td><span class="param-type">string</span></td><td class="opt">Нет</td><td><code>eleven_v3_conversational</code> — Voksy Voice Fast (по умолчанию) или <code>eleven_v3</code> — Voksy Voice HD</td></tr>
+              <tr><td><span class="param-name">eleven_stability</span></td><td><span class="param-type">float</span></td><td class="opt">Нет</td><td>Подача: <code>0</code> — эмоциональнее, <code>0.5</code> — естественно (по умолчанию), <code>1</code> — ровно</td></tr>
             </tbody>
           </table>
         </div>
@@ -489,7 +502,7 @@
           <i class="fas fa-info-circle"></i>
           <div>
             <div class="title">Предусловия (выполняются пользователем в кабинете)</div>
-            <div class="desc">Верифицированная телефония Voximplant; API-ключ выбранного голосового провайдера в настройках; активный тариф или доступный триал; меньше 3 агентов. Иначе — ошибки 400/402 (см. ниже).</div>
+            <div class="desc">Доступ к агенту (тариф или пробный период) и меньше 3 агентов. Номер телефона для создания не нужен — его привязывают в кабинете. Иначе — ошибки 400/402 (см. ниже).</div>
           </div>
         </div>
       </div>
@@ -508,8 +521,8 @@
             <tbody>
               <tr><td><span class="param-name">is_active</span></td><td><span class="param-type">bool</span></td><td>Включить/выключить агента</td></tr>
               <tr><td><span class="param-name">default_caller_id</span></td><td><span class="param-type">string</span></td><td>Номер, с которого звонит агент</td></tr>
-              <tr><td><span class="param-name">webhook_url</span></td><td><span class="param-type">string ≤500</span></td><td>URL вебхука для событий во внешнюю систему</td></tr>
-              <tr><td><span class="param-name">assistant_type</span></td><td><span class="param-type">string</span></td><td>Смена голосового провайдера (нужен ключ нового провайдера)</td></tr>
+              <tr><td><span class="param-name">webhook_url</span></td><td><span class="param-type">string ≤500</span></td><td>URL вебхука для событий во внешнюю систему (n8n, Make, Zapier, ваш сервер). Только <code>https://</code> или <code>http://</code> и адрес в интернете: внутренние адреса (<code>localhost</code>, <code>10.x</code>, <code>192.168.x</code>, <code>169.254.x</code> …) отклоняются с <code>400</code></td></tr>
+              <tr><td><span class="param-name">eleven_*</span></td><td><span class="param-type"></span></td><td>Смена движка и голоса — те же поля, что в create</td></tr>
             </tbody>
           </table>
         </div>
@@ -527,16 +540,36 @@
     <!-- Голоса -->
     <div class="content-section">
       <div class="section-header">
-        <h2 class="section-title"><i class="fas fa-microphone"></i> Голоса по провайдерам</h2>
+        <h2 class="section-title"><i class="fas fa-microphone"></i> Голоса</h2>
       </div>
       <div class="section-body">
         <ul>
-          <li><b>openai:</b> <code>alloy</code>, <code>echo</code>, <code>marin</code>, <code>cedar</code>, <code>shimmer</code>, <code>ash</code>, <code>ballad</code>, <code>coral</code>, <code>sage</code>, <code>verse</code></li>
-          <li><b>gemini:</b> <code>Zephyr</code>, <code>Puck</code>, <code>Charon</code>, <code>Kore</code>, <code>Fenrir</code>, <code>Leda</code>, <code>Orus</code>, <code>Aoede</code>, <code>Callirrhoe</code>, <code>Autonoe</code>, <code>Enceladus</code>, <code>Iapetus</code>, <code>Umbriel</code>, <code>Algieba</code>, <code>Despina</code>, <code>Erinome</code>, <code>Algenib</code>, <code>Rasalgethi</code>, <code>Laomedeia</code>, <code>Achernar</code>, <code>Alnilam</code>, <code>Schedar</code>, <code>Gacrux</code>, <code>Pulcherrima</code>, <code>Achird</code>, <code>Zubenelgenubi</code>, <code>Vindemiatrix</code>, <code>Sadachbia</code>, <code>Sadaltager</code>, <code>Sulafat</code></li>
-          <li><b>yandex:</b> <code>marina</code>, <code>dasha</code>, <code>alexander</code>, <code>julia</code>, <code>lera</code>, <code>masha</code>, <code>anton</code>, <code>kirill</code>, <code>filipp</code>, <code>ermil</code>, <code>jane</code>, <code>omazh</code>, <code>zahar</code>, <code>madi_ru</code>, <code>saule_ru</code></li>
-          <li><b>cartesia:</b> голос задаётся через <code>cartesia_voice_id</code> + опционально <code>voice_speed</code></li>
+          <li><b>Voksy Live</b> (<code>eleven_voice_engine: "gpt_live"</code>), поле <code>eleven_live_voice</code>: <code>marin</code>, <code>cedar</code>, <code>alloy</code>, <code>ash</code>, <code>ballad</code>, <code>coral</code>, <code>echo</code>, <code>sage</code>, <code>shimmer</code>, <code>verse</code>, <code>quartz</code>, <code>ripple</code>, <code>vesper</code>, <code>willow</code>, <code>stone</code>, <code>gleam</code>, <code>meridian</code>, <code>bossa</code>, <code>tempo</code>, <code>beacon</code>, <code>delta</code>, <code>cinder</code>. По умолчанию <code>marin</code>.</li>
+          <li><b>Voksy Voice</b> (<code>eleven_voice_engine: "eleven"</code>): голос — <code>eleven_voice_id</code> из «Библиотеки голосов Voksy». Список голосов по ключу не отдаётся — голос выбирают в кабинете; без него ставится голос по умолчанию.</li>
         </ul>
-        <p>Дефолты: openai — <code>alloy</code>, gemini — <code>Kore</code>, yandex — <code>marina</code>. Невалидное имя голоса в update → <code>400 invalid_voice</code>.</p>
+      </div>
+    </div>
+
+    <!-- Приём заявок -->
+    <div class="content-section endpoint-anchor" id="public-intake">
+      <div class="section-header">
+        <h2 class="section-title"><span class="method-tag post">POST</span> /api/agent/public/{agent_id}/message — приём заявок</h2>
+      </div>
+      <div class="section-body">
+        <p>Это <b>другой</b> ключ — не <code>vfy_…</code>, а секретный ключ конкретного агента (страница агента → Настройки → «Публичный API»). Им пользуется ваш сервер, форма сайта через n8n/Make или ваша CRM, чтобы отдать агенту новую заявку.</p>
+        <div class="code-block"><pre>curl -X POST "https://voksyai.online/api/agent/public/&lt;agent_id&gt;/message" \
+  -H "X-Api-Key: &lt;ключ агента&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Айбек","phone":"+996700123456","comment":"хочу демо"}'</pre></div>
+        <p>Агент заводит клиента (номер уже есть в CRM — работает с этой карточкой, дубль не создаёт), записывает суть заявки заметкой и, если это следует из его инструкций или заявки, ставит звонок <b>этому</b> клиенту. Больше ничего в этом канале нет: список клиентов, переписка, удаление и рассылки недоступны, а текст заявки агент воспринимает как данные, а не как команду.</p>
+        <p>Ответ — подтверждение от сервера: <code>{"reply": "Заявка принята: клиент сохранён в CRM, …", "actions": ["contact_saved", "note_added"], "timestamp": "…"}</code>. Возможные <code>actions</code>: <code>contact_saved</code>, <code>note_added</code>, <code>call_scheduled</code>.</p>
+        <div class="info-box warn">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <div class="title">Ограничения</div>
+            <div class="desc">Не больше 30 заявок в минуту на агента (<code>429 too_many_requests</code>), текст заявки — до 8000 символов. Ключ агента держите на своём сервере, в код страницы сайта его не вставляйте.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -551,10 +584,9 @@
             <thead><tr><th>Код</th><th>detail</th><th>Причина</th></tr></thead>
             <tbody>
               <tr><td>401</td><td><code>invalid_api_key</code></td><td>Неверный или отозванный API-ключ</td></tr>
-              <tr><td>400</td><td><code>telephony_not_verified</code></td><td>Устарело: с v3.2 при создании агента не возвращается — телефония для создания не требуется</td></tr>
-              <tr><td>400</td><td><code>api_key_required_gemini/openai/cartesia/yandex</code></td><td>Устарело: с v3.2 при создании агента не возвращается — ключ нужен только для звонков</td></tr>
               <tr><td>400</td><td><code>agent_limit_reached</code></td><td>Уже 3 агента</td></tr>
               <tr><td>400</td><td><code>invalid_assistant_type / invalid_orchestrator_model / invalid_voice</code></td><td>Невалидное значение поля</td></tr>
+              <tr><td>400</td><td>«Вебхук не может вести на внутренний адрес…»</td><td><code>webhook_url</code> ведёт во внутреннюю сеть или записан с ошибкой</td></tr>
               <tr><td>402</td><td><code>subscription_required</code></td><td>Триал использован, нужен тариф</td></tr>
               <tr><td>404</td><td><code>not_found</code></td><td>Агент не найден (чужой или несуществующий agent_id)</td></tr>
             </tbody>

@@ -619,7 +619,7 @@ function renderPublicAccess(){
     </div>
     <div class="form-group">
       <label class="form-label">Как обращаться</label>
-      <div class="form-hint" style="margin-bottom:6px">POST-запрос на ссылку выше. Ключ — в заголовке <code>X-Api-Key</code> (или <code>Authorization: Bearer</code>). Тело — любой JSON или текст: агент сам разберёт, что в нём, и решит, что делать. Пример:</div>
+      <div class="form-hint" style="margin-bottom:6px">POST-запрос на ссылку выше. Ключ — в заголовке <code>X-Api-Key</code> (или <code>Authorization: Bearer</code>). Тело — любой JSON или текст: агент разберёт заявку, заведёт клиента и запишет её в карточку. Ответ — подтверждение <code>{"reply": "Заявка принята: …", "actions": [...]}</code>. Не больше 30 заявок в минуту. Пример:</div>
       <pre class="pub-code">${esc(curl)}</pre>
     </div>`;
 }

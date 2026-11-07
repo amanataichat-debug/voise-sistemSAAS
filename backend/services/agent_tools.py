@@ -4997,13 +4997,22 @@ async def fn_send_webhook(args: dict, agent_config, db: Session) -> dict:
     URL берётся ТОЛЬКО из agent_config.webhook_url — модель его не передаёт.
     Тело запроса: {event, data, agent_id, agent_name}. Best-effort: ошибки сети
     не роняют оркестратор, а возвращаются как {"ok": false, ...}.
+    Адрес должен вести в интернет: внутренняя сеть сервера закрыта (url_safety).
     """
     import asyncio
-    import aiohttp
 
-    url = (getattr(agent_config, "webhook_url", None) or "").strip() if agent_config else ""
+    from backend.utils.url_safety import (
+        BlockedAddressError, normalize_webhook_url, post_json_to_public_url, webhook_url_problem,
+    )
+
+    url = normalize_webhook_url(getattr(agent_config, "webhook_url", None)) if agent_config else ""
     if not url:
         return {"ok": False, "error": "webhook_url_not_configured"}
+    # SSRF (07.11.2026): вебхук не может вести во внутреннюю сеть сервера.
+    problem = webhook_url_problem(url)
+    if problem:
+        logger.warning(f"[AGENT-TOOLS] Webhook blocked for agent {agent_config.id}: {problem}")
+        return {"ok": False, "error": "webhook_url_blocked", "detail": problem}
 
     event = (args.get("event") or "").strip() or "default_event"
     payload = args.get("payload")
@@ -5018,17 +5027,17 @@ async def fn_send_webhook(args: dict, agent_config, db: Session) -> dict:
     }
 
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=data) as response:
-                response_text = await response.text()
-                logger.info(f"[AGENT-TOOLS] Webhook sent: event={event} status={response.status} (agent {agent_config.id})")
-                return {
-                    "ok": 200 <= response.status < 300,
-                    "status": response.status,
-                    "event": event,
-                    "response": response_text[:200],
-                }
+        status, response_text = await post_json_to_public_url(url, data, timeout_seconds=10)
+        logger.info(f"[AGENT-TOOLS] Webhook sent: event={event} status={status} (agent {agent_config.id})")
+        return {
+            "ok": 200 <= status < 300,
+            "status": status,
+            "event": event,
+            "response": response_text[:200],
+        }
+    except BlockedAddressError as e:
+        logger.warning(f"[AGENT-TOOLS] Webhook blocked for agent {agent_config.id}: {e}")
+        return {"ok": False, "error": "webhook_url_blocked", "detail": str(e)}
     except asyncio.TimeoutError:
         logger.error(f"[AGENT-TOOLS] Webhook timeout: {url}")
         return {"ok": False, "error": "webhook_timeout"}

@@ -3,12 +3,13 @@ Voksy AI Agent API v2.0 — CRUD, chat (with tools), contacts, calls, stats.
 """
 
 import asyncio
+import time
 import re
 import json
 import uuid
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Dict, Optional, List
 
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, status,
@@ -1124,6 +1125,20 @@ async def update_agent(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
+
+    # Вебхук (07.11.2026, SSRF): адрес должен вести в интернет, не во внутреннюю
+    # сеть сервера. Проверяем ДО любых изменений и только НОВЫЙ адрес — окно
+    # настроек шлёт поле при каждом сохранении, и старое значение не должно ломать
+    # сохранение остального (такой адрес всё равно не пропустит проверка при отправке).
+    if 'webhook_url' in update_data:
+        from backend.utils.url_safety import normalize_webhook_url, webhook_url_problem
+        new_url = normalize_webhook_url(update_data['webhook_url'])
+        if new_url and new_url != (agent.webhook_url or "").strip():
+            problem = webhook_url_problem(new_url)
+            if problem:
+                raise HTTPException(status_code=400, detail=problem)
+        if new_url:
+            update_data['webhook_url'] = new_url
 
     # ── Смена типа голосового ассистента ──
     new_type = update_data.get("assistant_type")
@@ -2661,6 +2676,24 @@ def _public_access_dict(agent: AgentConfig) -> dict:
     }
 
 
+PUBLIC_INTAKE_PER_MINUTE = 30
+_public_intake_hits: Dict[str, List[float]] = {}
+
+
+def _public_intake_rate_limited(agent_key: str, now: Optional[float] = None) -> bool:
+    """True — лимит заявок агента за последнюю минуту исчерпан (счёт в памяти воркера)."""
+    now = time.monotonic() if now is None else now
+    hits = [t for t in _public_intake_hits.get(agent_key, ()) if now - t < 60]
+    if len(hits) >= PUBLIC_INTAKE_PER_MINUTE:
+        _public_intake_hits[agent_key] = hits
+        return True
+    hits.append(now)
+    _public_intake_hits[agent_key] = hits
+    if len(_public_intake_hits) > 5000:  # не даём словарю расти бесконечно
+        _public_intake_hits.clear()
+    return False
+
+
 def _extract_api_key(request: Request) -> Optional[str]:
     """Достаём ключ из X-Api-Key, Authorization: Bearer <key> или ?key=."""
     key = request.headers.get("X-Api-Key") or request.headers.get("x-api-key")
@@ -3369,6 +3402,11 @@ async def agent_public_message(
     if not provided or not secrets.compare_digest(provided, agent.public_api_key):
         raise HTTPException(status_code=401, detail="invalid_api_key")
 
+    # 3a. Не больше PUBLIC_INTAKE_PER_MINUTE заявок в минуту на агента (на воркер):
+    # утёкший ключ не должен сжечь кредиты владельца пачкой запросов.
+    if _public_intake_rate_limited(str(agent.id)):
+        raise HTTPException(status_code=429, detail="too_many_requests")
+
     # 4. Владелец агента (он платит за обработку)
     owner = db.query(User).filter(User.id == agent.user_id).first()
     if not owner:
@@ -3411,7 +3449,11 @@ async def agent_public_message(
         logger.error(f"[AGENT-PUBLIC] processing error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="processing_error")
 
-    return {"reply": result["reply"], "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "reply": result["reply"],
+        "actions": result.get("actions", []),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 
 # ============================================================================
