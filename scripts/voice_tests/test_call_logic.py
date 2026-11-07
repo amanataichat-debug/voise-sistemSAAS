@@ -98,8 +98,9 @@ async def decisions():
     check("decisions: «доволен» подсказки не даёт", len(s.client.thinking) == 0)
     s, out, _ = session()
     await s._on_live_event(ev("call_back_later", "neutral"))
-    check("decisions: «занят» не велит прощаться, а подтверждать договорённость",
-          "попрощайся" not in s.client.thinking[0].lower().replace("сам попрощается", "") and "подтверди договорённость" in s.client.thinking[0])
+    check("decisions: «занят» не велит прощаться, а коротко принять договорённость без пересказа (07.11.2026)",
+          "попрощайся" not in s.client.thinking[0].lower().replace("сам попрощается", "")
+          and "договорились" in s.client.thinking[0] and "без пересказа" in s.client.thinking[0])
     s, out, _ = session()
     await s._on_live_event(ev("goodbye", "positive"))
     check("decisions: прощание → автозавершение ждёт тишины", s._farewell_at is not None)
@@ -149,7 +150,7 @@ async def diagnostics():
     s.repeats = {"понял": 10}; s.errors = 1; s.close_seconds = 15.0
     s._log_diagnostics(200)
     texts = " | ".join(e["text"] for e in cl.events)
-    for needle, label in [("медленнее 3 с", "медленные ответы"), ("монолог", "монолог"), ("вызвана 3 раза", "повторные функции"),
+    for needle, label in [("медленнее 2,5 с", "медленные ответы"), ("монолог", "монолог"), ("вызвана 3 раза", "повторные функции"),
                           ("«понял» повторено 10", "слово-паразит"), ("ошибок GPT-Live", "ошибки"), ("закрытие сессии", "закрытие")]:
         check(f"диагностика: {label}", needle in texts)
     cl2 = CallLogRecorder(channel="phone"); cl2.latencies_ms.extend([900, 1200])
@@ -175,6 +176,28 @@ async def voiced():
     s.stop_event.set(); out.clear()
     await s._on_live_event({"type": "session.output_audio.delta", "delta": voice})
     check("после остановки звонка звук игнорируется", out == [])
+
+    # 07.11.2026 (звонок 5bf12c2d): журнал считал задержку от прихода транскрипта (≈0,8 с), а клиент ждал 2–3 с.
+    # Теперь — от последнего громкого куска входящего звука, пока ассистент молчит.
+    s, out, cl = session(); s.client.io_rate = 24000
+    for _ in range(5):
+        s._track_input_level(silence)
+    s._track_input_level(voice)
+    check("задержка по звуку: голос клиента над шумом линии отмечен", s._last_user_audio_at > 0)
+    s._last_user_audio_at = time.time() - 2.0
+    s._user_spoke_at = time.time() - 0.6
+    await s._on_live_event({"type": "session.output_audio.delta", "delta": voice})
+    snd = cl.latencies_ms[-1] if cl.latencies_ms else 0
+    check("задержка по звуку: в журнал идёт пауза от конца речи (~2 с), а не от транскрипта (~0,6 с)",
+          1900 <= snd <= 2600 and any("по звуку линии" in e["text"] for e in cl.events), str(cl.latencies_ms))
+    before = s._last_user_audio_at
+    s._track_input_level(voice)
+    check("задержка по звуку: пока ассистент говорит, вход (эхо) не считается речью клиента",
+          s._last_user_audio_at == before)
+    s.assistant_speaking = False; s._user_spoke_at = time.time() - 0.5
+    s._reply_started_at = time.time()
+    check("задержка по звуку: звук до прошлого ответа не годится — запасной замер по транскрипту",
+          s._sound_gap_ms(time.time() + 0.1) is None)
 
 
 async def farewell():
@@ -268,6 +291,9 @@ def greeting_personal():
     check("приветствие: фраза без приветствия в начале — как есть", p("Компания Voksy, слушаю вас.", "Айбек", ev) == "Компания Voksy, слушаю вас.")
     check("имя: «Клиент 0700…» и компания — не имя, «Айбек Осмонов» → «Айбек»",
           sgs.first_name("Клиент 0700123456") == "" and sgs.first_name("ООО Ромашка") == "" and sgs.first_name("Айбек Осмонов") == "Айбек")
+    check("имя: ник из мессенджера («VeTeR», «AIBEK») — не имя, «Анна-Мария» и «Aibek» — имя (07.11.2026)",
+          sgs.first_name("VeTeR") == "" and sgs.first_name("AIBEK") == "" and sgs.first_name("Анна-Мария") == "Анна-Мария"
+          and sgs.first_name("Aibek") == "Aibek")
     call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
     check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
     hint = lc.VOICE_DELEGATION_HINT
@@ -292,8 +318,11 @@ def prompt_budget():
         p, st = avc.build_call_system_prompt(None, a, object(), call_context="К" * ctx_n, max_chars=24000)
         check(f"бюджет: карточка {base_n} + контекст {ctx_n} при лимите 24000 → знания в промпте и всё влезло",
               "5000 сом" in p and len(p) <= 24000 and not st.get("dropped"), f"len={len(p)} {st}")
-    total = 24000 + len(lc.VOICE_DELEGATION_HINT) + len(lc.VOICE_TELEPHONY_HINT)
-    check("бюджет: худший случай укладывается в 16 384 токена OpenAI (≈2,6 симв./токен)", total / 2.6 < 16384 * 0.9, f"{total} симв. ≈ {int(total / 2.6)} токенов")
+    # 07.11.2026: считаем и головы инструкций (произношение + «Живой разговор»), они тоже идут голосовому слою
+    total = (24000 + len(lc.VOICE_PRONUNCIATION_HEAD) + len(lc.VOICE_CONVERSATION_HEAD)
+             + len(lc.VOICE_DELEGATION_HINT) + len(lc.VOICE_TELEPHONY_HINT))
+    check("бюджет: худший случай укладывается в 16 384 токена OpenAI (≈2,6 симв./токен, запас 5%)",
+          total / 2.6 < 16384 * 0.95, f"{total} симв. ≈ {int(total / 2.6)} токенов")
 
 
 def session_config():

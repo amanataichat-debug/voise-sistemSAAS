@@ -78,7 +78,12 @@ def first_name(name: Optional[str]) -> str:
     if not n or any(bad in n.lower() + " " for bad in _NOT_A_NAME):
         return ""
     word = n.split(" ")[0].strip(",.")
-    return word if _NAME_RE.match(word) else ""
+    if not _NAME_RE.match(word):
+        return ""
+    # Ник из мессенджера («VeTeR», «aIBEK», «ANVAR») — не имя: звонок 07.11.2026 начался с «Добрый день, VeTeR»
+    if any(any(ch.isupper() for ch in part[1:]) for part in word.split("-")):
+        return ""
+    return word
 
 
 def personalize_greeting(greeting: str, name: str = "", now: Optional[datetime] = None) -> str:

@@ -14,7 +14,14 @@
 заново от последнего сообщения агента. Тексты касаний пишет сам агент (оркестратор)
 под клиента и историю; система только следит, чтобы касание не забылось.
 
-Состояние — в memory карточки: memory["nurture"] = {started_at, touches, last_touch_at}.
+Оживление (07.11.2026, владелец: «в WhatsApp пишут и пропадают»): дожим был только после КП, а клиент, который
+написал сам, получил ответ и замолчал, не получал больше НИЧЕГО — терялась большая часть лидов из рекламы.
+Теперь в открытых этапах (кроме «Думает») тот, кто писал последние 3 дня и молчит после нашего ответа, получает
+два касания: через 3 часа и на следующий день; дальше ждём его самого (этап не меняем). Клиент снова написал —
+счёт касаний начинается заново от его нового сообщения. Последним писал владелец сам — не вмешиваемся.
+
+Состояние — в memory карточки: memory["nurture"] = {started_at, touches, last_touch_at},
+memory["reengage"] = {anchor (последнее сообщение клиента), touches, last_touch_at}.
 Бронь касания между воркерами gunicorn — атомарный UPDATE (как у прогрева), иначе
 4 воркера отправили бы 4 одинаковых сообщения.
 """
@@ -53,6 +60,31 @@ TOUCH_INSTRUCTIONS = {
         "Касание 3 из 3, последнее. Клиент так и не ответил. Одно спокойное сообщение: "
         "не будешь отвлекать, если станет актуально, пусть напишет сюда, подключим за "
         "1–2 дня. Без вопросов и без давления."
+    ),
+}
+
+
+# Оживление замолчавших в переписке (не «Думает»): касание 1 через 3 ч после нашего ответа, касание 2 — назавтра
+REENGAGE_GAPS = {1: timedelta(hours=3), 2: timedelta(hours=22)}
+REENGAGE_MAX = 2
+REENGAGE_WINDOW = timedelta(days=3)   # клиент писал не раньше — старых лидов первыми не трогаем
+INSTAGRAM_WINDOW = timedelta(hours=23)  # Meta: отвечать можно 24 ч после сообщения клиента
+
+REENGAGE_INSTRUCTIONS = {
+    1: (
+        "Касание 1 из 2. Клиент сам написал, ты ответил, а он молчит уже несколько часов. Одно короткое "
+        "сообщение (1–2 строки), на которое легко ответить. Не повторяй свой прошлый ответ и не задавай снова "
+        "тот же вопрос. Дай одну новую конкретную пользу или живой пример под его вопрос, нишу или тему "
+        "объявления (что известно из переписки) и лёгкий вопрос-выбор или предложение: прислать пример, "
+        "позвонить на 2 минуты и показать. Без «вы тут?», «напоминаю о себе», «ну что?». Если по переписке "
+        "видно, что клиент отказался, попрощался, сказал, что напишет сам, или вопрос уже решён, — НЕ пиши, "
+        "только отметь это в памяти."
+    ),
+    2: (
+        "Касание 2 из 2, последнее. Клиент молчит со вчера. Одно спокойное дружелюбное сообщение: одной строкой, "
+        "чем можешь помочь именно ему, и очень простой следующий шаг, на который можно ответить одним словом "
+        "(например: «напишите «да» — пришлю пример» или «удобно, если позвоню на 2 минуты?»). Без давления и "
+        "упрёков, не повторяй прошлые сообщения. После этого сам больше не пиши, пока он не ответит."
     ),
 }
 
@@ -172,6 +204,30 @@ def _last_message_at(db: Session, contact_id, direction: str) -> Optional[dateti
     return best
 
 
+def _latest_message(db: Session, contact_id) -> Optional[dict]:
+    """Последнее сообщение переписки клиента по трём каналам: {at, direction, sent_by, channel}."""
+    from backend.models.agent_instagram import AgentInstagramMessage
+    from backend.models.agent_telegram_account import AgentTelegramMessage
+    from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    best = None
+    for channel, model in (("whatsapp", AgentWhatsAppMessage), ("telegram", AgentTelegramMessage),
+                           ("instagram", AgentInstagramMessage)):
+        try:
+            row = db.query(model.created_at, model.direction, model.sent_by).filter(
+                model.agent_contact_id == contact_id,
+            ).order_by(model.created_at.desc()).first()
+        except Exception:
+            row = None
+        if row is None or row[0] is None:
+            continue
+        at = row[0]
+        if at.tzinfo is not None:
+            at = at.astimezone(timezone.utc).replace(tzinfo=None)
+        if best is None or at > best["at"]:
+            best = {"at": at, "direction": row[1] or "inbound", "sent_by": row[2], "channel": channel}
+    return best
+
+
 INIT_LOOKBACK = timedelta(days=14)
 
 
@@ -237,6 +293,67 @@ def next_action(db: Session, contact, now: Optional[datetime] = None) -> Optiona
     return ("touch", touches + 1)
 
 
+def _reengage_state(contact) -> dict:
+    mem = contact.memory if isinstance(contact.memory, dict) else {}
+    st = mem.get("reengage")
+    return st if isinstance(st, dict) else {}
+
+
+def reengage_action(db: Session, contact, now: Optional[datetime] = None) -> Optional[tuple]:
+    """
+    Оживление замолчавшего в переписке: ("touch", n, anchor_iso, channel) — пора касание n; None — ждём.
+    Этап проверяет вызывающий (открытый, не «Думает»); здесь — переписка, пауза, задачи, окно Instagram.
+    """
+    now = now or _now()
+    mem = contact.memory if isinstance(contact.memory, dict) else {}
+    if isinstance(mem.get("nurture"), dict):
+        return None  # идёт дожим после КП — у него свои касания
+    from backend.services import agent_pause
+    if agent_pause.is_paused(contact):
+        return None
+    last = _latest_message(db, contact.id)
+    if last is None or last["direction"] != "outbound":
+        return None  # переписки нет или клиент написал последним — его разбирает обычный поток
+    if (last.get("sent_by") or "") == "owner":
+        return None  # владелец сам ведёт диалог
+    last_in = _last_message_at(db, contact.id, "inbound")
+    if last_in is None or now - last_in > REENGAGE_WINDOW:
+        return None  # клиент сам не писал (или давно) — первыми не пишем
+    if last["channel"] == "instagram" and now - last_in > INSTAGRAM_WINDOW:
+        return None  # Instagram не даст написать позже 24 ч после клиента
+    if _has_future_task(db, contact.id):
+        return None
+    anchor = _iso(last_in)
+    st = _reengage_state(contact)
+    touches = int(st.get("touches") or 0) if st.get("anchor") == anchor else 0
+    if touches >= REENGAGE_MAX:
+        return None
+    n = touches + 1
+    if now - last["at"] < REENGAGE_GAPS[n]:
+        return None
+    return ("touch", n, anchor, last["channel"])
+
+
+def _claim_reengage(db: Session, contact, n: int, anchor: str) -> bool:
+    """Атомарно занять касание оживления n (между воркерами gunicorn)."""
+    st = _reengage_state(contact)
+    prev_key = f"{st.get('anchor') or ''}:{int(st.get('touches') or 0)}"
+    try:
+        row = db.execute(_sql(
+            "UPDATE agent_contacts SET memory = COALESCE(memory, CAST('{}' AS jsonb)) || jsonb_build_object('reengage', "
+            "jsonb_build_object('anchor', CAST(:anchor AS text), 'touches', CAST(:n AS int), "
+            "'last_touch_at', CAST(:ts AS text))) "
+            "WHERE id = :cid AND COALESCE(memory->'reengage'->>'anchor', '') || ':' || "
+            "COALESCE(memory->'reengage'->>'touches', '0') = :prev RETURNING id"
+        ), {"cid": str(contact.id), "anchor": anchor, "n": n, "ts": _iso(_now()), "prev": prev_key}).first()
+        db.commit()
+        return row is not None
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[FUNNEL] claim reengage {n} for {contact.id} failed: {e}")
+        return False
+
+
 def _claim_touch(db: Session, contact_id, n: int) -> bool:
     """Атомарно: touches = n-1 → n. True — касание делает этот воркер."""
     try:
@@ -274,8 +391,9 @@ def close_no_reply(db: Session, agent, contact) -> bool:
     return row is not None
 
 
-async def run_touch(db: Session, agent, contact, n: int) -> None:
-    """Касание n: один прогон оркестратора, текст пишет агент под клиента."""
+async def run_touch(db: Session, agent, contact, n: int, kind: str = "proposal",
+                    channel: Optional[str] = None) -> None:
+    """Касание n: один прогон оркестратора, текст пишет агент под клиента. kind: proposal | reengage."""
     from backend.models.agent_call import AgentCall
     from backend.models.user import User
     from backend.services.agent_orchestrator import PostCallOrchestrator
@@ -284,7 +402,7 @@ async def run_touch(db: Session, agent, contact, n: int) -> None:
     user = db.query(User).filter(User.id == contact.user_id).first()
     if user is None:
         return
-    channel = _detect_recent_channel(db, str(agent.id), str(contact.id)) or "whatsapp"
+    channel = channel or _detect_recent_channel(db, str(agent.id), str(contact.id)) or "whatsapp"
     call = AgentCall(
         agent_contact_id=contact.id,
         agent_config_id=agent.id,
@@ -292,13 +410,22 @@ async def run_touch(db: Session, agent, contact, n: int) -> None:
         status="calling",
         direction="outbound",
         started_at=_now(),
-        postcall_log={"call_direction": "followup_outbound", "channel": channel},
+        postcall_log={"call_direction": "followup_outbound", "channel": channel, "followup_kind": kind},
     )
     db.add(call)
     db.commit()
-    instruction = f"[Канал переписки: {channel}] " + TOUCH_INSTRUCTIONS[n]
-    contact.next_step_text = (f"Касание {n + 1} дожима" if n < MAX_TOUCHES else "Закрыть: нет ответа")
-    contact.next_step_at = _now() + TOUCH_GAP
+    if kind == "reengage":
+        instruction = f"[Канал переписки: {channel}] " + REENGAGE_INSTRUCTIONS[n]
+        if n < REENGAGE_MAX:
+            contact.next_step_text = f"Касание {n + 1}: оживить переписку"
+            contact.next_step_at = _now() + REENGAGE_GAPS[n + 1]
+        else:
+            contact.next_step_text = "Ждём ответа клиента"
+            contact.next_step_at = None
+    else:
+        instruction = f"[Канал переписки: {channel}] " + TOUCH_INSTRUCTIONS[n]
+        contact.next_step_text = (f"Касание {n + 1} дожима" if n < MAX_TOUCHES else "Закрыть: нет ответа")
+        contact.next_step_at = _now() + TOUCH_GAP
     db.commit()
     await PostCallOrchestrator()._analyze_v3_openrouter(
         agent_call=call, agent_contact=contact, agent_config=agent, user=user, task=None,
@@ -311,6 +438,45 @@ def _in_work_hours(now_utc: datetime) -> bool:
     from backend.core.timezone_utils import BISHKEK
     h = now_utc.replace(tzinfo=timezone.utc).astimezone(BISHKEK).hour
     return WORK_HOURS[0] <= h < WORK_HOURS[1]
+
+
+def reengage_stage_keys(agent) -> set:
+    """Открытые этапы, где оживляем замолчавших: все «в работе», кроме «Думает» (там свой дожим)."""
+    from backend.core.pipeline_stages import get_agent_stages
+    thinking = thinking_stage_key(agent)
+    return {s["key"] for s in get_agent_stages(agent) if s.get("kind", "open") == "open" and s["key"] != thinking}
+
+
+REENGAGE_PER_AGENT_TICK = 20   # не больше касаний за один проход (5 мин) на агента — без пачек сообщений
+
+
+async def run_reengage(db: Session, agent) -> int:
+    """Оживление замолчавших в переписке для одного агента. Возвращает число касаний."""
+    from backend.models.agent_contact import AgentContact
+    keys = reengage_stage_keys(agent)
+    if not keys:
+        return 0
+    since = _now() - REENGAGE_WINDOW - timedelta(days=1)
+    contacts = db.query(AgentContact).filter(
+        AgentContact.agent_config_id == agent.id,
+        AgentContact.status.in_(list(keys)),
+        AgentContact.updated_at >= since,
+    ).order_by(AgentContact.updated_at.desc()).limit(300).all()
+    done = 0
+    for contact in contacts:
+        if done >= REENGAGE_PER_AGENT_TICK:
+            break
+        act = reengage_action(db, contact)
+        if act is None:
+            continue
+        _, n, anchor, channel = act
+        if not _claim_reengage(db, contact, n, anchor):
+            continue
+        db.refresh(contact)
+        logger.info(f"[FUNNEL] contact {contact.id}: оживление {n} из {REENGAGE_MAX} ({channel})")
+        await run_touch(db, agent, contact, n, kind="reengage", channel=channel)
+        done += 1
+    return done
 
 
 async def run_nurture(db: Session) -> int:
@@ -326,6 +492,14 @@ async def run_nurture(db: Session) -> int:
         try:
             if agent_mode.mode_for_agent(db, agent) not in (agent_mode.FULL, agent_mode.REACTIVE):
                 continue
+            try:
+                done += await run_reengage(db, agent)
+            except Exception as e:
+                logger.warning(f"[FUNNEL] reengage agent {agent.id}: {e}", exc_info=True)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             key = thinking_stage_key(agent)
             if not key:
                 continue

@@ -89,6 +89,65 @@ state["task"] = False
 check("нет дожима в памяти → ничего", sf.next_action(None, types.SimpleNamespace(id="c", memory={}), now) is None)
 check("инструкции на 3 касания", set(sf.TOUCH_INSTRUCTIONS) == {1, 2, 3} and "расчёт" in sf.TOUCH_INSTRUCTIONS[2])
 
+# --- оживление: написал, получил ответ и замолчал (07.11.2026, «в WhatsApp пишут и пропадают») ---
+rs = {"last": None, "in": None, "task": False}
+sf._latest_message = lambda db, cid: rs["last"]
+sf._last_message_at = lambda db, cid, direction: rs["in"] if direction == "inbound" else None
+sf._has_future_task = lambda db, cid: rs["task"]
+
+
+def lead(mem=None):
+    return types.SimpleNamespace(id="L", memory=mem or {})
+
+
+def out_msg(hours_ago, channel="whatsapp", sent_by="agent"):
+    return {"at": now - timedelta(hours=hours_ago), "direction": "outbound", "sent_by": sent_by, "channel": channel}
+
+
+rs.update(last=out_msg(4), **{"in": now - timedelta(hours=5)})
+act = sf.reengage_action(None, lead(), now)
+check("оживление: клиент написал, мы ответили 4 ч назад, он молчит → касание 1",
+      act is not None and act[:2] == ("touch", 1) and act[3] == "whatsapp", str(act))
+anchor = act[2]
+rs["last"] = out_msg(2)
+check("оживление: прошло 2 ч → ждём (касание через 3 ч)", sf.reengage_action(None, lead(), now) is None)
+rs["last"] = {"at": now - timedelta(hours=1), "direction": "inbound", "sent_by": None, "channel": "whatsapp"}
+check("оживление: клиент написал последним → не трогаем", sf.reengage_action(None, lead(), now) is None)
+rs["last"] = out_msg(23)
+done1 = lead({"reengage": {"anchor": anchor, "touches": 1}})
+check("оживление: после касания 1 прошли сутки → касание 2", (sf.reengage_action(None, done1, now) or ())[:2] == ("touch", 2))
+check("оживление: после касания 2 — больше сами не пишем",
+      sf.reengage_action(None, lead({"reengage": {"anchor": anchor, "touches": 2}}), now) is None)
+rs["in"] = now - timedelta(hours=26)
+check("оживление: клиент снова написал (новое сообщение) → счёт заново",
+      (sf.reengage_action(None, lead({"reengage": {"anchor": anchor, "touches": 2}}), now) or ())[:2] == ("touch", 1))
+rs["in"] = now - timedelta(days=5)
+check("оживление: клиент писал 5 дней назад — старый лид, первыми не пишем", sf.reengage_action(None, lead(), now) is None)
+rs["in"] = now - timedelta(hours=25)
+rs["last"] = out_msg(23, channel="instagram")
+check("оживление: Instagram позже 24 ч после клиента — нельзя", sf.reengage_action(None, lead(), now) is None)
+rs.update(last=out_msg(4, sent_by="owner"), **{"in": now - timedelta(hours=5)})
+check("оживление: последним писал сам владелец — не вмешиваемся", sf.reengage_action(None, lead(), now) is None)
+rs["last"] = out_msg(4)
+check("оживление: идёт дожим после КП — у него свои касания",
+      sf.reengage_action(None, lead({"nurture": {"touches": 0}}), now) is None)
+rs["task"] = True
+check("оживление: у клиента есть задача агента — не мешаем", sf.reengage_action(None, lead(), now) is None)
+rs["task"] = False
+check("оживление: этапы — открытые кроме «Думает»", sf.reengage_stage_keys(agent) == {"new", "active"})
+check("оживление: 2 инструкции, без «вы тут?» и с запретом писать отказавшимся",
+      set(sf.REENGAGE_INSTRUCTIONS) == {1, 2} and "НЕ пиши" in sf.REENGAGE_INSTRUCTIONS[1])
+
+# --- переписка: правило «не анкета» для WhatsApp / Telegram / Instagram ---
+from backend.services import agent_orchestrator as _ao
+_src = open(_ao.__file__, encoding="utf-8").read()
+check("переписка: максимум один лёгкий вопрос, без анкеты и эха — во всех трёх мессенджерах",
+      _src.count("+ chat_sales_rule") == 3 and "НЕ АНКЕТА" in _src and "НЕ ЭХО" in _src)
+check("разбор звонка: просьба о менеджере/встрече → notify_owner_handoff (входящий и исходящий)",
+      _src.count("+ call_handoff_rule") == 2 and "ЧЕЛОВЕК / ВСТРЕЧА" in _src)
+check("касание оживления: своё событие «клиент замолчал», не «дожим после КП»",
+      'followup_kind == "reengage"' in _src and "КЛИЕНТ ЗАМОЛЧАЛ В ПЕРЕПИСКЕ" in _src)
+
 # --- из «Отказа (нет ответа)» клиент написал → «В работе» ---
 lost = AgentContact(status="rejected", memory={"lost_by": "no_reply"}, lost_reason="нет ответа", phone="996700000003")
 check("написал после «нет ответа» → «В работе»", sf.on_client_message(DB(), agent, lost) == "active" and lost.status == "active")

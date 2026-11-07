@@ -77,6 +77,14 @@ OUTPUT_IDLE_SEC = 1.0
 # 198, «Ассистент начал говорить» один раз за звонок, задержка ответа не мерилась вовсе). Поэтому
 # речью ассистента считаем только куски громче порога (RMS PCM16), паузы — тишиной.
 VOICED_RMS = 200
+# Задержка ответа по ЗВУКУ (07.11.2026): журнал считал её от прихода транскрипта клиента, а он приходит на
+# 1–1,5 с позже конца речи — звонок 5bf12c2d: в журнале «средняя 806 мс», а по записи клиент ждал ответа
+# 2–3 с. Теперь конец речи клиента — последний громкий кусок входящего звука (порог над шумом линии), пока
+# ассистент молчит; транскрипт — запасной вариант.
+INPUT_VOICED_RMS = 300
+INPUT_FLOOR_FACTOR = 4.0
+# Порог «медленного ответа» в диагностике (по звуку клиент слышит паузу уже от ~2 с)
+SLOW_REPLY_MS = 2500
 # Приветствие ушло в session.start, но модель молчит дольше — дублируем старым путём
 # (session.instructions.append): документация не гарантирует речь по session.input
 GREETING_FALLBACK_SEC = 3.0
@@ -137,12 +145,16 @@ CUE_MAX_PER_CALL = 3  # больше — эмоции превращаются �
 INTENT_HINTS = {
     # Звонок 25.10.2026 (сессия 043c4070): здесь стояло «…и вежливо попрощайся» — модель сразу вызвала
     # hangup_call, пока клиент ещё называл время и номер Telegram, и связь оборвалась на полуслове.
-    "call_back_later": "Клиент сейчас занят или просит связаться позже. Не продолжай рассказ: уточни удобное "
-                       "время и канал (звонок или сообщение), подтверди договорённость одной фразой "
-                       "(«Договорились, напишу вам в Telegram в десять») и дождись, пока клиент сам "
-                       "попрощается. Не завершай звонок сам, пока клиент не закончил говорить.",
-    "wants_human": "Клиент просит живого человека. Не отказывай и не спорь: скажи, что передашь его "
-                   "просьбу менеджеру, и уточни, когда ему удобно, чтобы перезвонили.",
+    "call_back_later": "Клиент сейчас занят или просит связаться позже. Не продолжай рассказ: если время ещё не "
+                       "названо — спроси удобное время и канал (звонок или сообщение) одним вопросом; назвал — "
+                       "коротко «договорились», без пересказа его слов, и дождись, пока клиент сам попрощается. Не "
+                       "завершай звонок сам, пока клиент не закончил говорить.",
+    # Звонок 07.11.2026 (5bf12c2d): по этой подсказке агент ответил «Пока да, я передам запрос менеджеру. Когда вам
+    # удобно…», а на следующую реплику снова спросил «когда вам удобно, чтобы он перезвонил» — и ушёл к бэкенду.
+    "wants_human": "Клиент просит живого человека или встречу. Не отказывай, не спорь и не уходи к бэкенду: одной "
+                   "короткой фразой скажи, что передашь менеджеру (это сделает система после звонка). Время "
+                   "спроси, только если клиент его ещё не называл, и только один раз. Не пересказывай его просьбу. "
+                   "Дальше продолжай помогать сам: на вопросы, которые знаешь, отвечай.",
 }
 INTENT_LOG = {
     "call_back_later": "Клиент занят, просит поговорить позже",
@@ -411,6 +423,11 @@ class LiveVoiceSession:
         self._owns_call_log = bool(call_log) and call_log.channel != "phone"
         self.on_session_end = None  # конец разговора (кошелёк), до сохранения журнала
         self._user_spoke_at: Optional[float] = None
+        # Конец речи клиента по звуку (см. INPUT_VOICED_RMS): последний громкий кусок входа, уровень шума линии
+        # и когда ассистент в прошлый раз начал отвечать (звук до этого момента к новому ответу не относится)
+        self._last_user_audio_at: float = 0.0
+        self._input_floor: Optional[float] = None
+        self._reply_started_at: float = 0.0
         # Автозавершение звонка: последняя речь клиента (не обнуляется), прощание — когда и чьё,
         # отправлена ли команда «положить трубку»
         self._last_user_voice_at: float = 0.0
@@ -499,19 +516,47 @@ class LiveVoiceSession:
         self.voiced_bytes += len(delta_b64) * 3 // 4
         if not self.assistant_speaking:
             self.assistant_speaking = True
+            now = time.time()
             if self.call_log:
                 if self._user_spoke_at is not None:
-                    # Грубая задержка ответа: от последнего фрагмента речи клиента до первого звука
-                    # (у Live нет событий «клиент договорил»; фрагменты транскрипта идут с запаздыванием)
-                    ms = int((time.time() - self._user_spoke_at) * 1000)
-                    self.call_log.latencies_ms.append(ms)
-                    self.call_log.add("tts", f"Ассистент начал говорить через {ms} мс после речи клиента")
+                    # Транскрипт — запасной замер (фрагменты идут с запаздыванием), главный — по звуку линии
+                    ms = int((now - self._user_spoke_at) * 1000)
+                    sound_ms = self._sound_gap_ms(now)
+                    if sound_ms is not None:
+                        self.call_log.latencies_ms.append(sound_ms)
+                        self.call_log.add("tts", f"Ассистент начал говорить через {sound_ms} мс после конца речи "
+                                                 f"клиента (по звуку линии; по транскрипту {ms} мс)")
+                    else:
+                        self.call_log.latencies_ms.append(ms)
+                        self.call_log.add("tts", f"Ассистент начал говорить через {ms} мс после речи клиента")
                     self._user_spoke_at = None
                 else:
                     self.call_log.add("tts", "Ассистент начал говорить")
+            self._reply_started_at = now
             await self.emit({"type": "assistant.speech.started", "response_id": self.client.session_id,
                              "timestamp": time.time()})
         await self.emit({"type": "response.audio.delta", "delta": delta_b64})
+
+    def _sound_gap_ms(self, now: float) -> Optional[int]:
+        """Пауза от последнего громкого звука клиента до ответа, мс; None — звук не подходит для замера."""
+        last = self._last_user_audio_at
+        if not last or last <= self._reply_started_at or now - last > 15.0:
+            return None
+        return int((now - last) * 1000)
+
+    def _track_input_level(self, audio_b64: str) -> None:
+        """Вход клиента, пока ассистент молчит: громкий кусок над шумом линии = клиент ещё говорит."""
+        if audioop is None or self.assistant_speaking:
+            return
+        try:
+            rms = audioop.rms(base64.b64decode(audio_b64), 2)
+        except Exception:
+            return
+        floor = self._input_floor
+        # шум линии: вниз сразу, вверх медленно (речь не должна поднимать «пол»)
+        self._input_floor = rms if (floor is None or rms < floor) else floor + (rms - floor) * 0.01
+        if rms >= max(INPUT_VOICED_RMS, (floor or 0.0) * INPUT_FLOOR_FACTOR):
+            self._last_user_audio_at = time.time()
 
     @staticmethod
     def _is_voiced(delta_b64: str) -> bool:
@@ -640,11 +685,11 @@ class LiveVoiceSession:
 
         lat = self.call_log.latencies_ms
         if lat:
-            slow = [x for x in lat if x > 3000]
+            slow = [x for x in lat if x > SLOW_REPLY_MS]
             info.append(f"ответов с замером задержки {len(lat)}: средняя {int(sum(lat) / len(lat))} мс, "
                         f"максимум {max(lat)} мс")
             if slow:
-                issues.append(f"{len(slow)} из {len(lat)} ответов медленнее 3 с (максимум {max(lat)} мс)")
+                issues.append(f"{len(slow)} из {len(lat)} ответов медленнее 2,5 с (максимум {max(lat)} мс)")
         else:
             info.append("задержку ответов измерить не удалось (клиент не говорил или транскрипт не пришёл)")
 
@@ -1020,6 +1065,7 @@ class LiveVoiceSession:
                     self._audio_last_ts = now
                     if dur > self._audio_allowance:
                         continue
+                    self._track_input_level(audio)
                     if await self.client.send_audio_b64(audio):
                         self._audio_allowance -= dur
                         self.audio_chunks_in += 1

@@ -255,8 +255,8 @@ hint = lc.VOICE_DELEGATION_HINT
 # Хеш меняется осознанно 02.11.2026: добавлен абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» (владелец:
 # звонок звучал «скован, как будто цепями» — слишком много точных запретов подряд).
 # И 04.11.2026: краткость без пассивности, поддакивание не обрывает фразу, блок ПРОДАЖИ / ГОРЯЧИЙ КЛИЕНТ.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски; обновлён 02.11.2026)",
-      hashlib.sha256(hint.encode()).hexdigest() == "885cf3906c5c9491cbc4075ba3620f4a2505ec03b58b401dba909710fe00b6f9", len(hint))
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски; обновлён 07.11.2026 — договорённость без эха)",
+      hashlib.sha256(hint.encode()).hexdigest() == "d9aeb33f582d090b51db7c09da41e7bc0d491b25641c297102247dc5b1f3cc9a", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("куски склеиваются в тот же текст для GPT",
@@ -281,7 +281,9 @@ check("Gemini: без противоречия «можно мм/угу» про
 # предел здесь — только защита от случайного разбухания, не продуктовое ограничение.
 # 04.11.2026: 14 → 16 тыс. — в общие правила диалога добавлены ПРОДАЖИ / ГОРЯЧИЙ КЛИЕНТ и поддакивание.
 # 06.11.2026: 16 → 10 тыс. — промпт звонка был 34 тыс., правила противоречили друг другу и терялись.
-check("Gemini: подсказки не длиннее 10 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 10000, len(g))
+# 07.11.2026: 10 → 11 тыс. — в начало добавлен общий с GPT-Live блок «Живой разговор» (не эхо, не повторять себя,
+# вау-пример, темп продажи): владелец — «агент занудный, повторяет за клиентом».
+check("Gemini: подсказки не длиннее 11 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 11000, len(g))
 check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
       "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
 check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
@@ -376,11 +378,34 @@ check("Gemini: голос Puck → мужской род; на сайте без
       and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
 _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
 check("GPT-Live: произношение носителя (ударения, редукция, без английского акцента) — в самом начале инструкций голоса",
-      "VOICE_PRONUNCIATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
+      "VOICE_PRONUNCIATION_HEAD + VOICE_CONVERSATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
       and "native Russian speaker" in lc.VOICE_PRONUNCIATION_HEAD and "speak it until the end" in lc.VOICE_PRONUNCIATION_HEAD)
 check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
       "до конца звонка" in _pc and "не додумывай" in _pc)
 check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
+
+# 07.11.2026 (звонки 078a6ed3, 5bf12c2d): агент пересказывал клиента, повторял свой питч, спрашивал разрешения
+# рассказать, рано дожимал и уходил к бэкенду с «передайте менеджеру». Блок «Живой разговор» — в начале у обоих.
+_head = lc.VOICE_CONVERSATION_HEAD
+check("живой разговор: не эхо, не повторять себя, вау-сцена, без «хотите расскажу», темп продажи",
+      all(k in _head for k in ("НЕ ЭХО", "НЕ ПОВТОРЯЙ СЕБЯ", "ВАУ", "разрешения", "ТЕМП ПРОДАЖИ", "всё верно")))
+_cfg = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="Ты Анри. Скажи своими словами, что услышал.",
+                                                      functions={}, voice="cedar", greeting_message=None),
+                           "cid", telephony=True).build_session_config()["instructions"]
+check("GPT-Live: «Живой разговор» сразу после произношения и ДО инструкции карточки",
+      _cfg.index("НЕ ЭХО") < _cfg.index("Ты Анри") and _cfg.index("Pronunciation") < _cfg.index("НЕ ЭХО"))
+_gh = vh.gemini_prompt_head("Puck", "ru", "Добрый день")
+check("Gemini: «Живой разговор» в начале промпта (в gemini_prompt_head)", "НЕ ЭХО" in _gh and "ВАУ" in _gh)
+check("договорённость: принять коротко, итог один раз — у GPT-Live и Gemini, без «спроси, всё ли верно»",
+      "один раз, перед прощанием" in lc.VOICE_DIALOG_RULES and "спроси, всё ли верно" not in lc.VOICE_DIALOG_RULES
+      and "без пересказа" in vh.GEMINI_CALL_RULES)
+check("делегирование: менеджер / встреча / перезвон — не к бэкенду",
+      "очную встречу или перезвонить" in lc.VOICE_DELEGATION_POLICY)
+check("бэкенд не пересказывает клиента", "Не повторяй за клиентом его слова" in lc.BACKEND_SYSTEM_PROMPT)
+from backend.websockets import handler_live as _hl
+check("Decisions wants_human: время спросить один раз и только если не названо, не к бэкенду",
+      "только если клиент его ещё не называл" in _hl.INTENT_HINTS["wants_human"]
+      and "не уходи к бэкенду" in _hl.INTENT_HINTS["wants_human"])
 
 # ---------- функции карточки: BLOCKING, без scheduling; у Gemini-ассистентов прежнее NON_BLOCKING ----------
 async def setup_payload(blocking):
