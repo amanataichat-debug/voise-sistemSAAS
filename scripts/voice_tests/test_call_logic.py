@@ -199,6 +199,43 @@ async def voiced():
     check("задержка по звуку: звук до прошлого ответа не годится — запасной замер по транскрипту",
           s._sound_gap_ms(time.time() + 0.1) is None)
 
+    # 07.11.2026: «шумный, перебивает, сбивается и начинает заново» — пока агент говорит, тихий звук линии
+    # (эхо громкой связи, шум улицы) в модель не идёт; громкая речь клиента проходит.
+    def pcm(amp, n=160):
+        return base64.b64encode(b"".join(struct.pack("<h", int(amp * math.sin(i / 3))) for i in range(n))).decode()
+    loud, echo = pcm(9000), pcm(500)
+    zero = base64.b64encode(b"\x00\x00" * 160).decode()
+    g, _, gcl = session(); g.client.io_rate = 8000
+    for _ in range(10):
+        g._track_input_level(pcm(40)); g._gate_input(pcm(40), 0.02)   # тишина линии, агент молчит
+    for _ in range(5):
+        g._gate_input(loud, 0.02)                                       # клиент говорит
+    check("эхо-ворота: пока агент молчит, звук идёт как есть", g._gate_input(echo, 0.02) == echo)
+    g.assistant_speaking = True; g._last_audio_at = time.time(); g._gate_open_until = 0.0
+    check("эхо-ворота: агент говорит — тихое эхо/шум заменяются тишиной", g._gate_input(echo, 0.02) == zero)
+    check("эхо-ворота: громкая речь клиента поверх агента проходит (можно перебить)", g._gate_input(loud, 0.02) == loud)
+    check("эхо-ворота: хвост слова после громкого куска проходит", g._gate_input(echo, 0.02) == echo)
+    g._gate_open_until = 0.0; g.assistant_speaking = False; g._last_audio_at = time.time() - 0.3
+    check("эхо-ворота: ещё 0,8 с после речи агента эхо глушится", g._gate_input(echo, 0.02) == zero)
+    g._last_audio_at = time.time() - 2.0
+    check("эхо-ворота: потом снова всё проходит", g._gate_input(echo, 0.02) == echo)
+    w, _, _ = session(phone=False); w.assistant_speaking = True; w._last_audio_at = time.time()
+    check("эхо-ворота: в виджете не работают (там браузерное шумоподавление)", w._gate_input(echo, 0.02) == echo)
+    q, _, _ = session(); q.client.io_rate = 8000
+    for _ in range(10):
+        q._track_input_level(pcm(20)); q._gate_input(pcm(20), 0.02)
+    for _ in range(5):
+        q._gate_input(pcm(560), 0.02)                                   # тихий клиент: речь ≈ −42 dBFS
+    q.assistant_speaking = True; q._last_audio_at = time.time()
+    check("эхо-ворота: тихий клиент (−42 dBFS) всё равно может перебить агента", q._gate_input(pcm(560), 0.02) == pcm(560))
+    q._gate_open_until = 0.0
+    check("эхо-ворота: у тихого клиента эхо втрое тише его речи глушится", q._gate_input(pcm(120), 0.02) != pcm(120))
+    g.gated_seconds = 3.0; g.reply_durations = [4.0, 18.5]; g.call_log = gcl
+    g._log_diagnostics(60)
+    texts = " | ".join(e["text"] for e in gcl.events)
+    check("диагностика: монолог дольше 15 с и подавленный шум линии — в журнале",
+          "длиннее 15 с" in texts and "шум и эхо линии" in texts, texts[-300:])
+
 
 async def farewell():
     # звонок 27.10.2026 (f50d0b4e): «Да, всё, спасибо, хорошо» → «Тогда на этом всё, спасибо за звонок!»,
@@ -297,7 +334,15 @@ def greeting_personal():
     call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
     check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
     hint = lc.VOICE_DELEGATION_HINT
-    check("подсказка голосу: вдохи/выдохи и связки (ЖИВАЯ РЕЧЬ)", "ЖИВАЯ РЕЧЬ" in hint and "вдох" in hint and "выдох" in hint)
+    # 07.11.2026: по узкополосной линии вдохи и вздохи слышны как шум — дыхание вслух больше не просим
+    check("подсказка голосу: живые связки есть, слышимого дыхания нет (ЖИВАЯ РЕЧЬ)",
+          "ЖИВАЯ РЕЧЬ" in hint and "Без слышимых вдохов, вздохов и выдохов" in hint
+          and "вдох перед" not in hint and "мягким вздохом" not in hint)
+    check("подсказка голосу: диалог, а не монолог — без «три-четыре фразы», характер по шаблону OpenAI",
+          "ДИАЛОГ, А НЕ МОНОЛОГ" in hint and "три-четыре фразы" not in hint and "Personality" in hint)
+    check("подсказка голосу: перебили — сразу замолчи (шаблон OpenAI), поддакивание — договорить, дослушивать",
+          "сразу замолчи и выслушай" in hint and "Backchannel policy" in hint and "ДОСЛУШИВАЙ" in hint
+          and "Замолкай, только" not in hint)
     check("подсказка голосу: обращение по имени к месту (ИМЯ)", "ИМЯ." in hint and "не в каждой фразе" in hint)
 
 
