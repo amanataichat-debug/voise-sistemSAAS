@@ -98,13 +98,16 @@ def owner_voice_for(db, agent) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def send_voice(token: str, chat_id: str, audio: Dict[str, Any]) -> bool:
-    """OGG/Opus → sendVoice (голосовое с волной), иначе sendAudio."""
+async def send_voice(token: str, chat_id: str, audio: Dict[str, Any], button: Optional[Dict[str, Any]] = None) -> bool:
+    """OGG/Opus → sendVoice (голосовое с волной), иначе sendAudio. button — кнопка Mini App под голосовым."""
+    import json as _json
     from backend.services.agent_telegram_service import TELEGRAM_API
 
     method = "sendVoice" if audio.get("is_ogg") else "sendAudio"
     field = "voice" if audio.get("is_ogg") else "audio"
     data = {"chat_id": chat_id}
+    if button:
+        data["reply_markup"] = _json.dumps({"inline_keyboard": [[button]]}, ensure_ascii=False)
     if audio.get("duration"):
         data["duration"] = str(int(audio["duration"]))
     files = {field: (audio.get("filename") or "voice.ogg", audio["data"], audio.get("mime") or "audio/ogg")}
@@ -149,7 +152,13 @@ async def reply_with_voice(agent_id: str, chat_id: str, reply_markdown: str) -> 
         if not audio.get("ok"):
             logger.warning(f"[OWNER-TG-VOICE] synthesis failed: {audio.get('error')}")
             return False
-        sent = await send_voice(token, chat_id, audio)
+        button = None
+        if user.agent_mode() == "full":
+            from backend.services import owner_voice as ov
+            url = ov.webapp_url(agent.id)
+            if url.startswith("https://"):
+                button = {"text": "🎙 Поговорить вживую", "web_app": {"url": url}}
+        sent = await send_voice(token, chat_id, audio, button)
         if sent:
             avs.charge(db, user.id, spoken, ref_id=agent.id, notes="Голосовой ответ владельцу в Telegram",
                        engine=voice.get("engine") or avs.ENGINE_ELEVEN, seconds=audio.get("duration") or None)

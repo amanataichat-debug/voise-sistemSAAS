@@ -206,6 +206,13 @@ async def connect_telegram_bot(
     db.commit()
     db.refresh(agent)
 
+    # 7. Кнопка «🎙 Поговорить с агентом» слева от поля ввода у всех личных чатов бота (Profi)
+    try:
+        _VOICE_MENU_DONE.discard((str(agent.id), "*"))
+        await _ensure_voice_menu(agent, None, db)
+    except Exception as exc:
+        logger.warning(f"[AGENT-TG] default voice menu failed: {exc}")
+
     logger.info(f"[AGENT-TG] Bot @{agent.telegram_bot_username} connected for user {current_user.id}")
     return _settings_dict(agent)
 
@@ -517,6 +524,42 @@ async def telegram_webapp_auth(body: WebAppAuthRequest, db: Session = Depends(ge
     }
 
 
+VOICE_MENU_TEXT = "🎙 Поговорить с агентом"
+_VOICE_MENU_DONE: set = set()   # (agent_id, chat_id) — кнопка меню уже поставлена этим воркером
+
+
+def _voice_menu_button(agent: AgentConfig) -> Optional[dict]:
+    from backend.services import owner_voice as ov
+    url = ov.webapp_url(agent.id)
+    if not url.startswith("https://"):
+        return None
+    return {"type": "web_app", "text": VOICE_MENU_TEXT, "web_app": {"url": url}}
+
+
+async def _ensure_voice_menu(agent: AgentConfig, chat_id: Optional[str], db: Session) -> bool:
+    """Кнопка «🎙 Поговорить с агентом» слева от поля ввода — сама, без команды /voice.
+    chat_id=None — кнопка по умолчанию для всех личных чатов бота (бот агента — служебный, клиенты в нём
+    не пишут). Только для Profi. Один раз на воркер для пары (агент, чат)."""
+    key = (str(agent.id), str(chat_id or "*"))
+    if key in _VOICE_MENU_DONE:
+        return False
+    owner = db.query(User).filter(User.id == agent.user_id).first()
+    button = _voice_menu_button(agent)
+    if owner is None or owner.agent_mode() != "full" or not button or not agent.telegram_bot_token:
+        return False
+    payload: dict = {"menu_button": button}
+    if chat_id:
+        payload["chat_id"] = int(chat_id) if str(chat_id).lstrip("-").isdigit() else chat_id
+    ok = await AgentTelegramService._call(agent.telegram_bot_token, "setChatMenuButton", payload) is not None
+    if ok:
+        _VOICE_MENU_DONE.add(key)
+        if chat_id is None:
+            await AgentTelegramService._call(agent.telegram_bot_token, "setMyCommands", {"commands": [
+                {"command": "voice", "description": "🎙 Поговорить с агентом голосом"},
+            ]})
+    return ok
+
+
 async def _send_voice_button(agent: AgentConfig, chat_id: str, db: Session, intro: Optional[str] = None) -> None:
     """Кнопка Mini App «Поговорить голосом» + та же кнопка в меню чата (слева от поля ввода)."""
     from backend.services import owner_voice as ov
@@ -532,15 +575,13 @@ async def _send_voice_button(agent: AgentConfig, chat_id: str, db: Session, intr
     if not url.startswith("https://"):
         await AgentTelegramService.send_message(token, chat_id, "Голосовой режим откроется после деплоя на https-адрес.")
         return
-    await AgentTelegramService._call(token, "setChatMenuButton", {
-        "chat_id": int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id,
-        "menu_button": {"type": "web_app", "text": "🎙 Голос", "web_app": {"url": url}},
-    })
+    _VOICE_MENU_DONE.discard((str(agent.id), str(chat_id)))
+    await _ensure_voice_menu(agent, chat_id, db)
     await AgentTelegramService._call(token, "sendMessage", {
         "chat_id": chat_id,
         "text": intro or ("🎙 Поговорите с агентом голосом — как по телефону: спросите отчёт, кто писал, "
-                          "попросите написать клиенту. Кнопка «🎙 Голос» теперь всегда слева от поля ввода."),
-        "reply_markup": {"inline_keyboard": [[{"text": "🎙 Поговорить голосом", "web_app": {"url": url}}]]},
+                          f"попросите написать клиенту. Кнопка «{VOICE_MENU_TEXT}» всегда слева от поля ввода."),
+        "reply_markup": {"inline_keyboard": [[{"text": VOICE_MENU_TEXT, "web_app": {"url": url}}]]},
     })
 
 
@@ -614,7 +655,13 @@ async def telegram_webhook(
                 )
             return {"ok": True}
 
-        # 6a. /voice — кнопка живого голосового разговора (Telegram Mini App)
+        # 6a. Кнопка «🎙 Поговорить с агентом» слева от поля ввода — без команды (один раз на воркер)
+        try:
+            await _ensure_voice_menu(agent, chat_id, db)
+        except Exception as exc:
+            logger.warning(f"[AGENT-TG] voice menu failed: {exc}")
+
+        # 6b. /voice — та же кнопка сообщением (на случай, если владелец ищет её)
         cmd = (message.get("text") or "").strip().lower().split("@")[0]
         if cmd in ("/voice", "/golos", "/голос"):
             await _send_voice_button(agent, chat_id, db)

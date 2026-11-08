@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 
 BISHKEK_OFFSET = timedelta(hours=6)
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+WEEKDAYS_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
 
 # Себестоимость минуты Gemini Live (та же оценка, что у кошелька, см. CLAUDE.md) → кредиты агента
 VOICE_COST_USD_PER_MIN = float(os.getenv("VOICE_COST_USD_PER_MIN_GEMINI_LIVE", "0.03") or 0.03)
@@ -373,7 +374,7 @@ def _brief_week(db, user, agent, day_start: datetime, now: datetime) -> str:
     for i in range(6, -1, -1):
         d = (day_start - timedelta(days=i) + BISHKEK_OFFSET).date()
         st = days.get(d) or _empty_day()
-        label = "сегодня" if i == 0 else "вчера" if i == 1 else f"{WEEKDAYS[d.weekday()][:2]} {d:%d.%m}"
+        label = "сегодня" if i == 0 else "вчера" if i == 1 else f"{WEEKDAYS_SHORT[d.weekday()]} {d:%d.%m}"
         rows.append(f"{label}: {_stats_sentence(st, short=True)}")
     t = _sum_days(days)
     t["writers"] = count_writers(db, user, agent, since, now + timedelta(minutes=1))
@@ -655,7 +656,7 @@ def fast_get_stats(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
         for i in range(n_days):
             d = a + timedelta(days=i)
             st = days.get(d) or _empty_day()
-            result["by_day"].append({"day": f"{WEEKDAYS[d.weekday()][:2]} {d:%d.%m}",
+            result["by_day"].append({"day": f"{WEEKDAYS_SHORT[d.weekday()]} {d:%d.%m}",
                                      "calls": st["calls_in"] + st["calls_out"], "with_talk": st["answered"],
                                      "messages": st["msgs_in"], "new_clients": st["new_clients"]})
     result["card"] = {
@@ -851,6 +852,126 @@ def fast_get_schedule(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
                                for x in items[:6]]}}
 
 
+def dashboard_cards(db, user, agent, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Карточки на экран в начале разговора: сегодня (+ график недели), ждут ответа, воронка.
+    Владелец сразу видит картину дня, пока агент здоровается. Сбой одной карточки не мешает остальным."""
+    from backend.services import inbox_service
+
+    now = now or datetime.utcnow()
+    today_bk = now + BISHKEK_OFFSET
+    day_start = today_bk.replace(hour=0, minute=0, second=0, microsecond=0) - BISHKEK_OFFSET
+    until = now + timedelta(minutes=1)
+    cards: List[Dict[str, Any]] = []
+    waiting_total = 0
+    waiting_items: List[Dict[str, Any]] = []
+
+    def safe(name, fn):
+        try:
+            return fn()
+        except Exception as exc:
+            logger.warning(f"[OWNER-VOICE] dashboard {name} failed: {exc}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return None
+
+    data = safe("dialogs", lambda: inbox_service.list_dialogs(db, user, folder="waiting", agent_id=agent.id, limit=4))
+    if data:
+        waiting_total = int((data.get("counts") or {}).get("waiting") or 0)
+        for it in data.get("items") or []:
+            try:
+                dt = datetime.fromisoformat(str(it.get("last_at")).replace("Z", "+00:00")) if it.get("last_at") else None
+            except ValueError:
+                dt = None
+            waiting_items.append({"title": it.get("name"),
+                                  "meta": f"{', '.join(CHANNEL_NAMES.get(c, c) for c in it.get('channels') or [])} · "
+                                          f"{_day_label(dt, today_bk)}",
+                                  "text": _clip(it.get("preview"), 110),
+                                  "channel": (it.get("channels") or [None])[0]})
+
+    def today_card():
+        days = activity_by_day(db, user, agent, day_start - timedelta(days=6), until)
+        t = days.get(today_bk.date()) or _empty_day()
+        writers = count_writers(db, user, agent, day_start, until)
+        bars = []
+        for i in range(6, -1, -1):
+            d = (today_bk - timedelta(days=i)).date()
+            st = days.get(d) or _empty_day()
+            bars.append({"label": "сег" if i == 0 else WEEKDAYS_SHORT[d.weekday()],
+                         "value": st["calls_in"] + st["calls_out"] + st["msgs_in"]})
+        return {
+            "type": "stats", "title": "Сегодня", "subtitle": f"{WEEKDAYS[today_bk.weekday()]}, {today_bk:%d.%m}",
+            "tiles": [
+                {"label": "Звонки", "value": t["calls_in"] + t["calls_out"], "sub": f"с разговором {t['answered']}"},
+                {"label": "Сообщения", "value": t["msgs_in"], "sub": f"от {writers} клиентов"},
+                {"label": "Новые клиенты", "value": t["new_clients"], "sub": "в CRM"},
+                {"label": "Ждут ответа", "value": waiting_total, "sub": "диалогов", "accent": bool(waiting_total)},
+            ],
+            "bars": bars, "bars_title": "Обращения за 7 дней",
+        }
+
+    card = safe("today", today_card)
+    if card:
+        cards.append(card)
+    if waiting_items:
+        cards.append({"type": "list", "title": f"Ждут ответа ({waiting_total})", "items": waiting_items})
+
+    def funnel_card():
+        from sqlalchemy import func
+        from backend.core.pipeline_stages import get_agent_stages
+        from backend.models.agent_contact import AgentContact
+
+        counts = dict(db.query(AgentContact.status, func.count(AgentContact.id))
+                      .filter(AgentContact.agent_config_id == agent.id).group_by(AgentContact.status).all())
+        if not counts:
+            return None
+        stages = []
+        known = set()
+        for st in get_agent_stages(agent):
+            known.add(st["key"])
+            stages.append({"label": st["label"], "value": int(counts.get(st["key"], 0))})
+        other = sum(int(v) for k, v in counts.items() if k not in known)
+        if other:
+            stages.append({"label": "Другое", "value": other})
+        return {"type": "funnel", "title": "Воронка CRM", "subtitle": f"всего клиентов {sum(int(v) for v in counts.values())}",
+                "stages": stages}
+
+    card = safe("funnel", funnel_card)
+    if card:
+        cards.append(card)
+    return cards
+
+
+def save_prefs(user_id: str, agent_id: str, prefs: Dict[str, Any]) -> bool:
+    """Сохранить настройки голосового режима владельца (своя сессия БД — вызывается из потока)."""
+    from backend.db.session import SessionLocal
+    from backend.models.agent_config import AgentConfig
+
+    db = SessionLocal()
+    try:
+        agent = db.query(AgentConfig).filter(AgentConfig.id == agent_id, AgentConfig.user_id == user_id).first()
+        if agent is None:
+            return False
+        agent.owner_voice_prefs = clean_prefs(prefs)
+        db.commit()
+        return True
+    except Exception as exc:
+        logger.error(f"[OWNER-VOICE] save prefs failed: {exc}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        db.close()
+
+
+def build_session_context(db, user, agent) -> Dict[str, Any]:
+    """Всё для начала разговора одним заходом в поток: сводка в промпт и карточки на экран."""
+    return {"brief": build_brief(db, user, agent), "cards": dashboard_cards(db, user, agent)}
+
+
 FAST_IMPL = {
     "get_stats": fast_get_stats,
     "client_info": fast_client_info,
@@ -898,7 +1019,8 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 
 ЧТО ТЫ ЗНАЕШЬ И КАК УЗНАЁШЬ
 - Ниже — СВОДКА ДЕЛ на начало разговора: сегодня, по дням за неделю, последние диалоги и звонки, задачи, воронка. На «дай отчёт», «что сегодня», «сколько звонков вчера», «как прошла неделя», «кто писал», «что по задачам» отвечай из неё сразу, без функций.
-- Нет в сводке — быстрые функции, они отвечают мгновенно, ничего не говори перед ними: get_stats — цифры за любой другой период; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
+- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_stats — цифры за период; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
+- Владелец любит видеть цифры: на вопрос о цифрах за любой период, о клиенте, о переписке или о планах — вызывай быструю функцию, даже если ответ есть в сводке (сводка — чтобы ты не ошибся и знал общую картину). На «дай отчёт» / «что нового» — get_stats за сегодня и list_dialogs «ждут ответа», потом расскажи главное.
 - Сложное (анализ, советы, база знаний, документы, почта, календарь, стенограмма звонка) — ask_agent: он думает несколько секунд, поэтому скажи одну короткую фразу — «Секунду, смотрю» — и жди. До результата — никаких цифр, имён и выводов.
 - Ничего не выдумывай: нет в сводке и в ответе функции — значит не знаешь, так и скажи.
 - Пришёл ответ — перескажи главное своими словами, коротко. На экране владелец видит карточку с цифрами — не зачитывай всё подряд, назови главное.
@@ -912,7 +1034,76 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 
 Ты не продавец и не консультант клиента: владельцу ничего не продаёшь и не задаёшь лишних вопросов. Не говори о себе как о модели и не называй технологии и провайдеров."""
 
-GREETING_RULE = "Начало разговора: поздоровайся по имени одной короткой фразой и скажи, что слушаешь. Отчёт сам не начинай."
+GREETING_RULE = "Начало разговора: поздоровайся одной короткой фразой так, как указано в обращении, и скажи, что слушаешь. Отчёт сам не начинай."
+
+# ---------------------------------------------------------------- как обращаться к владельцу
+ADDRESS_MODES = ("name", "chef", "boss", "custom")
+FORMALITY = ("vy", "ty")
+_ADDRESS_WORDS = {"chef": "шеф", "boss": "босс"}
+
+
+def clean_prefs(raw: Any) -> Dict[str, Any]:
+    """Настройки голосового режима владельца: только известные поля и значения."""
+    raw = raw if isinstance(raw, dict) else {}
+    out: Dict[str, Any] = {}
+    mode = str(raw.get("address") or "name").strip().lower()
+    out["address"] = mode if mode in ADDRESS_MODES else "name"
+    text = re.sub(r"[\r\n\t]+", " ", str(raw.get("address_text") or "")).strip()
+    text = re.sub(r"[«»\"<>{}\[\]]", "", text)[:40]
+    if text:
+        out["address_text"] = text
+    if out["address"] == "custom" and not text:
+        out["address"] = "name"
+    formality = str(raw.get("formality") or "vy").strip().lower()
+    out["formality"] = formality if formality in FORMALITY else "vy"
+    voice = str(raw.get("voice") or "").strip()
+    if voice and re.fullmatch(r"[A-Za-z]{2,20}", voice):
+        out["voice"] = voice
+    return out
+
+
+def address_word(prefs: Optional[Dict[str, Any]], user) -> str:
+    """Как называть владельца: «Аман», «шеф», «босс» или своё слово ('' — имя неизвестно)."""
+    p = clean_prefs(prefs)
+    if p["address"] in _ADDRESS_WORDS:
+        return _ADDRESS_WORDS[p["address"]]
+    if p["address"] == "custom":
+        return p.get("address_text") or ""
+    return p.get("address_text") or owner_first_name(user)
+
+
+def address_note(prefs: Optional[Dict[str, Any]], user) -> str:
+    p = clean_prefs(prefs)
+    word = address_word(p, user)
+    tone = ("на «ты», дружески и по-свойски, но с уважением" if p["formality"] == "ty"
+            else "на «вы», тепло и уважительно")
+    if p["address"] in ("chef", "boss", "custom") and word:
+        who = f"Обращайся к владельцу «{word}» — так он попросил; по имени не называй."
+    elif word:
+        who = f"Обращайся к владельцу по имени — «{word}»."
+    else:
+        who = "Имя владельца неизвестно — обращайся без имени."
+    return f"ОБРАЩЕНИЕ: {who} Говори с ним {tone}. Обращение вставляй естественно, не в каждой фразе."
+
+
+def greeting_text(user, prefs: Optional[Dict[str, Any]] = None) -> str:
+    p = clean_prefs(prefs)
+    word = address_word(p, user)
+    if p["formality"] == "ty":
+        return f"Привет, {word}! Слушаю." if word else "Привет! Слушаю."
+    if p["address"] in ("chef", "boss", "custom") and word:
+        return f"Слушаю вас, {word}!"
+    return f"Здравствуйте, {word}! Слушаю вас." if word else "Здравствуйте! Слушаю вас."
+
+
+def address_change_text(prefs: Dict[str, Any], user) -> str:
+    """Реплика для модели посреди разговора: владелец сменил обращение в настройках."""
+    p = clean_prefs(prefs)
+    word = address_word(p, user)
+    tone = "на «ты»" if p["formality"] == "ty" else "на «вы»"
+    called = f"«{word}»" if word else "без имени"
+    return (f"(Настройка от владельца, не вопрос.) С этого момента обращайся ко мне {called} и {tone}. "
+            "Подтверди одной короткой фразой в новом обращении и жди вопроса.")
 
 
 def owner_first_name(user) -> str:
@@ -921,11 +1112,6 @@ def owner_first_name(user) -> str:
         if val:
             return val.split()[0]
     return ""
-
-
-def greeting_text(user) -> str:
-    name = owner_first_name(user)
-    return f"Здравствуйте{', ' + name if name else ''}! Слушаю вас." if name else "Здравствуйте! Слушаю вас."
 
 
 def _history_block(history: Optional[List[Dict[str, Any]]], limit: int = 8) -> str:
@@ -950,14 +1136,14 @@ def voice_gender_note(voice: Optional[str]) -> str:
 
 
 def build_voice_prompt(user, agent, brief: str, history: Optional[List[Dict[str, Any]]] = None,
-                       voice: Optional[str] = None) -> str:
+                       voice: Optional[str] = None, prefs: Optional[Dict[str, Any]] = None) -> str:
     owner = owner_first_name(user) or "владелец"
     company = (getattr(agent, "brand_company_name", None) or "").strip()
     agent_name = (getattr(agent, "name", None) or "").strip()
     if not company and agent_name and agent_name != "Мой агент":
         company = agent_name
     head = VOICE_ROLE.format(owner=owner)
-    parts = [head]
+    parts = [head, address_note(prefs, user)]
     gender = voice_gender_note(voice)
     if gender:
         parts.append(gender)

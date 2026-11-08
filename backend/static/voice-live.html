@@ -7,16 +7,16 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Голосовой агент</title>
 <link rel="stylesheet" href="/static/css/fonts.css">
-<link rel="stylesheet" href="/static/css/voice-live.css">
+<link rel="stylesheet" href="/static/css/voice-live.css?v=20261108c">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   html, body { margin: 0; height: 100%; background: #050816; color: #f1f5ff; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
   .vl { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px 22px calc(28px + env(safe-area-inset-bottom));
     text-align: center; overflow: hidden; background: radial-gradient(120% 90% at 50% 0%, #121b46 0%, #0b1230 40%, #050816 80%); }
-  .vl::before, .vl::after { content: ""; position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(80px); opacity: .45; pointer-events: none; }
-  .vl::before { background: #2a5ce8; left: -25vmax; top: -10vmax; animation: vl-drift 16s ease-in-out infinite alternate; }
-  .vl::after { background: #7c3aed; right: -30vmax; bottom: -20vmax; animation: vl-drift 21s ease-in-out infinite alternate-reverse; }
-  @keyframes vl-drift { to { transform: translate(6vmax, 4vmax) scale(1.1); } }
+  .vl::before, .vl::after { content: ""; position: absolute; width: 90vmax; height: 90vmax; border-radius: 50%; opacity: .5; pointer-events: none; will-change: transform; }
+  .vl::before { background: radial-gradient(closest-side, #2a5ce8, transparent); left: -40vmax; top: -30vmax; animation: vl-drift 16s ease-in-out infinite alternate; }
+  .vl::after { background: radial-gradient(closest-side, #7c3aed, transparent); right: -45vmax; bottom: -40vmax; animation: vl-drift 21s ease-in-out infinite alternate-reverse; }
+  @keyframes vl-drift { to { transform: translate3d(6vmax, 4vmax, 0) scale(1.1); } }
   .vl > * { position: relative; z-index: 1; }
   .vl-orb { width: min(52vw, 230px); aspect-ratio: 1; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
     background: radial-gradient(circle at 34% 28%, #d6e4ff 0%, #7aa2ff 22%, #3b6dff 52%, #5b21b6 100%);
@@ -53,7 +53,7 @@
   <div class="vl-err" id="vl-err" hidden role="alert"></div>
   <div class="vl-foot">Voksy AI</div>
 </main>
-<script src="/static/agent/voice-chat.js"></script>
+<script src="/static/agent/voice-chat.js?v=20261108c"></script>
 <script>
 (function () {
   'use strict';

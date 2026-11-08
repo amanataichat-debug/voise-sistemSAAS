@@ -403,7 +403,7 @@ async def ws_flow(first, mode="full"):
     ag = types.SimpleNamespace(id="a1", name="Мой агент", brand_company_name=None, chat_history=[])
     tokens = []
     finished = {}
-    saved = (hov._load_owner, ov.build_brief, GeminiLiveClient.connect, GeminiLiveClient.close,
+    saved = (hov._load_owner, ov.build_session_context, GeminiLiveClient.connect, GeminiLiveClient.close,
              ov.charge_voice_minutes, ov.append_voice_history, dbs.SessionLocal)
     from backend.core.config import settings
     old_key = settings.GEMINI_API_KEY
@@ -424,7 +424,9 @@ async def ws_flow(first, mode="full"):
         self.is_connected = False
 
     hov._load_owner = fake_load
-    ov.build_brief = lambda db_, user_, agent_: "Сегодня: звонков 2."
+    ov.build_session_context = lambda db_, user_, agent_: {
+        "brief": "Сегодня: звонков 2.",
+        "cards": [{"type": "stats", "title": "Сегодня", "tiles": [{"label": "Звонки", "value": 2}]}]}
     GeminiLiveClient.connect = fake_connect
     GeminiLiveClient.close = fake_close
     ov.charge_voice_minutes = lambda db_, user_, agent_, secs: finished.setdefault("charged", secs) and 1
@@ -442,7 +444,7 @@ async def ws_flow(first, mode="full"):
     try:
         await hov.handle_owner_voice_connection(browser, types.SimpleNamespace(close=lambda: None))
     finally:
-        (hov._load_owner, ov.build_brief, GeminiLiveClient.connect, GeminiLiveClient.close,
+        (hov._load_owner, ov.build_session_context, GeminiLiveClient.connect, GeminiLiveClient.close,
          ov.charge_voice_minutes, ov.append_voice_history, dbs.SessionLocal) = saved
         settings.GEMINI_API_KEY = old_key
     return browser, tokens, created, finished
@@ -459,6 +461,10 @@ check("сокет: приветствие по имени после setupComple
                                                                    for m in made[0].ws.sent))
 check("сокет: на ping отвечает pong", any(m.get("type") == "pong" for m in br.sent))
 check("сокет: в конце — списание минут и запись истории", "charged" in fin and "pairs" in fin, fin)
+_dash = [m for m in br.sent if m.get("type") == "owner.dashboard"]
+check("сокет: сразу после подключения — карточки дня на экран", _dash and _dash[0]["cards"][0]["title"] == "Сегодня", _dash)
+check("сокет: в connection_status — настройки обращения и имя", st and st[0].get("prefs", {}).get("address") == "name"
+      and st[0].get("owner_name") == "Аман", st)
 
 br2, toks2, made2, fin2 = run(ws_flow({"type": "auth", "token": "bad"}), timeout=10)
 err2 = [m for m in br2.sent if m.get("type") == "error"]
@@ -642,6 +648,100 @@ check("модель пересказа недоступна → простой �
       (_sp, _usage, _model))
 
 
+# ---------- обращение к владельцу: по имени / шеф / босс / своё, на вы / на ты ----------
+check("настройки по умолчанию: по имени, на вы", ov.clean_prefs(None) == {"address": "name", "formality": "vy"})
+check("настройки: мусор отбрасывается", ov.clean_prefs({"address": "king", "formality": "xx", "voice": "Ko re!", "evil": 1})
+      == {"address": "name", "formality": "vy"})
+check("настройки: своё обращение без текста → по имени", ov.clean_prefs({"address": "custom"})["address"] == "name")
+_ct = ov.clean_prefs({"address": "custom", "address_text": "«Аман-ака»\n<b>" + "я" * 60})["address_text"]
+check("настройки: текст обращения чистится и обрезается", _ct.startswith("Аман-ака b") and len(_ct) <= 40
+      and not any(ch in _ct for ch in "«»<>\n"), _ct)
+check("настройки: голос сохраняется", ov.clean_prefs({"voice": "Puck"})["voice"] == "Puck")
+_u = types.SimpleNamespace(first_name="Аман")
+check("обращение по имени", ov.address_word({"address": "name"}, _u) == "Аман"
+      and "по имени — «Аман»" in ov.address_note({"address": "name"}, _u))
+check("обращение по имени — своё имя из настроек", ov.address_word({"address": "name", "address_text": "Аманат"}, _u) == "Аманат")
+check("обращение «шеф»: не по имени", ov.address_word({"address": "chef"}, _u) == "шеф" and "по имени не называй" in ov.address_note({"address": "chef"}, _u))
+check("обращение «босс»", ov.address_word({"address": "boss"}, _u) == "босс")
+check("своё обращение", ov.address_word({"address": "custom", "address_text": "Аман-ака"}, _u) == "Аман-ака")
+check("на «ты» — дружески", "на «ты»" in ov.address_note({"formality": "ty"}, _u))
+check("приветствие: шеф", ov.greeting_text(_u, {"address": "chef"}) == "Слушаю вас, шеф!")
+check("приветствие: по имени на ты", ov.greeting_text(_u, {"formality": "ty"}) == "Привет, Аман! Слушаю.")
+check("приветствие: без имени", ov.greeting_text(types.SimpleNamespace(first_name=""), None) == "Здравствуйте! Слушаю вас.")
+_chg = ov.address_change_text({"address": "chef", "formality": "ty"}, _u)
+check("смена обращения в разговоре: подсказка модели", "«шеф»" in _chg and "на «ты»" in _chg and "не вопрос" in _chg, _chg)
+_pp = ov.build_voice_prompt(_u, agent, "сводка", voice="Kore", prefs={"address": "boss"})
+check("промпт: блок ОБРАЩЕНИЕ с выбранным словом", "ОБРАЩЕНИЕ" in _pp and "«босс»" in _pp)
+check("промпт: цифры показывать карточкой через быструю функцию", "ПОКАЗЫВАЮТ владельцу карточку" in _pp and "даже если ответ есть в сводке" in _pp)
+check("дашборд при сбое базы — пустой, без падения", ov.dashboard_cards(BrokenDB(), user, agent) == [])
+
+
+async def prefs_flow():
+    c = make_client()
+    texts = []
+    async def fake_send_text(t):
+        texts.append(t); return True
+    c.send_text_message = fake_send_text
+    sock = FakeClientSocket()
+    sess = hov.OwnerVoiceSession(sock, "u1", "a1", c, prefs={"address": "name"}, owner=types.SimpleNamespace(first_name="Аман"))
+    saved_args = []
+    orig = ov.save_prefs
+    ov.save_prefs = lambda uid, aid, p: saved_args.append((uid, aid, p)) or True
+    try:
+        await sess._save_prefs({"address": "chef", "formality": "ty", "voice": "Puck"})
+        await sess._save_prefs({"address": "chef", "formality": "ty", "voice": "Kore"})   # только голос — без реплики модели
+    finally:
+        ov.save_prefs = orig
+    return sock.sent, texts, saved_args, sess
+
+_sent, _texts, _saved, _sess = run(prefs_flow())
+check("настройки из окна сохраняются в базу", len(_saved) == 2 and _saved[0][2]["address"] == "chef" and _saved[0][2]["voice"] == "Puck", _saved)
+check("окну отвечает prefs.saved с приветствием", _sent and _sent[0]["type"] == "prefs.saved" and _sent[0]["ok"] is True
+      and _sent[0]["greeting"] == "Привет, шеф! Слушаю.", _sent[:1])
+check("новое обращение сразу уходит в разговор, смена голоса — нет", len(_texts) == 1 and "«шеф»" in _texts[0], _texts)
+
+
+# ---------- Telegram: кнопка «Поговорить с агентом» без /voice ----------
+import backend.api.agent_telegram as atg
+
+async def menu_flow(mode):
+    calls = []
+    orig_call = atg.AgentTelegramService._call
+    async def fake_call(token, method, payload):
+        calls.append((method, payload)); return {"ok": True}
+    atg.AgentTelegramService._call = staticmethod(fake_call)
+    orig_host = _settings.HOST_URL
+    _settings.HOST_URL = "https://voksyai.online"
+    atg._VOICE_MENU_DONE.clear()
+    ag2 = types.SimpleNamespace(id="a9", user_id="u9", telegram_bot_token="123:x")
+    own = types.SimpleNamespace(agent_mode=lambda: mode)
+    class D:
+        def query(self, m):
+            class Q:
+                def filter(self, *a): return self
+                def first(self): return own
+            return Q()
+    try:
+        r1 = await atg._ensure_voice_menu(ag2, "777", D())
+        r2 = await atg._ensure_voice_menu(ag2, "777", D())
+        r3 = await atg._ensure_voice_menu(ag2, None, D())
+    finally:
+        atg.AgentTelegramService._call = orig_call
+        _settings.HOST_URL = orig_host
+    return r1, r2, r3, calls
+
+_r1, _r2, _r3, _calls = run(menu_flow("full"))
+_menu = [p for m, p in _calls if m == "setChatMenuButton"]
+check("Telegram: кнопка меню ставится сама для чата владельца", _r1 and _menu and _menu[0]["chat_id"] == 777
+      and _menu[0]["menu_button"]["text"] == "🎙 Поговорить с агентом"
+      and _menu[0]["menu_button"]["web_app"]["url"] == "https://voksyai.online/static/voice-live.html?agent=a9", _menu[:1])
+check("Telegram: второй раз тем же воркером — без лишних запросов", _r2 is False and len(_menu) == 2, len(_menu))
+check("Telegram: кнопка по умолчанию для бота + команда в меню", _r3 and "chat_id" not in _menu[1]
+      and any(m == "setMyCommands" for m, _ in _calls))
+_n1, _n2, _n3, _ncalls = run(menu_flow("reactive"))
+check("Telegram: на Старте кнопку живого голоса не ставим", not _n1 and not _ncalls)
+
+
 # ============================================================ часть 2: настоящий PostgreSQL
 PG = os.environ.get("OWNER_VOICE_TEST_DATABASE_URL")
 if not PG:
@@ -746,6 +846,15 @@ else:
           [d["name"] for d in ld["dialogs"]])
     ld2 = ov.fast_list_dialogs(db, owner, ag, {"folder": "all", "channel": "instagram"})
     check("PG list_dialogs: фильтр по каналу", [d["name"] for d in ld2["dialogs"]] == ["Айбек"], ld2["dialogs"])
+    cards_pg = ov.dashboard_cards(db, owner, ag)
+    _types = [c["type"] for c in cards_pg]
+    check("PG дашборд: сегодня, ждут ответа, воронка", _types == ["stats", "list", "funnel"], _types)
+    _tiles = {t["label"]: t["value"] for t in cards_pg[0]["tiles"]}
+    check("PG дашборд: плитки сегодня (звонок 1, сообщений 2, ждут 2) и график 7 дней",
+          _tiles.get("Звонки") == 1 and _tiles.get("Сообщения") == 2 and _tiles.get("Ждут ответа") == 2
+          and len(cards_pg[0]["bars"]) == 7 and cards_pg[0]["bars"][-1]["label"] == "сег", (_tiles, cards_pg[0]["bars"]))
+    check("PG дашборд: в воронке все клиенты", sum(st["value"] for st in cards_pg[2]["stages"]) == 2, cards_pg[2])
+    check("PG дашборд: у клиентов в списке есть канал (цвет точки)", cards_pg[1]["items"][0]["channel"] == "whatsapp", cards_pg[1]["items"][:1])
     gs = ov.fast_get_schedule(db, owner, ag, {"days": 2})
     check("PG get_schedule: задача на звонок", gs["count"] == 1 and gs["items"][0]["client"] == "Нурлан Асанов", gs)
     db.close()

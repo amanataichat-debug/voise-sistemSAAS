@@ -89,7 +89,7 @@ class _SessionSocket:
 
 class OwnerVoiceSession:
     def __init__(self, websocket: WebSocket, user_id: str, agent_id: str, client: GeminiLiveClient,
-                 in_rate: int = GEMINI_IN_RATE) -> None:
+                 in_rate: int = GEMINI_IN_RATE, prefs: Optional[Dict[str, Any]] = None, owner=None) -> None:
         self.websocket = websocket
         self.user_id = user_id
         self.agent_id = agent_id
@@ -101,6 +101,8 @@ class OwnerVoiceSession:
         self.actions_done = 0
         self.functions_called = 0
         self.typed: List[str] = []   # быстрые команды из окна — у них нет расшифровки речи, в историю пишем сами
+        self.prefs: Dict[str, Any] = ov.clean_prefs(prefs)
+        self.owner = owner or SimpleNamespace(first_name="")
         self._sem = asyncio.Semaphore(2)
         # Последняя реплика владельца — для проверки «да» перед действием (ov.action_refusal)
         self._owner_cur = ""
@@ -238,6 +240,8 @@ class OwnerVoiceSession:
                 self.interruption_state["is_assistant_speaking"] = False
             elif mtype == "session.end":
                 raise WebSocketDisconnect()
+            elif mtype == "prefs.save":
+                await self._save_prefs(data.get("prefs"))
             elif mtype == "text.input":
                 # быстрая команда из окна («Отчёт за сегодня») — как если бы владелец сказал её вслух
                 text = str(data.get("text") or "").strip()[:500]
@@ -245,6 +249,17 @@ class OwnerVoiceSession:
                     self.observe({"type": "transcript.delta", "role": "user", "delta": text})
                     self.typed.append(text)
                     await self.client.send_text_message(text)
+
+    async def _save_prefs(self, raw: Any) -> None:
+        """Настройки из окна (обращение, голос): в базу, а новое обращение — сразу в разговор."""
+        new = ov.clean_prefs(raw)
+        address_changed = any(new.get(k) != self.prefs.get(k) for k in ("address", "address_text", "formality"))
+        self.prefs = new
+        ok = await asyncio.to_thread(ov.save_prefs, self.user_id, self.agent_id, new)
+        await self.websocket.send_json({"type": "prefs.saved", "ok": ok, "prefs": new,
+                                        "greeting": ov.greeting_text(self.owner, new)})
+        if address_changed and self.client.is_connected:
+            await self.client.send_text_message(ov.address_change_text(new, self.owner))
 
     async def _watch_limit(self) -> None:
         try:
@@ -384,18 +399,22 @@ async def handle_owner_voice_connection(websocket: WebSocket, db) -> None:
         await _fail(websocket, "not_configured", "Голосовой движок не настроен на сервере", 1011)
         return
 
-    voice = resolve_voice(params.get("voice"))
+    prefs = ov.clean_prefs(getattr(agent, "owner_voice_prefs", None))
+    # голос: выбранный в этом окне (параметр) → сохранённый в настройках → по умолчанию
+    voice = resolve_voice(params.get("voice") or prefs.get("voice"))
     try:
         in_rate = int(params.get("rate") or GEMINI_IN_RATE)
     except ValueError:
         in_rate = GEMINI_IN_RATE
+    owner = SimpleNamespace(first_name=ov.owner_first_name(user))
 
     t0 = time.monotonic()
-    brief = await asyncio.to_thread(ov.build_brief, db, user, agent)
-    prompt = ov.build_voice_prompt(user, agent, brief, agent.chat_history or [], voice=voice)
+    ctx = await asyncio.to_thread(ov.build_session_context, db, user, agent)
+    brief, cards = ctx.get("brief") or "", ctx.get("cards") or []
+    prompt = ov.build_voice_prompt(user, agent, brief, agent.chat_history or [], voice=voice, prefs=prefs)
     config = SimpleNamespace(
         id=agent.id, user_id=user.id, name=f"Голосовой режим: {agent.name}", system_prompt=prompt,
-        greeting_message=ov.greeting_text(user), functions=[{"name": n} for n in ov.FUNCTION_NAMES],
+        greeting_message=ov.greeting_text(owner, prefs), functions=[{"name": n} for n in ov.FUNCTION_NAMES],
         google_sheet_id=None, voice=voice,
     )
     user_id, agent_id = str(user.id), str(agent.id)
@@ -424,11 +443,14 @@ async def handle_owner_voice_connection(websocket: WebSocket, db) -> None:
         "message": "Connected: Voksy Live Go (full-duplex)", "full_duplex": True,
         "audio_rate": GEMINI_OUT_RATE, "input_rate": GEMINI_IN_RATE, "voice": voice,
         "voices": GEMINI_LIVE_VOICES, "session_id": client.session_id, "client_id": client_id,
-        "max_seconds": ov.MAX_SESSION_SECONDS,
+        "max_seconds": ov.MAX_SESSION_SECONDS, "prefs": prefs, "owner_name": owner.first_name,
     })
+    if cards:
+        # картина дня на экране, пока агент здоровается
+        await websocket.send_json({"type": "owner.dashboard", "cards": cards})
     _log(f"session {client_id} started in {connect_ms}ms: user={user_id} agent={agent_id} voice={voice} "
          f"prompt={client.system_prompt_chars} chars (brief {len(brief)})")
-    session = OwnerVoiceSession(websocket, user_id, agent_id, client, in_rate=in_rate)
+    session = OwnerVoiceSession(websocket, user_id, agent_id, client, in_rate=in_rate, prefs=prefs, owner=owner)
     await session.run()
     try:
         await websocket.close()

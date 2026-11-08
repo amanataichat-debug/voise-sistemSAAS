@@ -179,6 +179,10 @@ class AgentConfig(Base):
     brand_color = Column(String(16), nullable=True)          # #RRGGBB
     brand_contacts = Column(String(500), nullable=True)      # «сайт · телефон»
     brand_logo_file_id = Column(UUID(as_uuid=True), nullable=True)  # agent_files.id
+    # Голосовой режим владельца (ветка 0811-voice-jarvis): как агент обращается к владельцу и каким голосом —
+    # {address: name|chef|boss|custom, address_text, formality: vy|ty, voice}. Колонку добавляет
+    # app.ensure_branding_columns() в начале старта.
+    owner_voice_prefs = Column(JSONB, nullable=True)
 
     # ── CRM v2 (2510-crm-v2): настраиваемые стадии воронки ─────────────
     # JSON-строка со списком [{key,label,color,kind}], kind: open|won|lost.

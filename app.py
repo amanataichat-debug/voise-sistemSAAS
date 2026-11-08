@@ -1963,6 +1963,8 @@ def ensure_branding_columns():
         # Окно звонков агента вкл/выкл (ветка 2010-live-human) — та же таблица,
         # тот же ранний старт, поэтому здесь, а не отдельной функцией.
         "ADD COLUMN IF NOT EXISTS call_window_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+        # Голосовой режим владельца (ветка 0811-voice-jarvis): обращение и голос
+        "ADD COLUMN IF NOT EXISTS owner_voice_prefs JSONB",
     ]
     try:
         inspector = inspect(engine)
