@@ -171,9 +171,6 @@ body.vv-open { overflow: hidden; }
 @keyframes vv-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 /* демонстрация посторонним: настройки сохранять некуда, прячем шестерёнку */
 .vv[data-demo="1"] .vv-set { display: none; }
-.vv[data-demo="1"] .vv-name::after { content: "демо"; margin-left: 8px; padding: 2px 7px; border-radius: 999px; font-size: 10px;
-  font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #ffd27a; background: rgba(251, 191, 36, .16);
-  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, .32); vertical-align: middle; }
 /* отчёт: сцены загораются под речь агента (voice-chat.js → revealScenes) */
 .vv-card.vv-wide { width: min(420px, calc(100vw - 48px)); max-height: min(46vh, 380px); scroll-behavior: smooth; }
 .vv-scenes { display: flex; flex-direction: column; gap: 12px; }

@@ -64,10 +64,14 @@ check("бот на паузе: в демо никого", demo.list_dialogs({"fo
 check("расписание на завтра не пустое", demo.get_schedule({"days": 2})["count"] >= 2)
 check("цифры за период считаются", demo.get_stats({"period": "week"})["calls"]["total"] > 0)
 check("вопрос не по цифрам получает ответ по демо-данным", "реклам" in demo.ask_agent("почему мало заявок")["answer"].lower())
-check("незнакомый вопрос честно говорит, что это демонстрация",
-      "демонстрация" in demo.ask_agent("посчитай налоги за третий квартал")["answer"].lower())
+_unknown = demo.ask_agent("посчитай налоги за третий квартал")["answer"].lower()
+check("на незнакомый вопрос — «данных нет», без слов о демонстрации",
+      "данных нет" in _unknown and not any(w in _unknown for w in ("демонстрац", "выдуман", "придуман")), _unknown[:80])
 _act = demo.do_action("написать Нурлану в WhatsApp")
-check("действие в демо ничего не отправляет", _act["ok"] and "не отправлено" in _act["card"]["text"], _act["card"]["text"])
+check("действие подтверждается по-деловому, без слов о демонстрации",
+      _act["ok"] and _act["card"]["title"] == "Сделано"
+      and not any(w in (_act["answer"] + _act["card"]["text"]).lower() for w in ("демо", "выдуман", "не отправлено")),
+      _act["answer"])
 
 # ---------- сводка и промпт ----------
 _brief = demo.demo_brief()
@@ -75,16 +79,23 @@ check("сводка: сегодня, неделя, клиенты, звонки,
       all(x in _brief for x in ("Сегодня:", "За неделю:", "Клиенты и переписка", "Последние звонки",
                                 "Задачи", "Воронка:", "Деньги:")), _brief[:120])
 _prompt = demo.demo_prompt("Азамат")
-check("промпт: собеседник — не владелец, это демонстрация",
-      "НЕ твой владелец" in _prompt and "демонстрац" in _prompt.lower())
+check("промпт: прямой запрет говорить про демонстрацию и выдуманность",
+      "НИКОГДА не говори, что это демонстрация" in _prompt and "выдуманная или тестовая компания" in _prompt)
+check("промпт: ни слова «демо» в самих данных и правилах речи",
+      "СВОДКА ДЕЛ:" in _prompt and "придуманная компания" not in _prompt)
 check("промпт: по имени", "Азамат" in _prompt)
 check("промпт: отчёт по порядку script", "script ПО ПОРЯДКУ" in _prompt)
 check("промпт: клиенты демо перечислены", "Нурлан Асанов" in _prompt and "Жылдыз" in _prompt)
 check("промпт влезает в разумный размер", 3000 < len(_prompt) < 12000, len(_prompt))
-check("приветствие сразу говорит, что компания выдуманная", "выдуман" in demo.demo_greeting("Азамат"))
+_hi = demo.demo_greeting("Азамат")
+check("приветствие обычное: здоровается по имени и слушает",
+      _hi.startswith("Здравствуйте, Азамат") and "Слушаю" in _hi
+      and not any(w in _hi.lower() for w in ("демонстрац", "выдуман", "придуман")), _hi)
 _cards = demo.demo_cards()
 check("карточки на старте: день, ждут ответа, воронка, балансы",
       [c["type"] for c in _cards] == ["stats", "list", "funnel", "balance"], [c["type"] for c in _cards])
+check("в подписях карточек нет слова «демо»",
+      not any("демо" in str(c.get("subtitle", "")).lower() for c in _cards), [c.get("subtitle") for c in _cards])
 
 # ---------- функции Gemini ----------
 _fn = {f["name"]: f for f in demo.demo_functions()}
@@ -92,7 +103,10 @@ check("список функций демо = список настоящего 
 check("в демо все функции отвечают сразу (BLOCKING)", all(f["behavior"] == "BLOCKING" for f in _fn.values()))
 for name, f in _fn.items():
     check(f"схема {name} не меняется очисткой под Gemini", gemini_schema(f["parameters"]) == f["parameters"])
-check("do_action в демо честно называет себя показом", "ничего не уходит" in _fn["do_action"]["description"])
+check("описание do_action без слов о демонстрации",
+      "ответил «да»" in _fn["do_action"]["description"]
+      and not any(w in _fn["do_action"]["description"].lower() for w in ("демо", "выдуман")),
+      _fn["do_action"]["description"][:70])
 check("исполнитель демо знает все функции, кроме телеграма (он в сессии)",
       all(demo.run_demo_function(n, {"period": "today", "query": "нурлан", "folder": "waiting", "days": 1,
                                      "question": "привет", "command": "позвонить"}).get("ok")

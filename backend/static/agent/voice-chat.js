@@ -44,7 +44,11 @@
   };
   const MOTION = { connecting: [0.02, 0.5], listening: [0.03, 0.9], speaking: [0.045, 1.6], thinking: [0.05, 2.2],
     muted: [0.012, 0.4], error: [0.015, 0.4], idle: [0.015, 0.4] };
-  const PREBUF_MIN = 0.18, PREBUF_MAX = 0.6, ECHO_TAIL_MS = 350, BARGE_MIN_LEFT = 0.35, DRAIN_AFTER_MS = 280;
+  // Запас воспроизведения. Речь «по слогам» — это НЕ модель, а пустой буфер: Gemini отдаёт звук
+  // рывками, и если играть сразу, на каждом рывке ворклет досуха высыхает и останавливается.
+  // На телефоне (и особенно в WebView Telegram) рывки больше, поэтому стартовый запас там выше.
+  const PREBUF_MIN = 0.18, PREBUF_PHONE = 0.36, PREBUF_MAX = 1.1;
+  const ECHO_TAIL_MS = 350, BARGE_MIN_LEFT = 0.35, DRAIN_AFTER_MS = 280;
   const IC = {
     logo: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>',
     cc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16 10.5a2 2 0 1 0 0 3"/></svg>',
@@ -140,6 +144,7 @@ registerProcessor('vv-out', VvOut);`;
     opts: null, el: null, ws: null, ctx: null, stream: null, src: null, lp: null, mic: null, out: null, analyser: null, buf: null,
     worklet: false, sources: [], nextPlay: 0, rsT: 0, rsPrev: 0, micT: 0, micPrev: 0,
     agentPlaying: false, agentEndAt: 0, prebuf: PREBUF_MIN, inReply: false, underruns: 0, drainT: null, skipTurn: false,
+    gaps: 0,
     muted: false, open: false, live: false, closing: false, error: null, offline: false,
     lines: [], fnRunning: 0, wake: null, raf: null, startedAt: 0, timer: null, idleT: null,
     speechLvl: 0.06, holdUntil: 0, micLevel: 0, outLevel: 0, lvl: 0,
@@ -158,6 +163,10 @@ registerProcessor('vv-out', VvOut);`;
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
   function storedVoice() { const v = lsGet('vf_owner_voice'); return VOICES.some(x => x.id === v) ? v : ''; }
+  function prebufBase() {
+    const phone = TG || (navigator.maxTouchPoints || 0) > 1 || window.innerWidth < 820;
+    return phone ? PREBUF_PHONE : PREBUF_MIN;
+  }
   function haptic(kind) {
     if (!TG || !TG.HapticFeedback) return;
     try { if (kind === 'success') TG.HapticFeedback.notificationOccurred('success'); else TG.HapticFeedback.impactOccurred(kind || 'light'); } catch (e) { }
@@ -556,6 +565,7 @@ registerProcessor('vv-out', VvOut);`;
         S.out.port.onmessage = e => onOutState(e.data);
         S.out.connect(S.analyser);
         S.worklet = true;
+        setPrebuf(S.prebuf || prebufBase());
       } catch (e) { S.worklet = false; }
     }
     if (!S.worklet) {
@@ -637,8 +647,12 @@ registerProcessor('vv-out', VvOut);`;
     clearTimeout(S.drainT);
     if (S.pendingUnderrun) {
       if (performance.now() - S.pendingUnderrun < 1500) {
-        S.underruns++;                                     // поток продолжился после недобора — нужен запас побольше
-        setPrebuf(Math.min(PREBUF_MAX, S.prebuf + 0.08));
+        // поток продолжился — значит буфер опустел посреди фразы. Первый раз добавляем сразу много:
+        // по чуть-чуть мы бы «доросли» за пять рваных фраз, а слышно это с первой.
+        S.underruns++;
+        S.gaps++;
+        setPrebuf(Math.min(PREBUF_MAX, S.prebuf + (S.gaps === 1 ? 0.22 : 0.12)));
+        if (S.gaps >= 2 && S.quality > 0) S.quality--;     // рисование отнимает поток у главного потока
       }
       S.pendingUnderrun = 0;
       clearTimeout(S.idleT);
@@ -719,7 +733,10 @@ registerProcessor('vv-out', VvOut);`;
     buffer.copyToChannel ? buffer.copyToChannel(f, 0) : buffer.getChannelData(0).set(f);
     const now = ctx.currentTime;
     if (S.nextPlay < now + 0.02) {
-      if (S.inReply && S.sources.length === 0 && S.lastChunkAt && performance.now() - S.lastChunkAt < 900) setPrebuf(Math.min(PREBUF_MAX, S.prebuf + 0.08));
+      if (S.inReply && S.sources.length === 0 && S.lastChunkAt && performance.now() - S.lastChunkAt < 900) {
+        S.gaps++;                                          // тот же шаг, что у ворклета: первый разрыв слышно сразу
+        setPrebuf(Math.min(PREBUF_MAX, S.prebuf + (S.gaps === 1 ? 0.22 : 0.12)));
+      }
       S.nextPlay = now + S.prebuf;
     }
     S.lastChunkAt = performance.now();
@@ -790,7 +807,7 @@ registerProcessor('vv-out', VvOut);`;
       S.ownerName = d.owner_name || '';
       if (d.demo && d.company) {
         const name = S.el.querySelector('.vv-name');
-        if (name) name.textContent = 'Демо: ' + d.company;
+        if (name) name.textContent = d.company;
       }
       showAlert('');
       setStatus('Слушаю', 'listening');
@@ -814,7 +831,7 @@ registerProcessor('vv-out', VvOut);`;
       reportTurnEnded();
       if (S.out && S.inReply) S.out.port.postMessage({ t: 'drain' });
       S.inReply = false;
-      if (!S.underruns && S.prebuf > PREBUF_MIN) setPrebuf(Math.max(PREBUF_MIN, S.prebuf - 0.02));
+      if (!S.underruns && S.prebuf > prebufBase()) setPrebuf(Math.max(prebufBase(), S.prebuf - 0.02));
       S.underruns = 0;
     } else if (t === 'transcript.delta') {
       onTranscript(d.role === 'user' ? 'user' : 'assistant', d.delta || '');
@@ -956,7 +973,7 @@ registerProcessor('vv-out', VvOut);`;
       chips.querySelectorAll('.vv-chip').forEach(b => b.addEventListener('click', () => sendText(b.dataset.chip)));
     }
     Object.assign(S, { lines: [], fnRunning: 0, muted: false, closing: false, error: null, live: false, nextPlay: 0, sources: [],
-      prebuf: PREBUF_MIN, underruns: 0, inReply: false, lastRole: null, agentText: '', ownerText: '', anyOwner: false, skipTurn: false,
+      prebuf: prebufBase(), underruns: 0, gaps: 0, inReply: false, lastRole: null, agentText: '', ownerText: '', anyOwner: false, skipTurn: false,
       startedAt: 0, lvl: 0, micLevel: 0, outLevel: 0, holdUntil: 0, pal: null, palTarget: null, agentPlaying: false, statusText: '',
       rsT: 0, rsPrev: 0, micT: 0, micPrev: 0, offline: false, state: '', pendingUnderrun: 0 });
     S.el.querySelector('.vv-name').textContent = S.opts.title || 'Голосовой агент';

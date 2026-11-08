@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Голосовой агент</title>
 <link rel="stylesheet" href="/static/css/fonts.css">
-<link rel="stylesheet" href="/static/css/voice-live.css?v=20261109a">
+<link rel="stylesheet" href="/static/css/voice-live.css?v=20261109b">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   html, body { margin: 0; height: 100%; background: #050816; color: #f1f5ff; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
@@ -53,7 +53,7 @@
   <div class="vl-err" id="vl-err" hidden role="alert"></div>
   <div class="vl-foot">Voksy AI</div>
 </main>
-<script src="/static/agent/voice-chat.js?v=20261109a"></script>
+<script src="/static/agent/voice-chat.js?v=20261109b"></script>
 <script>
 (function () {
   'use strict';
@@ -88,7 +88,7 @@
   const DEMO_ERRORS = {
     401: 'Не удалось проверить вход через Telegram. Закройте окно и нажмите кнопку в боте ещё раз.',
     404: 'Демонстрация сейчас выключена. Напишите нам на voksyai.online — покажем вживую.',
-    login: 'Откройте демонстрацию из Telegram-бота Voksy AI.',
+    login: 'Откройте голосового агента из Telegram-бота Voksy AI.',
   };
 
   async function auth() {
@@ -101,7 +101,7 @@
       });
       if (!r.ok) throw r.status;
       const d = await r.json();
-      return { token: d.token, agent_id: null, agent_name: 'Демо: ' + (d.company || 'Voksy AI'), demo: true };
+      return { token: d.token, agent_id: null, agent_name: d.company || 'Voksy AI', demo: true };
     }
     if (inTg) {
       const r = await fetch('/api/agent/telegram/webapp-auth', {
@@ -147,12 +147,11 @@
   orb.addEventListener('click', start);
   if (inTg) document.getElementById('vl-title').textContent = 'Поговорите с агентом';
   if (isDemo) {
-    document.getElementById('vl-title').textContent = 'Демонстрация голосового агента';
-    document.querySelector('.vl p').textContent = 'Поговорите голосом с агентом выдуманной компании «Окна Комфорт». ' +
-      'Он знает её звонки, переписку, CRM и деньги. Настоящим клиентам в демо ничего не уходит.';
+    document.getElementById('vl-title').textContent = 'Голосовой агент Voksy AI';
+    document.querySelector('.vl p').textContent = 'Спросите голосом, что нового: агент знает звонки, переписку, ' +
+      'клиентов в CRM и деньги на счету — и ответит за пару секунд.';
     document.querySelector('.vl-hints').innerHTML =
       '<span>«Что нового?»</span><span>«Кто ждёт ответа?»</span><span>«Что писал Нурлан?»</span>';
-    document.querySelector('.vl-foot').textContent = 'Voksy AI · демонстрация на выдуманных данных';
   }
 })();
 </script>

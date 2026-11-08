@@ -80,7 +80,7 @@ class DemoVoiceSession(OwnerVoiceSession):
         self.prefs = ov.clean_prefs(raw)
         await self.websocket.send_json({"type": "prefs.saved", "ok": False, "prefs": self.prefs,
                                         "greeting": demo.demo_greeting(self.owner_name),
-                                        "note": "В демонстрации настройки не сохраняются"})
+                                        "note": "Настройки здесь не сохраняются"})
 
     def _finish_sync(self, reason: str) -> None:
         _log(f"demo finished ({reason}): {time.time() - self.started_at:.0f}s, pairs={len(self.pairs)}, "
