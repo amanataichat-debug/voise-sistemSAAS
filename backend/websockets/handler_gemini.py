@@ -581,6 +581,33 @@ async def handle_gemini_websocket_connection(
         log_to_render(f"👋 Connection closed: {client_id}")
 
 
+async def _run_custom_function(gemini_client: GeminiLiveClient, websocket: WebSocket, executor, call_id: str,
+                               name: str, arguments: dict) -> None:
+    """Функция через gemini_client.function_executor: результат → toolResponse, событие → клиенту."""
+    started = time.time()
+    try:
+        result = await executor(call_id, name, arguments)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log_to_render(f"❌ custom function {name} failed: {exc}\n{traceback.format_exc()}", "ERROR")
+        result = {"ok": False, "error": "Не получилось выполнить — попробуйте ещё раз"}
+    if not isinstance(result, dict):
+        result = {"result": result}
+    elapsed = time.time() - started
+    delivery = await gemini_client.send_function_result(call_id, result)
+    try:
+        if delivery.get("success"):
+            await websocket.send_json({"type": "function_call.completed", "function": name,
+                                       "function_call_id": call_id, "result": result,
+                                       "execution_time": elapsed, "async_execution": True})
+        else:
+            await websocket.send_json({"type": "function_call.delivery_error", "function": name,
+                                       "function_call_id": call_id, "error": delivery.get("error")})
+    except Exception as exc:
+        log_to_render(f"custom function event send failed: {exc}", "WARNING")
+
+
 async def _launch_function_call(
     gemini_client: GeminiLiveClient,
     websocket: WebSocket,
@@ -619,6 +646,14 @@ async def _launch_function_call(
     await websocket.send_json({"type": "function_call.started", "function": normalized, "function_call_id": call_id})
     await websocket.send_json({"type": "function_call.executing", "function": normalized,
                                "function_call_id": call_id, "arguments": arguments, "async_execution": True})
+    executor = getattr(gemini_client, "function_executor", None)
+    if executor is not None:
+        # Свой исполнитель (голосовой режим владельца): функции не из реестра backend/functions
+        task = asyncio.create_task(_run_custom_function(gemini_client, websocket, executor, call_id, normalized,
+                                                        arguments))
+        function_tasks[call_id] = task
+        task.add_done_callback(lambda t, cid=call_id: function_tasks.pop(cid, None))
+        return
     task = asyncio.create_task(execute_and_send_function_result(
         openai_client=gemini_client,
         websocket=websocket,

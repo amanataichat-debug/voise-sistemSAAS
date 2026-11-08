@@ -199,6 +199,7 @@ class GeminiLiveClient:
         voice_hints: bool = False,
         telephony: bool = False,
         blocking_tools: bool = False,
+        function_definitions: Optional[List[Dict[str, Any]]] = None,
     ):
         """Initialize the Gemini Live API client.
 
@@ -222,6 +223,14 @@ class GeminiLiveClient:
         # blocking_tools: функции BLOCKING — модель ждёт результата и только потом отвечает. При NON_BLOCKING
         # она отвечает сразу и, запрещённая «сейчас посмотрю», говорила «не знаю» ещё до результата поиска.
         self.blocking_tools = blocking_tools
+        # function_definitions: готовые определения функций {name, description, parameters} В ОБХОД реестра
+        # backend/functions и коннекторов Composio — голосовой режим владельца (handler_owner_voice.py).
+        # Такие функции не регистрируются в общем реестре нарочно: иначе их можно было бы включить публичному
+        # виджету и отдать CRM владельца любому посетителю сайта. Исполняет их function_executor.
+        self.custom_functions: Optional[List[Dict[str, Any]]] = (
+            [dict(f) for f in function_definitions] if function_definitions is not None else None)
+        # async (call_id, name, args) -> dict: свой исполнитель функций вместо execute_function реестра
+        self.function_executor = None
         self.system_prompt_chars = 0   # длина итогового промпта сессии (карточка + знания + правила) — для журнала звонка
         self.connect_error: Optional[str] = None   # причина отказа Google (код и текст) для сообщения клиенту
         self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
@@ -373,20 +382,22 @@ class GeminiLiveClient:
                 except Exception as e:
                     logger.warning(f"[GEMINI-CLIENT] language instruction skipped: {e}")
             functions = getattr(self.assistant_config, "functions", None)
-
-            # Динамически домешиваем функции подключённых коннекторов (Composio):
-            # голос не полагается на разовый снимок в конфиге, читает connected-
-            # коннекторы агента из БД — так же, как оркестратор берёт tools.get.
-            try:
-                from backend.services import composio_service as _composio
-                functions = _composio.merge_voice_connector_functions(
-                    self.db_session, self.assistant_config, functions
-                )
-                _note = _composio.connector_voice_prompt_note(self.db_session, self.assistant_config)
-                if _note:
-                    system_message = (system_message or "") + _note
-            except Exception as _e:
-                logger.warning(f"[GEMINI-CLIENT] connector merge failed: {_e}")
+            if self.custom_functions is not None:
+                functions = [{"name": f["name"]} for f in self.custom_functions]
+            else:
+                # Динамически домешиваем функции подключённых коннекторов (Composio):
+                # голос не полагается на разовый снимок в конфиге, читает connected-
+                # коннекторы агента из БД — так же, как оркестратор берёт tools.get.
+                try:
+                    from backend.services import composio_service as _composio
+                    functions = _composio.merge_voice_connector_functions(
+                        self.db_session, self.assistant_config, functions
+                    )
+                    _note = _composio.connector_voice_prompt_note(self.db_session, self.assistant_config)
+                    if _note:
+                        system_message = (system_message or "") + _note
+                except Exception as _e:
+                    logger.warning(f"[GEMINI-CLIENT] connector merge failed: {_e}")
 
             # Update functions
             if functions:
@@ -618,7 +629,12 @@ class GeminiLiveClient:
             return False
         
         # Build tools
-        normalized_functions = normalize_functions(functions) if self.tools_enabled else []
+        if not self.tools_enabled:
+            normalized_functions = []
+        elif self.custom_functions is not None:
+            normalized_functions = self.custom_functions
+        else:
+            normalized_functions = normalize_functions(functions)
         tools = []
         
         for func_def in normalized_functions:
