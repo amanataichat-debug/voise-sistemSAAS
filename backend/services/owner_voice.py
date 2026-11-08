@@ -41,8 +41,11 @@ MAX_SESSION_SECONDS = int(os.getenv("OWNER_VOICE_MAX_SECONDS", "1200") or 1200)
 # озвучивает, когда придёт. BLOCKING — молчит до результата (OWNER_VOICE_BLOCKING_TOOLS=1).
 BLOCKING_TOOLS = os.getenv("OWNER_VOICE_BLOCKING_TOOLS", "0").strip().lower() in ("1", "true", "yes", "on")
 DEFAULT_VOICE = (os.getenv("OWNER_VOICE_GEMINI_VOICE", "") or "Kore").strip()
+# Модель оркестратора для голосовых ВОПРОСОВ (ask_agent): нужна скорость, ответ слушают вживую. Пусто —
+# модель агента. Действия (do_action) всегда идут на модели агента: там важнее точность, чем секунды.
+READ_MODEL = (os.getenv("OWNER_VOICE_ORCHESTRATOR_MODEL", "google/gemini-3.6-flash") or "").strip()
 
-BRIEF_MAX_CHARS = 6000
+BRIEF_MAX_CHARS = 7000
 MAX_ITERATIONS = 8
 MAX_ACTIONS_PER_SESSION = 20
 ANSWER_MAX_CHARS = 2500
@@ -156,14 +159,84 @@ def action_refusal(confirmed: Any, last_owner_text: Optional[str]) -> Optional[s
 
 
 # ---------------------------------------------------------------- функции голосового помощника (Gemini)
+# Быстрые (FAST_FUNCTIONS) читают базу напрямую и отвечают за доли секунды — BLOCKING: модель молча ждёт
+# результат и сразу говорит по нему. Медленные (поход к оркестратору ≈ 3–10 с) — NON_BLOCKING: модель
+# говорит «секунду, смотрю», а результат озвучивает, когда он придёт (scheduling WHEN_IDLE).
+_PERIOD_DESC = ("today — сегодня, yesterday — вчера, week — последние 7 дней, month — последние 30 дней, "
+                "this_month — с 1-го числа, custom — даты date_from/date_to")
 GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
     {
-        "name": "ask_agent",
+        "name": "get_stats",
+        "behavior": "BLOCKING",
         "description": (
-            "Узнать в системе то, чего нет в сводке: клиент и его карточка, переписка в WhatsApp/Telegram/"
-            "Instagram, звонки и их итоги, задачи и расписание, отчёт за другой период, воронка, база знаний, "
-            "файлы, Gmail и Календарь. Только чтение — ничего не меняет. Пиши запрос полностью и с именами "
-            "(«что писал Нурлан Асанов в WhatsApp сегодня»), а не «он»."
+            "Цифры за период: звонки (входящие, исходящие, с разговором, минуты), сообщения клиентов и сколько "
+            "клиентов написало, ответы агента, новые клиенты, по дням. Для «сколько звонков вчера», «как прошла "
+            "неделя», «сколько написали за месяц». Отвечает мгновенно."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "this_month", "custom"],
+                           "description": _PERIOD_DESC},
+                "date_from": {"type": "string", "description": "Для custom: первая дата, ГГГГ-ММ-ДД"},
+                "date_to": {"type": "string", "description": "Для custom: последняя дата включительно, ГГГГ-ММ-ДД"},
+            },
+            "required": ["period"],
+        },
+    },
+    {
+        "name": "client_info",
+        "behavior": "BLOCKING",
+        "description": (
+            "Всё о клиенте по имени, телефону или компании: карточка, этап воронки, что агент о нём знает, "
+            "последние сообщения во всех мессенджерах и звонки с итогами. Для «что писал Нурлан», «кто такой "
+            "Айбек», «чем кончился звонок с …». Отвечает мгновенно."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Имя, телефон или компания клиента"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_dialogs",
+        "behavior": "BLOCKING",
+        "description": (
+            "Список переписок: кто ждёт ответа, непрочитанные, где бот на паузе, или все последние. Для «кто ждёт "
+            "ответа», «кто писал в WhatsApp», «где бот молчит». Отвечает мгновенно."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "folder": {"type": "string", "enum": ["waiting", "unread", "paused", "all"],
+                           "description": "waiting — ждут ответа, unread — непрочитанные, paused — бот на паузе, all — все"},
+                "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram", "any"],
+                            "description": "Канал или any"},
+            },
+            "required": ["folder"],
+        },
+    },
+    {
+        "name": "get_schedule",
+        "behavior": "BLOCKING",
+        "description": "Запланированные звонки, сообщения и напоминания на ближайшие дни. Отвечает мгновенно.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "На сколько дней вперёд, 1–14"},
+            },
+            "required": ["days"],
+        },
+    },
+    {
+        "name": "ask_agent",
+        "behavior": "NON_BLOCKING",
+        "description": (
+            "Сложный вопрос, на который быстрые функции не отвечают: анализ, сравнение, база знаний, файлы, "
+            "Gmail и Календарь, стенограмма звонка, советы по клиентам. Работает несколько секунд — скажи "
+            "«секунду, смотрю». Только чтение. Пиши запрос полностью и с именами, а не «он»."
         ),
         "parameters": {
             "type": "object",
@@ -175,6 +248,7 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
     },
     {
         "name": "do_action",
+        "behavior": "NON_BLOCKING",
         "description": (
             "Выполнить команду владельца: написать или отправить клиенту (WhatsApp/Telegram/Instagram, "
             "голосовое, файл, КП), позвонить клиенту, поставить или перенести задачу/напоминание, сменить этап "
@@ -195,6 +269,7 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
     },
     {
         "name": "send_to_telegram",
+        "behavior": "BLOCKING",
         "description": (
             "Отправить самому владельцу в его Telegram (бот агента) отчёт, сводку или список, который он "
             "попросил прислать или согласился получить. Текст — готовое сообщение: коротко, по пунктам, с "
@@ -209,6 +284,7 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
 ]
+FAST_FUNCTIONS = {"get_stats", "client_info", "list_dialogs", "get_schedule"}
 FUNCTION_NAMES = [f["name"] for f in GEMINI_FUNCTIONS]
 
 
@@ -270,7 +346,8 @@ def build_brief(db, user, agent, now: Optional[datetime] = None) -> str:
             except Exception:
                 pass
 
-    safe("today", lambda: _brief_today(db, agent, day_start))
+    safe("today", lambda: _brief_today(db, user, agent, day_start, now))
+    safe("week", lambda: _brief_week(db, user, agent, day_start, now))
     safe("dialogs", lambda: _brief_dialogs(db, user, agent, today_bk))
     safe("calls", lambda: _brief_calls(db, agent, day_start, today_bk))
     safe("tasks", lambda: _brief_tasks(db, agent, now, today_bk))
@@ -282,45 +359,26 @@ def build_brief(db, user, agent, now: Optional[datetime] = None) -> str:
     return text
 
 
-def _brief_today(db, agent, day_start: datetime) -> str:
-    from sqlalchemy import func
-    from backend.models.agent_call import AgentCall
-    from backend.models.agent_contact import AgentContact
-    from backend.services.agent_orchestrator import MESSAGE_DIRECTIONS
+def _brief_today(db, user, agent, day_start: datetime, now: datetime) -> str:
+    days = activity_by_day(db, user, agent, day_start, now + timedelta(minutes=1))
+    t = _sum_days(days)
+    t["writers"] = count_writers(db, user, agent, day_start, now + timedelta(minutes=1))
+    return "Сегодня: " + _stats_sentence(t) + "."
 
-    rows = (
-        db.query(AgentCall.direction, AgentCall.status, func.count(AgentCall.id))
-        .filter(AgentCall.agent_config_id == agent.id, AgentCall.created_at >= day_start)
-        .group_by(AgentCall.direction, AgentCall.status)
-        .all()
-    )
-    calls_in = calls_out = answered = 0
-    messages: Dict[str, int] = {}
-    for direction, status, n in rows:
-        d = (direction or "outbound").lower()
-        if d in MESSAGE_DIRECTIONS:
-            if d.endswith("_inbound"):
-                ch = d.split("_", 1)[0]
-                messages[ch] = messages.get(ch, 0) + int(n)
-            continue
-        if d == "inbound":
-            calls_in += int(n)
-        else:
-            calls_out += int(n)
-        if status == "answered":
-            answered += int(n)
-    new_clients = (
-        db.query(func.count(AgentContact.id))
-        .filter(AgentContact.agent_config_id == agent.id, AgentContact.created_at >= day_start)
-        .scalar() or 0
-    )
-    total_msgs = sum(messages.values())
-    line = (f"Сегодня: звонков {calls_in + calls_out} (входящих {calls_in}, исходящих {calls_out}, "
-            f"с разговором {answered}); новых клиентов в CRM {new_clients}; обращений в мессенджерах "
-            f"(разобрано агентом) {total_msgs}")
-    if messages:
-        line += " — " + ", ".join(f"{CHANNEL_NAMES.get(k, k)} {v}" for k, v in sorted(messages.items()))
-    return line + "."
+
+def _brief_week(db, user, agent, day_start: datetime, now: datetime) -> str:
+    since = day_start - timedelta(days=6)
+    days = activity_by_day(db, user, agent, since, now + timedelta(minutes=1))
+    rows = []
+    for i in range(6, -1, -1):
+        d = (day_start - timedelta(days=i) + BISHKEK_OFFSET).date()
+        st = days.get(d) or _empty_day()
+        label = "сегодня" if i == 0 else "вчера" if i == 1 else f"{WEEKDAYS[d.weekday()][:2]} {d:%d.%m}"
+        rows.append(f"{label}: {_stats_sentence(st, short=True)}")
+    t = _sum_days(days)
+    t["writers"] = count_writers(db, user, agent, since, now + timedelta(minutes=1))
+    return _section("По дням за неделю (вопросы «вчера», «за неделю» — отсюда, без функций)", rows) + \
+        "\nИтого за 7 дней: " + _stats_sentence(t) + "."
 
 
 def _brief_dialogs(db, user, agent, today_bk: datetime) -> str:
@@ -427,6 +485,404 @@ def _brief_funnel(db, agent) -> str:
     return f"Воронка CRM: всего клиентов {total} — " + ", ".join(parts) + "."
 
 
+# ---------------------------------------------------------------- активность по дням (сводка и get_stats)
+def _empty_day() -> Dict[str, int]:
+    return {"calls_in": 0, "calls_out": 0, "answered": 0, "talk_sec": 0, "msgs_in": 0, "writers": 0,
+            "bot_out": 0, "owner_out": 0, "new_clients": 0}
+
+
+def _sum_days(days: Dict[Any, Dict[str, int]]) -> Dict[str, int]:
+    total = _empty_day()
+    for st in days.values():
+        for k, v in st.items():
+            total[k] = total.get(k, 0) + int(v or 0)
+    total["writers"] = 0   # уникальных за период считает count_writers, сумма по дням тут неверна
+    return total
+
+
+def _stats_sentence(st: Dict[str, int], short: bool = False) -> str:
+    calls = st["calls_in"] + st["calls_out"]
+    talk_min = round(st["talk_sec"] / 60)
+    if short:
+        return (f"звонков {calls} (входящих {st['calls_in']}, с разговором {st['answered']}), "
+                f"сообщений от клиентов {st['msgs_in']}, новых клиентов {st['new_clients']}")
+    out = (f"звонков {calls} (входящих {st['calls_in']}, исходящих {st['calls_out']}, с разговором "
+           f"{st['answered']}, разговоров {talk_min} мин); сообщений от клиентов {st['msgs_in']}")
+    if st.get("writers"):
+        out += f" от {st['writers']} клиентов"
+    out += (f", ответов агента {st['bot_out']}, ваших ответов {st['owner_out']}; "
+            f"новых клиентов в CRM {st['new_clients']}")
+    return out
+
+
+def _bk_day_expr(column):
+    from sqlalchemy import func, text
+    return func.date(column + text("interval '6 hours'"))
+
+
+def activity_by_day(db, user, agent, since: datetime, until: datetime) -> Dict[Any, Dict[str, int]]:
+    """Звонки, сообщения и новые клиенты по дням (дата по Бишкеку); since/until — naive UTC."""
+    from sqlalchemy import func, text
+    from backend.models.agent_call import AgentCall
+    from backend.models.agent_contact import AgentContact
+    from backend.services import inbox_service
+    from backend.services.agent_orchestrator import MESSAGE_DIRECTIONS
+
+    days: Dict[Any, Dict[str, int]] = {}
+
+    def day(d):
+        return days.setdefault(d, _empty_day())
+
+    day_col = _bk_day_expr(AgentCall.created_at)
+    for d, direction, status, n, secs in (
+        db.query(day_col, AgentCall.direction, AgentCall.status, func.count(AgentCall.id),
+                 func.coalesce(func.sum(AgentCall.duration_seconds), 0))
+        .filter(AgentCall.agent_config_id == agent.id, AgentCall.created_at >= since, AgentCall.created_at < until,
+                ~AgentCall.direction.in_(list(MESSAGE_DIRECTIONS)))
+        .group_by(day_col, AgentCall.direction, AgentCall.status)
+        .all()
+    ):
+        st = day(d)
+        if (direction or "outbound") == "inbound":
+            st["calls_in"] += int(n)
+        else:
+            st["calls_out"] += int(n)
+        if status == "answered":
+            st["answered"] += int(n)
+            st["talk_sec"] += int(secs or 0)
+
+    union = " UNION ALL ".join(inbox_service._UNION_PARTS.values())
+    sql = (
+        "WITH m AS (" + union + ") "
+        "SELECT date(m.created_at + interval '6 hours') AS d, "
+        "count(*) FILTER (WHERE m.direction = 'inbound') AS msgs_in, "
+        "count(DISTINCT m.cid) FILTER (WHERE m.direction = 'inbound') AS writers, "
+        "count(*) FILTER (WHERE m.direction = 'outbound' AND COALESCE(m.sent_by, '') <> 'owner') AS bot_out, "
+        "count(*) FILTER (WHERE m.direction = 'outbound' AND m.sent_by = 'owner') AS owner_out "
+        "FROM m JOIN agent_contacts c ON c.id = m.cid "
+        "WHERE c.agent_config_id = :aid AND m.created_at >= :since AND m.created_at < :until "
+        "GROUP BY 1"
+    )
+    for r in db.execute(text(sql), {"uid": str(user.id), "aid": str(agent.id), "since": since, "until": until}):
+        st = day(r.d)
+        st["msgs_in"] += int(r.msgs_in or 0)
+        st["writers"] += int(r.writers or 0)
+        st["bot_out"] += int(r.bot_out or 0)
+        st["owner_out"] += int(r.owner_out or 0)
+
+    nc_col = _bk_day_expr(AgentContact.created_at)
+    for d, n in (
+        db.query(nc_col, func.count(AgentContact.id))
+        .filter(AgentContact.agent_config_id == agent.id, AgentContact.created_at >= since,
+                AgentContact.created_at < until)
+        .group_by(nc_col).all()
+    ):
+        day(d)["new_clients"] += int(n)
+    return days
+
+
+def count_writers(db, user, agent, since: datetime, until: datetime) -> int:
+    """Сколько разных клиентов написало за период (во всех мессенджерах)."""
+    from sqlalchemy import text
+    from backend.services import inbox_service
+
+    union = " UNION ALL ".join(inbox_service._UNION_PARTS.values())
+    sql = ("WITH m AS (" + union + ") SELECT count(DISTINCT m.cid) FROM m JOIN agent_contacts c ON c.id = m.cid "
+           "WHERE c.agent_config_id = :aid AND m.direction = 'inbound' AND m.created_at >= :since "
+           "AND m.created_at < :until")
+    return int(db.execute(text(sql), {"uid": str(user.id), "aid": str(agent.id), "since": since,
+                                      "until": until}).scalar() or 0)
+
+
+def period_range(period: str, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                 now: Optional[datetime] = None):
+    """(since_utc, until_utc, подпись) для периода в датах Бишкека."""
+    now = now or datetime.utcnow()
+    today = (now + BISHKEK_OFFSET).date()
+    period = (period or "today").strip().lower()
+
+    def utc(d):
+        return datetime(d.year, d.month, d.day) - BISHKEK_OFFSET
+
+    if period == "yesterday":
+        a = b = today - timedelta(days=1)
+        label = f"вчера, {a:%d.%m}"
+    elif period == "week":
+        a, b = today - timedelta(days=6), today
+        label = f"последние 7 дней ({a:%d.%m}–{b:%d.%m})"
+    elif period == "month":
+        a, b = today - timedelta(days=29), today
+        label = f"последние 30 дней ({a:%d.%m}–{b:%d.%m})"
+    elif period == "this_month":
+        a, b = today.replace(day=1), today
+        label = f"этот месяц ({a:%d.%m}–{b:%d.%m})"
+    elif period == "custom":
+        try:
+            a = datetime.strptime((date_from or "").strip()[:10], "%Y-%m-%d").date()
+            b = datetime.strptime((date_to or date_from or "").strip()[:10], "%Y-%m-%d").date()
+        except ValueError:
+            a = b = today
+        if a > b:
+            a, b = b, a
+        b = min(b, today)
+        a = max(a, b - timedelta(days=366))
+        label = f"{a:%d.%m.%Y}" if a == b else f"{a:%d.%m.%Y}–{b:%d.%m.%Y}"
+    else:
+        a = b = today
+        label = f"сегодня, {a:%d.%m}"
+    return utc(a), utc(b) + timedelta(days=1), label, a, b
+
+
+def fast_get_stats(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    since, until, label, a, b = period_range(args.get("period"), args.get("date_from"), args.get("date_to"))
+    days = activity_by_day(db, user, agent, since, until)
+    total = _sum_days(days)
+    total["writers"] = count_writers(db, user, agent, since, until)
+    calls = total["calls_in"] + total["calls_out"]
+    result: Dict[str, Any] = {
+        "ok": True,
+        "period": label,
+        "summary": _stats_sentence(total),
+        "calls": {"total": calls, "incoming": total["calls_in"], "outgoing": total["calls_out"],
+                  "with_talk": total["answered"], "talk_minutes": round(total["talk_sec"] / 60)},
+        "messages": {"from_clients": total["msgs_in"], "clients_wrote": total["writers"],
+                     "agent_replies": total["bot_out"], "your_replies": total["owner_out"]},
+        "new_clients": total["new_clients"],
+    }
+    n_days = (b - a).days + 1
+    if 1 < n_days <= 31:
+        result["by_day"] = []
+        for i in range(n_days):
+            d = a + timedelta(days=i)
+            st = days.get(d) or _empty_day()
+            result["by_day"].append({"day": f"{WEEKDAYS[d.weekday()][:2]} {d:%d.%m}",
+                                     "calls": st["calls_in"] + st["calls_out"], "with_talk": st["answered"],
+                                     "messages": st["msgs_in"], "new_clients": st["new_clients"]})
+    result["card"] = {
+        "type": "stats", "title": label[:1].upper() + label[1:],
+        "tiles": [
+            {"label": "Звонки", "value": calls, "sub": f"с разговором {total['answered']}"},
+            {"label": "Сообщения", "value": total["msgs_in"], "sub": f"от {total['writers']} клиентов"},
+            {"label": "Новые клиенты", "value": total["new_clients"], "sub": "в CRM"},
+            {"label": "Разговоры", "value": f"{round(total['talk_sec'] / 60)} мин", "sub": f"входящих {total['calls_in']}"},
+        ],
+        "bars": [{"label": x["day"][-5:], "value": x["calls"] + x["messages"]} for x in result.get("by_day", [])],
+    }
+    return result
+
+
+def _stage_label(agent, key: Optional[str]) -> str:
+    try:
+        from backend.core.pipeline_stages import get_agent_stages
+        labels = {s["key"]: s["label"] for s in get_agent_stages(agent)}
+        return labels.get(key or "", key or "")
+    except Exception:
+        return key or ""
+
+
+def find_clients(db, user, agent, query: str, limit: int = 5) -> list:
+    from sqlalchemy import or_
+    from backend.models.agent_contact import AgentContact
+
+    q = (query or "").strip()
+    if not q:
+        return []
+    if sum(ch.isdigit() for ch in q) >= 7:
+        try:
+            from backend.services.agent_contact_phones import find_contacts_by_phone_any
+            found, _tail = find_contacts_by_phone_any(db, user.id, agent.id, q, limit=limit)
+            if found:
+                return list(found)[:limit]
+        except Exception as exc:
+            logger.warning(f"[OWNER-VOICE] phone search failed: {exc}")
+            db.rollback()
+    words = [w for w in re.split(r"\s+", q) if len(w) >= 2][:3] or [q]
+    conds = []
+    for w in words:
+        like = f"%{w}%"
+        conds.append(or_(AgentContact.name.ilike(like), AgentContact.company.ilike(like),
+                         AgentContact.phone.ilike(like), AgentContact.tags.ilike(like)))
+    base = db.query(AgentContact).filter(AgentContact.agent_config_id == agent.id)
+    rows = base.filter(*conds).order_by(AgentContact.updated_at.desc()).limit(limit).all()
+    if not rows and len(words) > 1:   # «Нурлан Асанов» → хотя бы по одному слову
+        rows = base.filter(or_(*conds)).order_by(AgentContact.updated_at.desc()).limit(limit).all()
+    return rows
+
+
+_WHO = {"client": "клиент", "bot": "агент", "owner": "вы"}
+_OUTCOMES = {"answered": "был разговор", "no_answer": "не ответил", "failed": "не соединился", "busy": "занято",
+             "completed": "был разговор", "missed": "пропущен", "scheduled": "запланирован", "calling": "идёт"}
+
+
+def _memory_brief(memory: Any, limit: int = 700) -> str:
+    if not isinstance(memory, dict) or not memory:
+        return ""
+    skip = {"nurture", "reengage", "lost_by", "whatsapp_phone"}
+    parts = []
+    for k, v in memory.items():
+        if k in skip or v in (None, "", [], {}):
+            continue
+        val = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+        parts.append(f"{k}: {_clip(val, 200)}")
+    return _clip("; ".join(parts), limit)
+
+
+def fast_client_info(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    from backend.models.agent_call import AgentCall
+    from backend.services import inbox_service
+    from backend.services.agent_orchestrator import MESSAGE_DIRECTIONS
+
+    query = (args.get("query") or "").strip()
+    rows = find_clients(db, user, agent, query)
+    if not rows:
+        return {"ok": False, "message": f"Клиента «{query}» в CRM не нашёл. Уточни имя или номер."}
+    c = rows[0]
+    now_bk = datetime.utcnow() + BISHKEK_OFFSET
+    feed = []
+    try:
+        items = inbox_service.timeline(db, c, limit=10).get("items") or []
+    except Exception as exc:
+        logger.warning(f"[OWNER-VOICE] timeline failed: {exc}")
+        db.rollback()
+        items = []
+    for it in items[-10:]:
+        try:
+            ts = datetime.fromisoformat(str(it.get("ts")).replace("Z", "+00:00")) if it.get("ts") else None
+        except ValueError:
+            ts = None
+        when = _day_label(ts, now_bk)
+        if it.get("type") == "call":
+            if (it.get("direction") or "") in MESSAGE_DIRECTIONS:
+                continue   # разбор переписки агентом — не звонок, сами сообщения уже в ленте
+            dur = int(it.get("duration") or 0)
+            outcome = str(it.get("outcome") or it.get("status") or "")
+            feed.append(f"{when} · звонок {'входящий' if it.get('direction') == 'inbound' else 'исходящий'}"
+                        f"{f', {dur // 60} мин {dur % 60} с' if dur else ''}"
+                        f"{' · ' + _OUTCOMES.get(outcome, outcome) if outcome else ''}")
+        else:
+            who = _WHO.get(it.get("who") or "", it.get("who") or "")
+            text = _clip(it.get("text") or ("файл" if it.get("attachment") else ""), 220)
+            feed.append(f"{when} · {CHANNEL_NAMES.get(it.get('channel'), it.get('channel'))} · {who}"
+                        f"{' (голосовое)' if it.get('voice') else ''}: «{text}»")
+    calls = []
+    for call in (db.query(AgentCall).filter(AgentCall.agent_contact_id == c.id,
+                                            ~AgentCall.direction.in_(list(MESSAGE_DIRECTIONS)))
+                 .order_by(AgentCall.created_at.desc()).limit(3).all()):
+        if call.call_result:
+            calls.append(f"{_day_label(call.created_at, now_bk)}: {_clip(call.call_result, 260)}")
+    from backend.services import agent_pause
+    client = {
+        "name": c.name or c.phone, "company": c.company or None, "phone": inbox_service.real_phone(c.phone),
+        "stage": _stage_label(agent, c.status), "in_crm_since": _day_label(c.created_at, now_bk),
+        "deal_amount": float(c.deal_amount) if getattr(c, "deal_amount", None) is not None else None,
+        "next_step": c.next_step_text or None, "notes": _clip(c.notes, 400) or None,
+        "agent_knows": _memory_brief(c.memory) or None,
+        "bot_paused": bool(agent_pause.is_paused(c, datetime.utcnow())),
+        "recent": feed, "call_results": calls,
+    }
+    out = {"ok": True, "client": {k: v for k, v in client.items() if v not in (None, [], "")}}
+    if len(rows) > 1:
+        out["other_matches"] = [r.name or r.phone for r in rows[1:4]]
+        out["note"] = "Есть ещё похожие клиенты — если владелец имел в виду другого, уточни."
+    out["card"] = {"type": "client", "title": client["name"], "subtitle": " · ".join(
+        x for x in (client.get("company"), client["stage"], client.get("phone")) if x),
+        "lines": feed[-4:]}
+    return out
+
+
+def fast_list_dialogs(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    from backend.services import inbox_service
+
+    folder = args.get("folder") if args.get("folder") in ("waiting", "unread", "paused", "all") else "waiting"
+    channel = args.get("channel") if args.get("channel") in ("whatsapp", "telegram", "instagram") else None
+    data = inbox_service.list_dialogs(db, user, folder=folder, channel=channel, agent_id=agent.id, limit=8)
+    now_bk = datetime.utcnow() + BISHKEK_OFFSET
+    items = []
+    for it in data.get("items") or []:
+        try:
+            dt = datetime.fromisoformat(str(it.get("last_at")).replace("Z", "+00:00")) if it.get("last_at") else None
+        except ValueError:
+            dt = None
+        items.append({
+            "name": it.get("name"), "channels": [CHANNEL_NAMES.get(x, x) for x in it.get("channels") or []],
+            "when": _day_label(dt, now_bk), "last_from": _WHO.get(it.get("last_by") or "", ""),
+            "text": _clip(it.get("preview"), 160), "waiting": bool(it.get("waiting")),
+            "bot_paused": bool(it.get("paused")),
+        })
+    counts = data.get("counts") or {}
+    titles = {"waiting": "Ждут ответа", "unread": "Непрочитанные", "paused": "Бот на паузе", "all": "Последние диалоги"}
+    return {"ok": True, "folder": titles[folder], "counts": {"waiting": counts.get("waiting", 0),
+                                                             "unread": counts.get("unread", 0),
+                                                             "paused": counts.get("paused", 0)},
+            "dialogs": items,
+            "card": {"type": "list", "title": titles[folder],
+                     "items": [{"title": x["name"], "meta": f"{', '.join(x['channels'])} · {x['when']}",
+                                "text": x["text"]} for x in items[:6]]}}
+
+
+def fast_get_schedule(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    from backend.models.agent_contact import AgentContact
+    from backend.models.task import Task, TaskStatus
+
+    try:
+        days = max(1, min(int(args.get("days") or 1), 14))
+    except (TypeError, ValueError):
+        days = 1
+    now = datetime.utcnow()
+    now_bk = now + BISHKEK_OFFSET
+    end_bk = now_bk.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)
+    rows = (
+        db.query(Task, AgentContact)
+        .join(AgentContact, AgentContact.id == Task.agent_contact_id)
+        .filter(AgentContact.agent_config_id == agent.id, Task.status == TaskStatus.SCHEDULED,
+                Task.scheduled_time <= end_bk - BISHKEK_OFFSET)
+        .order_by(Task.scheduled_time.asc()).limit(20).all()
+    )
+    items = []
+    for task, contact in rows:
+        what = {"call": "звонок", "telegram": "сообщение в Telegram", "owner": "напоминание вам"}.get(
+            task.channel or "call", task.channel or "")
+        items.append({"when": _day_label(task.scheduled_time, now_bk), "what": what,
+                      "client": contact.name or contact.phone, "title": _clip(task.title, 100),
+                      "by": "вы" if getattr(task, "created_by", None) == "owner" else "агент"})
+    return {"ok": True, "days": days, "count": len(items), "items": items,
+            "card": {"type": "list", "title": f"Запланировано ({len(items)})",
+                     "items": [{"title": f"{x['when']} · {x['what']}", "meta": x["client"], "text": x["title"]}
+                               for x in items[:6]]}}
+
+
+FAST_IMPL = {
+    "get_stats": fast_get_stats,
+    "client_info": fast_client_info,
+    "list_dialogs": fast_list_dialogs,
+    "get_schedule": fast_get_schedule,
+}
+
+
+def run_fast_function(name: str, args: Dict[str, Any], user_id: str, agent_id: str) -> Dict[str, Any]:
+    """Быстрая функция в отдельном потоке (asyncio.to_thread): своя сессия БД, звук не стоит."""
+    from backend.db.session import SessionLocal
+    from backend.models.agent_config import AgentConfig
+    from backend.models.user import User
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        agent = db.query(AgentConfig).filter(AgentConfig.id == agent_id, AgentConfig.user_id == user_id).first()
+        if user is None or agent is None:
+            return {"ok": False, "error": "Агент недоступен"}
+        return FAST_IMPL[name](db, user, agent, args if isinstance(args, dict) else {})
+    except Exception as exc:
+        logger.error(f"[OWNER-VOICE] fast {name} failed: {exc}", exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "error": "Не получилось достать данные — попробуй ask_agent"}
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------- промпт голосового помощника
 VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА БИЗНЕСА. С тобой говорит {owner} — владелец, а не клиент. Ты тот же агент Voksy AI, который ведёт его клиентов, CRM, звонки и переписку, только сейчас — голосом: толковый помощник-референт, который в курсе всех дел компании и сразу отвечает по сути.
 
@@ -440,11 +896,12 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 - Не понял или не расслышал — коротко переспроси, не отвечай наугад.
 - Если в ответе много деталей (список клиентов, отчёт), один раз предложи: «Отправить подробно в Telegram?» Не в каждой реплике.
 
-ЧТО ТЫ ЗНАЕШЬ
-- Ниже — СВОДКА ДЕЛ на начало разговора. На «дай отчёт», «что сегодня», «кто писал», «кто звонил», «что по задачам» отвечай из неё сразу, без функций.
-- Всё, чего в сводке нет (конкретный клиент целиком, вся переписка, прошлые недели, база знаний, документы, почта, календарь), — функция ask_agent. Запрос пиши полностью, с именами и периодом.
-- Пока функция работает, скажи одну короткую фразу — «Секунду, смотрю» — и жди. До результата — никаких цифр, имён и выводов. Ничего не выдумывай: нет в сводке и в ответе функции — значит не знаешь, так и скажи.
-- Пришёл ответ — перескажи главное своими словами, коротко.
+ЧТО ТЫ ЗНАЕШЬ И КАК УЗНАЁШЬ
+- Ниже — СВОДКА ДЕЛ на начало разговора: сегодня, по дням за неделю, последние диалоги и звонки, задачи, воронка. На «дай отчёт», «что сегодня», «сколько звонков вчера», «как прошла неделя», «кто писал», «что по задачам» отвечай из неё сразу, без функций.
+- Нет в сводке — быстрые функции, они отвечают мгновенно, ничего не говори перед ними: get_stats — цифры за любой другой период; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
+- Сложное (анализ, советы, база знаний, документы, почта, календарь, стенограмма звонка) — ask_agent: он думает несколько секунд, поэтому скажи одну короткую фразу — «Секунду, смотрю» — и жди. До результата — никаких цифр, имён и выводов.
+- Ничего не выдумывай: нет в сводке и в ответе функции — значит не знаешь, так и скажи.
+- Пришёл ответ — перескажи главное своими словами, коротко. На экране владелец видит карточку с цифрами — не зачитывай всё подряд, назови главное.
 
 ДЕЙСТВИЯ (написать или отправить клиенту, позвонить, поставить или перенести задачу, сменить этап, заметка, пауза бота, событие в календаре)
 - Сначала одной фразой повтори, что сделаешь: кому, через какой канал, что именно, когда. Например: «Пишу Нурлану в WhatsApp, что вы перезвоните в три. Отправляю?»
@@ -565,6 +1022,14 @@ async def run_orchestrator_task(kind: str, request: str, agent, user, db,
                "agent_config": agent, "surface": "owner_chat"}
 
     client = get_openrouter_client()
+    model = agent.orchestrator_model
+    if kind == "read" and READ_MODEL:
+        try:
+            from backend.services.agent_models import is_valid_model
+            if is_valid_model(READ_MODEL):
+                model = READ_MODEL
+        except Exception:
+            pass
     total_prompt = total_completion = 0
     used: List[str] = []
     final_text = ""
@@ -572,7 +1037,7 @@ async def run_orchestrator_task(kind: str, request: str, agent, user, db,
     try:
         while iteration < MAX_ITERATIONS:
             iteration += 1
-            response = await client.chat_completion(model=agent.orchestrator_model, messages=messages,
+            response = await client.chat_completion(model=model, messages=messages,
                                                     tools=tools or None, temperature=0.4)
             p_tok, c_tok = _extract_usage(response)
             total_prompt += p_tok
@@ -611,7 +1076,7 @@ async def run_orchestrator_task(kind: str, request: str, agent, user, db,
     finally:
         if total_prompt or total_completion:
             try:
-                CreditService.charge(db=db, user_id=user.id, model_slug=agent.orchestrator_model,
+                CreditService.charge(db=db, user_id=user.id, model_slug=model,
                                      prompt_tokens=total_prompt, completion_tokens=total_completion,
                                      ref_type="voice_chat", ref_id=agent.id,
                                      notes=f"voice {kind}: iterations {iteration}")
@@ -690,3 +1155,101 @@ def append_voice_history(db, agent, pairs: List[Dict[str, str]]) -> int:
     agent.chat_history = history[-20:]
     db.commit()
     return len(pairs)
+
+
+# ---------------------------------------------------------------- Telegram Mini App: вход без пароля
+# Mini App открывается из бота агента. Telegram подписывает данные пользователя ключом бота (initData),
+# мы проверяем подпись и выдаём короткий токен ТОЛЬКО для голосового сокета этого агента — не токен
+# кабинета: даже утёкший, он не открывает ни API, ни CRM.
+VOICE_TOKEN_TTL = 30 * 60
+WEBAPP_MAX_AGE = 24 * 3600
+
+
+def _b64u(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _b64u_dec(text: str) -> bytes:
+    import base64
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def _token_key() -> bytes:
+    from backend.core.config import settings
+    return ("owner-voice:" + str(settings.JWT_SECRET_KEY or "")).encode()
+
+
+def make_voice_token(user_id, agent_id, ttl: int = VOICE_TOKEN_TTL, now: Optional[float] = None) -> str:
+    import hashlib
+    import hmac
+    import time as _time
+    body = _b64u(json.dumps({"u": str(user_id), "a": str(agent_id),
+                             "e": int((now or _time.time()) + ttl)}, separators=(",", ":")).encode())
+    sig = _b64u(hmac.new(_token_key(), ("ov1." + body).encode(), hashlib.sha256).digest())
+    return f"ov1.{body}.{sig}"
+
+
+def read_voice_token(token: str, now: Optional[float] = None) -> Optional[Dict[str, str]]:
+    """{'user_id', 'agent_id'} или None (подделка, другой формат, истёк)."""
+    import hashlib
+    import hmac
+    import time as _time
+    try:
+        prefix, body, sig = (token or "").split(".")
+        if prefix != "ov1":
+            return None
+        good = _b64u(hmac.new(_token_key(), ("ov1." + body).encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(good, sig):
+            return None
+        data = json.loads(_b64u_dec(body))
+        if int(data.get("e") or 0) < (now or _time.time()):
+            return None
+        return {"user_id": str(data["u"]), "agent_id": str(data["a"])}
+    except Exception:
+        return None
+
+
+def verify_webapp_init_data(init_data: str, bot_token: str, max_age: int = WEBAPP_MAX_AGE,
+                            now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """Проверка initData Telegram Mini App (core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
+    Возвращает разобранные поля (user — словарь) или None."""
+    import hashlib
+    import hmac
+    import time as _time
+    from urllib.parse import parse_qsl
+
+    if not init_data or not bot_token:
+        return None
+    try:
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return None
+    fields = dict(pairs)
+    received = fields.pop("hash", "")
+    if not received:
+        return None
+    check = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, received):
+        return None
+    try:
+        auth_date = int(fields.get("auth_date") or 0)
+    except ValueError:
+        return None
+    if not auth_date or (now or _time.time()) - auth_date > max_age:
+        return None
+    try:
+        fields["user"] = json.loads(fields.get("user") or "{}")
+    except ValueError:
+        return None
+    if not isinstance(fields["user"], dict) or not fields["user"].get("id"):
+        return None
+    return fields
+
+
+def webapp_url(agent_id) -> str:
+    from backend.core.config import settings
+    base = (getattr(settings, "HOST_URL", "") or "").rstrip("/")
+    return f"{base}/static/voice-live.html?agent={agent_id}"

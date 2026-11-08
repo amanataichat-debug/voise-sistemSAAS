@@ -162,7 +162,8 @@ app.add_middleware(
 # Безопасность (06.11.2026): заголовки ответа и ограничение частоты попыток входа
 # ---------------------------------------------------------------------------
 # Страницы, которые встраиваются на чужие сайты во фрейм — им запрет фреймов не ставим
-_FRAMEABLE = re.compile(r"^/(embed/|static/(widget|[a-z-]*-test)\.html)")
+# voice-live.html — Telegram Mini App: Telegram Web открывает её во фрейме
+_FRAMEABLE = re.compile(r"^/(embed/|static/(widget|voice-live|[a-z-]*-test)\.html)")
 
 
 @app.middleware("http")

@@ -100,6 +100,7 @@ class OwnerVoiceSession:
         self.started_at = time.time()
         self.actions_done = 0
         self.functions_called = 0
+        self.typed: List[str] = []   # быстрые команды из окна — у них нет расшифровки речи, в историю пишем сами
         self._sem = asyncio.Semaphore(2)
         # Последняя реплика владельца — для проверки «да» перед действием (ov.action_refusal)
         self._owner_cur = ""
@@ -131,6 +132,8 @@ class OwnerVoiceSession:
     async def save_turn(self, user: str, assistant: str) -> bool:
         user = "" if (user or "").strip() in _PLACEHOLDERS else (user or "").strip()
         assistant = "" if (assistant or "").strip() in _PLACEHOLDERS else (assistant or "").strip()
+        if not user and assistant and self.typed:
+            user = self.typed.pop(0)   # ответ на быструю команду из окна
         if user or assistant:
             self.pairs.append({"user": user, "assistant": assistant})
         return True
@@ -155,35 +158,48 @@ class OwnerVoiceSession:
                 return {"ok": False, "message": "Слишком много действий за один разговор — продолжите в чате агента."}
         if name not in ov.FUNCTION_NAMES:
             return {"ok": False, "error": f"Нет такой функции: {name}"}
-
+        if name in ov.FAST_FUNCTIONS:
+            # прямой запрос к базе — в потоке: синхронный драйвер БД не останавливает звук разговора
+            return await asyncio.to_thread(ov.run_fast_function, name, args, self.user_id, self.agent_id)
         async with self._sem:
-            from backend.db.session import SessionLocal
-            from backend.models.agent_config import AgentConfig
-            from backend.models.user import User
+            # Оркестратор делает синхронные запросы к БД внутри корутин. В основном loop'е воркера, где идёт
+            # звук, это и были «запинки, как будто связь пропадает» (живой тест 08.11.2026): пока агент думал,
+            # кусочки ответа Gemini не уходили в браузер. Поэтому — в фоновом loop'е (core/background_loop.py).
+            from backend.core import background_loop
+            result = await background_loop.run(self._execute_slow(name, args, list(self.pairs)))
+        if name == "do_action" and result.get("ok"):
+            self.actions_done += 1
+        return result
 
-            db = SessionLocal()
-            try:
-                user = db.query(User).filter(User.id == self.user_id).first()
-                agent = db.query(AgentConfig).filter(AgentConfig.id == self.agent_id,
-                                                     AgentConfig.user_id == self.user_id).first()
-                if user is None or agent is None:
-                    return {"ok": False, "error": "Агент недоступен"}
-                if name == "send_to_telegram":
-                    return await ov.send_owner_telegram(args.get("text") or "", agent, user, db)
-                kind = "read" if name == "ask_agent" else "action"
-                request = args.get("question") if kind == "read" else args.get("command")
-                result = await ov.run_orchestrator_task(kind, request or "", agent, user, db, self.pairs)
-                if kind == "action" and result.get("ok"):
-                    self.actions_done += 1
-                return result
-            except Exception as exc:
-                name_err = type(exc).__name__
-                if name_err in ("InsufficientCreditsError", "SubscriptionExpiredError", "SubscriptionRequiredError"):
-                    return {"ok": False, "error": "Кредиты агента закончились или тариф истёк — скажи об этом владельцу."}
-                _log(f"function {name} failed: {exc}\n{traceback.format_exc()}", "ERROR")
-                return {"ok": False, "error": "Не получилось — попробуйте ещё раз"}
-            finally:
-                db.close()
+    async def _execute_slow(self, name: str, args: Dict[str, Any], pairs: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Оркестратор и Telegram — выполняется в фоновом loop'е, со своей сессией БД."""
+        from backend.db.session import SessionLocal
+        from backend.models.agent_config import AgentConfig
+        from backend.models.user import User
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == self.user_id).first()
+            agent = db.query(AgentConfig).filter(AgentConfig.id == self.agent_id,
+                                                 AgentConfig.user_id == self.user_id).first()
+            if user is None or agent is None:
+                return {"ok": False, "error": "Агент недоступен"}
+            if name == "send_to_telegram":
+                return await ov.send_owner_telegram(args.get("text") or "", agent, user, db)
+            kind = "read" if name == "ask_agent" else "action"
+            request = args.get("question") if kind == "read" else args.get("command")
+            result = await ov.run_orchestrator_task(kind, request or "", agent, user, db, pairs)
+            if kind == "action" and result.get("ok") and result.get("answer"):
+                result["card"] = {"type": "done", "title": "Сделано", "text": result["answer"]}
+            return result
+        except Exception as exc:
+            name_err = type(exc).__name__
+            if name_err in ("InsufficientCreditsError", "SubscriptionExpiredError", "SubscriptionRequiredError"):
+                return {"ok": False, "error": "Кредиты агента закончились или тариф истёк — скажи об этом владельцу."}
+            _log(f"function {name} failed: {exc}\n{traceback.format_exc()}", "ERROR")
+            return {"ok": False, "error": "Не получилось — попробуйте ещё раз"}
+        finally:
+            db.close()
 
     # ------------------------------------------------------------------ звук от браузера
     def _to_gemini(self, pcm: bytes) -> bytes:
@@ -222,6 +238,13 @@ class OwnerVoiceSession:
                 self.interruption_state["is_assistant_speaking"] = False
             elif mtype == "session.end":
                 raise WebSocketDisconnect()
+            elif mtype == "text.input":
+                # быстрая команда из окна («Отчёт за сегодня») — как если бы владелец сказал её вслух
+                text = str(data.get("text") or "").strip()[:500]
+                if text and self.client.is_connected:
+                    self.observe({"type": "transcript.delta", "role": "user", "delta": text})
+                    self.typed.append(text)
+                    await self.client.send_text_message(text)
 
     async def _watch_limit(self) -> None:
         try:
@@ -307,11 +330,22 @@ def _load_owner(db, token: str, agent_id: Optional[str]):
     from backend.models.agent_config import AgentConfig
     from backend.models.user import User
 
-    try:
-        payload = decode_jwt_token(token or "")
-        user_uuid = uuid.UUID(str(payload.get("sub")))
-    except Exception:
-        return None, None
+    if (token or "").startswith("ov1."):
+        # короткий токен Telegram Mini App: открывает только голос этого агента
+        scoped = ov.read_voice_token(token)
+        if not scoped:
+            return None, None
+        try:
+            user_uuid = uuid.UUID(scoped["user_id"])
+            agent_id = scoped["agent_id"]
+        except ValueError:
+            return None, None
+    else:
+        try:
+            payload = decode_jwt_token(token or "")
+            user_uuid = uuid.UUID(str(payload.get("sub")))
+        except Exception:
+            return None, None
     user = db.query(User).filter(User.id == user_uuid).first()
     if user is None:
         return None, None

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#050816">
+<meta name="robots" content="noindex, nofollow">
+<title>Голосовой агент</title>
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/voice-live.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; background: #050816; color: #f1f5ff; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .vl { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px 22px calc(28px + env(safe-area-inset-bottom));
+    text-align: center; overflow: hidden; background: radial-gradient(120% 90% at 50% 0%, #121b46 0%, #0b1230 40%, #050816 80%); }
+  .vl::before, .vl::after { content: ""; position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(80px); opacity: .45; pointer-events: none; }
+  .vl::before { background: #2a5ce8; left: -25vmax; top: -10vmax; animation: vl-drift 16s ease-in-out infinite alternate; }
+  .vl::after { background: #7c3aed; right: -30vmax; bottom: -20vmax; animation: vl-drift 21s ease-in-out infinite alternate-reverse; }
+  @keyframes vl-drift { to { transform: translate(6vmax, 4vmax) scale(1.1); } }
+  .vl > * { position: relative; z-index: 1; }
+  .vl-orb { width: min(52vw, 230px); aspect-ratio: 1; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+    background: radial-gradient(circle at 34% 28%, #d6e4ff 0%, #7aa2ff 22%, #3b6dff 52%, #5b21b6 100%);
+    box-shadow: 0 0 0 0 rgba(91, 140, 255, .45), 0 24px 80px rgba(59, 109, 255, .55), inset 0 4px 14px rgba(255, 255, 255, .45);
+    animation: vl-breathe 3.2s ease-in-out infinite; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; }
+  .vl-orb svg { width: 30%; height: 30%; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); }
+  .vl-orb:active { transform: scale(.96); }
+  .vl-orb:focus-visible { outline: 3px solid #8fb0ff; outline-offset: 6px; }
+  @keyframes vl-breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(91, 140, 255, .4), 0 24px 80px rgba(59, 109, 255, .5), inset 0 4px 14px rgba(255,255,255,.45); }
+    50% { box-shadow: 0 0 0 18px rgba(91, 140, 255, 0), 0 24px 90px rgba(124, 58, 237, .55), inset 0 4px 14px rgba(255,255,255,.45); } }
+  .vl h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.01em; }
+  .vl p { margin: -10px 0 0; max-width: 340px; font-size: 14.5px; line-height: 1.5; color: rgba(226, 232, 255, .72); }
+  .vl-btn { min-width: 220px; height: 52px; padding: 0 26px; border-radius: 999px; border: 0; cursor: pointer; font: inherit; font-size: 16px; font-weight: 650; color: #fff;
+    background: linear-gradient(135deg, #3b6dff, #7c3aed); box-shadow: 0 12px 34px rgba(91, 108, 255, .45); -webkit-tap-highlight-color: transparent; }
+  .vl-btn:disabled { opacity: .6; cursor: wait; }
+  .vl-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 380px; }
+  .vl-hints span { padding: 7px 12px; border-radius: 999px; font-size: 12.5px; color: rgba(226, 232, 255, .8); background: rgba(255,255,255,.06); border: 1px solid rgba(148,163,255,.16); }
+  .vl-err { max-width: 360px; padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.45; background: rgba(244, 63, 94, .14); border: 1px solid rgba(244, 63, 94, .4); color: #ffd5dc; }
+  .vl-err[hidden] { display: none; }
+  .vl-err a { color: #fff; font-weight: 600; }
+  .vl-foot { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom)); font-size: 11.5px; color: rgba(226,232,255,.4); z-index: 1; }
+  @media (prefers-reduced-motion: reduce) { .vl::before, .vl::after, .vl-orb { animation: none; } }
+</style>
+</head>
+<body>
+<main class="vl" id="vl">
+  <button class="vl-orb" id="vl-orb" type="button" aria-label="Начать разговор с агентом">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>
+  </button>
+  <h1 id="vl-title">Ваш голосовой агент</h1>
+  <p>Спросите, что нового, — он знает звонки, переписку и CRM. Писать клиентам и звонить будет только после вашего «да».</p>
+  <button class="vl-btn" id="vl-start" type="button">Начать разговор</button>
+  <div class="vl-hints"><span>«Отчёт за сегодня»</span><span>«Кто ждёт ответа?»</span><span>«Что писал Нурлан?»</span></div>
+  <div class="vl-err" id="vl-err" hidden role="alert"></div>
+  <div class="vl-foot">Voksy AI</div>
+</main>
+<script src="/static/agent/voice-chat.js"></script>
+<script>
+(function () {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  const agentId = params.get('agent') || '';
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const inTg = !!(tg && tg.initData);
+  const startBtn = document.getElementById('vl-start');
+  const orb = document.getElementById('vl-orb');
+  const err = document.getElementById('vl-err');
+  const main = document.getElementById('vl');
+
+  if (inTg) {
+    try {
+      tg.ready(); tg.expand();
+      tg.setHeaderColor && tg.setHeaderColor('#050816');
+      tg.setBackgroundColor && tg.setBackgroundColor('#050816');
+      tg.disableVerticalSwipes && tg.disableVerticalSwipes();   // свайп вниз не закрывает разговор
+    } catch (e) { }
+  }
+
+  function showError(html) { err.innerHTML = html; err.hidden = !html; }
+
+  const ERRORS = {
+    401: 'Не удалось проверить вход через Telegram. Закройте окно и откройте кнопку «🎙 Голос» в боте ещё раз.',
+    403: 'Этот Telegram не подключён к агенту. В кабинете: настройки Telegram-бота → «Подключить мой Telegram».',
+    402: 'Живой голосовой разговор с агентом — на тарифе Profi.',
+    404: 'Агент не найден. Откройте кнопку «🎙 Голос» из бота агента.',
+    login: 'Войдите в кабинет Voksy AI в этом браузере, затем откройте эту страницу снова. <a href="/static/login.html">Войти</a>',
+  };
+
+  async function auth() {
+    if (inTg) {
+      const r = await fetch('/api/agent/telegram/webapp-auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ init_data: tg.initData, agent_id: agentId }),
+      });
+      if (!r.ok) throw r.status;
+      return r.json();
+    }
+    let token = null;
+    try { token = localStorage.getItem('auth_token'); } catch (e) { }
+    if (!token) throw 'login';
+    return { token, agent_id: agentId || null, agent_name: 'Голосовой агент' };
+  }
+
+  async function start() {
+    showError('');
+    startBtn.disabled = true;
+    try {
+      const a = await auth();
+      if (inTg && tg.HapticFeedback) { try { tg.HapticFeedback.impactOccurred('medium'); } catch (e) { } }
+      main.style.visibility = 'hidden';
+      await window.VoksyVoice.open({
+        agentId: a.agent_id || agentId || null,
+        token: a.token,
+        title: a.agent_name || 'Голосовой агент',
+        onClose: () => {
+          main.style.visibility = '';
+          if (inTg) { try { tg.close(); } catch (e) { } }
+        },
+        onMicError: inTg ? () => { try { tg.openLink(location.origin + location.pathname + '?agent=' + encodeURIComponent(agentId)); } catch (e) { } } : null,
+      });
+    } catch (e) {
+      main.style.visibility = '';
+      showError(ERRORS[e] || 'Не получилось подключиться. Попробуйте ещё раз.');
+    } finally {
+      startBtn.disabled = false;
+    }
+  }
+
+  startBtn.addEventListener('click', start);
+  orb.addEventListener('click', start);
+  if (inTg) document.getElementById('vl-title').textContent = 'Поговорите с агентом';
+})();
+</script>
+</body>
+</html>

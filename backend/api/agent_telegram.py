@@ -458,6 +458,12 @@ async def _handle_owner_link(agent: AgentConfig, message: dict, db: Session) -> 
             "✅ Готово. Сюда я буду присылать оповещения: новые клиенты, итоги звонков и итоги дня. "
             "Что именно присылать, настраивается в кабинете: «Чат-бот» → «Оповещения».",
         )
+        try:
+            owner = db.query(User).filter(User.id == agent.user_id).first()
+            if owner is not None and owner.agent_mode() == "full":
+                await _send_voice_button(agent, chat_id, db)
+        except Exception as exc:
+            logger.warning(f"[AGENT-TG] voice button after link failed: {exc}")
         return True
 
     if not known:
@@ -469,6 +475,73 @@ async def _handle_owner_link(agent: AgentConfig, message: dict, db: Session) -> 
         )
         return True
     return False
+
+
+class WebAppAuthRequest(BaseModel):
+    init_data: str = Field(..., max_length=8192)
+    agent_id: str = Field(..., max_length=64)
+
+
+@router.post("/webapp-auth")
+async def telegram_webapp_auth(body: WebAppAuthRequest, db: Session = Depends(get_db)):
+    """
+    Вход в голосовой режим из Telegram Mini App (кнопка «🎙 Голос» в боте агента). Без пароля:
+    Telegram подписывает данные пользователя ключом бота, проверяем подпись и что это чат владельца,
+    выдаём короткий токен только для /ws/agent-voice этого агента (не токен кабинета).
+    """
+    from backend.services import owner_voice as ov
+
+    try:
+        agent = db.query(AgentConfig).filter(AgentConfig.id == body.agent_id).first()
+    except Exception:
+        db.rollback()
+        agent = None
+    if not agent or not agent.telegram_bot_token:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+    data = ov.verify_webapp_init_data(body.init_data, agent.telegram_bot_token)
+    if not data:
+        raise HTTPException(status_code=401, detail="bad_signature")
+    tg_user_id = str(data["user"].get("id"))
+    if tg_user_id not in agent.get_telegram_chat_ids_list():
+        raise HTTPException(status_code=403, detail="not_owner_chat")
+    owner = db.query(User).filter(User.id == agent.user_id).first()
+    if owner is None:
+        raise HTTPException(status_code=404, detail="owner_not_found")
+    if owner.agent_mode() != "full":
+        raise HTTPException(status_code=402, detail="profi_required")
+    return {
+        "token": ov.make_voice_token(owner.id, agent.id),
+        "agent_id": str(agent.id),
+        "agent_name": agent.name if agent.name and agent.name != "Мой агент" else "Голосовой агент",
+        "expires_in": ov.VOICE_TOKEN_TTL,
+    }
+
+
+async def _send_voice_button(agent: AgentConfig, chat_id: str, db: Session, intro: Optional[str] = None) -> None:
+    """Кнопка Mini App «Поговорить голосом» + та же кнопка в меню чата (слева от поля ввода)."""
+    from backend.services import owner_voice as ov
+
+    owner = db.query(User).filter(User.id == agent.user_id).first()
+    token = agent.telegram_bot_token
+    if owner is None or owner.agent_mode() != "full":
+        await AgentTelegramService.send_message(
+            token, chat_id, "Живой голосовой разговор с агентом доступен на тарифе Profi. "
+                            "Голосовые сообщения работают и так — просто запишите вопрос.")
+        return
+    url = ov.webapp_url(agent.id)
+    if not url.startswith("https://"):
+        await AgentTelegramService.send_message(token, chat_id, "Голосовой режим откроется после деплоя на https-адрес.")
+        return
+    await AgentTelegramService._call(token, "setChatMenuButton", {
+        "chat_id": int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id,
+        "menu_button": {"type": "web_app", "text": "🎙 Голос", "web_app": {"url": url}},
+    })
+    await AgentTelegramService._call(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": intro or ("🎙 Поговорите с агентом голосом — как по телефону: спросите отчёт, кто писал, "
+                          "попросите написать клиенту. Кнопка «🎙 Голос» теперь всегда слева от поля ввода."),
+        "reply_markup": {"inline_keyboard": [[{"text": "🎙 Поговорить голосом", "web_app": {"url": url}}]]},
+    })
 
 
 @router.post("/webhook/{secret}")
@@ -541,10 +614,18 @@ async def telegram_webhook(
                 )
             return {"ok": True}
 
+        # 6a. /voice — кнопка живого голосового разговора (Telegram Mini App)
+        cmd = (message.get("text") or "").strip().lower().split("@")[0]
+        if cmd in ("/voice", "/golos", "/голос"):
+            await _send_voice_button(agent, chat_id, db)
+            return {"ok": True}
+
         # 7. Текст или голосовое (voice → распознаём в текст через STT)
         text = message.get("text")
+        is_voice = False
         if not text:
             voice = message.get("voice")
+            is_voice = bool(voice)
             if voice:
                 await AgentTelegramService._call(
                     agent.telegram_bot_token, "sendChatAction",
@@ -573,7 +654,7 @@ async def telegram_webhook(
 
         # 9. Обработать
         logger.info(f"[AGENT-TG] Incoming message from chat {chat_id} (agent {agent.id}): {text[:80]!r}")
-        await process_telegram_message(
+        reply = await process_telegram_message(
             agent=agent,
             chat_id=chat_id,
             text=text,
@@ -581,6 +662,12 @@ async def telegram_webhook(
             message=message,
             db=db,
         )
+        # Спросили голосом — отвечаем и голосом (после текста, в фоне: синтез идёт до ~20 с,
+        # а Telegram ждёт ответа на webhook недолго)
+        if is_voice and reply:
+            from backend.core import background_loop
+            from backend.services.owner_telegram_voice import reply_with_voice
+            background_loop.submit(reply_with_voice(str(agent.id), chat_id, reply))
 
     except Exception as e:
         logger.error(f"[AGENT-TG] Webhook error: {e}", exc_info=True)

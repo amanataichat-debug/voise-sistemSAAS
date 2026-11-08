@@ -231,6 +231,7 @@ class GeminiLiveClient:
             [dict(f) for f in function_definitions] if function_definitions is not None else None)
         # async (call_id, name, args) -> dict: свой исполнитель функций вместо execute_function реестра
         self.function_executor = None
+        self.function_behaviors: Dict[str, str] = {}   # имя → BLOCKING / NON_BLOCKING (заполняет setup_session)
         self.system_prompt_chars = 0   # длина итогового промпта сессии (карточка + знания + правила) — для журнала звонка
         self.connect_error: Optional[str] = None   # причина отказа Google (код и текст) для сообщения клиенту
         self._pending: list = []                   # сообщения, прочитанные при ожидании setup (первым читает цикл событий)
@@ -637,15 +638,22 @@ class GeminiLiveClient:
             normalized_functions = normalize_functions(functions)
         tools = []
         
+        self.function_behaviors = {}
         for func_def in normalized_functions:
+            # gemini-3.8-live: NON_BLOCKING — модель продолжает говорить, пока функция работает;
+            # BLOCKING (карточки ElevenLabs) — ждёт результата и отвечает по нему. Свои функции
+            # (function_definitions) могут задать поведение сами — быстрые ждут, медленные нет.
+            behavior = "BLOCKING" if self.use_blocking_tools else "NON_BLOCKING"
+            own = func_def.get("behavior") if self.custom_functions is not None else None
+            if own in ("BLOCKING", "NON_BLOCKING"):
+                behavior = "NON_BLOCKING" if thinking_level(self.model) else own   # думающая модель BLOCKING не умеет
+            self.function_behaviors[normalize_function_name(func_def["name"])] = behavior
             tools.append({
                 "function_declarations": [{
                     "name": func_def["name"],
                     "description": func_def["description"],
                     "parameters": gemini_schema(func_def["parameters"]),
-                    # gemini-3.8-live: NON_BLOCKING — модель продолжает говорить, пока функция работает;
-                    # BLOCKING (карточки ElevenLabs) — ждёт результата и отвечает по нему
-                    "behavior": "BLOCKING" if self.use_blocking_tools else "NON_BLOCKING",
+                    "behavior": behavior,
                 }]
             })
         
@@ -947,9 +955,10 @@ class GeminiLiveClient:
                 "id": function_call_id,
                 "response": result,
             }
-            if not self.use_blocking_tools:
-                function_response["scheduling"] = GEMINI_TOOL_SCHEDULING  # у BLOCKING-функций его нет
             name = self.call_names.pop(function_call_id, None) or self.last_function_name
+            behavior = (getattr(self, "function_behaviors", None) or {}).get(normalize_function_name(name or ""))
+            if (behavior == "NON_BLOCKING") if behavior else (not self.use_blocking_tools):
+                function_response["scheduling"] = GEMINI_TOOL_SCHEDULING  # у BLOCKING-функций его нет
             if name:
                 function_response["name"] = name
             result_payload = {"toolResponse": {"functionResponses": [function_response]}}

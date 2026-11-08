@@ -73,3 +73,14 @@ def submit(coro) -> None:
     из asyncio.to_thread или из обычного потока (там своего loop'а нет).
     """
     asyncio.run_coroutine_threadsafe(coro, _ensure_loop())
+
+
+async def run(coro):
+    """
+    Выполнить корутину в фоновом loop'е и дождаться результата из текущего loop'а.
+
+    Для работы с синхронными запросами к БД во время живого голоса (голосовой режим оркестратора):
+    звук идёт в основном loop'е воркера, а запросы оркестратора к базе блокируют только фоновый поток.
+    """
+    future = asyncio.run_coroutine_threadsafe(coro, _ensure_loop())
+    return await asyncio.wrap_future(future)

@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/voksiai.css">
 <link rel="stylesheet" href="/static/agent/agent.css">
+<link rel="stylesheet" href="/static/css/voice-live.css">
 <script defer src="/static/js/ui.js"></script>
 </head>
 <body>
@@ -222,7 +223,7 @@
         <div class="chat-header chat-orb-slot"></div>
         <textarea class="chat-input" id="chat-input" placeholder="Напишите оркестратору…" title="Enter — отправить, Shift+Enter — перенос строки" rows="1"></textarea>
         <button class="chat-mic" id="chat-mic" type="button" title="Надиктовать сообщение" onclick="toggleRecording()"><i class="fas fa-microphone"></i></button>
-        <button class="chat-voice" id="chat-voice" type="button" title="Поговорить с агентом голосом" aria-label="Поговорить с агентом голосом" onclick="openVoiceChat()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg><span class="chat-voice-label">Поговорить</span></button>
+        <button class="chat-voice" id="chat-voice" type="button" title="Поговорить с агентом голосом (V)" aria-label="Поговорить с агентом голосом" onclick="openVoiceChat()"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg><span class="chat-voice-label">Поговорить</span></button>
         <button class="chat-send" id="chat-send" type="button" title="Отправить"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>

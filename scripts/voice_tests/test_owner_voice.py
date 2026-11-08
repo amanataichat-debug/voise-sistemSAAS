@@ -4,6 +4,11 @@
 промпт и функции Gemini, крючки GeminiLiveClient (свои функции в обход реестра, свой исполнитель) через
 настоящий handle_gemini_messages, запрос к оркестратору (запрещённый инструмент не выполняется), доступ
 только Profi, кредиты за минуты и запись разговора в историю чата.
+
+Часть 2 — сводка дел и быстрые функции на настоящем PostgreSQL, если задан OWNER_VOICE_TEST_DATABASE_URL
+(отдельная пустая база: схема public пересоздаётся тестом):
+
+    OWNER_VOICE_TEST_DATABASE_URL=postgresql://postgres@/voksy_test?host=/tmp python scripts/voice_tests/test_owner_voice.py
 """
 import os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -80,10 +85,20 @@ check("confirmed строкой 'true' понимается", ov.action_refusal(
 check("пустая реплика — отказ (не расслышали «да»)", ov.action_refusal(True, "") is not None)
 
 # ---------- функции и промпт голосового помощника ----------
-check("три функции голосового помощника", ov.FUNCTION_NAMES == ["ask_agent", "do_action", "send_to_telegram"])
+check("функции голосового помощника", ov.FUNCTION_NAMES == ["get_stats", "client_info", "list_dialogs", "get_schedule",
+                                                             "ask_agent", "do_action", "send_to_telegram"], ov.FUNCTION_NAMES)
 for f in ov.GEMINI_FUNCTIONS:
     check(f"схема {f['name']} не меняется очисткой под Gemini", gemini_schema(f["parameters"]) == f["parameters"])
-check("do_action требует confirmed", "confirmed" in ov.GEMINI_FUNCTIONS[1]["parameters"]["required"])
+_fn = {f["name"]: f for f in ov.GEMINI_FUNCTIONS}
+check("do_action требует confirmed", "confirmed" in _fn["do_action"]["parameters"]["required"])
+check("быстрые функции ждут результат молча (BLOCKING)",
+      all(_fn[n]["behavior"] == "BLOCKING" for n in ov.FAST_FUNCTIONS) and ov.FAST_FUNCTIONS <= set(ov.FUNCTION_NAMES))
+check("оркестратор и действия не блокируют (агент говорит «секунду, смотрю»)",
+      _fn["ask_agent"]["behavior"] == "NON_BLOCKING" and _fn["do_action"]["behavior"] == "NON_BLOCKING")
+check("в функциях нет записи и удаления, кроме do_action", all(n in ov.FAST_FUNCTIONS or n in ("ask_agent", "do_action", "send_to_telegram")
+                                                          for n in ov.FUNCTION_NAMES))
+check("промпт: быстрые функции названы", all(n in ov.VOICE_ROLE for n in ("get_stats", "client_info", "list_dialogs", "get_schedule")))
+check("промпт: вчера/неделя — из сводки", "сколько звонков вчера" in ov.VOICE_ROLE)
 
 user = types.SimpleNamespace(first_name="Аман", last_name="", id="u1", credits_balance=5000, is_admin=False)
 agent = types.SimpleNamespace(id="a1", name="Мой агент", brand_company_name="Voksy AI", chat_history=[
@@ -151,12 +166,34 @@ async def setup_tools():
 
 c, sp = run(setup_tools())
 decl = [t["function_declarations"][0] for t in sp["setup"]["tools"]]
-check("в setup ушли ровно три функции помощника", [d["name"] for d in decl] == ov.FUNCTION_NAMES, [d["name"] for d in decl])
-check("описания и параметры — наши, не из реестра", decl[0]["description"] == ov.GEMINI_FUNCTIONS[0]["description"]
-      and decl[1]["parameters"]["properties"].get("confirmed"))
-check("функции не блокирующие (агент говорит «секунду, смотрю»)", all(d["behavior"] == "NON_BLOCKING" for d in decl)
-      if not ov.BLOCKING_TOOLS else all(d["behavior"] == "BLOCKING" for d in decl))
+check("в setup ушли ровно функции помощника", [d["name"] for d in decl] == ov.FUNCTION_NAMES, [d["name"] for d in decl])
+_decl = {d["name"]: d for d in decl}
+check("описания и параметры — наши, не из реестра", _decl["ask_agent"]["description"] == _fn["ask_agent"]["description"]
+      and _decl["do_action"]["parameters"]["properties"].get("confirmed"))
+check("поведение у каждой функции своё: быстрые BLOCKING, оркестратор NON_BLOCKING",
+      _decl["get_stats"]["behavior"] == "BLOCKING" and _decl["client_info"]["behavior"] == "BLOCKING"
+      and _decl["ask_agent"]["behavior"] == "NON_BLOCKING" and _decl["do_action"]["behavior"] == "NON_BLOCKING",
+      {k: v["behavior"] for k, v in _decl.items()})
+check("в setup не уходит служебное поле behavior внутрь параметров", all("behavior" not in d["parameters"] for d in decl))
 check("enabled_functions = функции помощника", c.enabled_functions == ov.FUNCTION_NAMES, c.enabled_functions)
+
+
+async def tool_results():
+    c2 = make_client()
+    await c2.setup_session(voice="Kore", system_message="p", functions=c2.assistant_config.functions)
+    c2.register_function_call("f1", "get_stats")
+    c2.register_function_call("f2", "ask_agent")
+    await c2.send_function_result("f1", {"ok": True})
+    await c2.send_function_result("f2", {"ok": True})
+    return [m["toolResponse"]["functionResponses"][0] for m in c2.ws.sent if "toolResponse" in m]
+
+_tr = run(tool_results())
+check("результат быстрой функции — без scheduling (BLOCKING)", _tr and "scheduling" not in _tr[0] and _tr[0]["name"] == "get_stats", _tr)
+check("результат ask_agent — со scheduling (озвучить, когда освободится)", len(_tr) == 2 and _tr[1].get("scheduling"), _tr)
+
+_card = make_client()
+_card.custom_functions = None   # карточки ElevenLabs и Gemini-ассистенты: поведение по-старому, поле behavior не читается
+check("у обычных клиентов поведение по-старому", _card.use_blocking_tools is False)
 from backend.functions import get_enabled_functions
 check("функций помощника НЕТ в общем реестре (их не включить публичному виджету)",
       get_enabled_functions(ov.FUNCTION_NAMES) == [])
@@ -430,6 +467,290 @@ br3, _, made3, _ = run(ws_flow({"type": "auth", "token": "jwt-ok"}, mode="reacti
 err3 = [m for m in br3.sent if m.get("type") == "error"]
 check("сокет: тариф Старт — «только Profi», Gemini не открывается", err3 and err3[0]["error"]["code"] == "profi_required"
       and not made3, err3)
+
+# ---------- периоды и цифры для get_stats ----------
+from datetime import datetime as _dt, timedelta as _td
+_now = _dt(2026, 11, 8, 15, 0)   # 21:00 в Бишкеке, воскресенье
+a, b, label, d1, d2 = ov.period_range("yesterday", now=_now)
+check("вчера: сутки по Бишкеку в UTC", a == _dt(2026, 11, 6, 18, 0) and b == _dt(2026, 11, 7, 18, 0) and "07.11" in label, (a, b, label))
+a, b, label, d1, d2 = ov.period_range("today", now=_now)
+check("сегодня: с полуночи по Бишкеку", a == _dt(2026, 11, 7, 18, 0) and b == _dt(2026, 11, 8, 18, 0), (a, b))
+a, b, label, d1, d2 = ov.period_range("week", now=_now)
+check("неделя: 7 дней включая сегодня", (d2 - d1).days == 6 and "7 дней" in label, label)
+a, b, label, d1, d2 = ov.period_range("this_month", now=_now)
+check("этот месяц: с 1-го", d1.day == 1 and d1.month == 11, (d1, d2))
+a, b, label, d1, d2 = ov.period_range("custom", "2026-11-05", "2026-11-01", now=_now)
+check("свои даты: перепутанный порядок исправляется", d1.day == 1 and d2.day == 5, (d1, d2))
+a, b, label, d1, d2 = ov.period_range("custom", "2026-12-01", "2027-01-01", now=_now)
+check("свои даты: будущее обрезается сегодняшним днём", d2 <= (_now + _td(hours=6)).date(), (d1, d2))
+a, b, label, d1, d2 = ov.period_range("custom", "ерунда", None, now=_now)
+check("свои даты: ерунда → сегодня", d1 == d2 == (_now + _td(hours=6)).date())
+_st = ov._empty_day(); _st.update(calls_in=2, calls_out=3, answered=4, talk_sec=600, msgs_in=7, writers=3, bot_out=5, owner_out=1, new_clients=2)
+_sent = ov._stats_sentence(_st)
+check("фраза цифр: звонки, разговоры, сообщения, новые", "звонков 5" in _sent and "10 мин" in _sent and "от 3 клиентов" in _sent
+      and "новых клиентов в CRM 2" in _sent, _sent)
+check("сумма по дням не складывает «написавших» (их считает отдельный запрос)",
+      ov._sum_days({1: dict(_st), 2: dict(_st)})["writers"] == 0 and ov._sum_days({1: dict(_st), 2: dict(_st)})["msgs_in"] == 14)
+
+
+# ---------- быстрые функции идут в поток, медленные — в фоновый loop ----------
+async def fast_route():
+    c = make_client()
+    sess = hov.OwnerVoiceSession(FakeClientSocket(), "u1", "a1", c)
+    import threading
+    seen_threads = []
+    def fake_fast(name, args, uid, aid):
+        seen_threads.append(threading.current_thread().name)
+        return {"ok": True, "name": name, "args": args, "card": {"type": "stats"}}
+    orig = ov.run_fast_function
+    ov.run_fast_function = fake_fast
+    try:
+        r = await sess.execute("x1", "get_stats", {"period": "yesterday"})
+    finally:
+        ov.run_fast_function = orig
+    return r, seen_threads, threading.current_thread().name
+
+_r, _threads, _main = run(fast_route())
+check("быстрая функция выполнена", _r.get("ok") and _r.get("name") == "get_stats", _r)
+check("быстрая функция — не в потоке звука (asyncio.to_thread)", _threads and _threads[0] != _main, _threads)
+
+
+async def slow_route():
+    import threading
+    c = make_client()
+    sess = hov.OwnerVoiceSession(FakeClientSocket(), "u1", "a1", c)
+    where = []
+    async def fake_slow(name, args, pairs):
+        where.append(threading.current_thread().name)
+        return {"ok": True, "answer": "готово"}
+    sess._execute_slow = fake_slow
+    r = await sess.execute("x2", "ask_agent", {"question": "что нового"})
+    return r, where
+
+_r2, _where = run(slow_route())
+check("оркестратор выполняется в фоновом loop'е (звук не стоит)", _r2.get("ok") and _where == ["background-jobs"], _where)
+
+
+# ---------- быстрая команда из окна ----------
+async def typed_flow():
+    c = make_client()
+    sent_texts = []
+    async def fake_send_text(t):
+        sent_texts.append(t); return True
+    c.send_text_message = fake_send_text
+    frames = [{"type": "websocket.receive", "text": json.dumps({"type": "text.input", "text": "Отчёт за сегодня"})}]
+    class Sock(FakeClientSocket):
+        async def receive(self):
+            await asyncio.sleep(0.01)
+            return frames.pop(0) if frames else {"type": "websocket.disconnect"}
+    sess = hov.OwnerVoiceSession(Sock(), "u1", "a1", c)
+    try:
+        await sess.handle_client_messages()
+    except Exception:
+        pass
+    await sess.save_turn("", "Сегодня четыре звонка")
+    return sent_texts, sess
+
+_texts, _sess = run(typed_flow())
+check("быстрая команда ушла в Gemini текстом", _texts == ["Отчёт за сегодня"], _texts)
+check("быстрая команда считается репликой владельца (для «да»)", _sess.last_owner_text() == "Отчёт за сегодня")
+check("в историю: команда + ответ одной парой", _sess.pairs[-1] == {"user": "Отчёт за сегодня", "assistant": "Сегодня четыре звонка"},
+      _sess.pairs[-1:])
+
+
+# ---------- голосовой токен Mini App ----------
+import time as _time
+tok = ov.make_voice_token("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+rd = ov.read_voice_token(tok)
+check("токен Mini App читается", rd == {"user_id": "11111111-1111-1111-1111-111111111111",
+                                        "agent_id": "22222222-2222-2222-2222-222222222222"}, rd)
+check("токен Mini App — не JWT кабинета (свой формат ov1.)", tok.startswith("ov1.") and tok.count(".") == 2)
+_parts = tok.split(".")
+check("подделанный токен отклоняется", ov.read_voice_token(_parts[0] + "." + _parts[1] + "x." + _parts[2]) is None)
+check("токен с чужой подписью отклоняется", ov.read_voice_token(_parts[0] + "." + _parts[1] + "." + "A" * len(_parts[2])) is None)
+check("просроченный токен отклоняется", ov.read_voice_token(tok, now=_time.time() + ov.VOICE_TOKEN_TTL + 5) is None)
+check("мусор вместо токена — None", ov.read_voice_token("abc") is None and ov.read_voice_token("") is None)
+
+
+class OwnerDB:
+    def __init__(self, user_obj, agent_obj): self.u, self.a, self.filters = user_obj, agent_obj, []
+    def query(self, model):
+        db = self
+        class Q:
+            def filter(self, *conds):
+                db.filters.append(conds); return self
+            def order_by(self, *a): return self
+            def first(self): return db.u if model.__name__ == "User" else db.a
+        return Q()
+
+_owner = types.SimpleNamespace(id="11111111-1111-1111-1111-111111111111")
+_ag = types.SimpleNamespace(id="22222222-2222-2222-2222-222222222222")
+u1, a1 = hov._load_owner(OwnerDB(_owner, _ag), tok, None)
+check("сокет: вход по токену Mini App", u1 is _owner and a1 is _ag)
+u2, a2 = hov._load_owner(OwnerDB(_owner, _ag), tok[:-3] + "AAA", None)
+check("сокет: подделанный токен Mini App — отказ", u2 is None and a2 is None)
+
+
+# ---------- подпись initData Telegram ----------
+import hashlib as _hl, hmac as _hm
+from urllib.parse import urlencode as _ue
+
+def init_data(bot_token, user_id=777, age=10, tamper=False):
+    fields = {"auth_date": str(int(_time.time()) - age), "query_id": "AAH", "signature": "sig",
+              "user": json.dumps({"id": user_id, "first_name": "Аман"}, ensure_ascii=False, separators=(",", ":"))}
+    check_str = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret = _hm.new(b"WebAppData", bot_token.encode(), _hl.sha256).digest()
+    fields["hash"] = _hm.new(secret, check_str.encode(), _hl.sha256).hexdigest()
+    if tamper:
+        fields["user"] = fields["user"].replace("777", "778")
+    return _ue(fields)
+
+_bot = "123456:ABCDEF"
+_ok = ov.verify_webapp_init_data(init_data(_bot), _bot)
+check("initData с верной подписью принимается", _ok and _ok["user"]["id"] == 777, _ok)
+check("initData с подменённым пользователем отклоняется", ov.verify_webapp_init_data(init_data(_bot, tamper=True), _bot) is None)
+check("initData чужого бота отклоняется", ov.verify_webapp_init_data(init_data(_bot), "999:OTHER") is None)
+check("старые initData (больше суток) отклоняются", ov.verify_webapp_init_data(init_data(_bot, age=2 * 86400), _bot) is None)
+check("пустые initData отклоняются", ov.verify_webapp_init_data("", _bot) is None and ov.verify_webapp_init_data("a=b", _bot) is None)
+from backend.core.config import settings as _settings
+_old_host = _settings.HOST_URL
+_settings.HOST_URL = "https://voksyai.online/"
+check("адрес Mini App", ov.webapp_url("a1") == "https://voksyai.online/static/voice-live.html?agent=a1", ov.webapp_url("a1"))
+_settings.HOST_URL = _old_host
+
+
+# ---------- голосовой ответ в Telegram ----------
+from backend.services import owner_telegram_voice as otv
+_md = "**Итог дня**\n\n| Канал | Сообщений |\n|---|---|\n| WhatsApp | 12 |\n\n- Нурлан ждёт ответа\n- [Ссылка](https://x.y)"
+_pl = otv.plain_text(_md)
+check("пересказ без markdown, таблиц и ссылок", "**" not in _pl and "|" not in _pl and "https" not in _pl and "Нурлан" in _pl, _pl)
+check("длинный ответ обрезается по предложению", len(otv.plain_text("Раз два три. " * 200)) <= otv.MAX_SPOKEN + 1)
+
+async def spoken_fallback():
+    import backend.services.openrouter_client as _orc
+    orig = _orc.get_openrouter_client
+    class Boom:
+        async def chat_completion(self, **kw): raise RuntimeError("down")
+    _orc.get_openrouter_client = lambda: Boom()
+    try:
+        return await otv.spoken_version("**Сегодня** 4 звонка")
+    finally:
+        _orc.get_openrouter_client = orig
+
+_sp, _usage, _model = run(spoken_fallback())
+check("модель пересказа недоступна → простой текст, без списания", _sp == "Сегодня 4 звонка" and _usage == (0, 0) and _model is None,
+      (_sp, _usage, _model))
+
+
+# ============================================================ часть 2: настоящий PostgreSQL
+PG = os.environ.get("OWNER_VOICE_TEST_DATABASE_URL")
+if not PG:
+    print("SKIP часть 2: OWNER_VOICE_TEST_DATABASE_URL не задан")
+else:
+    import uuid as _uuid
+    from sqlalchemy import create_engine, text as _text
+    from sqlalchemy.orm import sessionmaker
+    from backend.models.base import Base
+    import backend.models  # noqa: регистрирует все модели
+    from backend.models.user import User
+    from backend.models.agent_config import AgentConfig
+    from backend.models.agent_contact import AgentContact
+    from backend.models.agent_call import AgentCall
+    from backend.models.agent_whatsapp import AgentWhatsAppAccount, AgentWhatsAppChat, AgentWhatsAppMessage
+    from backend.models.agent_instagram import AgentInstagramMessage
+    from backend.models.task import Task, TaskStatus
+
+    engine = create_engine(PG)
+    with engine.begin() as conn:
+        conn.execute(_text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    now = _dt.utcnow()
+    owner = User(email=f"o{_uuid.uuid4().hex[:6]}@x.kg", password_hash="x", credits_balance=5000, first_name="Аман")
+    db.add(owner); db.flush()
+    ag = AgentConfig(user_id=owner.id, name="Анри", is_active=True)
+    db.add(ag); db.flush()
+
+    def mk(name, phone, status="new", created=None, **kw):
+        kw.setdefault("memory", {})
+        c = AgentContact(agent_config_id=ag.id, user_id=owner.id, name=name, phone=phone, status=status, **kw)
+        if created:
+            c.created_at = created
+        db.add(c); db.flush(); return c
+    nurlan = mk("Нурлан Асанов", "+996700111222", status="in_progress", company="Кафе Ала-Тоо",
+                memory={"niche": "кафе", "direction_need": "автоответы в WhatsApp"})
+    aibek = mk("Айбек", "+996555333444", created=now - _td(days=1))
+    wa = AgentWhatsAppAccount(agent_config_id=ag.id, user_id=owner.id, instance_name="i1", webhook_secret="s",
+                              status="connected", wa_phone="996700000001")
+    db.add(wa); db.flush()
+    chat = AgentWhatsAppChat(account_id=wa.id, remote_jid="996700111222@s.whatsapp.net", phone="996700111222",
+                             agent_contact_id=nurlan.id)
+    db.add(chat); db.flush()
+
+    def wam(d, body, mins, by=None):
+        db.add(AgentWhatsAppMessage(agent_config_id=ag.id, account_id=wa.id, chat_id=chat.id, agent_contact_id=nurlan.id,
+                                    direction=d, body=body, sent_by=by, created_at=now - _td(minutes=mins)))
+    wam("inbound", "Сколько стоит Profi на год?", 30)
+    wam("outbound", "Profi на год — со скидкой 30 процентов", 29)
+    wam("inbound", "А можно оплатить картой?", 5)
+    db.add(AgentInstagramMessage(agent_config_id=ag.id, agent_contact_id=aibek.id, direction="inbound",
+                                 body="Можно демо в четверг?", created_at=now - _td(days=1, minutes=10)))
+    db.add(AgentCall(agent_contact_id=nurlan.id, agent_config_id=ag.id, user_id=owner.id, direction="inbound",
+                     status="answered", duration_seconds=185, call_result="Интересуется Profi на год, просит счёт",
+                     created_at=now - _td(minutes=60)))
+    db.add(AgentCall(agent_contact_id=aibek.id, agent_config_id=ag.id, user_id=owner.id, direction="outbound",
+                     status="no_answer", duration_seconds=0, created_at=now - _td(days=1, hours=1)))
+    db.add(AgentCall(agent_contact_id=aibek.id, agent_config_id=ag.id, user_id=owner.id, direction="outbound",
+                     status="answered", duration_seconds=95, created_at=now - _td(days=1, minutes=30)))
+    # переписка, которую разобрал агент, — не звонок
+    db.add(AgentCall(agent_contact_id=nurlan.id, agent_config_id=ag.id, user_id=owner.id, direction="whatsapp_inbound",
+                     status="answered", created_at=now - _td(minutes=29)))
+    db.add(Task(is_agent_task=True, agent_contact_id=nurlan.id, user_id=owner.id, status=TaskStatus.SCHEDULED,
+                scheduled_time=now + _td(hours=3), title="Отправить счёт", channel="call"))
+    db.commit()
+
+    brief_pg = ov.build_brief(db, owner, ag)
+    check("PG сводка: сегодня 1 звонок, сообщения клиента", "Сегодня: звонков 1" in brief_pg and "сообщений от клиентов 2" in brief_pg,
+          brief_pg[:400])
+    check("PG сводка: переписка агента не считается звонком", "входящих 1, исходящих 0" in brief_pg, brief_pg[:300])
+    check("PG сводка: есть разбивка по дням и «вчера»", "По дням за неделю" in brief_pg and "вчера: звонков 2" in brief_pg,
+          brief_pg[brief_pg.find("По дням"):brief_pg.find("По дням") + 300])
+    check("PG сводка: последние диалоги и звонки", "Нурлан Асанов" in brief_pg and "просит счёт" in brief_pg)
+    check("PG сводка: задачи и воронка", "Отправить счёт" in brief_pg and "Воронка CRM: всего клиентов 2" in brief_pg)
+    check("PG сводка в пределах бюджета", len(brief_pg) <= ov.BRIEF_MAX_CHARS, len(brief_pg))
+
+    st = ov.fast_get_stats(db, owner, ag, {"period": "yesterday"})
+    check("PG get_stats вчера: 2 звонка, 1 разговор, 1 сообщение, 1 новый клиент",
+          st["calls"]["total"] == 2 and st["calls"]["with_talk"] == 1 and st["messages"]["from_clients"] == 1
+          and st["new_clients"] == 1, st)
+    wk = ov.fast_get_stats(db, owner, ag, {"period": "week"})
+    check("PG get_stats неделя: 3 звонка, 7 дней в разбивке, карточка", wk["calls"]["total"] == 3 and len(wk["by_day"]) == 7
+          and wk["card"]["type"] == "stats" and len(wk["card"]["bars"]) == 7, wk.get("calls"))
+    check("PG get_stats: клиентов написало — уникальные", wk["messages"]["clients_wrote"] == 2, wk["messages"])
+
+    ci = ov.fast_client_info(db, owner, ag, {"query": "Нурлан"})
+    check("PG client_info по имени: карточка, этап, что знает агент", ci["ok"] and ci["client"]["name"] == "Нурлан Асанов"
+          and "кафе" in ci["client"].get("agent_knows", ""), ci.get("client"))
+    check("PG client_info: последние сообщения всех каналов", any("картой" in x for x in ci["client"]["recent"]), ci["client"]["recent"])
+    check("PG client_info: итог звонка", any("просит счёт" in x for x in ci["client"].get("call_results", [])))
+    check("PG client_info: разбор переписки не выдаётся за звонок, итог по-русски",
+          sum("звонок" in x for x in ci["client"]["recent"]) == 1 and any("был разговор" in x for x in ci["client"]["recent"]),
+          ci["client"]["recent"])
+    ci2 = ov.fast_client_info(db, owner, ag, {"query": "+996 700 111 222"})
+    check("PG client_info по номеру в любом формате", ci2["ok"] and ci2["client"]["name"] == "Нурлан Асанов", ci2.get("message"))
+    ci3 = ov.fast_client_info(db, owner, ag, {"query": "Несуществующий"})
+    check("PG client_info: не нашёл — так и говорит", ci3["ok"] is False and "не нашёл" in ci3["message"])
+
+    ld = ov.fast_list_dialogs(db, owner, ag, {"folder": "waiting"})
+    check("PG list_dialogs: ждут ответа — Нурлан и Айбек", [d["name"] for d in ld["dialogs"]] == ["Нурлан Асанов", "Айбек"],
+          [d["name"] for d in ld["dialogs"]])
+    ld2 = ov.fast_list_dialogs(db, owner, ag, {"folder": "all", "channel": "instagram"})
+    check("PG list_dialogs: фильтр по каналу", [d["name"] for d in ld2["dialogs"]] == ["Айбек"], ld2["dialogs"])
+    gs = ov.fast_get_schedule(db, owner, ag, {"days": 2})
+    check("PG get_schedule: задача на звонок", gs["count"] == 1 and gs["items"][0]["client"] == "Нурлан Асанов", gs)
+    db.close()
+    engine.dispose()
+
 
 print(f"\nИТОГО провалов: {failures}")
 sys.exit(1 if failures else 0)

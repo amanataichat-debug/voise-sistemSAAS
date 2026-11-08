@@ -615,10 +615,9 @@ async def process_telegram_message(
     use_stream = is_private and getattr(agent, "uses_hardcoded_prompt", False)
 
     if use_stream:
-        await _stream_telegram_reply(
+        return await _stream_telegram_reply(
             agent, chat_id, text, user, db, history_row, message, orchestrator,
         )
-        return
 
     await AgentTelegramService._call(
         agent.telegram_bot_token, "sendChatAction",
@@ -632,11 +631,13 @@ async def process_telegram_message(
         telegram_history_row=history_row,
     )
     # Ответ в Telegram — сырой Markdown модели через rich (fallback на HTML)
+    reply = result.get("reply") or "Готово."
     await AgentTelegramService.send_rich_or_fallback(
         token=agent.telegram_bot_token,
         chat_id=chat_id,
-        markdown=result.get("reply") or "Готово.",
+        markdown=reply,
     )
+    return reply
 
 
 async def _stream_telegram_reply(
@@ -710,6 +711,8 @@ async def _stream_telegram_reply(
         final_text = final_text or buffer
 
     # Финал: постоянное сообщение заменяет эфемерный draft.
+    final_text = final_text or buffer or "Готово."
     await AgentTelegramService.send_rich_or_fallback(
-        token=token, chat_id=chat_id, markdown=final_text or buffer or "Готово.",
+        token=token, chat_id=chat_id, markdown=final_text,
     )
+    return final_text
