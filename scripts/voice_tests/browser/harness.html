@@ -1,0 +1,31 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>Стенд голосового окна</title>
+<link rel="stylesheet" href="/static/css/voice-live.css">
+<style>html,body{margin:0;height:100%;background:#050816;color:#fff;font-family:Inter,system-ui,sans-serif}</style>
+</head><body>
+<script>
+// поддельный сокет: отдаёт то, что шлёт настоящий сервер, по команде из Playwright
+window.__sent = [];
+class FakeWS {
+  constructor(url) { this.url = url; window.__ws = this; this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 5); }
+  send(d) { window.__sent.push(d); }
+  close() { this.readyState = 3; this.onclose && this.onclose(); }
+}
+FakeWS.OPEN = 1;
+window.WebSocket = FakeWS;
+window.__push = d => window.__ws.onmessage({ data: JSON.stringify(d) });
+// микрофон: тишина из AudioContext, настоящий getUserMedia в headless недоступен
+navigator.mediaDevices = navigator.mediaDevices || {};
+navigator.mediaDevices.getUserMedia = async () => {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const dst = ctx.createMediaStreamDestination();
+  const g = ctx.createGain(); g.gain.value = 0;      // тишина: иначе тон мешает проверке ворот
+  const osc = ctx.createOscillator(); osc.connect(g); g.connect(dst); osc.start();
+  return dst.stream;
+};
+</script>
+<script src="/static/agent/voice-chat.js"></script>
+<script>
+window.__open = (demo) => window.VoksyVoice.open({ token: 't', title: 'Стенд', demo: !!demo });
+</script>
+</body></html>

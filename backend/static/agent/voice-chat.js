@@ -49,6 +49,12 @@
   // На телефоне (и особенно в WebView Telegram) рывки больше, поэтому стартовый запас там выше.
   const PREBUF_MIN = 0.18, PREBUF_PHONE = 0.36, PREBUF_MAX = 1.1;
   const ECHO_TAIL_MS = 350, BARGE_MIN_LEFT = 0.35, DRAIN_AFTER_MS = 280;
+  // Эхо-ворота микрофона. На громкой связи телефон слышит собственный голос агента, встроенное
+  // подавление эха в WebView Telegram с ним не справляется — Gemini принимает эхо за перебивание,
+  // обрывает фразу, мы чистим буфер, и получается щелчок на каждом втором слове. Поэтому пока агент
+  // говорит, ворота открывает только РЕЧЬ: громче порога и не меньше ECHO_OPEN_FRAMES кадров подряд.
+  const ECHO_OPEN_MIN = 0.055, ECHO_OPEN_FRAMES = 4, ECHO_HOLD_MS = 700, ECHO_PREFIX_FRAMES = 8;
+  const ECHO_LEARN_FIRST_MS = 2000, ECHO_LEARN_MS = 400;
   const IC = {
     logo: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>',
     cc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16 10.5a2 2 0 1 0 0 3"/></svg>',
@@ -148,6 +154,7 @@ registerProcessor('vv-out', VvOut);`;
     muted: false, open: false, live: false, closing: false, error: null, offline: false,
     lines: [], fnRunning: 0, wake: null, raf: null, startedAt: 0, timer: null, idleT: null,
     speechLvl: 0.06, holdUntil: 0, micLevel: 0, outLevel: 0, lvl: 0,
+    echoLvl: 0, loudFrames: 0, gateOpen: true, micRing: [], bargeIns: 0, echoLearnUntil: 0, echoMeasured: false,
     lastRole: null, lastAgentAt: 0, agentText: '', ownerText: '', anyOwner: false,
     state: 'connecting', statusText: '', shimmer: false, pal: null, palTarget: null, quality: 2, glowEl: null,
     prefs: { address: 'name', formality: 'vy' }, ownerName: '', pendingPrefs: null, report: null, demo: false,
@@ -595,19 +602,48 @@ registerProcessor('vv-out', VvOut);`;
 
   function agentActive(now) { return S.agentPlaying || S.sources.length > 0 || now < S.agentEndAt + ECHO_TAIL_MS; }
 
-  function onMicFrame(pcm, rms) {
-    const now = performance.now();
-    const active = agentActive(now);
-    if (!active && rms > 0.015) S.speechLvl = S.speechLvl * 0.94 + rms * 0.06;   // обычная громкость речи владельца
-    const thr = Math.max(0.012, 0.35 * S.speechLvl);
-    let pass = true;
-    if (active) {
-      if (rms >= thr) S.holdUntil = now + 600;
-      else if (now > S.holdUntil) pass = false;     // тихо, пока говорит агент, — это эхо его голоса
+  // Решение ворот по одному кадру микрофона (40 мс). Вынесено отдельно и чистое по времени,
+  // чтобы это можно было проверить тестом: VoksyVoice.__gate(rms, активен_ли_агент, время).
+  function gateFrame(rms, active, now) {
+    if (!active) {
+      if (rms > 0.015) S.speechLvl = S.speechLvl * 0.94 + rms * 0.06;   // обычная громкость речи владельца
+      S.echoLvl *= 0.99;
+      S.loudFrames = 0;
+      S.gateOpen = true;                            // агент молчит — слушаем линию как есть
+    } else if (now < S.echoLearnUntil) {
+      // первые секунды приветствия: владелец почти наверняка молчит, всё, что слышно, — эхо динамика.
+      // Замеряем его уровень, иначе на громкой связи порог пришлось бы угадывать.
+      S.echoLvl = S.echoLvl * 0.85 + rms * 0.15;   // среднее, а не пик: случайное слово владельца
+                                                  // в окне замера не задерёт порог навсегда
+      S.gateOpen = false;
+      S.loudFrames = 0;
+    } else {
+      // порог: громче заведомого эха (втрое), громче минимума и хотя бы вполовину обычной речи владельца
+      const thr = Math.max(ECHO_OPEN_MIN, 3 * S.echoLvl, 0.5 * S.speechLvl);
+      if (rms >= thr) {
+        S.loudFrames++;
+        if (S.loudFrames >= ECHO_OPEN_FRAMES) { S.gateOpen = true; S.holdUntil = now + ECHO_HOLD_MS; }
+      } else {
+        S.loudFrames = 0;
+        S.echoLvl = S.echoLvl * 0.9 + rms * 0.1;    // тихо, пока агент говорит, — это его эхо, запоминаем уровень
+        if (now > S.holdUntil) S.gateOpen = false;
+      }
     }
+    return S.gateOpen;
+  }
+  function onMicFrame(pcm, rms) {
+    const open = gateFrame(rms, agentActive(performance.now()), performance.now());
     S.micLevel = S.muted ? 0 : rms;
     if (S.muted || !S.live || !S.ws || S.ws.readyState !== WebSocket.OPEN) return;
-    S.ws.send(pass ? pcm : new Int16Array(pcm.length));
+    if (open) {
+      // начало фразы, пока ворота ещё закрывались, не теряем: отдаём накопленные кадры
+      while (S.micRing.length) { try { S.ws.send(S.micRing.shift()); } catch (e) { S.micRing.length = 0; } }
+      S.ws.send(pcm);
+    } else {
+      S.micRing.push(pcm);
+      if (S.micRing.length > ECHO_PREFIX_FRAMES) S.micRing.shift();
+      S.ws.send(new Int16Array(pcm.length));
+    }
   }
 
   // ---------------------------------------------------------------- звук: воспроизведение
@@ -823,9 +859,19 @@ registerProcessor('vv-out', VvOut);`;
       stopPlayback();
     } else if (t === 'gemini.voice_activity') {
       // Google услышал речь: обрываем доигрывание, только если ворота видели настоящую речь владельца
-      if (d.activity === 'start' && performance.now() < S.holdUntil + 200 && playbackLeft() >= (S.worklet ? 1 : BARGE_MIN_LEFT)) stopPlayback();
+      // Google услышал звук. Обрываем ответ, только если это РЕЧЬ владельца по нашим воротам,
+      // иначе эхо из динамика рубило бы фразу агента на каждом слове.
+      if (d.activity === 'start' && S.gateOpen && performance.now() < S.holdUntil + 200
+          && playbackLeft() >= (S.worklet ? 1 : BARGE_MIN_LEFT)) { S.bargeIns++; stopPlayback(); }
     } else if (t === 'assistant.speech.started') {
       S.inReply = true;
+      S.loudFrames = 0;
+      S.micRing.length = 0;
+      // Начало каждой реплики агента — самый безопасный момент замерить эхо: владелец только что
+      // получил ответ и почти наверняка молчит. Иначе при громкой связи (или если человек прибавил
+      // звук посреди разговора) ворота один раз открылись бы на эхо и больше не закрылись.
+      S.echoLearnUntil = performance.now() + (S.echoMeasured ? ECHO_LEARN_MS : ECHO_LEARN_FIRST_MS);
+      S.echoMeasured = true;
     } else if (t === 'assistant.speech.ended' || t === 'turn.saved') {
       S.skipTurn = false;
       reportTurnEnded();
@@ -975,7 +1021,9 @@ registerProcessor('vv-out', VvOut);`;
     Object.assign(S, { lines: [], fnRunning: 0, muted: false, closing: false, error: null, live: false, nextPlay: 0, sources: [],
       prebuf: prebufBase(), underruns: 0, gaps: 0, inReply: false, lastRole: null, agentText: '', ownerText: '', anyOwner: false, skipTurn: false,
       startedAt: 0, lvl: 0, micLevel: 0, outLevel: 0, holdUntil: 0, pal: null, palTarget: null, agentPlaying: false, statusText: '',
-      rsT: 0, rsPrev: 0, micT: 0, micPrev: 0, offline: false, state: '', pendingUnderrun: 0 });
+      rsT: 0, rsPrev: 0, micT: 0, micPrev: 0, offline: false, state: '', pendingUnderrun: 0,
+      echoLvl: 0, loudFrames: 0, gateOpen: true, micRing: [], bargeIns: 0, speechLvl: 0.06, holdUntil: 0,
+      echoLearnUntil: 0, echoMeasured: false });
     S.el.querySelector('.vv-name').textContent = S.opts.title || 'Голосовой агент';
     S.el.querySelector('.vv-cap-owner').textContent = '';
     S.el.querySelector('.vv-cap-agent').textContent = '';
@@ -1079,7 +1127,15 @@ registerProcessor('vv-out', VvOut);`;
     }
   });
 
-  window.VoksyVoice = { open, close, isOpen: () => S.open, _handle: d => handle(d) };   // _handle — для проверок вёрстки
+  window.VoksyVoice = {
+    open, close, isOpen: () => S.open,
+    _handle: d => handle(d),                                   // для проверок вёрстки
+    __gate: (rms, active, now) => gateFrame(rms, active, now),  // для проверок эхо-ворот
+    // Диагностика прямо в консоли, если звук опять рвётся: уровень эха, запас буфера, разрывы.
+    stats: () => ({ echoLvl: +S.echoLvl.toFixed(4), gateOpen: S.gateOpen, bargeIns: S.bargeIns,
+                    prebuf: +S.prebuf.toFixed(2), gaps: S.gaps, speechLvl: +S.speechLvl.toFixed(4),
+                    worklet: S.worklet, rate: S.ctx ? S.ctx.sampleRate : 0 }),
+  };
 
   // ---------------------------------------------------------------- кабинет: кнопка «Поговорить» на agent.html
   window.openVoiceChat = function () {
