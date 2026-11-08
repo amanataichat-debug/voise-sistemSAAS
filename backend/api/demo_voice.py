@@ -21,6 +21,7 @@ DEMO_VOICE_MAX_SECONDS, DEMO_VOICE_PER_DAY, DEMO_VOICE_PER_HOUR. Нет DEMO_BOT
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 import traceback
@@ -52,11 +53,27 @@ def bot_token() -> str:
 
 
 def webhook_secret() -> str:
-    return (os.getenv("DEMO_BOT_WEBHOOK_SECRET", "") or "").strip()
+    """Случайный кусок адреса вебхука: чтобы слать нам «сообщения от Telegram» мог только Telegram.
+    Владельцу ничего придумывать не нужно — по умолчанию считаем его из токена бота. Переменная
+    DEMO_BOT_WEBHOOK_SECRET нужна, только если захочется задать его руками."""
+    manual = (os.getenv("DEMO_BOT_WEBHOOK_SECRET", "") or "").strip()
+    if manual:
+        return manual
+    token = bot_token()
+    if not token:
+        return ""
+    import hashlib
+    from backend.core.config import settings as _s
+    return hashlib.sha256(f"demo-webhook:{token}:{_s.JWT_SECRET_KEY or ''}".encode()).hexdigest()[:32]
 
 
 def enabled() -> bool:
     return bool(bot_token())
+
+
+def webhook_url() -> str:
+    base = (settings.HOST_URL or "https://voksyai.online").rstrip("/")
+    return f"{base}/api/demo/webhook/{webhook_secret()}"
 
 
 async def send_demo_message(chat_id: str, text: str, reply_markup: Optional[dict] = None) -> bool:
@@ -198,20 +215,76 @@ async def demo_setup(current_user: User = Depends(check_admin_access)):
         raise HTTPException(status_code=400, detail="DEMO_BOT_TOKEN не задан")
     if not webhook_secret():
         raise HTTPException(status_code=400, detail="DEMO_BOT_WEBHOOK_SECRET не задан")
-    me = await AgentTelegramService._call(bot_token(), "getMe", {})
-    if not me:
-        raise HTTPException(status_code=400, detail="Telegram не принял DEMO_BOT_TOKEN")
-    base = (settings.HOST_URL or "https://voksyai.online").rstrip("/")
-    hook = f"{base}/api/demo/webhook/{webhook_secret()}"
-    ok = await AgentTelegramService._call(bot_token(), "setWebhook", {
-        "url": hook, "allowed_updates": ["message"], "drop_pending_updates": True}) is not None
-    await AgentTelegramService._call(bot_token(), "setMyCommands", {
-        "commands": [{"command": "start", "description": "Поговорить с демо-агентом"}]})
-    await AgentTelegramService._call(bot_token(), "setChatMenuButton", {
-        "menu_button": {"type": "web_app", "text": "🎙 Демо", "web_app": {"url": demo.demo_webapp_url()}}})
-    logger.info(f"[DEMO-BOT] setup by {current_user.email}: @{me.get('username')} webhook={ok}")
-    return {"ok": ok, "bot": me.get("username"), "webhook": hook, "mini_app": demo.demo_webapp_url(),
+    result = await register_demo_bot(force=True)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Не получилось настроить демо-бота")
+    logger.info(f"[DEMO-BOT] setup by {current_user.email}: @{result.get('bot')}")
+    return {**result, "mini_app": demo.demo_webapp_url(),
             "limits": {"per_day": PER_DAY, "per_hour": PER_HOUR, "max_seconds": demo.MAX_SECONDS}}
+
+
+# ---------------------------------------------------------------- настройка бота при старте
+# Владельцу достаточно положить DEMO_BOT_TOKEN в Render: при запуске сервер сам скажет Telegram,
+# куда слать сообщения, и поставит кнопку Mini App. Руками ничего нажимать не нужно.
+_registered = False
+
+
+def _token_belongs_to_agent(token: str) -> bool:
+    """Защита от беды: если этот токен — рабочий бот агента, вебхук перехватывать НЕЛЬЗЯ."""
+    from backend.db.session import SessionLocal
+    from backend.models.agent_config import AgentConfig
+
+    db = SessionLocal()
+    try:
+        return db.query(AgentConfig.id).filter(AgentConfig.telegram_bot_token == token).first() is not None
+    except Exception as exc:
+        logger.warning(f"[DEMO-BOT] не удалось проверить токен по агентам: {exc}")
+        return False      # не смогли проверить — не блокируем настройку демо
+    finally:
+        db.close()
+
+
+async def register_demo_bot(force: bool = False) -> Dict[str, Any]:
+    """getMe → проверка, что это не бот агента → setWebhook + команды + кнопка Mini App. Идемпотентно."""
+    global _registered
+    if not enabled():
+        return {"ok": False, "error": "DEMO_BOT_TOKEN не задан"}
+    token = bot_token()
+    me = await AgentTelegramService._call(token, "getMe", {})
+    if not me:
+        return {"ok": False, "error": "Telegram не принял DEMO_BOT_TOKEN"}
+    if await asyncio.to_thread(_token_belongs_to_agent, token):
+        logger.error(f"[DEMO-BOT] @{me.get('username')} — это рабочий бот агента, демо на нём не включаем")
+        return {"ok": False, "bot": me.get("username"),
+                "error": "Этот токен уже подключён как Telegram-бот агента. Для демо нужен ОТДЕЛЬНЫЙ бот, "
+                         "иначе рабочий бот перестанет отвечать клиентам."}
+    hook = webhook_url()
+    if not force:
+        info = await AgentTelegramService._call(token, "getWebhookInfo", {})
+        if info and info.get("url") == hook:
+            _registered = True
+            return {"ok": True, "bot": me.get("username"), "webhook": hook, "changed": False}
+    ok = await AgentTelegramService._call(token, "setWebhook", {
+        "url": hook, "allowed_updates": ["message"], "drop_pending_updates": True}) is not None
+    await AgentTelegramService._call(token, "setMyCommands", {
+        "commands": [{"command": "start", "description": "Поговорить с демо-агентом"}]})
+    await AgentTelegramService._call(token, "setChatMenuButton", {
+        "menu_button": {"type": "web_app", "text": "🎙 Демо", "web_app": {"url": demo.demo_webapp_url()}}})
+    _registered = bool(ok)
+    logger.info(f"[DEMO-BOT] @{me.get('username')} настроен: webhook={ok} {hook}")
+    return {"ok": bool(ok), "bot": me.get("username"), "webhook": hook, "changed": True}
+
+
+async def setup_demo_bot_on_startup() -> None:
+    """Зовётся из app.py в фоновом потоке: медленный Telegram не задерживает запуск воркера."""
+    if not enabled() or _registered:
+        return
+    try:
+        result = await register_demo_bot()
+        if not result.get("ok"):
+            logger.warning(f"[DEMO-BOT] не настроен: {result.get('error')}")
+    except Exception as exc:
+        logger.error(f"[DEMO-BOT] настройка при старте не удалась: {exc}")
 
 
 # ---------------------------------------------------------------- сокет демо

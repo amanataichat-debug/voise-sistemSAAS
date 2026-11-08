@@ -14,7 +14,7 @@ from datetime import datetime
 
 sys.path.insert(0, ROOT)
 os.environ.update(HOST_URL="https://example.com", DATABASE_URL="sqlite://", PRODUCTION="false", OPENAI_API_KEY="k",
-                  JWT_SECRET_KEY="test-secret", DEMO_BOT_TOKEN="111:demo", DEMO_BOT_WEBHOOK_SECRET="s3cr3t")
+                  JWT_SECRET_KEY="test-secret", DEMO_BOT_TOKEN="111:demo")
 logging.disable(logging.CRITICAL)
 
 import backend.core.config  # noqa: F401 — первым, как в app.py
@@ -149,6 +149,19 @@ _saved = os.environ.pop("DEMO_BOT_TOKEN")
 check("без DEMO_BOT_TOKEN демо выключено", dv.demo_access(_tok)["code"] == "not_configured" and not dv.enabled())
 os.environ["DEMO_BOT_TOKEN"] = _saved
 
+# ---------- адрес вебхука: владельцу ничего придумывать не нужно ----------
+_auto = dv.webhook_secret()
+check("секрет вебхука считается из токена сам", len(_auto) == 32 and _auto.isalnum(), _auto)
+os.environ["DEMO_BOT_TOKEN"] = "222:other"
+check("другой бот — другой адрес", dv.webhook_secret() != _auto)
+os.environ["DEMO_BOT_TOKEN"] = "111:demo"
+check("секрет не меняется от запуска к запуску", dv.webhook_secret() == _auto)
+os.environ["DEMO_BOT_WEBHOOK_SECRET"] = "ручной"
+check("заданный руками секрет сильнее", dv.webhook_secret() == "ручной")
+del os.environ["DEMO_BOT_WEBHOOK_SECRET"]
+check("адрес вебхука с секретом внутри",
+      dv.webhook_url() == f"https://example.com/api/demo/webhook/{_auto}", dv.webhook_url())
+
 # ---------- вебхук демо-бота ----------
 _sent = []
 
@@ -172,12 +185,12 @@ class FakeRequest:
 
 dv._starts.clear(); dv._all_starts.clear()
 _sent.clear()
-run(dv.demo_webhook("s3cr3t", FakeRequest({"message": {"chat": {"id": 777}, "text": "/start"}})))
+run(dv.demo_webhook(dv.webhook_secret(), FakeRequest({"message": {"chat": {"id": 777}, "text": "/start"}})))
 check("/start отвечает кнопкой Mini App",
       any(m == "sendMessage" and "web_app" in json.dumps(p.get("reply_markup") or {}) for m, p in _sent), _sent[:1])
 check("/start ставит кнопку меню чата", any(m == "setChatMenuButton" for m, _p in _sent))
 _sent.clear()
-run(dv.demo_webhook("s3cr3t", FakeRequest({"message": {"chat": {"id": 777}, "text": "привет"}})))
+run(dv.demo_webhook(dv.webhook_secret(), FakeRequest({"message": {"chat": {"id": 777}, "text": "привет"}})))
 check("на обычное сообщение тоже кнопка", any(m == "sendMessage" for m, _p in _sent))
 from fastapi import HTTPException
 try:
@@ -185,6 +198,39 @@ try:
     check("чужой секрет вебхука отбивается", False)
 except HTTPException as exc:
     check("чужой секрет вебхука отбивается", exc.status_code == 404)
+
+# ---------- настройка бота при старте: один токен и ничего больше ----------
+_api = []
+
+
+async def fake_api(token, method, payload):
+    _api.append((method, payload))
+    if method == "getMe":
+        return {"id": 111, "username": "voksy_demo_bot"}
+    if method == "getWebhookInfo":
+        return {"url": _hook_now[0]}
+    return {"ok": True}
+
+
+AgentTelegramService._call = staticmethod(fake_api)
+_hook_now = [""]
+dv._registered = False
+dv._token_belongs_to_agent = lambda token: False
+_res = run(dv.register_demo_bot())
+check("при старте вебхук прописывается сам", _res["ok"] and _res["changed"] and _res["bot"] == "voksy_demo_bot", _res)
+check("ставится и кнопка Mini App, и команда", {"setWebhook", "setMyCommands", "setChatMenuButton"} <= {m for m, _p in _api})
+_hook_now[0] = dv.webhook_url()
+_api.clear()
+dv._registered = False
+_res = run(dv.register_demo_bot())
+check("второй запуск ничего не трогает", _res["ok"] and _res["changed"] is False and "setWebhook" not in {m for m, _p in _api}, _res)
+dv._token_belongs_to_agent = lambda token: True
+_api.clear()
+_res = run(dv.register_demo_bot(force=True))
+check("рабочий бот агента демо НЕ перехватывает", _res["ok"] is False and "ОТДЕЛЬНЫЙ бот" in _res["error"], _res.get("error"))
+check("и ничего не настраивает", "setWebhook" not in {m for m, _p in _api})
+dv._token_belongs_to_agent = lambda token: False
+AgentTelegramService._call = staticmethod(fake_call)
 
 # ---------- вход из Mini App ----------
 import hashlib, hmac

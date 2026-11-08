@@ -3113,6 +3113,7 @@ async def startup_event():
                 lambda: start_telegram_user_poller(check_interval=60),       # личный Telegram агента
                 start_instagram_poller,                                      # Instagram DM агента
                 start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
+                demo_voice.setup_demo_bot_on_startup,                        # демо-бот: вебхук и кнопка Mini App
             ])
             logger.info("✅ Background jobs started in a separate thread: subscription checker, "
                         "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s), "
