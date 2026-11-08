@@ -85,8 +85,9 @@ check("confirmed строкой 'true' понимается", ov.action_refusal(
 check("пустая реплика — отказ (не расслышали «да»)", ov.action_refusal(True, "") is not None)
 
 # ---------- функции и промпт голосового помощника ----------
-check("функции голосового помощника", ov.FUNCTION_NAMES == ["get_stats", "client_info", "list_dialogs", "get_schedule",
-                                                             "ask_agent", "do_action", "send_to_telegram"], ov.FUNCTION_NAMES)
+check("функции голосового помощника", ov.FUNCTION_NAMES == ["get_stats", "get_report", "get_balance", "client_info",
+                                                             "list_dialogs", "get_schedule", "ask_agent", "do_action",
+                                                             "send_to_telegram"], ov.FUNCTION_NAMES)
 for f in ov.GEMINI_FUNCTIONS:
     check(f"схема {f['name']} не меняется очисткой под Gemini", gemini_schema(f["parameters"]) == f["parameters"])
 _fn = {f["name"]: f for f in ov.GEMINI_FUNCTIONS}
@@ -97,7 +98,11 @@ check("оркестратор и действия не блокируют (аг�
       _fn["ask_agent"]["behavior"] == "NON_BLOCKING" and _fn["do_action"]["behavior"] == "NON_BLOCKING")
 check("в функциях нет записи и удаления, кроме do_action", all(n in ov.FAST_FUNCTIONS or n in ("ask_agent", "do_action", "send_to_telegram")
                                                           for n in ov.FUNCTION_NAMES))
-check("промпт: быстрые функции названы", all(n in ov.VOICE_ROLE for n in ("get_stats", "client_info", "list_dialogs", "get_schedule")))
+check("промпт: быстрые функции названы", all(n in ov.VOICE_ROLE for n in ("get_stats", "get_report", "get_balance",
+                                                                             "client_info", "list_dialogs", "get_schedule")))
+check("промпт: «дай отчёт» — это get_report, а не несколько функций", "«Дай отчёт»" in ov.VOICE_ROLE and "get_report за нужный период" in ov.VOICE_ROLE)
+check("промпт: отчёт рассказывается по порядку script (под него загорается инфографика)",
+      "ОТЧЁТ РАССКАЗЫВАЙ ПО ПОРЯДКУ" in ov.VOICE_ROLE and "script" in ov.VOICE_ROLE)
 check("промпт: вчера/неделя — из сводки", "сколько звонков вчера" in ov.VOICE_ROLE)
 
 user = types.SimpleNamespace(first_name="Аман", last_name="", id="u1", credits_balance=5000, is_admin=False)
@@ -499,6 +504,61 @@ check("сумма по дням не складывает «написавших
       ov._sum_days({1: dict(_st), 2: dict(_st)})["writers"] == 0 and ov._sum_days({1: dict(_st), 2: dict(_st)})["msgs_in"] == 14)
 
 
+# ---------- отчёт-инфографика: сцены, подсказки речи, сравнение с прошлым периодом ----------
+_a, _b = _dt(2026, 11, 8).date(), _dt(2026, 11, 8).date()
+_ps, _pu, _plabel, _pshort = ov._prev_range(_a, _b)
+check("прошлый период для «сегодня» — вчерашние сутки по Бишкеку",
+      _ps == _dt(2026, 11, 6, 18, 0) and _pu == _dt(2026, 11, 7, 18, 0) and _plabel == "чем накануне", (_ps, _pu, _plabel))
+check("у сравнения две подписи: для речи и короткая на карточку", _pshort == "ко вчера", _pshort)
+_ps, _pu, _plabel, _pshort = ov._prev_range(_dt(2026, 11, 2).date(), _dt(2026, 11, 8).date())
+check("прошлый период для недели — предыдущие 7 дней",
+      (_pu - _ps).days == 7 and _plabel == "чем неделей раньше" and _pshort == "к прошлой неделе", (_ps, _pu, _plabel))
+check("рост и падение к прошлому периоду", ov._delta(10, 7)["text"] == "на 3 больше" and ov._delta(10, 7)["dir"] == "up"
+      and ov._delta(4, 9)["text"] == "на 5 меньше" and ov._delta(4, 9)["dir"] == "down")
+check("одинаково — так и говорим", ov._delta(5, 5)["text"] == "столько же" and ov._delta(0, 0)["text"] == "")
+check("у каждой сцены отчёта есть слова-подсказки", all(ov.REPORT_CUES.get(k) for k in
+      ("calls", "messages", "days", "waiting", "funnel", "tasks", "money")), list(ov.REPORT_CUES))
+_cues = [c for v in ov.REPORT_CUES.values() for c in v]
+check("подсказки не пересекаются между сценами (иначе загорится не тот блок)", len(_cues) == len(set(_cues)),
+      [c for c in _cues if _cues.count(c) > 1])
+check("подсказки в нижнем регистре (речь приводится к нему)", all(c == c.lower() for c in _cues))
+_scene = ov._report_scene("calls", "Звонки", "tiles", tiles=[{"label": "Всего", "value": 3}])
+check("сцена отчёта несёт id, вид, заголовок и подсказки",
+      _scene["id"] == "calls" and _scene["kind"] == "tiles" and _scene["cue"] == ov.REPORT_CUES["calls"], _scene)
+
+# ---------- балансы ----------
+class _Plan:
+    code, name = "profi", "Profi"
+
+
+class _MoneyUser:
+    wallet_balance = 186000      # 1860 сом
+    credits_balance = 16400
+    is_admin = False
+    email = "owner@example.kg"
+    subscription_plan_rel = _Plan()
+    subscription_end_date = _dt.utcnow() + _td(days=23)
+
+
+_bal = ov.balances(None, _MoneyUser(), None)
+check("кошелёк в сомах и в минутах звонков", _bal["wallet_som"] == 1860.0 and _bal["wallet_minutes"] > 100, _bal)
+check("кредиты и тариф в балансах", _bal["credits"] == 16400 and _bal["plan"] == "Profi" and _bal["plan_days_left"] in (22, 23), _bal)
+check("фраза о деньгах — словами, без markdown", "в кошельке 1860 сом" in ov._money_sentence(_bal)
+      and "кредитов агента 16400" in ov._money_sentence(_bal), ov._money_sentence(_bal))
+_rows = ov._money_rows(_bal)
+check("карточка балансов: кошелёк, кредиты, тариф", [r["label"] for r in _rows] == ["Кошелёк", "Кредиты агента", "Тариф"], _rows)
+check("нормальные остатки не подсвечиваются тревогой", not any(r["low"] for r in _rows), _rows)
+
+
+class _EmptyUser(_MoneyUser):
+    wallet_balance = 300         # 3 сома — меньше минуты
+    credits_balance = 100
+
+
+_low = ov._money_rows(ov.balances(None, _EmptyUser(), None))
+check("пустой кошелёк и кредиты подсвечиваются", _low[0]["low"] and _low[1]["low"], _low)
+
+
 # ---------- быстрые функции идут в поток, медленные — в фоновый loop ----------
 async def fast_route():
     c = make_client()
@@ -740,6 +800,24 @@ check("Telegram: кнопка по умолчанию для бота + кома
       and any(m == "setMyCommands" for m, _ in _calls))
 _n1, _n2, _n3, _ncalls = run(menu_flow("reactive"))
 check("Telegram: на Старте кнопку живого голоса не ставим", not _n1 and not _ncalls)
+
+
+# ---------- окно разговора: отчёт рисуется сценами и загорается под речь ----------
+_js = open(os.path.join(ROOT, "backend/static/agent/voice-chat.js"), encoding="utf-8").read()
+_css = open(os.path.join(ROOT, "backend/static/css/voice-live.css"), encoding="utf-8").read()
+check("окно умеет карточки отчёта и балансов", "card.type === 'report'" in _js and "card.type === 'balance'" in _js)
+check("сцены отчёта скрыты до своей очереди", "class=\"vv-scene\" data-i=" in _js and "hidden>" in _js)
+check("речь агента сверяется с подсказками сцен", "reportSync(delta)" in _js and "r.buf.indexOf(cues[k])" in _js)
+check("молчит или ушёл в сторону — блок покажем сами", "Date.now() - r.last > 2600" in _js
+      and "revealScenes(scenes.length - 1)" in _js)
+check("конец реплики дорисовывает отчёт", "reportTurnEnded()" in _js)
+check("таймеры отчёта снимаются при закрытии окна", _js.count("stopReport()") >= 3)
+check("счётчики плиток запускаются при показе сцены, а не заранее",
+      "sc.el.querySelectorAll('b[data-n]').forEach" in _js and "if (card.type === 'report') initReport" in _js)
+check("стили сцен и балансов на месте", ".vv-scene" in _css and ".vv-money" in _css and ".vv-card.vv-wide" in _css)
+check("аудиочасть окна цела", all(x in _js for x in ("async function startAudio", "function playChunk",
+                                                     "async function connect", "function reconnect")))
+check("демо-режим окна: свой сокет и без настроек", "'/ws/demo-voice'" in _js and '.vv[data-demo="1"] .vv-set' in _css)
 
 
 # ============================================================ часть 2: настоящий PostgreSQL

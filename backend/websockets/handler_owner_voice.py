@@ -102,6 +102,7 @@ class OwnerVoiceSession:
         self.functions_called = 0
         self.typed: List[str] = []   # быстрые команды из окна — у них нет расшифровки речи, в историю пишем сами
         self.prefs: Dict[str, Any] = ov.clean_prefs(prefs)
+        self.max_seconds = ov.MAX_SESSION_SECONDS   # демо-сессия короче, см. handler_demo_voice
         self.owner = owner or SimpleNamespace(first_name="")
         self._sem = asyncio.Semaphore(2)
         # Последняя реплика владельца — для проверки «да» перед действием (ov.action_refusal)
@@ -263,7 +264,7 @@ class OwnerVoiceSession:
 
     async def _watch_limit(self) -> None:
         try:
-            await asyncio.sleep(max(60, ov.MAX_SESSION_SECONDS))
+            await asyncio.sleep(max(60, self.max_seconds))
             await self.websocket.send_json({"type": "session.limit",
                                             "message": "Разговор длится слишком долго — начните новый"})
         except asyncio.CancelledError:

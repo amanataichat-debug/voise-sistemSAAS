@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Голосовой агент</title>
 <link rel="stylesheet" href="/static/css/fonts.css">
-<link rel="stylesheet" href="/static/css/voice-live.css?v=20261108c">
+<link rel="stylesheet" href="/static/css/voice-live.css?v=20261109a">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   html, body { margin: 0; height: 100%; background: #050816; color: #f1f5ff; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
@@ -53,12 +53,13 @@
   <div class="vl-err" id="vl-err" hidden role="alert"></div>
   <div class="vl-foot">Voksy AI</div>
 </main>
-<script src="/static/agent/voice-chat.js?v=20261108c"></script>
+<script src="/static/agent/voice-chat.js?v=20261109a"></script>
 <script>
 (function () {
   'use strict';
   const params = new URLSearchParams(location.search);
   const agentId = params.get('agent') || '';
+  const isDemo = params.get('demo') === '1';
   const tg = window.Telegram && window.Telegram.WebApp;
   const inTg = !!(tg && tg.initData);
   const startBtn = document.getElementById('vl-start');
@@ -84,8 +85,24 @@
     404: 'Агент не найден. Откройте кнопку «🎙 Голос» из бота агента.',
     login: 'Войдите в кабинет Voksy AI в этом браузере, затем откройте эту страницу снова. <a href="/static/login.html">Войти</a>',
   };
+  const DEMO_ERRORS = {
+    401: 'Не удалось проверить вход через Telegram. Закройте окно и нажмите кнопку в боте ещё раз.',
+    404: 'Демонстрация сейчас выключена. Напишите нам на voksyai.online — покажем вживую.',
+    login: 'Откройте демонстрацию из Telegram-бота Voksy AI.',
+  };
 
   async function auth() {
+    if (isDemo) {
+      // демо: вход только по подписи Telegram — в кабинет этот токен не пускает
+      if (!inTg) throw 'login';
+      const r = await fetch('/api/demo/webapp-auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ init_data: tg.initData }),
+      });
+      if (!r.ok) throw r.status;
+      const d = await r.json();
+      return { token: d.token, agent_id: null, agent_name: 'Демо: ' + (d.company || 'Voksy AI'), demo: true };
+    }
     if (inTg) {
       const r = await fetch('/api/agent/telegram/webapp-auth', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -108,8 +125,9 @@
       if (inTg && tg.HapticFeedback) { try { tg.HapticFeedback.impactOccurred('medium'); } catch (e) { } }
       main.style.visibility = 'hidden';
       await window.VoksyVoice.open({
-        agentId: a.agent_id || agentId || null,
+        agentId: a.agent_id || (isDemo ? null : agentId) || null,
         token: a.token,
+        demo: !!a.demo,
         title: a.agent_name || 'Голосовой агент',
         onClose: () => {
           main.style.visibility = '';
@@ -119,7 +137,7 @@
       });
     } catch (e) {
       main.style.visibility = '';
-      showError(ERRORS[e] || 'Не получилось подключиться. Попробуйте ещё раз.');
+      showError((isDemo ? DEMO_ERRORS[e] : ERRORS[e]) || 'Не получилось подключиться. Попробуйте ещё раз.');
     } finally {
       startBtn.disabled = false;
     }
@@ -128,6 +146,14 @@
   startBtn.addEventListener('click', start);
   orb.addEventListener('click', start);
   if (inTg) document.getElementById('vl-title').textContent = 'Поговорите с агентом';
+  if (isDemo) {
+    document.getElementById('vl-title').textContent = 'Демонстрация голосового агента';
+    document.querySelector('.vl p').textContent = 'Поговорите голосом с агентом выдуманной компании «Окна Комфорт». ' +
+      'Он знает её звонки, переписку, CRM и деньги. Настоящим клиентам в демо ничего не уходит.';
+    document.querySelector('.vl-hints').innerHTML =
+      '<span>«Что нового?»</span><span>«Кто ждёт ответа?»</span><span>«Что писал Нурлан?»</span>';
+    document.querySelector('.vl-foot').textContent = 'Voksy AI · демонстрация на выдуманных данных';
+  }
 })();
 </script>
 </body>

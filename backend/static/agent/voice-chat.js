@@ -34,7 +34,8 @@
     { id: 'Puck', g: 'муж.', d: 'бодрый' }, { id: 'Charon', g: 'муж.', d: 'деловой' },
     { id: 'Fenrir', g: 'муж.', d: 'энергичный' }, { id: 'Orus', g: 'муж.', d: 'низкий' },
   ];
-  const CHIPS = ['Что нового?', 'Кто ждёт ответа?', 'Сколько звонков вчера?', 'Как прошла неделя?', 'Что запланировано на завтра?'];
+  const CHIPS = ['Отчёт за сегодня', 'Кто ждёт ответа?', 'Как прошла неделя?', 'Сколько денег на счету?', 'Что запланировано на завтра?'];
+  const DEMO_CHIPS = ['Что нового?', 'Кто ждёт ответа?', 'Что писал Нурлан?', 'Как прошла неделя?', 'Сколько денег на счету?'];
   const ADDRESS = [{ id: 'name', t: 'По имени' }, { id: 'chef', t: 'Шеф' }, { id: 'boss', t: 'Босс' }, { id: 'custom', t: 'Своё' }];
   const PALETTES = {
     connecting: ['#64748b', '#475569', '#94a3b8'], listening: ['#22d3ee', '#3b6dff', '#6366f1'],
@@ -60,6 +61,8 @@
     list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="8" y1="7" x2="20" y2="7"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="17" x2="16" y2="17"/><circle cx="4" cy="7" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="17" r="1"/></svg>',
     funnel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>',
     done: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17 19 7"/></svg>',
+    report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a1 1 0 0 1 1-1h10l5 5v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M14 4v5h5"/><path d="M8 17v-3M12 17v-6M16 17v-4"/></svg>',
+    balance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2"/><rect x="3" y="8" width="18" height="11" rx="2.5"/><circle cx="16" cy="13.5" r="1.4"/></svg>',
   };
   const CH_DOT = { whatsapp: 'wa', telegram: 'tg', instagram: 'ig' };
 
@@ -142,7 +145,7 @@ registerProcessor('vv-out', VvOut);`;
     speechLvl: 0.06, holdUntil: 0, micLevel: 0, outLevel: 0, lvl: 0,
     lastRole: null, lastAgentAt: 0, agentText: '', ownerText: '', anyOwner: false,
     state: 'connecting', statusText: '', shimmer: false, pal: null, palTarget: null, quality: 2, glowEl: null,
-    prefs: { address: 'name', formality: 'vy' }, ownerName: '', pendingPrefs: null,
+    prefs: { address: 'name', formality: 'vy' }, ownerName: '', pendingPrefs: null, report: null, demo: false,
   };
 
   function esc(s) {
@@ -169,6 +172,8 @@ registerProcessor('vv-out', VvOut);`;
     const period = { today: 'сегодня', yesterday: 'вчера', week: 'неделю', month: 'месяц', this_month: 'этот месяц' }[a.period] || 'период';
     switch (name) {
       case 'get_stats': return 'Считаю цифры за ' + period + '…';
+      case 'get_report': return 'Собираю отчёт за ' + period + '…';
+      case 'get_balance': return 'Смотрю балансы…';
       case 'client_info': return a.query ? 'Открываю карточку: ' + a.query : 'Открываю карточку клиента…';
       case 'list_dialogs': return 'Смотрю переписку…';
       case 'get_schedule': return 'Смотрю расписание…';
@@ -363,6 +368,7 @@ registerProcessor('vv-out', VvOut);`;
       if (fresh) S.agentText = '';
       S.agentText += delta;
       S.lastAgentAt = now;
+      reportSync(delta);
       const box = $('.vv-cap-agent');
       if (box) {
         const narrow = window.innerWidth < 640, max = narrow ? (S.el.dataset.cards === '1' ? 80 : 150) : 300;
@@ -392,34 +398,56 @@ registerProcessor('vv-out', VvOut);`;
     };
     requestAnimationFrame(step);
   }
+  function tilesHtml(tiles) {
+    return '<div class="vv-tiles">' + (tiles || []).map(t =>
+      '<div class="vv-tile' + (t.accent ? ' vv-accent' : '') + (t.dir === 'up' ? ' vv-up' : t.dir === 'down' ? ' vv-down' : '') +
+      '"><em>' + esc(t.label) + '</em><b' + (typeof t.value === 'number' ? ' data-n="' + t.value + '">0' : '>' + esc(t.value)) +
+      '</b><small>' + esc(t.sub || '') + '</small></div>').join('') + '</div>';
+  }
+  function barsHtml(bars, title, today) {
+    if (!bars || bars.length < 2) return '';
+    const max = Math.max(1, ...bars.map(b => +b.value || 0)), labels = bars.length <= 10;
+    return (title ? '<div class="vv-bars-t">' + esc(title) + '</div>' : '') +
+      '<div class="vv-bars' + (labels ? ' vv-has-labels' : '') + '">' + bars.map((b, i) =>
+        '<div class="vv-bar' + (today && i === bars.length - 1 ? ' vv-today' : '') + '" style="height:' +
+        Math.max(6, Math.round((+b.value || 0) / max * 100)) + '%;animation-delay:' + (i * 35) + 'ms"' +
+        (labels ? ' data-l="' + esc(b.label) + '" data-v="' + (+b.value || '') + '"' : '') +
+        ' title="' + esc(b.full || b.label) + ': ' + esc(b.value) + '"></div>').join('') + '</div>';
+  }
+  function rowsHtml(items) {
+    return '<div class="vv-rows">' + ((items || []).map(i => '<div class="vv-row"><span class="vv-dot ' + (CH_DOT[i.channel] || '') + '"></span><div><b>' +
+      esc(i.title) + '</b>' + (i.meta ? ' · ' + esc(i.meta) : '') + (i.text ? '<small>' + esc(i.text) + '</small>' : '') +
+      '</div></div>').join('') || '<div class="vv-row">Пусто</div>') + '</div>';
+  }
+  function funnelHtml(stages) {
+    const st = stages || [], max = Math.max(1, ...st.map(s => +s.value || 0));
+    return '<div class="vv-funnel">' + st.map((s, i) => '<div class="vv-fn-row"><span>' + esc(s.label) + '</span><div class="vv-fn-bar"><i style="width:' +
+      Math.max(3, Math.round((+s.value || 0) / max * 100)) + '%;animation-delay:' + (i * 60) + 'ms"></i></div><b>' + (+s.value || 0) + '</b></div>').join('') + '</div>';
+  }
+  function moneyHtml(rows) {
+    return '<div class="vv-money">' + ((rows || []).map(r => '<div class="vv-money-r' + (r.low ? ' vv-low' : '') + '"><em>' + esc(r.label) +
+      '</em><b>' + esc(r.value) + '</b><small>' + esc(r.sub || '') + '</small></div>').join('') || '<div class="vv-row">Нет данных</div>') + '</div>';
+  }
+  function sceneHtml(sc, i) {
+    let body;
+    if (sc.kind === 'tiles') body = tilesHtml(sc.tiles);
+    else if (sc.kind === 'bars') body = barsHtml(sc.bars, '', false);
+    else if (sc.kind === 'list') body = rowsHtml(sc.items);
+    else if (sc.kind === 'funnel') body = funnelHtml(sc.stages) + (sc.note ? '<div class="vv-scene-n">' + esc(sc.note) + '</div>' : '');
+    else if (sc.kind === 'balance') body = moneyHtml(sc.rows);
+    else body = '<div class="vv-row">' + esc(sc.text || '') + '</div>';
+    return '<section class="vv-scene" data-i="' + i + '" hidden><h5>' + esc(sc.title) + '</h5>' + body + '</section>';
+  }
   function cardBody(card) {
-    if (card.type === 'stats') {
-      let h = '<div class="vv-tiles">' + (card.tiles || []).map(t =>
-        '<div class="vv-tile' + (t.accent ? ' vv-accent' : '') + '"><em>' + esc(t.label) + '</em><b' + (typeof t.value === 'number' ? ' data-n="' + t.value + '">0' : '>' + esc(t.value)) +
-        '</b><small>' + esc(t.sub || '') + '</small></div>').join('') + '</div>';
-      const bars = card.bars || [];
-      if (bars.length > 1) {
-        const max = Math.max(1, ...bars.map(b => +b.value || 0)), labels = bars.length <= 10;
-        if (card.bars_title) h += '<div class="vv-bars-t">' + esc(card.bars_title) + '</div>';
-        h += '<div class="vv-bars' + (labels ? ' vv-has-labels' : '') + '">' + bars.map((b, i) =>
-          '<div class="vv-bar' + (i === bars.length - 1 && card.title === 'Сегодня' ? ' vv-today' : '') + '" style="height:' + Math.max(6, Math.round((+b.value || 0) / max * 100)) +
-          '%;animation-delay:' + (i * 35) + 'ms"' + (labels ? ' data-l="' + esc(b.label) + '" data-v="' + (+b.value || '') + '"' : '') + ' title="' + esc(b.label) + ': ' + esc(b.value) + '"></div>').join('') + '</div>';
-      }
-      return h;
-    }
+    if (card.type === 'stats') return tilesHtml(card.tiles) + barsHtml(card.bars, card.bars_title, card.title === 'Сегодня');
+    if (card.type === 'report') return '<div class="vv-scenes">' + (card.scenes || []).map(sceneHtml).join('') + '</div>';
+    if (card.type === 'balance') return moneyHtml(card.rows);
     if (card.type === 'client') {
       return '<div class="vv-client-h"><span class="vv-avatar">' + esc(initials(card.title)) + '</span><div><b>' + esc(card.title) + '</b><small>' + esc(card.subtitle || '') + '</small></div></div>' +
         '<div class="vv-feed">' + ((card.lines || []).map(l => '<div>' + esc(l) + '</div>').join('') || '<div>Переписки пока нет</div>') + '</div>';
     }
-    if (card.type === 'list') {
-      return '<div class="vv-rows">' + ((card.items || []).map(i => '<div class="vv-row"><span class="vv-dot ' + (CH_DOT[i.channel] || '') + '"></span><div><b>' + esc(i.title) + '</b>' +
-        (i.meta ? ' · ' + esc(i.meta) : '') + (i.text ? '<small>' + esc(i.text) + '</small>' : '') + '</div></div>').join('') || '<div class="vv-row">Пусто</div>') + '</div>';
-    }
-    if (card.type === 'funnel') {
-      const st = card.stages || [], max = Math.max(1, ...st.map(s => +s.value || 0));
-      return '<div class="vv-funnel">' + st.map((s, i) => '<div class="vv-fn-row"><span>' + esc(s.label) + '</span><div class="vv-fn-bar"><i style="width:' +
-        Math.max(3, Math.round((+s.value || 0) / max * 100)) + '%;animation-delay:' + (i * 60) + 'ms"></i></div><b>' + (+s.value || 0) + '</b></div>').join('') + '</div>';
-    }
+    if (card.type === 'list') return rowsHtml(card.items);
+    if (card.type === 'funnel') return funnelHtml(card.stages);
     return '<div class="vv-row">' + esc(card.text || '') + '</div>';
   }
   function renderCard(card, opts) {
@@ -427,15 +455,79 @@ registerProcessor('vv-out', VvOut);`;
     if (!box || !card || !card.type) return;
     opts = opts || {};
     const el = document.createElement('div');
-    el.className = 'vv-card' + (card.type === 'done' ? ' vv-done' : '') + (opts.fresh ? ' vv-fresh' : '');
+    el.className = 'vv-card' + (card.type === 'done' ? ' vv-done' : '') + (card.type === 'report' ? ' vv-wide' : '') + (opts.fresh ? ' vv-fresh' : '');
     el.innerHTML = '<div class="vv-card-h"><span>' + (CARD_IC[card.type] || CARD_IC.list) + '</span>' + esc(card.type === 'client' ? 'Клиент' : (card.title || '')) +
       (card.subtitle && card.type !== 'client' ? '<em>' + esc(card.subtitle) + '</em>' : '') + '</div>' + cardBody(card);
     if (opts.append) box.appendChild(el); else box.prepend(el);
     box.querySelectorAll('.vv-fresh').forEach(x => { if (x !== el) x.classList.remove('vv-fresh'); });
     while (box.children.length > 4) box.lastElementChild.remove();
-    el.querySelectorAll('b[data-n]').forEach(b => countUp(b, +b.dataset.n));
+    if (card.type === 'report') initReport(el, card);
+    else el.querySelectorAll('b[data-n]').forEach(b => countUp(b, +b.dataset.n));
+    if (S.report && !S.report.el.isConnected) stopReport();
     if (!opts.append) box.scrollTo({ left: 0, behavior: 'smooth' });
     if (S.el.dataset.cards !== '1') S.el.dataset.cards = '1';
+  }
+
+  // ---------------------------------------------------------------- отчёт: блоки загораются под речь
+  // get_report вернул сцены в том порядке, в каком помощник о них рассказывает, и слова-подсказки к каждой.
+  // Услышали слово — показали блок. Речь ушла в сторону или оборвалась — показываем сами, чтобы владелец
+  // не смотрел в пустую карточку.
+  function stopReport() {
+    const r = S.report;
+    if (!r) return;
+    clearInterval(r.tick);
+    clearTimeout(r.all);
+    clearTimeout(r.end);
+    S.report = null;
+  }
+  function initReport(el, card) {
+    stopReport();
+    const nodes = Array.prototype.slice.call(el.querySelectorAll('.vv-scene'));
+    const scenes = (card.scenes || []).map((sc, i) => ({ el: nodes[i], cues: (sc.cue || []).map(c => String(c).toLowerCase()) }));
+    if (!scenes.length) return;
+    S.report = { el, scenes, next: 0, buf: '', last: Date.now(), tick: null, all: null, end: null };
+    revealScenes(0);
+    if (!S.report) return;
+    S.report.tick = setInterval(() => {
+      const r = S.report;
+      if (!r) return;
+      if (r.next >= r.scenes.length) { stopReport(); return; }
+      if (Date.now() - r.last > 2600) revealScenes(r.next);
+    }, 700);
+    S.report.all = setTimeout(() => revealScenes(scenes.length - 1), 16000);
+  }
+  function revealScenes(upto) {
+    const r = S.report;
+    if (!r) return;
+    const last = Math.min(upto, r.scenes.length - 1);
+    for (let i = r.next; i <= last; i++) {
+      const sc = r.scenes[i];
+      if (!sc || !sc.el) continue;
+      sc.el.hidden = false;
+      r.el.querySelectorAll('.vv-scene.vv-now').forEach(x => x.classList.remove('vv-now'));
+      sc.el.classList.add('vv-on', 'vv-now');
+      sc.el.querySelectorAll('b[data-n]').forEach(b => countUp(b, +b.dataset.n));
+      if (i > 0) { try { r.el.scrollTo({ top: Math.max(0, sc.el.offsetTop - 34), behavior: 'smooth' }); } catch (e) { } }
+    }
+    r.next = last + 1;
+    r.last = Date.now();
+    if (r.next >= r.scenes.length) { clearInterval(r.tick); r.tick = null; clearTimeout(r.all); r.all = null; }
+  }
+  function reportSync(delta) {
+    const r = S.report;
+    if (!r || r.next >= r.scenes.length) return;
+    r.buf = (r.buf + ' ' + String(delta || '')).toLowerCase().slice(-240);
+    for (let i = r.next; i < r.scenes.length; i++) {
+      const cues = r.scenes[i].cues;
+      for (let k = 0; k < cues.length; k++) {
+        if (cues[k] && r.buf.indexOf(cues[k]) >= 0) { revealScenes(i); r.buf = ''; return; }
+      }
+    }
+  }
+  function reportTurnEnded() {
+    const r = S.report;
+    if (!r || r.end) return;
+    r.end = setTimeout(() => { if (S.report === r) revealScenes(r.scenes.length - 1); }, 1600);
   }
 
   // ---------------------------------------------------------------- звук: запуск
@@ -652,11 +744,12 @@ registerProcessor('vv-out', VvOut);`;
     const q = new URLSearchParams({ rate: '16000' });
     const v = storedVoice();
     if (v) q.set('voice', v);
-    if (S.opts.agentId) q.set('agent_id', S.opts.agentId);
+    if (S.opts.agentId && !S.demo) q.set('agent_id', S.opts.agentId);
     let token = '';
     try { token = typeof S.opts.token === 'function' ? await S.opts.token() : (S.opts.token || ''); } catch (e) { token = ''; }
     S.offline = false;
-    const ws = new WebSocket(proto + '://' + location.host + '/ws/agent-voice?' + q.toString());
+    const path = S.demo ? '/ws/demo-voice' : '/ws/agent-voice';
+    const ws = new WebSocket(proto + '://' + location.host + path + '?' + q.toString());
     S.ws = ws;
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token }));
@@ -695,6 +788,10 @@ registerProcessor('vv-out', VvOut);`;
       if (d.prefs) S.prefs = d.prefs;
       if (d.prefs && d.prefs.voice && !storedVoice()) lsSet('vf_owner_voice', d.prefs.voice);
       S.ownerName = d.owner_name || '';
+      if (d.demo && d.company) {
+        const name = S.el.querySelector('.vv-name');
+        if (name) name.textContent = 'Демо: ' + d.company;
+      }
       showAlert('');
       setStatus('Слушаю', 'listening');
       haptic('light');
@@ -714,6 +811,7 @@ registerProcessor('vv-out', VvOut);`;
       S.inReply = true;
     } else if (t === 'assistant.speech.ended' || t === 'turn.saved') {
       S.skipTurn = false;
+      reportTurnEnded();
       if (S.out && S.inReply) S.out.port.postMessage({ t: 'drain' });
       S.inReply = false;
       if (!S.underruns && S.prebuf > PREBUF_MIN) setPrebuf(Math.max(PREBUF_MIN, S.prebuf - 0.02));
@@ -846,8 +944,17 @@ registerProcessor('vv-out', VvOut);`;
   async function open(opts) {
     if (S.open) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Этот браузер не даёт доступ к микрофону', 'error'); return; }
-    S.opts = Object.assign({ agentId: null, token: null, title: 'Голосовой агент', onClose: null, onCredits: null, onMicError: null }, opts || {});
+    S.opts = Object.assign({ agentId: null, token: null, title: 'Голосовой агент', demo: false,
+      onClose: null, onCredits: null, onMicError: null }, opts || {});
+    S.demo = !!S.opts.demo;
     if (!S.el) S.el = buildDom();
+    S.el.dataset.demo = S.demo ? '1' : '0';
+    if (S.demo) {
+      // в демо настройки сохранять некуда и агент не наш — прячем шестерёнку, меняем подсказки
+      const chips = S.el.querySelector('.vv-chips');
+      if (chips) chips.innerHTML = DEMO_CHIPS.map(c => '<button class="vv-chip" type="button" data-chip="' + esc(c) + '">' + esc(c) + '</button>').join('');
+      chips.querySelectorAll('.vv-chip').forEach(b => b.addEventListener('click', () => sendText(b.dataset.chip)));
+    }
     Object.assign(S, { lines: [], fnRunning: 0, muted: false, closing: false, error: null, live: false, nextPlay: 0, sources: [],
       prebuf: PREBUF_MIN, underruns: 0, inReply: false, lastRole: null, agentText: '', ownerText: '', anyOwner: false, skipTurn: false,
       startedAt: 0, lvl: 0, micLevel: 0, outLevel: 0, holdUntil: 0, pal: null, palTarget: null, agentPlaying: false, statusText: '',
@@ -911,6 +1018,7 @@ registerProcessor('vv-out', VvOut);`;
     try { S.ws && S.ws.close(); } catch (e) { }
     S.ws = null; S.live = false;
     stopPlayback();
+    stopReport();
     clearTimeout(S.idleT);
     try { if (S.mic) { if (S.mic.port) S.mic.port.onmessage = null; S.mic.onaudioprocess = null; S.mic.disconnect(); } } catch (e) { }
     try { S.out && S.out.disconnect(); } catch (e) { }

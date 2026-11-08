@@ -45,6 +45,7 @@ from backend.api import (
     eleven_assistants,  # Eleven Assistants CRUD API (OpenAI Realtime текст + ElevenLabs TTS, кыргызский по умолчанию)
     eleven_ws,  # Eleven voice WebSocket: /ws/eleven/{id}
     owner_voice_ws,  # Голосовой режим оркестратора: /ws/agent-voice (Gemini Live + оркестратор)
+    demo_voice,  # Демо голосового агента для посторонних: /ws/demo-voice + Telegram-бот демо (без базы)
     sip_gateway,  # 📞 Собственная SIP-телефония (шлюз Asterisk + мост)
     translate_assistants,  # 🆕 v1.0: Translate Assistants CRUD API
     translate_ws,  # 🆕 v1.0: Translate WebSocket API
@@ -306,6 +307,7 @@ app.include_router(translate_ws.router, tags=["Translate WebSocket"])  # BEFORE 
 app.include_router(fish_ws.router, tags=["Fish WebSocket"])  # BEFORE websocket.router — /ws/fish/{id} must match before /ws/{assistant_id}
 app.include_router(eleven_ws.router, tags=["Eleven WebSocket"])  # BEFORE websocket.router — /ws/eleven/{id}
 app.include_router(owner_voice_ws.router, tags=["Owner Voice WebSocket"])  # BEFORE websocket.router — /ws/agent-voice
+app.include_router(demo_voice.router, tags=["Demo Voice"])  # BEFORE websocket.router — /ws/demo-voice (демо без базы)
 app.include_router(sip_gateway.router, tags=["SIP Gateway"])  # BEFORE websocket.router — /ws/sip/{call_id} and /ws/sip-gateway/control must match before /ws/{assistant_id}
 app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(grok_ws.router, tags=["Grok WebSocket"])  # 🆕 v3.0

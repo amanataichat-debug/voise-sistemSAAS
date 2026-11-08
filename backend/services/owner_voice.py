@@ -186,6 +186,36 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "get_report",
+        "behavior": "BLOCKING",
+        "description": (
+            "ОТЧЁТ за период одной функцией: звонки и чем кончились, переписка, сравнение с прошлым периодом, "
+            "по дням, кто ждёт ответа, воронка, что запланировано и балансы (кошелёк, кредиты, тариф). "
+            "Вызывай на «дай отчёт», «что нового», «как дела», «итоги дня/недели/месяца». Отвечает мгновенно "
+            "и рисует владельцу инфографику: рассказывай по полю script ПО ПОРЯДКУ, своими словами и коротко — "
+            "блоки на экране загораются под твою речь."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "this_month", "custom"],
+                           "description": _PERIOD_DESC},
+                "date_from": {"type": "string", "description": "Для custom: первая дата, ГГГГ-ММ-ДД"},
+                "date_to": {"type": "string", "description": "Для custom: последняя дата включительно, ГГГГ-ММ-ДД"},
+            },
+            "required": ["period"],
+        },
+    },
+    {
+        "name": "get_balance",
+        "behavior": "BLOCKING",
+        "description": (
+            "Деньги: сколько в кошельке и на сколько минут звонков хватит, кредиты агента, тариф и когда "
+            "заканчивается. Для «сколько денег», «на сколько хватит», «когда пополнять». Отвечает мгновенно."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
         "name": "client_info",
         "behavior": "BLOCKING",
         "description": (
@@ -285,7 +315,7 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
 ]
-FAST_FUNCTIONS = {"get_stats", "client_info", "list_dialogs", "get_schedule"}
+FAST_FUNCTIONS = {"get_stats", "get_report", "get_balance", "client_info", "list_dialogs", "get_schedule"}
 FUNCTION_NAMES = [f["name"] for f in GEMINI_FUNCTIONS]
 
 
@@ -353,6 +383,8 @@ def build_brief(db, user, agent, now: Optional[datetime] = None) -> str:
     safe("calls", lambda: _brief_calls(db, agent, day_start, today_bk))
     safe("tasks", lambda: _brief_tasks(db, agent, now, today_bk))
     safe("funnel", lambda: _brief_funnel(db, agent))
+    safe("money", lambda: "Деньги: " + _money_sentence(balances(db, user, agent)) +
+         ". О деньгах подробнее — get_balance; сам про них не заговаривай, если не спросили и ничего не кончается.")
 
     text = "\n\n".join(parts)
     if len(text) > BRIEF_MAX_CHARS:
@@ -852,6 +884,286 @@ def fast_get_schedule(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
                                for x in items[:6]]}}
 
 
+# ---------------------------------------------------------------- отчёт-инфографика и балансы
+# Отчёт владелец и слушает, и видит: функция возвращает «сцены» (блоки инфографики) в том порядке,
+# в каком помощник о них рассказывает, и к каждой — слова-подсказки (cue). Окно подсвечивает сцену,
+# когда слышит эти слова в речи агента, поэтому картинка идёт синхронно с рассказом, а не вываливается
+# целиком. Порядок сцен = порядок рассказа, он же в поле script: модель говорит по нему своими словами.
+REPORT_CUES: Dict[str, List[str]] = {
+    "calls": ["звонк", "звонил", "позвон", "дозвон", "набра", "трубк", "чалуу", "разговор"],
+    "messages": ["сообщен", "написа", "перепис", "whatsapp", "ватсап", "телеграм", "инстаграм", "жазды"],
+    # подсказки нарочно узкие: «неделей раньше» и «не ответили» звучат уже в блоке звонков,
+    # и на широких словах («недел», «не ответил») зажигались чужие блоки (проверено в браузере)
+    "days": ["по дням", "динамик", "график", "плотн", "ровно"],
+    "waiting": ["ждут", "ждёт", "ждет", "без ответа", "зависл", "никто не отвеч"],
+    "funnel": ["воронк", "этап", "сделк", "срм", "crm", "новых клиент"],
+    "tasks": ["задач", "заплан", "календар", "напомин", "завтра", "созвон"],
+    "money": ["баланс", "кошел", "кредит", "хватит", "попол", "на счету", "деньг"],
+}
+
+
+def _prev_range(a, b):
+    """Предыдущий период той же длины: (since_utc, until_utc) и подпись «чем вчера» / «чем неделей раньше»."""
+    length = (b - a).days + 1
+    prev_b = a - timedelta(days=1)
+    prev_a = prev_b - timedelta(days=length - 1)
+    since = datetime(prev_a.year, prev_a.month, prev_a.day) - BISHKEK_OFFSET
+    until = datetime(prev_b.year, prev_b.month, prev_b.day) - BISHKEK_OFFSET + timedelta(days=1)
+    if length == 1:
+        label, short = "чем накануне", "ко вчера"
+    elif length == 7:
+        label, short = "чем неделей раньше", "к прошлой неделе"
+    elif length >= 28:
+        label, short = "чем в прошлом месяце", "к прошлому месяцу"
+    else:
+        label, short = f"чем {length} дней до этого", f"к прошлым {length} дням"
+    return since, until, label, short
+
+
+def _delta(cur: int, prev: int) -> Dict[str, Any]:
+    """Насколько больше или меньше, чем в прошлом периоде (для плитки и для речи)."""
+    diff = int(cur) - int(prev)
+    if prev == 0 and cur == 0:
+        return {"diff": 0, "text": "", "dir": "same"}
+    if diff == 0:
+        return {"diff": 0, "text": "столько же", "dir": "same"}
+    word = "больше" if diff > 0 else "меньше"
+    return {"diff": diff, "text": f"на {abs(diff)} {word}", "dir": "up" if diff > 0 else "down"}
+
+
+def call_outcomes(db, agent, since: datetime, until: datetime) -> Dict[str, int]:
+    """Чем кончились звонки за период: ответили / не ответили / не соединились."""
+    from sqlalchemy import func
+    from backend.models.agent_call import AgentCall
+    from backend.services.agent_orchestrator import MESSAGE_DIRECTIONS
+
+    out = {"answered": 0, "no_answer": 0, "failed": 0}
+    rows = (db.query(AgentCall.status, func.count(AgentCall.id))
+            .filter(AgentCall.agent_config_id == agent.id, AgentCall.created_at >= since,
+                    AgentCall.created_at < until, ~AgentCall.direction.in_(list(MESSAGE_DIRECTIONS)))
+            .group_by(AgentCall.status).all())
+    for status, n in rows:
+        key = str(status or "")
+        if key == "answered":
+            out["answered"] += int(n)
+        elif key in ("no_answer", "busy", "rejected"):
+            out["no_answer"] += int(n)
+        elif key in ("failed", "error"):
+            out["failed"] += int(n)
+    return out
+
+
+def balances(db, user, agent) -> Dict[str, Any]:
+    """Кошелёк (сомы и минуты звонков), кредиты агента и тариф — одним словарём."""
+    from backend.services import wallet_service as ws
+
+    tyiyn = int(getattr(user, "wallet_balance", 0) or 0)
+    som = ws.to_som(tyiyn)
+    per_min = ws.som_per_minute("eleven") or 0
+    free = ws.is_free_user(user)
+    minutes = int((tyiyn / 100) // per_min) if per_min and tyiyn > 0 else 0
+    credits = int(getattr(user, "credits_balance", 0) or 0)
+    per_voice_min = max(1, voice_credits(60))
+    plan = getattr(user, "subscription_plan_rel", None)
+    end = getattr(user, "subscription_end_date", None)
+    days_left = None
+    if end is not None:
+        try:
+            days_left = max(0, (end.replace(tzinfo=None) - datetime.utcnow()).days)
+        except Exception:
+            days_left = None
+    plan_name = None
+    if plan is not None:
+        plan_name = "Пробный период" if getattr(plan, "code", "") in ("free", "referral_trial") else plan.name
+    return {
+        "wallet_som": round(som, 2), "wallet_minutes": minutes, "som_per_minute": round(per_min, 2),
+        "wallet_free": free, "credits": credits, "credits_voice_minutes": int(credits // per_voice_min),
+        "plan": plan_name, "plan_days_left": days_left,
+    }
+
+
+def _money_rows(b: Dict[str, Any]) -> List[Dict[str, Any]]:
+    wallet_sub = "звонки бесплатны" if b["wallet_free"] else f"≈ {b['wallet_minutes']} мин звонков"
+    rows = [{"label": "Кошелёк", "value": f"{b['wallet_som']:.0f} сом", "sub": wallet_sub,
+             "low": (not b["wallet_free"]) and b["wallet_minutes"] < 20},
+            {"label": "Кредиты агента", "value": b["credits"], "sub": "переписка и голос", "low": b["credits"] < 500}]
+    if b["plan"]:
+        tail = f"осталось {b['plan_days_left']} дн." if b["plan_days_left"] is not None else ""
+        rows.append({"label": "Тариф", "value": b["plan"], "sub": tail, "low": (b["plan_days_left"] or 99) <= 3})
+    return rows
+
+
+def _money_sentence(b: Dict[str, Any]) -> str:
+    parts = []
+    if b["wallet_free"]:
+        parts.append("звонки на этом аккаунте бесплатны")
+    else:
+        parts.append(f"в кошельке {b['wallet_som']:.0f} сом — это примерно {b['wallet_minutes']} минут звонков")
+    parts.append(f"кредитов агента {b['credits']}")
+    if b["plan"]:
+        parts.append(f"тариф {b['plan']}" + (f", осталось {b['plan_days_left']} дней" if b["plan_days_left"] is not None else ""))
+    return "; ".join(parts)
+
+
+def fast_get_balance(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    b = balances(db, user, agent)
+    low = []
+    if not b["wallet_free"] and b["wallet_minutes"] < 20:
+        low.append("кошелёк почти пуст — звонки скоро остановятся")
+    if b["credits"] < 500:
+        low.append("кредиты агента на исходе — переписка скоро остановится")
+    if b["plan_days_left"] is not None and b["plan_days_left"] <= 3:
+        low.append(f"тариф заканчивается через {b['plan_days_left']} дн.")
+    return {"ok": True, "summary": _money_sentence(b), "warnings": low, **b,
+            "card": {"type": "balance", "title": "Балансы", "subtitle": "кошелёк, кредиты, тариф",
+                     "rows": _money_rows(b)}}
+
+
+_PERIOD_SHORT = {"today": "сегодня", "yesterday": "вчера", "week": "7 дней", "month": "30 дней",
+                 "this_month": "этот месяц"}
+
+
+def _report_scene(scene_id: str, title: str, kind: str, **payload) -> Dict[str, Any]:
+    return {"id": scene_id, "title": title, "kind": kind, "cue": REPORT_CUES.get(scene_id, []), **payload}
+
+
+def fast_get_report(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Полный отчёт за период: цифры со сравнением, по дням, звонки, кто ждёт, воронка, планы, балансы.
+    Карточка — инфографика сценами: окно показывает сцену, когда слышит её слова в речи агента."""
+    from backend.services import inbox_service
+
+    since, until, label, a, b_day = period_range(args.get("period"), args.get("date_from"), args.get("date_to"))
+    days = activity_by_day(db, user, agent, since, until)
+    total = _sum_days(days)
+    total["writers"] = count_writers(db, user, agent, since, until)
+    calls = total["calls_in"] + total["calls_out"]
+    talk_min = round(total["talk_sec"] / 60)
+
+    prev_since, prev_until, prev_label, prev_short = _prev_range(a, b_day)
+    prev = _sum_days(activity_by_day(db, user, agent, prev_since, prev_until))
+    prev_calls = prev["calls_in"] + prev["calls_out"]
+    d_calls, d_msgs = _delta(calls, prev_calls), _delta(total["msgs_in"], prev["msgs_in"])
+
+    outcomes = call_outcomes(db, agent, since, until)
+    scenes: List[Dict[str, Any]] = [
+        _report_scene("calls", "Звонки", "tiles", tiles=[
+            {"label": "Всего", "value": calls, "sub": d_calls["text"] and f"{d_calls['text']} {prev_label}" or "",
+             "dir": d_calls["dir"]},
+            {"label": "С разговором", "value": outcomes["answered"], "sub": f"{talk_min} мин всего"},
+            {"label": "Не ответили", "value": outcomes["no_answer"], "sub": "перезвонить",
+             "accent": bool(outcomes["no_answer"])},
+            {"label": "Входящих", "value": total["calls_in"], "sub": f"исходящих {total['calls_out']}"},
+        ]),
+        _report_scene("messages", "Переписка", "tiles", tiles=[
+            {"label": "От клиентов", "value": total["msgs_in"],
+             "sub": d_msgs["text"] and f"{d_msgs['text']} {prev_label}" or "", "dir": d_msgs["dir"]},
+            {"label": "Писало клиентов", "value": total["writers"], "sub": "разных"},
+            {"label": "Ответил агент", "value": total["bot_out"], "sub": "сообщений"},
+            {"label": "Ответили вы", "value": total["owner_out"], "sub": "сами"},
+        ]),
+    ]
+
+    n_days = (b_day - a).days + 1
+    by_day: List[Dict[str, Any]] = []
+    for i in range(min(n_days, 31)):
+        d = a + timedelta(days=i)
+        st = days.get(d) or _empty_day()
+        by_day.append({"day": f"{WEEKDAYS_SHORT[d.weekday()]} {d:%d.%m}", "short": WEEKDAYS_SHORT[d.weekday()],
+                       "dm": f"{d:%d.%m}", "calls": st["calls_in"] + st["calls_out"],
+                       "messages": st["msgs_in"], "new_clients": st["new_clients"]})
+    if len(by_day) > 1:
+        # на неделю подписываем дни словами, на месяц — датами (иначе «пн» повторяется четыре раза)
+        week_view = len(by_day) <= 8
+        scenes.append(_report_scene("days", "По дням", "bars", bars=[
+            {"label": x["short"] if week_view else x["dm"], "full": x["day"], "value": x["calls"] + x["messages"]}
+            for x in by_day]))
+
+    waiting_items: List[Dict[str, Any]] = []
+    waiting_total = 0
+    try:
+        data = inbox_service.list_dialogs(db, user, folder="waiting", agent_id=agent.id, limit=5)
+        waiting_total = int((data.get("counts") or {}).get("waiting") or 0)
+        now_bk = datetime.utcnow() + BISHKEK_OFFSET
+        for it in data.get("items") or []:
+            try:
+                dt = datetime.fromisoformat(str(it.get("last_at")).replace("Z", "+00:00")) if it.get("last_at") else None
+            except ValueError:
+                dt = None
+            waiting_items.append({"title": it.get("name"),
+                                  "meta": f"{', '.join(CHANNEL_NAMES.get(c, c) for c in it.get('channels') or [])} · "
+                                          f"{_day_label(dt, now_bk)}",
+                                  "text": _clip(it.get("preview"), 110),
+                                  "channel": (it.get("channels") or [None])[0]})
+    except Exception as exc:
+        logger.warning(f"[OWNER-VOICE] report waiting failed: {exc}")
+        db.rollback()
+    if waiting_items:
+        scenes.append(_report_scene("waiting", f"Ждут ответа ({waiting_total})", "list", items=waiting_items))
+
+    funnel: List[Dict[str, Any]] = []
+    try:
+        from sqlalchemy import func
+        from backend.core.pipeline_stages import get_agent_stages
+        from backend.models.agent_contact import AgentContact
+
+        counts = dict(db.query(AgentContact.status, func.count(AgentContact.id))
+                      .filter(AgentContact.agent_config_id == agent.id).group_by(AgentContact.status).all())
+        for st in get_agent_stages(agent):
+            funnel.append({"label": st["label"], "value": int(counts.get(st["key"], 0))})
+    except Exception as exc:
+        logger.warning(f"[OWNER-VOICE] report funnel failed: {exc}")
+        db.rollback()
+    if funnel:
+        scenes.append(_report_scene("funnel", "Воронка CRM", "funnel", stages=funnel,
+                                    note=f"новых за период {total['new_clients']}"))
+
+    schedule = fast_get_schedule(db, user, agent, {"days": 2})
+    plans = schedule.get("items") or []
+    if plans:
+        scenes.append(_report_scene("tasks", f"Запланировано ({len(plans)})", "list",
+                                    items=[{"title": f"{x['when']} · {x['what']}", "meta": x["client"],
+                                            "text": x["title"]} for x in plans[:5]]))
+
+    money = balances(db, user, agent)
+    scenes.append(_report_scene("money", "Балансы", "balance", rows=_money_rows(money)))
+
+    script = [
+        f"Звонков {calls}" + (f", {d_calls['text']} {prev_label}" if d_calls["text"] else "") +
+        f"; с разговором {outcomes['answered']}" + (f", не ответили {outcomes['no_answer']}" if outcomes["no_answer"] else ""),
+        f"Сообщений от клиентов {total['msgs_in']} от {total['writers']} клиентов" +
+        (f", {d_msgs['text']} {prev_label}" if d_msgs["text"] else ""),
+    ]
+    if len(by_day) > 1:
+        best = max(by_day, key=lambda x: x["calls"] + x["messages"])
+        script.append(f"По дням самый плотный — {best['day']}")
+    if waiting_items:
+        script.append(f"Ждут ответа {waiting_total}: " + ", ".join(x["title"] or "без имени" for x in waiting_items[:3]))
+    if funnel:
+        script.append(f"Новых клиентов за период {total['new_clients']}, в воронке " +
+                      ", ".join(f"{s['label']} {s['value']}" for s in funnel[:3]))
+    if plans:
+        script.append(f"Запланировано {len(plans)}: ближайшее — {plans[0]['when']}, {plans[0]['what']}, "
+                      f"{plans[0]['client']}")
+    script.append(_money_sentence(money))
+
+    return {
+        "ok": True, "period": label,
+        "summary": _stats_sentence(total),
+        "compare_with": prev_label, "calls_delta": d_calls["text"], "messages_delta": d_msgs["text"],
+        "calls": {"total": calls, "incoming": total["calls_in"], "outgoing": total["calls_out"],
+                  "answered": outcomes["answered"], "no_answer": outcomes["no_answer"],
+                  "failed": outcomes["failed"], "talk_minutes": talk_min},
+        "messages": {"from_clients": total["msgs_in"], "clients_wrote": total["writers"],
+                     "agent_replies": total["bot_out"], "your_replies": total["owner_out"]},
+        "new_clients": total["new_clients"], "waiting": waiting_total,
+        "scheduled": len(plans), "balances": money,
+        "script": script,
+        "speak_order": [s["id"] for s in scenes],
+        "card": {"type": "report", "title": "Отчёт · " + _PERIOD_SHORT.get(str(args.get("period") or "today"), label),
+                 "subtitle": prev_short, "scenes": scenes},
+    }
+
+
 def dashboard_cards(db, user, agent, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Карточки на экран в начале разговора: сегодня (+ график недели), ждут ответа, воронка.
     Владелец сразу видит картину дня, пока агент здоровается. Сбой одной карточки не мешает остальным."""
@@ -940,6 +1252,10 @@ def dashboard_cards(db, user, agent, now: Optional[datetime] = None) -> List[Dic
     card = safe("funnel", funnel_card)
     if card:
         cards.append(card)
+    card = safe("money", lambda: {"type": "balance", "title": "Балансы", "subtitle": "кошелёк, кредиты, тариф",
+                                  "rows": _money_rows(balances(db, user, agent))})
+    if card:
+        cards.append(card)
     return cards
 
 
@@ -974,6 +1290,8 @@ def build_session_context(db, user, agent) -> Dict[str, Any]:
 
 FAST_IMPL = {
     "get_stats": fast_get_stats,
+    "get_report": fast_get_report,
+    "get_balance": fast_get_balance,
     "client_info": fast_client_info,
     "list_dialogs": fast_list_dialogs,
     "get_schedule": fast_get_schedule,
@@ -1019,8 +1337,10 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 
 ЧТО ТЫ ЗНАЕШЬ И КАК УЗНАЁШЬ
 - Ниже — СВОДКА ДЕЛ на начало разговора: сегодня, по дням за неделю, последние диалоги и звонки, задачи, воронка. На «дай отчёт», «что сегодня», «сколько звонков вчера», «как прошла неделя», «кто писал», «что по задачам» отвечай из неё сразу, без функций.
-- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_stats — цифры за период; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
-- Владелец любит видеть цифры: на вопрос о цифрах за любой период, о клиенте, о переписке или о планах — вызывай быструю функцию, даже если ответ есть в сводке (сводка — чтобы ты не ошибся и знал общую картину). На «дай отчёт» / «что нового» — get_stats за сегодня и list_dialogs «ждут ответа», потом расскажи главное.
+- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_report — весь отчёт за период; get_stats — только цифры; get_balance — деньги: кошелёк, кредиты, тариф; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
+- Владелец любит видеть цифры: на вопрос о цифрах за любой период, о клиенте, о переписке, о планах или о деньгах — вызывай быструю функцию, даже если ответ есть в сводке (сводка — чтобы ты не ошибся и знал общую картину).
+- «Дай отчёт», «что нового», «как дела», «итоги дня (недели, месяца)» — это get_report за нужный период. Одна функция вместо нескольких: в ней уже и звонки, и переписка, и кто ждёт ответа, и воронка, и планы, и балансы.
+- ОТЧЁТ РАССКАЗЫВАЙ ПО ПОРЯДКУ поля script: сначала звонки, потом переписка, по дням, кто ждёт ответа, воронка, планы, деньги. На экране блоки инфографики загораются под твою речь — поэтому называй блок словами («звонков…», «сообщений…», «ждут ответа…», «в воронке…», «запланировано…», «в кошельке…») и не перескакивай. Своими словами, по одной короткой фразе на блок; пустые блоки пропускай. Если владелец просил только часть («только звонки») — расскажи её и остановись.
 - Сложное (анализ, советы, база знаний, документы, почта, календарь, стенограмма звонка) — ask_agent: он думает несколько секунд, поэтому скажи одну короткую фразу — «Секунду, смотрю» — и жди. До результата — никаких цифр, имён и выводов.
 - Ничего не выдумывай: нет в сводке и в ответе функции — значит не знаешь, так и скажи.
 - Пришёл ответ — перескажи главное своими словами, коротко. На экране владелец видит карточку с цифрами — не зачитывай всё подряд, назови главное.
