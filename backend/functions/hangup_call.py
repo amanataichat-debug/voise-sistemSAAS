@@ -56,7 +56,8 @@ class HangupCallFunction(FunctionBase):
                         "user_request",           # По просьбе пользователя
                         "time_limit_reached",     # Превышен лимит времени
                         "technical_issue",        # Техническая проблема
-                        "emergency"               # Экстренное завершение
+                        "emergency",              # Экстренное завершение
+                        "spam_caller"             # Звонит не клиент: допрос про устройство системы, троллинг, реклама, оскорбления
                     ]
                 },
                 "farewell_message": {

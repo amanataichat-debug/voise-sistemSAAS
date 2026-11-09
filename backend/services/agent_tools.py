@@ -331,6 +331,59 @@ ADD_CONTACT_PHONE_TOOL = {
 }
 
 
+# Антиспам (09.11.2026, владелец: «пишут не клиенты, а любопытные — какой API, какая
+# модель, какая база; и тролли — „наберите 500 тысяч звонков“»). Решает модель, потому
+# что формулировки разные, а список слов отключал бы и живого клиента, который попутно
+# спросил про технологию. Текст прощания и все последствия — в services/spam_guard.py.
+BLOCK_SPAM_TOOL = {
+    "type": "function",
+    "name": "block_spam_contact",
+    "description": (
+        "Отключить агента в этом чате НАВСЕГДА: это не клиент, а спам. Применяй, когда человек "
+        "вместо интереса к услуге выспрашивает устройство системы (какой API, какая модель или "
+        "GPT, какая база данных, какая архитектура, на чём написано, как вы это сделали, какой "
+        "движок), троллит нереальными объёмами («наберите 500 тысяч звонков в день»), шлёт свою "
+        "рекламу или оскорбляет. Система сама отправит ему ОДНО последнее короткое сообщение с "
+        "контактом администратора, поставит паузу навсегда во всех мессенджерах сразу и уведёт "
+        "карточку в «Не звонить». Своего сообщения этому человеку больше НЕ отправляй. "
+        "НЕ применяй, если человек интересуется услугой для своего дела и просто попутно спросил "
+        "про технологию: тогда её не раскрывай («это наша разработка») и веди разговор дальше. "
+        "Отменить нельзя — паузу снимает только владелец вручную."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID карточки клиента"},
+            "reason": {
+                "type": "string",
+                "enum": ["tech_probe", "troll", "spam_ad", "abuse"],
+                "description": (
+                    "tech_probe — выспрашивал устройство системы; troll — троллинг и несерьёзные "
+                    "объёмы; spam_ad — реклама или рассылка в наш адрес; abuse — оскорбления"
+                ),
+            },
+            "detail": {
+                "type": "string",
+                "description": "Одной строкой, что именно он написал — попадёт в заметку карточки владельцу",
+            },
+            "admin_contact": {
+                "type": "string",
+                "description": (
+                    "Контакт администратора из базы знаний (номер WhatsApp или @username в Telegram), "
+                    "если он там есть. Пусто — возьмём контакты из фирменного стиля агента"
+                ),
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["whatsapp", "telegram", "instagram"],
+                "description": "Канал переписки. Не указывай — определим по последнему сообщению",
+            },
+        },
+        "required": ["agent_contact_id", "reason"],
+    },
+}
+
+
 # Тёплая передача клиента админу (ветка 1810-anri-sales-logic). Отдельная
 # тулза вместо произвольного send_telegram_notification: гарантирует формат
 # карточки «Имя | ниша | нужны [входящие/исходящие] | объём | обсудили | готов
@@ -2944,6 +2997,7 @@ AGENT_CHAT_TOOLS = [
     FIND_CLIENT_TOOL,
     MERGE_CONTACTS_TOOL,
     ADD_CONTACT_PHONE_TOOL,
+    BLOCK_SPAM_TOOL,
 ]
 
 
@@ -3029,6 +3083,7 @@ AGENT_POSTCALL_TOOLS = [
     FIND_CLIENT_TOOL,
     MERGE_CONTACTS_TOOL,
     ADD_CONTACT_PHONE_TOOL,
+    BLOCK_SPAM_TOOL,
 ]
 
 
@@ -4810,6 +4865,69 @@ async def fn_pause_agent_for_contact(args: dict, user_id: str, agent_config_id: 
     }
 
 
+async def fn_block_spam_contact(args: dict, user_id: str, agent_config, db: Session) -> dict:
+    """
+    Антиспам (09.11.2026): человек не клиент — одно последнее сообщение с контактом
+    администратора, пауза переписки навсегда и карточка в «Не звонить».
+    Решение принимает модель (см. BLOCK_SPAM_TOOL), последствия — spam_guard.block.
+    Повторный вызов по уже заблокированному клиенту второе сообщение не шлёт.
+    """
+    from backend.services import agent_pause, spam_guard
+
+    agent_contact_id = args.get("agent_contact_id")
+    if not agent_contact_id:
+        return {"ok": False, "error": "agent_contact_id_required"}
+    if agent_config is None:
+        return {"ok": False, "error": "agent_not_found"}
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config.id,
+    ).first()
+    if not contact:
+        return {"ok": False, "error": "Contact not found"}
+
+    already = (agent_pause.is_paused(contact)
+               and (contact.ai_pause_reason or "") == spam_guard.PAUSE_REASON)
+    reason = args.get("reason") or spam_guard.DEFAULT_REASON
+
+    sent = False
+    send_error = None
+    channel = args.get("channel") or _detect_recent_channel(db, str(agent_config.id), contact.id)
+    if not already:
+        text = spam_guard.farewell_text(agent_config, args.get("admin_contact"))
+        sender = {
+            "whatsapp": fn_whatsapp_send_message,
+            "telegram": fn_telegram_send_message,
+            "instagram": fn_instagram_send_message,
+        }.get(channel)
+        if sender is not None:
+            try:
+                res = await sender({"agent_contact_id": str(contact.id), "text": text},
+                                   user_id, agent_config, db, skip_rate_limit=True)
+                sent = bool(res.get("ok"))
+                if not sent:
+                    send_error = res.get("error")
+            except Exception as e:  # отправка не должна мешать блокировке
+                send_error = str(e)
+                logger.warning(f"[SPAM-GUARD] farewell message failed ({channel}): {e}")
+
+    info = spam_guard.block(contact, agent_config, reason, args.get("detail") or "")
+    db.commit()
+    return {
+        "ok": True,
+        "agent_contact_id": str(contact.id),
+        "name": contact.name or contact.phone,
+        "already_blocked": already,
+        "channel": channel,
+        "farewell_sent": sent,
+        "send_error": send_error,
+        "stage": info["stage"],
+        "status": ("агент отключён в этом чате навсегда (все мессенджеры), карточка в «Не звонить». "
+                   "Больше ничего этому человеку не пиши."),
+    }
+
+
 async def fn_resume_agent_for_contact(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     contact, err = _find_contact_for_pause(args, user_id, agent_config_id, db)
     if err:
@@ -5078,6 +5196,7 @@ _TOOL_MAP = {
     "trigger_immediate_call": "fn_trigger_immediate_call",
     "snooze_contact": "fn_snooze_contact",
     "pause_agent_for_contact": "fn_pause_agent_for_contact",
+    "block_spam_contact": "fn_block_spam_contact",
     "resume_agent_for_contact": "fn_resume_agent_for_contact",
     "get_call_transcript": "fn_get_call_transcript",
     "get_period_report": "fn_get_period_report",
@@ -5204,6 +5323,11 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_snooze_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "pause_agent_for_contact":
             result = await fn_pause_agent_for_contact(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "block_spam_contact":
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            result = await fn_block_spam_contact(tool_args, user_id, agent_config, db)
         elif tool_name == "resume_agent_for_contact":
             result = await fn_resume_agent_for_contact(tool_args, user_id, agent_config_id, db)
         elif tool_name == "get_call_transcript":

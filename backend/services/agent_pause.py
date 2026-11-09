@@ -10,7 +10,10 @@
                   Telegram и Instagram); длительность — настройка коннектора
                   owner_pause_minutes, каждое новое сообщение продлевает паузу;
   manual        — кнопка «Остановить агента» в карточке клиента;
-  command       — команда владельца в чате агента (pause_agent_for_contact).
+  command       — команда владельца в чате агента (pause_agent_for_contact);
+  spam          — антиспам: человек не клиент (выспрашивал устройство системы,
+                  троллил, рекламировал, оскорблял), пауза навсегда, карточка в
+                  «Не звонить» (services/spam_guard.py).
 
 Пока пауза: входящие клиента сохраняются в тред, но оркестратор не запускается
 (handle_inbound_* в agent_orchestrator), запланированные Telegram-сообщения не
@@ -36,7 +39,8 @@ DEFAULT_OWNER_PAUSE_MINUTES = 30
 REPLY_DELAY_CHOICES = (5, 10, 15, 20, 30, 60)
 DEFAULT_REPLY_DELAY_SECONDS = 15
 
-REASONS = ("owner_message", "manual", "command")
+# spam — антиспам (services/spam_guard.py): бот отключён в чате навсегда, человек не клиент.
+REASONS = ("owner_message", "manual", "command", "spam")
 
 
 def owner_pause_minutes(row) -> int:

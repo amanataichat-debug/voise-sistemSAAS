@@ -276,7 +276,10 @@ def hangup_refusal_text(reason: str, last_user_text: str, caller_farewell_at: Op
     словами клиента); на линии тишина HANGUP_GUARD_SILENCE_SEC после того, как и клиент, и агент замолчали.
     Агент попрощался, а клиент молчит, — звонок положит автозавершение (прощание + тишина), без модели.
     """
-    if reason in ("time_limit_reached", "emergency"):
+    # spam_caller — антиспам (09.11.2026): звонящий не клиент (допрос про устройство системы,
+    # троллинг, реклама, оскорбления). Такому агент говорит одну фразу с контактом админа и
+    # кладёт трубку, не дожидаясь, пока он попрощается; дальше PostCall зовёт block_spam_contact.
+    if reason in ("time_limit_reached", "emergency", "spam_caller"):
         return None
     if caller_farewell_at is not None and last_user_voice_at <= caller_farewell_at + 1.5:
         return None
