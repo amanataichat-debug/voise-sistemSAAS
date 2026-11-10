@@ -71,5 +71,26 @@ _orch = open(os.path.join(ROOT, "docs/orchestrator_prompt_anri.md"), encoding="u
 check("наша продажа — в инструкциях Анри (регистрация, «Вокси Эй-Ай», сравнение с менеджером)",
       "Вокси Эй-Ай" in _anri and "регистрац" in _anri and "менеджер" in _anri and "ссылку на регистрацию" in _orch)
 
+# Журнал звонка подсказывает владельцу, где его инструкция вредит звонку (у любого клиента)
+import types
+from backend.services import agent_voice_context as avc
+_tpl = open(os.path.join(ROOT, "backend/static/js/instruction-templates.js"), encoding="utf-8").read()
+_w = avc.instruction_warnings(types.SimpleNamespace(voice_additional_instructions="Ты — <имя>, менеджер компании «<название>».",
+                                                    additional_instructions="Пиши коротко."))
+check("журнал звонка: незаполненные места шаблона видны владельцу", len(_w) == 1 and "<имя>" in _w[0], _w)
+_w = avc.instruction_warnings(types.SimpleNamespace(voice_additional_instructions="Говори коротко. " * 600,
+                                                    additional_instructions=""))
+check("журнал звонка: слишком длинная инструкция для звонков — предупреждение", len(_w) == 1 and "длинная" in _w[0], _w)
+check("журнал звонка: нормальная инструкция и агент без инструкций — без предупреждений",
+      avc.instruction_warnings(types.SimpleNamespace(voice_additional_instructions="Ты — Айгуль.", additional_instructions=None)) == []
+      and avc.instruction_warnings(None) == [])
+_sip = open(os.path.join(ROOT, "backend/api/sip_gateway.py"), encoding="utf-8").read()
+check("SIP-звонок пишет эти предупреждения в журнал", "agent_voice_context.instruction_warnings(agent_cfg)" in _sip)
+# сами тексты шаблонов — строки между «var voice» и объявлением объекта (имя объекта VoksyInstructionTemplates не в счёт)
+_tpl_text = " ".join(re.findall(r"'((?:[^'\\]|\\.)*)'", _tpl[_tpl.find("var voice"):_tpl.find("window.VoksyInstructionTemplates = {")]))
+check("шаблоны кабинета — для любого бизнеса (без Voksy) и с местами для заполнения",
+      len(_tpl_text) > 2000 and not leaks(_tpl_text) and "<название>" in _tpl_text and "confirmFilled" in _tpl,
+      (len(_tpl_text), leaks(_tpl_text)))
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

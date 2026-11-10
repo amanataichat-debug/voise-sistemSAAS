@@ -40,6 +40,7 @@ backend/websockets/live_client.py; по документам OpenAI instructions
 было одинаковым и предсказуемым.
 """
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import or_
@@ -473,6 +474,36 @@ _SEP = "\n\n"
 # Первая строка VOICE_AGENT_PROMPT_BASE: по ней узнаём промпт карточки, собранный
 # кодом (build_voice_agent_prompt), а не написанный владельцем вручную.
 _GENERATED_PROMPT_MARK = "Ты — голосовой AI-агент. Перед каждым звонком"
+
+
+# Инструкция для звонков длиннее этого — модель держит её хуже (Анри до 10.11.2026: ~10 тыс. символов, правила
+# противоречили друг другу, агент монологизировал). Шаблон кабинета — ~1,5 тыс., сценарий Анри — ~5 тыс.
+VOICE_INSTRUCTIONS_SOFT_LIMIT = 6000
+_TEMPLATE_GAP = re.compile(r"<[^<>\n]{2,80}>")
+
+
+def instruction_warnings(agent) -> List[str]:
+    """
+    Что в инструкциях владельца мешает звонку — строки для журнала звонка (видны владельцу).
+    Платформа не правит текст владельца, но говорит, где он себе вредит: незаполненные места шаблона
+    кабинета («Ты — <имя>» агент произнёс бы дословно) и слишком длинная инструкция.
+    """
+    if agent is None:
+        return []
+    out: List[str] = []
+    voice = (getattr(agent, "voice_additional_instructions", None) or "").strip()
+    chat = (getattr(agent, "additional_instructions", None) or "").strip()
+    if not isinstance(voice, str) or not isinstance(chat, str):
+        return []
+    for label, text in (("для звонков", voice), ("переписки", chat)):
+        gaps = _TEMPLATE_GAP.findall(text)
+        if gaps:
+            out.append(f"В инструкции {label} остались места шаблона {', '.join(gaps[:3])} — агент скажет их "
+                       f"дословно; замените своим текстом")
+    if len(voice) > VOICE_INSTRUCTIONS_SOFT_LIMIT:
+        out.append(f"Инструкция для звонков длинная: {len(voice)} симв. (лучше до {VOICE_INSTRUCTIONS_SOFT_LIMIT}). "
+                   f"Чем длиннее, тем хуже модель держит правила; цены и факты держите в базе знаний, а не в инструкции")
+    return out
 
 
 def fresh_card_prompt(assistant, agent) -> str:
