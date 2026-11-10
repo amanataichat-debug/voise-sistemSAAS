@@ -1612,7 +1612,9 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         return {"ok": False, "error": "Коннектор Instagram не подключён"}
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_row is None:
         return {"ok": False, "error": "Пустой текст сообщения"}
 
@@ -1751,7 +1753,9 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
         return err("not_connected")
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_row is None and voice is None:
         return err("empty_text")
 
@@ -1955,7 +1959,9 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_bytes is None and voice is None:
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 
