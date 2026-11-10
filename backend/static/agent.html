@@ -405,8 +405,7 @@
           <div class="form-group">
             <label class="form-label">Инструкции для оркестратора</label>
             <textarea class="form-textarea" id="i-additional_instructions" rows="5" placeholder="Например: «перед обзвоном новых контактов всегда проверяй дубли», «не планируй звонки в выходные»."></textarea>
-            <div class="form-hint">Как агент пишет клиентам и ведёт их по воронке: тон, первый вопрос, что значит «оформить», когда звать вас. </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"><button type="button" class="btn btn-secondary btn-sm" onclick="openInstructionBuilder('generate','chat')"><i class="fas fa-wand-magic-sparkles"></i> Сгенерировать по описанию</button><button type="button" class="btn btn-ghost btn-sm" onclick="openInstructionBuilder('refine','chat')">Добавить правку</button><button type="button" class="btn btn-ghost btn-sm" onclick="VoksyInstructionTemplates.insert(document.getElementById('i-additional_instructions'),'chat')">Вставить шаблон</button></div>
+            <div class="form-hint">Правила планирования и работы с контактами, которые не вписываются в документы компании.</div>
           </div>
           <div class="form-group">
             <label class="form-label">URL вебхука</label>
@@ -441,8 +440,7 @@
           <div class="form-group">
             <label class="form-label">Инструкции для голосового агента</label>
             <textarea class="form-textarea" id="i-voice_additional_instructions" rows="5" placeholder="Например: «говори коротко, не дави», «если спросят про цену — назови диапазон», «не упоминай конкурентов»."></textarea>
-            <div class="form-hint">Сценарий живого разговора: с чего начать, какой вопрос задать, что значит «оформить». Цены и факты агент берёт из базы знаний. </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"><button type="button" class="btn btn-secondary btn-sm" onclick="openInstructionBuilder('generate','voice')"><i class="fas fa-wand-magic-sparkles"></i> Сгенерировать по описанию</button><button type="button" class="btn btn-ghost btn-sm" onclick="openInstructionBuilder('refine','voice')">Добавить правку</button><button type="button" class="btn btn-ghost btn-sm" onclick="VoksyInstructionTemplates.insert(document.getElementById('i-voice_additional_instructions'),'voice')">Вставить шаблон</button></div>
+            <div class="form-hint">Правила поведения именно в живом разговоре. Добавляются к промпту голосового агента.</div>
           </div>
         </section>
 
@@ -783,9 +781,7 @@
 <script defer src="/static/agent/tasks-calendar.js"></script>
 <script defer src="/static/agent/chat.js"></script>
 <script defer src="/static/agent/voice-chat.js?v=20261109c"></script>
-<script defer src="/static/js/instruction-templates.js?v=1"></script>
-<script defer src="/static/js/instruction-builder.js?v=1"></script>
-<script defer src="/static/agent/instructions-voice.js?v=20261110b"></script>
+<script defer src="/static/agent/instructions-voice.js"></script>
 <script defer src="/static/agent/phone.js"></script>
 <script defer src="/static/agent/telegram.js"></script>
 <script defer src="/static/agent/telegram-account.js"></script>

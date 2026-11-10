@@ -584,9 +584,6 @@ async def sip_media(
             trimmed="да" if kb_stats.get("trimmed") else None,
             context_clipped=kb_stats.get("context_clipped"),
         )
-    # Где инструкции владельца вредят звонку (места шаблона «<имя>», слишком длинный текст)
-    for warning in agent_voice_context.instruction_warnings(agent_cfg):
-        call_log.add("kb", warning, level="warning")
 
     # 6. Запуск браузерного хендлера через адаптер
     socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)

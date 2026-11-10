@@ -65,9 +65,7 @@ from backend.websockets.function_calls import (
     execute_and_send_function_result,
 )
 from backend.websockets.live_client import audioop
-from backend.websockets.live_client import (
-    CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient, is_decision_error,
-)
+from backend.websockets.live_client import CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient
 
 logger = get_logger(__name__)
 
@@ -106,11 +104,6 @@ REPEAT_WORDS = {
     "ясно": re.compile(r"\bясно\b", re.IGNORECASE),
     "сейчас уточню/посмотрю": re.compile(
         r"\bсейчас\s+(?:уточню|посмотрю|прикин\w+|проверю)\b|\bдайте\s+(?:я\s+)?(?:уточню|проверю)\b",
-        re.IGNORECASE),
-    # Звонок af6e4d6a (10.11.2026): «Одну секунду.» трижды за 3,5 минуты — на вопросы, ответ на которые был в промпте
-    "одну секунду/минутку": re.compile(
-        r"\b(?:одну\s+|одна\s+)?секунд(?:у|очку)\b|\bодну\s+минут(?:у|очку)\b|\bминутк(?:у|очку)\b"
-        r"|\bбир\s+(?:секунд|мүнөт)\w*",
         re.IGNORECASE),
     "түшүндүм/түшүнүктүү": re.compile(r"\bтүшүнд[үу]м\b|\bтүшүнүктүү\b", re.IGNORECASE),
 }
@@ -242,9 +235,7 @@ def is_assistant_closing(text: str) -> bool:
     for m in _FAREWELL_RE.finditer(tail):
         pass
     if m is None:
-        # «пока» у ассистента прощанием не считаем: реплика приходит кусками, и обрывок «Идея простая: пока»
-        # (звонок af6e4d6a, 10.11.2026) читался как прощание — журнал писал «ждём тишины, чтобы завершить звонок»
-        return False
+        return len(t.split()) <= 5 and bool(_PAKA_RE.search(t))
     return "?" not in tail[m.end():]
 
 # Клиент сам хочет закончить: прощание / «всё, спасибо» или явный отказ продолжать разговор.
@@ -485,10 +476,7 @@ class LiveVoiceSession:
         self._log_role: Optional[str] = None
         self.function_calls = 0
         self.delegations = 0
-        # Делегирования, в которых бэкенд вызвал хоть одну функцию; остальные — поход за ответом из промпта
-        self._tool_delegations: set = set()
         self.errors = 0
-        self.decision_errors = 0   # сбои Native Decisions (decision_failed): разговор не задевают
         self.backend_text = ""
         self._tasks: list = []
         self.assistant_type = assistant_type
@@ -817,24 +805,12 @@ class LiveVoiceSession:
                 if c >= 3:
                     issues.append(f"функция {n} вызвана {c} раза — проверьте, что ответ не лежит в промпте")
 
-        # Звонок af6e4d6a (10.11.2026): 4 похода к бэкенду, два без функций (цена, «это программа?») — ответ лежал
-        # в промпте, клиент слышал «одну секунду» и паузу. Такие походы видно только по разнице счётчиков.
-        plain = self.delegations - len(self._tool_delegations)
-        if plain >= 2:
-            issues.append(f"голосовая модель {plain} раз уходила к бэкенду без функции — ответ, скорее всего, был "
-                          f"в промпте (цены, факты); клиент слышал паузу. Проверьте раздел знаний «наизусть»")
-        stall = self.repeats.get("одну секунду/минутку", 0) + self.repeats.get("сейчас уточню/посмотрю", 0)
-        if stall:
-            issues.append(f"агент тянул время («одну секунду», «сейчас уточню») {stall} раз — для клиента это «не знаю»")
-
         if self.repeats and any(v >= REPEAT_WARN_AT for v in self.repeats.values()):
             top = max(self.repeats.items(), key=lambda x: x[1])
             issues.append(f"слово-паразит «{top[0]}» повторено {top[1]} раз")
 
         if self.errors:
             issues.append(f"ошибок GPT-Live: {self.errors}")
-        if self.decision_errors:
-            info.append(f"сбоев подсказок Decisions {self.decision_errors} (на разговор не влияют)")
         if self.call_log.function_errors:
             issues.append(f"функций с ошибкой: {self.call_log.function_errors}")
         if self.close_seconds is not None and self.close_seconds > 3.0:
@@ -935,18 +911,9 @@ class LiveVoiceSession:
             return
 
         if etype == "error":
+            self.errors += 1
             err = event.get("error") or {}
             client_event_id = str(err.get("client_event_id") or event.get("client_event_id") or "")
-            if is_decision_error(err):
-                # Звонок af6e4d6a (10.11.2026): «decision_failed: Decision sampling failed» — сбой ОДНОГО фонового
-                # решения Native Decisions (настроение/прощание). Разговор он не задевает, но раньше уходил в мост
-                # как ошибка хендлера: журнал помечал ERROR и сам звонок («Звонок завершён … handler_error»).
-                self.decision_errors += 1
-                if self.call_log and self.decision_errors == 1:
-                    self.call_log.add("session", "Подсказка Decisions на одну реплику не посчиталась (decision_failed) "
-                                      "— на разговор не влияет")
-                return
-            self.errors += 1
             if client_event_id.startswith(_QUIET_ERROR_PREFIXES):
                 return  # уже в логе клиента; пользователю показывать нечего
             if self.call_log:
@@ -1062,8 +1029,6 @@ class LiveVoiceSession:
     async def _on_function_call(self, event: Dict[str, Any]) -> None:
         name = event.get("name") or ""
         call_id = event.get("call_id")
-        if event.get("delegation_id"):
-            self._tool_delegations.add(event.get("delegation_id"))
         normalized = normalize_function_name(name) or name
         if not normalized or not call_id:
             _log(f"function call without name/call_id: {event}", "ERROR")

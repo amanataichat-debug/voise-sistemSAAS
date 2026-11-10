@@ -800,14 +800,6 @@
       else openEditor(null);
     });
     $('ask-btn').addEventListener('click', runAsk);
-    // «Проверить базу знаний» (js/knowledge-health.js): находит ли агент каждую запись так же, как на звонке
-    $('health-btn').addEventListener('click', function () {
-      if (!window.VoksyKnowledgeHealth) { VF.toast('Обновите страницу', { type: 'error' }); return; }
-      VoksyKnowledgeHealth.open({ request: function () {
-        return api(API + '/knowledge/health').then(function (d) { return { ok: true, data: d }; },
-          function (e) { return { ok: false, data: { detail: e.message } }; });
-      } });
-    });
     $('ask-input').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') runAsk(); });
     boot();
   });

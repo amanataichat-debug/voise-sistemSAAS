@@ -28,7 +28,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Text, and_, cast, func, or_
+from sqlalchemy import or_
 
 from backend.core.logging import get_logger
 from backend.models.agent_knowledge import (
@@ -141,17 +141,6 @@ _SYNONYM_GROUPS = [
     ["документ", "документы", "бумаги", "справки", "реквизиты"],
     ["менеджер", "специалист", "оператор", "человек", "живой"],
     ["звонок", "звонки", "звонить", "позвонить", "обзвон", "телефония"],
-    # Автотовары (10.11.2026, клиент — автозапчасти): клиенты пишут марку и кириллицей, и латиницей,
-    # а в каталоге обычно латиница. Только марки и частые модели — короткие основы вроде «мати» (Matiz)
-    # не берём: они цепляли бы «материал».
-    ["toyota", "тойота", "таета", "тоета"], ["lexus", "лексус"], ["honda", "хонда"], ["nissan", "ниссан", "нисан"],
-    ["mazda", "мазда"], ["subaru", "субару"], ["mitsubishi", "митсубиси", "мицубиси", "митсубиши"],
-    ["hyundai", "хендай", "хундай", "хюндай", "хендэ", "хёндэ"], ["kia", "киа"], ["daewoo", "дэу", "деу"],
-    ["chevrolet", "шевроле", "шевролет"], ["mercedes", "мерседес", "benz", "бенц"], ["bmw", "бмв"],
-    ["audi", "ауди"], ["volkswagen", "фольксваген", "vw"], ["lada", "лада", "ваз"],
-    ["camry", "камри"], ["corolla", "королла"], ["prius", "приус"], ["sonata", "соната"], ["elantra", "элантра"],
-    ["nexia", "нексия"], ["gentra", "джентра"],
-    ["амортизатор", "амортизаторы", "стойка", "стойки"],
 ]
 
 _SYN_INDEX: Dict[str, frozenset] = {}
@@ -189,40 +178,10 @@ def _term_regexes(terms: List[frozenset]) -> list:
             for alts in terms]
 
 
-def attributes_text(attrs) -> str:
-    """Характеристики позиции одной строкой (служебные ключи «_…» не в счёт): «Марка: Toyota; Артикул: …»."""
-    if not isinstance(attrs, dict):
-        return ""
-    return "; ".join(f"{k}: {v}" for k, v in attrs.items() if not str(k).startswith("_") and v not in (None, ""))
-
-
-_COMPACT_RE = re.compile(r"[\W_]+", re.UNICODE)
-
-
-def compact(text: str) -> str:
-    """Без пробелов, дефисов и знаков: «90915-YZZE1», «90915 yzze1» и «90915YZZE1» совпадают."""
-    return _COMPACT_RE.sub("", (text or "").lower().replace("ё", "е"))
-
-
-def article_tokens(query: str) -> List[str]:
-    """Слова запроса, похожие на артикул или номер детали: есть цифра, длина без знаков от 5."""
-    out = []
-    # Весь короткий запрос целиком: «90915 yzze1» написали через пробел — это один артикул
-    whole = compact(query)
-    if 5 <= len(whole) <= 24 and any(ch.isdigit() for ch in whole) and len((query or "").split()) <= 3:
-        out.append(whole)
-    for w in re.findall(r"[\w\-./]{4,}", query or ""):
-        c = compact(w)
-        if len(c) >= 5 and any(ch.isdigit() for ch in c) and c not in out:
-            out.append(c)
-    return out[:3]
-
-
-def _rank_row(row, rxs: list, query_norm: str, articles: Optional[List[str]] = None):
+def _rank_row(row, rxs: list, query_norm: str):
     """(оценка, сколько слов запроса нашлось, было ли попадание в заголовок/ключевые слова)."""
     title = (row.title or "").lower()
-    # Характеристики (марка, модель, артикул) весят как ключевые слова: по ним клиент и ищет
-    keywords = ((row.keywords or "") + " " + attributes_text(getattr(row, "attributes", None))).lower()
+    keywords = (row.keywords or "").lower()
     body = (row.body or "").lower()
     score, matched, strong = 0.0, 0, False
     for rx in rxs:
@@ -245,13 +204,6 @@ def _rank_row(row, rxs: list, query_norm: str, articles: Optional[List[str]] = N
     if query_norm and query_norm in keywords:
         score += 6.0
         strong = True
-    if articles:
-        flat = compact(title + " " + keywords + " " + body)
-        for a in articles:
-            if a in flat:
-                score += 12.0      # точный артикул — главнее любых совпадений по словам
-                strong = True
-                matched += 1
     if rxs:
         # Запись, в которой нашлись почти все слова запроса, важнее той, где одно
         score *= 0.6 + matched / len(rxs)
@@ -288,7 +240,9 @@ def rank_entries(rows: list, query: str, limit: int = 4):
     return [], "none"
 
 
-def _alt_patterns(alts, with_attributes: bool = False) -> list:
+def _candidate_filter(terms: List[frozenset]):
+    """SQL-условие «в записи есть хоть одна основа любого слова запроса» (подстрока; точнее отберёт rank)."""
+    alts = sorted({a for t in terms for a in t if len(a) >= 2}, key=len, reverse=True)[:MAX_SQL_ALTS]
     patterns = []
     for a in alts:
         like = f"%{a}%"
@@ -297,77 +251,7 @@ def _alt_patterns(alts, with_attributes: bool = False) -> list:
             AgentKnowledgeEntry.keywords.ilike(like),
             AgentKnowledgeEntry.body.ilike(like),
         ]
-        if with_attributes:
-            # Марка, модель, артикул из колонок таблицы лежат в attributes (JSONB) — ищем и там
-            patterns.append(cast(AgentKnowledgeEntry.attributes, Text).ilike(like))
-    return patterns
-
-
-# Быстрый ответ на звонке (10.11.2026, звонок af6e4d6a: поиск 2,5 с и 1,3 с). Гибридный поиск ждал векторную
-# часть, даже когда по словам уже нашёлся точный ответ. На звонке каждая секунда слышна, поэтому при УВЕРЕННОМ
-# совпадении по словам ждём векторы не дольше FAST_VECTOR_GRACE и отвечаем. Неуверенное — ждём, как раньше.
-FAST_VECTOR_GRACE = float(os.getenv("KB_FAST_VECTOR_GRACE", "0.25"))
-FAST_CHANNELS = ("call",)
-
-
-def keyword_confident(rows: list, query: str) -> bool:
-    """
-    Совпадение по словам надёжно без векторов: у первой записи слово в заголовке или ключевых словах, нашлась
-    бо́льшая часть слов запроса (или весь вопрос целиком), и она заметно лучше второй — иначе это не уверенность.
-    """
-    if not rows:
-        return False
-    terms = query_terms(query)
-    if not terms:
-        return False
-    rxs = _term_regexes(terms)
-    query_norm = normalize(query)
-    s1, m1, strong1 = _rank_row(rows[0], rxs, query_norm)
-    if not strong1:
-        return False
-    exact = bool(query_norm) and (query_norm in (rows[0].title or "").lower()
-                                  or query_norm in (rows[0].keywords or "").lower())
-    need = 2 if len(terms) <= 3 else max(3, (len(terms) + 1) // 2)
-    if not exact and m1 < need:
-        return False
-    if len(rows) > 1:
-        s2, m2, _ = _rank_row(rows[1], rxs, query_norm)
-        if not exact and s1 < s2 * 1.25 and m1 <= m2:
-            return False   # две записи почти равны — пусть рассудит поиск по смыслу
-    return True
-
-
-def _candidate_filter(terms: List[frozenset], with_attributes: bool = False):
-    """SQL-условие «в записи есть хоть одна основа любого слова запроса» (подстрока; точнее отберёт rank)."""
-    alts = sorted({a for t in terms for a in t if len(a) >= 2}, key=len, reverse=True)[:MAX_SQL_ALTS]
-    patterns = _alt_patterns(alts, with_attributes)
     return or_(*patterns) if patterns else None
-
-
-def _all_terms_filter(terms: List[frozenset]):
-    """Строгий отбор каталога: в позиции есть КАЖДОЕ значимое слово запроса (или его синоним)."""
-    conds = []
-    for t in terms:
-        alts = [a for a in t if len(a) >= 3]
-        if alts:
-            conds.append(or_(*_alt_patterns(alts, with_attributes=True)))
-    return and_(*conds) if len(conds) >= 2 else None
-
-
-def _article_filter(db, articles: List[str]):
-    """Артикул в любом написании (Postgres: сравнение без пробелов, дефисов и знаков)."""
-    if not articles or db is None:
-        return None
-    try:
-        if db.get_bind().dialect.name != "postgresql":
-            return None
-    except Exception:
-        return None
-    blob = func.lower(func.coalesce(AgentKnowledgeEntry.title, "") + " " + func.coalesce(AgentKnowledgeEntry.keywords, "")
-                      + " " + func.coalesce(cast(AgentKnowledgeEntry.attributes, Text), "") + " "
-                      + func.coalesce(AgentKnowledgeEntry.body, ""))
-    flat = func.regexp_replace(blob, r"[^0-9a-zа-яё]+", "", "g")
-    return or_(*[flat.like(f"%{a}%") for a in articles])
 
 
 # ============================================================================
@@ -521,42 +405,20 @@ def search_products(
         q = q.filter(AgentKnowledgeEntry.price >= min_price)
 
     terms = query_terms(query)
-    articles = article_tokens(query)
-    if not terms and not articles:
-        rows = q.limit(200).all()
+    if terms:
+        cond = _candidate_filter(terms)
+        if cond is not None:
+            q = q.filter(cond)
+
+    rows = q.limit(200).all()
+    if not terms:
         rows.sort(key=lambda r: (r.price if r.price is not None else 0))
         return rows[:limit]
-
-    # Каталог в тысячи позиций (автозапчасти, 10.11.2026): широкий отбор «хоть одно слово» по основам вроде
-    # «филь» или «toyo» даёт тысячи строк, а ранжировать успевали первые 200 — нужная позиция могла не попасть.
-    # Поэтому: точный артикул → все слова запроса → хоть одно слово; кандидаты складываются по порядку.
-    rows: List[AgentKnowledgeEntry] = []
-    seen_ids = set()
-    stages = [_article_filter(db, articles), _all_terms_filter(terms) if terms else None,
-              _candidate_filter(terms, with_attributes=True) if terms else None]
-    for cond in stages:
-        if cond is None or len(rows) >= 200:
-            continue
-        try:
-            found = q.filter(cond).limit(200).all()
-        except Exception as e:      # непохожая БД / выражение — без этого слоя, поиск не падает
-            logger.info(f"[KB] слой поиска каталога пропущен: {e}")
-            try:
-                db.rollback()
-            except Exception:
-                pass
-            continue
-        for r in found:
-            if r.id not in seen_ids:
-                seen_ids.add(r.id)
-                rows.append(r)
     rxs = _term_regexes(terms)
     query_norm = normalize(query)
-    scored = [(r, _rank_row(r, rxs, query_norm, articles)[0]) for r in rows]
+    scored = [(r, _rank_row(r, rxs, query_norm)[0]) for r in rows]
     scored = [(r, sc) for r, sc in scored if sc > 0]
-    # При равных очках выше то, что можно сразу показать и продать: в наличии и с фото
-    scored.sort(key=lambda pair: (round(pair[1], 3), bool(pair[0].in_stock), bool(pair[0].media_file_ids)),
-                reverse=True)
+    scored.sort(key=lambda pair: pair[1], reverse=True)
     return [r for r, _ in scored[:limit]]
 
 
@@ -728,14 +590,7 @@ async def _hybrid_answer(db, agent_config_id, kb_namespace: Optional[str], query
     except Exception as e:
         vec_task.cancel()
         raise e
-    if channel in FAST_CHANNELS and kw_quality == "ok" and keyword_confident(kw_rows, query):
-        try:
-            vec = await asyncio.wait_for(asyncio.shield(vec_task), timeout=FAST_VECTOR_GRACE)
-        except asyncio.TimeoutError:
-            vec_task.cancel()
-            return await _keyword_answer(db, kw_rows[:top_k], query)
-    else:
-        vec = await vec_task
+    vec = await vec_task
     if vec is None:
         return None  # векторный слой не ответил — прежний путь
     vectors.spawn(vectors.maybe_backfill(agent_config_id))
@@ -784,21 +639,6 @@ async def _hybrid_answer(db, agent_config_id, kb_namespace: Optional[str], query
         out["note"] = ("Совпадение неточное — слова запроса встретились только вскользь. Проверь, что это "
                        "действительно про вопрос клиента, иначе скажи, что уточнишь.")
     return out
-
-
-async def _keyword_answer(db, rows: list, query: str) -> Dict[str, Any]:
-    """Ответ из записей, найденных по словам (уверенное совпадение на звонке — без ожидания векторов)."""
-    def _hits():
-        mark_hits(db, rows)
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-    await asyncio.to_thread(_hits)
-    results = [entry_for_agent(r) for r in rows]
-    logger.info(f"[KB] быстрый ответ по словам «{query[:60]}»: {len(results)} записей, векторы не ждали")
-    return {"ok": True, "query": query, "source": "knowledge_base", "total": len(results),
-            "results": results, "search": "keywords_fast"}
 
 
 async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: str,
@@ -918,16 +758,11 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
     if row.kind == "product":
         if row.price is not None:
             out["price"] = format_price(row.price, row.currency)
-        attrs = row.attributes if isinstance(row.attributes, dict) else {}
-        visible = {k: v for k, v in attrs.items() if not str(k).startswith("_") and v not in (None, "")}
-        if visible:
-            out["attributes"] = visible
+        if row.attributes:
+            out["attributes"] = row.attributes
         out["in_stock"] = bool(row.in_stock)
         media = row.media_file_ids or []
         if media:
             # Агент отправит это клиенту: whatsapp_send_file / telegram_send_file.
             out["media_file_ids"] = media
-        elif attrs.get("_photo_url"):
-            # Фото из колонки таблицы каталога — ссылкой (файла в библиотеке нет)
-            out["photo_url"] = attrs["_photo_url"]
     return out

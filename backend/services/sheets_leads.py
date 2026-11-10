@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 LEADS_SHEET_TITLE = "Заявки"
 LEADS_HEADER = ["Дата (Бишкек)", "Канал", "Имя", "Телефон", "Стадия", "Сообщение"]
-# 10.11.2026: 1000 → 10 000 — каталог автозапчастей у клиента на тысячи позиций
-CATALOG_MAX_ROWS = 10000
-CATALOG_MAX_EXTRA_COLUMNS = 15
+CATALOG_MAX_ROWS = 1000
 CATALOG_SOURCE = "google_sheet"  # attributes["_source"] у импортированных позиций
 
 _ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]{20,})")
@@ -38,7 +36,6 @@ COLUMN_ALIASES = {
     "body": ("описание", "характеристики", "description", "сүрөттөмө"),
     "in_stock": ("наличие", "в наличии", "остаток", "stock", "бар"),
     "keywords": ("ключевые слова", "синонимы", "keywords", "теги"),
-    "photo": ("фото", "фотография", "photo", "image", "картинка", "изображение", "сүрөт"),
 }
 
 
@@ -184,37 +181,18 @@ def rows_to_products(values: List[List[Any]]) -> List[Dict[str, Any]]:
     if "title" not in cols:
         raise SheetError("В первой строке нет колонки «Название». Подпишите колонки: Название, Цена, Описание, Наличие.")
     get = lambda row, field: row[cols[field]] if field in cols and cols[field] < len(row) else ""  # noqa: E731
-    # Остальные подписанные колонки (артикул, марка, модель, год, OEM, бренд…) — характеристики позиции.
-    # Раньше они молча выбрасывались, и агент не находил запчасть по артикулу или по машине (10.11.2026).
-    used = set(cols.values())
-    extra_cols = [(idx, " ".join(str(cell).split())[:60]) for idx, cell in enumerate(values[0])
-                  if idx not in used and str(cell or "").strip()][:CATALOG_MAX_EXTRA_COLUMNS]
     products, seen = [], set()
     for row in values[1:CATALOG_MAX_ROWS + 1]:
         title = " ".join(str(get(row, "title")).split())[:500]
-        if not title:
+        if not title or _norm(title) in seen:
             continue
-        extras = {}
-        for idx, label in extra_cols:
-            value = " ".join(str(row[idx] if idx < len(row) else "").split())[:300]
-            if value:
-                extras[label] = value
-        # Одно название у разных позиций — норма для запчастей («Колодки передние» на Camry и на Corolla):
-        # повтором считаем только совпадение названия И характеристик.
-        key = "|".join([_norm(title)] + [_norm(v) for v in extras.values()])
-        if key in seen:
-            continue
-        seen.add(key)
-        photo = str(get(row, "photo") or "").strip()
+        seen.add(_norm(title))
         products.append({
             "title": title,
             "price": parse_price(get(row, "price")),
             "body": str(get(row, "body") or "").strip(),
             "in_stock": parse_in_stock(get(row, "in_stock")),
             "keywords": str(get(row, "keywords") or "").strip() or None,
-            "attributes": extras,
-            "photo_url": photo if photo.startswith(("http://", "https://")) else None,
-            "key": key,
         })
     if not products:
         raise SheetError("В таблице нет строк с названием товара или услуги.")
@@ -243,26 +221,21 @@ def import_catalog(db, agent, user_id, products: List[Dict[str, Any]]) -> Dict[s
     """Создать или обновить позиции каталога из таблицы. Ручные позиции не трогаются."""
     from backend.models.agent_knowledge import AgentKnowledgeEntry as E
 
-    existing = {}
-    for row in db.query(E).filter(E.agent_config_id == agent.id, E.kind == "product").all():
-        if isinstance(row.attributes, dict) and row.attributes.get("_source") == CATALOG_SOURCE:
-            # До 10.11.2026 позиции сопоставлялись по названию — у старых ключа «_key» нет
-            existing[row.attributes.get("_key") or _norm(row.title)] = row
+    existing = {
+        _norm(row.title): row
+        for row in db.query(E).filter(E.agent_config_id == agent.id, E.kind == "product").all()
+        if isinstance(row.attributes, dict) and row.attributes.get("_source") == CATALOG_SOURCE
+    }
     created = updated = 0
     for p in products:
-        key = p.get("key") or _norm(p["title"])
-        row = existing.pop(key, None) or existing.pop(_norm(p["title"]), None)
+        row = existing.pop(_norm(p["title"]), None)
         if row is None:
             row = E(user_id=user_id, agent_config_id=agent.id, kind="product", currency="KGS",
-                    in_prompt=False, is_active=True)
+                    in_prompt=False, is_active=True, attributes={"_source": CATALOG_SOURCE})
             db.add(row)
             created += 1
         else:
             updated += 1
-        attrs = {"_source": CATALOG_SOURCE, "_key": key, **(p.get("attributes") or {})}
-        if p.get("photo_url"):
-            attrs["_photo_url"] = p["photo_url"]
-        row.attributes = attrs
         row.title = p["title"]
         row.body = p["body"]
         row.price = p["price"]
