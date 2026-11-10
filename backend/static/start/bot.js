@@ -321,12 +321,12 @@
       '<div class="st-sub-h">Главная инструкция бота (переписка)</div>' +
       '<div class="field"><textarea class="textarea st-textarea-lg" id="i-add" rows="10" placeholder="Как общаться, когда отправлять файлы, что делать, если не знает ответ, когда передавать вам клиента">' + esc(A.additional_instructions || '') + '</textarea>' +
       '<div class="hint">Пишите так, как объясняли бы новому сотруднику: как вежливо общаться, в какой момент отправлять файлы и фото, что узнавать у клиента, когда звать вас. Чем конкретнее, тем лучше ответы.</div></div>' +
-      '<div class="row" style="gap:8px"><button class="btn btn-primary" id="i-save-chat" type="button">Сохранить</button><button class="btn" id="i-tpl-chat" type="button">' + icon('wand-2') + '<span>Вставить шаблон</span></button></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="i-save-chat" type="button">Сохранить</button><button class="btn" id="i-gen-chat" type="button">' + icon('wand-2') + '<span>Сгенерировать по описанию</span></button><button class="btn" id="i-fix-chat" type="button"><span>Добавить правку</span></button><button class="btn" id="i-tpl-chat" type="button"><span>Вставить шаблон</span></button></div>' +
 
       '<div class="st-sub-h" style="margin-top:26px">Инструкция для звонков</div>' +
       '<div class="field"><textarea class="textarea" id="i-vadd" rows="6" placeholder="Стиль общения по телефону, манера, что говорить и чего не говорить">' + esc(A.voice_additional_instructions || '') + '</textarea>' +
       '<div class="hint">Как бот звучит и ведёт себя в телефонном разговоре: темп, тон, что уточнять, как заканчивать звонок. Знания из базы бот берёт сам.</div></div>' +
-      '<div class="row" style="gap:8px"><button class="btn btn-primary" id="i-save-voice" type="button">Сохранить</button><button class="btn" id="i-tpl-voice" type="button">' + icon('wand-2') + '<span>Вставить шаблон</span></button></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="i-save-voice" type="button">Сохранить</button><button class="btn" id="i-gen-voice" type="button">' + icon('wand-2') + '<span>Сгенерировать по описанию</span></button><button class="btn" id="i-fix-voice" type="button"><span>Добавить правку</span></button><button class="btn" id="i-tpl-voice" type="button"><span>Вставить шаблон</span></button></div>' +
 
       '<div class="st-sub-h" style="margin-top:26px">О бизнесе</div>' +
       DOCS.map(function (d) {
@@ -350,6 +350,28 @@
       if (el.value.trim() && !window.confirm('Заменить текст шаблоном?')) return;
       el.value = text; el.focus();
     }
+    // «Сгенерировать по описанию» / «Добавить правку» (js/instruction-builder.js): сервер пишет текст, сохраняем здесь
+    function builder(mode, kind, sel, field) {
+      if (!window.VoksyInstructionBuilder) { S.toast('Обновите страницу', 'error'); return; }
+      window.VoksyInstructionBuilder.open({
+        mode: mode, kind: kind,
+        request: function (path, body) { return S.api(path, { method: 'POST', body: body }); },
+        getCurrent: function () { return S.$(sel).value; },
+        onApply: function (text) {
+          var body = {}; body[field] = text;
+          return put(body).then(function (r) {
+            if (!r.ok) { S.toast(S.apiError(r), 'error'); return false; }
+            A[field] = text; S.$(sel).value = text;
+            S.toast(kind === 'voice' ? 'Инструкция для звонков сохранена' : 'Инструкция для переписки сохранена', 'success');
+            return true;
+          });
+        }
+      });
+    }
+    S.$('#i-gen-chat').addEventListener('click', function () { builder('generate', 'chat', '#i-add', 'additional_instructions'); });
+    S.$('#i-fix-chat').addEventListener('click', function () { builder('refine', 'chat', '#i-add', 'additional_instructions'); });
+    S.$('#i-gen-voice').addEventListener('click', function () { builder('generate', 'voice', '#i-vadd', 'voice_additional_instructions'); });
+    S.$('#i-fix-voice').addEventListener('click', function () { builder('refine', 'voice', '#i-vadd', 'voice_additional_instructions'); });
     S.$('#i-tpl-chat').addEventListener('click', function () { tpl('#i-add', TPL_CHAT, 'chat'); });
     S.$('#i-tpl-voice').addEventListener('click', function () { tpl('#i-vadd', TPL_VOICE, 'voice'); });
     function filled(text) {

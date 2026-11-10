@@ -565,6 +565,38 @@ async function saveInstructions(){
 }
 
 
+// ════════════════ ГЕНЕРАЦИЯ И ПРАВКА ИНСТРУКЦИЙ ════════════════
+// «Сгенерировать по описанию» / «Добавить правку» (10.11.2026): окно — общий модуль js/instruction-builder.js,
+// сервер пишет текст (POST /api/agent/instructions/generate|refine) и ничего не сохраняет. «Готово» сохраняет
+// только это поле, остальные настройки окна не трогаются.
+function openInstructionBuilder(mode, kind){
+  if(!window.VoksyInstructionBuilder){ showToast('Обновите страницу', 'error'); return; }
+  const field = kind === 'voice' ? 'voice_additional_instructions' : 'additional_instructions';
+  const ta = document.getElementById('i-' + field);
+  VoksyInstructionBuilder.open({
+    mode, kind,
+    request: async (path, body) => {
+      const r = await apiFetch(API + path, { method: 'POST', body: JSON.stringify(body) });
+      const data = r ? await r.json().catch(() => ({})) : {};
+      return { ok: !!(r && r.ok), data };
+    },
+    getCurrent: () => (ta ? ta.value : (agentData && agentData[field]) || ''),
+    onApply: async (text) => {
+      const r = await apiFetch(API + '/', { method: 'PUT', body: JSON.stringify({ [field]: text }) });
+      if(!r || r.status !== 200){
+        const err = r ? await r.json().catch(() => ({})) : {};
+        showToast(errText(err.detail ?? err.message), 'error');
+        return false;
+      }
+      agentData = await r.json();
+      if(ta) ta.value = text;
+      showToast(kind === 'voice' ? 'Инструкция для звонков сохранена' : 'Инструкция для переписки сохранена', 'success');
+      return true;
+    },
+  });
+}
+
+
 // ════════════════ PUBLIC API ACCESS ════════════════
 // Публичный HTTP-канал приёма заявок «сервер-к-серверу».
 // Backend: GET/PUT /api/agent/public-access, POST /public-access/regenerate.

@@ -2028,6 +2028,72 @@ async def reindex_knowledge_vectors(
     return {"success": True, "enabled": True, **stats}
 
 
+class InstructionGenerateRequest(BaseModel):
+    kind: str = Field(..., pattern="^(chat|voice)$")
+    brief: str = Field(..., min_length=1, max_length=8000)
+
+
+class InstructionRefineRequest(BaseModel):
+    kind: str = Field(..., pattern="^(chat|voice)$")
+    change: str = Field(..., min_length=1, max_length=3000)
+    # Текст из редактора (мог быть ещё не сохранён); пусто — сохранённая инструкция агента
+    current: Optional[str] = Field(None, max_length=24000)
+
+
+def _builder_http_error(e) -> HTTPException:
+    status = 402 if e.code == "insufficient_credits" else (502 if e.code == "builder_failed" else 400)
+    return HTTPException(status_code=status, detail=e.message)
+
+
+@router.post("/instructions/generate")
+async def generate_instructions(
+    body: InstructionGenerateRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    «Сгенерировать промпт» (10.11.2026): владелец пишет своими словами о бизнесе и продажах — модель собирает
+    готовую инструкцию переписки (kind=chat) или звонков (kind=voice) под этапы его воронки и его базу знаний.
+    НИЧЕГО не сохраняет: владелец смотрит текст и сам жмёт «Готово» (обычный PUT /api/agent/).
+    """
+    from backend.services import instruction_builder as ib
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not current_user.has_agent_chat_access():
+        raise HTTPException(status_code=403, detail="Генерация инструкций доступна на тарифах Старт и Profi")
+    try:
+        return await ib.generate(db, current_user, agent, kind=body.kind, brief=body.brief)
+    except ib.BuilderError as e:
+        raise _builder_http_error(e)
+
+
+@router.post("/instructions/refine")
+async def refine_instructions(
+    body: InstructionRefineRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    «Добавить правку» (10.11.2026): владелец пишет, что убрать или добавить («добавь этап Замер», «не предлагай
+    скидки») — правка вносится в основную инструкцию, остальное сохраняется дословно. Ничего не сохраняет.
+    """
+    from backend.services import instruction_builder as ib
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not current_user.has_agent_chat_access():
+        raise HTTPException(status_code=403, detail="Правка инструкций доступна на тарифах Старт и Profi")
+    try:
+        return await ib.refine(db, current_user, agent, kind=body.kind, change=body.change, current=body.current)
+    except ib.BuilderError as e:
+        raise _builder_http_error(e)
+
+
 @router.post("/knowledge/test")
 async def test_knowledge_search(
     body: KnowledgeTestRequest,
