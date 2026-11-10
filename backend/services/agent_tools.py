@@ -133,8 +133,13 @@ FIND_PRODUCTS_TOOL = {
         "Если в системной инструкции уже есть блок «ПРАЙС» — короткие вопросы про "
         "цену/название можно отвечать по нему сразу, без вызова. Но если клиент просит "
         "фото, подробности, характеристики, фильтр по цене — вызывай обязательно. "
-        "В ответе: цена, описание, id фото/видео — отправь их клиенту тулзой "
-        "whatsapp_send_file / telegram_send_file / instagram_send_file. "
+        "В query передавай всё, что назвал клиент: что за товар, марку, модель, год, "
+        "артикул или номер детали — поиск понимает артикул в любом написании и марку "
+        "кириллицей и латиницей. "
+        "В ответе: цена, описание, характеристики, id фото/видео (media_file_ids) — "
+        "отправь фото клиенту тулзой whatsapp_send_file / telegram_send_file / "
+        "instagram_send_file; файла нет, но есть photo_url — дай ссылку на фото одной "
+        "строкой. Несколько подходящих позиций — коротко назови 2–3 и спроси, какая. "
         "Если первая попытка пуста — переформулируй query ещё 1–2 раза синонимами. "
         "Товары вне каталога не придумывай: когда и переформулировки не помогли, "
         "попробуй search_knowledge_base по общей базе; если и там пусто — скажи "
@@ -862,8 +867,8 @@ SEND_VOICE_MESSAGE_TOOL = {
     "description": (
         "Отправить клиенту ГОЛОСОВОЕ сообщение (озвучка голосом агента) в личный Telegram или "
         "WhatsApp. Пиши так, как живой человек спокойно наговаривает голосовое на телефон: "
-        "на языке клиента (русский или кыргызский — чистый литературный, без диалекта и без "
-        "смешения языков), простыми понятными словами, без канцелярита и терминов; "
+        "на языке клиента (русский — грамотный разговорный; кыргызский — разговорный бишкекский: "
+        "кыргызская грамматика, деловые слова можно по-русски, без книжных слов), простыми понятными словами, без канцелярита и терминов; "
         "разговорно, неторопливо, связными фразами, с паузами «…» и лёгкими раздумьями («так…», "
         "«смотрите…», «ну вот»), без «алло», без дикторских и рекламных оборотов, без ссылок, "
         "эмодзи, списков и markdown. До ~400 символов (≈30 секунд). Можно 1–3 звуковые метки в "
@@ -1612,7 +1617,9 @@ async def fn_instagram_send_message(args: dict, user_id: str, agent_config, db: 
         return {"ok": False, "error": "Коннектор Instagram не подключён"}
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_row is None:
         return {"ok": False, "error": "Пустой текст сообщения"}
 
@@ -1751,7 +1758,9 @@ async def fn_whatsapp_send_message(args: dict, user_id: str, agent_config, db: S
         return err("not_connected")
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_row is None and voice is None:
         return err("empty_text")
 
@@ -1955,7 +1964,9 @@ async def fn_telegram_send_message(args: dict, user_id: str, agent_config, db: S
         return {"ok": False, "error": telegram_user_service.error_human("not_connected")}
 
     from backend.services.message_style import clean_client_text
-    text = clean_client_text((args.get("text") or "").strip())
+    text = (args.get("text") or "").strip()
+    if sent_by != "owner":          # текст владельца из инбокса — его слова, не правим
+        text = clean_client_text(text)
     if not text and file_bytes is None and voice is None:
         return {"ok": False, "error": telegram_user_service.error_human("empty_text")}
 

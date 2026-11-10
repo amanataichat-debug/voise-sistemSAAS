@@ -169,6 +169,17 @@ check("ссылка и номер целы", clean("Ссылка https://voksyai
       == "Ссылка https://voksyai.online/a_b-c*d номер +996 705 701 707")
 check("диапазон 10–15 → 10-15", clean("от 10–15 тыс") == "от 10-15 тыс")
 check("разделитель реплик --- сохраняется", "---" in clean("Привет\n---\nКак дела?"))
+# 10.11.2026, владелец: «без кавычек, спецсимволов, чёрточек, не ставил несколько вопросительных знаков»
+check("кавычки, «??», «!!» и стрелки убираются",
+      clean("Тариф «Старт» — 7 500 сом!! Интересно?? Шаг 1 → шаг 2") == "Тариф Старт, 7 500 сом! Интересно? Шаг 1, шаг 2")
+check("дефис между словами → запятая, артикул и диапазон целы",
+      clean("Цена - 500 сом, срок 10 - 15 дней, артикул 90915-YZZE1") == "Цена, 500 сом, срок 10-15 дней, артикул 90915-YZZE1")
+check("апостроф и ссылка с кавычками рядом целы",
+      clean("Пишите в WhatsApp'ка: https://x.kg/a?b=\"1\"") == "Пишите в WhatsApp'ка: https://x.kg/a?b=\"1\"")
+_tools = open(os.path.join(ROOT, "backend/services/agent_tools.py"), encoding="utf-8").read()
+check("текст владельца из инбокса не чистится (его слова), агента — чистится во всех трёх мессенджерах",
+      _tools.count('if sent_by != "owner":          # текст владельца') == 3)
+check("правило стиля в переписке для всех агентов", "СТИЛЬ ЧЕЛОВЕКА" in open(os.path.join(ROOT, "backend/services/agent_orchestrator.py"), encoding="utf-8").read())
 
 # --- прогрев: имя-заглушка не используется ---
 from backend.services import call_warmup as cw
@@ -181,7 +192,8 @@ g = vh.build_gemini_voice_hints([], "Kore", True)
 for name, text in (("GPT-Live", lc.VOICE_DELEGATION_HINT), ("Gemini", g)):
     check(f"{name}: ПРОДАЖИ и ГОРЯЧИЙ КЛИЕНТ", "ПРОДАЖИ." in text and "ГОРЯЧИЙ КЛИЕНТ" in text)
     check(f"{name}: поддакивание не обрывает фразу", "Поддакивание — НЕ перебивание" in text)
-    check(f"{name}: ссылка на регистрацию в материалах", "ссылку на регистрацию" in text)
+    # 10.11.2026: правила общие для ВСЕХ клиентов платформы — «оформить сегодня» без регистрации в Voksy
+    check(f"{name}: горячий клиент — оформить сегодня (запись, заказ, ссылка на оплату)", "ссылка на оплату" in text)
 check("GPT-Live: нет «спроси, интересно ли дальше»", "спроси, интересно ли дальше" not in lc.VOICE_DELEGATION_HINT)
 
 # --- оркестратор: касание дожима — сообщение, не звонок ---
@@ -189,7 +201,7 @@ from backend.services import agent_orchestrator as ao
 check("followup_outbound — не звонок", not ao.is_voice_direction("followup_outbound"))
 src = open(ao.__file__, encoding="utf-8").read()
 check("промпт: success только после согласия + ссылка на регистрацию",
-      "клиент согласился подключаться → отправь ему ссылку на регистрацию" in src)
+      "клиент согласился купить / записаться / подключиться" in src and "notify_owner_handoff(" in src)
 from backend.models.agent_call import AgentCall
 ac = AgentCall(postcall_log={"call_direction": "followup_outbound", "channel": "instagram"})
 check("касание видно в истории как сообщение канала", ac._resolve_channel() == "instagram")

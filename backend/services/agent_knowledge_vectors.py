@@ -106,7 +106,8 @@ def entry_text(row) -> str:
     if getattr(row, "kind", None) == "product":
         attrs = getattr(row, "attributes", None)
         if isinstance(attrs, dict) and attrs:
-            parts.append("; ".join(f"{k}: {v}" for k, v in attrs.items()))
+            # служебные ключи «_source», «_key», «_photo_url» — не смысл позиции
+            parts.append("; ".join(f"{k}: {v}" for k, v in attrs.items() if not str(k).startswith("_")))
         if getattr(row, "price", None) is not None:
             parts.append(f"Цена: {row.price:g} {getattr(row, 'currency', None) or 'KGS'}")
     return "\n".join(p for p in parts if p)[:MAX_TEXT_CHARS]
