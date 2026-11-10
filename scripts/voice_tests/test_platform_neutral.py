@@ -92,5 +92,25 @@ check("шаблоны кабинета — для любого бизнеса (�
       len(_tpl_text) > 2000 and not leaks(_tpl_text) and "<название>" in _tpl_text and "confirmFilled" in _tpl,
       (len(_tpl_text), leaks(_tpl_text)))
 
+# Кыргызский везде один — разговорный бишкекский (10.11.2026, владелец: «не литературный, как говорит молодёжь
+# в Бишкеке»). Раньше звонок говорил по-бишкекски, а голосовые сообщения, перевод в инбоксе и инструмент
+# голосового — «чистым литературным, без русских слов».
+_files = {p: open(os.path.join(ROOT, p), encoding="utf-8").read() for p in (
+    "backend/services/agent_voice_service.py", "backend/services/agent_prompts.py", "backend/services/agent_tools.py",
+    "backend/services/inbox_service.py", "backend/services/agent_orchestrator.py", "backend/websockets/fish_llm_client.py",
+    "backend/websockets/live_client.py")}
+_strings_all = {p: " ".join(n.value for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+                for p, src in _files.items()}
+_book = {p: re.findall(r"чистый литературный|адабий|литературная бишкекская|не вставляй русские слова|без русских слов",
+                       t, re.IGNORECASE) for p, t in _strings_all.items()}
+check("нигде не требуется книжный кыргызский «без русских слов»", not any(_book.values()),
+      {p: v for p, v in _book.items() if v})
+from backend.services.agent_voice_service import SPEECH_NORMS
+check("кыргызский — разговорный бишкекский: звонок, каскад, переписка, голосовые, перевод в инбоксе",
+      "разговорный бишкекский" in lc.VOICE_MANNER_HINT and "разговорном бишкекском" in SPEECH_NORMS["ky"]
+      and all("разговорный бишкекский" in _strings_all[p] for p in (
+          "backend/services/agent_prompts.py", "backend/services/agent_tools.py", "backend/services/inbox_service.py",
+          "backend/services/agent_orchestrator.py", "backend/websockets/fish_llm_client.py")))
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
