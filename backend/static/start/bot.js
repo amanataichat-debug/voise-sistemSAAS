@@ -343,15 +343,27 @@
         S.toast(msg, 'success');
       });
     }
-    function tpl(id, text) {
+    function tpl(id, text, kind) {
       var el = S.$(id);
+      // Общие шаблоны кабинетов Старта и Profi (js/instruction-templates.js); нет файла — прежние короткие
+      if (window.VoksyInstructionTemplates) { window.VoksyInstructionTemplates.insert(el, kind); return; }
       if (el.value.trim() && !window.confirm('Заменить текст шаблоном?')) return;
       el.value = text; el.focus();
     }
-    S.$('#i-tpl-chat').addEventListener('click', function () { tpl('#i-add', TPL_CHAT); });
-    S.$('#i-tpl-voice').addEventListener('click', function () { tpl('#i-vadd', TPL_VOICE); });
-    S.$('#i-save-chat').addEventListener('click', function () { saveBody({ additional_instructions: S.$('#i-add').value }, this, 'Инструкция для переписки сохранена'); });
-    S.$('#i-save-voice').addEventListener('click', function () { saveBody({ voice_additional_instructions: S.$('#i-vadd').value }, this, 'Инструкция для звонков сохранена'); });
+    S.$('#i-tpl-chat').addEventListener('click', function () { tpl('#i-add', TPL_CHAT, 'chat'); });
+    S.$('#i-tpl-voice').addEventListener('click', function () { tpl('#i-vadd', TPL_VOICE, 'voice'); });
+    function filled(text) {
+      var T = window.VoksyInstructionTemplates;
+      return !T || T.confirmFilled([text]);
+    }
+    S.$('#i-save-chat').addEventListener('click', function () {
+      if (!filled(S.$('#i-add').value)) return;
+      saveBody({ additional_instructions: S.$('#i-add').value }, this, 'Инструкция для переписки сохранена');
+    });
+    S.$('#i-save-voice').addEventListener('click', function () {
+      if (!filled(S.$('#i-vadd').value)) return;
+      saveBody({ voice_additional_instructions: S.$('#i-vadd').value }, this, 'Инструкция для звонков сохранена');
+    });
     S.$('#i-save-docs').addEventListener('click', function () {
       var body = {};
       for (var i = 0; i < DOCS.length; i++) {

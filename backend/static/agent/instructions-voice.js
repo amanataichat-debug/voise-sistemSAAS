@@ -518,6 +518,10 @@ function closeInstructionsModal(){
 
 async function saveInstructions(){
   const btn = document.getElementById('instructions-save-btn');
+  // Незаполненные <…> из шаблона агент произнёс бы дословно (js/instruction-templates.js)
+  if(window.VoksyInstructionTemplates && !VoksyInstructionTemplates.confirmFilled([
+      document.getElementById('i-additional_instructions').value,
+      document.getElementById('i-voice_additional_instructions').value])) return;
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="width:15px;height:15px;border-width:2px"></div> Сохранение...';
 
