@@ -2094,6 +2094,37 @@ async def refine_instructions(
         raise _builder_http_error(e)
 
 
+_KB_HEALTH_LAST: Dict[str, float] = {}
+KB_HEALTH_MIN_INTERVAL_SEC = 15.0
+
+
+@router.get("/knowledge/health")
+async def knowledge_health(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    «Проверить базу знаний» (10.11.2026): находит ли агент каждую запись по её вопросу тем же путём, что на
+    звонке, что не влезло в «наизусть», файлы без текста, каталог без цены и фото, поиск по смыслу, инструкции.
+    Ничего не пишет в базу (services/knowledge_health.py).
+    """
+    import time as _time
+    from backend.services import knowledge_health
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    if not current_user.has_agent_chat_access():
+        raise HTTPException(status_code=403, detail="Проверка базы знаний доступна на тарифах Старт и Profi")
+    key = str(agent.id)
+    now = _time.monotonic()
+    if now - _KB_HEALTH_LAST.get(key, 0.0) < KB_HEALTH_MIN_INTERVAL_SEC:
+        raise HTTPException(status_code=429, detail="Проверка только что была — повторите через несколько секунд")
+    _KB_HEALTH_LAST[key] = now
+    return await knowledge_health.run_health(db, agent)
+
+
 @router.post("/knowledge/test")
 async def test_knowledge_search(
     body: KnowledgeTestRequest,

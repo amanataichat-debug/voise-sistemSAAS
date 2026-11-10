@@ -431,13 +431,19 @@
       '<div class="tabs" style="margin:-6px -8px 16px">' + KB_TABS.map(function (t) {
         return '<div class="tab' + (kb.tab === t[0] ? ' active' : '') + '" data-kt="' + t[0] + '"><span>' + t[1] + '</span><span class="st-count" style="margin-left:2px">' + counts[t[0]] + '</span></div>';
       }).join('') + '</div>' + v + '<div id="kb-body"></div>' +
-      '<div class="st-sub-h" style="margin-top:22px">Проверить как клиент</div>' +
+      '<div class="st-sub-h" style="margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<span>Проверить как клиент</span><button class="btn" id="kb-health" type="button">' + icon('circle-check') + '<span>Проверить базу знаний</span></button></div>' +
       '<div class="st-toolbar"><div class="st-search" style="max-width:none">' + icon('search') + '<input class="input" id="kb-q" placeholder="Задайте вопрос, как клиент: «сколько стоит доставка?»"></div>' +
       '<button class="btn" id="kb-ask" type="button">Спросить</button></div><div id="kb-ans"></div>';
     S.$$('[data-kt]', b).forEach(function (t) {
       t.addEventListener('click', function () { kb.tab = t.dataset.kt; drawKb(); });
     });
     drawKbBody();
+    // «Проверить базу знаний» (js/knowledge-health.js): находит ли бот каждую запись так же, как на звонке
+    S.$('#kb-health').addEventListener('click', function () {
+      if (!window.VoksyKnowledgeHealth) { S.toast('Обновите страницу', 'error'); return; }
+      window.VoksyKnowledgeHealth.open({ request: function () { return S.api('/knowledge/health'); } });
+    });
     var ask = function () {
       var q = S.$('#kb-q').value.trim(); if (!q) return;
       S.$('#kb-ans').innerHTML = '<div class="skeleton" style="height:60px;margin-top:10px"></div>';
