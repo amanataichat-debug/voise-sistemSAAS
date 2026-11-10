@@ -440,23 +440,59 @@ def build_voice_knowledge_block(db, agent, budget: int = VOICE_KNOWLEDGE_BUDGET
     if not parts:
         return "", {}
 
-    # Главное правило: то, что выше, уже у тебя в голове. Голосовой слой
-    # GPT-Live по умолчанию инструктирован делегировать всё «про базу знаний»
-    # бэкенду (VOICE_DELEGATION_HINT), поэтому проговариваем исключение прямо.
-    parts.append(
-        "\n\n# КАК ПОЛЬЗОВАТЬСЯ ЭТИМ НА ЗВОНКЕ\n"
-        "Всё перечисленное выше ты уже знаешь: отвечай сразу, своими словами, "
-        "не делегируй бэкенду и не вызывай поиск. Если клиент спрашивает про "
-        "позицию из прайса что-то, чего в описании этой позиции НЕТ (детали, "
-        "условия, номера, сроки, характеристики, фото, варианты) — не "
-        "отвечай «не знаю», сначала вызови find_products и проверь там. "
-        "Для остального, чего нет ни в этом блоке, ни в прайсе вообще — "
-        "search_knowledge_base. Если ответа нет нигде — не выдумывай: скажи, "
-        "что уточнишь, и предложи перезвонить или прислать в мессенджер."
+    # Главное правило: то, что ниже, уже у тебя в голове. Голосовой слой
+    # GPT-Live по умолчанию делегирует бэкенду всё «про базу знаний», поэтому
+    # исключение проговариваем прямо — и В НАЧАЛЕ блока. Звонок af6e4d6a
+    # (10.11.2026): блок стоял в конце промпта после 14 тыс. символов правил,
+    # агент на цену и «нужен ли пароль» говорил «одну секунду» и шёл к бэкенду.
+    head = (
+        f"# {KNOWLEDGE_HEADING}\n"
+        "Это ты знаешь наизусть: отвечай отсюда сразу, первой фразой, своими "
+        "словами — без поиска, без бэкенда и без «одну секунду». Если в разделах "
+        "ниже есть старое и новое значение одного факта (цена, тариф) — верь "
+        "разделу «вопрос — ответ». Деталь позиции прайса, которой здесь нет "
+        "(условия, характеристики, фото), — find_products; другой факт, которого "
+        "здесь нет вообще, — search_knowledge_base. Нигде нет — не выдумывай: "
+        "скажи, что точный ответ пришлёшь после звонка, и назови когда."
     )
-    block = "".join(parts)
+    block = head + "".join(parts)
     stats["total"] = len(block)
     return block, stats
+
+
+# Заголовок раздела знаний в промпте звонка. На него ссылаются подсказки голосу
+# (live_client.VOICE_CONVERSATION_HEAD, VOICE_DELEGATION_POLICY) — менять вместе.
+KNOWLEDGE_HEADING = "ЧТО ТЫ ЗНАЕШЬ НАИЗУСТЬ"
+# Между знаниями (теперь в начале) и правилами карточки; входит в бюджет max_chars.
+_SEP = "\n\n"
+
+# Первая строка VOICE_AGENT_PROMPT_BASE: по ней узнаём промпт карточки, собранный
+# кодом (build_voice_agent_prompt), а не написанный владельцем вручную.
+_GENERATED_PROMPT_MARK = "Ты — голосовой AI-агент. Перед каждым звонком"
+
+
+def fresh_card_prompt(assistant, agent) -> str:
+    """
+    Промпт карточки звонка по ТЕКУЩЕМУ коду.
+
+    Карточка агента хранит system_prompt, собранный в момент сохранения
+    инструкций (api/agent.py → build_voice_agent_prompt). Правка базовых правил
+    в коде (agent_prompts.VOICE_AGENT_PROMPT_BASE) до уже созданных агентов не
+    доходила, пока владелец не пересохранит инструкции: у Анри 10.11.2026 на
+    звонке всё ещё стояло правило про send_sms, которого давно нет. Теперь
+    собранный кодом промпт пересобирается на каждом звонке из текущей базы и
+    инструкций агента. Промпт, написанный владельцем руками, не трогаем.
+    """
+    stored = (getattr(assistant, "system_prompt", None) or "").strip()
+    if agent is None or not stored.startswith(_GENERATED_PROMPT_MARK):
+        return stored
+    try:
+        from backend.services.agent_prompts import build_voice_agent_prompt
+        extra = getattr(agent, "voice_additional_instructions", None)
+        return build_voice_agent_prompt(extra if isinstance(extra, str) else None).strip()
+    except Exception as e:  # промпт звонка важнее свежести правил
+        logger.warning(f"[VOICE-KB] промпт карточки не пересобран, берём сохранённый: {e}")
+        return stored
 
 
 def build_call_system_prompt(db, assistant, agent, call_context: str = "",
@@ -470,18 +506,22 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
     LIVE_VOICE_INSTRUCTIONS_MAX_CHARS: длиннее голосовой слой не увидит).
     Режем при нехватке только знания: правила разговора и контекст звонка
     обязательны.
+
+    Порядок (10.11.2026): знания → правила карточки → контекст звонка. Голосовая
+    модель держит начало инструкций лучше середины; факты в начале она отвечает
+    сама, а не делегирует бэкенду с «одну секунду».
     """
-    base = (getattr(assistant, "system_prompt", None) or "").strip()
+    base = fresh_card_prompt(assistant, agent)
     context = (call_context or "").strip()
     tail = f"\n\n[Контекст звонка] {context}" if context else ""
 
     block, stats = build_voice_knowledge_block(db, agent, budget=budget)
 
     if max_chars and block:
-        room = max_chars - len(base) - len(tail)
+        room = max_chars - len(base) - len(tail) - len(_SEP)
         want = min(len(block), MIN_CALL_KNOWLEDGE)
         if room < want and len(tail) > CONTEXT_FLOOR:
-            keep = max(CONTEXT_FLOOR, max_chars - len(base) - want)
+            keep = max(CONTEXT_FLOOR, max_chars - len(base) - want - len(_SEP))
             if keep < len(tail):
                 logger.warning(
                     f"[VOICE-KB] контекст звонка урезан с {len(tail)} до {keep} символов, "
@@ -489,7 +529,7 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                 )
                 stats["context_clipped"] = len(tail) - keep
                 tail = _clip_lines(tail, keep)
-                room = max_chars - len(base) - len(tail)
+                room = max_chars - len(base) - len(tail) - len(_SEP)
         if room < len(block):
             if room < 400:
                 # Промпт карточки сам съел бюджет (длинные доп. инструкции
@@ -510,7 +550,9 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                 stats["total"] = len(block)
                 stats["trimmed"] = 1
 
-    return f"{base}{block}{tail}".strip(), stats
+    if block:
+        return f"{block.strip()}{_SEP}{base}{tail}".strip(), stats
+    return f"{base}{tail}".strip(), stats
 
 
 # ============================================================================
