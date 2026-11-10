@@ -139,7 +139,7 @@ def hints():
     check("подсказка: «секунду» больше не разрешена при ожидании бэкенда",
           "максимум одно короткое слово" not in hint and "НЕ «одну секунду»" in lc.VOICE_DELEGATION_POLICY)
     check("подсказка: делегирование только за функцией или фактом, которого нет",
-          "Delegate to the backend ONLY when" in lc.VOICE_DELEGATION_POLICY and "пароли" in lc.VOICE_DELEGATION_POLICY)
+          "Delegate to the backend ONLY when" in lc.VOICE_DELEGATION_POLICY and "документы" in lc.VOICE_DELEGATION_POLICY)
     head = lc.VOICE_CONVERSATION_HEAD
     check("начало: сначала вопрос о деле, цена цифрой, шаг со временем",
           all(k in head for k in ("СНАЧАЛА ВОПРОС, ПОТОМ РАССКАЗ", "ЦЕНА — ЦИФРОЙ", "без времени следующего контакта")))

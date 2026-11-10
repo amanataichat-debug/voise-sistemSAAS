@@ -181,7 +181,8 @@ g = vh.build_gemini_voice_hints([], "Kore", True)
 for name, text in (("GPT-Live", lc.VOICE_DELEGATION_HINT), ("Gemini", g)):
     check(f"{name}: ПРОДАЖИ и ГОРЯЧИЙ КЛИЕНТ", "ПРОДАЖИ." in text and "ГОРЯЧИЙ КЛИЕНТ" in text)
     check(f"{name}: поддакивание не обрывает фразу", "Поддакивание — НЕ перебивание" in text)
-    check(f"{name}: ссылка на регистрацию в материалах", "ссылку на регистрацию" in text)
+    # 10.11.2026: правила общие для ВСЕХ клиентов платформы — «оформить сегодня» без регистрации в Voksy
+    check(f"{name}: горячий клиент — оформить сегодня (запись, заказ, ссылка на оплату)", "ссылка на оплату" in text)
 check("GPT-Live: нет «спроси, интересно ли дальше»", "спроси, интересно ли дальше" not in lc.VOICE_DELEGATION_HINT)
 
 # --- оркестратор: касание дожима — сообщение, не звонок ---
@@ -189,7 +190,7 @@ from backend.services import agent_orchestrator as ao
 check("followup_outbound — не звонок", not ao.is_voice_direction("followup_outbound"))
 src = open(ao.__file__, encoding="utf-8").read()
 check("промпт: success только после согласия + ссылка на регистрацию",
-      "клиент согласился подключаться → отправь ему ссылку на регистрацию" in src)
+      "клиент согласился купить / записаться / подключиться" in src and "notify_owner_handoff(" in src)
 from backend.models.agent_call import AgentCall
 ac = AgentCall(postcall_log={"call_direction": "followup_outbound", "channel": "instagram"})
 check("касание видно в истории как сообщение канала", ac._resolve_channel() == "instagram")
