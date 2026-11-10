@@ -303,6 +303,40 @@ def _alt_patterns(alts, with_attributes: bool = False) -> list:
     return patterns
 
 
+# Быстрый ответ на звонке (10.11.2026, звонок af6e4d6a: поиск 2,5 с и 1,3 с). Гибридный поиск ждал векторную
+# часть, даже когда по словам уже нашёлся точный ответ. На звонке каждая секунда слышна, поэтому при УВЕРЕННОМ
+# совпадении по словам ждём векторы не дольше FAST_VECTOR_GRACE и отвечаем. Неуверенное — ждём, как раньше.
+FAST_VECTOR_GRACE = float(os.getenv("KB_FAST_VECTOR_GRACE", "0.25"))
+FAST_CHANNELS = ("call",)
+
+
+def keyword_confident(rows: list, query: str) -> bool:
+    """
+    Совпадение по словам надёжно без векторов: у первой записи слово в заголовке или ключевых словах, нашлась
+    бо́льшая часть слов запроса (или весь вопрос целиком), и она заметно лучше второй — иначе это не уверенность.
+    """
+    if not rows:
+        return False
+    terms = query_terms(query)
+    if not terms:
+        return False
+    rxs = _term_regexes(terms)
+    query_norm = normalize(query)
+    s1, m1, strong1 = _rank_row(rows[0], rxs, query_norm)
+    if not strong1:
+        return False
+    exact = bool(query_norm) and (query_norm in (rows[0].title or "").lower()
+                                  or query_norm in (rows[0].keywords or "").lower())
+    need = 2 if len(terms) <= 3 else max(3, (len(terms) + 1) // 2)
+    if not exact and m1 < need:
+        return False
+    if len(rows) > 1:
+        s2, m2, _ = _rank_row(rows[1], rxs, query_norm)
+        if not exact and s1 < s2 * 1.25 and m1 <= m2:
+            return False   # две записи почти равны — пусть рассудит поиск по смыслу
+    return True
+
+
 def _candidate_filter(terms: List[frozenset], with_attributes: bool = False):
     """SQL-условие «в записи есть хоть одна основа любого слова запроса» (подстрока; точнее отберёт rank)."""
     alts = sorted({a for t in terms for a in t if len(a) >= 2}, key=len, reverse=True)[:MAX_SQL_ALTS]
@@ -694,7 +728,14 @@ async def _hybrid_answer(db, agent_config_id, kb_namespace: Optional[str], query
     except Exception as e:
         vec_task.cancel()
         raise e
-    vec = await vec_task
+    if channel in FAST_CHANNELS and kw_quality == "ok" and keyword_confident(kw_rows, query):
+        try:
+            vec = await asyncio.wait_for(asyncio.shield(vec_task), timeout=FAST_VECTOR_GRACE)
+        except asyncio.TimeoutError:
+            vec_task.cancel()
+            return await _keyword_answer(db, kw_rows[:top_k], query)
+    else:
+        vec = await vec_task
     if vec is None:
         return None  # векторный слой не ответил — прежний путь
     vectors.spawn(vectors.maybe_backfill(agent_config_id))
@@ -743,6 +784,21 @@ async def _hybrid_answer(db, agent_config_id, kb_namespace: Optional[str], query
         out["note"] = ("Совпадение неточное — слова запроса встретились только вскользь. Проверь, что это "
                        "действительно про вопрос клиента, иначе скажи, что уточнишь.")
     return out
+
+
+async def _keyword_answer(db, rows: list, query: str) -> Dict[str, Any]:
+    """Ответ из записей, найденных по словам (уверенное совпадение на звонке — без ожидания векторов)."""
+    def _hits():
+        mark_hits(db, rows)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+    await asyncio.to_thread(_hits)
+    results = [entry_for_agent(r) for r in rows]
+    logger.info(f"[KB] быстрый ответ по словам «{query[:60]}»: {len(results)} записей, векторы не ждали")
+    return {"ok": True, "query": query, "source": "knowledge_base", "total": len(results),
+            "results": results, "search": "keywords_fast"}
 
 
 async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: str,
