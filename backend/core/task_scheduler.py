@@ -336,6 +336,12 @@ class TaskScheduler:
         missed = missed_call_today(db, agent_contact, task.user_id, today)
         if missed is None:
             return None
+        # Клиент после недозвона сам написал / позвонил, или звонок разминулся с его
+        # сообщением «позвоните после 18» — та же проверка, что при постановке задачи
+        # (agent_tools.missed_call_excused). Раньше планировщик переносил на завтра и такие.
+        from backend.services.agent_tools import missed_call_excused
+        if missed_call_excused(db, agent_contact, missed.created_at, datetime.now(timezone.utc)):
+            return None
         window = call_window(agent_config)
         start_hour = window[0] if window is not None else CALL_WINDOW_START_HOUR
         tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=BISHKEK)

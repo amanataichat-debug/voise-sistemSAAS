@@ -150,6 +150,10 @@ check("переписка: запрет спрашивать объём перв
 check("демо-звонок: клиенту на O! звоним САМИ, остальным — наш номер без слов про оператора",
       "ЗВОНОК КЛИЕНТУ" in _src and "check_phone_operator" in _src
       and "НЕ объясняй про оператора" in _src and "только на номера O!" in _src)
+from backend.services.chat_conscience import CHAT_MIND as _MIND
+check("переписка: живой продавец (chat_conscience.CHAT_MIND) — во всех трёх мессенджерах",
+      _src.count("+ chat_sales_rule") == 3 and "CHAT_MIND" in _src
+      and "Вопросов в сообщении ноль или один" in _MIND and "не пересказывай его слова" in _MIND)
 check("разбор звонка: просьба о менеджере/встрече → notify_owner_handoff (входящий и исходящий)",
       _src.count("+ call_handoff_rule") == 2 and "ЧЕЛОВЕК / ВСТРЕЧА" in _src)
 check("касание оживления: своё событие «клиент замолчал», не «дожим после КП»",

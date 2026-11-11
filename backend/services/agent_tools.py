@@ -942,6 +942,42 @@ def _repeats_voice(tool_name: str, tool_args: dict, db: Session) -> bool:
         return False
 
 
+_CHAT_SEND_CHANNELS = {
+    "whatsapp_send_message": "whatsapp",
+    "telegram_send_message": "telegram",
+    "instagram_send_message": "instagram",
+}
+
+
+def _chat_conscience_refusal(tool_name: str, tool_args: dict, context: dict, db: Session) -> Optional[str]:
+    """Проверка текста клиенту по переписке (chat_conscience.send_refusal); сбой — не мешает отправке."""
+    channel = _CHAT_SEND_CHANNELS.get(tool_name)
+    if not channel:
+        return None
+    args = tool_args or {}
+    contact_id = args.get("agent_contact_id") or context.get("current_contact_id")
+    text = args.get("text") or ""
+    if not contact_id or not text.strip():
+        return None
+    try:
+        from backend.services import chat_conscience
+        if channel == "instagram":
+            from backend.services import instagram_service
+            rows = instagram_service.get_thread(db, contact_id, limit=20)
+        elif channel == "telegram":
+            rows = telegram_user_service.get_thread(db, contact_id, limit=20)
+        else:
+            rows = whatsapp_service.get_thread(db, contact_id, limit=20)
+        return chat_conscience.send_refusal(rows, text.replace("\n---\n", "\n"))
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] chat conscience check failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 def _thread_for(channel: str, db: Session, contact_id) -> list:
     if channel == "telegram":
         return telegram_user_service.get_thread(db, contact_id, limit=10)
@@ -4394,7 +4430,7 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
         if last_called.tzinfo is None:
             last_called = last_called.replace(tzinfo=timezone.utc)
         called_today = (last_called.astimezone(BISHKEK).date() == today_local
-                        and not _client_came_back(db, contact, last_called))
+                        and not missed_call_excused(db, contact, last_called, scheduled_utc))
         if called_today and db is not None:
             # Сверка с фактом: last_called_at раньше ставил и разбор сообщения из
             # мессенджера — клиенту не звонили, а агент получал «уже звонили».
@@ -4452,7 +4488,7 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     if db is not None and today_local <= _bishkek_now().date():
         from backend.services.agent_contact_phones import missed_call_today
         missed = missed_call_today(db, contact, user_id or contact.user_id, today_local)
-        if missed is not None and _client_came_back(db, contact, missed.created_at):
+        if missed is not None and missed_call_excused(db, contact, missed.created_at, scheduled_utc):
             # Клиент после недозвона сам написал / позвонил («позвоните сейчас») —
             # это уже не дозвон вслепую: звонок по его просьбе разрешён.
             missed = None
@@ -4471,6 +4507,32 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
             }
 
     return {"ok": True, "scheduled_utc": scheduled_utc}
+
+
+# Звонок разминулся с сообщением клиента (Janara, 11.11.2026): клиент в 14:01 написал
+# «после 18:00 позвоните», а звонок по старой задаче ушёл в ту же минуту и не дозвонился.
+# Сообщение оказалось РАНЬШЕ звонка, запрет «недозвон сегодня» не снимался, и звонок на
+# 18:00 агент получил только на завтра. Клиент писал за MISSED_CALL_RACE_MINUTES до
+# недозвона, а новый звонок не раньше чем через MISSED_CALL_RECALL_GAP — это его просьба,
+# а не дозвон вслепую. Общий предел наборов в день (MAX_CALLS_PER_DAY) остаётся.
+MISSED_CALL_RACE_MINUTES = 15
+MISSED_CALL_RECALL_GAP = timedelta(hours=2)
+
+
+def missed_call_excused(db: Optional[Session], contact, missed_at, scheduled_utc=None) -> bool:
+    """Звонок в тот же день после недозвона разрешён: клиент вышел на связь после него
+    или написал перед самым недозвоном, а новый звонок — через 2+ часа."""
+    if missed_at is None:
+        return False
+    if _client_came_back(db, contact, missed_at):
+        return True
+    if scheduled_utc is None:
+        return False
+    m = missed_at if missed_at.tzinfo else missed_at.replace(tzinfo=timezone.utc)
+    sch = scheduled_utc if scheduled_utc.tzinfo else scheduled_utc.replace(tzinfo=timezone.utc)
+    if sch - m < MISSED_CALL_RECALL_GAP:
+        return False
+    return _client_came_back(db, contact, m - timedelta(minutes=MISSED_CALL_RACE_MINUTES))
 
 
 def _client_came_back(db: Optional[Session], contact, since) -> bool:
@@ -5261,6 +5323,19 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
         if paused_refusal:
             logger.info(f"[AGENT-TOOLS] {tool_name} blocked: contact paused (owner is talking)")
             return json.dumps({"ok": False, "error": paused_refusal}, ensure_ascii=False)
+
+        # «Сознание» переписки (ветка 1111-chat-live): тот же вопрос второй раз,
+        # «вам удобно?» после согласия, созвон тому, кто ушёл от ответа, — не
+        # отправляем, модель получает объяснение и пишет по-человечески.
+        chat_refusal = _chat_conscience_refusal(tool_name, tool_args, context, db)
+        # Не больше двух отказов за разбор: дальше модель уже переписала текст сама,
+        # лучше отправить, чем оставить клиента без ответа.
+        if chat_refusal and context.get("_chat_refusals", 0) >= 2:
+            chat_refusal = None
+        if chat_refusal:
+            context["_chat_refusals"] = context.get("_chat_refusals", 0) + 1
+            logger.info(f"[AGENT-TOOLS] {tool_name} blocked by chat conscience: {chat_refusal[:120]}")
+            return json.dumps({"ok": False, "error": chat_refusal}, ensure_ascii=False)
 
     refusal = agent_mode.check_tool(user, tool_name, tool_args, context, db)
     if refusal:
