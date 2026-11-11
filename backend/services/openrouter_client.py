@@ -2,6 +2,7 @@
 OpenRouter API client for Voksy AI Agent orchestrator.
 Uses system API key from settings.OPENROUTER_API_KEY.
 """
+import asyncio
 import json
 from typing import Optional, List, Dict, Any, AsyncIterator
 import httpx
@@ -76,6 +77,10 @@ def _log_usage(model: str, usage: Optional[Dict[str, Any]]) -> None:
     )
 
 
+RETRY_DELAYS = (1.5, 4.0)
+RETRY_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524}
+
+
 class OpenRouterClient:
     def __init__(self):
         self.api_key = settings.OPENROUTER_API_KEY
@@ -126,16 +131,32 @@ class OpenRouterClient:
         if extra_payload:
             payload.update(extra_payload)
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                json=payload,
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            _log_usage(model, data.get("usage"))
-            return data
+        # Повтор на временных сбоях (ветка 1111-clean-system): один 429/5xx, обрыв сети или пустой ответ
+        # провайдера раньше оставлял клиента в мессенджере без ответа.
+        last_error: Optional[Exception] = None
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            if attempt:
+                await asyncio.sleep(RETRY_DELAYS[attempt - 1])
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(OPENROUTER_API_URL, json=payload, headers=headers)
+                if response.status_code in RETRY_STATUSES:
+                    last_error = httpx.HTTPStatusError(f"OpenRouter {response.status_code}",
+                                                       request=response.request, response=response)
+                    logger.warning(f"[OPENROUTER] {model}: {response.status_code}, попытка {attempt + 1}")
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                if not data.get("choices"):
+                    last_error = RuntimeError(f"OpenRouter: ответ без choices: {str(data.get('error') or data)[:200]}")
+                    logger.warning(f"[OPENROUTER] {model}: пустой ответ, попытка {attempt + 1}")
+                    continue
+                _log_usage(model, data.get("usage"))
+                return data
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                last_error = e
+                logger.warning(f"[OPENROUTER] {model}: сеть ({type(e).__name__}), попытка {attempt + 1}")
+        raise last_error or RuntimeError("OpenRouter: запрос не выполнен")
 
     async def chat_completion_stream(
         self,
