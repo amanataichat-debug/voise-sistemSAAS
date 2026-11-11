@@ -141,12 +141,7 @@ check("оживление: 2 инструкции, без «вы тут?» и с
 # --- переписка: правило «не анкета» для WhatsApp / Telegram / Instagram ---
 from backend.services import agent_orchestrator as _ao
 _src = open(_ao.__file__, encoding="utf-8").read()
-from backend.services.chat_conscience import CHAT_MIND as _MIND
-check("переписка: живой продавец (chat_conscience.CHAT_MIND) — во всех трёх мессенджерах",
-      _src.count("+ chat_sales_rule") == 3 and "CHAT_MIND" in _src
-      and "Вопросов в сообщении ноль или один" in _MIND and "не пересказывай его слова" in _MIND)
-check("разбор звонка: просьба о менеджере/встрече → notify_owner_handoff (входящий и исходящий)",
-      _src.count("+ call_handoff_rule") == 2 and "ЧЕЛОВЕК / ВСТРЕЧА" in _src)
+# Правила переписки и разбора звонка проверяются сборкой настоящего события: test_chat_prompt.py
 check("касание оживления: своё событие «клиент замолчал», не «дожим после КП»",
       'followup_kind == "reengage"' in _src and "КЛИЕНТ ЗАМОЛЧАЛ В ПЕРЕПИСКЕ" in _src)
 
@@ -183,8 +178,9 @@ check("GPT-Live: нет «спроси, интересно ли дальше»",
 from backend.services import agent_orchestrator as ao
 check("followup_outbound — не звонок", not ao.is_voice_direction("followup_outbound"))
 src = open(ao.__file__, encoding="utf-8").read()
-check("промпт: success только после согласия + ссылка на регистрацию",
-      "клиент согласился подключаться → отправь ему ссылку на регистрацию" in src)
+from backend.core.pipeline_stages import stage_from_decision
+check("«Успех» не ставится сам по итогу разбора — только явно (агент/владелец)",
+      stage_from_decision("SUCCESS", "active") is None)
 from backend.models.agent_call import AgentCall
 ac = AgentCall(postcall_log={"call_direction": "followup_outbound", "channel": "instagram"})
 check("касание видно в истории как сообщение канала", ac._resolve_channel() == "instagram")
@@ -196,8 +192,8 @@ src_tools = open(at.__file__, encoding="utf-8").read()
 check("add_contact_phone умеет use_for_whatsapp", '"use_for_whatsapp"' in src_tools and 'mem["whatsapp_phone"] = digits' in src_tools)
 check("whatsapp_send_message идёт на «номер для WhatsApp» карточки, а не в старый чат",
       'pref_raw = phone_arg or mem.get("whatsapp_phone")' in src_tools)
-check("промпт разбора: ДРУГОЙ НОМЕР → add_contact_phone(use_for_whatsapp) и сразу отправить",
-      "ДРУГОЙ НОМЕР" in src and "use_for_whatsapp=true" in src)
+check("промпт разбора звонка: другой номер → сначала add_contact_phone (use_for_whatsapp), потом отправка",
+      "сначала add_contact_phone (use_for_whatsapp" in src)
 
 print(f"\n{'OK' if not failures else 'FAILED'}: {failures} failures")
 sys.exit(1 if failures else 0)

@@ -122,7 +122,8 @@ check("clean: обычное тире между словами", clean_client_t
 
 # ── блок времени: клиенту без часового пояса ────────────────────────────────
 tb = build_time_block(round_to_minutes=0)
-check("time block: клиенту без «(Бишкек)»", "КЛИЕНТУ" in tb and "Никогда не" in tb and "СЕГОДНЯ" in tb)
+check("time block: клиенту без часового пояса, «после 18» днём = сегодня",
+      "клиенту часовой пояс не пиши" in tb and "сегодня" in tb and "(Бишкек)" in tb)
 check("time block: «ВСЕГДА … (Бишкек)» для пользователя убрано", "Пользователю ВСЕГДА" not in tb)
 
 # ── недозвон, разминувшийся с сообщением клиента ────────────────────────────
@@ -212,9 +213,11 @@ check("demo: ready_to_connect — разрешено", cc.handoff_refusal(demo, 
 human = demo + [msg("inbound", "Лучше пусть менеджер позвонит", 0)]
 check("demo: клиент прямо просит менеджера — разрешено", cc.handoff_refusal(human, "requested_human", True) is None)
 blk = cc.situation_block(demo, NOW, can_call=True)
-check("demo: в разборе «ты МОЖЕШЬ сам позвонить»", "МОЖЕШЬ сам позвонить" in blk, blk)
+check("demo: в разборе «можешь сам» → звонишь (trigger_immediate_call / create_agent_task)",
+      "можешь сам" in blk and "trigger_immediate_call" in blk and "create_agent_task" in blk, blk)
 blk = cc.situation_block(demo, NOW, can_call=False, call_reason="у клиента нет номера O!")
-check("demo: в разборе «не можешь» с причиной", "не можешь" in blk and "O!" in blk, blk)
+check("demo: в разборе «не можешь» с причиной → номер из контактов/базы и передача владельцу",
+      "не можешь" in blk and "O!" in blk and "notify_owner_handoff" in blk and "номер" in blk, blk)
 
 user_full = NS(agent_mode=lambda: "full")
 user_start = NS(agent_mode=lambda: "reactive")

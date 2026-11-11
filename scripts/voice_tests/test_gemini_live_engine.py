@@ -389,8 +389,9 @@ check("Gemini: язык карточки — язык приветствия, д
       "Начни на кыргызском языке" in _ln and "держись его" in _ln and "целой фразой" in _ln and "«алло»" in _ln
       and "плохо владеешь" in _ln and "меняй язык вместе с ним" not in _ln and vh.language_note("") == "")
 _pc = open(os.path.join(ROOT, "backend/services/agent_prompts.py"), encoding="utf-8").read()
-check("правило языка Gemini не противоречит промпту звонков агента (оба: держись приветствия, не меняй из-за «алло»)",
-      "держись его" in _pc and "короткого «алло»" in _pc and "короткого «алло»" in _ln)
+from backend.services.agent_prompts import VOICE_AGENT_PROMPT_BASE as _VB
+check("правило языка — в одном месте (правила голоса), база промпта звонка его не дублирует",
+      "короткого «алло»" in _ln and "язык" not in _VB.lower())
 check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
 check("Gemini: без правил про бэкенд делегирования GPT",
       "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
@@ -401,8 +402,8 @@ _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding
 check("GPT-Live: произношение носителя (ударения, редукция, без английского акцента) — в самом начале инструкций голоса",
       "VOICE_PRONUNCIATION_HEAD + VOICE_CONVERSATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
       and "native Russian speaker" in lc.VOICE_PRONUNCIATION_HEAD and "speak it until the end" in lc.VOICE_PRONUNCIATION_HEAD)
-check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
-      "до конца звонка" in _pc and "не додумывай" in _pc)
+check("промпт звонков агента: факты — только из инструкции, знаний и поиска; без SMS и custom_greeting",
+      "не додумывай" in _VB and "send_sms" not in _VB and "custom_greeting" not in _VB)
 check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
 
 # 07.11.2026 (звонки 078a6ed3, 5bf12c2d): агент пересказывал клиента, повторял свой питч, спрашивал разрешения

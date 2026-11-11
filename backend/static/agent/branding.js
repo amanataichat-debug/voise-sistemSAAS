@@ -85,8 +85,8 @@ function renderBranding(){
     </div>
 
     <div class="form-group">
-      <label>Контакты в подвале</label>
-      <input type="text" id="brand-contacts-input" maxlength="500" placeholder="сайт · телефон · почта"
+      <label>Контакты компании (сайт, телефон)</label>
+      <input type="text" id="brand-contacts-input" maxlength="500" placeholder="voksyai.online · +996 700 000 000"
              value="${esc(s.contacts || '')}" onchange="saveBranding()">
       <div class="form-hint">Одной строкой — клиент увидит их внизу каждой страницы документа.</div>
     </div>`;

@@ -547,7 +547,6 @@ def _check_assistant_keys(assistant_type: str, current_user: User):
 # создании базы знаний — см. _voice_sync_kb_functions.
 def _default_voice_functions():
     return [
-        {"name": "send_sms", "description": "Отправить SMS клиенту во время звонка (адрес, ссылка, код, реквизиты)."},
         {"name": "hangup_call", "description": "Завершить телефонный звонок, когда разговор окончен или по просьбе клиента."},
     ]
 
@@ -649,7 +648,7 @@ def _create_voice_assistant(assistant_type: str, name: str, user_id, db,
             live_voice=_valid_live_voice(eleven.get("eleven_live_voice")),
             llm_model=DEFAULT_ELEVEN_LLM_MODEL,
             # send_sms без транспорта (Voximplant выключен) — голосу Eleven не даём
-            functions=[f for f in _default_voice_functions() if f["name"] != "send_sms"],
+            functions=_default_voice_functions(),
         )
     else:
         raise HTTPException(status_code=400, detail="invalid_assistant_type")

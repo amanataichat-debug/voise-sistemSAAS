@@ -97,7 +97,7 @@ contact.last_called_at = real_called
 
 src_prompt = open(ao.__file__, encoding="utf-8").read()
 check("промпт PostCall: просьба клиента о времени → РОВНО на это время, в том числе сегодня",
-      "РОВНО на это время, в том числе СЕГОДНЯ" in src_prompt)
+      "ровно на это время" in src_prompt and "сегодня тоже можно" in src_prompt)
 
 # --- строки сообщений помечены каналом сразу при создании ---
 src = open(ao.__file__, encoding="utf-8").read()
