@@ -13,6 +13,11 @@ from backend.functions.base import FunctionBase
 
 logger = get_logger(__name__)
 
+# send_sms: транспорта SMS нет (Voximplant отключён) — модели функцию не даём, даже если она осталась
+# включённой в старой карточке.
+DISABLED_FUNCTIONS = {"send_sms"}
+
+
 class FunctionRegistry:
     """Реестр функций для управления модульными функциями"""
     
@@ -64,9 +69,9 @@ class FunctionRegistry:
             # Ищем функцию сначала по оригинальному имени, потом по нормализованному
             function_class = self._functions.get(name) or self._functions.get(normalized_name)
             
-            if function_class:
+            if function_class and normalized_name not in DISABLED_FUNCTIONS and name not in DISABLED_FUNCTIONS:
                 result.append(function_class.get_definition())
-                
+
         return result
         
     async def execute_function(

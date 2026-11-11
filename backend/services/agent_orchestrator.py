@@ -267,6 +267,18 @@ MESSAGE_DIRECTIONS = frozenset({
 # Сколько ждать окончания прошлого разбора того же клиента (services/contact_lease.py).
 LEASE_WAIT_SECONDS = 150
 
+# Входящие сообщения клиента, на которые должен уйти ответ (перенос из 1111-clean-system).
+REPLY_EXPECTED_DIRECTIONS = frozenset({"whatsapp_inbound", "telegram_inbound", "instagram_inbound"})
+CLIENT_REPLY_TOOLS = frozenset({
+    "telegram_send_message", "telegram_send_file", "whatsapp_send_message", "whatsapp_send_file",
+    "instagram_send_message", "instagram_send_file", "send_voice_message", "send_proposal",
+})
+REPLY_NUDGE = (
+    "Клиент написал, а ответ ему не отправлен. Отправь ответ сейчас инструментом отправки того канала, "
+    "где он написал. Если отвечать действительно не нужно (он просто поблагодарил после завершённого "
+    "разговора, или это спам), ничего не вызывай."
+)
+
 
 def is_voice_direction(call_direction) -> bool:
     """True — событие PostCall было голосовым звонком, а не сообщением."""
@@ -1410,7 +1422,7 @@ class PostCallOrchestrator:
                 "   проявил интерес, договорились о следующем шаге) — ЗАПЛАНИРУЙ его\n"
                 "   через create_agent_task на подходящее время (учтутся рабочие часы).\n"
                 "   Сам факт SMS НЕ требует обязательного звонка.\n"
-                "   Если уместно ответить клиенту текстом — отправь SMS через send_sms."
+                "   SMS-ответ недоступен (нет SMS-провайдера): есть мессенджер клиента — ответь там."
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО SMS"
             status_label = "СТАТУС"
@@ -1915,6 +1927,9 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
             stage_moved_by_tool = False
             max_iterations = 10
             iteration = 0
+            # Клиент написал, а ответа нет — одна напоминалка модели (перенос из 1111-clean-system).
+            expects_reply = (call_direction or "").lower() in REPLY_EXPECTED_DIRECTIONS
+            reply_nudged = False
 
             while iteration < max_iterations:
                 iteration += 1
@@ -1931,6 +1946,13 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                 tool_calls = msg.get("tool_calls") or []
 
                 if not tool_calls:
+                    spam_blocked = any(t.get("tool") == "block_spam_contact" for t in tool_calls_log)
+                    if (expects_reply and not message_sent and not reply_nudged and not spam_blocked
+                            and iteration < max_iterations):
+                        reply_nudged = True
+                        messages.append({"role": "assistant", "content": msg.get("content") or ""})
+                        messages.append({"role": "user", "content": REPLY_NUDGE})
+                        continue
                     break
 
                 # Append assistant message with tool_calls to history
@@ -1972,9 +1994,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                         except Exception:
                             pass
 
-                    if tool_name in ("telegram_send_message", "telegram_send_file",
-                                     "whatsapp_send_message", "whatsapp_send_file",
-                                     "instagram_send_message", "instagram_send_file"):
+                    if tool_name in CLIENT_REPLY_TOOLS:
                         try:
                             if json.loads(result_str).get("ok"):
                                 message_sent = True
@@ -2026,6 +2046,16 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                 # Для UI: было ли сообщение реально отправлено (оркестратор мог
                 # осознанно не отправлять, если договорённость уже закрыта).
                 agent_call.postcall_log["message_sent"] = message_sent
+            if expects_reply:
+                agent_call.postcall_log["reply_sent"] = message_sent
+                spam_blocked = any(t.get("tool") == "block_spam_contact" for t in tool_calls_log)
+                if not message_sent and not spam_blocked:
+                    agent_call.postcall_log["warning"] = "no_reply_to_client"
+                    logger.warning(
+                        f"[AGENT-POSTCALL] Клиент написал ({call_direction}), а ответ не ушёл: "
+                        f"agent_call={agent_call.id}, contact={agent_contact.id}, "
+                        f"инструменты={[t.get('tool') for t in tool_calls_log]}"
+                    )
             if _prev_channel:
                 agent_call.postcall_log["channel"] = _prev_channel
 

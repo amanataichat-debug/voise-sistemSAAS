@@ -162,6 +162,11 @@ from backend.services.agent_knowledge_service import KB_MIN_SCORE  # noqa: E402
 
 
 # Отправка SMS клиенту с номера агента (Voximplant). Доступна в чате и в post-call.
+# SMS: транспорта нет (Voximplant отключён). Инструмент не входит в наборы модели (AGENT_CHAT_TOOLS,
+# AGENT_POSTCALL_TOOLS); вызов из старой истории получает понятный отказ.
+SMS_UNAVAILABLE = ("SMS сейчас не отправляются: у платформы нет SMS-провайдера. Напиши клиенту в "
+                   "мессенджер (WhatsApp, Telegram, Instagram) или сообщи владельцу.")
+
 SEND_SMS_TOOL = {
     "type": "function",
     "name": "send_sms",
@@ -3066,7 +3071,6 @@ AGENT_CHAT_TOOLS = [
     MOVE_CONTACT_STAGE_TOOL,
     SEARCH_KNOWLEDGE_BASE_TOOL,
     FIND_PRODUCTS_TOOL,
-    SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
     SEND_TELEGRAM_NOTIFICATION_TOOL,
     {
@@ -3194,7 +3198,6 @@ AGENT_POSTCALL_TOOLS = [
     MOVE_CONTACT_STAGE_TOOL,
     SEARCH_KNOWLEDGE_BASE_TOOL,
     FIND_PRODUCTS_TOOL,
-    SEND_SMS_TOOL,
     SEND_WEBHOOK_TOOL,
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
@@ -5502,10 +5505,9 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
         elif tool_name == "send_telegram_notification":
             result = await fn_send_telegram_notification(tool_args, context.get("agent_config"), db)
         elif tool_name == "send_sms":
-            agent_config = context.get("agent_config")
-            if agent_config is None and agent_config_id:
-                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
-            result = await fn_send_sms(tool_args, user_id, agent_config, db)
+            # Транспорта SMS нет (Voximplant отключён): инструмента у модели больше нет,
+            # вызов из старой истории получает понятный отказ (перенос из 1111-clean-system).
+            result = {"success": False, "error": "sms_unavailable", "message": SMS_UNAVAILABLE}
         elif tool_name == "search_contacts":
             result = await fn_search_contacts(tool_args, user_id, agent_config_id, db)
         elif tool_name == "get_contact_details":
