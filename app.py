@@ -483,6 +483,26 @@ except Exception as e:
 # DATABASE INITIALIZATION FUNCTIONS
 # ============================================================================
 
+def background_jobs():
+    """
+    Фоновые циклы воркера (запускаются в отдельном потоке, backend/core/background_loop.py).
+    Список вынесен в функцию, чтобы тест запуска (scripts/voice_tests/test_boot_jobs.py) проверял
+    ровно то, что запускает сервер: 11.11.2026 планировщик задач падал NameError при старте,
+    и ни один тест этого не видел.
+    """
+    from backend.services.weekly_jobs import start_weekly_jobs_loop
+    from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
+    return [
+        start_subscription_checker,                                  # раз в час
+        lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
+        start_subscription_blocker,                                  # каждые 5 мин
+        start_telegram_user_poller,                                  # личный Telegram агента (TG_POLL_SECONDS)
+        start_instagram_poller,                                      # Instagram DM агента
+        start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
+        wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
+    ]
+
+
 def run_migrations():
     """Run database migrations"""
     try:
@@ -493,6 +513,7 @@ def run_migrations():
             return
             
         alembic_cfg = AlembicConfig(alembic_ini_path)
+        alembic_cfg.attributes["skip_logging_config"] = True  # не трогать логгеры приложения
         alembic_command.upgrade(alembic_cfg, "head")
         logger.info("✅ Database migrations applied successfully")
     except Exception as e:
@@ -3104,17 +3125,7 @@ async def startup_event():
             # (backend/core/background_loop.py): их синхронные запросы к БД
             # больше не останавливают звук звонков в основном loop'е воркера.
             from backend.core.background_loop import start_background_jobs
-            from backend.services.weekly_jobs import start_weekly_jobs_loop
-            from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
-            start_background_jobs([
-                start_subscription_checker,                                  # раз в час
-                lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
-                start_subscription_blocker,                                  # каждые 5 мин
-                start_telegram_user_poller,                                  # личный Telegram агента (TG_POLL_SECONDS)
-                start_instagram_poller,                                      # Instagram DM агента
-                start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
-                wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
-            ])
+            start_background_jobs(background_jobs())
             logger.info("✅ Background jobs started in a separate thread: subscription checker, "
                         "task scheduler (30s), subscription blocker (5m), Telegram poller (TG_POLL_SECONDS), Instagram poller (IG_POLL_SECONDS), "
                         "weekly jobs (Sun 21:00 report + Mon 10:00 nurture, Bishkek)")

@@ -9,16 +9,21 @@ from alembic import context
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backend.models.base import Base
+# config первым: пакет backend.core целиком загружается раньше моделей (иначе циклический импорт
+# backend.models.file → backend.core → task_scheduler → services → backend.models.file при `alembic upgrade`).
 from backend.core.config import settings
+from backend.models.base import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Логи alembic.ini — только при запуске из командной строки. Из app.py (run_migrations) логирование
+# уже настроено: fileConfig с параметрами по умолчанию ОТКЛЮЧАЛ все логгеры приложения
+# (disable_existing_loggers=True) — в воркере, который делал миграции, пропадали WARNING/ERROR
+# в логах Render и в «Логах звонка».
+if config.config_file_name is not None and not config.attributes.get("skip_logging_config"):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

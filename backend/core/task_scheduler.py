@@ -842,6 +842,11 @@ class TaskScheduler:
             except Exception as commit_error:
                 logger.error(f"[TASK-SCHEDULER] Failed to update task status: {commit_error}")
     
+# Единственный экземпляр планировщика в процессе (строку стёрли вместе с Voximplant 11.11.2026 —
+# планировщик падал NameError при старте и не выполнял ни одной задачи).
+_task_scheduler: Optional[TaskScheduler] = None
+
+
 async def start_task_scheduler(check_interval: int = 30):
     """
     Запуск планировщика задач.
