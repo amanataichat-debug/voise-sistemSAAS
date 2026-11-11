@@ -57,7 +57,9 @@ check("без db → прежняя логика (отказ)", r.get("error") =
 
 # --- планировщик: кулдаун 3 ч не держит звонок после сообщения ---
 sched = TaskScheduler.__new__(TaskScheduler)
-naive_now = now_utc.replace(tzinfo=None)
+# Полдень по Бишкеку: проверки кулдауна не должны зависеть от того, во сколько запущен тест
+# (вечером окно звонков 9–20 само переносило звонок и тест падал).
+naive_now = now_utc.replace(hour=6, minute=0, second=0, microsecond=0, tzinfo=None)
 acp.voice_calls_since = lambda *a, **k: []
 check("кулдаун: переписка → звонок сейчас", sched._dial_gate(contact, naive_now, None, db=object()) is None)
 acp.voice_calls_since = lambda *a, **k: [types.SimpleNamespace(answered_at=None, direction="outbound")]
@@ -84,7 +86,7 @@ check("статистику не прочитать → прежний отка�
 from backend.core import task_scheduler as ts
 answered = types.SimpleNamespace(answered_at=naive_now, direction="outbound")
 missed_row = types.SimpleNamespace(answered_at=None, direction="outbound")
-contact.last_called_at = (now_utc - timedelta(minutes=20)).replace(tzinfo=None)
+contact.last_called_at = naive_now - timedelta(minutes=20)
 acp.voice_calls_since = lambda *a, **k: [answered]
 check("после разговора 20 мин назад → звонок сейчас", sched._dial_gate(contact, naive_now, None, db=object()) is None)
 acp.voice_calls_since = lambda *a, **k: [missed_row]

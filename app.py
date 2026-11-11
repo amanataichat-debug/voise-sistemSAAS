@@ -1847,6 +1847,8 @@ def ensure_chat_v2_columns():
             # Второй номер / номер для звонков (ветка 2110-client-memory).
             "ADD COLUMN IF NOT EXISTS alt_phones TEXT",
             "ADD COLUMN IF NOT EXISTS call_phone VARCHAR(50)",
+            # Один разбор на клиента за раз (services/contact_lease.py, ветка 1111-clean-system).
+            "ADD COLUMN IF NOT EXISTS ai_busy_until TIMESTAMP",
         ],
         "agent_whatsapp_accounts": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
@@ -3104,6 +3106,7 @@ async def startup_event():
             # больше не останавливают звук звонков в основном loop'е воркера.
             from backend.core.background_loop import start_background_jobs
             from backend.services.weekly_jobs import start_weekly_jobs_loop
+            from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
             start_background_jobs([
                 start_subscription_checker,                                  # раз в час
                 lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
@@ -3111,6 +3114,7 @@ async def startup_event():
                 lambda: start_telegram_user_poller(check_interval=60),       # личный Telegram агента
                 start_instagram_poller,                                      # Instagram DM агента
                 start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
+                wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
             ])
             logger.info("✅ Background jobs started in a separate thread: subscription checker, "
                         "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s), "
