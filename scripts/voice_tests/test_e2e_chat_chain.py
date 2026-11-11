@@ -239,6 +239,83 @@ from backend.services.weekly_jobs import _collect_weekly_stats  # noqa: E402
 wk = _collect_weekly_stats(agent, db)
 check("недельный отчёт: 0 звонков", wk.get("calls_total", 0) == 0, wk)
 
+# 5) знания, контакты компании, инструкции, файлы, КП — как их заполняет владелец в кабинете
+from backend.services import r2_storage as _r2  # noqa: E402
+_store = {}
+
+
+async def _put(key, data, content_type="application/octet-stream"):
+    _store[key] = data
+    return True
+
+
+async def _get(key):
+    return _store.get(key)
+
+_r2.R2StorageService.objects_available = classmethod(lambda cls: True)
+_r2.R2StorageService.put_object = classmethod(lambda cls, k, d, ct="application/octet-stream": _put(k, d, ct))
+_r2.R2StorageService.get_object = classmethod(lambda cls, k: _get(k))
+_r2.R2StorageService.presigned_url = classmethod(lambda cls, k, expires_seconds=3600, filename=None: "https://r2.test/" + k)
+media_sent = []
+
+
+async def fake_send_media(instance, to, *, data_b64, mime, filename=None, caption=None, **k):
+    media_sent.append((filename, mime, len(data_b64)))
+    return {"ok": True, "id": f"MED{len(media_sent)}", "key": {"id": f"MED{len(media_sent)}"}}
+
+wa.send_media = fake_send_media
+os.environ["KB_VECTOR_ENABLED"] = "0"
+r = client.post("/api/agent/knowledge", headers=H, json={"kind": "qa", "title": "Есть ли рассрочка?",
+                                                         "body": "Да, рассрочка на 3 месяца без переплаты."})
+check("кабинет: вопрос-ответ добавлен в базу знаний", r.status_code < 400, r.text[:200])
+r = client.put("/api/agent/", headers=H, json={"brand_contacts": "Сайт example.kg, телефон +996 555 000 111",
+                                               "additional_instructions": "Ты Анри. Цель — записать на демо."})
+check("кабинет: контакты компании и инструкция сохранены", r.status_code < 400, r.text[:200])
+r = client.post("/api/agent/files", headers=H, files={"file": ("Прайс.pdf", b"%PDF-1.4 test price", "application/pdf")},
+                data={"title": "Прайс", "description": "отправлять, когда спрашивают цены"})
+check("кабинет: прайс загружен в библиотеку", r.status_code < 400, r.text[:200])
+file_id = (r.json().get("file") or r.json()).get("id") if r.status_code < 400 else None
+
+seen_prompts.clear()
+tool_results = []
+_orig_completion = fake_completion
+
+
+async def capture_completion(self, model=None, messages=None, tools=None, **k):
+    for m in messages or []:
+        if isinstance(m, dict) and m.get("role") == "tool" and (m.get("content") or "") not in tool_results:
+            tool_results.append(m.get("content") or "")
+    return await _orig_completion(self, model=model, messages=messages, tools=tools, **k)
+
+orc.OpenRouterClient.chat_completion = capture_completion
+script[:] = [
+    ([tool("search_knowledge_base", query="рассрочка")], ""),
+    ([tool("list_agent_files")], ""),
+    ([tool("whatsapp_send_message", agent_contact_id="__CID__", text="Да, рассрочка на 3 месяца без переплаты. Прайс пришлю."),
+      tool("whatsapp_send_file", agent_contact_id="__CID__", file_id=str(file_id))], ""),
+    ([tool("create_document", title="КП для Нурлана", content="# Задача\nКафе, 2 филиала.\n# Предложение\n- **Бот** — отвечает ночью",
+           agent_contact_id="__CID__", table=[["Тариф", "Цена"], ["Старт", "7 500 сом"]])], ""),
+    (None, "готово"),
+]
+webhook("IN3", "А рассрочка есть? И пришлите прайс")
+check("ответ про рассрочку ушёл", wait_for(lambda: any("рассрочка" in x for x in sent)), sent)
+sysmsg = json.dumps(seen_prompts[0][0], ensure_ascii=False) if seen_prompts else ""
+check("в промпте: знания из базы (вопрос-ответ)", "рассрочка на 3 месяца" in sysmsg)
+check("в промпте: контакты компании и инструкция владельца", "example.kg" in sysmsg and "записать на демо" in sysmsg)
+check("в промпте: «О компании» (Кто мы)", "Я Анри" in sysmsg)
+wait_for(lambda: len(tool_results) >= 4, 20)
+check("поиск по базе знаний нашёл ответ", any("3 месяца" in t for t in tool_results), tool_results[:1])
+check("библиотека файлов видна агенту", any("Прайс" in t for t in tool_results[1:2]), tool_results[1:2])
+check("прайс отправлен клиенту файлом в WhatsApp", wait_for(lambda: any(m[0] and "Прайс" in m[0] for m in media_sent), 10),
+      media_sent)
+_kp = lambda: [t for t in tool_results if '"ok": true' in t and "КП для Нурлана" in t]
+check("КП собрано в PDF", wait_for(lambda: bool(_kp()), 20), (_kp() or tool_results[-1:])[0][:200])
+event_text = next((json.dumps(m, ensure_ascii=False) for m in (seen_prompts[0] if seen_prompts else [])
+                   if "СОБЫТИЕ" in str(m.get("content") if isinstance(m, dict) else "")), "")
+check("событие переписки без мусора «ДЛИТЕЛЬНОСТЬ 0s / СТАТУС answered»",
+      "СОБЫТИЕ" in event_text and "ДЛИТЕЛЬНОСТЬ" not in event_text and "СТАТУС: answered" not in event_text,
+      event_text[:200])
+
 db.close()
 print(f"ПРОВАЛОВ: {failures}")
 sys.exit(1 if failures else 0)

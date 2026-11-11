@@ -112,6 +112,24 @@ check("планировщик поставил звонок в очередь SI
 check("звонок на номер клиента с номера агента", sip is not None and sip.to_number.endswith("700111333")
       and (sip.did or "").endswith("700900900"), (getattr(sip, "to_number", None), getattr(sip, "did", None)))
 check("задача в работе, повторно не берётся", db.get(Task, task.id).status == TaskStatus.PENDING)
+# --- что услышит голосовой агент на этом исходящем: память о клиенте, инструкция, знания (без PreCall) ---
+from backend.services.sip_gateway_service import SipGatewayService  # noqa: E402
+from backend.services import agent_voice_context  # noqa: E402
+from backend.models.agent_knowledge import AgentKnowledgeEntry  # noqa: E402
+contact.memory = {"summary": "Спрашивал про рассрочку, у него кафе", "niche": "кафе"}
+agent.voice_additional_instructions = "Ты Анри. Цель звонка — записать на демо."
+db.add(AgentKnowledgeEntry(agent_config_id=agent.id, user_id=boss.id, kind="qa", title="Есть ли рассрочка?",
+                           body="Да, на 3 месяца без переплаты.", is_active=True))
+db.commit()
+mem_block = SipGatewayService.inbound_known_contact_block(sip, agent, db)
+check("исходящий: карточка и память клиента идут агенту из кода (не только через PreCall)",
+      "Нурлан" in mem_block and "рассрочку" in mem_block and "Ты звонишь" in mem_block, mem_block[:200])
+from backend.models.eleven_assistant import ElevenAssistantConfig  # noqa: E402
+asst = db.get(ElevenAssistantConfig, agent.eleven_assistant_id)
+call_prompt, _st = agent_voice_context.build_call_system_prompt(
+    db, asst, agent, call_context=SipGatewayService.call_context_text(sip) + "\n\n" + mem_block)
+check("промпт звонка: инструкция для звонков, база знаний, цель задачи и память клиента",
+      all(k in call_prompt for k in ("записать на демо", "на 3 месяца без переплаты", "Нурлан", "кафе")), len(call_prompt))
 asyncio.run(TaskScheduler().check_and_execute_tasks())
 check("второй тик не набирает клиента второй раз", db.query(SipCall).filter(SipCall.task_id == task.id).count() == 1)
 

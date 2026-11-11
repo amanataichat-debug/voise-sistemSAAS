@@ -1233,7 +1233,7 @@ class PostCallOrchestrator:
 1. В ЭТОМ ЖЕ ходе ответь клиенту: {send_tool}. Несколько его сообщений подряд — один ответ на всё.
    В том же ходе параллельно — update_contact_memory (узнал имя или компанию — ещё update_contact_info).
 2. По ситуации: просит прайс, каталог, документ — list_agent_files, затем {file_tool} (нет файла —
-   create_document); хочет созвон — по строке про звонок в разборе ниже; договорились списаться позже —
+   create_document); хочет созвон — по строке про звонок в разборе выше; договорились списаться позже —
    отложенное сообщение или задача на названное время.
 3. Этап воронки — только по реальному поводу. Клиент согласился и получил то, что нужно для покупки по
    правилам владельца, — «успех»."""
@@ -1304,17 +1304,18 @@ class PostCallOrchestrator:
             f"; WhatsApp пишем на +{(agent_contact.memory or {}).get('whatsapp_phone')}"
             if isinstance(agent_contact.memory, dict) and agent_contact.memory.get("whatsapp_phone") else ""
         )
+        # Для переписки статус и длительность «звонка» — шум (всегда answered / 0s); попытки дозвона — тоже.
+        is_message_event = not is_voice_direction(call_direction)
+        attempts_line = "" if is_message_event else f"\nВСЕГО ПОПЫТОК ЗВОНКА: {agent_contact.attempts_count or 0}"
+        status_lines = "" if is_message_event else f"\n{status_label}: {call_status}\nДЛИТЕЛЬНОСТЬ: {duration_seconds}s"
         return f"""{direction_line}
 КОНТАКТ: {agent_contact.name or 'Неизвестный'} ({phones_line})
 КОМПАНИЯ: {agent_contact.company or 'Не указана'}
-ПАМЯТЬ О КОНТАКТЕ: {memory_json}
-ВСЕГО ПОПЫТОК: {agent_contact.attempts_count or 0}{timeline or ''}
+ПАМЯТЬ О КОНТАКТЕ: {memory_json}{attempts_line}{timeline or ''}
 
 {transcript_label}:
 {transcript}
-
-{status_label}: {call_status}
-ДЛИТЕЛЬНОСТЬ: {duration_seconds}s
+{status_lines}
 AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
 
 {action_block}"""
