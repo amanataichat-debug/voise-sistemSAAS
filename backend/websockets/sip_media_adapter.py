@@ -63,6 +63,16 @@ INBOUND_BATCH_MS = {"openai": 20, "openai_g711": 20, "gemini": 100, "fish": 20, 
 OUTBOUND_CUSHION_MS = {"openai": 200, "openai_g711": 200}
 # Пауза в потоке аудио, после которой следующая порция считается новой репликой и снова копит запас
 OUTBOUND_IDLE_RESET_SEC = 0.6
+# Адаптивный запас (ветка 1111-clean-system, жалоба «запинки, звук то пропадает»): GPT-Live отдаёт речь
+# ровно в реальном темпе, и при задержке сети посреди фразы очередь моста пустеет — мост вставляет 20-мс
+# кадры цифровой тишины прямо в слово (слышно как обрыв и щелчок). Адаптер оценивает очередь моста
+# (отправлено − проиграно по часам); если она ушла в минус, это провал: запас на следующие реплики растёт на
+# OUTBOUND_CUSHION_STEP_MS (до OUTBOUND_CUSHION_MAX_MS), а текущая фраза перед продолжением добирает
+# OUTBOUND_REBUFFER_MS — один короткий провал вместо череды рывков. Число провалов — в «Логи звонка».
+OUTBOUND_CUSHION_STEP_MS = 100
+OUTBOUND_CUSHION_MAX_MS = 600
+OUTBOUND_REBUFFER_MS = 120
+OUTBOUND_UNDERRUN_TOLERANCE_SEC = 0.04
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
@@ -206,6 +216,11 @@ class HandlerSocket:
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
         self._cushion_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
+        self._cushion_max = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MAX_MS / 1000)
+        self._hold_target = self._cushion_bytes
+        self._stream_t0 = 0.0           # когда мосту ушло начало текущего потока
+        self._stream_sent = 0           # сколько байт этого потока отдано мосту
+        self.underruns = 0              # провалы очереди моста посреди фразы
         self._out_hold = bytearray()
         self._out_streaming = False
         self._out_last_at = 0.0
@@ -398,6 +413,7 @@ class HandlerSocket:
             self._voice = PhoneVoice()
             self._out_hold.clear()
             self._out_streaming = False
+            self._hold_target = self._cushion_bytes
             # Хендлер ждёт от клиента подтверждение остановки воспроизведения, как от браузера
             await self._queue.put({"type": "websocket.receive", "text": json.dumps({"type": "audio_playback.stopped"})})
             return
@@ -450,12 +466,16 @@ class HandlerSocket:
         now = time.time()
         if self._out_streaming and now - self._out_last_at > OUTBOUND_IDLE_RESET_SEC:
             self._out_streaming = False  # пауза в речи: следующая реплика снова копит запас
+            self._hold_target = self._cushion_bytes
+        elif self._out_streaming and self._stream_queued(now) < -OUTBOUND_UNDERRUN_TOLERANCE_SEC:
+            self._on_underrun(now)
         self._out_last_at = now
         if self._out_streaming:
+            self._stream_sent += len(pcm)
             await self._send_bytes(pcm)
             return
         self._out_hold.extend(pcm)
-        if len(self._out_hold) >= self._cushion_bytes:
+        if len(self._out_hold) >= self._hold_target:
             await self._flush_hold()
         elif self._cushion_task is None or self._cushion_task.done():
             # Короткая реплика («да», «угу») может быть меньше запаса — не держать её дольше запаса
@@ -463,7 +483,7 @@ class HandlerSocket:
 
     async def _flush_hold_later(self) -> None:
         try:
-            await asyncio.sleep(self._cushion_bytes / (PHONE_RATE * 2))
+            await asyncio.sleep(self._hold_target / (PHONE_RATE * 2))
             if not self._out_streaming and self._out_hold:
                 await self._flush_hold()
         except asyncio.CancelledError:
@@ -473,8 +493,30 @@ class HandlerSocket:
         self._out_streaming = True
         data = bytes(self._out_hold)
         self._out_hold.clear()
+        self._stream_t0 = time.time()
+        self._stream_sent = len(data)
         if data:
             await self._send_bytes(data)
+
+    def _stream_queued(self, now: float) -> float:
+        """Оценка очереди моста, с: отдано в этом потоке минус проиграно с его начала (мост играет 1:1)."""
+        return self._stream_sent / (PHONE_RATE * 2) - (now - self._stream_t0)
+
+    def _on_underrun(self, now: float) -> None:
+        """Очередь моста опустела посреди фразы: растим запас и добираем немного перед продолжением."""
+        self.underruns += 1
+        self._cushion_bytes = min(self._cushion_max,
+                                  self._cushion_bytes + int(PHONE_RATE * 2 * OUTBOUND_CUSHION_STEP_MS / 1000))
+        self._hold_target = int(PHONE_RATE * 2 * OUTBOUND_REBUFFER_MS / 1000)
+        self._out_streaming = False
+        gap = -self._stream_queued(now)
+        logger.info(f"[SIP-MEDIA] call {self.call_id}: underrun #{self.underruns} ({gap:.2f}s без звука), "
+                    f"запас теперь {self._cushion_bytes / (PHONE_RATE * 2) * 1000:.0f} мс")
+        if self.underruns <= 5:
+            call_log = CallLogRecorder.current()
+            if call_log is not None:
+                call_log.add("sip", f"Звук агента прервался посреди фразы ({gap:.2f} с, сеть): запас увеличен до "
+                                    f"{self._cushion_bytes / (PHONE_RATE * 2) * 1000:.0f} мс")
 
     async def _send_bytes(self, pcm: bytes) -> None:
         if self.closed:
