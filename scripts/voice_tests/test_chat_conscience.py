@@ -195,5 +195,34 @@ asyncio.run(at.execute_tool("whatsapp_send_message", dict(args), ctx, NS(rollbac
 asyncio.run(at.execute_tool("whatsapp_send_message", dict(args), ctx, NS(rollback=lambda: None)))
 check("execute_tool: после двух отказов за разбор — отправляем", len(sent) == 2, sent)
 
+
+# ── «давайте созвонимся» → звонит сам, а не «передал менеджеру» (+996 507…) ──
+demo = [
+    msg("inbound", "И сколько стоит?", 8),
+    msg("outbound", "Можете проверить работу сами: +996 705 701 707. Хотите, я коротко объясню, "
+                    "как агент подключается к вашему бизнесу?", 7),
+    msg("inbound", "Супер, давайте созвонимся", 1),
+]
+check("demo: «Супер, давайте созвонимся» — согласие на звонок", cc.situation(demo, NOW).call_settled)
+r = cc.handoff_refusal(demo, "requested_human", True)
+check("demo: передача менеджеру вместо своего звонка — отказ", r and "trigger_immediate_call" in r, r)
+check("demo: reason=demo тоже отказ", cc.handoff_refusal(demo, "demo", True) is not None)
+check("demo: не может позвонить (не O!/Старт) — передача разрешена", cc.handoff_refusal(demo, "demo", False) is None)
+check("demo: ready_to_connect — разрешено", cc.handoff_refusal(demo, "ready_to_connect", True) is None)
+human = demo + [msg("inbound", "Лучше пусть менеджер позвонит", 0)]
+check("demo: клиент прямо просит менеджера — разрешено", cc.handoff_refusal(human, "requested_human", True) is None)
+blk = cc.situation_block(demo, NOW, can_call=True)
+check("demo: в разборе «ты МОЖЕШЬ сам позвонить»", "МОЖЕШЬ сам позвонить" in blk, blk)
+blk = cc.situation_block(demo, NOW, can_call=False, call_reason="у клиента нет номера O!")
+check("demo: в разборе «не можешь» с причиной", "не можешь" in blk and "O!" in blk, blk)
+
+user_full = NS(agent_mode=lambda: "full")
+user_start = NS(agent_mode=lambda: "reactive")
+o_contact = NS(phone="996507734002", alt_phones=None, call_phone=None)
+other = NS(phone="996555123456", alt_phones=None, call_phone=None)
+check("can_call: Profi + O! (0507) — может", at.agent_can_call_contact(None, user_full, o_contact)[0])
+check("can_call: Старт — не может", not at.agent_can_call_contact(None, user_start, o_contact)[0])
+check("can_call: Мегаком — не может", not at.agent_can_call_contact(None, user_full, other)[0])
+
 print(f"\n{'OK' if not failures else 'FAILED'}: {failures} провал(ов)")
 sys.exit(1 if failures else 0)

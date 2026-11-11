@@ -1167,13 +1167,17 @@ class PostCallOrchestrator:
             "   ВРЕМЯ» ниже. Ничего не отправляй раньше обещанного времени."
         )
 
+        # Созвон — работа агента, не менеджера (11.11.2026, +996 507…): правило велело «просит демо или
+        # просит позвонить — ОБЯЗАТЕЛЬНО передай владельцу», и на «давайте созвонимся» агент ответил
+        # «передал живому менеджеру», хотя сам мог позвонить на O!. Менеджер — только по прямой просьбе.
         handoff_rule = (
-            "\n   Если клиент готов подключиться, просит живого человека/демо, или\n"
-            "   дал номер и просит позвонить — ОБЯЗАТЕЛЬНО передай владельцу через\n"
-            "   notify_owner_handoff (reason + короткий summary; scheduled_at в ISO\n"
-            "   UTC, если клиент назвал удобное время). Обращение уйдёт владельцу в\n"
-            "   Telegram и появится у него в «Ближайшие задачи». Это НЕ заменяет\n"
-            "   ответ клиенту в том же канале."
+            "\n   СОЗВОН ДЕЛАЕШЬ ТЫ: хочет созвон, демо, «позвоните» — звонишь сам\n"
+            "   (trigger_immediate_call сейчас, create_agent_task на его время), если в разборе ниже\n"
+            "   написано, что ты можешь ему позвонить. Не передавай это менеджеру и не давай номер,\n"
+            "   чтобы он звонил сам. Владельцу через notify_owner_handoff (reason + короткий summary;\n"
+            "   scheduled_at в ISO UTC, если назвал время) — только если клиент прямо просит менеджера\n"
+            "   или живого человека, готов подключаться и платить, жалуется, или позвонить ему ты не\n"
+            "   можешь. Передача не заменяет ответ клиенту в том же канале."
         )
 
         # Звонок 07.11.2026 (5bf12c2d): клиент попросил встречу с представителем и звонок менеджера «в ближайшие
@@ -1525,8 +1529,17 @@ class PostCallOrchestrator:
                     from backend.services import telegram_user_service as _thread_svc
                 else:
                     from backend.services import whatsapp_service as _thread_svc
+                can_call, call_reason = None, ""
+                try:
+                    from backend.models.user import User as _User
+                    from backend.services.agent_tools import agent_can_call_contact
+                    _owner = db.query(_User).filter(_User.id == agent_call.user_id).first()
+                    can_call, call_reason = agent_can_call_contact(db, _owner, agent_contact)
+                except Exception as e:
+                    logger.warning(f"[POSTCALL] can-call check failed: {e}")
                 situation_text = chat_conscience.situation_block(
-                    _thread_svc.get_thread(db, agent_contact.id, limit=20))
+                    _thread_svc.get_thread(db, agent_contact.id, limit=20),
+                    can_call=can_call, call_reason=call_reason)
             except Exception as e:
                 logger.warning(f"[POSTCALL] chat situation failed: {e}")
                 try:
@@ -1796,6 +1809,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
             "agent_config": agent_config,  # ← v2.2: для тулзы send_telegram_notification
             "surface": "postcall",  # тариф Старт «только отвечает»: клиентский контур
             "current_contact_id": str(agent_call.agent_contact_id) if agent_call.agent_contact_id else None,
+            "call_direction": (call_direction or "outbound").lower(),
         }
 
         messages: List[Dict[str, Any]] = [
@@ -2056,6 +2070,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                 "agent_config": agent_config,  # ← v2.2: для тулзы send_telegram_notification
                 "surface": "postcall",  # тариф Старт «только отвечает»: клиентский контур
                 "current_contact_id": str(agent_call.agent_contact_id) if agent_call.agent_contact_id else None,
+                "call_direction": (call_direction or "outbound").lower(),
             }
 
             post_call_decision = None
