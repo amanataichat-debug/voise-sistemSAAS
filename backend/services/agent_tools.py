@@ -4,6 +4,7 @@ Two tool sets: AGENT_CHAT_TOOLS (user chat) and AGENT_POSTCALL_TOOLS (post-call 
 """
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -68,10 +69,8 @@ UPDATE_CONTACT_INFO_TOOL = {
     "type": "function",
     "name": "update_contact_info",
     "description": (
-        "Обновить базовую информацию о контакте (имя, компанию, должность, заметки). "
-        "Используй когда пользователь говорит 'запиши что...', 'обнови данные...', "
-        "'у Иванова новая должность' и т.п. После звонка — когда узнал новый факт "
-        "о клиенте (например должность), который стоит сохранить как заметку."
+        "Записать в карточку имя, компанию или должность клиента — как только он их назвал "
+        "(в переписке или на звонке). notes дописывается к заметкам, старые не стираются."
     ),
     "parameters": {
         "type": "object",
@@ -3007,16 +3006,24 @@ AGENT_POSTCALL_TOOLS = [
     {
         "type": "function",
         "name": "update_contact_memory",
-        "description": "Обновить память агента о контакте после звонка.",
+        "description": (
+            "Записать в карточку клиента итог этого события (звонка или переписки) и новые факты. "
+            "Факты копятся списком без дублей; устаревшие убери через remove_facts."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
-                "summary": {"type": "string", "description": "Краткий итог звонка"},
+                "summary": {"type": "string", "description": "Итог этого события одной фразой"},
                 "key_facts": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Новые факты о контакте",
+                    "description": "Новые факты о клиенте (коротко, по одному на строку)",
+                },
+                "remove_facts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Факты из карточки, которые больше не верны (как они записаны)",
                 },
                 "best_time": {"type": "string", "description": "Лучшее время для звонка или null"},
                 "tone": {"type": "string", "description": "Тон разговора (дружелюбный/деловой/холодный)"},
@@ -3037,15 +3044,12 @@ AGENT_POSTCALL_TOOLS = [
         "type": "function",
         "name": "create_agent_task",
         "description": (
-            "Создать задачу на перезвон. После исходящего звонка следующее касание "
-            "планируется ВСЕГДА, кроме случая когда цель звонка уже достигнута: "
-            "перезвон — этим tool, отложенное сообщение — schedule_telegram_message "
-            "(если доступен). "
-            "Время задай ОДНИМ из способов: delay_minutes — для относительного "
-            "(«через N минут/часов»), scheduled_at — для абсолютного («завтра в 14:00»). "
-            "У клиента всегда одна запланированная задача на звонок: новая заменяет прежнюю "
-            "(в ответе — что заменено), удалять старую не нужно. После недозвона сегодня "
-            "второй звонок на сегодня система не поставит — ставь на завтра."
+            "Поставить звонок клиенту. Время — ОДНИМ способом: delay_minutes («через N минут/часов») "
+            "или scheduled_at («завтра в 14:00», UTC). У клиента одна запланированная задача на "
+            "звонок: новая заменяет прежнюю. Окно звонков и антиспам проверяет система: если время "
+            "нельзя, в ответе будет причина и ближайшее разрешённое. Звонок сегодня по просьбе "
+            "клиента (назвал время) разрешён. Касания воронки (дожим после КП, оживление) ставит "
+            "система — на них задачи не создавай."
         ),
         "parameters": {
             "type": "object",
@@ -3306,7 +3310,74 @@ async def fn_create_agent_task(args: dict, user_id: str, agent_config_id: str, d
     return result
 
 
-async def fn_update_contact_memory(args: dict, agent_config_id: str, db: Session) -> dict:
+# Память контакта (ветка 1111-clean-system). Раньше: attempts/last_call росли от каждого сообщения
+# («звонили сегодня» после переписки), key_facts — множество без порядка и предела, summary один на всё
+# (итог звонка затирался «ок, спасибо» из чата). Теперь: попытки звонков — только колонки
+# attempts_count/last_called_at (их пишет разбор звонка), факты — упорядоченный список без дублей
+# с пределом, итог звонка отдельно от итога переписки, плюс короткая история итогов.
+MEMORY_MAX_FACTS = 20
+MEMORY_MAX_HISTORY = 8
+_MESSAGE_CHANNELS = {"whatsapp_inbound": "whatsapp", "telegram_inbound": "telegram",
+                     "instagram_inbound": "instagram", "telegram_outbound": "telegram",
+                     "followup_outbound": "переписка", "sms_inbound": "sms"}
+
+
+def _fact_key(text: str) -> str:
+    return " ".join(re.findall(r"[\wё]+", (text or "").lower()))
+
+
+def merge_facts(old, new, remove=None, limit: int = MEMORY_MAX_FACTS) -> list:
+    """Старые факты по порядку + новые в конец; дубли (без учёта регистра и знаков) — один раз;
+    remove — факты, которые больше не верны; при переполнении уходят самые старые."""
+    drop = {_fact_key(x) for x in (remove or []) if str(x).strip()}
+    out, seen = [], set()
+    for fact in list(old or []) + list(new or []):
+        fact = " ".join(str(fact or "").split())[:200]
+        key = _fact_key(fact)
+        if not key or key in drop:
+            continue
+        if key in seen:
+            # Повтор свежее старого: переносим в конец (факт снова подтвердился).
+            out = [f for f in out if _fact_key(f) != key]
+        seen.add(key)
+        out.append(fact)
+    return out[-limit:]
+
+
+def apply_memory_update(memory: dict, args: dict, event: Optional[str] = None, now: Optional[datetime] = None) -> dict:
+    """Чистая функция: новая память контакта по аргументам update_contact_memory и типу события."""
+    memory = dict(memory or {})
+    now = now or datetime.utcnow()
+    event = (event or "").lower()
+    channel = _MESSAGE_CHANNELS.get(event, "звонок" if event in ("inbound", "outbound", "") else event)
+    summary = " ".join(str(args.get("summary") or "").split())[:500]
+    if summary:
+        memory["summary"] = summary
+        if channel == "звонок":
+            memory["call_summary"] = summary
+        history = [h for h in (memory.get("history") or []) if isinstance(h, dict)]
+        history.append({"at": now.strftime("%Y-%m-%d %H:%M"), "channel": channel, "text": summary[:200]})
+        memory["history"] = history[-MEMORY_MAX_HISTORY:]
+    if args.get("best_time"):
+        memory["best_time"] = str(args["best_time"])[:120]
+    if args.get("tone"):
+        memory["tone_history"] = (list(memory.get("tone_history") or []) + [str(args["tone"])[:40]])[-10:]
+    if "key_facts" in args or args.get("remove_facts"):
+        memory["key_facts"] = merge_facts(memory.get("key_facts"), args.get("key_facts") or [],
+                                          args.get("remove_facts"))
+    # Ниша и запрос — их читают узнавание клиента (find_client) и блок «знакомый клиент» на звонке.
+    if str(args.get("niche") or "").strip():
+        memory["niche"] = str(args["niche"]).strip()[:120]
+    if str(args.get("need") or "").strip():
+        memory["direction_need"] = str(args["need"]).strip()[:300]
+    # Устаревшие поля прежней версии: счётчик «попыток» от любого события сбивал антиспам звонков.
+    memory.pop("attempts", None)
+    memory.pop("last_call", None)
+    memory["updated_at"] = now.strftime("%Y-%m-%d %H:%M")
+    return memory
+
+
+async def fn_update_contact_memory(args: dict, agent_config_id: str, db: Session, event: Optional[str] = None) -> dict:
     agent_contact_id = args["agent_contact_id"]
     # Изоляция агентов: память можно обновлять только своему контакту.
     contact = db.query(AgentContact).filter(
@@ -3315,36 +3386,11 @@ async def fn_update_contact_memory(args: dict, agent_config_id: str, db: Session
     ).first()
     if not contact:
         return {"ok": False, "error": "Contact not found"}
-
-    memory = contact.memory or {}
-
-    if "summary" in args:
-        memory["summary"] = args["summary"]
-    if "best_time" in args and args["best_time"]:
-        memory["best_time"] = args["best_time"]
-    if "tone" in args:
-        tone_list = memory.get("tone_history", [])
-        tone_list.append(args["tone"])
-        memory["tone_history"] = tone_list[-10:]
-    if "key_facts" in args:
-        facts = set(memory.get("key_facts", []))
-        facts.update(args["key_facts"])
-        memory["key_facts"] = list(facts)
-    # Ниша и запрос — их читают узнавание клиента (find_client) и блок
-    # «знакомый клиент» на входящем звонке (memory.niche / direction_need).
-    if str(args.get("niche") or "").strip():
-        memory["niche"] = str(args["niche"]).strip()[:120]
-    if str(args.get("need") or "").strip():
-        memory["direction_need"] = str(args["need"]).strip()[:300]
-
-    memory["attempts"] = (memory.get("attempts", 0)) + 1
-    memory["last_call"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-
-    contact.memory = memory
+    contact.memory = apply_memory_update(contact.memory, args, event)
     flag_modified(contact, 'memory')
     db.commit()
     logger.info(f"[AGENT-TOOLS] Updated memory for contact {agent_contact_id}")
-    return {"ok": True, "contact_id": agent_contact_id}
+    return {"ok": True, "contact_id": agent_contact_id, "facts": len(contact.memory.get("key_facts") or [])}
 
 
 async def fn_update_contact_info(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
@@ -3365,10 +3411,17 @@ async def fn_update_contact_info(args: dict, user_id: str, agent_config_id: str,
         return {"ok": False, "error": "Contact not found"}
 
     updated_fields = []
-    for field in ("name", "company", "position", "notes"):
-        if field in args and args[field] is not None:
-            setattr(contact, field, args[field])
+    for field in ("name", "company", "position"):
+        value = args.get(field)
+        if isinstance(value, str) and value.strip():
+            setattr(contact, field, value.strip()[:255])
             updated_fields.append(field)
+    # Заметки только дописываются (раньше перезаписывались — стирались записи владельца).
+    note = (args.get("notes") or "").strip() if isinstance(args.get("notes"), str) else ""
+    if note and note not in (contact.notes or ""):
+        line = f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] {note}"
+        contact.notes = f"{contact.notes}\n{line}" if contact.notes else line
+        updated_fields.append("notes")
 
     if not updated_fields:
         return {"ok": False, "error": "no_fields_to_update"}
@@ -5162,7 +5215,8 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
         elif tool_name == "create_agent_task":
             result = await fn_create_agent_task(tool_args, user_id, agent_config_id, db)
         elif tool_name == "update_contact_memory":
-            result = await fn_update_contact_memory(tool_args, agent_config_id, db)
+            result = await fn_update_contact_memory(tool_args, agent_config_id, db,
+                                                    event=context.get("call_direction"))
         elif tool_name == "update_contact_info":
             result = await fn_update_contact_info(tool_args, user_id, agent_config_id, db)
         elif tool_name == "move_contact_stage":
