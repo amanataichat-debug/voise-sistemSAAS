@@ -86,6 +86,27 @@ async def _send(agent, db: Session, message: str) -> bool:
         return False
 
 
+_BLOCK_TEXT = {
+    "credits": ("⚠️ У агента «{name}» закончились кредиты — он перестал отвечать клиентам и разбирать звонки. "
+                "Пополните кредиты в кабинете, иначе новые обращения останутся без ответа."),
+    "access": ("⚠️ Агент «{name}» не отвечает клиентам: подписка истекла или не оформлена. "
+               "Продлите тариф в кабинете, иначе новые обращения останутся без ответа."),
+}
+
+
+async def agent_blocked(db: Session, agent, reason: str) -> bool:
+    """
+    Агент не может работать (кредиты / подписка) — владельцу один раз в сутки (ветка 1111-clean-system).
+    Раньше разбор молча падал: клиент не получал ответа, владелец не знал почему.
+    """
+    from backend.core.timezone_utils import now_bishkek
+    if agent is None or reason not in _BLOCK_TEXT:
+        return False
+    if not claim_agent_job(db, agent.id, f"blocked_{reason}", now_bishkek().date()):
+        return False
+    return await _send(agent, db, _BLOCK_TEXT[reason].format(name=getattr(agent, "name", None) or "агент"))
+
+
 # ---------------------------------------------------------------- после разбора
 
 def format_new_lead(agent, contact, channel: str, first_text: str) -> str:

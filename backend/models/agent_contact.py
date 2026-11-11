@@ -55,6 +55,9 @@ class AgentContact(Base):
     # Колонки создаёт app.ensure_chat_v2_columns() в начале старта.
     ai_paused_until = Column(DateTime, nullable=True)
     ai_pause_reason = Column(String(16), nullable=True)
+    # Идёт разбор сообщений/звонка этого клиента (services/contact_lease.py): до этого времени
+    # второй разбор того же клиента ждёт, а не отвечает параллельно.
+    ai_busy_until = Column(DateTime, nullable=True)
 
     # Дополнительные номера клиента (ветка 2110-client-memory): второй номер,
     # номер для звонков (WhatsApp на Beeline, звонить — на O!), номер склеенной

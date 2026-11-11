@@ -351,12 +351,43 @@ class TaskScheduler:
         )
         return tomorrow.replace(hour=start_hour).astimezone(timezone.utc).replace(tzinfo=None)
 
+    @staticmethod
+    def _claim_task(db: Session, task: Task) -> bool:
+        """
+        Атомарно занять задачу: SCHEDULED → PENDING одним UPDATE (ветка 1111-clean-system).
+
+        Планировщик запущен в каждом из 4 воркеров gunicorn. Раньше задача
+        помечалась «в работе» обычным присваиванием после чтения — два воркера,
+        прочитавшие её в один тик, набирали клиента дважды. Теперь выполняет
+        только тот воркер, чей UPDATE изменил строку.
+        """
+        claimed = db.query(Task).filter(
+            Task.id == task.id,
+            Task.status == TaskStatus.SCHEDULED,
+        ).update({"status": TaskStatus.PENDING}, synchronize_session=False)
+        db.commit()
+        if not claimed:
+            return False
+        db.refresh(task)
+        return True
+
+    @staticmethod
+    def _release_task(db: Session, task: Task, when: Optional[datetime] = None) -> None:
+        """Вернуть занятую задачу в очередь (перенос по окну звонков, агент выключен)."""
+        task.status = TaskStatus.SCHEDULED
+        if when is not None:
+            task.scheduled_time = when
+        db.commit()
+
     async def execute_agent_task(self, task: Task, db: Session):
         """
         Execute an agent task: create AgentCall, run PreCall with AgentContact,
         then initiate the call and launch PostCall.
         """
         try:
+            if not self._claim_task(db, task):
+                logger.info(f"[TASK-SCHEDULER] Agent task {task.id} already taken by another worker")
+                return
             logger.info(f"[TASK-SCHEDULER] 🤖 Executing AGENT task {task.id}: {task.title}")
 
             # Get AgentContact first — оно определяет, какому агенту принадлежит звонок.
@@ -391,6 +422,7 @@ class TaskScheduler:
             # Leave the task SCHEDULED so it runs once the agent is re-activated.
             if not agent_config or not agent_config.is_active:
                 logger.info(f"[TASK-SCHEDULER] Skipping agent task {task.id}: agent missing or inactive")
+                self._release_task(db, task)
                 return  # не помечаем как failed — просто пропускаем, ждём активации
 
             # B1+B2 (карта): детерминированный предохранитель перед дозвоном —
@@ -406,9 +438,7 @@ class TaskScheduler:
                 if postpone_to is None:
                     postpone_to = self._missed_today_gate(agent_contact, task, agent_config, db)
                 if postpone_to is not None:
-                    task.scheduled_time = postpone_to
-                    task.status = TaskStatus.SCHEDULED
-                    db.commit()
+                    self._release_task(db, task, postpone_to)
                     logger.info(
                         f"[TASK-SCHEDULER] ⏳ Agent task {task.id} перенесена на {postpone_to} UTC "
                         f"(окно звонков агента / анти-долбёж, контакт {agent_contact.id})"
@@ -928,8 +958,10 @@ class TaskScheduler:
             db: Сессия БД
         """
         try:
+            if not self._claim_task(db, task):
+                return
             logger.info(f"[TASK-SCHEDULER] 🚀 Executing task {task.id}: {task.title}")
-            
+
             # Обновляем статус на PENDING
             task.status = TaskStatus.PENDING
             task.call_started_at = datetime.utcnow()

@@ -326,9 +326,7 @@ async def _process_media(account_id: str, contact_id: str, msg_row_id: str, msg:
 
 async def _dispatch_if_latest(account_id: str, chat_id: str, contact_id: str, msg_row_id: str) -> None:
     """Отдать серию входящих оркестратору — только из задачи последнего сообщения."""
-    from sqlalchemy import or_
-    from backend.models.agent_whatsapp import AgentWhatsAppChat, AgentWhatsAppMessage
-    from backend.services.agent_orchestrator import handle_inbound_whatsapp
+    from backend.models.agent_whatsapp import AgentWhatsAppMessage
 
     db = SessionLocal()
     try:
@@ -338,10 +336,40 @@ async def _dispatch_if_latest(account_id: str, chat_id: str, contact_id: str, ms
         ).order_by(AgentWhatsAppMessage.created_at.desc()).first()
         if latest is None or str(latest.id) != msg_row_id:
             return  # пришло новое сообщение — ответит его задача
+    finally:
+        db.close()
+    await dispatch_chat(account_id, chat_id, contact_id)
 
+
+async def dispatch_chat(account_id: str, chat_id: str, contact_id: str) -> bool:
+    """
+    Отдать оркестратору все ещё не переданные входящие чата одним прогоном.
+
+    Ветка 1111-clean-system: сначала аренда клиента (contact_lease) — пока идёт
+    прошлый разбор этого клиента, второй не запускаем (раньше клиент получал два
+    ответа подряд). Не удалось — сообщения остаются непереданными, их подберёт
+    sweep_unanswered(). Затем атомарный claim по last_dispatched_at (ровно один
+    воркер). Возвращает True, если прогон состоялся.
+    """
+    from sqlalchemy import or_
+    from backend.models.agent_whatsapp import AgentWhatsAppChat, AgentWhatsAppMessage
+    from backend.services import contact_lease
+    from backend.services.agent_orchestrator import handle_inbound_whatsapp
+
+    db = SessionLocal()
+    try:
+        latest = db.query(AgentWhatsAppMessage).filter(
+            AgentWhatsAppMessage.chat_id == chat_id,
+            AgentWhatsAppMessage.direction == "inbound",
+        ).order_by(AgentWhatsAppMessage.created_at.desc()).first()
         chat = db.query(AgentWhatsAppChat).filter(AgentWhatsAppChat.id == chat_id).first()
-        if chat is None:
-            return
+        if latest is None or chat is None:
+            return False
+        if chat.last_dispatched_at is not None and chat.last_dispatched_at >= latest.created_at:
+            return False
+        if not contact_lease.try_acquire(db, contact_id):
+            logger.info(f"[WA-IN] chat {chat_id}: идёт разбор этого клиента — ответим после него")
+            return False
         since = chat.last_dispatched_at
         claimed = db.query(AgentWhatsAppChat).filter(
             AgentWhatsAppChat.id == chat_id,
@@ -350,7 +378,8 @@ async def _dispatch_if_latest(account_id: str, chat_id: str, contact_id: str, ms
         ).update({"last_dispatched_at": latest.created_at}, synchronize_session=False)
         db.commit()
         if not claimed:
-            return
+            contact_lease.release(db, contact_id)
+            return False
 
         q = db.query(AgentWhatsAppMessage).filter(
             AgentWhatsAppMessage.chat_id == chat_id,
@@ -363,8 +392,88 @@ async def _dispatch_if_latest(account_id: str, chat_id: str, contact_id: str, ms
     finally:
         db.close()
 
-    text = "\n".join(parts).strip()
-    if not text:
-        return
-    logger.info(f"[WA-IN] {len(parts)} message(s) in chat {chat_id} → orchestrator")
-    await handle_inbound_whatsapp(account_id, contact_id, text)
+    try:
+        text = "\n".join(parts).strip()
+        if not text:
+            return False
+        logger.info(f"[WA-IN] {len(parts)} message(s) in chat {chat_id} → orchestrator")
+        await handle_inbound_whatsapp(account_id, contact_id, text)
+        return True
+    finally:
+        db = SessionLocal()
+        try:
+            contact_lease.release(db, contact_id)
+        finally:
+            db.close()
+
+
+# Подметание: входящие, на которые разбор так и не запустился (деплой посреди 15-секундной
+# паузы, разбор клиента был занят). Смотрим только свежие — старую историю не трогаем.
+SWEEP_EVERY_SECONDS = 20
+SWEEP_WINDOW = timedelta(minutes=30)
+SWEEP_GRACE_SECONDS = 90   # сверх reply_delay_seconds: обычная задача и распознавание голосового успевают
+
+
+def _unanswered_chats(now: datetime) -> list:
+    from sqlalchemy import and_, func, or_
+    from backend.models.agent_whatsapp import AgentWhatsAppAccount, AgentWhatsAppChat, AgentWhatsAppMessage
+    db = SessionLocal()
+    try:
+        last_in = (
+            db.query(AgentWhatsAppMessage.chat_id.label("chat_id"),
+                     func.max(AgentWhatsAppMessage.created_at).label("last_at"))
+            .filter(AgentWhatsAppMessage.direction == "inbound",
+                    AgentWhatsAppMessage.created_at > now - SWEEP_WINDOW)
+            .group_by(AgentWhatsAppMessage.chat_id)
+            .subquery()
+        )
+        rows = (
+            db.query(AgentWhatsAppChat, AgentWhatsAppAccount, last_in.c.last_at)
+            .join(last_in, last_in.c.chat_id == AgentWhatsAppChat.id)
+            .join(AgentWhatsAppAccount, AgentWhatsAppAccount.id == AgentWhatsAppChat.account_id)
+            .filter(
+                AgentWhatsAppChat.agent_contact_id.isnot(None),
+                AgentWhatsAppAccount.auto_reply_enabled.is_(True),
+                or_(AgentWhatsAppChat.last_dispatched_at.is_(None),
+                    AgentWhatsAppChat.last_dispatched_at < last_in.c.last_at),
+            )
+            .all()
+        )
+        out = []
+        for chat, account, last_at in rows:
+            if not account.is_connected():
+                continue
+            baseline = account.connected_at or account.created_at
+            if baseline is not None and last_at < baseline - timedelta(minutes=2):
+                continue
+            wait = agent_pause.reply_delay_seconds(account) + SWEEP_GRACE_SECONDS
+            if (now - last_at).total_seconds() < wait:
+                continue
+            out.append((str(account.id), str(chat.id), str(chat.agent_contact_id)))
+        return out
+    finally:
+        db.close()
+
+
+async def sweep_unanswered() -> int:
+    """Один проход подметания. Возвращает число запущенных разборов."""
+    started = 0
+    for account_id, chat_id, contact_id in await asyncio.to_thread(_unanswered_chats, datetime.utcnow()):
+        try:
+            if await dispatch_chat(account_id, chat_id, contact_id):
+                started += 1
+                logger.warning(f"[WA-IN] sweep: чат {chat_id} остался без ответа — разбор запущен повторно")
+        except Exception as e:
+            logger.error(f"[WA-IN] sweep chat {chat_id} failed: {e}", exc_info=True)
+    return started
+
+
+async def start_sweep_loop() -> None:
+    """Фоновый цикл подметания (в каждом воркере; дубли отсекают аренда и claim)."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            await sweep_unanswered()
+        except Exception as e:
+            logger.error(f"[WA-IN] sweep tick failed: {e}", exc_info=True)
+        await asyncio.sleep(SWEEP_EVERY_SECONDS)

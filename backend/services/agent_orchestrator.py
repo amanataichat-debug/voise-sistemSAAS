@@ -264,6 +264,10 @@ MESSAGE_DIRECTIONS = frozenset({
 })
 
 
+# Сколько ждать окончания прошлого разбора того же клиента (services/contact_lease.py).
+LEASE_WAIT_SECONDS = 150
+
+
 def is_voice_direction(call_direction) -> bool:
     """True — событие PostCall было голосовым звонком, а не сообщением."""
     return (call_direction or "outbound").lower() not in MESSAGE_DIRECTIONS
@@ -1769,8 +1773,27 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
         """PostCall v3 — OpenRouter Chat Completions, без previous_response_id."""
         logger.info(f"[AGENT-POSTCALL] (v3/OpenRouter) Analyzing call {agent_call.id}, model {agent_config.orchestrator_model}")
 
-        # Pre-flight проверка подписки/кредитов (раздел 5.1)
-        CreditService.precheck(db, user)
+        # Pre-flight проверка подписки/кредитов (раздел 5.1). Не прошла — строка события не висит
+        # в «calling», владелец получает оповещение (раньше клиенту была тишина без объяснений).
+        try:
+            CreditService.precheck(db, user)
+        except (SubscriptionExpiredError, SubscriptionRequiredError, InsufficientCreditsError) as gate_err:
+            reason = "credits" if isinstance(gate_err, InsufficientCreditsError) else "access"
+            logger.warning(f"[AGENT-POSTCALL] call {agent_call.id}: разбор не запущен ({reason}): {gate_err}")
+            agent_call.postcall_log = {
+                **(agent_call.postcall_log if isinstance(agent_call.postcall_log, dict) else {}),
+                "call_direction": call_direction, "error": f"blocked_{reason}",
+                "analyzed_at": datetime.utcnow().isoformat(),
+            }
+            agent_call.status = "answered" if call_status == "answered" else "no_answer"
+            agent_call.completed_at = datetime.utcnow()
+            agent_call.transcript = agent_call.transcript or transcript
+            if task:
+                task.status = TaskStatus.COMPLETED
+            db.commit()
+            from backend.services import owner_notifications
+            await owner_notifications.agent_blocked(db, agent_config, reason)
+            return
 
         # Аккумулятор токенов по всем итерациям цикла tool calls (раздел 5.2, edge case 2)
         total_prompt = 0
@@ -3395,6 +3418,7 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
     from backend.models.agent_telegram_account import AgentTelegramAccount
 
     db = SessionLocal()
+    leased_contact = None
     try:
         account = db.query(AgentTelegramAccount).filter(
             AgentTelegramAccount.id == account_id
@@ -3435,6 +3459,13 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
 
         # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
         # треде, агент увидит его после паузы; сейчас не отвечаем.
+        # Один разбор на клиента: идёт прошлый — ждём его, чтобы не ответить дважды.
+        from backend.services import contact_lease
+        if not await contact_lease.acquire(db, contact.id, wait_seconds=LEASE_WAIT_SECONDS):
+            logger.warning(f"[AGENT-INBOUND] contact {contact.id}: прошлый разбор не закончился "
+                           f"за {LEASE_WAIT_SECONDS} с — отвечаем без очереди")
+        leased_contact = contact.id
+        db.refresh(contact)
         if agent_pause.is_paused(contact):
             # «Умный молчун» — ветка 1810-anri-sales-logic: отвечать не отвечаем,
             # но записываем входящее в memory, чтобы после снятия паузы Анри был
@@ -3471,6 +3502,9 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
     except Exception as e:
         logger.error(f"[AGENT-TG-USER] handle_inbound_telegram error: {e}", exc_info=True)
     finally:
+        if leased_contact is not None:
+            from backend.services import contact_lease
+            contact_lease.release(db, leased_contact)
         db.close()
 
 
@@ -3488,6 +3522,7 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
     Открывает собственную сессию БД — безопасно для asyncio.create_task().
     """
     db = SessionLocal()
+    leased_contact = None
     try:
         agent = db.query(AgentConfig).filter(
             AgentConfig.id == agent_config_id,
@@ -3522,6 +3557,13 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
 
         # Владелец ведёт переписку сам (или остановил агента) — сообщение уже в
         # треде, агент увидит его после паузы; сейчас не отвечаем.
+        # Один разбор на клиента: идёт прошлый — ждём его, чтобы не ответить дважды.
+        from backend.services import contact_lease
+        if not await contact_lease.acquire(db, contact.id, wait_seconds=LEASE_WAIT_SECONDS):
+            logger.warning(f"[AGENT-INBOUND] contact {contact.id}: прошлый разбор не закончился "
+                           f"за {LEASE_WAIT_SECONDS} с — отвечаем без очереди")
+        leased_contact = contact.id
+        db.refresh(contact)
         if agent_pause.is_paused(contact):
             # «Умный молчун» — см. комментарий в handle_inbound_telegram.
             record_during_pause(contact, "instagram", message_body, db)
@@ -3556,6 +3598,9 @@ async def handle_inbound_instagram(agent_config_id: str, agent_contact_id: str, 
     except Exception as e:
         logger.error(f"[AGENT-IG] handle_inbound_instagram error: {e}", exc_info=True)
     finally:
+        if leased_contact is not None:
+            from backend.services import contact_lease
+            contact_lease.release(db, leased_contact)
         db.close()
 
 
