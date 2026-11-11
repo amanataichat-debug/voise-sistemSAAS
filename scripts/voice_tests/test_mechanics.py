@@ -263,6 +263,28 @@ rc.status = "rejected"; db.commit()
 check("клиент в «Отказ» — повтор не ставится",
       asyncio.run(call_retry.ensure_retry_after_no_answer(db, bagent, rc, boss, "", now_utc=now_utc)) is None)
 
+# --- 6. напоминание владельцу приходит один раз ---
+on_sent = []
+
+
+async def fake_send2(agent_, db_, message):
+    on_sent.append(message)
+    return True
+
+on._send = fake_send2
+rem = Task(is_agent_task=True, channel="owner", agent_contact_id=rc.id, user_id=boss.id,
+           status=TaskStatus.SCHEDULED, scheduled_time=datetime.utcnow() - timedelta(minutes=1),
+           title="Позвонить Нурлану", description="просил менеджера", created_by="agent")
+old_rem = Task(is_agent_task=True, channel="owner", agent_contact_id=rc.id, user_id=boss.id,
+               status=TaskStatus.SCHEDULED, scheduled_time=datetime.utcnow() - timedelta(days=5), title="старое")
+db.add_all([rem, old_rem]); db.commit()
+n1 = worker(asyncio.run, on.send_due_reminders(Session()))
+n2 = worker(asyncio.run, on.send_due_reminders(Session()))
+check("напоминание владельцу пришло один раз", n1 == 1 and n2 == 0 and len(on_sent) == 1
+      and "Позвонить Нурлану" in on_sent[0], (n1, n2, on_sent))
+db.expire_all()
+check("напоминание осталось в списке задач до закрытия", db.get(Task, rem.id).status == TaskStatus.SCHEDULED)
+
 db.close()
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)
