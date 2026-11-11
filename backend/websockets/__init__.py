@@ -3,24 +3,14 @@
 WebSocket module for Voksy AI application.
 Handles real-time communication with clients.
 
-🆕 OpenAI voice runs on GPT-Live (gpt-live-1, full-duplex); Realtime GA kept as legacy
-🆕 Google Gemini Live on gemini-3.8-live (Browser Agent and 3.1/2.5 variants removed)
-🆕 Now includes xAI Grok Voice Agent API support
-🆕 v3.3: Voximplant ↔ Gemini bridge (fallback for Vox Gemini module)
-🧪 Experimental: Streaming TTS with sentence detection + ElevenLabs
+OpenAI voice runs on GPT-Live (gpt-live-1, full-duplex); Gemini Live on gemini-3.8-live;
+Eleven cards (Voksy Voice / Voksy Live / Voksy Live Go) — handler_eleven. Legacy Realtime handlers and
+Voximplant bridges were removed 11.11.2026 (branch 1111-clean-system).
 """
-
-# 📌 OpenAI - Старые обработчики (Beta API)
-from .handler import handle_websocket_connection
-from .openai_client import OpenAIRealtimeClient
 
 # OpenAI GPT-Live (gpt-live-1) — актуальный голосовой транспорт OpenAI
 from .handler_live import handle_live_websocket_connection
 from .live_client import OpenAILiveClient
-
-# OpenAI Realtime GA (легаси, оставлен для отката)
-from .handler_realtime_new import handle_websocket_connection_new
-from .openai_client_new import OpenAIRealtimeClientNew
 
 # Google Gemini Live (gemini-3.8-live)
 from .gemini_client import GeminiLiveClient
@@ -37,17 +27,12 @@ from .fish_tts_client import FishTTSClient
 
 
 __all__ = [
-    # OpenAI Beta API (старая версия)
-    "handle_websocket_connection", 
-    "OpenAIRealtimeClient",
-    
     # OpenAI GPT-Live (актуальный транспорт)
     "handle_live_websocket_connection",
     "OpenAILiveClient",
 
     # OpenAI GA API (легаси)
-    "handle_websocket_connection_new",
-    "OpenAIRealtimeClientNew",
+
     
     # Google Gemini Live (gemini-3.8-live)
     "GeminiLiveClient",
