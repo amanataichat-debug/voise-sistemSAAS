@@ -1,20 +1,13 @@
 """
-Task Scheduler для автоматического выполнения запланированных задач.
-Проверяет каждые 30 секунд наличие задач, которые нужно выполнить.
+Планировщик задач: каждые 30 секунд берёт наступившие задачи и выполняет их.
 
-✅ ВЕРСИЯ v4.0 - PARTNER INTEGRATION + LEGACY FALLBACK
-✅ v4.0: Поддержка партнёрской интеграции Voximplant (VoximplantChildAccount)
-✅ v4.0: Обратная совместимость со старой интеграцией (user.get_voximplant_config())
-✅ v3.4: Восстановлена правильная логика user.get_voximplant_config()
-✅ v3.3: Исправлено получение assistant_id (использует task.assistant_id)
-✅ v3.2: Исправлена обработка response от Voximplant API
-✅ v3.1: Добавлена передача custom_greeting (персонализированное приветствие)
-✅ v3.0: Передача контекста задачи в Voximplant
+Звонки идут только через собственный SIP-шлюз (Asterisk + мост, infra/sip-gateway): задача без номера с
+исходящими завершается с понятной причиной. Запасные пути через Voximplant удалены (ветка 1111-clean-system).
+Задачу выполняет ровно один из воркеров gunicorn (_claim_task — атомарный UPDATE).
 """
 
 import asyncio
 import json
-import httpx
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, Tuple
@@ -31,17 +24,13 @@ from backend.models.yandex_assistant import YandexAssistantConfig
 from backend.models.grok_assistant import GrokAssistantConfig
 from backend.models.fish_assistant import FishAssistantConfig
 from backend.models.eleven_assistant import ElevenAssistantConfig
-from backend.models.voximplant_child import VoximplantChildAccount
 from backend.models.agent_config import AgentConfig
 from backend.models.agent_contact import AgentContact
 from backend.models.agent_call import AgentCall
-from backend.services.voximplant_partner import get_voximplant_partner_service
 from backend.services.agent_orchestrator import PreCallOrchestrator, PostCallOrchestrator
 
 logger = get_logger(__name__)
 
-# Voximplant API endpoint (для LEGACY интеграции)
-VOXIMPLANT_API_URL = "https://api.voximplant.com/platform_api/StartScenarios/"
 
 # Timezone по умолчанию
 DEFAULT_TIMEZONE = "Asia/Bishkek"
@@ -55,22 +44,6 @@ CALL_RETRY_COOLDOWN = timedelta(hours=3)
 # короткая: 3 часа держали бы «через 2 часа» до вечера (0311-call-guard).
 CALLBACK_AFTER_TALK_COOLDOWN = timedelta(minutes=15)
 
-# Провайдеры со своим исходящим сценарием. Каскаду нужна цепочка
-# vox-turn-taking + outbound_cascade, Fish — прокси синтеза (/ws/fish/tts/…);
-# общий outbound_crm ни того, ни другого не умеет.
-OUTBOUND_RULE_BY_TYPE = {
-    "cascade": "outbound_cascade",
-    "fish": "outbound_fish",
-}
-DEFAULT_OUTBOUND_RULE = "outbound_crm"
-
-
-def _outbound_rule_name(assistant_type: Optional[str]) -> str:
-    """Имя правила Voximplant для исходящего звонка этим типом ассистента."""
-    return OUTBOUND_RULE_BY_TYPE.get(assistant_type, DEFAULT_OUTBOUND_RULE)
-
-
-
 # Звонок агента без номера собственной телефонии (sip_phone_numbers с allow_outbound).
 NO_OUTBOUND_NUMBER_MESSAGE = (
     "Нет номера для исходящих звонков. Подключите номер в настройках агента."
@@ -78,17 +51,7 @@ NO_OUTBOUND_NUMBER_MESSAGE = (
 
 class TaskScheduler:
     """
-    Планировщик задач для автоматических звонков.
-    
-    ✅ v4.0: Поддержка двух типов интеграции:
-        1. НОВАЯ: VoximplantChildAccount (партнёрская интеграция)
-        2. LEGACY: user.get_voximplant_config() (старая интеграция)
-    
-    ✅ v3.4: Правильная логика user.get_voximplant_config()
-    ✅ v3.3: Правильное получение assistant_id из task
-    ✅ v3.2: Корректная обработка response
-    ✅ v3.1: Поддержка custom_greeting
-    ✅ v3.0: Передача контекста задачи
+    Планировщик задач: звонки агента и обычные задачи — через SIP-шлюз, Telegram-задачи — сообщением.
     """
     
     def __init__(self, check_interval: int = 30):
@@ -533,23 +496,16 @@ class TaskScheduler:
             phone_number = agent_contact.phone
             contact_name = agent_contact.name or ""
 
-            child_account: Optional[VoximplantChildAccount] = None
-            if hasattr(user, 'voximplant_child_account') and user.voximplant_child_account:
-                child_account = user.voximplant_child_account
-
             call_session_id = None
             call_success = False
 
+            # Звонки идут только через собственный SIP-шлюз (Voximplant выключен, ветка 1111-clean-system
+            # убрала его запасные пути: раньше задача без SIP-номера пыталась звонить через Voximplant).
             sip_number = self._sip_number_for(
                 user, task, assistant_type, db,
                 preferred=getattr(task, "caller_id", None) or (agent_config.default_caller_id if agent_config else None),
             )
-            if sip_number is not None:
-                call_session_id, call_success = await self._agent_call_via_sip_gateway(
-                    task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
-                )
-            elif assistant_type == "eleven":
-                # Eleven звонит только через собственный SIP-шлюз (Voximplant выключен).
+            if sip_number is None:
                 logger.warning(f"[TASK-SCHEDULER] ❌ No SIP number with outbound for agent task {task.id}")
                 task.status = TaskStatus.FAILED
                 task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
@@ -557,22 +513,9 @@ class TaskScheduler:
                 agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
                 db.commit()
                 return
-            elif child_account and child_account.can_make_outbound_calls:
-                call_session_id, call_success = await self._agent_call_via_partner(
-                    task, agent_contact, child_account, assistant_id, assistant_name, assistant_type, db
-                )
-            elif user.has_voximplant_config():
-                call_session_id, call_success = await self._agent_call_via_legacy(
-                    task, agent_contact, user, assistant_id, assistant_name, assistant_type, db
-                )
-            else:
-                logger.error(f"[TASK-SCHEDULER] ❌ No outbound number for agent task {task.id}")
-                task.status = TaskStatus.FAILED
-                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                agent_call.status = "failed"
-                agent_call.call_result = NO_OUTBOUND_NUMBER_MESSAGE
-                db.commit()
-                return
+            call_session_id, call_success = await self._agent_call_via_sip_gateway(
+                task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
+            )
 
             if call_success and call_session_id and sip_number is not None:
                 # SIP-шлюз: звонок только в очереди. Итог (COMPLETED/FAILED) проставит событие моста,
@@ -582,24 +525,6 @@ class TaskScheduler:
                 task.status = TaskStatus.PENDING  # 'в работе' (CALLING в проде в enum может не быть)
                 task.call_result = f"Agent call queued on SIP gateway. Session: {call_session_id}"
                 db.commit()
-            elif call_success and call_session_id:
-                agent_call.call_session_id = str(call_session_id)
-                task.call_session_id = str(call_session_id)
-                task.status = TaskStatus.COMPLETED
-                task.call_completed_at = datetime.utcnow()
-                task.call_result = f"Agent call initiated. Session: {call_session_id}"
-                db.commit()
-
-                # Launch PostCall with agent_call_id (v3 → OpenRouter, v2 → user OpenAI key)
-                if can_orchestrate:
-                    spawn(
-                        PostCallOrchestrator.poll_and_run(
-                            agent_call_id=str(agent_call.id),
-                            agent_config_id=str(agent_config.id),
-                            user_openai_key=user.openai_api_key or "",
-                        )
-                    )
-                    logger.info(f"[TASK-SCHEDULER] 🤖 Agent PostCall started for call {agent_call.id}")
             else:
                 task.status = TaskStatus.FAILED
                 task.call_result = task.call_result or "Call failed"
@@ -828,124 +753,6 @@ class TaskScheduler:
             task.call_result = f"SIP gateway error: {e}"
             db.commit()
 
-    async def _agent_call_via_partner(
-        self, task, agent_contact, child_account, assistant_id, assistant_name, assistant_type, db
-    ) -> Tuple[Optional[str], bool]:
-        """Initiate agent call via partner API. Returns (session_id, success)."""
-        try:
-            outbound_rule_name = _outbound_rule_name(assistant_type)
-            rule_id = child_account.get_rule_id(outbound_rule_name)
-            if not rule_id:
-                task.call_result = f"Outbound rule '{outbound_rule_name}' not configured"
-                return None, False
-
-            caller_id = None
-
-            # 1. Task-level caller_id
-            if task.caller_id:
-                if child_account.phone_numbers:
-                    for phone in child_account.phone_numbers:
-                        if phone.phone_number == task.caller_id and phone.is_active:
-                            caller_id = task.caller_id
-                            break
-
-            # 2. AgentConfig.default_caller_id
-            if not caller_id and agent_contact:
-                agent_cfg = db.query(AgentConfig).filter(
-                    AgentConfig.id == agent_contact.agent_config_id
-                ).first()
-                if agent_cfg and agent_cfg.default_caller_id:
-                    if child_account.phone_numbers:
-                        for phone in child_account.phone_numbers:
-                            if phone.phone_number == agent_cfg.default_caller_id and phone.is_active:
-                                caller_id = agent_cfg.default_caller_id
-                                logger.info(f"   📞 Using agent default_caller_id: {caller_id}")
-                                break
-
-            # 3. First active number (fallback)
-            if not caller_id and child_account.phone_numbers:
-                for phone in child_account.phone_numbers:
-                    if phone.is_active:
-                        caller_id = phone.phone_number
-                        break
-            if not caller_id:
-                task.call_result = "No active phone numbers"
-                return None, False
-
-            service = get_voximplant_partner_service()
-            result = await service.start_outbound_call(
-                child_account_id=child_account.vox_account_id,
-                child_api_key=child_account.vox_api_key,
-                rule_id=int(rule_id),
-                phone_number=agent_contact.phone,
-                assistant_id=assistant_id,
-                caller_id=caller_id,
-                contact_name=agent_contact.name or "",
-                task_title=task.title or "",
-                task_description=task.description or "",
-                custom_greeting=task.custom_greeting or "",
-                timezone=DEFAULT_TIMEZONE,
-                assistant_type=assistant_type,
-            )
-
-            if result.get("success"):
-                return result.get("call_session_history_id"), True
-            else:
-                task.call_result = f"Partner API error: {result.get('error', 'Unknown')}"
-                return None, False
-        except Exception as e:
-            task.call_result = f"Partner API exception: {str(e)}"
-            return None, False
-
-    async def _agent_call_via_legacy(
-        self, task, agent_contact, user, assistant_id, assistant_name, assistant_type, db
-    ) -> Tuple[Optional[str], bool]:
-        """Initiate agent call via legacy API. Returns (session_id, success)."""
-        try:
-            voximplant_config = user.get_voximplant_config()
-            if not voximplant_config:
-                task.call_result = "No Voximplant settings"
-                return None, False
-
-            final_assistant_id = assistant_id
-            if assistant_type == "gemini":
-                final_assistant_id = f"gemini_{assistant_id}"
-
-            script_custom_data = json.dumps({
-                "phone_number": agent_contact.phone,
-                "assistant_id": final_assistant_id,
-                "caller_id": voximplant_config["caller_id"],
-                "task_title": task.title or "",
-                "task_description": task.description or "",
-                "contact_name": agent_contact.name or "",
-                "custom_greeting": task.custom_greeting or "",
-                "timezone": DEFAULT_TIMEZONE,
-            }, ensure_ascii=False)
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    VOXIMPLANT_API_URL,
-                    data={
-                        "account_id": voximplant_config["account_id"],
-                        "api_key": voximplant_config["api_key"],
-                        "rule_id": voximplant_config["rule_id"],
-                        "script_custom_data": script_custom_data,
-                    }
-                )
-                response_data = response.json()
-
-                if response.status_code == 200 and response_data.get("result") == 1:
-                    raw = response_data.get("call_session_history_id")
-                    session_id = raw[0] if isinstance(raw, list) and raw else raw
-                    return session_id, True
-                else:
-                    error_msg = response_data.get("error", {}).get("msg", "Unknown error")
-                    task.call_result = f"Voximplant error: {error_msg}"
-                    return None, False
-        except Exception as e:
-            task.call_result = f"Legacy API exception: {str(e)}"
-            return None, False
-
     async def execute_task(self, task: Task, db: Session):
         """
         Выполнение конкретной задачи (инициация звонка).
@@ -1006,57 +813,24 @@ class TaskScheduler:
             # ✅ v4.0: ВЫБОР ИНТЕГРАЦИИ
             # =====================================================================
             
-            # Проверяем наличие партнёрской интеграции (VoximplantChildAccount)
-            child_account: Optional[VoximplantChildAccount] = None
-            
-            # Используем backref relationship
-            if hasattr(user, 'voximplant_child_account') and user.voximplant_child_account:
-                child_account = user.voximplant_child_account
-            
-            # Определяем какую интеграцию использовать
+            # Только собственный SIP-шлюз (Asterisk + мост); Voximplant выключен.
             sip_number = self._sip_number_for(user, task, assistant_type, db)
-            if sip_number is not None:
-                # ✅ Собственный SIP-шлюз (Asterisk + мост)
-                logger.info(f"[TASK-SCHEDULER] 📞 Using SIP GATEWAY integration (number {sip_number.phone_number})")
-                await self._execute_via_sip_gateway(
-                    task=task,
-                    contact=contact,
-                    sip_number=sip_number,
-                    assistant_id=assistant_id,
-                    assistant_type=assistant_type,
-                    db=db
-                )
-            elif child_account and child_account.can_make_outbound_calls:
-                # ✅ НОВАЯ партнёрская интеграция
-                logger.info(f"[TASK-SCHEDULER] 🆕 Using PARTNER integration (VoximplantChildAccount)")
-                await self._execute_via_partner_api(
-                    task=task,
-                    contact=contact,
-                    child_account=child_account,
-                    assistant_id=assistant_id,
-                    assistant_name=assistant_name,
-                    assistant_type=assistant_type,
-                    db=db
-                )
-            elif user.has_voximplant_config():
-                # ✅ LEGACY интеграция (fallback)
-                logger.info(f"[TASK-SCHEDULER] 📦 Using LEGACY integration (user.get_voximplant_config)")
-                await self._execute_via_legacy_api(
-                    task=task,
-                    contact=contact,
-                    user=user,
-                    assistant_id=assistant_id,
-                    assistant_name=assistant_name,
-                    assistant_type=assistant_type,
-                    db=db
-                )
-            else:
-                # ❌ Нет конфигурации
-                logger.error(f"[TASK-SCHEDULER] ❌ No Voximplant configuration found for user {user.id}")
+            if sip_number is None:
+                logger.warning(f"[TASK-SCHEDULER] ❌ No SIP number with outbound for task {task.id}")
                 task.status = TaskStatus.FAILED
-                task.call_result = "No Voximplant configuration found. Please configure telephony in Settings or connect Partner integration."
+                task.call_result = NO_OUTBOUND_NUMBER_MESSAGE
                 db.commit()
-            
+                return
+            logger.info(f"[TASK-SCHEDULER] 📞 Using SIP GATEWAY integration (number {sip_number.phone_number})")
+            await self._execute_via_sip_gateway(
+                task=task,
+                contact=contact,
+                sip_number=sip_number,
+                assistant_id=assistant_id,
+                assistant_type=assistant_type,
+                db=db
+            )
+
         except Exception as e:
             logger.error(f"[TASK-SCHEDULER] Error executing task {task.id}: {e}", exc_info=True)
             
@@ -1068,316 +842,6 @@ class TaskScheduler:
             except Exception as commit_error:
                 logger.error(f"[TASK-SCHEDULER] Failed to update task status: {commit_error}")
     
-    async def _execute_via_partner_api(
-        self,
-        task: Task,
-        contact: Contact,
-        child_account: VoximplantChildAccount,
-        assistant_id: str,
-        assistant_name: str,
-        assistant_type: str,
-        db: Session
-    ):
-        """
-        ✅ v4.0: Выполнение звонка через НОВУЮ партнёрскую интеграцию.
-        
-        Использует VoximplantPartnerService для запуска звонка.
-        """
-        try:
-            logger.info(f"[TASK-SCHEDULER] 🆕 PARTNER API CALL")
-            logger.info(f"   Contact: {contact.name or contact.phone}")
-            logger.info(f"   Assistant: {assistant_name} ({assistant_type})")
-            logger.info(f"   Task: {task.title}")
-            if task.custom_greeting:
-                logger.info(f"   💬 Custom Greeting: {task.custom_greeting[:80]}...")
-            
-            # Сценарий исходящего: общий outbound_crm для провайдеров, которые он
-            # умеет, и свой сценарий у каскада и Fish (см. _outbound_rule_name).
-            rule_name = _outbound_rule_name(assistant_type)
-            rule_id = child_account.get_rule_id(rule_name)
-
-            if not rule_id:
-                logger.error(f"[TASK-SCHEDULER] ❌ Rule '{rule_name}' not found in child account")
-                logger.error(f"   Available rules: {list(child_account.vox_rule_ids.keys()) if child_account.vox_rule_ids else 'None'}")
-                task.status = TaskStatus.FAILED
-                task.call_result = (
-                    f"Outbound rule '{rule_name}' not configured. Run the matching admin "
-                    f"endpoint (/api/telephony/admin/setup-crm-rules for outbound_crm, "
-                    f"/admin/setup-fish-scenarios or /admin/setup-cascade-scenarios for "
-                    f"provider rules) to create it."
-                )
-                db.commit()
-                return
-
-            # Активный агент пользователя: его default_caller_id служит запасным
-            # номером, а после успешного старта звонка — ключом для PostCall.
-            # Читать эту переменную ДО присваивания (как было раньше) нельзя:
-            # любая задача без явного task.caller_id падала с UnboundLocalError.
-            agent_config = db.query(AgentConfig).filter(
-                AgentConfig.user_id == contact.user_id,
-                AgentConfig.is_active == True
-            ).first()
-
-            # ✅ v4.1: Выбор caller_id — из задачи, агента или автоматически
-            caller_id = None
-
-            # 1. Если в задаче указан конкретный caller_id — используем его
-            if task.caller_id:
-                caller_id_valid = False
-                if child_account.phone_numbers:
-                    for phone in child_account.phone_numbers:
-                        if phone.phone_number == task.caller_id and phone.is_active:
-                            caller_id = task.caller_id
-                            caller_id_valid = True
-                            logger.info(f"   ✅ Using task-specified caller_id: {caller_id}")
-                            break
-
-                if not caller_id_valid:
-                    logger.warning(f"[TASK-SCHEDULER] ⚠️ Task caller_id '{task.caller_id}' is not active or not found")
-                    logger.warning(f"   Falling back to agent/auto-select...")
-
-            # 2. AgentConfig.default_caller_id (если есть активный агент)
-            if not caller_id and agent_config and agent_config.default_caller_id:
-                if child_account.phone_numbers:
-                    for phone in child_account.phone_numbers:
-                        if phone.phone_number == agent_config.default_caller_id and phone.is_active:
-                            caller_id = agent_config.default_caller_id
-                            logger.info(f"   📞 Using agent default_caller_id: {caller_id}")
-                            break
-
-            # 3. Если caller_id не указан или не валиден — берём первый активный
-            if not caller_id:
-                if child_account.phone_numbers:
-                    for phone in child_account.phone_numbers:
-                        if phone.is_active:
-                            caller_id = phone.phone_number
-                            logger.info(f"   📞 Auto-selected caller_id: {caller_id}")
-                            break
-
-            # 4. Если вообще нет активных номеров — ошибка
-            if not caller_id:
-                logger.error(f"[TASK-SCHEDULER] ❌ No active phone numbers for caller_id")
-                task.status = TaskStatus.FAILED
-                task.call_result = "No active phone numbers available for caller ID. Check that your phone numbers are not expired."
-                db.commit()
-                return
-            
-            logger.info(f"   Rule ID: {rule_id}")
-            logger.info(f"   Caller ID: {caller_id}")
-            
-            # Вызываем VoximplantPartnerService
-            service = get_voximplant_partner_service()
-            
-            result = await service.start_outbound_call(
-                child_account_id=child_account.vox_account_id,
-                child_api_key=child_account.vox_api_key,
-                rule_id=int(rule_id),
-                phone_number=contact.phone,
-                assistant_id=assistant_id,
-                caller_id=caller_id,
-                # ✅ v3.1: CRM контекст
-                contact_name=contact.name or "",
-                task_title=task.title or "",
-                task_description=task.description or "",
-                custom_greeting=task.custom_greeting or "",
-                timezone=DEFAULT_TIMEZONE,
-                assistant_type=assistant_type
-            )
-            
-            if result.get("success"):
-                call_session_id = result.get("call_session_history_id")
-                
-                task.status = TaskStatus.COMPLETED
-                task.call_completed_at = datetime.utcnow()
-                task.call_session_id = str(call_session_id) if call_session_id else None
-                task.call_result = f"Call initiated successfully via Partner API. Session ID: {call_session_id}"
-                
-                logger.info(f"[TASK-SCHEDULER] ✅ Task {task.id} completed successfully (Partner API)")
-                logger.info(f"   Call session ID: {call_session_id}")
-
-                # ✅ v5.0: Launch PostCall if agent is active (agent_config найден выше)
-                if agent_config and task.pre_call_response_id:
-                    user = db.query(User).filter(User.id == contact.user_id).first()
-                    if user and user.openai_api_key:
-                        spawn(
-                            PostCallOrchestrator.poll_and_run(
-                                task_id=str(task.id),
-                                agent_config_id=str(agent_config.id),
-                                user_openai_key=user.openai_api_key
-                            )
-                        )
-                        logger.info(f"[TASK-SCHEDULER] 🤖 PostCall polling started for task {task.id}")
-            else:
-                error_msg = result.get("error", "Unknown error")
-                task.status = TaskStatus.FAILED
-                task.call_result = f"Partner API error: {error_msg}"
-
-                logger.error(f"[TASK-SCHEDULER] ❌ Partner API error for task {task.id}: {error_msg}")
-
-            db.commit()
-            
-        except Exception as e:
-            logger.error(f"[TASK-SCHEDULER] Partner API exception: {e}", exc_info=True)
-            task.status = TaskStatus.FAILED
-            task.call_result = f"Partner API exception: {str(e)}"
-            db.commit()
-    
-    async def _execute_via_legacy_api(
-        self,
-        task: Task,
-        contact: Contact,
-        user: User,
-        assistant_id: str,
-        assistant_name: str,
-        assistant_type: str,
-        db: Session
-    ):
-        """
-        ✅ v4.0: Выполнение звонка через СТАРУЮ (Legacy) интеграцию.
-        
-        Использует прямой вызов Voximplant API с настройками из user модели.
-        Это оригинальный код из v3.4, вынесенный в отдельный метод.
-        """
-        try:
-            logger.info(f"[TASK-SCHEDULER] 📦 LEGACY API CALL")
-            logger.info(f"   Contact: {contact.name or contact.phone}")
-            logger.info(f"   Assistant: {assistant_name} ({assistant_type})")
-            logger.info(f"   Task: {task.title}")
-            if task.custom_greeting:
-                logger.info(f"   💬 Custom Greeting: {task.custom_greeting[:80]}...")
-            
-            # Получаем настройки Voximplant из user модели
-            voximplant_config = user.get_voximplant_config()
-            
-            if not voximplant_config:
-                logger.error(f"[TASK-SCHEDULER] ❌ User {user.id} has no Voximplant settings")
-                task.status = TaskStatus.FAILED
-                task.call_result = "User has no Voximplant settings. Please configure in Settings."
-                db.commit()
-                return
-            
-            # Для Gemini добавляем префикс к assistant_id
-            final_assistant_id = assistant_id
-            if assistant_type == "gemini":
-                final_assistant_id = f"gemini_{assistant_id}"
-            
-            # Формируем script_custom_data с контекстом задачи
-            script_custom_data_dict = {
-                "phone_number": contact.phone,
-                "assistant_id": final_assistant_id,
-                "caller_id": voximplant_config["caller_id"],
-                # Контекст задачи
-                "task_title": task.title or "",
-                "task_description": task.description or "",
-                "contact_name": contact.name or "",
-                # Персонализированное приветствие
-                "custom_greeting": task.custom_greeting or "",
-                # Timezone
-                "timezone": DEFAULT_TIMEZONE
-            }
-            
-            logger.info(f"[TASK-SCHEDULER] 📦 Script custom data:")
-            logger.info(f"   phone_number: {script_custom_data_dict['phone_number']}")
-            logger.info(f"   assistant_id: {script_custom_data_dict['assistant_id']}")
-            logger.info(f"   caller_id: {script_custom_data_dict['caller_id']}")
-            logger.info(f"   task_title: {script_custom_data_dict['task_title']}")
-            logger.info(f"   contact_name: {script_custom_data_dict['contact_name']}")
-            if script_custom_data_dict['custom_greeting']:
-                logger.info(f"   💬 custom_greeting: {script_custom_data_dict['custom_greeting'][:80]}...")
-            
-            script_custom_data = json.dumps(script_custom_data_dict, ensure_ascii=False)
-            
-            # Отправляем запрос в Voximplant API
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    VOXIMPLANT_API_URL,
-                    data={
-                        "account_id": voximplant_config["account_id"],
-                        "api_key": voximplant_config["api_key"],
-                        "rule_id": voximplant_config["rule_id"],
-                        "script_custom_data": script_custom_data
-                    }
-                )
-                
-                response_data = response.json()
-                
-                logger.info(f"[TASK-SCHEDULER] Voximplant API response: {response_data}")
-                
-                if response.status_code == 200 and response_data.get("result") == 1:
-                    # Успешно запущен звонок
-                    call_session_raw = response_data.get("call_session_history_id")
-                    
-                    if isinstance(call_session_raw, list):
-                        call_session_id = call_session_raw[0] if call_session_raw else None
-                    else:
-                        call_session_id = call_session_raw
-                    
-                    task.status = TaskStatus.COMPLETED
-                    task.call_completed_at = datetime.utcnow()
-                    task.call_session_id = str(call_session_id) if call_session_id else None
-                    task.call_result = f"Call initiated successfully via Legacy API. Session ID: {call_session_id}"
-
-                    logger.info(f"[TASK-SCHEDULER] ✅ Task {task.id} completed successfully (Legacy API)")
-                    logger.info(f"   Call session ID: {call_session_id}")
-
-                    # ✅ v5.0: Launch PostCall if agent is active
-                    agent_config = db.query(AgentConfig).filter(
-                        AgentConfig.user_id == user.id,
-                        AgentConfig.is_active == True
-                    ).first()
-                    if agent_config and task.pre_call_response_id:
-                        if user.openai_api_key:
-                            spawn(
-                                PostCallOrchestrator.poll_and_run(
-                                    task_id=str(task.id),
-                                    agent_config_id=str(agent_config.id),
-                                    user_openai_key=user.openai_api_key
-                                )
-                            )
-                            logger.info(f"[TASK-SCHEDULER] 🤖 PostCall polling started for task {task.id}")
-                else:
-                    # Ошибка от Voximplant
-                    error_msg = response_data.get("error", {}).get("msg", "Unknown Voximplant error")
-                    error_code = response_data.get("error", {}).get("code", "N/A")
-                    
-                    task.status = TaskStatus.FAILED
-                    task.call_result = f"Voximplant error [{error_code}]: {error_msg}"
-                    
-                    logger.error(f"[TASK-SCHEDULER] ❌ Voximplant error for task {task.id}")
-                    logger.error(f"   Error code: {error_code}")
-                    logger.error(f"   Error message: {error_msg}")
-                
-                db.commit()
-                
-        except httpx.TimeoutException as e:
-            logger.error(f"[TASK-SCHEDULER] Timeout calling Voximplant API: {e}")
-            task.status = TaskStatus.FAILED
-            task.call_result = f"Timeout error: Request to Voximplant took too long"
-            db.commit()
-            
-        except httpx.RequestError as e:
-            logger.error(f"[TASK-SCHEDULER] Network error calling Voximplant API: {e}")
-            task.status = TaskStatus.FAILED
-            task.call_result = f"Network error: {str(e)}"
-            db.commit()
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"[TASK-SCHEDULER] Invalid JSON response from Voximplant: {e}")
-            task.status = TaskStatus.FAILED
-            task.call_result = f"Invalid response from Voximplant API"
-            db.commit()
-        
-        except Exception as e:
-            logger.error(f"[TASK-SCHEDULER] Legacy API exception: {e}", exc_info=True)
-            task.status = TaskStatus.FAILED
-            task.call_result = f"Legacy API exception: {str(e)}"
-            db.commit()
-
-
-# Глобальный экземпляр планировщика
-_task_scheduler: Optional[TaskScheduler] = None
-
-
 async def start_task_scheduler(check_interval: int = 30):
     """
     Запуск планировщика задач.

@@ -3044,8 +3044,8 @@ async def public_outbound_call(
         
         # Общий CRM-сценарий умеет не всех: у каскада и Fish свои исходящие
         # сценарии (цепочка с vox-turn-taking / прокси синтеза Fish).
-        from backend.core.task_scheduler import _outbound_rule_name
-        rule_name = _outbound_rule_name(assistant_type)
+        # DEAD (Voximplant выключен): правило сценария подбиралось по типу ассистента.
+        rule_name = {"cascade": "outbound_cascade", "fish": "outbound_fish"}.get(assistant_type, "outbound_crm")
         rule_id = child_account.vox_rule_ids.get(rule_name)
 
         if not rule_id:
