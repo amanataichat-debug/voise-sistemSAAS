@@ -179,8 +179,9 @@ phone.input_level = None
 phone._play_until = _t.time() + 2.0
 run(phone._feed(_tone(500)))
 run(phone._feed(_tone(9000)))
-check("эхо-ворота Gemini: пока агент доигрывает ответ, тихое эхо уходит тишиной, громкая речь клиента проходит",
-      len(_eg_sent) == 2 and not any(_eg_sent[0]) and _eg_sent[1] == _tone(9000))
+check("эхо-ворота Gemini: пока агент доигрывает ответ, тихое эхо приглушено (≈ −24 дБ), громкая речь клиента проходит",
+      len(_eg_sent) == 2 and 0 < audioop.rms(_eg_sent[0], 2) <= audioop.rms(_tone(500), 2) * 0.1
+      and _eg_sent[1] == _tone(9000))
 
 run(widget.save_turn("[no user input]", "Здравствуйте"))
 run(widget.save_turn("Привет", "[no response]"))
