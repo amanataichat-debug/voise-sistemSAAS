@@ -1515,6 +1515,57 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
         db,
         call_direction: str = "outbound"
     ):
+        """
+        Один разбор на клиента за раз — для ВСЕХ событий (звонок, переписка, касание воронки).
+        Обработчики переписки уже арендовали клиента — повторный вход проходит сразу (contact_lease._HELD).
+        Разбор звонка ждёт окончания разбора переписки; касание воронки при занятом клиенте не идёт:
+        клиент сейчас сам на связи, дожимать нечего.
+        """
+        from backend.services import contact_lease
+        cid = agent_contact.id
+        own = not contact_lease.held(cid)
+        if own:
+            wait = 0 if call_direction == "followup_outbound" else LEASE_WAIT_SECONDS
+            if not await contact_lease.acquire(db, cid, wait_seconds=wait):
+                if call_direction == "followup_outbound":
+                    logger.info(f"[AGENT-POSTCALL] contact {cid}: идёт разбор клиента — касание воронки пропущено")
+                    try:
+                        db.delete(agent_call)  # пустая строка события не нужна в истории клиента
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                    return
+                logger.warning(f"[AGENT-POSTCALL] contact {cid}: прошлый разбор не закончился за "
+                               f"{LEASE_WAIT_SECONDS} с — разбираем без очереди")
+                own = False
+        try:
+            result = await self._analyze_v3_body(
+                agent_call, agent_contact, agent_config, user, task,
+                transcript, call_status, duration_seconds, db, call_direction,
+            )
+            # Недозвон на исходящем и модель не поставила следующий звонок (или разбор упал) —
+            # повтор ставит код (services/call_retry.py), иначе клиент выпадал из обзвона навсегда.
+            if (call_direction or "outbound").lower() == "outbound" and call_status != "answered":
+                from backend.services.call_retry import ensure_retry_after_no_answer
+                await ensure_retry_after_no_answer(db, agent_config, agent_contact, user, transcript)
+            return result
+        finally:
+            if own:
+                contact_lease.release(db, cid)
+
+    async def _analyze_v3_body(
+        self,
+        agent_call: AgentCall,
+        agent_contact: AgentContact,
+        agent_config: AgentConfig,
+        user: User,
+        task: Optional[Task],
+        transcript: str,
+        call_status: str,
+        duration_seconds: float,
+        db,
+        call_direction: str = "outbound"
+    ):
         """PostCall v3 — OpenRouter Chat Completions, без previous_response_id."""
         logger.info(f"[AGENT-POSTCALL] (v3/OpenRouter) Analyzing call {agent_call.id}, model {agent_config.orchestrator_model}")
 

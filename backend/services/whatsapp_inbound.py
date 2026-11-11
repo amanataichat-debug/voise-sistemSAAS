@@ -338,10 +338,13 @@ async def _dispatch_if_latest(account_id: str, chat_id: str, contact_id: str, ms
             return  # пришло новое сообщение — ответит его задача
     finally:
         db.close()
-    await dispatch_chat(account_id, chat_id, contact_id)
+    # Клиент дописал, пока бот отвечал на прошлое сообщение: ждём конца того разбора (как Telegram/Instagram),
+    # а не подметания через 1,5–2 мин.
+    from backend.services.agent_orchestrator import LEASE_WAIT_SECONDS
+    await dispatch_chat(account_id, chat_id, contact_id, wait_seconds=LEASE_WAIT_SECONDS)
 
 
-async def dispatch_chat(account_id: str, chat_id: str, contact_id: str) -> bool:
+async def dispatch_chat(account_id: str, chat_id: str, contact_id: str, wait_seconds: float = 0) -> bool:
     """
     Отдать оркестратору все ещё не переданные входящие чата одним прогоном.
 
@@ -367,9 +370,17 @@ async def dispatch_chat(account_id: str, chat_id: str, contact_id: str) -> bool:
             return False
         if chat.last_dispatched_at is not None and chat.last_dispatched_at >= latest.created_at:
             return False
-        if not contact_lease.try_acquire(db, contact_id):
+        if not await contact_lease.acquire(db, contact_id, wait_seconds=wait_seconds):
             logger.info(f"[WA-IN] chat {chat_id}: идёт разбор этого клиента — ответим после него")
             return False
+        if wait_seconds:
+            # пока ждали, клиент мог дописать — берём серию целиком
+            db.expire_all()
+            latest = db.query(AgentWhatsAppMessage).filter(
+                AgentWhatsAppMessage.chat_id == chat_id,
+                AgentWhatsAppMessage.direction == "inbound",
+            ).order_by(AgentWhatsAppMessage.created_at.desc()).first()
+            chat = db.query(AgentWhatsAppChat).filter(AgentWhatsAppChat.id == chat_id).first()
         since = chat.last_dispatched_at
         claimed = db.query(AgentWhatsAppChat).filter(
             AgentWhatsAppChat.id == chat_id,
