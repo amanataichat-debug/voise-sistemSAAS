@@ -79,7 +79,8 @@ async def status(db = Depends(get_db)):
     db_status = "ok"
     try:
         # Execute a simple query to check DB connection
-        db.execute("SELECT 1").fetchone()
+        from sqlalchemy import text
+        db.execute(text("SELECT 1")).fetchone()
     except Exception as e:
         db_status = f"error: {str(e)}"
         logger.error(f"Database connection error: {str(e)}")

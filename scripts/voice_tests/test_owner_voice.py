@@ -843,7 +843,24 @@ else:
         conn.execute(_text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
-    now = _dt.utcnow()
+    # Часы заморожены на полдень по Бишкеку: данные «час назад» и «вчера» не должны переползать
+    # через полночь (тест падал после 00:00 Бишкека — сравнивал «сегодня» с моментом запуска).
+    _real = _dt.utcnow()
+    _frozen = _real.replace(hour=6, minute=0, second=0, microsecond=0)  # 12:00 Бишкек
+
+    class _FrozenDT(_dt):
+        @classmethod
+        def utcnow(cls):
+            return _frozen
+
+        @classmethod
+        def now(cls, tz=None):
+            return _frozen.replace(tzinfo=tz) if tz else _frozen + _td(hours=6)
+
+    import backend.services.inbox_service as _inbox_mod
+    ov.datetime = _FrozenDT
+    _inbox_mod.datetime = _FrozenDT
+    now = _frozen
     owner = User(email=f"o{_uuid.uuid4().hex[:6]}@x.kg", password_hash="x", credits_balance=5000, first_name="Аман")
     db.add(owner); db.flush()
     ag = AgentConfig(user_id=owner.id, name="Анри", is_active=True)

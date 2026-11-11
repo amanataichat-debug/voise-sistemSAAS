@@ -106,6 +106,7 @@ def run_alembic_migrations():
         
         # Создаем конфигурацию Alembic
         alembic_cfg = Config(alembic_cfg_path)
+        alembic_cfg.attributes["skip_logging_config"] = True  # не отключать логгеры приложения
         
         # Устанавливаем DATABASE_URL из переменных окружения
         database_url = os.getenv("DATABASE_URL")
@@ -216,7 +217,8 @@ def check_database_connection():
         db = SessionLocal()
         
         # Простой тестовый запрос
-        result = db.execute("SELECT 1 as test").fetchone()
+        from sqlalchemy import text
+        result = db.execute(text("SELECT 1 as test")).fetchone()
         
         if result and result[0] == 1:
             print("✅ Подключение к базе данных успешно!")

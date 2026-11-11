@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Коммит только при зелёных проверках. Включить один раз в клоне: git config core.hooksPath .githooks
+# С тестовой базой проверка полнее: export CHECK_DATABASE_URL=postgresql://…  (база будет изменена)
+exec bash "$(git rev-parse --show-toplevel)/scripts/check_all.sh"
