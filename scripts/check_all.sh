@@ -25,9 +25,9 @@ echo "$out" | grep -E "^\[FAIL\]|^       FAIL|ИТОГО"
 echo "$out" | grep -q "ИТОГО: прошло [0-9]*, провалов 0" || fail=1
 if [ -n "${CHECK_DATABASE_URL:-}" ]; then
   echo "== тесты на PostgreSQL"
-  for t in mechanics inbox owner_voice boot_jobs; do
+  for t in mechanics inbox owner_voice boot_jobs e2e_call_chain e2e_chat_chain; do
     if ! MECH_TEST_DATABASE_URL=$CHECK_DATABASE_URL INBOX_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
-         OWNER_VOICE_TEST_DATABASE_URL=$CHECK_DATABASE_URL BOOT_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
+         OWNER_VOICE_TEST_DATABASE_URL=$CHECK_DATABASE_URL BOOT_TEST_DATABASE_URL=$CHECK_DATABASE_URL E2E_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          python scripts/voice_tests/test_$t.py > "/tmp/check_$t.log" 2>&1; then
       grep -E "^FAIL|Error" "/tmp/check_$t.log" | head; echo "FAIL test_$t"; fail=1
     fi
