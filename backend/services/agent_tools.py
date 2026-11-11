@@ -3797,23 +3797,25 @@ async def fn_get_agent_stats(args: dict, user_id: str, agent_config_id: str, db:
         AgentContact.status.notin_(["rejected", "do_not_call"]),
     ).scalar() or 0
 
+    # Только звонки: разборы переписки тоже лежат в agent_calls (voice_calls_only).
+    from backend.models.agent_call import voice_calls_only
     total_calls = db.query(func.count(AgentCall.id)).filter(
-        AgentCall.agent_config_id == agent_config_id
+        AgentCall.agent_config_id == agent_config_id, voice_calls_only(),
     ).scalar() or 0
 
     success_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent_config_id,
-        AgentCall.post_call_decision == "SUCCESS",
+        AgentCall.post_call_decision == "SUCCESS", voice_calls_only(),
     ).scalar() or 0
 
     followup_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent_config_id,
-        AgentCall.post_call_decision == "FOLLOWUP",
+        AgentCall.post_call_decision == "FOLLOWUP", voice_calls_only(),
     ).scalar() or 0
 
     no_answer_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent_config_id,
-        AgentCall.post_call_decision == "NO_ANSWER",
+        AgentCall.post_call_decision == "NO_ANSWER", voice_calls_only(),
     ).scalar() or 0
 
     scheduled_tasks = db.query(func.count(Task.id)).join(
@@ -5214,6 +5216,7 @@ async def fn_get_period_report(args: dict, user_id: str, agent_config_id: str, d
 
 async def fn_get_failed_calls(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     """Очередь на перезвон: последний неудачный/недозвон по каждому контакту."""
+    from backend.models.agent_call import voice_calls_only
     try:
         limit = max(1, min(int(args.get("limit") or 30), 100))
     except (ValueError, TypeError):
@@ -5228,6 +5231,7 @@ async def fn_get_failed_calls(args: dict, user_id: str, agent_config_id: str, db
                 AgentCall.status.in_(["no_answer", "failed"]),
                 AgentCall.post_call_decision == "NO_ANSWER",
             ),
+            voice_calls_only(),  # очередь на ПЕРЕЗВОН — только звонки
         )
         .order_by(AgentCall.created_at.desc())
         .limit(300)

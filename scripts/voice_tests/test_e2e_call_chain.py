@@ -152,6 +152,8 @@ c2 = db2.get(AgentContact, contact.id)
 check("попытка звонка посчитана", (c2.attempts_count or 0) == 1 and c2.last_called_at is not None,
       (c2.attempts_count, c2.last_called_at))
 db2.close()
+st = client.get("/api/agent/stats", headers=H).json()
+check("статистика: недозвон считается звонком", st.get("total_calls") == 1 and st.get("no_answer_calls") == 1, st)
 db.close()
 print(f"ПРОВАЛОВ: {failures}")
 sys.exit(1 if failures else 0)
