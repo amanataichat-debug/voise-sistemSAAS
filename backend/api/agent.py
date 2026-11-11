@@ -3480,23 +3480,25 @@ async def get_agent_stats(
         AgentContact.status.notin_(["rejected", "do_not_call"]),
     ).scalar() or 0
 
+    # Только звонки: разборы переписки тоже лежат в agent_calls (voice_calls_only).
+    from backend.models.agent_call import voice_calls_only
     total_calls = db.query(func.count(AgentCall.id)).filter(
-        AgentCall.agent_config_id == agent.id
+        AgentCall.agent_config_id == agent.id, voice_calls_only(),
     ).scalar() or 0
 
     success_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent.id,
-        AgentCall.post_call_decision == "SUCCESS",
+        AgentCall.post_call_decision == "SUCCESS", voice_calls_only(),
     ).scalar() or 0
 
     followup_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent.id,
-        AgentCall.post_call_decision == "FOLLOWUP",
+        AgentCall.post_call_decision == "FOLLOWUP", voice_calls_only(),
     ).scalar() or 0
 
     no_answer_calls = db.query(func.count(AgentCall.id)).filter(
         AgentCall.agent_config_id == agent.id,
-        AgentCall.post_call_decision.in_(["NO_ANSWER", "REJECTED"]),
+        AgentCall.post_call_decision.in_(["NO_ANSWER", "REJECTED"]), voice_calls_only(),
     ).scalar() or 0
 
     scheduled_tasks = db.query(func.count(Task.id)).join(

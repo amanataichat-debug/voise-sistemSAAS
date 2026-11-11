@@ -102,8 +102,10 @@ def _collect_weekly_stats(agent: AgentConfig, db: Session) -> dict:
     from backend.core.timezone_utils import BISHKEK
     today_local = _now_bishkek().date()
     week_start_utc, now_utc = _week_bounds_utc(today_local)
+    from backend.models.agent_call import voice_calls_only
     base_calls = db.query(AgentCall).filter(
         AgentCall.agent_config_id == agent.id,
+        voice_calls_only(),  # переписка — не звонок
         AgentCall.created_at >= week_start_utc,
         AgentCall.created_at < now_utc,
     )

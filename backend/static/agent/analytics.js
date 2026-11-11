@@ -199,13 +199,16 @@ function renderAnalytics(data){
   // Фильтр звонков по выбранному периоду (week/month/half/all)
   const nowMs = Date.now();
   const periodMs = _periodMs(analyticsPeriod);
+  // Только звонки: в /calls лежат и разборы переписки (channel whatsapp/telegram/instagram/sms) —
+  // раньше каждое сообщение считалось «звонком» в KPI.
+  const voiceCalls = allCalls.filter(c => (c.channel || 'call') === 'call');
   const calls = periodMs
-    ? allCalls.filter(c => {
+    ? voiceCalls.filter(c => {
         const t = c.started_at || c.created_at;
         if(!t) return false;
         return (nowMs - new Date(t).getTime()) <= periodMs;
       })
-    : allCalls;
+    : voiceCalls;
 
   // Метрики — часть считается из stats (вся база), часть — из calls за период
   const total_contacts = stats.total_contacts || 0;
@@ -278,7 +281,7 @@ function renderAnalytics(data){
     const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - i * bucketCfg.stepDays);
     days.push({ x: d, y: 0, start: d.getTime(), end: d.getTime() + bucketCfg.stepDays * 24 * 3600 * 1000 });
   }
-  (periodMs ? calls : allCalls).forEach(c => {
+  (periodMs ? calls : voiceCalls).forEach(c => {
     const t = c.started_at || c.created_at;
     if(!t) return;
     const ms = new Date(t).getTime();

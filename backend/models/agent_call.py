@@ -160,3 +160,23 @@ class AgentCall(Base):
             "precall_log": self.precall_log or {},
             "postcall_log": self.postcall_log or {},
         }
+
+
+# ── Звонок или сообщение ───────────────────────────────────────────────────────────────────────
+# В agent_calls лежат и звонки, и разборы переписки (WhatsApp/Telegram/Instagram/SMS, касания воронки).
+# Статистика «звонков» обязана считать только звонки (аудит 11.11.2026: /api/agent/stats, get_agent_stats
+# и недельный отчёт считали каждое сообщение звонком, а разбор переписки без задачи — «успешным звонком»).
+MESSAGE_EVENT_DIRECTIONS = (
+    "sms_inbound", "telegram_inbound", "telegram_outbound",
+    "instagram_inbound", "whatsapp_inbound", "followup_outbound",
+)
+
+
+def voice_calls_only():
+    """SQL-условие: строка agent_calls — голосовой звонок (по колонке direction и пометке разбора)."""
+    from sqlalchemy import and_, or_
+    marked = AgentCall.postcall_log["call_direction"].astext
+    return and_(
+        AgentCall.direction.notin_(MESSAGE_EVENT_DIRECTIONS),
+        or_(AgentCall.postcall_log.is_(None), marked.is_(None), marked.notin_(MESSAGE_EVENT_DIRECTIONS)),
+    )

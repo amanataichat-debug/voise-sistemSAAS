@@ -228,6 +228,17 @@ if t:
     when = t.scheduled_time.replace(tzinfo=timezone.utc).astimezone(BISHKEK)
     check("звонок ровно на время клиента (15:00 Бишкек завтра)", when == tomorrow15, when)
 
+# 4) статистика: переписка — не звонки
+st = client.get("/api/agent/stats", headers=H).json()
+check("статистика кабинета: 0 звонков после переписки", st.get("total_calls") == 0 and st.get("success_calls") == 0, st)
+from backend.services.agent_tools import fn_get_agent_stats  # noqa: E402
+tool_stats = asyncio.run(fn_get_agent_stats({}, str(boss.id), str(agent.id), db))
+check("статистика для агента (get_agent_stats): 0 звонков", (tool_stats.get("total_calls") or
+      (tool_stats.get("stats") or {}).get("total_calls") or 0) == 0, tool_stats)
+from backend.services.weekly_jobs import _collect_weekly_stats  # noqa: E402
+wk = _collect_weekly_stats(agent, db)
+check("недельный отчёт: 0 звонков", wk.get("calls_total", 0) == 0, wk)
+
 db.close()
 print(f"ПРОВАЛОВ: {failures}")
 sys.exit(1 if failures else 0)
