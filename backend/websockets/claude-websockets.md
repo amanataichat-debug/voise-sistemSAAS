@@ -1,5 +1,8 @@
 # backend/websockets — реал-тайм голосовые хендлеры и провайдерские WS-клиенты
 
+> **11.11.2026, ветка `1111-clean-system`.** Правила голоса для всех движков — `voice_rules.py` (`build_voice_rules`: `gpt_live` / `gemini` / `cascade`). Блоки `VOICE_*_HINT`/`VOICE_*_HEAD` в `live_client.py`, `GEMINI_*` в `voice_hints.py`, `VOICE_RULES` в `chat_llm_client.py` и `LANGUAGE_INSTRUCTIONS` в `fish_llm_client.py` удалены. Где ниже написано иначе, это история.
+
+
 ## Назначение
 Сердце голосового движка Voksy AI. Здесь живут WebSocket-хендлеры (серверная сторона соединения с браузером/телефонией) и WS-клиенты к провайдерам реал-тайм голоса (OpenAI GPT-Live, Google Gemini Live, Fish Audio, ElevenLabs TTS, xAI Grok). Хендлер принимает аудио от клиента, проксирует его в провайдера, получает аудио/события обратно, обрабатывает function calling и пишет диалог в БД. Телефония (собственный SIP-шлюз) проходит через те же хендлеры, что и виджет, через `sip_media_adapter.py`. Роутеры в `backend/api/*_ws.py` лишь принимают соединение и делегируют сюда.
 

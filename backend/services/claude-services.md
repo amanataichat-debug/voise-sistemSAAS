@@ -1,5 +1,8 @@
 # services/ — слой бизнес-логики между API/WebSocket-ами и моделями
 
+> **11.11.2026, ветка `1111-clean-system`.** Промпт оркестратора: `agent_prompts.ORCHESTRATOR_CORE` + `CLIENT_BLOCK` / `OWNER_BLOCK` (surface). `CHAT_MIND` удалён (правила переписки — в `CLIENT_BLOCK`), `chat_split` делит только по `---` (≤3 сообщений), `send_sms` у модели нет, новый `contact_lease.py` (один разбор на клиента). Память контакта — `agent_tools.apply_memory_update`. Подробно — раздел «Чистая система» в корневом CLAUDE.md; где ниже написано иначе, это история.
+
+
 ## Назначение
 `backend/services/` содержит сервисный слой Voksy AI: вся доменная логика, которая не должна жить в роутерах FastAPI или в ORM-моделях. Здесь же находится «мозг» автономного обзвона — оркестратор Voksy AI Agent (PreCall / PostCall / Chat), кредитный/биллинговый учёт, интеграции с внешними API (OpenRouter, OpenAI, Robokassa, Pinecone, Cloudflare R2, Voximplant Partner, Telegram, Google Sheets, SMTP; ElevenLabs — только TTS из `websockets/eleven_tts_client.py`). Сервисы вызываются из `backend/api/`, `backend/websockets/`, `backend/functions/` и фоновых планировщиков из `backend/core/`. Большинство сервисов — классы со `@staticmethod`/`@classmethod` либо синглтоны; собственного состояния обычно не держат, работают через переданную `Session`.
 
