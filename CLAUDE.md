@@ -13,7 +13,7 @@ The Voximplant code is still in the tree and is **dead code awaiting removal**. 
 - `backend/api/voximplant.py`, `backend/api/voximplant_settings.py`, `backend/api/telephony.py` (number binding, scenario deployment, `/config`, `/outbound-config`)
 - `backend/services/voximplant_partner.py`, `backend/models/voximplant_child.py`, `User.voximplant_*` columns, `VOXIMPLANT_*` settings
 - `backend/websockets/voximplant_handler.py`, `voximplant_adapter.py`, `handler_vox_gemini.py`, `handler_fish_tts.py` (old Fish TTS proxy for VoxEngine)
-- `voximplant_scenarios/`, `.claude/skills/voximplant-*`, `backend/static/outbound-calls.html`, `test_outbound-calls.html` (the old Voximplant `telephony.html` is gone: the page now works on `/api/sip/*`)
+- (`voximplant_scenarios/` и `handler_realtime_streaming.py` удалены 11.11.2026) `.claude/skills/voximplant-*`, `backend/static/outbound-calls.html`, `test_outbound-calls.html` (the old Voximplant `telephony.html` is gone: the page now works on `/api/sip/*`)
 - fallbacks in `backend/core/task_scheduler.py` (`_execute_via_partner_api`, `_execute_via_legacy_api`) and Voximplant number handling in `backend/api/agent.py`
 - `send_sms` function (Voximplant Management API) — has no working transport now
 
