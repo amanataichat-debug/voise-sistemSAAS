@@ -36,6 +36,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 from backend.db.session import SessionLocal
 from backend.services import agent_pause
 from backend.services import telegram_user_service as tg_user
@@ -43,7 +44,9 @@ from backend.services import telegram_user_service as tg_user
 logger = get_logger(__name__)
 
 # Claim должен «протухать» чуть раньше интервала, чтобы не пропускать тики.
-CLAIM_CUTOFF_SECONDS = 55
+from backend.core.config import settings as _settings  # noqa: E402
+POLL_SECONDS = max(15, int(getattr(_settings, "TG_POLL_SECONDS", 30) or 30))
+CLAIM_CUTOFF_SECONDS = POLL_SECONDS - 5
 
 # Исходящее, которого нет среди отправок агента, моложе этого — ещё может
 # оказаться отправкой агента, не успевшей записаться в БД; ждём тик.
@@ -54,7 +57,7 @@ OWNER_ECHO_GRACE_SECONDS = 20
 MAX_DIALOG_RUNS_PER_TICK = 5
 
 
-async def start_telegram_user_poller(check_interval: int = 60):
+async def start_telegram_user_poller(check_interval: int = POLL_SECONDS):
     """Запуск поллера. No-op, если TELEGRAM_API_ID/HASH/SESSION_KEY не заданы."""
     if not tg_user.is_configured():
         logger.info("[TG-POLLER] Telegram user connector not configured, poller disabled")
@@ -282,10 +285,10 @@ async def _poll_account(db, account):
         )
         if any(m.get("media") for m in inbound):
             items = [(m, (r.id if r is not None else None)) for m, r in stored]
-            asyncio.create_task(_process_media_and_dispatch(str(account.id), str(contact_id), items))
+            spawn(_process_media_and_dispatch(str(account.id), str(contact_id), items))
         else:
             text_joined = "\n".join(m["text"] for m in inbound)
-            asyncio.create_task(handle_inbound_telegram(str(account.id), str(contact_id), text_joined))
+            spawn(handle_inbound_telegram(str(account.id), str(contact_id), text_joined))
         runs += 1
 
     db.commit()

@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from websockets.exceptions import ConnectionClosed
 
 from backend.core.config import settings
+from backend.core.spawn import spawn
 from backend.core.logging import get_logger
 from backend.models.eleven_assistant import (
     DEFAULT_ELEVEN_GREETING,
@@ -514,7 +515,7 @@ class GeminiLiveVoiceSession:
             if sheet_id:
                 for p in self.pairs:
                     if p["user"] or p["assistant"]:
-                        asyncio.create_task(async_save_to_google_sheets(
+                        spawn(async_save_to_google_sheets(
                             sheet_id=sheet_id, user_message=p["user"], assistant_message=p["assistant"],
                             function_result=None, conversation_id=self.client.conversation_record_id,
                             context="Gemini Live dialog"))

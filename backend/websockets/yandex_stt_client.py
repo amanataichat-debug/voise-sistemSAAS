@@ -27,6 +27,7 @@ import time
 from typing import Awaitable, Callable, List, Optional
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 
 logger = get_logger(__name__)
 
@@ -189,7 +190,7 @@ class YandexSTTClient:
         self._last_audio_at = time.monotonic()
         self._queue.put_nowait(s.StreamingRequest(chunk=s.AudioChunk(data=pcm)))
         if self._session_audio >= SESSION_ROTATE_SEC and not self._in_phrase and not self._rotating:
-            asyncio.create_task(self._rotate())
+            spawn(self._rotate())
         return True
 
     async def _filler(self) -> None:

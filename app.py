@@ -3113,14 +3113,14 @@ async def startup_event():
                 start_subscription_checker,                                  # раз в час
                 lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
                 start_subscription_blocker,                                  # каждые 5 мин
-                lambda: start_telegram_user_poller(check_interval=60),       # личный Telegram агента
+                start_telegram_user_poller,                                  # личный Telegram агента (TG_POLL_SECONDS)
                 start_instagram_poller,                                      # Instagram DM агента
                 start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
                 demo_voice.setup_demo_bot_on_startup,                        # демо-бот: вебхук и кнопка Mini App
                 wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
             ])
             logger.info("✅ Background jobs started in a separate thread: subscription checker, "
-                        "task scheduler (30s), subscription blocker (5m), Telegram poller (60s), Instagram poller (90s), "
+                        "task scheduler (30s), subscription blocker (5m), Telegram poller (TG_POLL_SECONDS), Instagram poller (IG_POLL_SECONDS), "
                         "weekly jobs (Sun 21:00 report + Mon 10:00 nurture, Bishkek)")
 
         except Exception as e:
