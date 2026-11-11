@@ -216,7 +216,11 @@ async def voiced():
     def pcm(amp, n=160):
         return base64.b64encode(b"".join(struct.pack("<h", int(amp * math.sin(i / 3))) for i in range(n))).decode()
     loud, echo = pcm(9000), pcm(500)
-    zero = base64.b64encode(b"\x00\x00" * 160).decode()
+    import audioop as _ao
+
+    def muted(b64):   # приглушено (≈ −24 дБ), но не цифровой ноль — без рывков «тишина ↔ шум» для модели
+        r_in, r_out = _ao.rms(base64.b64decode(echo), 2), _ao.rms(base64.b64decode(b64), 2)
+        return 0 < r_out <= r_in * 0.1
     g, _, gcl = session(); g.client.io_rate = 8000
     for _ in range(10):
         g._track_input_level(pcm(40)); g._gate_input(pcm(40), 0.02)   # тишина линии, агент молчит
@@ -224,11 +228,11 @@ async def voiced():
         g._gate_input(loud, 0.02)                                       # клиент говорит
     check("эхо-ворота: пока агент молчит, звук идёт как есть", g._gate_input(echo, 0.02) == echo)
     g.assistant_speaking = True; g._last_audio_at = time.time(); g.echo_gate.open_until = 0.0
-    check("эхо-ворота: агент говорит — тихое эхо/шум заменяются тишиной", g._gate_input(echo, 0.02) == zero)
+    check("эхо-ворота: агент говорит — тихое эхо/шум приглушаются (не в ноль)", muted(g._gate_input(echo, 0.02)))
     check("эхо-ворота: громкая речь клиента поверх агента проходит (можно перебить)", g._gate_input(loud, 0.02) == loud)
     check("эхо-ворота: хвост слова после громкого куска проходит", g._gate_input(echo, 0.02) == echo)
     g.echo_gate.open_until = 0.0; g.assistant_speaking = False; g._last_audio_at = time.time() - 0.3
-    check("эхо-ворота: ещё 0,8 с после речи агента эхо глушится", g._gate_input(echo, 0.02) == zero)
+    check("эхо-ворота: ещё 0,8 с после речи агента эхо приглушается", muted(g._gate_input(echo, 0.02)))
     g._last_audio_at = time.time() - 2.0
     check("эхо-ворота: потом снова всё проходит", g._gate_input(echo, 0.02) == echo)
     w, _, _ = session(phone=False); w.assistant_speaking = True; w._last_audio_at = time.time()
