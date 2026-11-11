@@ -20,6 +20,20 @@ _EMOJI_RE = re.compile(
 _URL_RE = re.compile(r"https?://\S+|www\.\S+")
 
 
+# Часовой пояс клиенту не пишем: все клиенты в Кыргызстане (ветка 1111-chat-live).
+_TZ_PAREN_RE = re.compile(
+    r"\s*\(\s*(?:по\s+)?(?:времени\s+)?(?:бишкек\w*|bishkek|utc\s*\+?\s*6?|gmt\s*\+?\s*6?)"
+    r"(?:\s+времени)?\s*(?:,\s*utc\s*\+?\s*6)?\s*\)",
+    re.IGNORECASE,
+)
+_TZ_WORDS_RE = re.compile(
+    r",?\s+(?:по\s+бишкек\w*(?:\s+времени)?|по\s+времени\s+бишкека|по\s+местному\s+времени)(?=[\s.,!?]|$)",
+    re.IGNORECASE,
+)
+# Строка прайса «Название — цена»: двоеточие вместо тире (тире ниже превращается в запятую).
+_PRICE_LINE_RE = re.compile(r"^([^,:\n—–]{1,40}?)\s+[—–-]\s+(?=(?:от\s+)?\d)", re.IGNORECASE)
+
+
 def _clean_line(line: str) -> str:
     s = line
     s = re.sub(r"^\s{0,3}#{1,6}\s+", "", s)                    # заголовки
@@ -28,6 +42,10 @@ def _clean_line(line: str) -> str:
     s = re.sub(r"__(.+?)__", r"\1", s)
     s = re.sub(r"(?<!\w)\*(\S.*?\S|\S)\*(?!\w)", r"\1", s)        # *курсив*
     s = s.replace("`", "")
+    s = _TZ_PAREN_RE.sub("", s)                                  # «в 18:00 (Бишкек)» → «в 18:00»
+    s = _TZ_WORDS_RE.sub("", s)                                  # «по бишкекскому времени»
+    s = re.sub(r"\(\s*\)", "", s)
+    s = _PRICE_LINE_RE.sub(r"\1: ", s)                            # «Profi — 12 500» → «Profi: 12 500»
     s = re.sub(r"(\d)\s*[—–]\s*(\d)", r"\1-\2", s)               # 10–15 → 10-15
     s = re.sub(r"\s+[—–]\s+", ", ", s)                           # слово — слово → слово, слово
     s = re.sub(r"^[—–]\s*", "", s)

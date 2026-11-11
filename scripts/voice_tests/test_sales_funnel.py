@@ -141,8 +141,10 @@ check("оживление: 2 инструкции, без «вы тут?» и с
 # --- переписка: правило «не анкета» для WhatsApp / Telegram / Instagram ---
 from backend.services import agent_orchestrator as _ao
 _src = open(_ao.__file__, encoding="utf-8").read()
-check("переписка: максимум один лёгкий вопрос, без анкеты и эха — во всех трёх мессенджерах",
-      _src.count("+ chat_sales_rule") == 3 and "НЕ АНКЕТА" in _src and "НЕ ЭХО" in _src)
+from backend.services.chat_conscience import CHAT_MIND as _MIND
+check("переписка: живой продавец (chat_conscience.CHAT_MIND) — во всех трёх мессенджерах",
+      _src.count("+ chat_sales_rule") == 3 and "CHAT_MIND" in _src
+      and "Вопросов в сообщении ноль или один" in _MIND and "не пересказывай его слова" in _MIND)
 check("разбор звонка: просьба о менеджере/встрече → notify_owner_handoff (входящий и исходящий)",
       _src.count("+ call_handoff_rule") == 2 and "ЧЕЛОВЕК / ВСТРЕЧА" in _src)
 check("касание оживления: своё событие «клиент замолчал», не «дожим после КП»",
