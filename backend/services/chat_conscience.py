@@ -67,7 +67,9 @@ _CONSENT_RE = re.compile(
     r"^\s*(да|ага|ок|окей|ok|okay|хорошо|давайте|давай|можно|конечно|удобно|норм|согласен|"
     r"согласна|звоните|позвоните|набирайте|ооба|макул|мейли|болот|жарайт)\b"
     r"|\b(звоните|позвоните|перезвоните|набирайте|наберите|чалыңыз|чалсаңыз)\b"
-    r"|\bможно\s+(сейчас|позвонить)\b|\bсейчас\s+удобно\b",
+    r"|\bможно\s+(сейчас|позвонить)\b|\bсейчас\s+удобно\b"
+    r"|^\s*(супер|отлично|класс|го|окей|ладно)\b"
+    r"|\b(давайте|давай)\s+(созвон\w*|позвон\w*|поговорим|звоните|наберите)",
     re.IGNORECASE,
 )
 _NEGATIVE_START_RE = re.compile(r"^\s*(нет|не\s+надо|не\s+нужно|не\s+звоните|жок|керек\s+эмес)\b",
@@ -76,6 +78,12 @@ _DEFLECT_RE = re.compile(
     r"(на\s+работе|занят|занята|некогда|не\s+могу\s+(сейчас|говорить)|не\s+сейчас|подумаю|"
     r"подумать|посоветуюсь|поговорю\s+с|обсужу|спрошу\s+у|потом|позже\s+(напишу|свяжусь)|"
     r"сама?\s+напишу|сам\s+свяжусь|сама\s+свяжусь|ойлонуп|кийин|азыр\s+бош\s+эмес)",
+    re.IGNORECASE,
+)
+# Клиент сам просит человека: только тогда созвон уходит менеджеру, а не агенту.
+_HUMAN_RE = re.compile(
+    r"(менеджер|живо\w*\s+человек|с\s+человеком|оператор|сотрудник|специалист|руководител|"
+    r"директор|админ\w*|владел\w*|адам\s+менен|кызматкер)",
     re.IGNORECASE,
 )
 _THANKS_ONLY_RE = re.compile(r"^\s*(спасибо|благодарю|рахмат|понятно|ясно|хорошо,?\s*понятно)[\s.!]*$",
@@ -228,13 +236,41 @@ def situation(rows, now: Optional[datetime] = None) -> Situation:
     return s
 
 
-def situation_block(rows, now: Optional[datetime] = None) -> str:
+def client_asked_human(rows, last_n: int = 6) -> bool:
+    """В последних сообщениях клиента есть просьба о человеке / менеджере."""
+    inbound = [_body(m) for m in (rows or []) if _dir(m) == "inbound" and _body(m)]
+    return any(_HUMAN_RE.search(t) for t in inbound[-last_n:])
+
+
+def call_ability_line(can_call: Optional[bool], reason: str = "") -> str:
+    """Строка разбора: может ли агент сам позвонить этому клиенту."""
+    if can_call is True:
+        return (
+            "- Ты МОЖЕШЬ сам позвонить этому клиенту (его номер на O!, тариф позволяет). Захотел созвон,"
+            " демо, «позвоните» — звони САМ: сейчас — trigger_immediate_call, на время — create_agent_task."
+            " Не передавай это менеджеру (notify_owner_handoff) и не давай номер, чтобы он звонил сам:"
+            " твой звонок и есть демо. Человеку передавай, только если клиент прямо просит менеджера"
+            " или готов оплачивать."
+        )
+    if can_call is False:
+        return (
+            f"- Сам позвонить этому клиенту ты не можешь ({reason or 'звонок недоступен'}). Хочет услышать"
+            " агента — дай демо-номер из базы знаний; просит человека — notify_owner_handoff."
+        )
+    return ""
+
+
+def situation_block(rows, now: Optional[datetime] = None, can_call: Optional[bool] = None,
+                    call_reason: str = "") -> str:
     """Готовый вывод для события переписки (пусто — нечего подсказать)."""
     try:
         s = situation(rows, now)
     except Exception:
         return ""
     lines = []
+    ability = call_ability_line(can_call, call_reason)
+    if ability:
+        lines.append(ability)
     if s.client_last:
         lines.append(f"- Клиент сейчас написал: «{_clip(s.client_last, 240)}».")
     if s.asked_question and not s.call_settled:
@@ -310,3 +346,21 @@ def send_refusal(rows, text: str, now: Optional[datetime] = None) -> Optional[st
             " звонок. Предложишь снова, только если клиент сам вернётся к этому."
         )
     return None
+
+
+def handoff_refusal(rows, reason: str, can_call: bool) -> Optional[str]:
+    """
+    Передача владельцу вместо своего звонка (11.11.2026, +996 507…: клиент «давайте созвонимся»,
+    агент ответил «передал живому менеджеру», хотя мог позвонить сам). Отказ, если агент может
+    позвонить, повод — демо / «человек», а клиент человека не просил.
+    """
+    if not can_call or reason not in ("demo", "requested_human"):
+        return None
+    if client_asked_human(rows):
+        return None
+    return (
+        "Клиент не просил менеджера — он хочет созвон, а позвонить ты можешь сам (номер O!). Позвони сам:"
+        " сейчас — trigger_immediate_call, на названное время — create_agent_task, и коротко напиши"
+        " клиенту, что звонишь. Твой звонок и есть демонстрация. Владельцу передавай, только когда"
+        " клиент прямо просит человека или готов подключаться (ready_to_connect)."
+    )

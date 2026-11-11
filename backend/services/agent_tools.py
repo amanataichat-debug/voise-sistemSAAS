@@ -343,9 +343,11 @@ NOTIFY_OWNER_HANDOFF_TOOL = {
     "description": (
         "Передать клиента админу: собрать карточку из CRM и отправить в "
         "Telegram-бот владельца. Используй, когда клиент: (1) готов "
-        "подключаться (`ready_to_connect`), (2) просит живого человека "
-        "(`requested_human`), (3) просит демонстрацию (`demo`), (4) жалоба "
-        "или нестандартный случай (`escalation`). Если по клиенту за этот "
+        "подключаться (`ready_to_connect`), (2) прямо просит менеджера или живого "
+        "человека (`requested_human`), (3) просит демонстрацию, а позвонить ему ты "
+        "сам не можешь (`demo`), (4) жалоба или нестандартный случай (`escalation`). "
+        "Хочет созвон, а ты можешь позвонить — звони сам (trigger_immediate_call / "
+        "create_agent_task), это не передача. Если по клиенту за этот "
         "же эпизод уже отправлял `send_telegram_notification` или "
         "`notify_owner_handoff` — не дублируй."
     ),
@@ -913,6 +915,72 @@ def _chat_conscience_refusal(tool_name: str, tool_args: dict, context: dict, db:
         return chat_conscience.send_refusal(rows, text.replace("\n---\n", "\n"))
     except Exception as e:
         logger.warning(f"[AGENT-TOOLS] chat conscience check failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
+_MESSAGE_EVENT_DIRECTIONS = {"whatsapp_inbound", "telegram_inbound", "instagram_inbound",
+                             "followup_outbound", "telegram_outbound"}
+
+
+def agent_can_call_contact(db: Session, user, contact) -> tuple:
+    """(может ли агент сам позвонить клиенту, причина если нет): тариф с звонками + номер O!."""
+    from backend.models.sip_gateway import is_o_number, normalize_sip_number
+    from backend.services.agent_contact_phones import dial_number
+    try:
+        mode = user.agent_mode() if user is not None else None
+    except Exception:
+        mode = None
+    if mode != "full":
+        return False, "звонки клиентам доступны на тарифе Profi"
+    phone = dial_number(contact) if contact is not None else ""
+    if not phone or not is_o_number(normalize_sip_number(phone)):
+        return False, "у клиента нет номера O!, мы звоним только на 050 и 070"
+    return True, ""
+
+
+def _client_threads(db: Session, contact_id) -> list:
+    """Переписка с клиентом во всех мессенджерах одной лентой (старые → новые)."""
+    rows = []
+    for getter in (
+        lambda: whatsapp_service.get_thread(db, contact_id, limit=20),
+        lambda: telegram_user_service.get_thread(db, contact_id, limit=20),
+        lambda: __import__("backend.services.instagram_service", fromlist=["x"]).get_thread(db, contact_id, limit=20),
+    ):
+        try:
+            rows.extend(getter() or [])
+        except Exception as e:
+            logger.warning(f"[AGENT-TOOLS] thread read failed: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    rows.sort(key=lambda m: (getattr(m, "sent_at", None) or getattr(m, "created_at", None) or datetime.min))
+    return rows
+
+
+def _handoff_instead_of_call_refusal(tool_args: dict, context: dict, db: Session) -> Optional[str]:
+    """notify_owner_handoff в переписке вместо своего звонка — отказ (chat_conscience.handoff_refusal)."""
+    if (context.get("call_direction") or "") not in _MESSAGE_EVENT_DIRECTIONS:
+        return None
+    args = tool_args or {}
+    contact_id = args.get("agent_contact_id") or context.get("current_contact_id")
+    if not contact_id:
+        return None
+    try:
+        from backend.services import chat_conscience
+        contact = db.query(AgentContact).filter(AgentContact.id == contact_id).first()
+        if contact is None:
+            return None
+        can_call, _ = agent_can_call_contact(db, context.get("user"), contact)
+        if not can_call:
+            return None
+        return chat_conscience.handoff_refusal(_client_threads(db, contact_id), args.get("reason") or "", True)
+    except Exception as e:
+        logger.warning(f"[AGENT-TOOLS] handoff check failed: {e}")
         try:
             db.rollback()
         except Exception:
@@ -5206,6 +5274,14 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             context["_chat_refusals"] = context.get("_chat_refusals", 0) + 1
             logger.info(f"[AGENT-TOOLS] {tool_name} blocked by chat conscience: {chat_refusal[:120]}")
             return json.dumps({"ok": False, "error": chat_refusal}, ensure_ascii=False)
+
+    # Созвон менеджеру вместо своего звонка (ветка 1111-chat-live): клиент в переписке
+    # «давайте созвонимся», агент может позвонить сам — передача владельцу не нужна.
+    if context.get("surface") == "postcall" and tool_name == "notify_owner_handoff":
+        handoff_refusal = _handoff_instead_of_call_refusal(tool_args, context, db)
+        if handoff_refusal:
+            logger.info("[AGENT-TOOLS] notify_owner_handoff blocked: agent can call the client itself")
+            return json.dumps({"ok": False, "error": handoff_refusal}, ensure_ascii=False)
 
     refusal = agent_mode.check_tool(user, tool_name, tool_args, context, db)
     if refusal:
