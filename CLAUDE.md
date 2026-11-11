@@ -417,6 +417,14 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 - SMS: транспорта нет — `send_sms` у модели нет (оркестратор, голос, `functions/registry.DISABLED_FUNCTIONS`),
   вызов из старой истории получает отказ `SMS_UNAVAILABLE`. Для SMS нужен провайдер.
 
+- Звук телефона: адаптивный запас у моста (`sip_media_adapter`: провал очереди → запас +100 мс до 600, добор
+  120 мс; «провалов звука агента N» в журнале), эхо-ворота приглушают (−24 дБ), а не обнуляют; функции поиска
+  на звонке (`function_calls.OFFLOAD_FUNCTIONS`) — в фоновом потоке, чтобы не останавливать звук.
+- Фоновые задачи — только через `core.spawn.spawn` (хранит ссылку, логирует ошибку), не голый `asyncio.create_task`.
+- Опрос Telegram/Instagram — `TG_POLL_SECONDS`=30 / `IG_POLL_SECONDS`=45; запрос к OpenRouter — 2 повтора на сбоях.
+- Удалены: `/api/voximplant`, обработчики VoxEngine, легаси Realtime (`handler.py`, `openai_client.py`,
+  `handler_realtime_new.py`), запасные пути Voximplant в планировщике.
+
 **Тесты:** `python scripts/voice_regression.py` (без сети и БД). Механика на настоящем PostgreSQL:
 `MECH_TEST_DATABASE_URL=postgresql://… python scripts/voice_tests/test_mechanics.py`. Тесты проверяют поведение
 (сборку промпта, механику, отказы), а не наличие фраз.
