@@ -34,7 +34,7 @@ import httpx
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
-from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS, FishLLMClient
+from backend.websockets.fish_llm_client import FishLLMClient
 
 logger = get_logger(__name__)
 
@@ -49,21 +49,7 @@ SLOW_FIRST_SEC = 2.0
 PENDING_RESULT = {"status": "in_progress", "message": "Функция ещё выполняется, результат придёт позже."}
 
 # Голосовой канал: ответ слушают, а не читают
-VOICE_RULES = (
-    "Это голосовой разговор (телефон или голосовой виджет). Отвечай коротко и разговорно: "
-    "обычно 1–2 предложения, максимум 3. Без списков, нумерации, markdown, эмодзи и ссылок. "
-    "Числа, время и суммы пиши так, как их произносят. Если не понял собеседника — "
-    "переспроси одним коротким вопросом. Никогда не завершай звонок (hangup_call) из-за того, что "
-    "не понял собеседника или плохо слышно, — переспроси. Завершай звонок, только когда разговор "
-    "окончен или собеседник прощается. "
-    "Реплики собеседника — автоматическое распознавание телефонной речи: в них бывают искажённые "
-    "слова, смесь кыргызского и русского, неверно услышанные названия (название компании и продуктов "
-    "часто искажается до похожих слов). Угадывай смысл по контексту разговора и отвечай по сути. "
-    "Не говори про плохую связь и не проси повторить, если смысл можно угадать; если не уверен — "
-    "назови свою догадку и уточни её одним вопросом («Вы спрашиваете про …?»). "
-    "Не говори, что уже что-то сделал (записал, передал специалисту, отправил), если не вызвал "
-    "для этого функцию в этом разговоре: без функции говори в будущем времени («передам», «с вами свяжутся»)."
-)
+# Правила голосового разговора — общие для всех движков: backend/websockets/voice_rules.py.
 
 
 class ChatLLMClient(FishLLMClient):
@@ -94,15 +80,14 @@ class ChatLLMClient(FishLLMClient):
         self._keepalive_task: Optional[asyncio.Task] = None
 
         # Промпт и функции — сразу, без сети: приветствие можно класть в историю до connect()
-        instructions = getattr(self.assistant_config, "system_prompt", None) or "Ты вежливый голосовой помощник."
-        language = (getattr(self.assistant_config, "language", None) or "").strip().lower()[:2]
-        if language in LANGUAGE_INSTRUCTIONS:
-            instructions = f"{instructions}\n\n{LANGUAGE_INSTRUCTIONS[language]}"
-        instructions = f"{instructions}\n\n{VOICE_RULES}"
+        from backend.websockets.voice_rules import card_instructions
+        _tools = self._build_tools()
+        instructions = card_instructions(self.assistant_config, "cascade", functions=_tools,
+                                         telephony=bool(getattr(self, "telephony", False)))
         self._messages = [{"role": "system", "content": instructions}]
         # _build_tools отдаёт формат Realtime ({type,name,description,parameters})
         self._tools = [{"type": "function", "function": {k: t[k] for k in ("name", "description", "parameters")}}
-                       for t in self._build_tools()]
+                       for t in _tools]
 
     # ------------------------------------------------------------------ соединение
     async def connect(self) -> bool:

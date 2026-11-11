@@ -53,10 +53,6 @@ STABLE_LIVE_MODEL = "gemini-3.8-live"   # запасная модель, есл�
 GEMINI_LIVE_MODEL = getattr(settings, "GEMINI_LIVE_MODEL", None) or "gemini-3.8-live"
 # Как модель озвучивает результат асинхронной функции: WHEN_IDLE — договорить и
 # затем озвучить, INTERRUPT — сразу, SILENT — молча учесть.
-def language_note_for_gemini(language: str) -> str:
-    from backend.websockets.voice_hints import language_note
-    return language_note(language)
-
 
 # Уровни «расширенных» полей setup для долгих звонков (если Google отверг setup — спускаемся ниже)
 EXTRAS_NONE, EXTRAS_BASIC, EXTRAS_FULL = 0, 1, 2
@@ -370,18 +366,10 @@ class GeminiLiveClient:
             # Get settings
             voice = self.voice_override or getattr(self.assistant_config, "voice", None) or DEFAULT_VOICE
             system_message = getattr(self.assistant_config, "system_prompt", None) or DEFAULT_SYSTEM_MESSAGE
-            if self.voice_hints:
-                # Карточка ElevenLabs на Gemini Live: правило языка (язык карточки = язык приветствия, явная
-                # просьба клиента держится до конца звонка) идёт в НАЧАЛО промпта вместе с голосом —
-                # gemini_prompt_head ниже, при сборке подсказок.
-                pass
-            elif self.language:
-                try:
-                    from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS
-                    if self.language in LANGUAGE_INSTRUCTIONS:
-                        system_message = f"{system_message}\n\n{LANGUAGE_INSTRUCTIONS[self.language]}"
-                except Exception as e:
-                    logger.warning(f"[GEMINI-CLIENT] language instruction skipped: {e}")
+            if not self.voice_hints and self.language:
+                # Старые Gemini-ассистенты: только язык начала (правила разговора у них свои, в промпте).
+                from backend.websockets.voice_rules import start_language_rule
+                system_message = f"{system_message}{start_language_rule(self.language, None)}"
             functions = getattr(self.assistant_config, "functions", None)
             if self.custom_functions is not None:
                 functions = [{"name": f["name"]} for f in self.custom_functions]
@@ -415,18 +403,17 @@ class GeminiLiveClient:
 
             if self.voice_hints:
                 try:
-                    from backend.websockets.voice_hints import (build_gemini_voice_hints, call_context_block,
-                                                                 gemini_prompt_head, split_call_context)
-                    # 06.11.2026: голос и язык — в начале, до инструкции карточки (модель держит начало и конец
-                    # промпта; в середине 34 тыс. символов эти правила терялись). 07.11.2026: туда же — контекст
-                    # звонка (кто звонит, прошлые звонки и переписка): из конца карточки он «не доходил» до модели.
+                    from backend.websockets.voice_hints import call_context_block, split_call_context
+                    from backend.websockets.voice_rules import build_voice_rules
+                    # Контекст звонка (кто звонит, прошлые звонки и переписка) — в начало: из конца длинной
+                    # карточки Gemini его не держал (звонок d08c06f4, «как будто нет памяти»).
                     card, call_ctx = split_call_context(system_message)
-                    system_message = (gemini_prompt_head(voice, self.language, getattr(self.assistant_config, "greeting_message", None))
-                                      + call_context_block(call_ctx)
-                                      + card
-                                      + build_gemini_voice_hints(normalize_functions(functions), voice, self.telephony))
+                    system_message = (call_context_block(call_ctx) + card + build_voice_rules(
+                        "gemini", language=self.language,
+                        greeting=getattr(self.assistant_config, "greeting_message", None), voice=voice,
+                        functions=normalize_functions(functions), telephony=self.telephony))
                 except Exception as e:
-                    logger.warning(f"[GEMINI-CLIENT] voice hints skipped: {e}")
+                    logger.warning(f"[GEMINI-CLIENT] voice rules skipped: {e}")
 
             self.system_prompt_chars = len(system_message)
 

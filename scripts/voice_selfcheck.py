@@ -158,7 +158,9 @@ def check_prompt(db, agent, caller: Optional[str], rep: Report) -> None:
         rep.fail("промпт", "У агента нет голосовой карточки — звонить нечем")
         return
     limit = live_client.LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
-    base = (getattr(voice, "system_prompt", None) or "").strip()
+    # Промпт карточки агента собирается из кода на каждом звонке (agent_voice_context.build_call_system_prompt)
+    from backend.services.agent_prompts import build_voice_agent_prompt
+    base = build_voice_agent_prompt(getattr(agent, "voice_additional_instructions", None)).strip()
 
     call = SimpleNamespace(direction="inbound", caller=caller or "996000000000", to_number=None,
                            call_metadata={}, id="selfcheck")
@@ -177,7 +179,10 @@ def check_prompt(db, agent, caller: Optional[str], rep: Report) -> None:
     ctx = "\n\n".join(p for p in (ctx, followup) if p)
 
     prompt, stats = agent_voice_context.build_call_system_prompt(db, voice, agent, call_context=ctx, max_chars=limit)
-    constant_hint = len(live_client.VOICE_DELEGATION_HINT) + len(live_client.VOICE_TELEPHONY_HINT)
+    from backend.websockets.voice_rules import build_voice_rules
+    rules = build_voice_rules("gpt_live", language=getattr(voice, "language", None), telephony=True,
+                              voice=getattr(voice, "live_voice", None))
+    constant_hint = len(rules)
     total_chars = len(prompt) + constant_hint
     tokens = int(total_chars / CHARS_PER_TOKEN)
     knowledge = stats.get("total", 0)
@@ -206,8 +211,8 @@ def check_prompt(db, agent, caller: Optional[str], rep: Report) -> None:
                            f"LIVE_VOICE_INSTRUCTIONS_MAX_CHARS в Render")
     if tokens > OPENAI_TOKEN_LIMIT * 0.9:
         rep.fail("промпт", f"Промпт близок к лимиту OpenAI ({tokens} из {OPENAI_TOKEN_LIMIT} токенов)")
-    if "МАТЕРИАЛЫ" not in live_client.VOICE_DELEGATION_HINT:
-        rep.fail("промпт", "В постоянной подсказке голоса нет правила про отправку материалов")
+    if "hangup_call" not in rules or "Материалы" not in rules:
+        rep.fail("промпт", "В общих правилах голоса нет правила про материалы или завершение звонка")
 
     wanted = agent_voice_context.kb_function_names(db, agent)
     have = set()

@@ -17,6 +17,7 @@ logging.disable(logging.CRITICAL)
 
 import backend.websockets.handler_live as h
 import backend.websockets.live_client as lc
+from backend.websockets.voice_rules import build_voice_rules
 import backend.services.agent_voice_context as avc
 from backend.websockets.call_log import CallLogRecorder
 
@@ -134,11 +135,12 @@ async def decisions():
     await s._on_live_event(cue("good_news"))
     check("эмоции: после прощания подсказок нет", len(s.client.thinking) == 0)
     # звонок 27.10.2026 (f7cc4b4c): «тише/медленнее» в подсказках проседало голос, скачки тона
-    hints_all = " ".join(h.CUE_HINTS.values()) + " " + lc.VOICE_DELEGATION_HINT
+    RULES = build_voice_rules("gpt_live", telephony=True)
+    hints_all = " ".join(h.CUE_HINTS.values()) + " " + RULES
     check("стабильный голос: нигде не просим говорить тише/медленнее/бодрее",
           not any(w in hints_all for w in ("медленнее и тише", "говори тише", "бодрее", "слышимый вдох")))
     check("стабильный голос: правило одной громкости и темпа на весь звонок",
-          "СТАБИЛЬНЫЙ ГОЛОС" in lc.VOICE_DELEGATION_HINT and "Никогда не шепчи" in lc.VOICE_DELEGATION_HINT)
+          "одним и тем же голосом" in RULES and "не шепчешь" in RULES)
     check("эмоции: реакция — после того, как клиент договорит", all("договорит" in v for v in h.CUE_HINTS.values()))
     s, out, _ = session()
     for i, c in enumerate(["joke", "problem", "good_news", "joke"]):
@@ -146,12 +148,11 @@ async def decisions():
         await s._on_live_event(cue(c))
     check("эмоции: не больше 3 подсказок за звонок", len(s.client.thinking) == 3, str(len(s.client.thinking)))
     check("материалы: не говорить «уже отправил» (голос и бэкенд)",
-          "«уже " in lc.VOICE_DELEGATION_HINT and "никогда «уже отправил»" in lc.BACKEND_SYSTEM_PROMPT)
+          "«уже отправил»" in RULES and "никогда «уже отправил»" in lc.BACKEND_SYSTEM_PROMPT)
     names = [q["name"] for q in lc.CALL_DECISION_TRIGGER["decisions"]["questions"]]
     check("эмоции: Decisions спрашивает caller_cue (joke/problem/good_news)", "caller_cue" in names)
-    check("эмоции: в подсказке голосу есть смех, шутки и эмпатия по ситуации",
-          "ЭМОЦИИ И ЮМОР" in lc.VOICE_DELEGATION_HINT and "посмейся" in lc.VOICE_DELEGATION_HINT
-          and "без шуток" in lc.VOICE_DELEGATION_HINT)
+    check("эмоции: словами, а не громкостью; смех и вздохи вслух не изображать (шум по линии 8 кГц)",
+          "Эмоции — словами" in RULES and "вслух не смеёшься" in RULES)
 
 
 async def diagnostics():
@@ -319,13 +320,13 @@ def voice_hints():
     check("подсказка: мужской голос cedar → мужской род", "мужском роде" in lc.voice_gender_hint("cedar"))
     check("подсказка: marin → женский род", "женском роде" in lc.voice_gender_hint("marin"))
     check("подсказка: alloy — без подсказки рода", lc.voice_gender_hint("alloy") == "")
-    hint = lc.VOICE_DELEGATION_HINT
+    rules = build_voice_rules("gpt_live", telephony=True, functions=[{"name": "hangup_call", "description": "Завершить звонок."}])
     for needle, label in [("Delegation policy", "метка делегирования OpenAI"), ("Interruption policy", "метка перебивания OpenAI"),
-                          ("ЗАВЕРШЕНИЕ", "прощание + hangup_call в том же ходе"), ("Чалганыңыз үчүн рахмат", "кыргызские образцы"),
-                          ("давайте в Телеграм", "выбор канала не делегировать")]:
-        check(f"подсказка голосу: {label}", needle in hint)
-    check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
-          "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
+                          ("hangup_call", "прощание + hangup_call в том же ходе"), ("Жакшы калыңыз", "кыргызский пример"),
+                          ("выбрал время или канал", "выбор канала не делегировать"), ("Backend tools", "список функций бэкенда")]:
+        check(f"правила голоса: {label}", needle in rules)
+    check("телефон: короче и переспрашивать; на виджете телефонного правила нет",
+          "телефонный звонок" in rules and "телефонный звонок" not in build_voice_rules("gpt_live"))
     a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},
                               voice="cedar", greeting_message=None)
     cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()
@@ -356,17 +357,12 @@ def greeting_personal():
           and sgs.first_name("Aibek") == "Aibek")
     call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
     check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
-    hint = lc.VOICE_DELEGATION_HINT
-    # 07.11.2026: по узкополосной линии вдохи и вздохи слышны как шум — дыхание вслух больше не просим
-    check("подсказка голосу: живые связки есть, слышимого дыхания нет (ЖИВАЯ РЕЧЬ)",
-          "ЖИВАЯ РЕЧЬ" in hint and "Без слышимых вдохов, вздохов и выдохов" in hint
-          and "вдох перед" not in hint and "мягким вздохом" not in hint)
-    check("подсказка голосу: диалог, а не монолог — без «три-четыре фразы», характер по шаблону OpenAI",
-          "ДИАЛОГ, А НЕ МОНОЛОГ" in hint and "три-четыре фразы" not in hint and "Personality" in hint)
-    check("подсказка голосу: перебили — сразу замолчи (шаблон OpenAI), поддакивание — договорить, дослушивать",
-          "сразу замолчи и выслушай" in hint and "Backchannel policy" in hint and "ДОСЛУШИВАЙ" in hint
-          and "Замолкай, только" not in hint)
-    check("подсказка голосу: обращение по имени к месту (ИМЯ)", "ИМЯ." in hint and "не в каждой фразе" in hint)
+    rules = build_voice_rules("gpt_live", telephony=True)
+    check("правила голоса: диалог — одна-две фразы за ход, объяснение кусками, без слышимого дыхания",
+          "одна-две короткие фразы" in rules and "три-четыре коротких фразы" in rules and "не вздыхаешь" in rules)
+    check("правила голоса: перебили — замолчи, поддакивание — договорить, не вступать на паузе",
+          "замолчи и выслушай" in rules and "Backchannel policy" in rules and "посреди его фразы" in rules)
+    check("правила голоса: обращение по имени два-три раза", "по имени два-три раза" in rules)
 
 
 def prompt_budget():
@@ -375,20 +371,23 @@ def prompt_budget():
     real_limit = lc.LIVE_VOICE_INSTRUCTIONS_MAX_CHARS
     check("бюджет: настроенный лимит промпта голоса не меньше 20000 (в Render не должна стоять старая "
           "переменная LIVE_VOICE_INSTRUCTIONS_MAX_CHARS)", real_limit >= 20000, f"сейчас {real_limit}")
-    # Реальный случай звонка 25.10: промпт карточки 14616 + контекст 1101 при НАСТРОЕННОМ лимите
-    a = types.SimpleNamespace(system_prompt="П" * 14616)
-    p, st = avc.build_call_system_prompt(None, a, object(), call_context="К" * 1101, max_chars=real_limit)
+    # Реальный случай звонка 25.10: промпт карточки 14616 + контекст 1101 при НАСТРОЕННОМ лимите.
+    # Промпт карточки агента собирается из кода: база + «Инструкции для звонков» владельца.
+    a = types.SimpleNamespace(system_prompt="устаревшая копия в БД")
+    ag = types.SimpleNamespace(voice_additional_instructions="П" * 14000)
+    p, st = avc.build_call_system_prompt(None, a, ag, call_context="К" * 1101, max_chars=real_limit)
+    check("промпт звонка агента собран из кода, а не из копии в БД",
+          "устаревшая копия" not in p and "голосовой агент компании" in p)
     check("бюджет: звонок 25.10 (карточка 14616 + контекст 1101) при настроенном лимите — знания в промпте",
           "5000 сом" in p and st.get("total", 0) >= avc.MIN_CALL_KNOWLEDGE and not st.get("dropped"),
           f"лимит {real_limit}, знания {st.get('total', 0)}, {st}")
     for base_n, ctx_n in [(10000, 6000), (15000, 5000), (20000, 5000)]:
-        a = types.SimpleNamespace(system_prompt="П" * base_n)
-        p, st = avc.build_call_system_prompt(None, a, object(), call_context="К" * ctx_n, max_chars=24000)
+        ag = types.SimpleNamespace(voice_additional_instructions="П" * (base_n - 600))
+        p, st = avc.build_call_system_prompt(None, types.SimpleNamespace(), ag, call_context="К" * ctx_n, max_chars=24000)
         check(f"бюджет: карточка {base_n} + контекст {ctx_n} при лимите 24000 → знания в промпте и всё влезло",
               "5000 сом" in p and len(p) <= 24000 and not st.get("dropped"), f"len={len(p)} {st}")
     # 07.11.2026: считаем и головы инструкций (произношение + «Живой разговор»), они тоже идут голосовому слою
-    total = (24000 + len(lc.VOICE_PRONUNCIATION_HEAD) + len(lc.VOICE_CONVERSATION_HEAD)
-             + len(lc.VOICE_DELEGATION_HINT) + len(lc.VOICE_TELEPHONY_HINT))
+    total = 24000 + len(build_voice_rules("gpt_live", telephony=True, voice="marin"))
     check("бюджет: худший случай укладывается в 16 384 токена OpenAI (≈2,6 симв./токен, запас 5%)",
           total / 2.6 < 16384 * 0.95, f"{total} симв. ≈ {int(total / 2.6)} токенов")
 
@@ -405,11 +404,15 @@ def session_config():
     check("конфиг: параллельные функции включены", cfg["delegation"]["responses"].get("parallel_tool_calls") is True)
     w = lc.OpenAILiveClient("k", types.SimpleNamespace(**{**a.__dict__, "live_phone_g711": False}), "cid", **h.live_media_options(types.SimpleNamespace()))
     check("конфиг: виджет остаётся на PCM 24 кГц", w.build_session_config()["audio"]["format"]["rate"] == 24000)
-    hint = lc.VOICE_DELEGATION_HINT
-    for needle, label in [("МАТЕРИАЛЫ", "правило про отправку КП после звонка"), ("НЕ ПЕРЕСПРАШИВАЙ", "не переспрашивать"),
-                          ("ДОГОВОРЁННОСТЬ", "подтверждать договорённость"), ("НЕ говори «понял»", "запрет «понял»"),
-                          ("Түшүндүм", "кыргызское «понял» в списке запрещённого")]:
-        check(f"подсказка голосу: {label}", needle in hint)
+    ins = cfg["instructions"]
+    check("конфиг: карточка первой, за ней общие правила голоса и кыргызский блок",
+          ins.startswith("Ты Алия.") and "КАК РАЗГОВАРИВАТЬ" in ins and "КЫРГЫЗЧА СҮЙЛӨӨ" in ins)
+    check("конфиг: язык начала — по приветствию («Салам!» → кыргызский)", "на кыргызском" in ins)
+    check("конфиг: правила не дублируются (одна копия завершения и материалов)",
+          ins.count("hangup_call") <= 3 and ins.count("Материалы:") == 1)
+    vm = lc.OpenAILiveClient("k", types.SimpleNamespace(system_prompt="Произнеси текст.", functions=None, voice="marin"),
+                             "cid", conversation_rules=False).build_session_config()
+    check("озвучка голосового сообщения: без правил звонка", vm["instructions"] == "Произнеси текст.")
 
 
 async def main():

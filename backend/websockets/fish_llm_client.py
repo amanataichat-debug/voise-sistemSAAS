@@ -39,22 +39,7 @@ TELEPHONY_VAD = {"threshold": 0.5, "prefix_padding_ms": 300, "silence_duration_m
 INPUT_RATE = 24000
 MAX_OUTPUT_TOKENS = 2000
 
-# Язык ответов по коду из карточки ассистента. Для ru инструкция не добавляется
-# (исторически промпты Fish-агентов уже на русском), для остальных — дописывается
-# к system_prompt, иначе модель отвечает на языке промпта, а не абонента.
-_SWITCH_RULE = (
-    " Если собеседник просит перейти на другой язык или сам говорит на другом языке — "
-    "перейди на его язык и продолжай на нём до конца разговора, пока он сам не попросит иначе."
-)
-LANGUAGE_INSTRUCTIONS = {
-    "ky": "Сүйлөшүүнү кыргыз тилинде башта. Начинай разговор на кыргызском языке (кириллица), "
-          "даже если системный промпт написан по-русски." + _SWITCH_RULE,
-    "kk": "Начинай разговор на казахском языке." + _SWITCH_RULE,
-    "uz": "Начинай разговор на узбекском языке." + _SWITCH_RULE,
-    "en": "Start the conversation in English. If the caller asks for another language or speaks another "
-          "language, switch to it and keep using it until they ask otherwise.",
-    "tr": "Konuşmaya Türkçe başla." + _SWITCH_RULE,
-}
+# Язык, манера и правила разговора — общие для всех голосовых движков: voice_rules.build_voice_rules.
 
 
 class FishLLMClient:
@@ -145,10 +130,9 @@ class FishLLMClient:
 
     async def update_session(self) -> bool:
         tools = self._build_tools()
-        instructions = getattr(self.assistant_config, "system_prompt", None) or "Ты вежливый голосовой помощник."
-        language = (getattr(self.assistant_config, "language", None) or "").strip().lower()[:2]
-        if language in LANGUAGE_INSTRUCTIONS:
-            instructions = f"{instructions}\n\n{LANGUAGE_INSTRUCTIONS[language]}"
+        from backend.websockets.voice_rules import card_instructions
+        instructions = card_instructions(self.assistant_config, "cascade", functions=tools,
+                                         telephony=bool(self.telephony))
         payload = {
             "type": "session.update",
             "session": {

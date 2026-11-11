@@ -28,7 +28,7 @@
 позиций).
 
 БЮДЖЕТ. Голосовому слою GPT-Live достаётся только НАЧАЛО промпта — первые
-LIVE_VOICE_INSTRUCTIONS_MAX_CHARS символов (16000, см.
+LIVE_VOICE_INSTRUCTIONS_MAX_CHARS символов (24000 по умолчанию, config.py; см.
 backend/websockets/live_client.py; по документам OpenAI instructions допускают
 до 16 384 токенов); остальное видит лишь делегирующий бэкенд, то есть снова
 через функцию и снова ≈4 секунды. Блоки собираются по приоритету и режутся по
@@ -442,17 +442,11 @@ def build_voice_knowledge_block(db, agent, budget: int = VOICE_KNOWLEDGE_BUDGET
 
     # Главное правило: то, что выше, уже у тебя в голове. Голосовой слой
     # GPT-Live по умолчанию инструктирован делегировать всё «про базу знаний»
-    # бэкенду (VOICE_DELEGATION_HINT), поэтому проговариваем исключение прямо.
+    # бэкенду (Delegation policy в voice_rules), поэтому проговариваем это прямо.
     parts.append(
-        "\n\n# КАК ПОЛЬЗОВАТЬСЯ ЭТИМ НА ЗВОНКЕ\n"
-        "Всё перечисленное выше ты уже знаешь: отвечай сразу, своими словами, "
-        "не делегируй бэкенду и не вызывай поиск. Если клиент спрашивает про "
-        "позицию из прайса что-то, чего в описании этой позиции НЕТ (детали, "
-        "условия, номера, сроки, характеристики, фото, варианты) — не "
-        "отвечай «не знаю», сначала вызови find_products и проверь там. "
-        "Для остального, чего нет ни в этом блоке, ни в прайсе вообще — "
-        "search_knowledge_base. Если ответа нет нигде — не выдумывай: скажи, "
-        "что уточнишь, и предложи перезвонить или прислать в мессенджер."
+        "\n\n# КАК ПОЛЬЗОВАТЬСЯ ЗНАНИЯМИ НА ЗВОНКЕ\n"
+        "Всё выше ты знаешь — отвечай сразу, без поиска. Деталей позиции нет в описании — find_products; "
+        "остального нет нигде выше — search_knowledge_base."
     )
     block = "".join(parts)
     stats["total"] = len(block)
@@ -471,7 +465,15 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
     Режем при нехватке только знания: правила разговора и контекст звонка
     обязательны.
     """
-    base = (getattr(assistant, "system_prompt", None) or "").strip()
+    # Промпт карточки агента собирается из кода на КАЖДОМ звонке (ветка 1111-clean-system): раньше он
+    # записывался в БД при создании агента, и правки базовых правил не доходили до существующих агентов.
+    # Голосовой ассистент без агента — его собственный промпт из карточки.
+    if agent is not None:
+        from backend.services.agent_prompts import build_voice_agent_prompt, company_contacts_block
+        base = (build_voice_agent_prompt(getattr(agent, "voice_additional_instructions", None))
+                + company_contacts_block(agent)).strip()
+    else:
+        base = (getattr(assistant, "system_prompt", None) or "").strip()
     context = (call_context or "").strip()
     tail = f"\n\n[Контекст звонка] {context}" if context else ""
 

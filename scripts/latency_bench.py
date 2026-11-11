@@ -83,7 +83,7 @@ def load_context(assistant_id: Optional[str], n_phrases: int) -> Dict[str, Any]:
     from backend.models.eleven_assistant import (
         DEFAULT_ELEVEN_GREETING, ElevenAssistantConfig, ElevenConversation,
     )
-    from backend.websockets.fish_llm_client import LANGUAGE_INSTRUCTIONS
+    from backend.websockets.voice_rules import card_instructions
     from backend.websockets.openai_client_new import normalize_functions
 
     db = SessionLocal()
@@ -98,12 +98,9 @@ def load_context(assistant_id: Optional[str], n_phrases: int) -> Dict[str, Any]:
         if a is None:
             raise SystemExit("Eleven-ассистент не найден (--assistant <uuid>)")
 
-        instructions = a.system_prompt or "Ты вежливый голосовой помощник."
-        lang = (a.language or "").strip().lower()[:2]
-        if lang in LANGUAGE_INSTRUCTIONS:
-            instructions += "\n\n" + LANGUAGE_INSTRUCTIONS[lang]
         tools = [{"name": f["name"], "description": f["description"], "parameters": f["parameters"]}
                  for f in normalize_functions(a.functions)]
+        instructions = card_instructions(a, "cascade", functions=tools, telephony=True)
 
         rows = (db.query(ElevenConversation.user_message, ElevenConversation.assistant_message)
                 .filter(ElevenConversation.assistant_id == a.id)

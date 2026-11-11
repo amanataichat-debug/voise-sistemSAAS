@@ -14,7 +14,6 @@ logging.disable(logging.CRITICAL)
 from backend.core.pipeline_stages import stage_from_decision
 from backend.services import sales_funnel as sf
 from backend.services.message_style import clean_client_text as clean
-from backend.websockets import live_client as lc, voice_hints as vh
 
 failures = 0
 
@@ -167,12 +166,14 @@ check("Айбек → «Айбек, здравствуйте»", cw._greeting(ty
 check("текст прогрева без длинного тире", "—" not in cw.WARMUP_TEMPLATE)
 
 # --- голос: продажи и поддакивание (общие для GPT-Live и Gemini) ---
-g = vh.build_gemini_voice_hints([], "Kore", True)
-for name, text in (("GPT-Live", lc.VOICE_DELEGATION_HINT), ("Gemini", g)):
-    check(f"{name}: ПРОДАЖИ и ГОРЯЧИЙ КЛИЕНТ", "ПРОДАЖИ." in text and "ГОРЯЧИЙ КЛИЕНТ" in text)
-    check(f"{name}: поддакивание не обрывает фразу", "Поддакивание — НЕ перебивание" in text)
-    check(f"{name}: ссылка на регистрацию в материалах", "ссылку на регистрацию" in text)
-check("GPT-Live: нет «спроси, интересно ли дальше»", "спроси, интересно ли дальше" not in lc.VOICE_DELEGATION_HINT)
+from backend.websockets.voice_rules import build_voice_rules
+for name in ("gpt_live", "gemini", "cascade"):
+    text = build_voice_rules(name, telephony=True)
+    check(f"{name}: продажа — понять задачу, совет, шаг со временем; согласен — закрыть сегодня",
+          "следующий шаг со временем" in text and "закрепи шаг сегодня" in text)
+    check(f"{name}: поддакивание не обрывает фразу", "не перебивание" in text)
+    check(f"{name}: «подумаю» — одно уточнение, дважды отказ — попрощаться",
+          "что смущает" in text and "Отказался дважды" in text)
 
 # --- оркестратор: касание дожима — сообщение, не звонок ---
 from backend.services import agent_orchestrator as ao

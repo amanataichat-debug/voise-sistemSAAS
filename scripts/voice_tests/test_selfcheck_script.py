@@ -31,7 +31,7 @@ class FakeQuery:
 def fake_db(rows): return types.SimpleNamespace(query=lambda *a, **k: FakeQuery(rows))
 
 
-agent = types.SimpleNamespace(id="a1", name="Анри", kb_namespace="kb-1")
+agent = types.SimpleNamespace(id="a1", name="Анри", kb_namespace="kb-1", voice_additional_instructions="П" * 14000)
 failures = 0
 def check(name, cond, extra=""):
     global failures

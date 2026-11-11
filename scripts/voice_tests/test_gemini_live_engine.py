@@ -266,86 +266,41 @@ run(drain())
 check("отложенный setupComplete → приветствие отправлено", any("realtimeInput" in m for m in c3.ws.sent), c3.ws.sent)
 
 
-# ---------- промпт: GPT-Live не изменился, Gemini получил те же правила манеры ----------
-import hashlib
+# ---------- промпт: одни правила голоса для всех движков (voice_rules.py, ветка 1111-clean-system) ----------
 from backend.websockets import live_client as lc, voice_hints as vh
-
-hint = lc.VOICE_DELEGATION_HINT
-# Хеш меняется осознанно 02.11.2026: добавлен абзац «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ» (владелец:
-# звонок звучал «скован, как будто цепями» — слишком много точных запретов подряд).
-# И 04.11.2026: краткость без пассивности, поддакивание не обрывает фразу, блок ПРОДАЖИ / ГОРЯЧИЙ КЛИЕНТ.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (после разделения на куски; обновлён 07.11.2026 — без эха, манера по шаблону OpenAI)",
-      hashlib.sha256(hint.encode()).hexdigest() == "1e03438ae27fb9c45927dc4dd60b0773e85ea4e19178dbd4874eec373a2ab0b3", len(hint))
-check("GPT-Live: телефонная подсказка прежняя",
-      hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
-check("куски склеиваются в тот же текст для GPT",
-      hint == lc.VOICE_MANNER_HINT + lc.VOICE_DELEGATION_POLICY + lc.VOICE_DIALOG_RULES + lc.VOICE_ALREADY_KNOW_HINT + lc.VOICE_GREETING_RULE)
+from backend.websockets import voice_rules as vr
 
 fn_list = [{"name": "search_knowledge_base", "description": "Ищет ответ в базе знаний компании. Возвращает текст."},
            {"name": "hangup_call", "description": "Завершает звонок."}]
-g_tail = vh.build_gemini_voice_hints(fn_list, "Aoede", telephony=True)
-# 06.11.2026: голос и язык — в НАЧАЛЕ промпта (gemini_prompt_head), остальное — после карточки
-g_head = vh.gemini_prompt_head("Aoede", "ru", "Добрый день")
-g = g_head + "<КАРТОЧКА>" + g_tail
-check("Gemini получает свою манеру: живой разговор, задача человека, переспрос обрывка, голос, язык, кыргызский",
-      all(k in g for k in ("ЖИВОЙ РАЗГОВОР, А НЕ АНКЕТА", "ПОНИМАЙ ЗАДАЧУ", "ЕСЛИ НЕ РАССЛЫШАЛ", "СТАБИЛЬНЫЙ ГОЛОС",
-                           "ЯЗЫК.", "КЫРГЫЗСКИЙ")))
-check("Gemini: не дежурный вопрос в каждой реплике (звонок 01.11.2026) и без правил GPT «одна мысль и спроси»",
-      "НЕ заканчивай каждую реплику вопросом" in g and lc.VOICE_MANNER_HINT not in g
-      and "спроси, интересно ли дальше" not in g and "ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ" not in g)
-check("Gemini: без противоречия «можно мм/угу» против «МОЛЧИ»", "можно одно тихое «мм»" not in g)
-# Потолок поднят 02.11.2026 (дважды): «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ», пункт 5 продаж «не отдавай
-# инициативу», и «ТЫ — ПОЛНОЦЕННЫЙ СОТРУДНИК, А НЕ ФИЛЬТР» (владелец: агент не должен перенаправлять на
-# менеджера то, что сам знает). Gemini не режет system_message по длине (в отличие от GPT-Live), так что
-# предел здесь — только защита от случайного разбухания, не продуктовое ограничение.
-# 04.11.2026: 14 → 16 тыс. — в общие правила диалога добавлены ПРОДАЖИ / ГОРЯЧИЙ КЛИЕНТ и поддакивание.
-# 06.11.2026: 16 → 10 тыс. — промпт звонка был 34 тыс., правила противоречили друг другу и терялись.
-# 07.11.2026: 10 → 11 тыс. — в начало добавлен общий с GPT-Live блок «Живой разговор» (не эхо, не повторять себя,
-# вау-пример, темп продажи): владелец — «агент занудный, повторяет за клиентом».
-# 07.11.2026 (ветка 0711-gemini-live, звонок d08c06f4): 11 → 13 тыс. — свой блок Gemini в начале (характер, объяснять
-# голосом вместо «пришлю», извиниться и исправиться, память о клиенте); дубли в манере ужаты.
-check("Gemini: подсказки не длиннее 13 тыс. символов (без противоречий, со словарём и продажами)", len(g) < 13000, len(g))
-check("Gemini: никогда не говорит на других языках (звонок 02.11.2026: речь записалась как хинди)",
-      "NEVER SPEAK ANY LANGUAGE OTHER THAN RUSSIAN OR KYRGYZ" in g)
-check("Gemini: понимание кыргызского — смешанная речь, «похоже на казахский», словарик частых фраз",
-      "КАК ПОНИМАТЬ КЫРГЫЗСКУЮ РЕЧЬ" in g and "смешивать" in g and "канча турат" in g and "ойлонуп көрөйүн" in g)
-check("Gemini: продажи — понять, предложить под задачу, сомнения («подумаю»), закрыть шагом со временем",
-      all(k in g for k in ("ПОЙМИ", "КОНСУЛЬТИРУЙ, А НЕ НАВЯЗЫВАЙ", "какие варианты есть", "СОМНЕНИЯ", "ЗАКРЫВАЙ ШАГОМ", "«Подумаю»")))
-check("Gemini: продажи — не отдавать инициативу на вопросах про документы/оформление (звонок 822daa6f)",
-      "НЕ ОТДАВАЙ ИНИЦИАТИВУ" in g)
-check("Gemini: сотрудник, а не фильтр к менеджеру — отвечает сам из инструкции/базы, менеджер не вместо ответа",
-      "ТЫ — ПОЛНОЦЕННЫЙ СОТРУДНИК, А НЕ ФИЛЬТР" in g and "а не вместо ответа" in g)
-
-# ---------- после hangup_call модель не озвучивает по-английски мысли о том, что ответ не нужен
-# (звонок 02.11.2026, 6811616a: на шум после прощания Gemini сказала вслух «The call is already
-# ending, so no further response is needed.») ----------
-from backend.functions.hangup_call import HangupCallFunction
-_hc = run(HangupCallFunction.execute({"reason": "conversation_completed", "farewell_message": "Жакшы калыңыз!"}))
-check("hangup_call: явный запрет озвучивать по-английски мысли о завершении звонка",
-      _hc["success"] is True and "переходи на английский" in _hc["message"] and "просто молчи" in _hc["message"])
-# 06.11.2026 (звонок d4229a5f): голос прыгал между мужским и женским — «посмейся, вздохни, вдохни» у native audio
-# раскачивает тембр. Эмоции — словами и интонацией, звуки не изображаем.
-check("Gemini: один и тот же голос, смех/вздохи вслух не изображать (звонок d4229a5f)",
-      "одним и тем же" in g_head and "смех, вздохи и вдохи вслух не изображай" in g_head and "естественный вдох" not in g)
-check("Gemini: голос и язык — в начале промпта, до карточки; напоминание — в конце",
-      g.index("ГОЛОС И ЯЗЫК") < g.index("<КАРТОЧКА>") < g.index("НАПОМИНАНИЕ") and g.index("ЯЗЫК.") < g.index("<КАРТОЧКА>"))
-check("Gemini: явная просьба о языке держится до конца звонка, русские вставки её не отменяют (звонок d4229a5f)",
-      "ДО КОНЦА звонка" in g_head and "НЕ просьба сменить язык" in g_head)
-check("Gemini: факты — только из инструкции или поиска, документы не додумывать (звонок d4229a5f)",
-      "ДОКУМЕНТЫ" in g and "НИЧЕГО НЕ ДОДУМЫВАЙ" in g and g.index("ЗНАНИЯ — ТОЛЬКО") < g.index("ЖИВОЙ РАЗГОВОР"))
-check("Gemini: приветствие по-русски на кыргызской карточке → начать по-русски, линия всё равно кыргызская",
-      "Начни на русском" in vh.gemini_prompt_head("Kore", "ky", "Добрый день. Чем могу помочь?")
-      and "ОСНОВНОЙ ЯЗЫК" in vh.gemini_prompt_head("Kore", "ky", "Добрый день")
-      and "Начни на кыргызском" in vh.gemini_prompt_head("Kore", "ky", "Саламатсызбы! Кантип жардам берем?"))
+g = vr.build_voice_rules("gemini", language="ru", greeting="Добрый день", voice="Aoede", functions=fn_list, telephony=True)
+gl_rules = vr.build_voice_rules("gpt_live", language="ru", greeting="Добрый день", voice="Aoede", functions=fn_list, telephony=True)
+cas = vr.build_voice_rules("cascade", language="ru", greeting="Добрый день", voice="Aoede", functions=fn_list, telephony=True)
+check("три движка получают одно ядро правил (манера, язык, кыргызский, завершение)",
+      all(vr.VOICE_RULES in t and vr.KYRGYZ_RULES in t for t in (g, gl_rules, cas)))
+check("правила голоса компактные: ≤ 6 тыс. символов на любой движок",
+      max(len(g), len(gl_rules), len(cas)) <= 6000, (len(g), len(gl_rules), len(cas)))
+for _name, _t in (("Gemini", g), ("GPT-Live", gl_rules), ("Voksy Voice", cas)):
+    low = _t.lower()
+    check(f"{_name}: ни один блок не объявляет себя главным, фактов Voksy AI в коде нет",
+          "главнее" not in low and "highest priority" not in low and "главное правило" not in low
+          and "вокси" not in low and "voksy" not in low and "регистрац" not in low)
+check("делегирование бэкенду — только у GPT-Live", "Delegation policy" in gl_rules and "Delegation policy" not in g
+      and "Delegation policy" not in cas)
+check("Gemini и Voksy Voice: когда звать функции + список функций без слипания",
+      "Функции:" in g and "- hangup_call: Завершает звонок\n" not in g[-5:] and "- search_knowledge_base:" in g)
+check("Voksy Voice: вход — распознанная речь, выход — для синтеза", "распознанная телефонная речь" in cas)
+check("род по голосу — ровно один раз", g.count("женском роде") == 1 and gl_rules.count("женском роде") == 1)
+check("язык начала: по приветствию; кыргызская карточка с русским приветствием — начать по-русски",
+      "на русском" in vr.build_voice_rules("gemini", language="ky", greeting="Добрый день")
+      and "на кыргызском" in vr.build_voice_rules("gemini", language="ky", greeting="Саламатсызбы!")
+      and "на кыргызском" in vr.build_voice_rules("gemini", language="ky", greeting=""))
+check("кыргызский блок написан по-кыргызски: пример продажи, цены словами, «кымбат», «ойлонуп көрөйүн», прощание",
+      all(k in vr.KYRGYZ_RULES for k in ("жети миң беш жүз", "он эки миң беш жүз", "бир миң тогуз жүз токсон",
+                                         "Кымбат экен", "Ойлонуп көрөйүн", "Кийин чалыңызчы", "Жакшы калыңыз")))
 check("журнал звонка: мужской персонаж на женском голосе → предупреждение",
       vh.persona_gender_conflict("Ты — Анри. О себе — в мужском роде: я рад помочь.", "Kore") is not None
       and vh.persona_gender_conflict("Ты — Анри. О себе — в мужском роде.", "Puck") is None
       and vh.persona_gender_conflict("Ты — Алия, я рада помочь.", "Kore") is None)
-_anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
-check("шаблон Анри не требует вопроса в каждой реплике (инструкция карточки главнее подсказок)",
-      "любой ответ заканчивай коротким вопросом" not in _anri and "НЕ заканчивай каждую реплику вопросом" in _anri)
-check("шаблон Анри: полноценный сотрудник, не отправляет на менеджера то, что знает (звонок 822daa6f)",
-      "полноценный сотрудник" in _anri and "называй, только когда клиент решил подключаться" not in _anri)
 
 # ---------- у Gemini Live ТА ЖЕ база знаний и те же живые функции, что у GPT-Live/Eleven
 # (владелец 02.11.2026: «ощущение, что они не читают базу знаний») ----------
@@ -369,60 +324,13 @@ check("Gemini Live: max_chars не передаётся (знания не об�
 check("Gemini Live (карточка): функции знаний включены в setup — search_knowledge_base реально попадает в Google",
       "self.enabled_functions = [normalize_function_name(tool" in open(
           os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read())
-check("Gemini: список функций не слипается с правилами диалога", "- hangup_call: Завершает звонок\n" in g, g[g.index("- hangup_call"):][:60])
-check("Gemini получает правила диалога: перебивания, завершение, материалы, приветствие",
-      all(k in g for k in ("Interruption policy", "ЗАВЕРШЕНИЕ", "МАТЕРИАЛЫ", "ПРИВЕТСТВИЕ")))
-check("Gemini: правило «не знаю» только после поиска и список функций",
-      "не говори «не знаю»" in g and "- search_knowledge_base:" in g and "- hangup_call:" in g)
-check("Gemini: правило разговора под проактивный звук 3.8 (отвечай сразу, один язык, UNMISTAKABLY)",
-      "ПОКА СОБЕСЕДНИК ГОВОРИТ" in g and "UNMISTAKABLY" in g and "не молчи" in g
-      and vh.GEMINI_CONVERSATION_HINT not in lc.VOICE_DELEGATION_HINT)
-check("Gemini: язык держится как в промпте звонков агента — язык приветствия, не меняется из-за «алло»",
-      "LANGUAGE OF YOUR GREETING" in g and "NOT a reason to switch" in g
-      and "THE LANGUAGE THE CALLER SPEAKS" not in g)
-check("Gemini: инструкция карточки/агента главнее общих правил манеры (и стоит перед ними)",
-      "ПРИОРИТЕТ ИНСТРУКЦИЙ" in g and g.index("ПРИОРИТЕТ ИНСТРУКЦИЙ") < g.index("ЖИВОЙ РАЗГОВОР")
-      and "следуй инструкции выше" in g)
-check("Gemini: пока клиент говорит — молчать (никаких «мм/угу» поверх речи)", "МОЛЧИ" in g and "поверх его речи" in g)
-_ln = vh.language_note("ky")
-check("Gemini: язык карточки — язык приветствия, держится его; смена только целой фразой; без отказа от русского",
-      "Начни на кыргызском языке" in _ln and "держись его" in _ln and "целой фразой" in _ln and "«алло»" in _ln
-      and "плохо владеешь" in _ln and "меняй язык вместе с ним" not in _ln and vh.language_note("") == "")
-_pc = open(os.path.join(ROOT, "backend/services/agent_prompts.py"), encoding="utf-8").read()
 from backend.services.agent_prompts import VOICE_AGENT_PROMPT_BASE as _VB
 check("правило языка — в одном месте (правила голоса), база промпта звонка его не дублирует",
-      "короткого «алло»" in _ln and "язык" not in _VB.lower())
-check("Gemini: телефонная подсказка и женский род для Aoede", "телефонный звонок" in g and "женском роде" in g)
-check("Gemini: без правил про бэкенд делегирования GPT",
-      "Delegation policy" not in g and "Do not delegate" not in g and "бэкенда" not in g)
-check("Gemini: голос Puck → мужской род; на сайте без телефона нет телефонной подсказки",
-      "мужском роде" in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False)
-      and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
-_lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
-check("GPT-Live: произношение носителя (ударения, редукция, без английского акцента) — в самом начале инструкций голоса",
-      "VOICE_PRONUNCIATION_HEAD + VOICE_CONVERSATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
-      and "native Russian speaker" in lc.VOICE_PRONUNCIATION_HEAD and "speak it until the end" in lc.VOICE_PRONUNCIATION_HEAD)
+      "язык" not in _VB.lower() and "«алло»" in vr.VOICE_RULES)
 check("промпт звонков агента: факты — только из инструкции, знаний и поиска; без SMS и custom_greeting",
       "не додумывай" in _VB and "send_sms" not in _VB and "custom_greeting" not in _VB)
 check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
-
-# 07.11.2026 (звонки 078a6ed3, 5bf12c2d): агент пересказывал клиента, повторял свой питч, спрашивал разрешения
-# рассказать, рано дожимал и уходил к бэкенду с «передайте менеджеру». Блок «Живой разговор» — в начале у обоих.
-_head = lc.VOICE_CONVERSATION_HEAD
-check("живой разговор: не эхо, не повторять себя, вау-сцена, без «хотите расскажу», темп продажи",
-      all(k in _head for k in ("НЕ ЭХО", "НЕ ПОВТОРЯЙ СЕБЯ", "ВАУ", "разрешения", "ТЕМП ПРОДАЖИ", "всё верно")))
-_cfg = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="Ты Анри. Скажи своими словами, что услышал.",
-                                                      functions={}, voice="cedar", greeting_message=None),
-                           "cid", telephony=True).build_session_config()["instructions"]
-check("GPT-Live: «Живой разговор» сразу после произношения и ДО инструкции карточки",
-      _cfg.index("НЕ ЭХО") < _cfg.index("Ты Анри") and _cfg.index("Pronunciation") < _cfg.index("НЕ ЭХО"))
-_gh = vh.gemini_prompt_head("Puck", "ru", "Добрый день")
-check("Gemini: «Живой разговор» в начале промпта (в gemini_prompt_head)", "НЕ ЭХО" in _gh and "ВАУ" in _gh)
-check("договорённость: принять коротко, итог один раз — у GPT-Live и Gemini, без «спроси, всё ли верно»",
-      "один раз, перед прощанием" in lc.VOICE_DIALOG_RULES and "спроси, всё ли верно" not in lc.VOICE_DIALOG_RULES
-      and "без пересказа" in vh.GEMINI_CALL_RULES)
-check("делегирование: менеджер / встреча / перезвон — не к бэкенду",
-      "очную встречу или перезвонить" in lc.VOICE_DELEGATION_POLICY)
+check("делегирование: менеджер / встреча / перезвон — не к бэкенду", "менеджера, встречу или перезвонить" in gl_rules)
 check("бэкенд не пересказывает клиента", "Не повторяй за клиентом его слова" in lc.BACKEND_SYSTEM_PROMPT)
 from backend.websockets import handler_live as _hl
 check("Decisions wants_human: время спросить один раз и только если не названо, не к бэкенду",
@@ -1100,32 +1008,20 @@ check("пока агент говорит, речь линии (эхо) не у�
 check("виджет без выравнивания громкости",
       gl.GeminiLiveVoiceSession(_SentWS(), types.SimpleNamespace(id="a"), _gc2, None, "c", False, None).input_level is None)
 check("Gemini VAD: prefixPaddingMs из GEMINI_VAD_PREFIX_MS, по умолчанию 300 (поднят 02.11.2026)", 'GEMINI_VAD_PREFIX_MS", "300"' in _live)
-_ky = vh.language_note("ky")
-check("кыргызская карточка: кыргызский — основной язык линии, русские слова в кыргызской речи — норма",
-      "ОСНОВНОЙ ЯЗЫК" in _ky and "РУССКИЕ СЛОВА" in _ky)
-check("язык карточки: никогда не говорить собеседнику, какие языки понимаешь", "НИКОГДА НЕ ГОВОРИ О ЯЗЫКАХ" in vh.language_note("ru"))
-check("русская карточка без кыргызского приоритета", "ОСНОВНОЙ ЯЗЫК" not in vh.language_note("ru"))
+check("кыргызская речь: русские слова в кыргызской речи — норма, язык не меняем",
+      "орусча сөздөр" in vr.KYRGYZ_RULES and "не просьба сменить язык" in vr.VOICE_RULES)
+check("о языках не говорить", "О языках не говори" in vr.VOICE_RULES)
 
-# ---------- 07.11.2026, ветка 0711-gemini-live, звонок d08c06f4: «без души, только «отправлю», не помнит» ----------
-_h = vh.gemini_prompt_head("Charon", "ky", "Саламатсызбы!")
-check("Gemini: в начале — характер, объяснять голосом, исправиться, переспросить, память",
-      all(k in _h for k in ("ХАРАКТЕР", "ОБЪЯСНЯЙ САМ ГОЛОСОМ", "НЕДОВОЛЕН — ИСПРАВЬСЯ", "НЕ ПОНЯЛ — ПЕРЕСПРОСИ", "ПАМЯТЬ"))
-      and "не больше одного раза за звонок" in _h)
-check("Gemini: «пришлю» — не ответ; материалы только после объяснения (и в правилах звонка)",
-      "НЕ ответ" in _h and "сначала объясни сам" in vh.GEMINI_CALL_RULES
-      and "предложи прислать материалы" not in vh.GEMINI_SALES_HINT)
 _card = "Ты Анри.\n\n# ЗНАНИЯ\nПрофи — 12 500 сом.\n\n[Контекст звонка] Это входящий звонок. Звонит клиент, который уже есть в CRM. Имя: Айбек.\nХРОНОЛОГИЯ: 07.11 звонок — спрашивал про цену."
 _rest, _ctx = vh.split_call_context(_card)
 check("Gemini: контекст звонка отделяется от карточки", "[Контекст звонка]" not in _rest and _ctx.startswith("Это входящий"))
 check("Gemini: блок контекста с заголовком, пустой — пусто",
       vh.call_context_block(_ctx).startswith("# КОНТЕКСТ ЗВОНКА И КЛИЕНТ") and vh.call_context_block("") == "")
 _gc_src = open(os.path.join(ROOT, "backend/websockets/gemini_client.py"), encoding="utf-8").read()
-check("Gemini: контекст звонка с историей клиента идёт сразу после головы, до карточки",
-      "+ call_context_block(call_ctx)\n                                      + card" in _gc_src)
-_lk = vh.language_note("ru")
-check("Gemini: просьба о кыргызском — сразу и без комментария о смене языка",
-      "давай по-кыргызски" in _lk and "СРАЗУ" in _lk and "без комментариев о смене языка" in _lk)
-check("Gemini: кыргызская дикция — законченные фразы, окончания полностью", "окончания слов проговаривай" in vh.KYRGYZ_LINE_NOTE)
+check("Gemini: контекст звонка с историей клиента идёт первым, до карточки",
+      "call_context_block(call_ctx) + card + build_voice_rules(" in _gc_src)
+check("материалы: сначала объяснить голосом, прислать не больше раза, «уже отправил» — нельзя",
+      "Сначала объясни главное голосом" in vr.VOICE_RULES and "«уже отправил»" in vr.VOICE_RULES)
 _sg = open(os.path.join(ROOT, "backend/api/sip_gateway.py"), encoding="utf-8").read()
 check("журнал звонка: узнан ли клиент по номеру и ушла ли его история агенту",
       "Клиент узнан по номеру в CRM" in _sg and "Номер не найден в CRM" in _sg)

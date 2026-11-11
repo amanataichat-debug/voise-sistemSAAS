@@ -397,7 +397,8 @@ async def _gpt_live_speak(text: str, voice: Dict[str, Any], timeout: float = 120
     cfg = types.SimpleNamespace(system_prompt=_live_prompt(voice.get("language")), functions=None,
                                 voice=voice["voice_id"])
     client = OpenAILiveClient(settings.OPENAI_API_KEY, cfg, client_id=f"voice-msg-{int(time.time())}",
-                              db_session=None, audio_rate=LIVE_RATE, voice_override=voice["voice_id"])
+                              db_session=None, audio_rate=LIVE_RATE, voice_override=voice["voice_id"],
+                              conversation_rules=False)
     if not await client.connect():
         return {"ok": False, "error": "live_unavailable"}
 
