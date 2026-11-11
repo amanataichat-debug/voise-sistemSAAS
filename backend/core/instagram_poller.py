@@ -37,15 +37,17 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 from backend.db.session import SessionLocal
 from backend.services import agent_pause
 from backend.services import instagram_service as ig
 
 logger = get_logger(__name__)
 
-# Интервал опроса и «протухание» claim'а (чуть меньше интервала).
-CHECK_INTERVAL_SECONDS = 90
-CLAIM_CUTOFF_SECONDS = 80
+# Интервал опроса и «протухание» claim'а (чуть меньше интервала; IG_POLL_SECONDS, по умолчанию 45 с).
+from backend.core.config import settings as _settings  # noqa: E402
+CHECK_INTERVAL_SECONDS = max(20, int(getattr(_settings, "IG_POLL_SECONDS", 45) or 45))
+CLAIM_CUTOFF_SECONDS = CHECK_INTERVAL_SECONDS - 5
 
 # Сколько тредов смотрим за тик и сколько сообщений берём из треда.
 POLL_CONVERSATIONS_LIMIT = 15
@@ -61,7 +63,7 @@ MAX_CONVERSATION_RUNS_PER_TICK = 5
 MAX_CONVERSATION_FETCH_PER_TICK = 10
 
 # Тред без watermark (первый раз видим): обрабатываем только сообщения свежее
-# этого окна, остальные — baseline. Поллер ходит каждые ~90с, так что живые
+# этого окна, остальные — baseline. Поллер ходит каждые ~45 с, так что живые
 # новые сообщения в окно попадают всегда.
 NEW_CONVERSATION_LOOKBACK_MINUTES = 15
 
@@ -516,12 +518,12 @@ async def _process_conversation(db, connector, row, conv_id, parsed, own_ids, ow
     )
     if any(m["attachments"] for m in inbound):
         items = [(m, r.id) for m, r in stored]
-        asyncio.create_task(_process_media_and_dispatch(
+        spawn(_process_media_and_dispatch(
             str(connector.agent_config_id), str(contact.id), items
         ))
     else:
         text_joined = "\n".join(m["text"] for m in inbound)
-        asyncio.create_task(handle_inbound_instagram(
+        spawn(handle_inbound_instagram(
             str(connector.agent_config_id), str(contact.id), text_joined
         ))
     return True

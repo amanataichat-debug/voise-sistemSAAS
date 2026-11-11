@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, Tuple
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 from backend.models.task import Task, TaskStatus
 from backend.models.contact import Contact
 from backend.models.user import User
@@ -591,7 +592,7 @@ class TaskScheduler:
 
                 # Launch PostCall with agent_call_id (v3 → OpenRouter, v2 → user OpenAI key)
                 if can_orchestrate:
-                    asyncio.create_task(
+                    spawn(
                         PostCallOrchestrator.poll_and_run(
                             agent_call_id=str(agent_call.id),
                             agent_config_id=str(agent_config.id),
@@ -1198,7 +1199,7 @@ class TaskScheduler:
                 if agent_config and task.pre_call_response_id:
                     user = db.query(User).filter(User.id == contact.user_id).first()
                     if user and user.openai_api_key:
-                        asyncio.create_task(
+                        spawn(
                             PostCallOrchestrator.poll_and_run(
                                 task_id=str(task.id),
                                 agent_config_id=str(agent_config.id),
@@ -1326,7 +1327,7 @@ class TaskScheduler:
                     ).first()
                     if agent_config and task.pre_call_response_id:
                         if user.openai_api_key:
-                            asyncio.create_task(
+                            spawn(
                                 PostCallOrchestrator.poll_and_run(
                                     task_id=str(task.id),
                                     agent_config_id=str(agent_config.id),

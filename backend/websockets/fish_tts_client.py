@@ -37,6 +37,7 @@ import msgpack
 import websockets
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 from backend.models.fish_assistant import DEFAULT_FISH_MODEL
 
 logger = get_logger(__name__)
@@ -118,7 +119,7 @@ class FishTTSClient:
 
         self.ws = fish
         generation = self.generation
-        asyncio.create_task(self._read(fish, generation))
+        spawn(self._read(fish, generation))
         if self._idle_task is None:
             self._idle_task = asyncio.create_task(self._idle_watch())
 
@@ -260,7 +261,7 @@ class FishTTSClient:
         self.speaking = False
         self.response_complete = False
         if old is not None:
-            asyncio.create_task(self._close_socket(old))
+            spawn(self._close_socket(old))
         if self._connect_task is None or self._connect_task.done():
             self._connect_task = asyncio.create_task(self._reconnect())
         logger.info(f"[FISH-TTS {self.label}] barge-in: reconnecting (gen={self.generation})")

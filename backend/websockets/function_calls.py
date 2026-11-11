@@ -23,6 +23,7 @@ import traceback
 from typing import Any, Dict, Optional
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 from backend.functions import execute_function
 from backend.services.conversation_service import ConversationService
 from backend.services.function_log_service import FunctionLogService
@@ -175,7 +176,7 @@ async def execute_and_send_function_result(
 
         sheet_id = getattr(config, "google_sheet_id", None) if config is not None else None
         if sheet_id:
-            asyncio.create_task(async_save_to_google_sheets(
+            spawn(async_save_to_google_sheets(
                 sheet_id=sheet_id,
                 user_message=user_transcript or f"[Function call: {function_name}]",
                 assistant_message=f"[Async function executed: {function_name}]",
@@ -184,7 +185,7 @@ async def execute_and_send_function_result(
                 context="function call",
             ))
 
-        asyncio.create_task(async_save_function_log(
+        spawn(async_save_function_log(
             function_name=function_name,
             arguments=arguments,
             result=result if isinstance(result, dict) else {"result": str(result)},
@@ -212,7 +213,7 @@ async def execute_and_send_function_result(
     except Exception as exc:
         execution_time = time.time() - started
         logger.error(f"[FUNC] {function_name} failed: {exc}\n{traceback.format_exc()}")
-        asyncio.create_task(async_save_function_log(
+        spawn(async_save_function_log(
             function_name=function_name,
             arguments=arguments,
             result={"error": str(exc)},

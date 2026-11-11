@@ -39,6 +39,7 @@ import time
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 
 from backend.core.logging import get_logger
+from backend.core.spawn import spawn
 
 logger = get_logger(__name__)
 
@@ -360,7 +361,7 @@ class GoogleSTTClient:
         if (self._session_audio >= SESSION_ROTATE_SEC and not self._in_phrase) \
                 or self._session_audio >= SESSION_FORCE_ROTATE_SEC:
             self._rotating = True
-            asyncio.create_task(self._rotate())
+            spawn(self._rotate())
 
     async def _filler(self) -> None:
         from google.cloud.speech_v2.types import cloud_speech as c
@@ -430,7 +431,7 @@ class GoogleSTTClient:
         if self._checking:
             return  # ошибку обработает _open_stream
         self._flush_finals_on_close()
-        asyncio.create_task(self._restart())
+        spawn(self._restart())
 
     def _flush_finals_on_close(self) -> None:
         self._cancel_commit()
