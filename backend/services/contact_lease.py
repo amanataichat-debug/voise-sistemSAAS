@@ -22,7 +22,7 @@ from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-LEASE = timedelta(minutes=4)
+LEASE = timedelta(minutes=6)   # с запасом на 2 повтора запроса к модели (openrouter_client)
 POLL_SECONDS = 2.0
 
 
