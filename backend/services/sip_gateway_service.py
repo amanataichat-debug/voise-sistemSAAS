@@ -807,11 +807,26 @@ class SipGatewayService:
         ни с одним контактом (тогда отрабатывает inbound_recent_contacts_hint).
         Best-effort — любой сбой не должен рвать звонок (ловится выше).
         """
-        if call.direction != "inbound" or agent is None or not call.caller:
+        if agent is None:
             return ""
         # По любому номеру клиента — основному или второму (ветка 2110-client-memory).
         from backend.services.agent_contact_phones import find_contact_by_phone
-        contact = find_contact_by_phone(db, agent.id, call.caller)
+        contact = None
+        outbound = call.direction == "outbound"
+        if outbound:
+            # Исходящий (аудит 12.11.2026): раньше память о клиенте приходила только через PreCall — модель
+            # оркестратора. Упал PreCall (сеть, кредиты) — агент звонил вчерашнему клиенту «вхолодную».
+            # Теперь карточка и хронология — из кода, как на входящем: клиент задачи, иначе номер.
+            if call.task_id:
+                from backend.models.task import Task
+                task = db.get(Task, call.task_id)
+                if task is not None and task.agent_contact_id:
+                    from backend.models.agent_contact import AgentContact
+                    contact = db.get(AgentContact, task.agent_contact_id)
+            if contact is None and call.to_number:
+                contact = find_contact_by_phone(db, agent.id, call.to_number)
+        elif call.caller:
+            contact = find_contact_by_phone(db, agent.id, call.caller)
         if contact is None:
             return ""
 
@@ -834,7 +849,8 @@ class SipGatewayService:
         # Звонок 27.10.2026 (сессия f50d0b4e): здесь было «ты уже общался с ним раньше» — на «помните
         # меня?» агент ответил «помню, рада снова слышать», а через фразу бэкенд по хронологии сказал
         # «мы не успели поговорить — был только пропущенный звонок». Номер в CRM ≠ состоявшийся разговор.
-        head = "Звонит клиент, который уже есть в CRM."
+        head = ("Ты звонишь клиенту, который уже есть в CRM." if outbound
+                else "Звонит клиент, который уже есть в CRM.")
         if name:
             head += f" Имя: {name}" + (f" ({company})" if company else "") + "."
         elif company:
