@@ -938,38 +938,6 @@ async def get_conversation_detail(
         logger.info(f"   Total messages after processing: {len(messages)}")
         logger.info(f"   Has structured dialog: {has_structured_dialog}")
 
-        # =============================================================================
-        # Fallback для старых звонков: log_url не сохранён, но есть
-        # call_session_history_id — дотягиваем лог из Voximplant GetCallHistory
-        # и кэшируем в client_info, чтобы не ходить в API повторно.
-        # =============================================================================
-        if not log_url and call_session_history_id:
-            try:
-                from backend.api.voximplant import (
-                    get_full_call_cost,
-                    get_voximplant_api_credentials,
-                )
-
-                credentials = get_voximplant_api_credentials(db, assistant.user_id)
-                if credentials:
-                    cost_result = await get_full_call_cost(
-                        call_session_history_id=call_session_history_id,
-                        account_id=credentials["account_id"],
-                        api_key=credentials["api_key"],
-                    )
-                    fetched_log_url = cost_result.get("log_file_url")
-                    if fetched_log_url:
-                        log_url = fetched_log_url
-                        if session_history_record is not None:
-                            updated_info = dict(session_history_record.client_info or {})
-                            updated_info["log_url"] = fetched_log_url
-                            session_history_record._row.client_info = updated_info
-                            db.commit()
-                        logger.info(f"   📄 log_url fetched from Voximplant and cached")
-            except Exception as log_fetch_error:
-                # Лог — вспомогательная информация, не ломаем детальный просмотр
-                logger.warning(f"   ⚠️ Failed to fetch log_url from Voximplant: {log_fetch_error}")
-        
         # Телефонный звонок через SIP-шлюз: полная стенограмма лежит в sip_calls.transcript
         # (с приветствием и последней репликой, которых нет в построчных записях).
         sip_turns = _sip_call_transcript(db, session_id)

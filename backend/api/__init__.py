@@ -31,7 +31,6 @@ from .admin import router as admin_router
 from .knowledge_base import router as knowledge_base_router
 from .payments import router as payments_router
 from .subscription_status import router as subscription_status_router
-from .voximplant import router as voximplant_router
 from .voximplant_settings import router as voximplant_settings_router
 from .partners import router as partners_router
 from .conversations import router as conversations_router
@@ -62,7 +61,6 @@ api_router.include_router(admin_router, prefix="/admin", tags=["Admin"])
 api_router.include_router(knowledge_base_router)
 api_router.include_router(payments_router, prefix="/payments", tags=["Payments"])
 api_router.include_router(subscription_status_router, prefix="/subscription-status", tags=["Subscription Status"])
-api_router.include_router(voximplant_router, prefix="/voximplant", tags=["Voximplant"])
 api_router.include_router(voximplant_settings_router, prefix="/users", tags=["Voximplant Settings"])
 api_router.include_router(partners_router, prefix="/partners", tags=["Partners"])
 api_router.include_router(conversations_router, tags=["Conversations"])
@@ -92,7 +90,6 @@ __all__ = [
     "knowledge_base_router",
     "payments_router",
     "subscription_status_router",
-    "voximplant_router",
     "voximplant_settings_router",
     "partners_router",
     "conversations_router",

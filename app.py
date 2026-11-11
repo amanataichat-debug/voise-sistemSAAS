@@ -31,7 +31,7 @@ from backend.core.logging import setup_logging, get_logger
 from backend.api import (
     auth, users, assistants, files, websocket, healthcheck, 
     subscriptions, subscription_logs, admin, 
-    knowledge_base, payments, voximplant, conversations,
+    knowledge_base, payments, conversations,
     email_verification,
     embeds,
     gemini_ws,  # ✅ Gemini WebSocket API
@@ -315,7 +315,6 @@ app.include_router(subscription_logs.router, prefix="/api/subscription-logs", ta
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
-app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
 app.include_router(partners_router, prefix="/api/partners", tags=["Partners"])
 app.include_router(conversations.router, prefix="/api/conversations", tags=["Conversations"])
 app.include_router(contacts.router, prefix="/api/contacts", tags=["CRM"])
@@ -3133,14 +3132,6 @@ async def startup_event():
         except Exception as e:
             logger.error(f"❌ Error initializing Email Verification: {str(e)}")
         
-        # Логирование инициализации Voximplant интеграции
-        try:
-            logger.info("📞 Voximplant integration initialized")
-            logger.info(f"   WebSocket endpoint: {settings.HOST_URL}/api/voximplant/ws/{{assistant_id}}")
-            logger.info(f"   Demo endpoint: {settings.HOST_URL}/api/voximplant/ws/demo")
-            logger.info(f"   Test endpoint: {settings.HOST_URL}/api/voximplant/test")
-        except Exception as e:
-            logger.error(f"❌ Error initializing Voximplant integration: {str(e)}")
         
         # Eleven-ассистенты (OpenAI Realtime текст + ElevenLabs TTS на серверном ключе)
         logger.info(

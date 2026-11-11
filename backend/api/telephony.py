@@ -105,9 +105,110 @@ from backend.services.voximplant_partner import (
     SIP_PROVIDER_IPS,
     SIP_PROVIDER_PROXIES,
 )
-from backend.api.voximplant import build_functions_for_openai
 
 logger = get_logger(__name__)
+from backend.functions import get_function_definitions, normalize_function_name  # noqa: E402
+
+
+# Перенесено из удалённого api/voximplant.py (DEAD-код Voximplant ещё пользуется этим форматом).
+def build_functions_for_openai(functions_config):
+    """
+    Преобразует конфигурацию функций в формат для OpenAI Realtime API
+    """
+    if not functions_config:
+        return []
+        
+    # Получаем все доступные определения функций
+    all_functions_definitions = get_function_definitions()
+    all_functions_dict = {normalize_function_name(f["name"]): f for f in all_functions_definitions}
+    
+    result_functions = []
+    try:
+        if isinstance(functions_config, list):
+            for idx, func in enumerate(functions_config):
+                if isinstance(func, dict) and "name" in func:
+                    normalized_name = normalize_function_name(func["name"])
+                    function_def = all_functions_dict.get(normalized_name)
+                    
+                    if function_def:
+                        # Добавляем function_id в parameters
+                        params = function_def["parameters"].copy()
+                        if "properties" not in params:
+                            params["properties"] = {}
+                        
+                        # Добавляем function_id как первый параметр
+                        params["properties"] = {
+                            "function_id": {
+                                "type": "string",
+                                "description": "ID функции для выполнения",
+                                "enum": [str(idx + 1)]
+                            },
+                            **params["properties"]
+                        }
+                        
+                        # Убеждаемся, что function_id включен в required
+                        if "required" not in params or not params["required"]:
+                            params["required"] = ["function_id"]
+                        elif "function_id" not in params["required"]:
+                            params["required"] = ["function_id"] + params["required"]
+                        
+                        # Формируем функцию в формате OpenAI
+                        result_functions.append({
+                            "type": "function",
+                            "function": {
+                                "name": func["name"],
+                                "description": func.get("description", function_def["description"]),
+                                "parameters": params
+                            }
+                        })
+                        logger.info(f"[VOXIMPLANT] Добавлена функция {func['name']} с ID {idx + 1}")
+        
+        elif isinstance(functions_config, dict) and "enabled_functions" in functions_config:
+            enabled_functions = functions_config.get("enabled_functions", [])
+            for idx, name in enumerate(enabled_functions):
+                normalized_name = normalize_function_name(name)
+                function_def = all_functions_dict.get(normalized_name)
+                
+                if function_def:
+                    # Аналогичная обработка как выше
+                    params = function_def["parameters"].copy()
+                    if "properties" not in params:
+                        params["properties"] = {}
+                    
+                    params["properties"] = {
+                        "function_id": {
+                            "type": "string",
+                            "description": "ID функции для выполнения",
+                            "enum": [str(idx + 1)]
+                        },
+                        **params["properties"]
+                    }
+                    
+                    if "required" not in params or not params["required"]:
+                        params["required"] = ["function_id"]
+                    elif "function_id" not in params["required"]:
+                        params["required"] = ["function_id"] + params["required"]
+                    
+                    result_functions.append({
+                        "type": "function",
+                        "function": {
+                            "name": function_def["name"],
+                            "description": function_def["description"],
+                            "parameters": params
+                        }
+                    })
+                    logger.info(f"[VOXIMPLANT] Добавлена функция {function_def['name']} с ID {idx + 1}")
+    
+    except Exception as e:
+        logger.error(f"[VOXIMPLANT] Ошибка при построении функций: {e}")
+        logger.error(traceback.format_exc())
+    
+    return result_functions
+
+
+# =============================================================================
+# 🆕 v3.6: ПОЛУЧЕНИЕ VOXIMPLANT API CREDENTIALS
+# =============================================================================
 
 router = APIRouter()
 

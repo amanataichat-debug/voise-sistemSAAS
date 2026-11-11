@@ -30,23 +30,11 @@ from .handler_gemini import handle_gemini_websocket_connection
 from .grok_client import GrokVoiceClient, map_voice_to_grok
 from .handler_grok import handle_grok_websocket_connection
 
-# 🐟 Fish Audio — прокси синтеза речи для сценариев Voximplant
-from .handler_fish_tts import handle_fish_tts_connection  # legacy: прокси для сценариев Voximplant (не используется)
+# 🐟 Fish Audio
 from .handler_fish import handle_fish_websocket_connection  # Fish: OpenAI Realtime (текст) + Fish Audio
 from .fish_llm_client import FishLLMClient
 from .fish_tts_client import FishTTSClient
 
-# 📞 Voximplant интеграция
-from .voximplant_adapter import VoximplantAdapter, handle_voximplant_websocket
-from .voximplant_handler import (
-    VoximplantProtocolHandler, 
-    SimpleVoximplantHandler,
-    handle_voximplant_websocket_with_protocol,
-    handle_voximplant_websocket_simple
-)
-
-# 🆕 v3.3: Voximplant ↔ Gemini bridge (fallback)
-from .handler_vox_gemini import handle_vox_gemini_websocket
 
 __all__ = [
     # OpenAI Beta API (старая версия)
@@ -78,19 +66,14 @@ __all__ = [
     "StreamingSentenceDetector",
     
     # 🐟 Fish Audio TTS proxy
-    "handle_fish_tts_connection",
+
     "handle_fish_websocket_connection",
     "FishLLMClient",
     "FishTTSClient",
 
     # Voximplant
-    "VoximplantAdapter",
-    "handle_voximplant_websocket",
-    "VoximplantProtocolHandler", 
-    "SimpleVoximplantHandler",
-    "handle_voximplant_websocket_with_protocol",
-    "handle_voximplant_websocket_simple",
+
     
     # 🆕 v3.3: Voximplant ↔ Gemini bridge
-    "handle_vox_gemini_websocket",
+
 ]

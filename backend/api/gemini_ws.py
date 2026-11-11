@@ -27,7 +27,6 @@ from backend.db.session import get_db
 from backend.websockets import handle_gemini_websocket_connection
 from backend.websockets.gemini_client import GEMINI_LIVE_MODEL, GEMINI_TOOL_SCHEDULING
 from backend.websockets.openai_client_streaming import handle_openai_streaming_websocket
-from backend.websockets.handler_vox_gemini import handle_vox_gemini_websocket  # dead code (Voximplant)
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -50,29 +49,6 @@ async def gemini_websocket_endpoint(websocket: WebSocket, assistant_id: str, db:
     except Exception as e:
         logger.error(f"[GEMINI-WS] WebSocket error for assistant {assistant_id}: {e}")
         logger.error(f"[GEMINI-WS] Traceback: {traceback.format_exc()}")
-        try:
-            await websocket.close(code=1011, reason="Internal server error")
-        except Exception:
-            pass
-
-
-@router.websocket("/ws/vox-gemini/{assistant_id}")
-async def vox_gemini_websocket_endpoint(
-    websocket: WebSocket,
-    assistant_id: str,
-    caller: Optional[str] = Query(None, description="Caller phone number"),
-    call_id: Optional[str] = Query(None, description="Voximplant call ID"),
-    db: Session = Depends(get_db),
-):
-    """МЁРТВЫЙ КОД: мост Voximplant ↔ Gemini. Voximplant отключён, телефония идёт через SIP-шлюз."""
-    try:
-        logger.warning(f"[VOX-GEMINI-WS] dead endpoint hit: assistant={assistant_id} caller={caller} call_id={call_id}")
-        await handle_vox_gemini_websocket(websocket=websocket, assistant_id=assistant_id, db=db,
-                                          caller_number=caller, call_id=call_id)
-    except WebSocketDisconnect:
-        logger.info(f"[VOX-GEMINI-WS] disconnected: assistant_id={assistant_id}")
-    except Exception as e:
-        logger.error(f"[VOX-GEMINI-WS] Error for assistant {assistant_id}: {e}")
         try:
             await websocket.close(code=1011, reason="Internal server error")
         except Exception:
