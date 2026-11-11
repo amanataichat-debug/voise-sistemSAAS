@@ -104,6 +104,49 @@ def call(method, path, u=None, **kw):
     return r
 
 
+# --- 0. регистрация нового клиента, как на сайте: регистрация → код на почту → подтверждение → вход ---
+from backend.services.email_service import EmailService  # noqa: E402
+_codes = []
+_orig_gen = EmailService._generate_verification_code
+
+
+def _gen():
+    c = _orig_gen()
+    _codes.append(c)
+    return c
+
+EmailService._generate_verification_code = staticmethod(_gen)
+EmailService._send_email_smtp = staticmethod(lambda *a, **k: None)
+new_email = f"newclient-{uuid.uuid4().hex[:6]}@example.com"
+r = call("POST", "/api/auth/register", json={"email": new_email, "password": "Passw0rd!x", "first_name": "Айгерим"})
+if r is None or r.status_code >= 400:
+    fails.append(f"регистрация: {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:200]}")
+r = call("POST", "/api/auth/login", json={"email": new_email, "password": "Passw0rd!x"})
+if r is not None and r.status_code < 400 and (r.json().get("token") or r.json().get("access_token")):
+    fails.append("вход без подтверждения почты выдал токен")
+r = call("POST", "/api/email-verification/verify", json={"email": new_email, "code": _codes[-1] if _codes else "000000"})
+tok = None
+if r is not None and r.status_code < 400:
+    tok = ((r.json().get("data") or {}).get("token")) or r.json().get("token")
+if not tok:
+    fails.append(f"подтверждение кода: {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:200]}")
+r = call("POST", "/api/auth/login", json={"email": new_email, "password": "Passw0rd!x"})
+if r is None or r.status_code >= 400:
+    fails.append(f"вход после подтверждения: {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:200]}")
+else:
+    j = r.json()
+    login_tok = j.get("token") or j.get("access_token") or (j.get("data") or {}).get("token")
+    me = client.get("/api/users/me", headers={"Authorization": f"Bearer {login_tok}"})
+    if me.status_code != 200:
+        fails.append(f"кабинет нового клиента /api/users/me: {me.status_code} {me.text[:200]}")
+    else:
+        print("новый клиент:", {k: me.json().get(k) for k in ("email", "agent_mode", "subscription_plan")})
+    for pth in ("/api/dashboard/summary", "/api/wallet/balance", "/api/subscriptions/my-subscription",
+                "/api/eleven-assistants/", "/api/agent/list"):
+        rr = client.get(pth, headers={"Authorization": f"Bearer {login_tok}"})
+        if rr.status_code >= 500:
+            fails.append(f"новый клиент {pth}: {rr.status_code} {rr.text[:200]}")
+
 # --- 1. создать агента Profi и ассистента, как в кабинете ---------------------------------------------
 ids = {}
 DOCS = {"doc_who_am_i": "Я Анри, менеджер компании Смоук", "doc_who_we_call": "Владельцы малого бизнеса",
