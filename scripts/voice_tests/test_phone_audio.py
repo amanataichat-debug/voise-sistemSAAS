@@ -75,5 +75,34 @@ async def main():
 
 
 asyncio.run(main())
+
+
+# --- функции поиска на звонке не останавливают звук: выполняются в фоновом потоке ---
+import threading
+from backend.websockets import function_calls as fc
+from backend.websockets.call_log import CallLogRecorder, CURRENT_CALL_LOG
+
+seen = {}
+
+
+async def fake_execute(name, arguments, context):
+    seen[name] = (threading.get_ident(), CURRENT_CALL_LOG.get())
+    return {"ok": True}
+
+fc.execute_function = fake_execute
+
+
+async def offload_check():
+    log = CallLogRecorder(channel="phone")
+    log.activate()
+    await fc.run_function("search_knowledge_base", {"query": "цена"}, {})
+    await fc.run_function("hangup_call", {}, {})
+    main_thread = threading.get_ident()
+    check("поиск по базе на звонке — в фоновом потоке (звук основного потока не стоит)",
+          seen["search_knowledge_base"][0] != main_thread)
+    check("журнал звонка доступен функции и в фоновом потоке", seen["search_knowledge_base"][1] is log)
+    check("hangup_call остаётся в основном потоке (трогает сам звонок)", seen["hangup_call"][0] == main_thread)
+
+asyncio.run(offload_check())
 print("ПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 
 from backend.core.logging import get_logger
 from backend.core.spawn import spawn
-from backend.functions import execute_function
+from backend.functions import execute_function, normalize_function_name
 from backend.services.conversation_service import ConversationService
 from backend.services.function_log_service import FunctionLogService
 from backend.services.google_sheets_service import GoogleSheetsService
@@ -131,6 +131,30 @@ async def _send(websocket, payload: Dict[str, Any]) -> None:
         logger.warning(f"[FUNC] send to client failed ({payload.get('type')}): {exc}")
 
 
+# Функции, которые во время звонка ходят в базу синхронно (поиск по базе знаний, каталогу, клиентам).
+# В основном потоке воркера они останавливали звук ВСЕХ звонков процесса на время запросов — на телефоне
+# это слышно как запинки. Выполняются в фоновом потоке со своим циклом событий (core/background_loop);
+# журнал звонка (contextvar) переносится туда же. Функции, которые трогают сам звонок (hangup_call и др.),
+# остаются в основном потоке.
+OFFLOAD_FUNCTIONS = {"search_knowledge_base", "find_products", "find_client", "search_pinecone"}
+
+
+async def run_function(function_name: str, arguments: Dict[str, Any], context: Dict[str, Any]) -> Any:
+    """Выполнить функцию: тяжёлые по базе — в фоновом потоке, остальные — здесь."""
+    if normalize_function_name(function_name) not in OFFLOAD_FUNCTIONS:
+        return await execute_function(name=function_name, arguments=arguments, context=context)
+    from backend.core import background_loop
+    from backend.websockets.call_log import CURRENT_CALL_LOG
+    call_log = CURRENT_CALL_LOG.get()
+
+    async def _in_background():
+        if call_log is not None:
+            CURRENT_CALL_LOG.set(call_log)
+        return await execute_function(name=function_name, arguments=arguments, context=context)
+
+    return await background_loop.run(_in_background())
+
+
 async def execute_and_send_function_result(
     openai_client: Any,
     websocket,
@@ -159,7 +183,7 @@ async def execute_and_send_function_result(
     try:
         logger.info(f"[FUNC] {function_name}({json.dumps(arguments, ensure_ascii=False)[:200]}) "
                     f"call_id={function_call_id} conversation={conversation_id}")
-        result = await execute_function(name=function_name, arguments=arguments, context=context)
+        result = await run_function(function_name, arguments, context)
         execution_time = time.time() - started
         logger.info(f"[FUNC] {function_name} done in {execution_time:.2f}s: {str(result)[:200]}")
 
