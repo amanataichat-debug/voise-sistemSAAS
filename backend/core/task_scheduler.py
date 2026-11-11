@@ -127,6 +127,14 @@ class TaskScheduler:
             except Exception as e:
                 logger.warning(f"[TASK-SCHEDULER] call warmup scan failed: {e}")
 
+            # Напоминания владельцу (channel="owner"): в назначенное время — в его Telegram-бот, один раз.
+            try:
+                from backend.services import owner_notifications
+                await owner_notifications.send_due_reminders(db, now)
+            except Exception as e:
+                logger.warning(f"[TASK-SCHEDULER] owner reminders failed: {e}")
+                db.rollback()
+
             if not total:
                 logger.debug(f"[TASK-SCHEDULER] No pending tasks at {now}")
                 return

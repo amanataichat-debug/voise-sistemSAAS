@@ -425,9 +425,18 @@ Users provide their own API keys for: OpenAI (OpenAI assistants), Google Gemini,
 - Удалены: `/api/voximplant`, обработчики VoxEngine, легаси Realtime (`handler.py`, `openai_client.py`,
   `handler_realtime_new.py`), запасные пути Voximplant в планировщике.
 
-**Тесты:** `python scripts/voice_regression.py` (без сети и БД). Механика на настоящем PostgreSQL:
-`MECH_TEST_DATABASE_URL=postgresql://… python scripts/voice_tests/test_mechanics.py`. Тесты проверяют поведение
-(сборку промпта, механику, отказы), а не наличие фраз.
+**Тесты — одна команда:** `bash scripts/check_all.sh` (компиляция, неопределённые имена, `voice_regression.py`,
+запуск всех фоновых циклов сервера). С тестовой PostgreSQL (`CHECK_DATABASE_URL=postgresql://…`, база будет
+изменена) ещё механика, инбокс, сводка, сквозные цепочки `test_e2e_call_chain` (кабинет → задача → планировщик →
+SIP → недозвон → повтор) и `test_e2e_chat_chain` (вебхук WhatsApp → ответ → CRM → задача), обход всех маршрутов
+кабинета `scripts/smoke_cabinet.py` (в т.ч. регистрация). Хук перед коммитом: `git config core.hooksPath .githooks`.
+Тесты проверяют поведение, а не наличие фраз. Список фоновых циклов — `app.background_jobs()` (его же проверяет тест).
+
+**Добавлено при повторном аудите (12.11.2026, `docs/audit_full_2026_11_11.md` §12):** `call_retry` — повтор после
+недозвона ставит код, если модель не поставила (завтра утром → послезавтра днём → стоп после 3); аренда клиента
+внутри `_analyze_v3_openrouter` (разбор звонка и касания — по одному на клиента); `agent_call.voice_calls_only()` —
+статистика «звонков» без переписки; напоминания владельцу (`channel="owner"`) приходят в Telegram-бот
+(`owner_notifications.send_due_reminders`); `alembic/env.py` не отключает логгеры приложения.
 
 ## Development Workflow (current)
 

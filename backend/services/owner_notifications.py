@@ -281,3 +281,52 @@ async def run_daily_digest(db: Session, day_local: date) -> int:
         if await _send(agent, db, format_daily_digest(agent, day_local, stats)):
             sent += 1
     return sent
+
+
+# ── Напоминания владельцу (задачи channel="owner") ─────────────────────────────────────────────
+# Аудит 11.11.2026: напоминание («позвоните клиенту в 15:00» от агента при передаче клиента или
+# «напомнить» из инбокса) только висело в списке задач — в назначенное время владелец ничего не
+# получал. Теперь планировщик на каждом тике шлёт созревшие напоминания в Telegram-бот владельца один
+# раз (атомарная бронь call_started_at — между 4 воркерами), задача остаётся в списке до закрытия.
+REMINDER_MAX_AGE = timedelta(days=2)   # старые (до этой правки) не присылаем пачкой
+
+
+def format_reminder(task, contact) -> str:
+    lines = [f"⏰ Напоминание: {_clip(task.title, 200)}"]
+    if contact is not None:
+        lines.append(f"Клиент: {_who(contact)}")
+    if task.description:
+        lines.append(_clip(task.description, 600))
+    return "\n".join(lines)
+
+
+async def send_due_reminders(db: Session, now_utc: Optional[datetime] = None) -> int:
+    from backend.models.agent_config import AgentConfig
+    from backend.models.agent_contact import AgentContact
+    from backend.models.task import Task, TaskStatus
+    now_utc = now_utc or datetime.utcnow()
+    due = db.query(Task).filter(
+        Task.channel == "owner",
+        Task.status == TaskStatus.SCHEDULED,
+        Task.scheduled_time <= now_utc,
+        Task.scheduled_time >= now_utc - REMINDER_MAX_AGE,
+        Task.call_started_at.is_(None),
+    ).limit(50).all()
+    sent = 0
+    for task in due:
+        claimed = db.query(Task).filter(Task.id == task.id, Task.call_started_at.is_(None)).update(
+            {"call_started_at": now_utc}, synchronize_session=False)
+        db.commit()
+        if not claimed:
+            continue  # другой воркер уже отправил
+        contact = db.get(AgentContact, task.agent_contact_id) if task.agent_contact_id else None
+        agent = db.get(AgentConfig, contact.agent_config_id) if contact is not None and contact.agent_config_id else None
+        if agent is None:
+            agent = db.query(AgentConfig).filter(AgentConfig.user_id == task.user_id).order_by(
+                AgentConfig.created_at.asc()).first()
+        if agent is None:
+            continue
+        if await _send(agent, db, format_reminder(task, contact)):
+            sent += 1
+            logger.info(f"[OWNER-NOTIFY] reminder {task.id} sent to owner of agent {agent.id}")
+    return sent
