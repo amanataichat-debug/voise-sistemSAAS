@@ -385,10 +385,22 @@
 
   function renderChat() {
     var chat = S.$('#ib-chat');
-    chat.innerHTML = '<div class="ib-chat-head" id="ib-head"></div><div class="ib-feed" id="ib-feed"></div><div id="ib-compose"></div>';
+    chat.innerHTML = '<div class="ib-chat-head" id="ib-head"></div><div id="ib-issues"></div><div class="ib-feed" id="ib-feed"></div><div id="ib-compose"></div>';
     renderHead();
+    renderIssues();
     renderFeed(false);
     renderCompose();
+  }
+
+  // Почему бот молчит с клиентом: кредиты, тариф, бот выключен, сбой разбора.
+  function renderIssues() {
+    var box = S.$('#ib-issues');
+    if (!box) return;
+    var list = (st.d && st.d.bot_issues) || [];
+    box.innerHTML = list.map(function (x) {
+      return '<div class="ib-issue">' + icon('triangle-alert') + '<span>' + esc(x.text) + '</span>' +
+        (x.url ? '<a class="btn btn-sm" href="' + esc(x.url) + '" target="_top">' + esc(x.action || 'Открыть') + '</a>' : '') + '</div>';
+    }).join('');
   }
 
   function renderHead() {

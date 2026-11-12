@@ -194,6 +194,7 @@ async def open_dialog(
         "timeline": tl,
         "default_channel": inbox.default_channel(db, contact, card["send_channels"]),
         "stages": _stages(agent),
+        "bot_issues": inbox.bot_issues(db, current_user, contact, agent),
     }
 
 

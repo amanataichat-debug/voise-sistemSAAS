@@ -91,6 +91,42 @@ check("блокировщик: задачи владельца Старта не
       'Task.created_by != "owner"' in _insp.getsource(subscription_blocker.check_expired_agent_subscriptions))
 
 
+# ---- «Почему бот молчит» (bot_issues): раньше все причины были молчаливыми
+from types import SimpleNamespace as _N
+from unittest.mock import MagicMock as _MM
+
+
+def _issues(user, agent, calls, has_chats=False):
+    db = _MM()
+    q = db.query.return_value.filter.return_value
+    q.order_by.return_value.limit.return_value.all.return_value = calls
+    q.first.return_value = ("x",) if has_chats else None
+    return inbox.bot_issues(db, user, _N(id="c1"), agent)
+
+
+_ok_user = _N(agent_mode=lambda: "reactive", credits_balance=5000)
+_agent = _N(id="a1", is_active=True)
+check("bot_issues: всё в порядке → пусто", _issues(_ok_user, _agent, []) == [])
+codes = [i["code"] for i in _issues(_N(agent_mode=lambda: "reactive", credits_balance=0), _agent, [])]
+check("bot_issues: нет кредитов", codes == ["no_credits"], codes)
+codes = [i["code"] for i in _issues(_N(agent_mode=lambda: None, credits_balance=5000), _N(id="a1", is_active=False), [])]
+check("bot_issues: бот выключен и нет доступа", codes == ["agent_off", "no_access"], codes)
+_iss = _issues(_N(agent_mode=lambda: "reactive", credits_balance=0), _agent, [])
+check("bot_issues: Старт ведёт во вкладку кредитов", _iss[0]["url"] == "/static/start-bot.html#s-credits", _iss[0]["url"])
+_iss = _issues(_N(agent_mode=lambda: "full", credits_balance=0), _agent, [])
+check("bot_issues: Profi ведёт на страницу агента", _iss[0]["url"] == "/static/agent.html", _iss[0]["url"])
+_call = _N(created_at=datetime(2026, 11, 12, 13, 46), postcall_log={
+    "call_direction": "telegram_inbound", "warning": "no_reply_to_client",
+    "tool_calls": [{"tool": "telegram_send_message", "result": {"ok": False, "error": "FloodWait"}}]})
+_iss = _issues(_ok_user, _agent, [_call])
+check("bot_issues: ответ не ушёл + причина отправки",
+      len(_iss) == 1 and _iss[0]["code"] == "no_reply" and "FloodWait" in _iss[0]["text"] and _iss[0].get("at"), _iss)
+_iss = _issues(_ok_user, _agent, [_N(created_at=None, postcall_log={"call_direction": "whatsapp_inbound", "error": "timeout"})])
+check("bot_issues: сбой модели", [i["code"] for i in _iss] == ["postcall_error"], _iss)
+_iss = _issues(_ok_user, _agent, [_N(created_at=None, postcall_log={"call_direction": "outbound", "error": "x"})])
+check("bot_issues: ошибки звонков не путаются с перепиской", _iss == [], _iss)
+check("bot_issues: нет бота", [i["code"] for i in _issues(_ok_user, None, [])] == ["no_agent"])
+
 # ============================================================ часть 2 (PostgreSQL)
 if not PG:
     print("SKIP часть 2: INBOX_TEST_DATABASE_URL не задан")

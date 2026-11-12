@@ -793,6 +793,115 @@ def contact_card(db: Session, user, contact) -> Dict[str, Any]:
     return data
 
 
+# Почему бот молчит с клиентом. Раньше все эти причины были молчаливыми: сообщение
+# лежало в инбоксе, бот не отвечал, а владелец гадал — кредиты, тариф, выключатель
+# или сбой. Порядок = порядок проверок в handle_inbound_* и PostCall.
+_INBOUND_DIRECTIONS = ("telegram_inbound", "whatsapp_inbound", "instagram_inbound", "sms_inbound")
+_BOT_PAGE = "/static/start-bot.html"
+
+
+def bot_issues(db: Session, user, contact, agent) -> List[Dict[str, Any]]:
+    """Список причин, по которым бот не ответит (или не ответил) этому клиенту."""
+    from backend.models.agent_call import AgentCall
+    from backend.services.credit_service import CreditService
+
+    full = False
+    try:
+        full = user.agent_mode() == "full"
+    except Exception:
+        pass
+    bot_page = "/static/agent.html" if full else _BOT_PAGE
+    issues: List[Dict[str, Any]] = []
+
+    def add(code, text, action=None, url=None):
+        issues.append({"code": code, "text": text, "action": action, "url": url})
+
+    if agent is None:
+        add("no_agent", "У клиента нет бота: он не привязан к чат-боту.", "Открыть чат-бот", bot_page)
+        return issues
+    if not agent.is_active:
+        add("agent_off", "Бот выключен и никому не отвечает.", "Включить бота", bot_page)
+    try:
+        mode = user.agent_mode()
+    except Exception:
+        mode = "unknown"
+    if mode is None:
+        add("no_access", "Пробный период или тариф закончился — бот не отвечает клиентам.",
+            "Выбрать тариф", "/static/dashboard.html#plans")
+    balance = int(getattr(user, "credits_balance", 0) or 0)
+    if balance < CreditService.MIN_PRECHECK_BALANCE:
+        add("no_credits",
+            f"Кредиты бота закончились: {balance} (нужно не меньше {CreditService.MIN_PRECHECK_BALANCE}). "
+            "Бот не отвечает, пока их нет.",
+            "Кредиты", bot_page + ("" if full else "#s-credits"))
+
+    # Каналы, в которых клиент пишет: отключены или с выключенным автоответом.
+    try:
+        from backend.models.agent_instagram import AgentInstagramConversation
+        from backend.models.agent_telegram_account import AgentTelegramDialog
+        from backend.models.agent_whatsapp import AgentWhatsAppChat
+        used = []
+        if db.query(AgentWhatsAppChat.id).filter(AgentWhatsAppChat.agent_contact_id == contact.id).first():
+            used.append(("whatsapp", "WhatsApp"))
+        if db.query(AgentTelegramDialog.id).filter(AgentTelegramDialog.agent_contact_id == contact.id).first():
+            used.append(("telegram", "Telegram"))
+        if db.query(AgentInstagramConversation.id).filter(AgentInstagramConversation.agent_contact_id == contact.id).first():
+            used.append(("instagram", "Instagram"))
+        if used:
+            chs = channel_status(db, agent)
+            for key, title in used:
+                ch = chs.get(key) or {}
+                if ch.get("exists") and not ch.get("connected"):
+                    add("channel_off", f"{title} бота отключён — бот не видит новые сообщения в нём. Подключите заново.",
+                        "Каналы", bot_page + ("" if full else "#s-channels"))
+                elif ch.get("connected") and ch.get("auto_reply_enabled") is False:
+                    add("auto_reply_off", f"В {title} выключен автоответ — бот не отвечает в этом канале.",
+                        "Каналы", bot_page + ("" if full else "#s-channels"))
+    except Exception as e:
+        logger.warning(f"[INBOX] каналы для проверки бота не прочитаны: {e}")
+
+    # Последний разбор входящего этого клиента: упал или ответ не ушёл.
+    try:
+        rows = (
+            db.query(AgentCall)
+            .filter(AgentCall.agent_contact_id == contact.id)
+            .order_by(AgentCall.created_at.desc())
+            .limit(5)
+            .all()
+        )
+    except Exception:
+        rows = []
+    for row in rows:
+        log = row.postcall_log if isinstance(row.postcall_log, dict) else {}
+        if log.get("call_direction") not in _INBOUND_DIRECTIONS:
+            continue
+        err = str(log.get("error") or "")
+        when = row.created_at
+        if err == "blocked_credits":
+            if not any(i["code"] == "no_credits" for i in issues):
+                add("no_credits", "Бот не ответил на последнее сообщение: не хватило кредитов.", "Кредиты",
+                    bot_page + ("" if full else "#s-credits"))
+        elif err == "blocked_access":
+            if not any(i["code"] == "no_access" for i in issues):
+                add("no_access", "Бот не ответил на последнее сообщение: нет доступа (тариф или пробный период).",
+                    "Выбрать тариф", "/static/dashboard.html#plans")
+        elif err:
+            add("postcall_error", "Бот не смог ответить на последнее сообщение: сбой модели бота ("
+                + err[:160] + "). Попробуйте сменить модель бота или написать ещё раз.", "Модель бота", bot_page)
+        elif log.get("warning") == "no_reply_to_client":
+            failed = [t for t in (log.get("tool_calls") or [])
+                      if isinstance(t, dict) and str(t.get("tool", "")).endswith(("send_message", "send_file"))
+                      and isinstance(t.get("result"), dict) and t["result"].get("ok") is False]
+            detail = ""
+            if failed:
+                detail = " Ошибка отправки: " + str(failed[-1]["result"].get("error") or "")[:200]
+            add("no_reply", "Бот разобрал сообщение, но ответ клиенту не ушёл." + detail, None, None)
+        if when and issues and issues[-1]["code"] in ("postcall_error", "no_reply"):
+            issues[-1]["at"] = when.isoformat() + "Z"
+        break  # только самый свежий разбор входящего
+    return issues
+
+
 def send_channels(db: Session, contact, agent) -> Dict[str, Dict[str, Any]]:
     """В какие каналы можно написать этому клиенту и почему нельзя в остальные."""
     from backend.models.agent_instagram import AgentInstagramMessage
