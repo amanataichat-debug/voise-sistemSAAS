@@ -58,6 +58,16 @@
     });
     var h = (location.hash || '').replace('#', '');
     showSection(TAB_ALIAS[h] || h || 's-main', false);
+    // Возврат после подключения Instagram/Gmail/Календаря во вкладке (телефон):
+    // показать итог и убрать параметры из адреса.
+    try {
+      var qp = new URLSearchParams(location.search);
+      if (qp.get('connector')) {
+        var okc = qp.get('status') === 'success';
+        setTimeout(function () { S.toast(okc ? 'Подключено' : 'Подключение не подтвердилось. Откройте «Каналы»: если аккаунт подключился, статус обновится сам', okc ? 'success' : 'error'); }, 300);
+        history.replaceState(null, '', location.pathname + location.hash);
+      }
+    } catch (e) {}
     window.addEventListener('hashchange', function () {
       var x = (location.hash || '').replace('#', ''); showSection(TAB_ALIAS[x] || x || 's-main', false);
     });
@@ -993,6 +1003,10 @@
         }
       };
       window.addEventListener('message', onMsg);
+      // Окно могло не прислать итог (вход в отдельной вкладке): вернулись на страницу —
+      // перечитываем каналы, сервер сам сверит подключение с Instagram/Google.
+      var onFocus = function () { window.removeEventListener('focus', onFocus); setTimeout(loadChannels, 800); };
+      window.addEventListener('focus', onFocus);
       if (!w) location.href = r.data.redirect_url;
     });
   }

@@ -3262,24 +3262,26 @@ async def connect_connector(
     # (reconcile/ callback признали аккаунт нерабочим), сносим ВСЕ аккаунты этого
     # агента+toolkit в Composio и НЕ переиспользуем — гоним свежий OAuth. Иначе
     # reuse мог бы снова подхватить «полу-мёртвый» аккаунт.
-    force_fresh = prev_status == "error"
-    if force_fresh:
-        try:
-            await composio_service.delete_all_connections(composio_user_id, toolkit)
-        except Exception as e:
-            logger.warning(f"[AGENT-CONNECTORS] force-fresh cleanup failed: {e}")
-
     # Идемпотентность: identity per-agent, поэтому ищем уже существующее активное
     # подключение ИМЕННО этого агента (например, повторный клик «Подключить» или
     # ранее завершённый OAuth). Берём ТОЛЬКО ACTIVE — протухший/полу-отозванный
     # аккаунт переиспользовать нельзя, иначе снова получим «не подключён».
+    # Сначала ищем ACTIVE, и только если его нет, после ошибки чистим висяки.
+    # Раньше после 'error' сносились ВСЕ аккаунты, в том числе только что
+    # подключённый (callback не успел его увидеть) — клиент Instagram входил
+    # заново при каждой попытке и так и не подключался (12.11.2026).
     try:
-        existing = None if force_fresh else await composio_service.find_active_connection(
+        existing = await composio_service.find_active_connection(
             composio_user_id, toolkit, require_active=True
         )
     except Exception as e:
         logger.warning(f"[AGENT-CONNECTORS] find_active_connection failed: {e}")
         existing = None
+    if not existing and prev_status == "error":
+        try:
+            await composio_service.delete_all_connections(composio_user_id, toolkit)
+        except Exception as e:
+            logger.warning(f"[AGENT-CONNECTORS] force-fresh cleanup failed: {e}")
 
     if existing and existing.get("connected_account_id"):
         row.status = "connected"
@@ -3322,9 +3324,16 @@ async def connect_connector(
     return {"redirect_url": redirect_url}
 
 
-def _connector_callback_html(toolkit: str, ok: bool) -> str:
-    """Простая страница возврата: уведомляет фронт (postMessage) и закрывается."""
+def _connector_callback_html(toolkit: str, ok: bool, back_url: str = "") -> str:
+    """Простая страница возврата: уведомляет фронт (postMessage) и закрывается.
+
+    Окно, которое не может закрыться само (телефон, вкладка вместо всплывающего
+    окна), уводит на back_url. Раньше это был несуществующий /agent.html: клиент
+    после удачного входа видел ошибку и подключал заново.
+    """
     status = "success" if ok else "error"
+    path, _, frag = (back_url or "/static/agent.html").partition("#")
+    back = path + ("&" if "?" in path else "?") + f"connector={toolkit}&status={status}" + (("#" + frag) if frag else "")
     label = _toolkit_label(toolkit or "")
     title = f"{label}: {'подключено' if ok else 'ошибка подключения'}"
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -3334,12 +3343,23 @@ display:flex;align-items:center;justify-content:center;height:100vh;margin:0;tex
 .card{{background:#1e293b;padding:32px 40px;border-radius:16px;max-width:360px}}
 h1{{font-size:18px;margin:0 0 8px}}p{{color:#94a3b8;font-size:14px;margin:0}}</style></head>
 <body><div class="card"><h1>{'✅' if ok else '⚠️'} {title}</h1>
-<p>Можно вернуться в дашборд агента. Это окно закроется автоматически.</p></div>
+<p>Это окно закроется само или вернёт вас в кабинет.</p></div>
 <script>
 try{{ if(window.opener){{ window.opener.postMessage({{type:'connector_result',toolkit:'{toolkit}',status:'{status}'}},'*'); }} }}catch(e){{}}
 setTimeout(function(){{ try{{window.close();}}catch(e){{}}
- if(!window.closed){{ window.location.href='/agent.html?connector={toolkit}&status={status}'; }} }}, 1200);
+ if(!window.closed){{ window.location.href={json.dumps(back)}; }} }}, 1200);
 </script></body></html>"""
+
+
+def _connector_back_url(db: Session, row) -> str:
+    """Куда вернуть владельца после подключения: Profi — страница агента, остальные — «Чат-бот»."""
+    try:
+        owner = db.query(User).filter(User.id == row.user_id).first()
+        if owner is not None and owner.agent_mode() == "full":
+            return "/static/agent.html"
+    except Exception:
+        pass
+    return "/static/start-bot.html#s-channels"
 
 
 @router.get("/connectors/callback")
@@ -3371,6 +3391,8 @@ async def connector_callback(
         logger.warning("[AGENT-CONNECTORS] callback: unknown state token")
         return HTMLResponse(_connector_callback_html("", False), status_code=404)
 
+    back_url = _connector_back_url(db, row)
+
     # Явная ошибка от провайдера — сразу error, без обращения к Composio.
     explicit_error = status_param in ("error", "failed", "denied", "cancelled")
     row.state_token = None
@@ -3383,8 +3405,10 @@ async def connector_callback(
         composio_user_id = row.composio_user_id or composio_service.composio_user_id_for_agent(row.agent_config_id)
         active = None
         try:
+            # Instagram подтверждает аккаунт дольше Google: ждём до ~10 с, а не 3.
             active = await composio_service.wait_for_active(
-                composio_user_id, row.toolkit, connected_account_id or row.connected_account_id
+                composio_user_id, row.toolkit, connected_account_id or row.connected_account_id,
+                attempts=10, delay=1.0,
             )
         except Exception as e:
             logger.warning(f"[AGENT-CONNECTORS] wait_for_active failed: {e}")
@@ -3405,7 +3429,7 @@ async def connector_callback(
 
             db.commit()
             logger.info(f"[AGENT-CONNECTORS] callback OK toolkit={row.toolkit} agent={row.agent_config_id} acc={row.connected_account_id}")
-            return HTMLResponse(_connector_callback_html(row.toolkit, True))
+            return HTMLResponse(_connector_callback_html(row.toolkit, True, back_url))
 
         logger.warning(f"[AGENT-CONNECTORS] callback: no ACTIVE account toolkit={row.toolkit} agent={row.agent_config_id} (status_param={status_param!r})")
 
@@ -3413,7 +3437,7 @@ async def connector_callback(
     row.status = "error"
     db.commit()
     logger.warning(f"[AGENT-CONNECTORS] callback ERROR toolkit={row.toolkit} status={status_param}")
-    return HTMLResponse(_connector_callback_html(row.toolkit, False))
+    return HTMLResponse(_connector_callback_html(row.toolkit, False, back_url))
 
 
 @router.delete("/connectors/{toolkit}")
