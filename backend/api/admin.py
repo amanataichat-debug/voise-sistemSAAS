@@ -526,6 +526,31 @@ async def adjust_user_wallet(
     return {"success": True, "balance": round(tx.balance_after / 100, 2), "transaction": tx.to_dict()}
 
 
+class CreditsAdjustRequest(BaseModel):
+    amount: int              # кредиты бота: > 0 — начислить, < 0 — списать
+    note: Optional[str] = None
+
+
+@router.post("/users/{user_id}/credits", response_model=Dict[str, Any])
+async def adjust_user_credits(
+    user_id: str = Path(..., description="User ID"),
+    request: CreditsAdjustRequest = ...,
+    current_user: User = Depends(check_admin_access),
+    db: Session = Depends(get_db)
+):
+    """Начислить (или списать) кредиты бота — на них бот отвечает в переписке. Только для админа."""
+    from backend.services.credit_service import CreditService
+    amount = int(request.amount or 0)
+    if amount == 0 or abs(amount) > 10_000_000:
+        raise HTTPException(status_code=400, detail="Укажите количество кредитов (не ноль, до 10 000 000)")
+    user = await UserService.get_user_by_id(db, user_id)
+    who = current_user.email or "admin"
+    note = (request.note or "").strip()[:300] or ("Начисление администратором" if amount > 0 else "Корректировка администратором")
+    tx = CreditService.manual_adjust(db, user.id, amount, f"{note} ({who})")
+    logger.info(f"[ADMIN] credits {amount:+d} for {user.email} by {who}")
+    return {"success": True, "balance": int(tx.balance_after or 0)}
+
+
 @router.post("/users/{user_id}/subscription", response_model=Dict[str, Any])
 async def update_user_subscription(
     user_id: str = Path(..., description="User ID"),

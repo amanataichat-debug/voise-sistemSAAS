@@ -2211,6 +2211,9 @@
                 <button class="table-action" onclick="openWalletModal('${user.id}', '${user.email}')" title="Кошелёк">
                   <i class="fas fa-wallet"></i>
                 </button>
+                <button class="table-action" onclick="openCreditsModal('${user.id}', '${user.email}')" title="Кредиты бота">
+                  <i class="fas fa-coins"></i>
+                </button>
               </td>
             `;
             
@@ -2683,6 +2686,9 @@
               <td>
                 <button class="table-action au-view-user" data-id="${u.user_id}" title="Детали">
                   <i class="fas fa-eye"></i>
+                </button>
+                <button class="table-action" onclick="openCreditsModal('${u.user_id}', '${this.esc(u.email)}', ${Number(u.credits_balance) || 0})" title="Начислить кредиты">
+                  <i class="fas fa-coins"></i>
                 </button>
               </td>
             `;
@@ -3393,6 +3399,30 @@
       window.openWalletModal(window.__adminSelectedUserId, window.__adminSelectedUserEmail);
     });
   })();
+</script>
+<script>
+  // Кредиты бота (переписка): POST /api/admin/users/{id}/credits {amount, note}
+  window.openCreditsModal = function (userId, email, balance) {
+    var cur = (balance === undefined || balance === null) ? '' : '\nСейчас: ' + Number(balance).toLocaleString('ru-RU') + ' кредитов.';
+    var raw = prompt('Кредиты бота для ' + (email || userId) + cur + '\n\nСколько начислить? (минус — списать)', '1000');
+    if (raw === null) return;
+    var amount = parseInt(String(raw).replace(/\s/g, ''), 10);
+    if (!amount) { alert('Укажите число кредитов, не ноль'); return; }
+    var note = prompt('Подпись к операции (необязательно):', 'Начисление администратором');
+    if (note === null) return;
+    fetch('/api/admin/users/' + encodeURIComponent(userId) + '/credits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') },
+      body: JSON.stringify({ amount: amount, note: note.trim() || null })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) throw new Error(d.detail || d.message || ('Ошибка ' + r.status));
+        return d;
+      });
+    }).then(function (d) {
+      alert('Готово. Баланс кредитов: ' + Number(d.balance).toLocaleString('ru-RU'));
+    }).catch(function (e) { alert(e.message); });
+  };
 </script>
 </body>
 </html>
