@@ -53,7 +53,8 @@ async def register(
         logger.info(f"📝 Registration request for: {user_data.email}")
         
         # ✅ ВАРИАНТ A: Проверяем существует ли пользователь
-        existing_user = db.query(User).filter(User.email == user_data.email).first()
+        from backend.models.user import find_user_by_email
+        existing_user = find_user_by_email(db, user_data.email)
         
         if existing_user:
             # Если email УЖЕ ПОДТВЕРЖДЕН - ошибка

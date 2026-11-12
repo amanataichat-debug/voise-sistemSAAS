@@ -452,3 +452,32 @@ class User(Base, BaseModel):
             providers.append("fish")
 
         return providers
+
+
+
+def normalize_email(email) -> str:
+    """Email для хранения и поиска: без пробелов по краям, строчными буквами."""
+    return str(email or "").strip().lower()
+
+
+def find_user_by_email(db, email):
+    """
+    Пользователь по email БЕЗ учёта регистра и пробелов (12.11.2026).
+
+    Телефон пишет первую букву email заглавной («Mirlan…@gmail.com»): регистрация сохраняла как есть,
+    вход и сброс пароля искали буква в букву (сброс — строчными) — клиент видел «Неверный email или
+    пароль» и не мог даже восстановить пароль. Если в базе есть дубли, отличающиеся регистром, берём
+    подтверждённый, иначе самый новый.
+    """
+    from sqlalchemy import func
+    key = normalize_email(email)
+    if not key:
+        return None
+    rows = (db.query(User).filter(func.lower(func.trim(User.email)) == key)
+            .order_by(User.created_at.desc()).all())
+    if not rows:
+        return None
+    for u in rows:
+        if getattr(u, "email_verified", False):
+            return u
+    return rows[0]

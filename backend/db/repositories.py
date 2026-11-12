@@ -36,7 +36,8 @@ class UserRepository(CRUDBase[User, UserCreate, UserUpdate]):
         Returns:
             Optional[User]: Найденный пользователь или None
         """
-        return db.query(User).filter(User.email == email).first()
+        from backend.models.user import find_user_by_email
+        return find_user_by_email(db, email)
     
     def create_with_hashed_password(self, db: Session, *, obj_in: UserCreate, hashed_password: str) -> User:
         """

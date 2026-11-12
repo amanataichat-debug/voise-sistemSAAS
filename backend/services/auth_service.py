@@ -21,7 +21,7 @@ from backend.core.security import (
     decode_jwt_token,
     security
 )
-from backend.models.user import User
+from backend.models.user import User, find_user_by_email, normalize_email
 from backend.schemas.auth import LoginRequest, RegisterRequest
 from backend.db.session import get_db
 
@@ -50,7 +50,7 @@ class AuthService:
             # 1. ПРОВЕРКА EMAIL
             # ========================================
             # Check if user already exists
-            existing_user = db.query(User).filter(User.email == user_data.email).first()
+            existing_user = find_user_by_email(db, user_data.email)
             if existing_user:
                 logger.warning(f"❌ Registration attempt with existing email: {user_data.email}")
                 raise HTTPException(
@@ -76,7 +76,7 @@ class AuthService:
             
             # Create new user (email_verified=False by default for new users)
             user = User(
-                email=user_data.email,
+                email=normalize_email(user_data.email),
                 password_hash=password_hash,
                 first_name=user_data.first_name,
                 last_name=user_data.last_name,
@@ -247,7 +247,7 @@ class AuthService:
             logger.info(f"🔐 Login attempt for email: {login_data.email}")
             
             # Find user by email
-            user = db.query(User).filter(User.email == login_data.email).first()
+            user = find_user_by_email(db, login_data.email)
             if not user:
                 logger.warning(f"❌ Login failed - user not found: {login_data.email}")
                 raise HTTPException(
@@ -418,7 +418,7 @@ class AuthService:
         normalized_email = str(email).lower().strip()
         logger.info(f"📧 Password reset requested for email: {normalized_email}")
 
-        user = db.query(User).filter(User.email == normalized_email).first()
+        user = find_user_by_email(db, normalized_email)
         if not user:
             logger.info(f"Password reset requested for unknown email: {normalized_email}")
             return True
@@ -457,7 +457,7 @@ class AuthService:
         normalized_email = str(email).lower().strip()
         logger.info(f"🔑 Password reset confirmation for email: {normalized_email}")
 
-        user = db.query(User).filter(User.email == normalized_email).first()
+        user = find_user_by_email(db, normalized_email)
         if not user:
             # Не раскрываем, существует ли аккаунт — та же ошибка, что при неверном коде
             logger.warning(f"Password reset confirm for unknown email: {normalized_email}")

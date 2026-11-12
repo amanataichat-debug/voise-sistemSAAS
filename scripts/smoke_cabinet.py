@@ -141,6 +141,26 @@ else:
         fails.append(f"кабинет нового клиента /api/users/me: {me.status_code} {me.text[:200]}")
     else:
         print("новый клиент:", {k: me.json().get(k) for k in ("email", "agent_mode", "subscription_plan")})
+    # Регистр букв в email (12.11.2026): телефон пишет первую букву заглавной — вход строчными должен
+    # работать, и наоборот; повторная регистрация тем же адресом в другом регистре — не второй аккаунт.
+    for variant in (new_email.upper(), new_email.capitalize()):
+        rv = call("POST", "/api/auth/login", json={"email": variant, "password": "Passw0rd!x"})
+        if rv is None or rv.status_code >= 400:
+            fails.append(f"вход с email в другом регистре ({variant!r}): {getattr(rv, 'status_code', None)}")
+_cap_email = f"Mobile.Client-{uuid.uuid4().hex[:6]}@Gmail.com"
+call("POST", "/api/auth/register", json={"email": _cap_email, "password": "Passw0rd!x", "first_name": "Мирлан"})
+rv = call("POST", "/api/email-verification/verify", json={"email": _cap_email.lower(), "code": _codes[-1] if _codes else "0"})
+if rv is None or rv.status_code >= 400:
+    fails.append(f"подтверждение кода строчными после регистрации с заглавной: {getattr(rv, 'status_code', None)} "
+                 f"{getattr(rv, 'text', '')[:200]}")
+rv = call("POST", "/api/auth/login", json={"email": _cap_email.lower(), "password": "Passw0rd!x"})
+if rv is None or rv.status_code >= 400:
+    fails.append(f"вход строчными после регистрации с заглавной буквы: {getattr(rv, 'status_code', None)} "
+                 f"{getattr(rv, 'text', '')[:200]}")
+rv = call("POST", "/api/auth/register", json={"email": _cap_email.lower(), "password": "Passw0rd!x"})
+if rv is None or rv.status_code < 400:
+    fails.append("повторная регистрация тем же email в другом регистре создала второй аккаунт")
+if r is not None and r.status_code < 400:
     for pth in ("/api/dashboard/summary", "/api/wallet/balance", "/api/subscriptions/my-subscription",
                 "/api/eleven-assistants/", "/api/agent/list"):
         rr = client.get(pth, headers={"Authorization": f"Bearer {login_tok}"})

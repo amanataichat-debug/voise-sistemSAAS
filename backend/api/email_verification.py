@@ -81,9 +81,9 @@ async def get_current_user_from_email(email: str, db: Session):
     Raises:
         HTTPException: If user not found
     """
-    from backend.models.user import User
-    
-    user = db.query(User).filter(User.email == email).first()
+    from backend.models.user import find_user_by_email
+
+    user = find_user_by_email(db, email)
     if not user:
         logger.warning(f"User not found for email: {email}")
         raise HTTPException(
