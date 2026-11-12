@@ -476,9 +476,9 @@
     if (kb.tab === 'product') {
       box.innerHTML = head + (items.length ? '<div class="st-catalog">' + items.map(function (e) {
         var ph = (e.media || [])[0];
-        var thumb = ph && ph.url && !ph.is_video ? '<img src="' + esc(ph.url) + '" alt="" loading="lazy">' : '<span class="st-ph">' + icon('image') + '</span>';
+        var thumb = ph && ph.url ? mediaThumb(ph.url, ph.is_video) : '<span class="st-ph">' + icon('image') + '</span>';
         var attrs = Object.keys(e.attributes || {}).slice(0, 3).map(function (k) { return '<span class="st-tag">' + esc(k) + ': ' + esc(e.attributes[k]) + '</span>'; }).join(' ');
-        return '<div class="st-prod' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="pic">' + thumb +
+        return '<div class="st-prod' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="pic' + (ph && ph.url ? ' clk" data-view="' + esc(e.id) + '" title="Посмотреть фото и видео' : '') + '">' + thumb +
           ((e.media || []).length > 1 ? '<span class="cnt">' + (e.media || []).length + '</span>' : '') + '</div>' +
           '<div class="bd"><div class="t">' + esc(e.title || '—') + '</div><div class="pr">' + esc(priceText(e)) + (e.in_stock === false ? ' <span class="st-badge warn">нет в наличии</span>' : '') + '</div>' +
           (attrs ? '<div class="at">' + attrs + '</div>' : '') +
@@ -494,6 +494,9 @@
       }).join('') : '<div class="st-empty">Пока пусто.</div>');
     }
     S.$('#kb-add').addEventListener('click', function () { entryDialog(kb.tab, null); });
+    S.$$('[data-view]', box).forEach(function (el) {
+      el.addEventListener('click', function () { mediaViewer(kb.entries.filter(function (e) { return e.id === el.dataset.view; })[0]); });
+    });
     S.$$('[data-edit]', box).forEach(function (b) {
       b.addEventListener('click', function () { entryDialog(kb.tab, kb.entries.filter(function (e) { return e.id === b.dataset.edit; })[0]); });
     });
@@ -527,8 +530,8 @@
           : '') +
         '<div class="field"><label class="label">' + titles[1] + '</label><textarea class="textarea" id="e-body" rows="4">' + esc(src ? src.body : '') + '</textarea></div>' +
         (isProd ? '<div class="field"><label class="label">Характеристики</label><div id="e-attrs"></div><button class="btn btn-ghost btn-sm" type="button" id="e-attr-add">' + icon('plus') + '<span>Добавить характеристику</span></button></div>' +
-          '<div class="field"><label class="label">Фото и видео</label><div class="hint" style="margin-bottom:8px">Бот покажет их клиенту, когда спросят про эту позицию.</div><div class="st-media" id="e-media"></div>' +
-          '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" id="e-up">' + icon('upload') + '<span>Загрузить фото</span></button></div></div>' : '') +
+          '<div class="field"><label class="label">Фото и видео</label><div class="hint" style="margin-bottom:8px">Отмеченные фото и видео бот отправит клиенту, когда спросят про эту позицию. Можно загрузить сразу несколько файлов (каждый до 20 МБ).</div><div id="e-media"></div>' +
+          '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" id="e-up">' + icon('upload') + '<span>Загрузить фото или видео</span></button></div></div>' : '') +
         '<div class="field"><label class="label">Ключевые слова</label><input class="input" id="e-kw" value="' + esc(src ? src.keywords || '' : '') + '" placeholder="через запятую: доставка, курьер">' +
         '<div class="hint">По ним бот находит запись, если клиент спросил другими словами.</div></div>' +
         (!isProd ? '<div class="st-switch-row"><div class="t"><b>Знать наизусть</b><div>Бот отвечает сразу, без поиска. Подходит для частых вопросов.</div></div><label class="switch"><input type="checkbox" id="e-prompt"' + (!e || e.in_prompt !== false ? ' checked' : '') + '><span class="track"></span></label></div>' : '') +
@@ -547,21 +550,39 @@
       S.$$('[data-av]', box).forEach(function (el) { el.addEventListener('input', function () { attrs[+el.dataset.av].v = el.value; }); });
       S.$$('[data-arm]', box).forEach(function (el) { el.addEventListener('click', function () { attrs.splice(+el.dataset.arm, 1); drawAttrs(); }); });
     }
+    // В позиции видны только ЕЁ фото и видео. Остальная медиатека бота (фото и видео
+    // других позиций) спрятана под кнопкой «Выбрать из ранее загруженных»: раньше вся
+    // медиатека показывалась сразу, и казалось, что видео другой позиции прикрепилось сюда.
+    var libOpen = false;
     function drawMedia() {
       var box = S.$('#e-media', d.el); if (!box) return;
       var pics = kb.files.filter(function (f) { return /^(image|video)\//.test(f.mime_type || ''); });
-      if (!pics.length) { box.innerHTML = '<div class="hint">Фото пока нет. Загрузите первое.</div>'; return; }
-      box.innerHTML = pics.map(function (f) {
-        var on = picked.indexOf(f.id) >= 0;
-        return '<div class="st-media-item' + (on ? ' on' : '') + '" data-mid="' + esc(f.id) + '">' + (f.preview_url && !/^video\//.test(f.mime_type) ? '<img src="' + esc(f.preview_url) + '" alt="" loading="lazy">' : '<span class="st-ph">' + icon('play') + '</span>') +
-          '<span class="chk">' + icon('check') + '</span></div>';
-      }).join('');
+      var byId = {}; pics.forEach(function (f) { byId[f.id] = f; });
+      var mine = picked.filter(function (id) { return byId[id]; });
+      var rest = pics.filter(function (f) { return picked.indexOf(f.id) < 0; });
+      var tile = function (f, on) {
+        return '<div class="st-media-item' + (on ? ' on' : '') + '" data-mid="' + esc(f.id) + '" title="' + (on ? 'Убрать из позиции' : 'Добавить в позицию') + '">' +
+          (f.preview_url ? mediaThumb(f.preview_url, /^video\//.test(f.mime_type || '')) : '<span class="st-ph">' + icon('play') + '</span>') +
+          '<span class="chk">' + icon(on ? 'x' : 'plus') + '</span></div>';
+      };
+      var html = mine.length
+        ? '<div class="st-media">' + mine.map(function (id) { return tile(byId[id], true); }).join('') + '</div>'
+        : '<div class="hint">У этой позиции пока нет фото и видео. Загрузите — можно сразу несколько.</div>';
+      if (rest.length) {
+        html += '<button class="btn btn-ghost btn-sm" type="button" id="e-lib" style="margin-top:8px">' + icon(libOpen ? 'chevron-up' : 'chevron-down') +
+          '<span>' + (libOpen ? 'Скрыть ранее загруженные' : 'Выбрать из ранее загруженных (' + rest.length + ')') + '</span></button>';
+        if (libOpen) html += '<div class="hint" style="margin:6px 0">Нажмите на фото или видео, чтобы добавить его к этой позиции.</div><div class="st-media st-media-lib">' + rest.map(function (f) { return tile(f, false); }).join('') + '</div>';
+      }
+      box.innerHTML = html;
       S.$$('[data-mid]', box).forEach(function (el) {
         el.addEventListener('click', function () {
           var i = picked.indexOf(el.dataset.mid);
-          if (i >= 0) { picked.splice(i, 1); el.classList.remove('on'); } else { picked.push(el.dataset.mid); el.classList.add('on'); }
+          if (i >= 0) picked.splice(i, 1); else picked.push(el.dataset.mid);
+          drawMedia();
         });
       });
+      var lb = S.$('#e-lib', box);
+      if (lb) lb.addEventListener('click', function () { libOpen = !libOpen; drawMedia(); });
     }
     if (isProd) {
       drawAttrs(); drawMedia();
@@ -597,6 +618,30 @@
       });
     });
     setTimeout(function () { var i = S.$('#e-title', d.el); if (i) i.focus(); }, 60);
+  }
+
+  // Превью фото или видео. Видео — первым кадром (preload=metadata) со значком ▶:
+  // раньше для видео рисовался пустой значок картинки, и казалось, что файл не загрузился.
+  function mediaThumb(url, isVideo) {
+    if (!isVideo) return '<img src="' + esc(url) + '" alt="" loading="lazy">';
+    return '<video class="st-vthumb" src="' + esc(url) + '#t=0.1" preload="metadata" muted playsinline onerror="this.style.visibility=\'hidden\'"></video>' +
+      '<span class="st-play">' + icon('play') + '</span>';
+  }
+
+  // Просмотр всех фото и видео позиции каталога.
+  function mediaViewer(e) {
+    var list = (e && e.media) || [];
+    if (!list.length) return;
+    var d = S.dialog({
+      title: e.title || 'Фото и видео', size: 'lg',
+      body: '<div class="st-viewer">' + list.map(function (m) {
+        return m.is_video
+          ? '<video src="' + esc(m.url) + '" controls playsinline preload="metadata"></video>'
+          : '<img src="' + esc(m.url) + '" alt="">';
+      }).join('') + '</div><div class="hint" style="margin-top:8px">Если видео не играет в браузере (например, .mov с iPhone), клиенту оно всё равно уйдёт файлом. Для просмотра на сайте лучше MP4.</div>',
+      foot: '<button class="btn" type="button" data-c>Закрыть</button>'
+    });
+    S.$('[data-c]', d.el).addEventListener('click', d.close);
   }
 
   // Выбор и загрузка файлов в библиотеку бота → cb(список созданных файлов)
@@ -636,7 +681,7 @@
   function drawFiles(box) {
     var rows = function (arr, lib) {
       return arr.map(function (f) {
-        var thumb = f.preview_url ? '<img src="' + esc(f.preview_url) + '" alt="" loading="lazy">' : icon(fileIc(f));
+        var thumb = f.preview_url ? mediaThumb(f.preview_url, /^video\//.test(f.mime_type || '')) : icon(fileIc(f));
         var meta = [S.fmtSize(f.size_bytes)];
         if (f.used_in_catalog) meta.push('в каталоге');
         if (f.knowledge_status === 'pending') meta.push('индексируется');

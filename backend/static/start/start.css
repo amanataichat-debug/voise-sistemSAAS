@@ -275,3 +275,19 @@
 .st-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: var(--vf-r-sm); margin-top: 8px; cursor: pointer; }
 .st-opt:has(input:checked) { border-color: var(--vf-accent); background: var(--vf-accent-soft); }
 .st-opt small { display: block; color: var(--vf-text-3); font-size: 12.5px; margin-top: 2px; }
+
+/* Видео в каталоге: первый кадр + значок ▶, просмотр всех медиа позиции */
+.st-prod .pic.clk { cursor: zoom-in; }
+.st-prod .pic video, .st-media-item video, .st-file .th video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(15,23,42,.6); color: #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.st-play .ic { width: 18px; height: 18px; }
+.st-media-item .st-play, .st-file .th .st-play { width: 26px; height: 26px; }
+.st-media-item .st-play .ic, .st-file .th .st-play .ic { width: 12px; height: 12px; }
+.st-file .th { position: relative; }
+.st-viewer { display: grid; gap: 12px; }
+.st-viewer img, .st-viewer video { width: 100%; max-height: 70vh; object-fit: contain; border-radius: var(--vf-r-sm); background: #0f172a; }
+
+/* Фото и видео позиции: свои — с крестиком, медиатека — с плюсом */
+.st-media-lib .st-media-item { opacity: .85; }
+.st-media-lib .st-media-item .chk { display: flex; background: rgba(15,23,42,.6); }
+.st-media-lib .st-media-item:hover { opacity: 1; border-color: var(--vf-accent); }
