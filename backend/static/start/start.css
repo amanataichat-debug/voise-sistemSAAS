@@ -512,3 +512,41 @@
   .st-ccard .bd { padding: 7px 8px 6px; }
   .st-ccard .acts .btn-icon { width: 28px; height: 28px; }
 }
+
+/* ═══ Телефон: вкладка «Каталог» нижней панели (body.st-catmode, адрес #catalog) — 13.11.2026 ═══
+   Продавец с телефона: только каталог, без меню разделов и подсказок базы знаний */
+@media (max-width: 760px) {
+  body.st-catmode .st-head, body.st-catmode .st-nav, body.st-catmode #s-kb > .card-head,
+  body.st-catmode .st-kbtabs, body.st-catmode .st-kbvoice, body.st-catmode .st-kbask { display: none !important; }
+  body.st-catmode #s-kb.card { border: 0; background: transparent; box-shadow: none; }
+  body.st-catmode #s-kb > .card-body { padding: 0; }
+  body.st-catmode .vf-content { padding-top: 8px; }
+  .st-cathead { margin-bottom: 8px; }
+  .st-catadd { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px 2px; width: calc(100% + 24px); }
+  .st-catadd::-webkit-scrollbar, .st-colbar::-webkit-scrollbar { display: none; }
+  .st-catadd .btn { flex: 0 0 auto; height: 38px; }
+  .st-catadd #kb-add { order: -1; }
+  .st-colbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px 10px; padding: 0 12px 2px; }
+  .st-colchip, .st-colbar .btn { flex: 0 0 auto; }
+  .st-cattools .st-search { flex: 1 1 100%; }
+  .st-cattools .select-native { flex: 1 1 0; min-width: 0; height: 38px; font-size: 14px; }
+  .st-cattools .st-search .input { height: 42px; font-size: 16px; } /* 16px — iOS не увеличивает страницу при фокусе */
+  .st-catsel { font-size: 13px; }
+}
+
+/* ═══ Телефон: окна снизу как в приложении, большие — на весь экран; поля формы — первыми ═══ */
+@media (max-width: 760px) {
+  .vf-backdrop { padding: 0; align-items: flex-end; }
+  .vf-backdrop .vf-dialog { max-width: none; max-height: 94dvh; border-radius: 18px 18px 0 0; border: 0;
+    transform: translateY(24px); padding-bottom: env(safe-area-inset-bottom, 0px); overscroll-behavior: contain; }
+  .vf-backdrop.open .vf-dialog { transform: none; }
+  .vf-backdrop .vf-dialog-lg, .vf-backdrop .vf-dialog-xl { height: 100dvh; max-height: 100dvh; border-radius: 0; width: 100%; }
+  .vf-dialog-head { position: sticky; top: 0; z-index: 3; background: var(--vf-surface); padding: 14px 16px 10px; border-bottom: 1px solid var(--vf-border); }
+  .vf-dialog-head .btn-icon { width: 40px; height: 40px; }
+  .vf-dialog-body { padding: 12px 16px 16px; }
+  .vf-dialog-foot { position: sticky; bottom: 0; z-index: 3; background: var(--vf-surface); padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--vf-border); flex-wrap: wrap; }
+  .vf-dialog-foot .btn { flex: 1 1 auto; height: 44px; justify-content: center; }
+  .vf-dialog .input, .vf-dialog textarea, .vf-dialog select, .vf-dialog .select-native { font-size: 16px; }
+  .st-pside { order: 2 !important; }
+}

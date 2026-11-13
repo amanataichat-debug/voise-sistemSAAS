@@ -52,12 +52,23 @@
     try { if (push !== false) history.replaceState(null, '', '#' + id); } catch (e) { /* ignore */ }
     var top = S.$('.st-bot-layout'); if (top && window.scrollY > top.offsetTop) window.scrollTo(0, 0);
   }
+  // #catalog (вкладка «Каталог» нижней панели на телефоне) — База знаний сразу на каталоге,
+  // без меню разделов: продавец с телефона пришёл править товары и остатки
+  function routeHash(h) {
+    var cat = h === 'catalog' || h === 'products';
+    document.body.classList.toggle('st-catmode', cat);
+    if (cat) {
+      if (kb.tab !== 'product') { kb.tab = 'product'; if (S.$('#kb-body')) drawKb(); }
+      showSection('s-kb', false);
+      return;
+    }
+    showSection(TAB_ALIAS[h] || h || 's-main', false);
+  }
   function setupScroll() {
     S.$$('.st-nav a').forEach(function (a) {
-      a.addEventListener('click', function (e) { e.preventDefault(); showSection(a.getAttribute('href').slice(1)); });
+      a.addEventListener('click', function (e) { e.preventDefault(); document.body.classList.remove('st-catmode'); showSection(a.getAttribute('href').slice(1)); });
     });
-    var h = (location.hash || '').replace('#', '');
-    showSection(TAB_ALIAS[h] || h || 's-main', false);
+    routeHash((location.hash || '').replace('#', ''));
     // Возврат после подключения Instagram/Gmail/Календаря во вкладке (телефон):
     // показать итог и убрать параметры из адреса.
     try {
@@ -69,7 +80,7 @@
       }
     } catch (e) {}
     window.addEventListener('hashchange', function () {
-      var x = (location.hash || '').replace('#', ''); showSection(TAB_ALIAS[x] || x || 's-main', false);
+      routeHash((location.hash || '').replace('#', ''));
     });
   }
 
@@ -437,15 +448,15 @@
   function drawKb() {
     var b = S.$('#b-kb');
     var counts = { qa: kb.counts.qa || 0, section: kb.counts.section || 0, product: kb.counts.product || 0, files: kb.files.length, gaps: kb.gaps.length };
-    var v = kb.voice && kb.voice.chars ? '<div class="st-note" style="margin:0 0 12px">Бот знает наизусть на звонке: ' + Number(kb.voice.chars).toLocaleString('ru-RU') + ' из ' + Number(kb.voice.budget || 0).toLocaleString('ru-RU') + ' символов. Остальное он находит поиском, это чуть дольше.</div>' : '';
+    var v = kb.voice && kb.voice.chars ? '<div class="st-note st-kbvoice" style="margin:0 0 12px">Бот знает наизусть на звонке: ' + Number(kb.voice.chars).toLocaleString('ru-RU') + ' из ' + Number(kb.voice.budget || 0).toLocaleString('ru-RU') + ' символов. Остальное он находит поиском, это чуть дольше.</div>' : '';
     b.innerHTML =
-      '<div class="tabs" style="margin:-6px -8px 16px">' + KB_TABS.map(function (t) {
+      '<div class="tabs st-kbtabs" style="margin:-6px -8px 16px">' + KB_TABS.map(function (t) {
         return '<div class="tab' + (kb.tab === t[0] ? ' active' : '') + '" data-kt="' + t[0] + '"><span>' + t[1] + '</span><span class="st-count" style="margin-left:2px">' + counts[t[0]] + '</span></div>';
       }).join('') + '</div>' + v + '<div id="kb-body"></div>' +
-      '<div class="st-sub-h" style="margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div class="st-kbask"><div class="st-sub-h" style="margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
       '<span>Проверить как клиент</span><button class="btn" id="kb-health" type="button">' + icon('circle-check') + '<span>Проверить базу знаний</span></button></div>' +
       '<div class="st-toolbar"><div class="st-search" style="max-width:none">' + icon('search') + '<input class="input" id="kb-q" placeholder="Задайте вопрос, как клиент: «сколько стоит доставка?»"></div>' +
-      '<button class="btn" id="kb-ask" type="button">Спросить</button></div><div id="kb-ans"></div>';
+      '<button class="btn" id="kb-ask" type="button">Спросить</button></div><div id="kb-ans"></div></div>';
     S.$$('[data-kt]', b).forEach(function (t) {
       t.addEventListener('click', function () { kb.tab = t.dataset.kt; drawKb(); });
     });

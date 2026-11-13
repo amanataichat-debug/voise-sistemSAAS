@@ -73,7 +73,8 @@
       aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item' },
-    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item' },
+    // CRM — таблицы и канбан: на телефоне скрыта (13.11.2026), там работают Инбокс и Каталог
+    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', desktop: true },
     { href: '/static/start-analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
@@ -147,6 +148,7 @@
     a.className = 'sidebar-nav-item' + (isActive(item) ? ' active' : '');
     if (item.id) a.id = item.id;
     if (item.feature) a.setAttribute('data-feature', item.feature);
+    if (item.desktop) a.classList.add('vf-desktop-only');
     if (item.admin) a.setAttribute('data-admin', '1');
     if (profiLocked(item)) {
       if (!document.getElementById('vf-profi-lock-style')) {
@@ -420,6 +422,7 @@
       if (nav) {
         try { if (sessionStorage.getItem('vf_is_admin') === '1') injectAdmin(nav); } catch (e) { /* ignore */ }
         document.dispatchEvent(new CustomEvent('vf:menu', { detail: { mode: mode } }));
+        renderTabBar(); phoneCrmNote();
       }
     }
   }
@@ -443,9 +446,140 @@
     } catch (e) { /* ignore */ }
   }
 
+  // ---------------------------------------------------------------------
+  // Телефон (13.11.2026): нижняя панель как в приложении — Главная · Инбокс · Каталог · Бот · Ещё.
+  // Продавцы на базаре работают только с телефона: всё главное — одним нажатием большим пальцем.
+  // Только для Старта и пробного периода (у Profi своя страница агента). CRM на телефоне скрыта.
+  // ---------------------------------------------------------------------
+  var PHONE = '(max-width: 760px)';
+  var TABBAR_STYLE = [
+    '@media ' + PHONE + '{',
+    '.vf-desktop-only{display:none!important}',
+    'body.vf-has-tabbar{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}',
+    'body.vf-has-tabbar .st-bulk{bottom:calc(72px + env(safe-area-inset-bottom,0px))}',
+    '.vf-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(255,255,255,.97);',
+    'border-top:1px solid var(--vf-border,#e2e8f0);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));',
+    'box-shadow:0 -6px 20px rgba(15,23,42,.06)}',
+    '.vf-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:52px;',
+    'border:0;background:none;color:var(--vf-text-3,#63738b);font:500 11px/1.1 Inter,system-ui,sans-serif;text-decoration:none;',
+    'border-radius:12px;position:relative;-webkit-tap-highlight-color:transparent;touch-action:manipulation;cursor:pointer}',
+    '.vf-tab .ic{width:23px;height:23px;transition:transform .15s}',
+    '.vf-tab:active .ic{transform:scale(.88)}',
+    '.vf-tab.on{color:var(--vf-accent,#2a5ce8);font-weight:650}',
+    '.vf-tab.on::before{content:"";position:absolute;top:2px;width:36px;height:30px;border-radius:10px;background:var(--vf-accent-soft,#eaf0fe);z-index:-1}',
+    '.vf-tab .vf-badge{position:absolute;top:4px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 4px;border-radius:999px;',
+    'background:#ef4444;color:#fff;font:700 10px/17px Inter,sans-serif;text-align:center}',
+    '}',
+    '@media (min-width: 761px){.vf-tabbar{display:none}}',
+    '.vf-phone-note{position:fixed;inset:0;z-index:850;background:var(--vf-bg,#f6f8fc);display:flex;align-items:center;justify-content:center;padding:24px}',
+    '.vf-phone-note .box{max-width:340px;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}',
+    '.vf-phone-note .ico{width:64px;height:64px;border-radius:20px;background:var(--vf-accent-soft,#eaf0fe);color:var(--vf-accent,#2a5ce8);display:flex;align-items:center;justify-content:center}',
+    '.vf-phone-note .ico .ic{width:30px;height:30px}',
+    '.vf-phone-note h2{margin:0;font-size:19px}',
+    '.vf-phone-note p{margin:0;color:var(--vf-text-3,#63738b);font-size:14px;line-height:1.5}',
+    '.vf-phone-note .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px}',
+    '.vf-phone-note a.b{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 18px;border-radius:12px;background:var(--vf-accent,#2a5ce8);color:#fff;font-weight:600;text-decoration:none}',
+    '.vf-phone-note a.b.ghost{background:#fff;color:var(--vf-text,#0e1729);border:1px solid var(--vf-border,#e2e8f0)}',
+    '.vf-phone-note button.l{border:0;background:none;color:var(--vf-text-4,#93a2b8);font-size:13px;text-decoration:underline;cursor:pointer;margin-top:6px}'
+  ].join('');
+  var TABS = [
+    { id: 'home', href: '/static/dashboard.html', icon: 'house', label: 'Главная', ky: 'Башкы' },
+    { id: 'inbox', href: '/static/inbox.html', icon: 'inbox', label: 'Инбокс', ky: 'Инбокс' },
+    { id: 'catalog', href: '/static/start-bot.html#catalog', icon: 'package', label: 'Каталог', ky: 'Каталог' },
+    { id: 'bot', href: '/static/start-bot.html', icon: 'bot', label: 'Бот', ky: 'Бот' },
+    { id: 'more', icon: 'menu', label: 'Ещё', ky: 'Дагы' }
+  ];
+  function isPhone() { try { return window.matchMedia(PHONE).matches; } catch (e) { return false; } }
+  function lang() { try { return localStorage.getItem('vs_lang') || 'ru'; } catch (e) { return 'ru'; } }
+  function activeTab() {
+    var p = currentPath(), h = (location.hash || '').replace('#', '');
+    if (p === '/static/dashboard.html') return 'home';
+    if (p === '/static/inbox.html') return 'inbox';
+    if (p === '/static/start-bot.html') return (h === 'catalog' || h === 'products') ? 'catalog' : 'bot';
+    return 'more';
+  }
+  function markTabs() {
+    var bar = document.getElementById('vf-tabbar');
+    if (!bar) return;
+    var on = activeTab();
+    Array.prototype.forEach.call(bar.querySelectorAll('.vf-tab'), function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === on); });
+  }
+  function openMoreMenu() {
+    var btn = document.getElementById('sidebar-toggle');
+    if (btn) { btn.click(); return; }
+    var sb = document.getElementById('sidebar');
+    if (sb) sb.classList.toggle('open');
+  }
+  function renderTabBar() {
+    if (cachedMode() !== 'reactive') return;
+    if (window.top !== window.self) return;           // инбокс во фрейме у Profi — без своей панели
+    if (document.getElementById('vf-tabbar')) { markTabs(); return; }
+    if (!document.getElementById('vf-tabbar-style')) {
+      var st = document.createElement('style'); st.id = 'vf-tabbar-style'; st.textContent = TABBAR_STYLE;
+      document.head.appendChild(st);
+    }
+    var ky = lang() === 'ky';
+    var bar = document.createElement('nav');
+    bar.id = 'vf-tabbar'; bar.className = 'vf-tabbar'; bar.setAttribute('aria-label', 'Меню');
+    bar.innerHTML = TABS.map(function (t) {
+      var inner = icon(t.icon) + '<span>' + (ky ? t.ky : t.label) + '</span>' + (t.id === 'inbox' ? '<span class="vf-badge" id="vf-tab-unread" hidden></span>' : '');
+      return t.href ? '<a class="vf-tab" data-tab="' + t.id + '" href="' + t.href + '">' + inner + '</a>'
+        : '<button type="button" class="vf-tab" data-tab="' + t.id + '">' + inner + '</button>';
+    }).join('');
+    document.body.appendChild(bar);
+    document.body.classList.add('vf-has-tabbar');
+    bar.querySelector('[data-tab="more"]').addEventListener('click', openMoreMenu);
+    // Каталог и Бот живут на одной странице: переход между ними — без перезагрузки
+    Array.prototype.forEach.call(bar.querySelectorAll('a.vf-tab'), function (a) {
+      a.addEventListener('click', function (e) {
+        var url = a.getAttribute('href'), path = url.split('#')[0];
+        if (path === currentPath()) {
+          e.preventDefault();
+          var h = url.indexOf('#') >= 0 ? url.split('#')[1] : '';
+          if (h) { if (location.hash !== '#' + h) location.hash = h; else window.dispatchEvent(new HashChangeEvent('hashchange')); }
+          else { history.replaceState(null, '', path); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+          markTabs();
+          window.scrollTo(0, 0);
+        }
+      });
+    });
+    window.addEventListener('hashchange', markTabs);
+    markTabs();
+    refreshUnread();
+  }
+  // Непрочитанные в инбоксе — точка на вкладке (раз в минуту, только пока страница открыта)
+  function refreshUnread() {
+    if (!token() || !document.getElementById('vf-tab-unread')) return;
+    apiFetch('/inbox/dialogs?folder=unread&limit=1').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      var el = document.getElementById('vf-tab-unread'); if (!el || !d) return;
+      var n = (d.counts && d.counts.unread) || 0;
+      el.hidden = !n; el.textContent = n > 99 ? '99+' : String(n);
+    }).catch(function () { /* ignore */ });
+    if (!refreshUnread.timer) refreshUnread.timer = setInterval(function () { if (!document.hidden) refreshUnread(); }, 60000);
+  }
+  // CRM на телефоне: таблицы и канбан не помещаются — понятный экран вместо мелкой каши
+  function phoneCrmNote() {
+    if (cachedMode() !== 'reactive' || !isPhone()) return;
+    if (currentPath() !== '/static/start-crm.html') return;
+    try { if (sessionStorage.getItem('vf_crm_phone_ok') === '1') return; } catch (e) { /* ignore */ }
+    var n = document.createElement('div');
+    n.className = 'vf-phone-note';
+    n.innerHTML = '<div class="box"><div class="ico">' + icon('monitor') + '</div><h2>CRM удобнее на компьютере</h2>' +
+      '<p>Таблица клиентов и воронка открываются на ноутбуке или планшете. С телефона клиентам отвечают в Инбоксе, а товары и остатки правят в Каталоге.</p>' +
+      '<div class="row"><a class="b" href="/static/inbox.html">' + icon('inbox') + 'Инбокс</a><a class="b ghost" href="/static/start-bot.html#catalog">' + icon('package') + 'Каталог</a></div>' +
+      '<button type="button" class="l">Всё равно открыть CRM</button></div>';
+    document.body.appendChild(n);
+    n.querySelector('button.l').addEventListener('click', function () {
+      try { sessionStorage.setItem('vf_crm_phone_ok', '1'); } catch (e) { /* ignore */ }
+      n.remove();
+    });
+  }
+
   function init() {
     if (redirectStartPages()) return;
     var nav = renderNav();
+    if (document.body) { renderTabBar(); phoneCrmNote(); }
+    else document.addEventListener('DOMContentLoaded', function () { renderTabBar(); phoneCrmNote(); });
     addSpeculation();
     renderLangSwitch();
     if (!nav) return;

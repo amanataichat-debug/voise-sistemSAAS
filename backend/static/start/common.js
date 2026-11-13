@@ -270,7 +270,14 @@
       (o.foot ? '<div class="vf-dialog-foot">' + o.foot + '</div>' : '') + '</div>';
     document.body.appendChild(back);
     requestAnimationFrame(function () { back.classList.add('open'); });
+    // Телефон: кнопка «Назад» (Android, жест iOS) закрывает окно, а не уводит со страницы
+    var phone = window.matchMedia && window.matchMedia('(max-width: 760px)').matches, pushed = false, closed = false;
+    function onPop() { if (!closed) { pushed = false; close(); } }
+    if (phone) { try { history.pushState({ vfDialog: 1 }, ''); pushed = true; window.addEventListener('popstate', onPop); } catch (e) { /* ignore */ } }
     function close() {
+      if (closed) return; closed = true;
+      window.removeEventListener('popstate', onPop);
+      if (pushed) { pushed = false; try { history.back(); } catch (e) { /* ignore */ } }
       back.classList.remove('open');
       document.removeEventListener('keydown', onKey);
       setTimeout(function () { back.remove(); }, 180);

@@ -326,3 +326,25 @@ html.ib-embed .ib { --ib-list: 340px; }
 .ib-issue > .ic { flex: none; width: 16px; height: 16px; }
 .ib-issue > span { flex: 1; }
 .ib-issue .btn { flex: none; }
+
+/* ═══ Телефон (13.11.2026): экран целиком, над нижней панелью вкладок; в открытом чате панели нет ═══ */
+@media (max-width: 860px) {
+  .ib, .ib.no-card { grid-template-columns: minmax(0, 1fr); }
+  .ib-list, .ib-chat { min-width: 0; }
+  .ib-main { height: 100dvh; }
+  .ib { height: calc(100dvh - var(--vf-topbar-h)); }
+  .ib-search input { height: 42px; font-size: 16px; }
+  .ib-chip { height: 34px; padding: 0 12px; font-size: 13.5px; }
+  .ib-item { padding: 12px; min-height: 68px; }
+  .ib-item:active { background: var(--vf-surface-2); }
+  .ib-compose textarea, .ib-compose .input { font-size: 16px; }
+  .ib-back { width: 40px; height: 40px; }
+}
+@media (max-width: 760px) {
+  body.vf-has-tabbar { padding-bottom: 0; }
+  body.vf-has-tabbar .ib { height: calc(100dvh - var(--vf-topbar-h) - 64px - env(safe-area-inset-bottom, 0px)); }
+  body.ib-chat-open .vf-tabbar { display: none; }
+  body.ib-chat-open .vf-topbar { display: none; }
+  body.vf-has-tabbar.ib-chat-open .ib, body.ib-chat-open .ib { height: 100dvh; }
+  .ib-compose { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+}

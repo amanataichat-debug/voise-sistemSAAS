@@ -339,12 +339,32 @@
     S.$('#ib-card').innerHTML = '';
   }
 
+  // Телефон: список и чат — по одному экрану; «Назад» (Android, жест iOS) возвращает к списку
+  var chatPushed = false;
+  function onePane() { return window.matchMedia && window.matchMedia('(max-width: 860px)').matches; }
+  function showChat() {
+    root.classList.add('show-chat');
+    document.body.classList.add('ib-chat-open');
+    if (onePane() && !chatPushed) { try { history.pushState({ ibChat: 1 }, ''); chatPushed = true; } catch (e) { /* ignore */ } }
+  }
+  function hideChat() {
+    root.classList.remove('show-chat');
+    document.body.classList.remove('ib-chat-open');
+    if (chatPushed) { chatPushed = false; try { history.back(); } catch (e) { /* ignore */ } }
+  }
+  window.addEventListener('popstate', function (e) {
+    var st8 = e.state || {};
+    if (chatPushed && !st8.ibChat && !st8.vfDialog) {
+      chatPushed = false; root.classList.remove('show-chat'); document.body.classList.remove('ib-chat-open');
+    }
+  });
+
   function openDialog(key) {
     if (!key) return;
     saveDraft();
     stopRecording(true);
     st.key = key; st.attach = null; st.tr = null; st.pause = null; st.unlinked = null; st.d = null;
-    root.classList.add('show-chat');
+    showChat();
     S.$$('.ib-item').forEach(function (r) { r.classList.toggle('active', r.dataset.key === key); });
     var it = st.items.filter(function (x) { return x.key === key; })[0];
     if (it && it.unread) { it.unread = 0; renderItems(); }
@@ -423,7 +443,7 @@
       '<button class="btn btn-sm" type="button" id="ib-call" title="Бот позвонит клиенту сейчас">' + icon('phone') + '<span class="lbl">Позвонить</span></button>' +
       '<button class="btn btn-ghost btn-icon btn-sm" type="button" id="ib-card-t" title="Карточка клиента">' + icon('panel-right') + '</button>' +
       '</div>';
-    S.$('#ib-back').addEventListener('click', function () { root.classList.remove('show-chat'); });
+    S.$('#ib-back').addEventListener('click', hideChat);
     S.$('#ib-who').addEventListener('click', toggleCard);
     S.$('#ib-card-t').addEventListener('click', toggleCard);
     S.$('#ib-stage').addEventListener('click', function (e) { stageMenu(e.currentTarget); });
@@ -442,7 +462,7 @@
     var c = st.d.contact;
     pop(btn, [{ header: 'Перенести на стадию' }].concat((st.d.stages || allStages()).map(function (s) {
       return { label: s.label, dot: s.color, sel: s.key === c.status, fn: function () { moveStage(s.key); } };
-    })).concat([{ sep: true }, { label: 'Все клиенты этой стадии в CRM', icon: 'external-link', fn: function () { openCrm(null, c.status); } }]));
+    })).concat(window.innerWidth <= 760 ? [] : [{ sep: true }, { label: 'Все клиенты этой стадии в CRM', icon: 'external-link', fn: function () { openCrm(null, c.status); } }]));
   }
   function moveStage(key) {
     var c = st.d.contact;
@@ -907,7 +927,7 @@
       '<div class="ib-card-head"><button class="btn btn-ghost btn-icon btn-sm x" type="button" id="ib-card-x" aria-label="Скрыть">' + icon('x') + '</button>' +
       '<div class="ib-ava lg">' + esc(S.initial(c.display_name)) + '</div><div class="nm">' + esc(c.display_name) + '</div>' +
       '<div class="sub">' + esc(c.agent ? 'Бот: ' + c.agent.name : '') + '</div>' +
-      '<div class="acts"><button class="btn btn-sm btn-primary" type="button" id="ib-crm">' + icon('external-link') + '<span>Открыть в CRM</span></button>' +
+      '<div class="acts"><button class="btn btn-sm btn-primary vf-desktop-only" type="button" id="ib-crm">' + icon('external-link') + '<span>Открыть в CRM</span></button>' +
       '<button class="btn btn-sm" type="button" id="ib-call2">' + icon('phone') + '<span>Позвонить</span></button></div></div>' +
       '<div class="ib-sec"><h4>Контакты</h4><div class="ib-kv">' + (kv.map(function (x) { return icon(x[0]) + '<div class="v">' + x[1] + '</div>'; }).join('') || '<span></span><div class="muted small">Нет данных</div>') + '</div></div>' +
       '<div class="ib-sec ib-know"><h4>Что узнал бот</h4>' + know + (docs ? '<div style="margin-top:10px">' + docs + '</div>' : '') + '</div>' +
@@ -986,7 +1006,7 @@
         '<div class="ib-compose"><div class="ib-note">' + icon('info') + '<span>Этого человека нет в CRM, поэтому бот ему не отвечает (в настройках WhatsApp бот отвечает только знакомым). Создайте карточку — после этого можно ответить, а бот начнёт вести диалог.</span></div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><input class="input" id="ib-ln-name" placeholder="Имя клиента" value="' + esc(ch.name || '') + '" style="flex:1;min-width:180px">' +
         '<button class="btn btn-primary" type="button" id="ib-ln">' + icon('plus') + '<span>Создать карточку</span></button></div></div>';
-      S.$('#ib-back').addEventListener('click', function () { root.classList.remove('show-chat'); });
+      S.$('#ib-back').addEventListener('click', hideChat);
       var feed = S.$('#ib-feed'); feed.scrollTop = feed.scrollHeight;
       S.$('#ib-card').innerHTML = '';
       S.$('#ib-ln').addEventListener('click', function () {
