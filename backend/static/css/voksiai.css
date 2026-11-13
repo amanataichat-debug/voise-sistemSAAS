@@ -529,3 +529,9 @@ i.vf-fa::before, span.vf-fa::before, i.vf-fa::after, span.vf-fa::after { content
 /* Старые страницы кабинета закрывают экран белой пеленой на время загрузки — в тёмной теме это выглядит как белая вспышка */
 [data-theme="dark"] .loading-overlay { background-color: color-mix(in srgb, var(--vf-bg) 82%, transparent) !important; }
 [data-theme="dark"] .payment-loading { background-color: color-mix(in srgb, var(--vf-surface) 96%, transparent) !important; }
+
+/* Телефон (13.11.2026): отклик на нажатие как в приложении — без серой вспышки и задержки двойного тапа */
+@media (hover: none) {
+  a, button, [role="button"], .btn, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .btn:active { transform: scale(.97); }
+}

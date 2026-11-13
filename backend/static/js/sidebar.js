@@ -575,11 +575,108 @@
     });
   }
 
+  // ---------------------------------------------------------------------
+  // Приложение на рабочем столе (13.11.2026): manifest.json + /static/sw.js.
+  // Android (Chrome) — системное окно установки; iPhone — подсказка «Поделиться → На экран Домой».
+  // Кнопка «Установить приложение» — в меню на телефоне; на дашборде — плашка раз в 14 дней.
+  // ---------------------------------------------------------------------
+  var installEvt = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); installEvt = e;
+    var b = document.getElementById('vf-install-btn'); if (b) b.hidden = false;
+  });
+  window.addEventListener('appinstalled', function () {
+    installEvt = null;
+    ['vf-install-btn', 'vf-install-bar'].forEach(function (id) { var el = document.getElementById(id); if (el) el.remove(); });
+  });
+  function standalone() {
+    try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; }
+  }
+  function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function inAppBrowser() { return /Telegram|Instagram|FBAN|FBAV|WhatsApp/i.test(navigator.userAgent); }
+  function registerSW() {
+    if (!('serviceWorker' in navigator) || location.protocol !== 'https:' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') return;
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/static/sw.js', { scope: '/static/' }).catch(function () { /* ignore */ });
+    });
+  }
+  var INSTALL_STYLE = [
+    '.vf-install-bar{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:12px 12px 12px 14px;border-radius:16px;',
+    'background:linear-gradient(135deg,#2a5ce8,#4f46e5);color:#fff;box-shadow:0 8px 24px -12px rgba(42,92,232,.6)}',
+    '.vf-install-bar img{width:40px;height:40px;border-radius:11px;background:#fff;flex:none}',
+    '.vf-install-bar .t{flex:1;min-width:0;font-size:13px;line-height:1.35}',
+    '.vf-install-bar .t b{display:block;font-size:14.5px;margin-bottom:1px}',
+    '.vf-install-bar .go{flex:none;height:38px;padding:0 14px;border-radius:10px;border:0;background:#fff;color:#2a5ce8;font-weight:700;font-size:13.5px;cursor:pointer}',
+    '.vf-install-bar .x{flex:none;width:30px;height:30px;border:0;background:none;color:rgba(255,255,255,.8);font-size:20px;line-height:1;cursor:pointer}',
+    '.vf-install-tip{position:fixed;inset:0;z-index:1300;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center}',
+    '.vf-install-tip .sh{width:100%;max-width:480px;background:#fff;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));color:#0e1729}',
+    '.vf-install-tip h3{margin:0 0 6px;font-size:18px}',
+    '.vf-install-tip p{margin:0 0 12px;color:#4b5a70;font-size:14px;line-height:1.5}',
+    '.vf-install-tip ol{margin:0 0 16px;padding-left:20px;font-size:15px;line-height:1.7}',
+    '.vf-install-tip .ok{width:100%;height:46px;border:0;border-radius:12px;background:#2a5ce8;color:#fff;font-weight:700;font-size:15px}'
+  ].join('');
+  function installStyle() {
+    if (document.getElementById('vf-install-style')) return;
+    var st = document.createElement('style'); st.id = 'vf-install-style'; st.textContent = INSTALL_STYLE;
+    document.head.appendChild(st);
+  }
+  function installTip() {
+    installStyle();
+    var ios = isIOS(), inapp = inAppBrowser();
+    var steps = inapp
+      ? '<p>Это окно открыто внутри мессенджера — отсюда приложение не установить.</p><ol><li>Нажмите «⋯» или «Поделиться» вверху</li><li>Выберите «Открыть в ' + (ios ? 'Safari' : 'браузере') + '»</li><li>Там нажмите «Установить приложение» ещё раз</li></ol>'
+      : ios
+        ? '<ol><li>Нажмите <b>«Поделиться»</b> ⬆︎ внизу Safari</li><li>Прокрутите и выберите <b>«На экран „Домой“»</b></li><li>Нажмите <b>«Добавить»</b></li></ol>'
+        : '<ol><li>Нажмите меню браузера <b>⋮</b> вверху справа</li><li>Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b></li></ol>';
+    var t = document.createElement('div');
+    t.className = 'vf-install-tip';
+    t.innerHTML = '<div class="sh"><h3>Voksy AI на рабочем столе</h3><p>Значок появится рядом с другими приложениями: Инбокс и Каталог открываются одним нажатием, без адресной строки.</p>' + steps + '<button type="button" class="ok">Понятно</button></div>';
+    document.body.appendChild(t);
+    t.addEventListener('click', function (e) { if (e.target === t || e.target.classList.contains('ok')) t.remove(); });
+  }
+  function installApp() {
+    if (installEvt) {
+      var ev = installEvt; installEvt = null;
+      ev.prompt();
+      if (ev.userChoice) ev.userChoice.then(function (r) { if (r && r.outcome === 'accepted') { var b = document.getElementById('vf-install-bar'); if (b) b.remove(); } });
+      return;
+    }
+    installTip();
+  }
+  function renderInstallUI() {
+    if (standalone() || !isPhone()) return;
+    var foot = document.querySelector('.vf-sidebar .sidebar-footer');
+    if (foot && !document.getElementById('vf-install-btn')) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.id = 'vf-install-btn'; b.className = 'btn btn-ghost';
+      b.style.cssText = 'width:100%;justify-content:flex-start';
+      b.innerHTML = icon('download') + ' <span>Установить приложение</span>';
+      b.addEventListener('click', installApp);
+      foot.insertBefore(b, foot.firstChild);
+    }
+    if (currentPath() !== '/static/dashboard.html' || document.getElementById('vf-install-bar')) return;
+    try { var d = +localStorage.getItem('vf_install_dismissed') || 0; if (Date.now() - d < 14 * 864e5) return; } catch (e) { /* ignore */ }
+    var host = document.querySelector('.vf-content') || document.getElementById('content-container'); if (!host) return;
+    installStyle();
+    var bar = document.createElement('div');
+    bar.id = 'vf-install-bar'; bar.className = 'vf-install-bar';
+    bar.innerHTML = '<img src="/static/apple-touch-icon.png" alt=""><div class="t"><b>Установите приложение</b>Инбокс и каталог одним нажатием</div>' +
+      '<button type="button" class="go">Установить</button><button type="button" class="x" aria-label="Закрыть">×</button>';
+    host.insertBefore(bar, host.firstChild);
+    bar.querySelector('.go').addEventListener('click', installApp);
+    bar.querySelector('.x').addEventListener('click', function () {
+      try { localStorage.setItem('vf_install_dismissed', String(Date.now())); } catch (e) { /* ignore */ }
+      bar.remove();
+    });
+  }
+  registerSW();
+  window.VoksyInstall = { open: installApp, standalone: standalone };
+
   function init() {
     if (redirectStartPages()) return;
     var nav = renderNav();
-    if (document.body) { renderTabBar(); phoneCrmNote(); }
-    else document.addEventListener('DOMContentLoaded', function () { renderTabBar(); phoneCrmNote(); });
+    if (document.body) { renderTabBar(); phoneCrmNote(); renderInstallUI(); }
+    else document.addEventListener('DOMContentLoaded', function () { renderTabBar(); phoneCrmNote(); renderInstallUI(); });
     addSpeculation();
     renderLangSwitch();
     if (!nav) return;

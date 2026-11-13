@@ -1,29 +1,22 @@
 {
+  "id": "/static/dashboard.html",
   "name": "Voksy AI",
   "short_name": "Voksy AI",
-  "description": "Создавайте голосовых ассистентов на основе OpenAI за минуты",
-  "start_url": "/",
+  "description": "Чат-бот, каталог и переписка с клиентами в одном приложении",
+  "lang": "ru",
+  "start_url": "/static/dashboard.html?source=app",
+  "scope": "/static/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#2a5ce8",
+  "orientation": "portrait",
+  "background_color": "#f6f8fc",
+  "theme_color": "#ffffff",
   "icons": [
-    {
-      "src": "/static/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/android-chrome-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/static/android-chrome-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/static/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Инбокс", "short_name": "Инбокс", "url": "/static/inbox.html?source=app", "icons": [{ "src": "/static/android-chrome-192x192.png", "sizes": "192x192" }] },
+    { "name": "Каталог", "short_name": "Каталог", "url": "/static/start-bot.html?source=app#catalog", "icons": [{ "src": "/static/android-chrome-192x192.png", "sizes": "192x192" }] }
   ]
 }
