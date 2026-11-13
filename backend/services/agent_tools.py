@@ -135,7 +135,10 @@ FIND_PRODUCTS_TOOL = {
         "В query передавай всё, что назвал клиент: что за товар, марку, модель, год, "
         "артикул или номер детали — поиск понимает артикул в любом написании и марку "
         "кириллицей и латиницей. "
-        "В ответе: цена, описание, характеристики, id фото/видео (media_file_ids) — "
+        "Коллекцию (мужская/женская/детская) и размер передавай отдельно в collection и size. "
+        "В ответе: цена, старая цена до скидки (old_price), коллекция, размеры (sizes), "
+        "остаток в штуках (stock_left: 1–3 — можно сказать, что осталось мало), описание, "
+        "характеристики, id фото/видео (media_file_ids) — "
         "отправь фото клиенту тулзой whatsapp_send_file / telegram_send_file / "
         "instagram_send_file; файла нет, но есть photo_url — дай ссылку на фото одной "
         "строкой. Несколько подходящих позиций — коротко назови 2–3 и спроси, какая. "
@@ -151,6 +154,9 @@ FIND_PRODUCTS_TOOL = {
             "max_price": {"type": "number", "description": "Верхняя граница цены, если клиент её назвал"},
             "min_price": {"type": "number", "description": "Нижняя граница цены"},
             "limit": {"type": "integer", "description": "Сколько позиций вернуть (по умолчанию 5, можно 10 для широких запросов)"},
+            "collection": {"type": "string", "description": "Коллекция/раздел каталога, если клиент его назвал: мужская, женская, детская, новинки"},
+            "size": {"type": "string", "description": "Размер, если клиент его назвал: 46, M, 110 (рост ребёнка)"},
+            "in_stock_only": {"type": "boolean", "description": "Только то, что есть в наличии"},
         },
         "required": [],
     },
@@ -5306,6 +5312,9 @@ async def fn_find_products(args: dict, agent_config, db: Session) -> dict:
         max_price=args.get("max_price"),
         min_price=args.get("min_price"),
         limit=args.get("limit") or 5,
+        collection=(args.get("collection") or "").strip() or None,
+        size=(str(args.get("size") or "")).strip() or None,
+        in_stock_only=bool(args.get("in_stock_only")),
     )
 
 

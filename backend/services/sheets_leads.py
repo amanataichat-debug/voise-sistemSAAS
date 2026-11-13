@@ -33,6 +33,11 @@ CATALOG_SOURCE = "google_sheet"  # attributes["_source"] у импортиров
 _ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]{20,})")
 
 COLUMN_ALIASES = {
+    # «цена до скидки» начинается с «цена» — поэтому старая цена проверяется раньше цены
+    "old_price": ("старая цена", "цена до скидки", "цена без скидки", "old price", "эски баа"),
+    "collection": ("коллекция", "категория", "раздел", "collection", "category", "коллекциясы"),
+    "sizes": ("размеры", "размер", "sizes", "size", "өлчөм"),
+    "stock_qty": ("количество", "кол-во", "штук", "остаток шт", "qty", "quantity", "саны"),
     "title": ("название", "наименование", "товар", "услуга", "позиция", "name", "title", "аталышы"),
     "price": ("цена", "стоимость", "price", "баасы", "баа", "сом"),
     "body": ("описание", "характеристики", "description", "сүрөттөмө"),
@@ -153,6 +158,11 @@ def map_columns(header: List[Any]) -> Dict[str, int]:
     return found
 
 
+def _parse_qty(value: Any) -> Optional[int]:
+    digits = re.sub(r"[^\d]", "", str(value or ""))
+    return int(digits[:9]) if digits else None
+
+
 def parse_price(value: Any) -> Optional[float]:
     text = str(value or "").replace(" ", " ")
     digits = re.sub(r"[^\d,.]", "", text).replace(",", ".")
@@ -215,6 +225,10 @@ def rows_to_products(values: List[List[Any]]) -> List[Dict[str, Any]]:
             "attributes": extras,
             "photo_url": photo if photo.startswith(("http://", "https://")) else None,
             "key": key,
+            "collection": " ".join(str(get(row, "collection") or "").split())[:120] or None,
+            "sizes": [x.strip()[:20] for x in re.split(r"[,;/]+", str(get(row, "sizes") or "")) if x.strip()][:40] or None,
+            "stock_qty": _parse_qty(get(row, "stock_qty")) if "stock_qty" in cols else None,
+            "old_price": parse_price(get(row, "old_price")) if "old_price" in cols else None,
         })
     if not products:
         raise SheetError("В таблице нет строк с названием товара или услуги.")
@@ -268,6 +282,12 @@ def import_catalog(db, agent, user_id, products: List[Dict[str, Any]]) -> Dict[s
         row.price = p["price"]
         row.in_stock = p["in_stock"]
         row.keywords = p["keywords"]
+        row.collection = p.get("collection")
+        row.sizes = p.get("sizes")
+        row.stock_qty = p.get("stock_qty")
+        row.old_price = p.get("old_price")
+        if row.stock_qty is not None:
+            row.in_stock = row.stock_qty > 0
         row.char_count = len(p["body"])
         row.is_active = True
         row.vector_status = "pending"

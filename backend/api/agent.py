@@ -1633,6 +1633,43 @@ class KnowledgeEntryRequest(BaseModel):
     in_prompt: Optional[bool] = None
     is_active: Optional[bool] = None
     position: Optional[int] = None
+    collection: Optional[str] = Field(None, max_length=120)
+    sizes: Optional[List[str]] = None
+    stock_qty: Optional[int] = None
+    old_price: Optional[float] = None
+
+
+class CollectionRenameRequest(BaseModel):
+    old: str = Field("", max_length=120)          # "" — позиции без коллекции
+    new: str = Field("", max_length=120)          # "" — убрать коллекцию (позиции остаются)
+
+
+def _kb_collection(value) -> Optional[str]:
+    """Коллекция: одна строка без лишних пробелов, до 120 символов; пусто — без коллекции."""
+    v = " ".join(str(value or "").split())[:120]
+    return v or None
+
+
+def _kb_sizes(values) -> Optional[list]:
+    """Размеры: «42, 44 / S M» → ["42", "44", "S", "M"], без повторов, до 40 штук."""
+    if not values:
+        return None
+    out = []
+    for raw in values if isinstance(values, list) else [values]:
+        for part in re.split(r"[,;/\n]+", str(raw or "")):
+            part = " ".join(part.split())[:20]
+            if part and part.lower() not in [x.lower() for x in out]:
+                out.append(part)
+    return out[:40] or None
+
+
+def _kb_stock(value) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return max(0, min(int(value), 10_000_000))
+    except (TypeError, ValueError):
+        return None
 
 
 class KnowledgeTestRequest(BaseModel):
@@ -1829,6 +1866,10 @@ async def create_knowledge_entry(
         attributes=body.attributes if kind == "product" else None,
         in_stock=True if body.in_stock is None else bool(body.in_stock),
         media_file_ids=_kb_media_ids(db, agent, body.media_file_ids),
+        collection=_kb_collection(body.collection) if kind == "product" else None,
+        sizes=_kb_sizes(body.sizes) if kind == "product" else None,
+        stock_qty=_kb_stock(body.stock_qty) if kind == "product" else None,
+        old_price=body.old_price if kind == "product" and body.old_price else None,
         # Каталог и документы в промпт не вшиваем: их много, они съедят бюджет
         # и замедлят каждый ответ. Они достаются поиском.
         in_prompt=(kind in ("qa", "section")) if body.in_prompt is None else bool(body.in_prompt),
@@ -1836,6 +1877,8 @@ async def create_knowledge_entry(
         position=body.position or 0,
         char_count=len(text),
     )
+    if row.stock_qty is not None:
+        row.in_stock = row.stock_qty > 0   # остаток в штуках главнее переключателя
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -1861,9 +1904,18 @@ async def update_knowledge_entry(
 
     data = body.dict(exclude_unset=True)
     for field in ("title", "body", "keywords", "price", "currency", "attributes",
-                  "in_stock", "media_file_ids", "in_prompt", "is_active", "position"):
+                  "in_stock", "media_file_ids", "in_prompt", "is_active", "position",
+                  "collection", "sizes", "stock_qty", "old_price"):
         if field in data:
             value = data[field]
+            if field == "collection":
+                value = _kb_collection(value)
+            elif field == "sizes":
+                value = _kb_sizes(value)
+            elif field == "stock_qty":
+                value = _kb_stock(value)
+            elif field == "old_price":
+                value = value or None
             if field in ("title", "keywords") and isinstance(value, str):
                 value = value.strip() or None
                 if field == "title":
@@ -1873,9 +1925,12 @@ async def update_knowledge_entry(
             setattr(row, field, value)
     if "body" in data:
         row.char_count = len(row.body or "")
+    if row.kind == "product" and row.stock_qty is not None and ("stock_qty" in data or "in_stock" in data):
+        row.in_stock = row.stock_qty > 0
     # Изменилось то, что попадает в вектор, — пометить на переиндексацию (досинхронизирует
     # и фоновая проверка при поиске, если запуск ниже не успеет)
-    if any(f in data for f in ("title", "body", "keywords", "price", "currency", "attributes", "is_active")):
+    if any(f in data for f in ("title", "body", "keywords", "price", "currency", "attributes", "is_active",
+                               "collection", "sizes")):
         row.vector_status = "pending"
     # Запись могли выключить — тогда у карточки голоса мог стать лишним
     # каталог или поиск целиком.
@@ -1884,6 +1939,33 @@ async def update_knowledge_entry(
     db.refresh(row)
     kb_vectors.schedule_sync(agent.id)
     return {"success": True, "entry": row.to_dict()}
+
+
+@router.post("/knowledge/collections/rename")
+async def rename_catalog_collection(
+    body: CollectionRenameRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Переименовать коллекцию каталога у всех её позиций (new="" — убрать коллекцию, позиции остаются)."""
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    old, new = _kb_collection(body.old), _kb_collection(body.new)
+    q = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent.id,
+        AgentKnowledgeEntry.kind == "product",
+    )
+    q = q.filter(AgentKnowledgeEntry.collection.is_(None)) if old is None else q.filter(
+        AgentKnowledgeEntry.collection == old)
+    changed = q.update({"collection": new, "vector_status": "pending"}, synchronize_session=False)
+    db.commit()
+    if changed:
+        kb_vectors.schedule_sync(agent.id)
+    return {"success": True, "changed": changed}
 
 
 @router.delete("/knowledge/{entry_id}")

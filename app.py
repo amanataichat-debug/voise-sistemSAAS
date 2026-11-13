@@ -1969,6 +1969,27 @@ def ensure_knowledge_v2_tables():
     except Exception as e:
         logger.error(f"❌ ensure_knowledge_v2_tables: {e}")
         return
+    # Каталог как у магазина (13.11.2026): колонки позиции. Таблица могла быть создана
+    # раньше — create_all колонки не добавляет. Каждый ALTER отдельной транзакцией.
+    try:
+        from sqlalchemy import text
+        cols = {c["name"] for c in inspect(engine).get_columns("agent_knowledge_entries")}
+        for col, ddl in (("collection", "VARCHAR(120)"), ("sizes", "JSONB"),
+                         ("stock_qty", "INTEGER"), ("old_price", "DOUBLE PRECISION")):
+            if col in cols:
+                continue
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+                    conn.execute(text(f'ALTER TABLE "agent_knowledge_entries" ADD COLUMN IF NOT EXISTS {col} {ddl}'))
+            except Exception as e:
+                logger.error(f"❌ ensure_knowledge_v2_tables: колонка {col}: {e}")
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_kb_entries_agent_collection '
+                              'ON agent_knowledge_entries (agent_config_id, kind, collection)'))
+    except Exception as e:
+        logger.error(f"❌ ensure_knowledge_v2_tables: колонки каталога: {e}")
     logger.info("✅ ensure_knowledge_v2_tables: база знаний v2 готова")
 
 

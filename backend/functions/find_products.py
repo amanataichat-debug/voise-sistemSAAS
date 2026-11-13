@@ -70,6 +70,14 @@ class FindProductsFunction(FunctionBase):
                     "description": "Сколько позиций вернуть (по умолчанию 5, максимум 10)",
                     "default": 5,
                 },
+                "collection": {
+                    "type": "string",
+                    "description": "Коллекция или раздел каталога, если клиент его назвал: мужская, женская, детская",
+                },
+                "size": {
+                    "type": "string",
+                    "description": "Размер, если клиент его назвал: 46, M, 110",
+                },
             },
         }
 
@@ -102,6 +110,8 @@ class FindProductsFunction(FunctionBase):
                 min_price=_num(arguments.get("min_price")),
                 limit=arguments.get("limit") or 5,
                 channel="call",
+                collection=(arguments.get("collection") or "").strip() or None,
+                size=(str(arguments.get("size") or "")).strip() or None,
             )
             logger.info(f"[VOICE-KB] find_products «{(arguments.get('query') or '')[:40]}» → "
                         f"{result.get('total', 0)} позиций")

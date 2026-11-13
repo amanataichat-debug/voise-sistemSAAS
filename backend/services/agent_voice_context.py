@@ -306,12 +306,29 @@ def build_price_block(db, agent_config_id, budget: int = PRICE_BUDGET) -> str:
     bud = _Budget(budget)
     lines: List[str] = []
     shown = 0
-    for row in rows[:PRICE_MAX_ITEMS]:
+    # Коллекции (13.11.2026): прайс разбит по ним — «мужская / женская» модель видит сразу.
+    picked = rows[:PRICE_MAX_ITEMS]
+    grouped = any(getattr(r, "collection", None) for r in picked)
+    if grouped:
+        picked = sorted(picked, key=lambda r: (getattr(r, "collection", None) is None,
+                                               (getattr(r, "collection", None) or "").lower()))
+    current = object()
+    for row in picked:
         title = (row.title or "").strip()
         if not title:
             continue
+        if grouped and getattr(row, "collection", None) != current:
+            current = getattr(row, "collection", None)
+            head = f"## {current or 'Без коллекции'}"
+            if bud.take(len(head) + 1) < len(head) + 1:
+                break
+            lines.append(head)
+            bud.spend(head + "\n")
         price = kb_fmt.format_price(row.price, row.currency)
         mark = "" if row.in_stock else " (нет в наличии)"
+        sizes = getattr(row, "sizes", None)
+        if row.in_stock and isinstance(sizes, list) and sizes:
+            mark += " (размеры " + ", ".join(str(x) for x in sizes[:8]) + ")"
         piece = f"- {_clip(title, 70)} — {price}{mark}"
         desc = (row.body or "").strip()
         if inline_desc and desc:

@@ -483,19 +483,8 @@
     }[kb.tab];
     var head = '<div class="row-between" style="margin-bottom:12px;gap:12px;flex-wrap:wrap"><span class="muted small" style="max-width:560px">' + hint + '</span>' +
       '<button class="btn btn-primary btn-sm" id="kb-add" type="button">' + icon('plus') + '<span>' + addLabel + '</span></button></div>';
-    if (kb.tab === 'product') {
-      box.innerHTML = head + (items.length ? '<div class="st-catalog">' + items.map(function (e) {
-        var ph = (e.media || [])[0];
-        var thumb = ph && ph.url ? mediaThumb(ph.url, ph.is_video) : '<span class="st-ph">' + icon('image') + '</span>';
-        var attrs = Object.keys(e.attributes || {}).slice(0, 3).map(function (k) { return '<span class="st-tag">' + esc(k) + ': ' + esc(e.attributes[k]) + '</span>'; }).join(' ');
-        return '<div class="st-prod' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="pic' + (ph && ph.url ? ' clk" data-view="' + esc(e.id) + '" title="Посмотреть фото и видео' : '') + '">' + thumb +
-          ((e.media || []).length > 1 ? '<span class="cnt">' + (e.media || []).length + '</span>' : '') + '</div>' +
-          '<div class="bd"><div class="t">' + esc(e.title || '—') + '</div><div class="pr">' + esc(priceText(e)) + (e.in_stock === false ? ' <span class="st-badge warn">нет в наличии</span>' : '') + '</div>' +
-          (attrs ? '<div class="at">' + attrs + '</div>' : '') +
-          '<div class="acts"><button class="btn btn-ghost btn-sm" data-edit="' + esc(e.id) + '" type="button">' + icon('pen') + '<span>Изменить</span></button>' +
-          '<button class="btn btn-ghost btn-icon btn-sm" data-del="' + esc(e.id) + '" type="button" aria-label="Удалить">' + icon('trash-2') + '</button></div></div></div>';
-      }).join('') + '</div>' : '<div class="st-empty">Каталог пуст. Добавьте позиции вручную или загрузите прайс из Google Таблицы (раздел ниже).</div>');
-    } else {
+    if (kb.tab === 'product') { drawCatalog(box); return; }
+    {
       box.innerHTML = head + (items.length ? items.map(function (e) {
         return '<div class="st-qa' + (e.is_active === false ? ' off' : '') + '" data-id="' + esc(e.id) + '"><div class="q">' + esc(e.title || '—') + '</div>' +
           (e.body ? '<div class="a">' + esc(e.body) + '</div>' : '') +
@@ -525,6 +514,7 @@
 
   // ── Запись базы знаний: вопрос-ответ / раздел / позиция каталога ──
   function entryDialog(kind, e, prefill, gapId) {
+    if (kind === 'product') { productDialog(e, prefill, gapId); return; }
     var src = e || prefill || null;
     var titles = { qa: ['Вопрос клиента', 'Ответ бота'], section: ['Название раздела', 'Текст'], product: ['Название', 'Описание'] }[kind];
     var picked = (e && e.media_file_ids) ? e.media_file_ids.slice() : [];
@@ -652,6 +642,444 @@
       foot: '<button class="btn" type="button" data-c>Закрыть</button>'
     });
     S.$('[data-c]', d.el).addEventListener('click', d.close);
+  }
+
+  // ══════════════════════════════ КАТАЛОГ КАК У МАГАЗИНА (13.11.2026) ══════════════════════
+  // Коллекции («Мужская», «Женская», «Детская / Зима»), поиск, фильтры, плитки или таблица,
+  // размеры, остаток в штуках, старая цена, копирование позиции. Раньше все позиции шли одной
+  // кучей крупными плитками, и владелец (норка, детская одежда) путался, что уже заполнено.
+  var NO_COL = '__none';
+  var CAT_PAGE = 60;
+  var SIZE_PRESETS = [
+    ['Одежда XS–XXL', ['XS', 'S', 'M', 'L', 'XL', 'XXL']],
+    ['Одежда 42–56', ['42', '44', '46', '48', '50', '52', '54', '56']],
+    ['Головные уборы 54–62', ['54', '55', '56', '57', '58', '59', '60', '61', '62']],
+    ['Детская по росту', ['80', '86', '92', '98', '104', '110', '116', '122', '128', '134', '140', '146', '152']],
+    ['Обувь 35–45', ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45']]
+  ];
+  var CAT_FILTERS = [['all', 'Все позиции'], ['in', 'В наличии'], ['out', 'Нет в наличии'], ['low', 'Мало осталось (до 3 шт.)'],
+    ['sale', 'Со скидкой'], ['nophoto', 'Без фото'], ['noprice', 'Без цены'], ['off', 'Выключенные']];
+  var CAT_SORTS = [['new', 'Сначала новые'], ['name', 'По названию'], ['price_up', 'Дешевле'], ['price_down', 'Дороже'], ['stock', 'Меньше остаток']];
+  var cat = (function () {
+    var d = { col: '', q: '', filter: 'all', sort: 'new', view: 'grid', shown: CAT_PAGE };
+    try { var x = JSON.parse(localStorage.getItem('vf_catalog_view') || '{}'); d.view = x.view === 'list' ? 'list' : 'grid'; d.sort = x.sort || 'new'; } catch (e) {}
+    return d;
+  })();
+  function catSave() { try { localStorage.setItem('vf_catalog_view', JSON.stringify({ view: cat.view, sort: cat.sort })); } catch (e) {}
+
+  }
+  function catProducts() { return kb.entries.filter(function (e) { return e.kind === 'product'; }); }
+  function catCollections() {
+    var map = {};
+    catProducts().forEach(function (e) { var c = (e.collection || '').trim(); if (c) map[c] = (map[c] || 0) + 1; });
+    if (cat.extra && !map[cat.extra]) map[cat.extra] = 0;   // только что созданная, ещё пустая коллекция
+    return Object.keys(map).sort(function (a, b) { return a.localeCompare(b, 'ru'); }).map(function (k) { return [k, map[k]]; });
+  }
+  function articleOf(e) {
+    var a = e.attributes || {};
+    for (var k in a) if (/^(артикул|код|sku)$/i.test(k)) return String(a[k] || '');
+    return '';
+  }
+  function money(v, c) { return Number(v).toLocaleString('ru-RU') + ' ' + curWord(c); }
+  function discount(e) {
+    if (!e.old_price || e.price == null || Number(e.old_price) <= Number(e.price)) return 0;
+    return Math.round((1 - Number(e.price) / Number(e.old_price)) * 100);
+  }
+  function stockBadge(e) {
+    if (e.in_stock === false) return '<span class="st-cbadge out">нет в наличии</span>';
+    if (e.stock_qty != null && e.stock_qty <= 3) return '<span class="st-cbadge low">осталось ' + e.stock_qty + ' шт.</span>';
+    if (e.stock_qty != null) return '<span class="st-cbadge ok">' + e.stock_qty + ' шт.</span>';
+    return '';
+  }
+  function catVisible() {
+    var q = cat.q.trim().toLowerCase();
+    var list = catProducts().filter(function (e) {
+      if (cat.col === NO_COL) { if ((e.collection || '').trim()) return false; }
+      else if (cat.col && (e.collection || '').trim() !== cat.col) return false;
+      switch (cat.filter) {
+        case 'in': if (e.in_stock === false) return false; break;
+        case 'out': if (e.in_stock !== false) return false; break;
+        case 'low': if (!(e.stock_qty != null && e.stock_qty > 0 && e.stock_qty <= 3)) return false; break;
+        case 'sale': if (!discount(e)) return false; break;
+        case 'nophoto': if ((e.media || []).length) return false; break;
+        case 'noprice': if (e.price != null && e.price !== '') return false; break;
+        case 'off': if (e.is_active !== false) return false; break;
+      }
+      if (!q) return true;
+      var hay = [e.title, e.body, e.keywords, e.collection, (e.sizes || []).join(' '), articleOf(e),
+        Object.keys(e.attributes || {}).filter(function (k) { return k.charAt(0) !== '_'; }).map(function (k) { return e.attributes[k]; }).join(' ')
+      ].join(' ').toLowerCase();
+      return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
+    });
+    var num = function (v) { return v == null || v === '' ? null : Number(v); };
+    list.sort(function (a, b) {
+      switch (cat.sort) {
+        case 'name': return (a.title || '').localeCompare(b.title || '', 'ru');
+        case 'price_up': return (num(a.price) == null) - (num(b.price) == null) || (num(a.price) || 0) - (num(b.price) || 0);
+        case 'price_down': return (num(a.price) == null) - (num(b.price) == null) || (num(b.price) || 0) - (num(a.price) || 0);
+        case 'stock': return (a.stock_qty == null) - (b.stock_qty == null) || (a.stock_qty || 0) - (b.stock_qty || 0);
+        default: return String(b.created_at || b.updated_at || '').localeCompare(String(a.created_at || a.updated_at || ''));
+      }
+    });
+    return list;
+  }
+
+  function drawCatalog(box) {
+    var all = catProducts();
+    var cols = catCollections();
+    var noCol = all.filter(function (e) { return !(e.collection || '').trim(); }).length;
+    if (cat.col && cat.col !== NO_COL && !cols.some(function (c) { return c[0] === cat.col; })) cat.col = '';
+    var chip = function (key, label, n) {
+      return '<button class="st-colchip' + (cat.col === key ? ' on' : '') + '" type="button" data-col="' + esc(key) + '">' + esc(label) +
+        '<span class="n">' + n + '</span></button>';
+    };
+    var curCol = cat.col && cat.col !== NO_COL ? cat.col : '';
+    box.innerHTML =
+      '<div class="row-between" style="margin-bottom:10px;gap:12px;flex-wrap:wrap"><span class="muted small" style="max-width:600px">Товары и услуги с ценой, размерами, остатком, фото и видео. ' +
+      'Разделите их на коллекции — так проще заполнять, а бот точнее подбирает: «женская шуба 46 размера».</span>' +
+      '<span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-sm" href="#s-sheet">' + icon('layers') + '<span>Загрузить из таблицы</span></a>' +
+      '<button class="btn btn-primary btn-sm" id="kb-add" type="button">' + icon('plus') + '<span>Добавить позицию' + (curCol ? ' в «' + esc(curCol) + '»' : '') + '</span></button></span></div>' +
+      '<div class="st-colbar">' + chip('', 'Все', all.length) + cols.map(function (c) { return chip(c[0], c[0], c[1]); }).join('') +
+      (cols.length && noCol ? chip(NO_COL, 'Без коллекции', noCol) : '') +
+      '<button class="st-colchip add" type="button" id="cat-newcol">' + icon('plus') + 'Коллекция</button>' +
+      (curCol ? '<button class="btn btn-ghost btn-sm" type="button" id="cat-colmenu" title="Переименовать или убрать коллекцию">' + icon('pen') + '<span>Коллекция</span></button>' : '') +
+      '</div>' +
+      '<div class="st-cattools"><div class="st-search">' + icon('search') + '<input class="input" id="cat-q" placeholder="Найти: название, размер, артикул, цвет" value="' + esc(cat.q) + '"></div>' +
+      '<select class="select-native" id="cat-filter">' + CAT_FILTERS.map(function (f) { return '<option value="' + f[0] + '"' + (cat.filter === f[0] ? ' selected' : '') + '>' + f[1] + '</option>'; }).join('') + '</select>' +
+      '<select class="select-native" id="cat-sort">' + CAT_SORTS.map(function (f) { return '<option value="' + f[0] + '"' + (cat.sort === f[0] ? ' selected' : '') + '>' + f[1] + '</option>'; }).join('') + '</select>' +
+      '<div class="st-seg"><button type="button" data-cview="grid" class="' + (cat.view === 'grid' ? 'on' : '') + '" title="Плитки">' + icon('layout-grid') + '</button>' +
+      '<button type="button" data-cview="list" class="' + (cat.view === 'list' ? 'on' : '') + '" title="Таблица">' + icon('list') + '</button></div></div>' +
+      '<div id="cat-stats" class="muted small" style="margin:0 0 10px"></div><div id="cat-items"></div>';
+
+    S.$('#kb-add').addEventListener('click', function () { productDialog(null, curCol ? { collection: curCol } : null); });
+    S.$$('[data-col]', box).forEach(function (b) { b.addEventListener('click', function () { cat.col = b.dataset.col; cat.shown = CAT_PAGE; drawCatalog(box); }); });
+    S.$('#cat-newcol').addEventListener('click', function () { newCollectionDialog(box); });
+    var cm = S.$('#cat-colmenu'); if (cm) cm.addEventListener('click', function () { collectionDialog(curCol, box); });
+    var qi = S.$('#cat-q');
+    qi.addEventListener('input', S.debounce(function () { cat.q = qi.value; cat.shown = CAT_PAGE; drawCatItems(); }, 150));
+    S.$('#cat-filter').addEventListener('change', function (e) { cat.filter = e.target.value; cat.shown = CAT_PAGE; drawCatItems(); });
+    S.$('#cat-sort').addEventListener('change', function (e) { cat.sort = e.target.value; catSave(); drawCatItems(); });
+    S.$$('[data-cview]', box).forEach(function (b) {
+      b.addEventListener('click', function () { cat.view = b.dataset.cview; catSave(); S.$$('[data-cview]', box).forEach(function (x) { x.classList.toggle('on', x === b); }); drawCatItems(); });
+    });
+    drawCatItems();
+  }
+
+  function drawCatItems() {
+    var wrap = S.$('#cat-items'); if (!wrap) return;
+    var all = catProducts();
+    var list = catVisible();
+    var out = all.filter(function (e) { return e.in_stock === false; }).length;
+    var nophoto = all.filter(function (e) { return !(e.media || []).length; }).length;
+    var noprice = all.filter(function (e) { return e.price == null || e.price === ''; }).length;
+    var st = ['Показано ' + Math.min(list.length, cat.shown) + ' из ' + list.length];
+    if (out) st.push('нет в наличии: ' + out);
+    if (nophoto) st.push('без фото: ' + nophoto);
+    if (noprice) st.push('без цены: ' + noprice);
+    S.$('#cat-stats').textContent = all.length ? st.join(' · ') : '';
+
+    if (!all.length) {
+      wrap.innerHTML = '<div class="st-empty">Каталог пуст. Нажмите «Добавить позицию» или загрузите прайс из Google Таблицы: ' +
+        'колонки «Название», «Коллекция», «Цена», «Цена до скидки», «Размеры», «Количество», «Фото».</div>';
+      return;
+    }
+    if (!list.length) {
+      wrap.innerHTML = '<div class="st-empty">' + (cat.col && cat.col !== NO_COL && !cat.q && cat.filter === 'all'
+        ? 'В коллекции «' + esc(cat.col) + '» пока нет позиций. Нажмите «Добавить позицию».' : 'Ничего не нашлось. Измените поиск или фильтр.') + '</div>';
+      return;
+    }
+    var page = list.slice(0, cat.shown);
+    var showCol = !cat.col;
+    var html;
+    if (cat.view === 'list') {
+      html = '<div class="st-ctable"><div class="st-crow head"><span></span><span>Позиция</span><span>Цена</span><span>Размеры</span><span>Наличие</span><span></span></div>' +
+        page.map(function (e) {
+          var ph = (e.media || [])[0];
+          var d = discount(e);
+          return '<div class="st-crow' + (e.is_active === false ? ' off' : '') + '" data-open="' + esc(e.id) + '">' +
+            '<span class="th">' + (ph && ph.url ? mediaThumb(ph.url, ph.is_video) : icon('image')) + '</span>' +
+            '<span class="nm"><b>' + esc(e.title || '—') + '</b><small>' + esc([showCol ? e.collection : '', articleOf(e) ? 'арт. ' + articleOf(e) : ''].filter(Boolean).join(' · ')) + '</small></span>' +
+            '<span class="pr">' + (e.price != null && e.price !== '' ? esc(money(e.price, e.currency)) : '<span class="muted">—</span>') +
+            (d ? '<small><s>' + esc(money(e.old_price, e.currency)) + '</s> −' + d + '%</small>' : '') + '</span>' +
+            '<span class="sz">' + esc((e.sizes || []).join(', ')) + '</span>' +
+            '<span>' + (stockBadge(e) || '<span class="st-cbadge ok">есть</span>') + '</span>' +
+            '<span class="acts">' + catActions(e) + '</span></div>';
+        }).join('') + '</div>';
+    } else {
+      html = '<div class="st-cgrid">' + page.map(function (e) {
+        var ph = (e.media || [])[0];
+        var d = discount(e);
+        var sizes = e.sizes || [];
+        return '<div class="st-ccard' + (e.is_active === false ? ' off' : '') + '" data-open="' + esc(e.id) + '">' +
+          '<div class="pic">' + (ph && ph.url ? mediaThumb(ph.url, ph.is_video) : '<span class="st-ph">' + icon('image') + '</span>') +
+          (d ? '<span class="sale">−' + d + '%</span>' : '') +
+          ((e.media || []).length > 1 ? '<span class="cnt">' + icon('image') + (e.media || []).length + '</span>' : '') +
+          (ph && ph.url ? '<button class="zoom" type="button" data-view="' + esc(e.id) + '" title="Посмотреть фото и видео">' + icon('search') + '</button>' : '') + '</div>' +
+          '<div class="bd">' + (showCol && e.collection ? '<div class="col">' + esc(e.collection) + '</div>' : '') +
+          '<div class="t">' + esc(e.title || '—') + '</div>' +
+          '<div class="pr">' + (e.price != null && e.price !== '' ? esc(money(e.price, e.currency)) : '<span class="muted">цена не указана</span>') +
+          (d ? ' <s>' + esc(money(e.old_price, e.currency)) + '</s>' : '') + '</div>' +
+          (sizes.length ? '<div class="sz">' + sizes.slice(0, 6).map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('') + (sizes.length > 6 ? '<span>+' + (sizes.length - 6) + '</span>' : '') + '</div>' : '') +
+          '<div class="ft">' + stockBadge(e) + '<span class="acts">' + catActions(e) + '</span></div></div></div>';
+      }).join('') + '</div>';
+    }
+    if (list.length > cat.shown) html += '<div style="text-align:center;margin-top:14px"><button class="btn" type="button" id="cat-more">Показать ещё ' + Math.min(CAT_PAGE, list.length - cat.shown) + '</button></div>';
+    wrap.innerHTML = html;
+    var byId = function (id) { return kb.entries.filter(function (x) { return x.id === id; })[0]; };
+    S.$$('[data-open]', wrap).forEach(function (el) {
+      el.addEventListener('click', function (ev) { if (ev.target.closest('button')) return; productDialog(byId(el.dataset.open)); });
+    });
+    S.$$('[data-view]', wrap).forEach(function (b) { b.addEventListener('click', function () { mediaViewer(byId(b.dataset.view)); }); });
+    S.$$('[data-cedit]', wrap).forEach(function (b) { b.addEventListener('click', function () { productDialog(byId(b.dataset.cedit)); }); });
+    S.$$('[data-ccopy]', wrap).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var src = byId(b.dataset.ccopy); if (!src) return;
+        var copy = JSON.parse(JSON.stringify(src)); delete copy.id; copy.title = (src.title || '') + ' (копия)';
+        productDialog(null, copy);
+      });
+    });
+    S.$$('[data-cdel]', wrap).forEach(function (b) {
+      b.addEventListener('click', function () {
+        S.confirm({ title: 'Удалить позицию?', message: 'Бот больше не будет её предлагать. Фото и видео останутся в файлах.', confirmText: 'Удалить', danger: true }).then(function (ok) {
+          if (!ok) return;
+          S.api('/knowledge/' + b.dataset.cdel, { method: 'DELETE' }).then(function (r) {
+            if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+            loadKb();
+          });
+        });
+      });
+    });
+    var more = S.$('#cat-more'); if (more) more.addEventListener('click', function () { cat.shown += CAT_PAGE; drawCatItems(); });
+  }
+  function catActions(e) {
+    return '<button class="btn btn-ghost btn-icon btn-sm" data-cedit="' + esc(e.id) + '" type="button" title="Изменить">' + icon('pen') + '</button>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" data-ccopy="' + esc(e.id) + '" type="button" title="Копировать: похожая позиция">' + icon('copy') + '</button>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" data-cdel="' + esc(e.id) + '" type="button" title="Удалить">' + icon('trash-2') + '</button>';
+  }
+
+  function newCollectionDialog(box) {
+    var d = S.dialog({
+      title: 'Новая коллекция',
+      body: '<div class="field"><label class="label">Название</label><input class="input" id="nc-name" placeholder="Например: Женская, Мужская, Детская / Зима, Новинки"></div>' +
+        '<div class="hint">Коллекция появится сверху каталога. Новые позиции в ней создаются с этой коллекцией.</div>',
+      foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" id="nc-ok">Создать</button>'
+    });
+    var go = function () {
+      var v = S.$('#nc-name', d.el).value.replace(/\s+/g, ' ').trim();
+      if (!v) { S.toast('Введите название', 'error'); return; }
+      cat.extra = v; cat.col = v; cat.q = ''; cat.filter = 'all'; d.close(); drawCatalog(box);
+    };
+    S.$('[data-c]', d.el).addEventListener('click', d.close);
+    S.$('#nc-ok', d.el).addEventListener('click', go);
+    S.$('#nc-name', d.el).addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    setTimeout(function () { S.$('#nc-name', d.el).focus(); }, 60);
+  }
+
+  function collectionDialog(name, box) {
+    var n = catProducts().filter(function (e) { return (e.collection || '').trim() === name; }).length;
+    var d = S.dialog({
+      title: 'Коллекция «' + name + '»',
+      body: '<div class="field"><label class="label">Название</label><input class="input" id="cc-name" value="' + esc(name) + '"></div>' +
+        '<div class="hint">Новое название получат все ' + n + ' позиций коллекции.</div>',
+      foot: '<button class="btn btn-ghost" type="button" id="cc-del" style="margin-right:auto">' + icon('trash-2') + '<span>Убрать коллекцию</span></button>' +
+        '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" id="cc-ok">Сохранить</button>'
+    });
+    var send = function (nv) {
+      return S.api('/knowledge/collections/rename', { method: 'POST', body: { old: name, new: nv } }).then(function (r) {
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        if (cat.extra === name) cat.extra = nv || null;
+        cat.col = nv || ''; d.close(); S.toast('Сохранено', 'success'); loadKb();
+      });
+    };
+    S.$('[data-c]', d.el).addEventListener('click', d.close);
+    S.$('#cc-ok', d.el).addEventListener('click', function () {
+      var v = S.$('#cc-name', d.el).value.replace(/\s+/g, ' ').trim();
+      if (!v) { S.toast('Введите название', 'error'); return; }
+      if (v === name) { d.close(); return; }
+      if (!n) { cat.extra = v; cat.col = v; d.close(); drawCatalog(box); return; }
+      send(v);
+    });
+    S.$('#cc-del', d.el).addEventListener('click', function () {
+      if (!n) { cat.extra = null; cat.col = ''; d.close(); drawCatalog(box); return; }
+      S.confirm({ title: 'Убрать коллекцию?', message: 'Позиции не удалятся, они попадут в «Без коллекции».', confirmText: 'Убрать' }).then(function (ok) { if (ok) send(''); });
+    });
+  }
+
+  // ── Окно позиции каталога ──
+  function productDialog(e, prefill, gapId) {
+    var src = e || prefill || {};
+    var picked = (src.media_file_ids || []).slice();
+    var sizes = (src.sizes || []).slice();
+    var sku = articleOf(src);
+    var attrs = Object.keys(src.attributes || {}).filter(function (k) { return k.charAt(0) !== '_' && !/^(артикул|код|sku)$/i.test(k); })
+      .map(function (k) { return { k: k, v: String(src.attributes[k]) }; });
+    var hidden = {};
+    Object.keys(src.attributes || {}).forEach(function (k) { if (k.charAt(0) === '_') hidden[k] = src.attributes[k]; });
+    var cols = catCollections().map(function (c) { return c[0]; });
+    var val = function (v) { return v == null ? '' : esc(v); };
+    var d = S.dialog({
+      title: e ? 'Изменить позицию' : 'Новая позиция', size: 'lg',
+      body:
+        '<div class="st-psec"><div class="field"><label class="label">Название *</label><input class="input" id="p-title" value="' + val(src.title) + '" placeholder="Например: Шапка-ушанка из норки"></div>' +
+        '<div class="st-grid2"><div class="field"><label class="label">Коллекция</label><input class="input" id="p-col" list="p-cols" value="' + val(src.collection) + '" placeholder="Мужская, Женская, Детская…">' +
+        '<datalist id="p-cols">' + cols.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
+        (cols.length ? '<div class="st-quick">' + cols.slice(0, 8).map(function (c) { return '<button type="button" data-pc="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div>' : '') + '</div>' +
+        '<div class="field"><label class="label">Артикул / код</label><input class="input" id="p-sku" value="' + val(sku) + '" placeholder="Необязательно"></div></div></div>' +
+
+        '<div class="st-psec"><div class="st-psec-h">Цена</div><div class="st-grid3">' +
+        '<div class="field"><label class="label">Цена</label><input class="input" id="p-price" type="number" min="0" step="0.01" value="' + val(src.price) + '"></div>' +
+        '<div class="field"><label class="label">Старая цена (до скидки)</label><input class="input" id="p-old" type="number" min="0" step="0.01" value="' + val(src.old_price) + '" placeholder="Если есть скидка"></div>' +
+        '<div class="field"><label class="label">Валюта</label><select class="select-native" id="p-cur">' + CURRENCIES.map(function (c) { return '<option value="' + c[0] + '"' + ((src.currency || 'KGS') === c[0] ? ' selected' : '') + '>' + c[1] + '</option>'; }).join('') + '</select></div>' +
+        '</div><div class="hint" id="p-disc"></div></div>' +
+
+        '<div class="st-psec"><div class="st-psec-h">Размеры</div><div class="st-sizes" id="p-sizes"></div>' +
+        '<div class="st-sizeadd"><input class="input" id="p-size" placeholder="Добавить размер и Enter: 46, M, 110"><button class="btn btn-sm" type="button" id="p-size-add">' + icon('plus') + '</button></div>' +
+        '<div class="st-quick" style="margin-top:8px">' + SIZE_PRESETS.map(function (p, i) { return '<button type="button" data-ps="' + i + '">' + esc(p[0]) + '</button>'; }).join('') +
+        '<button type="button" id="p-size-clear">Очистить</button></div></div>' +
+
+        '<div class="st-psec"><div class="st-psec-h">Наличие</div><div class="st-grid2">' +
+        '<div class="field"><label class="label">Остаток, шт.</label><input class="input" id="p-stock" type="number" min="0" step="1" value="' + val(src.stock_qty) + '" placeholder="Пусто — не считаем"></div>' +
+        '<div class="field"><label class="label">Наличие</label><select class="select-native" id="p-instock"><option value="1">Есть в наличии</option><option value="0"' + (src.in_stock === false ? ' selected' : '') + '>Нет в наличии</option></select></div>' +
+        '</div><div class="hint">Укажете остаток — наличие считается само: 0 шт. значит «нет в наличии». Бот скажет клиенту, что осталось мало.</div></div>' +
+
+        '<div class="st-psec"><div class="st-psec-h">Фото и видео</div><div class="hint" style="margin-bottom:8px">Отмеченные фото и видео бот отправит клиенту, когда спросят про эту позицию. Можно загрузить сразу несколько файлов (каждый до 20 МБ).</div>' +
+        '<div id="e-media"></div><div style="margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" id="e-up">' + icon('upload') + '<span>Загрузить фото или видео</span></button></div></div>' +
+
+        '<div class="st-psec"><div class="st-psec-h">Описание и характеристики</div>' +
+        '<div class="field"><label class="label">Описание</label><textarea class="textarea" id="p-body" rows="3" placeholder="Материал, фасон, для кого, уход">' + val(src.body) + '</textarea></div>' +
+        '<div class="field"><label class="label">Характеристики</label><div id="e-attrs"></div><button class="btn btn-ghost btn-sm" type="button" id="e-attr-add">' + icon('plus') + '<span>Добавить характеристику</span></button>' +
+        '<div class="st-quick" style="margin-top:6px">' + ['Цвет', 'Материал', 'Сезон', 'Пол', 'Возраст', 'Бренд', 'Страна'].map(function (k) { return '<button type="button" data-ak2="' + k + '">' + k + '</button>'; }).join('') + '</div></div>' +
+        '<div class="field"><label class="label">Ключевые слова</label><input class="input" id="p-kw" value="' + val(src.keywords) + '" placeholder="через запятую: ушанка, зимняя шапка, мех">' +
+        '<div class="hint">По ним бот находит позицию, если клиент назвал её по-другому.</div></div></div>' +
+
+        '<div class="st-switch-row"><div class="t"><b>Позиция активна</b><div>Выключенную позицию бот не предлагает.</div></div><label class="switch"><input type="checkbox" id="p-active"' + (src.is_active !== false ? ' checked' : '') + '><span class="track"></span></label></div>',
+      foot: '<button class="btn" type="button" data-c>Отмена</button>' +
+        (!e ? '<button class="btn" type="button" id="p-save-more">Сохранить и добавить ещё</button>' : '') +
+        '<button class="btn btn-primary" type="button" id="p-save">Сохранить</button>'
+    });
+    var $ = function (sel) { return S.$(sel, d.el); };
+    $('[data-c]').addEventListener('click', d.close);
+
+    function drawSizes() {
+      $('#p-sizes').innerHTML = sizes.length ? sizes.map(function (x, i) { return '<span class="st-sz">' + esc(x) + '<button type="button" data-szr="' + i + '" aria-label="Убрать">' + icon('x') + '</button></span>'; }).join('')
+        : '<span class="hint">Размеров нет. Для товаров без размера оставьте пусто.</span>';
+      S.$$('[data-szr]', d.el).forEach(function (b) { b.addEventListener('click', function () { sizes.splice(+b.dataset.szr, 1); drawSizes(); }); });
+    }
+    function addSizes(list) {
+      list.forEach(function (x) {
+        x = String(x || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+        if (x && !sizes.some(function (s) { return s.toLowerCase() === x.toLowerCase(); })) sizes.push(x);
+      });
+      drawSizes();
+    }
+    var sizeIn = $('#p-size');
+    var addTyped = function () { addSizes(sizeIn.value.split(/[,;/]+/)); sizeIn.value = ''; sizeIn.focus(); };
+    sizeIn.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addTyped(); } });
+    $('#p-size-add').addEventListener('click', addTyped);
+    S.$$('[data-ps]', d.el).forEach(function (b) { b.addEventListener('click', function () { addSizes(SIZE_PRESETS[+b.dataset.ps][1]); }); });
+    $('#p-size-clear').addEventListener('click', function () { sizes = []; drawSizes(); });
+    S.$$('[data-pc]', d.el).forEach(function (b) { b.addEventListener('click', function () { $('#p-col').value = b.dataset.pc; }); });
+
+    function drawDisc() {
+      var p = parseFloat($('#p-price').value), o = parseFloat($('#p-old').value);
+      $('#p-disc').textContent = p > 0 && o > p ? 'Скидка ' + Math.round((1 - p / o) * 100) + '%: бот назовёт и старую цену.' : (o && p && o <= p ? 'Старая цена должна быть больше текущей.' : '');
+    }
+    $('#p-price').addEventListener('input', drawDisc); $('#p-old').addEventListener('input', drawDisc); drawDisc();
+    var syncStock = function () { var v = $('#p-stock').value; var sel = $('#p-instock'); sel.disabled = v !== ''; if (v !== '') sel.value = Number(v) > 0 ? '1' : '0'; };
+    $('#p-stock').addEventListener('input', syncStock); syncStock();
+
+    function drawAttrs() {
+      var box = $('#e-attrs');
+      box.innerHTML = attrs.map(function (a, i) {
+        return '<div class="st-attr"><input class="input" data-ak="' + i + '" placeholder="Например: Цвет" value="' + esc(a.k) + '"><input class="input" data-av="' + i + '" placeholder="Например: чёрный" value="' + esc(a.v) + '">' +
+          '<button class="btn btn-ghost btn-icon btn-sm" type="button" data-arm="' + i + '" aria-label="Убрать">' + icon('x') + '</button></div>';
+      }).join('');
+      S.$$('[data-ak]', box).forEach(function (el) { el.addEventListener('input', function () { attrs[+el.dataset.ak].k = el.value; }); });
+      S.$$('[data-av]', box).forEach(function (el) { el.addEventListener('input', function () { attrs[+el.dataset.av].v = el.value; }); });
+      S.$$('[data-arm]', box).forEach(function (el) { el.addEventListener('click', function () { attrs.splice(+el.dataset.arm, 1); drawAttrs(); }); });
+    }
+    $('#e-attr-add').addEventListener('click', function () { attrs.push({ k: '', v: '' }); drawAttrs(); });
+    S.$$('[data-ak2]', d.el).forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!attrs.some(function (a) { return a.k === b.dataset.ak2; })) attrs.push({ k: b.dataset.ak2, v: '' });
+        drawAttrs();
+        var inputs = S.$$('[data-av]', d.el); if (inputs.length) inputs[inputs.length - 1].focus();
+      });
+    });
+    drawAttrs(); drawSizes();
+
+    var libOpen = false;
+    function drawMedia() {
+      var box = $('#e-media'); if (!box) return;
+      var pics = kb.files.filter(function (f) { return /^(image|video)\//.test(f.mime_type || ''); });
+      var byId = {}; pics.forEach(function (f) { byId[f.id] = f; });
+      var mine = picked.filter(function (id) { return byId[id]; });
+      var rest = pics.filter(function (f) { return picked.indexOf(f.id) < 0; });
+      var tile = function (f, on) {
+        return '<div class="st-media-item' + (on ? ' on' : '') + '" data-mid="' + esc(f.id) + '" title="' + (on ? 'Убрать из позиции' : 'Добавить в позицию') + '">' +
+          (f.preview_url ? mediaThumb(f.preview_url, /^video\//.test(f.mime_type || '')) : '<span class="st-ph">' + icon('play') + '</span>') +
+          '<span class="chk">' + icon(on ? 'x' : 'plus') + '</span></div>';
+      };
+      var html = mine.length ? '<div class="st-media">' + mine.map(function (id) { return tile(byId[id], true); }).join('') + '</div>'
+        : '<div class="hint">У позиции пока нет фото и видео.</div>';
+      if (rest.length) {
+        html += '<button class="btn btn-ghost btn-sm" type="button" id="e-lib" style="margin-top:8px">' + icon(libOpen ? 'chevron-up' : 'chevron-down') +
+          '<span>' + (libOpen ? 'Скрыть ранее загруженные' : 'Выбрать из ранее загруженных (' + rest.length + ')') + '</span></button>';
+        if (libOpen) html += '<div class="st-media st-media-lib" style="margin-top:6px">' + rest.map(function (f) { return tile(f, false); }).join('') + '</div>';
+      }
+      box.innerHTML = html;
+      S.$$('[data-mid]', box).forEach(function (el) {
+        el.addEventListener('click', function () {
+          var i = picked.indexOf(el.dataset.mid);
+          if (i >= 0) picked.splice(i, 1); else picked.push(el.dataset.mid);
+          drawMedia();
+        });
+      });
+      var lb = S.$('#e-lib', box); if (lb) lb.addEventListener('click', function () { libOpen = !libOpen; drawMedia(); });
+    }
+    drawMedia();
+    $('#e-up').addEventListener('click', function () {
+      pickFiles('image/*,video/*', true, function (rows) {
+        rows.forEach(function (f) { picked.push(f.id); });
+        S.api('/files?source=library').then(function (r) { if (r.ok) kb.files = r.data.files || []; drawMedia(); });
+      });
+    });
+
+    function collect() {
+      var title = $('#p-title').value.trim();
+      if (!title) { S.toast('Укажите название', 'error'); $('#p-title').focus(); return null; }
+      var obj = {};
+      Object.keys(hidden).forEach(function (k) { obj[k] = hidden[k]; });
+      var skuV = $('#p-sku').value.trim(); if (skuV) obj['Артикул'] = skuV;
+      attrs.forEach(function (a) { var k = (a.k || '').trim(); if (k && (a.v || '').trim()) obj[k] = a.v.trim(); });
+      var p = $('#p-price').value, o = $('#p-old').value, st = $('#p-stock').value;
+      return {
+        kind: 'product', title: title, body: $('#p-body').value.trim(), keywords: $('#p-kw').value.trim(),
+        collection: $('#p-col').value.replace(/\s+/g, ' ').trim(),
+        price: p === '' ? null : Number(p), old_price: o === '' ? null : Number(o), currency: $('#p-cur').value,
+        sizes: sizes.slice(), stock_qty: st === '' ? null : Math.max(0, parseInt(st, 10) || 0),
+        in_stock: st === '' ? $('#p-instock').value === '1' : Number(st) > 0,
+        media_file_ids: picked.slice(), attributes: obj, is_active: $('#p-active').checked, in_prompt: false
+      };
+    }
+    function save(more, btn) {
+      var body = collect(); if (!body) return;
+      btn.disabled = true;
+      S.api(e ? '/knowledge/' + e.id : '/knowledge', { method: e ? 'PUT' : 'POST', body: body }).then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        if (gapId) S.api('/knowledge/gaps/' + gapId, { method: 'DELETE' });
+        if (body.collection) { cat.extra = null; }
+        d.close(); S.toast('Сохранено', 'success');
+        loadKb().then(function () {
+          // Следующая позиция той же коллекции: коллекция, валюта и размеры остаются
+          if (more) productDialog(null, { collection: body.collection, currency: body.currency, sizes: body.sizes });
+        });
+      });
+    }
+    $('#p-save').addEventListener('click', function () { save(false, this); });
+    var sm = $('#p-save-more'); if (sm) sm.addEventListener('click', function () { save(true, this); });
+    setTimeout(function () { var i = $('#p-title'); if (i && !e) i.focus(); }, 60);
   }
 
   // Выбор и загрузка файлов в библиотеку бота → cb(список созданных файлов)

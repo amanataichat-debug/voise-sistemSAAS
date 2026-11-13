@@ -89,6 +89,12 @@ class AgentKnowledgeEntry(Base):
     # Фото и видео позиции: id файлов из agent_files. Агент отправляет их
     # клиенту вместе с ответом («вот эта модель»).
     media_file_ids = Column(JSONB, nullable=True)
+    # Каталог как у магазина (13.11.2026): коллекция («Мужская», «Женская», «Детская / Осень»),
+    # размеры списком, остаток в штуках (None — не считаем) и старая цена для скидки.
+    collection = Column(String(120), nullable=True)
+    sizes = Column(JSONB, nullable=True)
+    stock_qty = Column(Integer, nullable=True)
+    old_price = Column(Float, nullable=True)
 
     # ── Документ (kind=document) ──
     file_id = Column(UUID(as_uuid=True), nullable=True)    # agent_files.id
@@ -134,6 +140,11 @@ class AgentKnowledgeEntry(Base):
                 "attributes": self.attributes or {},
                 "in_stock": self.in_stock,
                 "media_file_ids": self.media_file_ids or [],
+                "collection": self.collection or "",
+                "sizes": self.sizes or [],
+                "stock_qty": self.stock_qty,
+                "old_price": self.old_price,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
             })
         if self.kind == "document":
             out.update({

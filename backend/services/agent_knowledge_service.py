@@ -218,11 +218,48 @@ def article_tokens(query: str) -> List[str]:
     return out[:3]
 
 
+def catalog_tags_text(row) -> str:
+    """Коллекция и размеры позиции — для поиска весят как ключевые слова («женская норка 46»)."""
+    parts = []
+    col = getattr(row, "collection", None)
+    if col:
+        parts.append(str(col))
+    sizes = getattr(row, "sizes", None)
+    if isinstance(sizes, list) and sizes:
+        parts.append("размер " + " ".join(str(x) for x in sizes))
+    return " ".join(parts)
+
+
+def _size_norm(value) -> str:
+    return re.sub(r"[^0-9a-zа-яё]+", "", str(value or "").lower().replace("ё", "е"))
+
+
+def _has_size(row, size: str) -> bool:
+    want = _size_norm(size)
+    if not want:
+        return True
+    sizes = getattr(row, "sizes", None)
+    if isinstance(sizes, list) and sizes:
+        return any(_size_norm(x) == want for x in sizes)
+    # Размеры могли записать характеристикой («Размер: 42–48») — ищем там
+    attrs = getattr(row, "attributes", None) or {}
+    for k, v in (attrs.items() if isinstance(attrs, dict) else []):
+        if "размер" in str(k).lower() or "size" in str(k).lower():
+            vals = [_size_norm(x) for x in re.split(r"[,;/\s]+", str(v))]
+            if want in vals:
+                return True
+            nums = re.findall(r"\d+", str(v))
+            if len(nums) == 2 and want.isdigit() and int(nums[0]) <= int(want) <= int(nums[1]):
+                return True
+    return False
+
+
 def _rank_row(row, rxs: list, query_norm: str, articles: Optional[List[str]] = None):
     """(оценка, сколько слов запроса нашлось, было ли попадание в заголовок/ключевые слова)."""
     title = (row.title or "").lower()
     # Характеристики (марка, модель, артикул) весят как ключевые слова: по ним клиент и ищет
-    keywords = ((row.keywords or "") + " " + attributes_text(getattr(row, "attributes", None))).lower()
+    keywords = ((row.keywords or "") + " " + attributes_text(getattr(row, "attributes", None))
+                + " " + catalog_tags_text(row)).lower()
     body = (row.body or "").lower()
     score, matched, strong = 0.0, 0, False
     for rx in rxs:
@@ -300,6 +337,9 @@ def _alt_patterns(alts, with_attributes: bool = False) -> list:
         if with_attributes:
             # Марка, модель, артикул из колонок таблицы лежат в attributes (JSONB) — ищем и там
             patterns.append(cast(AgentKnowledgeEntry.attributes, Text).ilike(like))
+            # Коллекция и размеры позиции каталога
+            patterns.append(AgentKnowledgeEntry.collection.ilike(like))
+            patterns.append(cast(AgentKnowledgeEntry.sizes, Text).ilike(like))
     return patterns
 
 
@@ -505,10 +545,15 @@ def search_products(
     max_price: Optional[float] = None,
     min_price: Optional[float] = None,
     limit: int = 5,
+    collection: Optional[str] = None,
+    size: Optional[str] = None,
+    in_stock_only: bool = False,
 ) -> List[AgentKnowledgeEntry]:
     """
     Каталог: подбор позиций. Цена фильтруется в SQL — по числам векторный
     поиск врёт («до 20 000» он не понимает), а SQL отвечает точно.
+    collection — коллекция («женская»: подстрока, без регистра), size — размер
+    из списка размеров позиции, in_stock_only — только то, что есть.
     """
     q = db.query(AgentKnowledgeEntry).filter(
         AgentKnowledgeEntry.agent_config_id == agent_config_id,
@@ -519,12 +564,22 @@ def search_products(
         q = q.filter(AgentKnowledgeEntry.price <= max_price)
     if min_price is not None:
         q = q.filter(AgentKnowledgeEntry.price >= min_price)
+    col = " ".join(str(collection or "").split())
+    if col:
+        # «женская» найдёт «Женская коллекция», «Женская / Зима»; основа слова — без окончания
+        stem_col = stem(normalize(col).split()[0]) if normalize(col) else col.lower()
+        q = q.filter(AgentKnowledgeEntry.collection.ilike(f"%{stem_col or col}%"))
+    if in_stock_only:
+        q = q.filter(AgentKnowledgeEntry.in_stock.is_(True))
+
+    def _sized(rows):
+        return [r for r in rows if _has_size(r, size)] if size else rows
 
     terms = query_terms(query)
     articles = article_tokens(query)
     if not terms and not articles:
-        rows = q.limit(200).all()
-        rows.sort(key=lambda r: (r.price if r.price is not None else 0))
+        rows = _sized(q.limit(500 if size else 200).all())
+        rows.sort(key=lambda r: (not r.in_stock, r.price if r.price is not None else 0))
         return rows[:limit]
 
     # Каталог в тысячи позиций (автозапчасти, 10.11.2026): широкий отбор «хоть одно слово» по основам вроде
@@ -550,6 +605,7 @@ def search_products(
             if r.id not in seen_ids:
                 seen_ids.add(r.id)
                 rows.append(r)
+    rows = _sized(rows)
     rxs = _term_regexes(terms)
     query_norm = normalize(query)
     scored = [(r, _rank_row(r, rxs, query_norm, articles)[0]) for r in rows]
@@ -858,7 +914,9 @@ async def answer_query(db, agent_config_id, kb_namespace: Optional[str], query: 
 async def answer_products(db, agent_config_id, query: str = "",
                           max_price: Optional[float] = None,
                           min_price: Optional[float] = None,
-                          limit: int = 5, channel: Optional[str] = None) -> Dict[str, Any]:
+                          limit: int = 5, channel: Optional[str] = None,
+                          collection: Optional[str] = None, size: Optional[str] = None,
+                          in_stock_only: bool = False) -> Dict[str, Any]:
     """
     Подбор позиций каталога. Общая реализация для чата и звонка.
 
@@ -880,7 +938,15 @@ async def answer_products(db, agent_config_id, query: str = "",
     def _work():
         rows = search_products(db, agent_config_id, query=query,
                                max_price=hi, min_price=lo,
-                               limit=min(int(limit or 5), 10))
+                               limit=min(int(limit or 5), 10),
+                               collection=collection, size=size, in_stock_only=bool(in_stock_only))
+        if not rows and (collection or size):
+            # Коллекцию модель могла назвать неточно — ищем по самому запросу (пустой запрос — по названию
+            # коллекции как по словам). Размер не бросаем: позиция не того размера клиенту не подойдёт.
+            rows = search_products(db, agent_config_id, query=(query or collection or ""),
+                                   max_price=hi, min_price=lo, limit=min(int(limit or 5), 10),
+                                   in_stock_only=bool(in_stock_only))
+            rows = [r for r in rows if _has_size(r, size)] if size else rows
         if not rows:
             record_gap(db, agent_config_id, query, channel)
             try:
@@ -923,6 +989,15 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
         if visible:
             out["attributes"] = visible
         out["in_stock"] = bool(row.in_stock)
+        if getattr(row, "collection", None):
+            out["collection"] = row.collection
+        if getattr(row, "sizes", None):
+            out["sizes"] = row.sizes
+        if getattr(row, "stock_qty", None) is not None:
+            out["stock_left"] = row.stock_qty     # сколько штук осталось
+        old = getattr(row, "old_price", None)
+        if old and row.price is not None and old > row.price:
+            out["old_price"] = format_price(old, row.currency)   # цена до скидки
         media = row.media_file_ids or []
         if media:
             # Агент отправит это клиенту: whatsapp_send_file / telegram_send_file.
