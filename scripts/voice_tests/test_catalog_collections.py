@@ -181,6 +181,24 @@ else:
     rr = cl.post("/api/agent/knowledge/collections/rename", json={"old": "Детская / Зима", "new": ""})
     check("API: удалить коллекцию — позиции остаются", rr.json()["changed"] == 2
           and db.query(E).filter(E.agent_config_id == ag.id).count() == 7, rr.text[:200])
+    # Справочник коллекций: пустые коллекции живут, порядок владельца, товар их пополняет
+    rr = cl.post("/api/agent/knowledge/collections/set", json={"collections": ["Женская", " Мужская ", "женская", "Детская", ""]})
+    check("справочник: сохранён без повторов и пустых", rr.status_code == 200
+          and rr.json()["collections"][:3] == ["Женская", "Мужская", "Детская"], rr.text[:300])
+    lst = cl.get("/api/agent/knowledge").json()["collections"]
+    check("справочник: пустая «Детская» видна в /knowledge", "Детская" in lst and lst.index("Женская") < lst.index("Детская"), lst)
+    check("справочник: коллекции товаров дописаны в конец", "Для мужчин" in lst, lst)
+    rr = cl.post("/api/agent/knowledge", json={"kind": "product", "title": "Шарф", "collection": "Осень"})
+    lst = cl.get("/api/agent/knowledge").json()["collections"]
+    check("справочник: новая коллекция из товара запомнилась", "Осень" in lst, lst)
+    rr = cl.post("/api/agent/knowledge/collections/rename", json={"old": "Детская", "new": "Детям"})
+    lst = rr.json().get("collections") or []
+    check("справочник: переименование пустой коллекции на месте", "Детям" in lst and "Детская" not in lst
+          and lst.index("Мужская") < lst.index("Детям"), lst)
+    rr = cl.post("/api/agent/knowledge/collections/rename", json={"old": "Детям", "new": ""})
+    check("справочник: удаление пустой коллекции", "Детям" not in (rr.json().get("collections") or []), rr.text[:200])
+    rr = cl.put("/api/agent/knowledge/collections", json={"collections": []})
+    check("справочник: старый PUT /knowledge/collections не ломает сервер", rr.status_code < 500, rr.status_code)
     app.dependency_overrides.clear()
     db.close()
 

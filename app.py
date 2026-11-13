@@ -1897,6 +1897,7 @@ def ensure_chat_v2_columns():
             "ADD COLUMN IF NOT EXISTS notify_call_summary BOOLEAN NOT NULL DEFAULT TRUE",
             "ADD COLUMN IF NOT EXISTS notify_daily_digest BOOLEAN NOT NULL DEFAULT TRUE",
             "ADD COLUMN IF NOT EXISTS notify_stock BOOLEAN NOT NULL DEFAULT TRUE",
+            "ADD COLUMN IF NOT EXISTS catalog_collections JSONB",
             "ADD COLUMN IF NOT EXISTS jobs_ran_on JSONB",
             # Google Таблица агента: заявки и прайс (services/sheets_leads.py)
             "ADD COLUMN IF NOT EXISTS leads_sheet_id VARCHAR(128)",

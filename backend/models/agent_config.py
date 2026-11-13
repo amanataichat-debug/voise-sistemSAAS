@@ -154,6 +154,9 @@ class AgentConfig(Base):
     notify_daily_digest = Column(Boolean, default=True, nullable=False)
     # Склад: «товар закончился / осталось мало / снова в наличии» (services/catalog_service.py)
     notify_stock = Column(Boolean, default=True, nullable=False)
+    # Справочник коллекций каталога (13.11.2026): владелец заводит «Мужская», «Женская», «Детская»
+    # заранее — они есть и пустыми, а в товаре выбираются из списка. Порядок = порядок вкладок.
+    catalog_collections = Column(JSONB, nullable=True)
     # {"daily_digest": "2026-10-27", ...} — дедуп ежедневных заданий между воркерами
     jobs_ran_on = Column(JSONB, nullable=True)
     # Google Таблица агента (services/sheets_leads.py): лист «Заявки» + прайс на первом листе

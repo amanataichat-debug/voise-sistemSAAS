@@ -1651,6 +1651,42 @@ class CatalogBatchRequest(BaseModel):
     items: List[KnowledgeEntryRequest] = Field(..., min_length=1, max_length=500)
 
 
+class CollectionsSetRequest(BaseModel):
+    collections: List[str] = Field(default_factory=list, max_length=100)
+
+
+def _catalog_collection_list(db: Session, agent: AgentConfig) -> List[str]:
+    """Коллекции агента: сначала справочник владельца (его порядок), затем найденные у товаров."""
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+    out: List[str] = []
+    for name in (getattr(agent, "catalog_collections", None) or []):
+        n = _kb_collection(name)
+        if n and n not in out:
+            out.append(n)
+    try:
+        rows = db.query(AgentKnowledgeEntry.collection).filter(
+            AgentKnowledgeEntry.agent_config_id == agent.id,
+            AgentKnowledgeEntry.kind == "product",
+            AgentKnowledgeEntry.collection.isnot(None),
+        ).distinct().all()
+        extra = sorted({r[0] for r in rows if r[0]} - set(out), key=lambda s: s.lower())
+        out += extra
+    except Exception as e:
+        logger.warning(f"[AGENT-KB] коллекции товаров не прочитаны: {e}")
+    return out
+
+
+def _remember_collection(agent: AgentConfig, name: Optional[str]) -> None:
+    """Новая коллекция из товара или таблицы попадает в справочник (в конец)."""
+    n = _kb_collection(name)
+    if not n:
+        return
+    cur = list(getattr(agent, "catalog_collections", None) or [])
+    if n not in cur:
+        cur.append(n)
+        agent.catalog_collections = cur[:100]
+
+
 class CollectionRenameRequest(BaseModel):
     old: str = Field("", max_length=120)          # "" — позиции без коллекции
     new: str = Field("", max_length=120)          # "" — убрать коллекцию (позиции остаются)
@@ -1717,6 +1753,11 @@ def _kb_media_ids(db: Session, agent: AgentConfig, ids) -> Optional[list]:
 
 def _kb_entry_or_404(db: Session, agent: AgentConfig, entry_id: str):
     from backend.models.agent_knowledge import AgentKnowledgeEntry
+    try:
+        entry_id = uuid.UUID(str(entry_id))
+    except (ValueError, AttributeError):
+        # Неверный id (или чужой путь вроде /knowledge/collections) — «не найдено», а не 500 из базы
+        raise HTTPException(status_code=404, detail="entry_not_found")
     row = db.query(AgentKnowledgeEntry).filter(
         AgentKnowledgeEntry.id == entry_id,
         AgentKnowledgeEntry.agent_config_id == agent.id,
@@ -1770,6 +1811,8 @@ async def list_knowledge_entries(
         # в промпт (services/agent_voice_context.py), чтобы владелец видел
         # реальную картину, а не только размер базы.
         "voice": _voice_knowledge_summary(db, agent),
+        # Справочник коллекций каталога в порядке владельца (пустые — тоже)
+        "collections": _catalog_collection_list(db, agent),
     }
 
 
@@ -1892,6 +1935,7 @@ async def create_knowledge_entry(
     )
     if kind == "product":
         catalog_service.apply_variants(row)   # остаток (общий или по размерам) главнее переключателя
+        _remember_collection(agent, row.collection)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -1943,6 +1987,8 @@ async def update_knowledge_entry(
         row.char_count = len(row.body or "")
     if row.kind == "product" and any(f in data for f in ("stock_qty", "in_stock", "variants")):
         catalog_service.apply_variants(row)
+    if row.kind == "product" and "collection" in data:
+        _remember_collection(agent, row.collection)
     # Изменилось то, что попадает в вектор, — пометить на переиндексацию (досинхронизирует
     # и фоновая проверка при поиске, если запуск ниже не успеет)
     if any(f in data for f in ("title", "body", "keywords", "price", "currency", "attributes", "is_active",
@@ -2021,6 +2067,8 @@ async def catalog_bulk_action(
         return {"success": True, "changed": len(deleted)}
 
     changed, events = catalog_service.apply_bulk(rows, action, value)
+    if action == "collection":
+        _remember_collection(agent, value)
     _voice_sync_kb_functions(db, agent)
     db.commit()
     if changed:
@@ -2065,6 +2113,7 @@ async def catalog_batch_create(
             position=0, char_count=len((it.body or "").strip()),
         )
         catalog_service.apply_variants(row)
+        _remember_collection(agent, row.collection)
         db.add(row)
         created.append(row)
     if not created:
@@ -2082,6 +2131,27 @@ def _notify_stock_events(agent: AgentConfig, events) -> None:
         catalog_service.schedule_stock_notify(agent.id, events)
     except Exception as e:
         logger.warning(f"[AGENT-KB] оповещение о складе: {e}")
+
+
+@router.post("/knowledge/collections/set")
+async def set_catalog_collections(
+    body: CollectionsSetRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Справочник коллекций: создать, убрать пустую, поменять порядок. Товары не трогает."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    clean: List[str] = []
+    for name in body.collections:
+        n = _kb_collection(name)
+        if n and n.lower() not in [c.lower() for c in clean]:
+            clean.append(n)
+    agent.catalog_collections = clean
+    db.commit()
+    return {"success": True, "collections": _catalog_collection_list(db, agent)}
 
 
 @router.post("/knowledge/collections/rename")
@@ -2105,10 +2175,20 @@ async def rename_catalog_collection(
     q = q.filter(AgentKnowledgeEntry.collection.is_(None)) if old is None else q.filter(
         AgentKnowledgeEntry.collection == old)
     changed = q.update({"collection": new, "vector_status": "pending"}, synchronize_session=False)
+    # Справочник: переименовать на месте (порядок сохраняется) или убрать
+    cur = [c for c in (agent.catalog_collections or []) if _kb_collection(c)]
+    if old is not None:
+        if new and new not in cur:
+            cur = [new if c == old else c for c in cur]
+            if new not in cur:
+                cur.append(new)
+        else:
+            cur = [c for c in cur if c != old]
+        agent.catalog_collections = cur
     db.commit()
     if changed:
         kb_vectors.schedule_sync(agent.id)
-    return {"success": True, "changed": changed}
+    return {"success": True, "changed": changed, "collections": _catalog_collection_list(db, agent)}
 
 
 @router.delete("/knowledge/{entry_id}")

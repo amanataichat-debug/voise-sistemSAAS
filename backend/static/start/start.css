@@ -485,3 +485,30 @@
 .st-qgrid label span { font-size: 12px; font-weight: 600; color: var(--vf-text-2); text-align: center; }
 .st-qgrid .input { height: 32px; padding: 0 6px; text-align: center; }
 .st-qgrid .input.zero { background: #fef2f2; border-color: #fecaca; color: #b42318; }
+
+/* ── 13.11.2026: ровная сетка каталога, скидка %, справочник коллекций ── */
+/* Карточки одной высоты: фото — квадрат при любом размере видео/фото (вертикальное видео растягивало карточку) */
+.st-cgrid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); align-items: stretch; }
+.st-ccard { max-width: none; }
+.st-ccard .pic { aspect-ratio: 1 / 1; height: auto; overflow: hidden; }
+.st-ccard .pic > img, .st-ccard .pic > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.st-ccard .pic .st-play { z-index: 1; }
+.st-ccard .bd { gap: 3px; }
+.st-ccard .col { min-height: 14px; }
+.st-ccard .t { min-height: calc(1.35em * 2); font-size: 13px; }
+.st-ccard .pr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-ccard .sz { max-height: 20px; overflow: hidden; }
+.st-grid4 { display: grid; grid-template-columns: 1.1fr .8fr 1.1fr 1fr; gap: 0 12px; }
+@media (max-width: 640px) { .st-grid4 { grid-template-columns: 1fr 1fr; } }
+.hint.st-warn { color: #b54708; font-weight: 500; }
+.st-cmlist { display: flex; flex-direction: column; border: 1px solid var(--vf-border); border-radius: var(--vf-r-md); overflow: hidden; }
+.st-cmrow { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-top: 1px solid var(--vf-border); background: var(--vf-surface); }
+.st-cmrow:first-child { border-top: 0; }
+.st-cmrow .nm { flex: 1; font-weight: 600; font-size: 13.5px; min-width: 0; }
+.st-cmrow .nm .input { height: 32px; }
+.st-cmrow .acts { display: flex; gap: 0; }
+@media (max-width: 760px) {
+  .st-cgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .st-ccard .bd { padding: 7px 8px 6px; }
+  .st-ccard .acts .btn-icon { width: 28px; height: 28px; }
+}
