@@ -9,7 +9,7 @@ import json
 import uuid
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List
 
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, status,
@@ -57,6 +57,7 @@ from backend.models.agent_telegram_account import AgentTelegramMessage
 from backend.models.agent_instagram import AgentInstagramMessage
 from backend.services import composio_service
 from backend.services import agent_pause
+from backend.services import catalog_service
 from backend.services import agent_voice_context
 from backend.core.config import settings
 from backend.core.dependencies import get_current_user, get_current_user_flexible
@@ -1637,6 +1638,17 @@ class KnowledgeEntryRequest(BaseModel):
     sizes: Optional[List[str]] = None
     stock_qty: Optional[int] = None
     old_price: Optional[float] = None
+    variants: Optional[List[dict]] = None
+
+
+class CatalogBulkRequest(BaseModel):
+    ids: List[str] = Field(..., min_length=1, max_length=2000)
+    action: str
+    value: Optional[Any] = None
+
+
+class CatalogBatchRequest(BaseModel):
+    items: List[KnowledgeEntryRequest] = Field(..., min_length=1, max_length=500)
 
 
 class CollectionRenameRequest(BaseModel):
@@ -1870,6 +1882,7 @@ async def create_knowledge_entry(
         sizes=_kb_sizes(body.sizes) if kind == "product" else None,
         stock_qty=_kb_stock(body.stock_qty) if kind == "product" else None,
         old_price=body.old_price if kind == "product" and body.old_price else None,
+        variants=catalog_service.normalize_variants(body.variants) if kind == "product" else None,
         # Каталог и документы в промпт не вшиваем: их много, они съедят бюджет
         # и замедлят каждый ответ. Они достаются поиском.
         in_prompt=(kind in ("qa", "section")) if body.in_prompt is None else bool(body.in_prompt),
@@ -1877,8 +1890,8 @@ async def create_knowledge_entry(
         position=body.position or 0,
         char_count=len(text),
     )
-    if row.stock_qty is not None:
-        row.in_stock = row.stock_qty > 0   # остаток в штуках главнее переключателя
+    if kind == "product":
+        catalog_service.apply_variants(row)   # остаток (общий или по размерам) главнее переключателя
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -1901,11 +1914,12 @@ async def update_knowledge_entry(
     if not agent:
         raise HTTPException(status_code=404, detail="not_found")
     row = _kb_entry_or_404(db, agent, entry_id)
+    stock_before = catalog_service.stock_state(row)
 
     data = body.dict(exclude_unset=True)
     for field in ("title", "body", "keywords", "price", "currency", "attributes",
                   "in_stock", "media_file_ids", "in_prompt", "is_active", "position",
-                  "collection", "sizes", "stock_qty", "old_price"):
+                  "collection", "sizes", "stock_qty", "old_price", "variants"):
         if field in data:
             value = data[field]
             if field == "collection":
@@ -1916,6 +1930,8 @@ async def update_knowledge_entry(
                 value = _kb_stock(value)
             elif field == "old_price":
                 value = value or None
+            elif field == "variants":
+                value = catalog_service.normalize_variants(value)
             if field in ("title", "keywords") and isinstance(value, str):
                 value = value.strip() or None
                 if field == "title":
@@ -1925,8 +1941,8 @@ async def update_knowledge_entry(
             setattr(row, field, value)
     if "body" in data:
         row.char_count = len(row.body or "")
-    if row.kind == "product" and row.stock_qty is not None and ("stock_qty" in data or "in_stock" in data):
-        row.in_stock = row.stock_qty > 0
+    if row.kind == "product" and any(f in data for f in ("stock_qty", "in_stock", "variants")):
+        catalog_service.apply_variants(row)
     # Изменилось то, что попадает в вектор, — пометить на переиндексацию (досинхронизирует
     # и фоновая проверка при поиске, если запуск ниже не успеет)
     if any(f in data for f in ("title", "body", "keywords", "price", "currency", "attributes", "is_active",
@@ -1935,10 +1951,137 @@ async def update_knowledge_entry(
     # Запись могли выключить — тогда у карточки голоса мог стать лишним
     # каталог или поиск целиком.
     _voice_sync_kb_functions(db, agent)
+    event = catalog_service.stock_event(stock_before, row) if row.kind == "product" else None
     db.commit()
     db.refresh(row)
     kb_vectors.schedule_sync(agent.id)
+    if event:
+        _notify_stock_events(agent, [(row, event)])
     return {"success": True, "entry": row.to_dict()}
+
+
+@router.post("/knowledge/bulk")
+async def catalog_bulk_action(
+    body: CatalogBulkRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Массовое действие над позициями каталога: в коллекцию, цена ±% / задать, скидка N% / убрать,
+    есть / нет в наличии, включить / выключить, удалить. Только позиции этого агента.
+    """
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    action = (body.action or "").strip()
+    if action not in catalog_service.BULK_ACTIONS:
+        raise HTTPException(status_code=400, detail="Неизвестное действие")
+    value = body.value
+    try:
+        if action == "price_percent":
+            value = float(value)
+            if not -95 <= value <= 500 or value == 0:
+                raise ValueError
+        elif action == "price_set":
+            value = float(value)
+            if value < 0:
+                raise ValueError
+        elif action == "discount":
+            value = float(value)
+            if not 0 < value < 100:
+                raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Укажите правильное число")
+
+    ids = []
+    for raw in body.ids:
+        try:
+            ids.append(uuid.UUID(str(raw)))
+        except (ValueError, AttributeError):
+            continue
+    rows = db.query(AgentKnowledgeEntry).filter(
+        AgentKnowledgeEntry.agent_config_id == agent.id,
+        AgentKnowledgeEntry.kind == "product",
+        AgentKnowledgeEntry.id.in_(ids),
+    ).all() if ids else []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Позиции не найдены")
+
+    if action == "delete":
+        deleted = [str(r.id) for r in rows]
+        for r in rows:
+            db.delete(r)
+        db.flush()
+        _voice_sync_kb_functions(db, agent)
+        db.commit()
+        kb_vectors.schedule_delete(agent.id, deleted)
+        return {"success": True, "changed": len(deleted)}
+
+    changed, events = catalog_service.apply_bulk(rows, action, value)
+    _voice_sync_kb_functions(db, agent)
+    db.commit()
+    if changed:
+        kb_vectors.schedule_sync(agent.id)
+    if events:
+        _notify_stock_events(agent, events)
+    return {"success": True, "changed": changed}
+
+
+@router.post("/knowledge/products/batch")
+async def catalog_batch_create(
+    body: CatalogBatchRequest,
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Много позиций каталога одним запросом: «Вставить списком» и «Позиции из фото».
+    Пустые строки пропускаются; одна транзакция, одна синхронизация векторов.
+    """
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    created = []
+    for it in body.items:
+        title = (it.title or "").strip()[:500]
+        if not title:
+            continue
+        row = AgentKnowledgeEntry(
+            user_id=current_user.id, agent_config_id=agent.id, kind="product", title=title,
+            body=(it.body or "").strip(), keywords=(it.keywords or "").strip() or None,
+            price=it.price if it.price is None or it.price >= 0 else None,
+            currency=(it.currency or "KGS"), attributes=it.attributes or None,
+            in_stock=True if it.in_stock is None else bool(it.in_stock),
+            media_file_ids=_kb_media_ids(db, agent, it.media_file_ids),
+            collection=_kb_collection(it.collection), sizes=_kb_sizes(it.sizes),
+            stock_qty=_kb_stock(it.stock_qty), old_price=it.old_price or None,
+            variants=catalog_service.normalize_variants(it.variants),
+            in_prompt=False, is_active=True if it.is_active is None else bool(it.is_active),
+            position=0, char_count=len((it.body or "").strip()),
+        )
+        catalog_service.apply_variants(row)
+        db.add(row)
+        created.append(row)
+    if not created:
+        raise HTTPException(status_code=400, detail="Нет ни одной позиции с названием")
+    db.flush()
+    _voice_sync_kb_functions(db, agent)
+    db.commit()
+    kb_vectors.schedule_sync(agent.id)
+    return {"success": True, "created": len(created), "ids": [str(r.id) for r in created]}
+
+
+def _notify_stock_events(agent: AgentConfig, events) -> None:
+    """Товар закончился / мало / снова есть → владельцу в Telegram (в фоне, если включено)."""
+    try:
+        catalog_service.schedule_stock_notify(agent.id, events)
+    except Exception as e:
+        logger.warning(f"[AGENT-KB] оповещение о складе: {e}")
 
 
 @router.post("/knowledge/collections/rename")

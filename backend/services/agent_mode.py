@@ -53,6 +53,7 @@ SEND_TOOLS = {
     "instagram_send_file",
     "send_voice_message",
     "send_proposal",
+    "send_product_card",
 }
 
 # Чат владельца с оркестратором на Старте читает и по команде владельца пишет клиентам в
@@ -60,7 +61,8 @@ SEND_TOOLS = {
 # меняет данные (звонки, задачи, рассылки, правка CRM), запрещено.
 OWNER_CHAT_READONLY_ALLOWED_PREFIXES = ("get_", "search_", "find_", "list_", "read_", "check_")
 OWNER_CHAT_READONLY_ALLOWED = {"get_period_report", "get_agent_stats", "notify_owner_handoff",
-                               "schedule_telegram_message", "block_spam_contact"} | SEND_TOOLS
+                               "schedule_telegram_message", "block_spam_contact",
+                               "update_product_stock"} | SEND_TOOLS
 
 REFUSAL_INITIATIVE = (
     "На вашем тарифе агент не звонит и не планирует звонки, не делает рассылки и не выполняет "

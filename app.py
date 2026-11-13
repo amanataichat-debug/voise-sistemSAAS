@@ -420,7 +420,7 @@ class _CabinetStaticFiles(StaticFiles):
     """
 
     _HASHED = re.compile(r"-[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg)$", re.I)
-    _REVALIDATE = (".html", ".js", ".css", ".json")
+    _REVALIDATE = (".html", ".js", ".css", ".json", ".svg")
 
     # Служебные файлы, которые лежат в папке статики, но наружу отдаваться не должны:
     # заметки для ИИ-агентов с архитектурой (CLAUDE.md, claude-*.md), тестовые и старые страницы.
@@ -1896,6 +1896,7 @@ def ensure_chat_v2_columns():
             "ADD COLUMN IF NOT EXISTS notify_new_lead BOOLEAN NOT NULL DEFAULT TRUE",
             "ADD COLUMN IF NOT EXISTS notify_call_summary BOOLEAN NOT NULL DEFAULT TRUE",
             "ADD COLUMN IF NOT EXISTS notify_daily_digest BOOLEAN NOT NULL DEFAULT TRUE",
+            "ADD COLUMN IF NOT EXISTS notify_stock BOOLEAN NOT NULL DEFAULT TRUE",
             "ADD COLUMN IF NOT EXISTS jobs_ran_on JSONB",
             # Google Таблица агента: заявки и прайс (services/sheets_leads.py)
             "ADD COLUMN IF NOT EXISTS leads_sheet_id VARCHAR(128)",
@@ -1975,7 +1976,7 @@ def ensure_knowledge_v2_tables():
         from sqlalchemy import text
         cols = {c["name"] for c in inspect(engine).get_columns("agent_knowledge_entries")}
         for col, ddl in (("collection", "VARCHAR(120)"), ("sizes", "JSONB"),
-                         ("stock_qty", "INTEGER"), ("old_price", "DOUBLE PRECISION")):
+                         ("stock_qty", "INTEGER"), ("old_price", "DOUBLE PRECISION"), ("variants", "JSONB")):
             if col in cols:
                 continue
             try:

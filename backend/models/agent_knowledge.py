@@ -95,6 +95,9 @@ class AgentKnowledgeEntry(Base):
     sizes = Column(JSONB, nullable=True)
     stock_qty = Column(Integer, nullable=True)
     old_price = Column(Float, nullable=True)
+    # Остаток по размерам и цветам: [{"size": "46", "color": "чёрный", "qty": 2}]. Есть варианты —
+    # stock_qty, sizes и in_stock считаются из них (catalog_service.apply_variants).
+    variants = Column(JSONB, nullable=True)
 
     # ── Документ (kind=document) ──
     file_id = Column(UUID(as_uuid=True), nullable=True)    # agent_files.id
@@ -144,6 +147,7 @@ class AgentKnowledgeEntry(Base):
                 "sizes": self.sizes or [],
                 "stock_qty": self.stock_qty,
                 "old_price": self.old_price,
+                "variants": self.variants or [],
                 "created_at": self.created_at.isoformat() if self.created_at else None,
             })
         if self.kind == "document":

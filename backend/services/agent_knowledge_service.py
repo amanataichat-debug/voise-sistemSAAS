@@ -227,6 +227,9 @@ def catalog_tags_text(row) -> str:
     sizes = getattr(row, "sizes", None)
     if isinstance(sizes, list) and sizes:
         parts.append("размер " + " ".join(str(x) for x in sizes))
+    colors = [v.get("color") for v in (getattr(row, "variants", None) or []) if isinstance(v, dict) and v.get("color")]
+    if colors:
+        parts.append(" ".join(dict.fromkeys(colors)))
     return " ".join(parts)
 
 
@@ -238,6 +241,11 @@ def _has_size(row, size: str) -> bool:
     want = _size_norm(size)
     if not want:
         return True
+    # Остаток по размерам: размер «есть», только если его ещё не раскупили
+    from backend.services.catalog_service import size_available
+    by_variant = size_available(row, want, _size_norm)
+    if by_variant is not None:
+        return by_variant
     sizes = getattr(row, "sizes", None)
     if isinstance(sizes, list) and sizes:
         return any(_size_norm(x) == want for x in sizes)
@@ -982,6 +990,8 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
     """
     out: Dict[str, Any] = {"title": row.title, "text": row.body}
     if row.kind == "product":
+        # id позиции — для send_product_card (карточка товара клиенту одним сообщением)
+        out["product_id"] = str(row.id) if getattr(row, "id", None) else None
         if row.price is not None:
             out["price"] = format_price(row.price, row.currency)
         attrs = row.attributes if isinstance(row.attributes, dict) else {}
@@ -991,7 +1001,11 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
         out["in_stock"] = bool(row.in_stock)
         if getattr(row, "collection", None):
             out["collection"] = row.collection
-        if getattr(row, "sizes", None):
+        from backend.services import catalog_service as _cat
+        if getattr(row, "variants", None):
+            out["sizes_in_stock"] = _cat.sizes_in_stock(row)
+            out["stock_by_variant"] = _cat.variant_lines(row)
+        elif getattr(row, "sizes", None):
             out["sizes"] = row.sizes
         if getattr(row, "stock_qty", None) is not None:
             out["stock_left"] = row.stock_qty     # сколько штук осталось

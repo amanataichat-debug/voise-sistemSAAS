@@ -94,6 +94,7 @@ async function renderTelegramModal(){
       ${tgNotifyRow('new_lead', 'Новый клиент', 'Клиент впервые написал или позвонил: имя, номер, первое сообщение.', s)}
       ${tgNotifyRow('call_summary', 'Итог звонка', 'После каждого разговора: длительность, краткий итог, стадия в CRM.', s)}
       ${tgNotifyRow('daily_digest', 'Итоги дня в 20:00', 'Новые клиенты, переписки, звонки и успехи за день.', s)}
+      ${tgNotifyRow('stock', 'Склад', 'Товар закончился, осталось мало (до 3 шт.) или снова появился в наличии.', s)}
     </div>
 
     <div style="margin:16px 0 8px;font-weight:600;font-size:13.5px">Чаты</div>

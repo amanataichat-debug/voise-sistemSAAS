@@ -118,6 +118,7 @@ def _settings_dict(agent: AgentConfig) -> dict:
             "new_lead": bool(getattr(agent, "notify_new_lead", True)),
             "call_summary": bool(getattr(agent, "notify_call_summary", True)),
             "daily_digest": bool(getattr(agent, "notify_daily_digest", True)),
+            "stock": bool(getattr(agent, "notify_stock", True)),
         },
     }
 
@@ -262,6 +263,7 @@ class TelegramNotifyRequest(BaseModel):
     new_lead: Optional[bool] = None
     call_summary: Optional[bool] = None
     daily_digest: Optional[bool] = None
+    stock: Optional[bool] = None
 
 
 @router.patch("/notify")
@@ -279,6 +281,8 @@ async def set_telegram_notify(
         agent.notify_call_summary = body.call_summary
     if body.daily_digest is not None:
         agent.notify_daily_digest = body.daily_digest
+    if body.stock is not None:
+        agent.notify_stock = body.stock
     db.commit()
     db.refresh(agent)
     return _settings_dict(agent)

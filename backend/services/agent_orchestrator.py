@@ -272,6 +272,7 @@ REPLY_EXPECTED_DIRECTIONS = frozenset({"whatsapp_inbound", "telegram_inbound", "
 CLIENT_REPLY_TOOLS = frozenset({
     "telegram_send_message", "telegram_send_file", "whatsapp_send_message", "whatsapp_send_file",
     "instagram_send_message", "instagram_send_file", "send_voice_message", "send_proposal",
+    "send_product_card",
 })
 REPLY_NUDGE = (
     "Клиент написал, а ответ ему не отправлен. Отправь ответ сейчас инструментом отправки того канала, "

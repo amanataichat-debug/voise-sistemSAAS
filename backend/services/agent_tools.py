@@ -138,10 +138,10 @@ FIND_PRODUCTS_TOOL = {
         "Коллекцию (мужская/женская/детская) и размер передавай отдельно в collection и size. "
         "В ответе: цена, старая цена до скидки (old_price), коллекция, размеры (sizes), "
         "остаток в штуках (stock_left: 1–3 — можно сказать, что осталось мало), описание, "
-        "характеристики, id фото/видео (media_file_ids) — "
-        "отправь фото клиенту тулзой whatsapp_send_file / telegram_send_file / "
-        "instagram_send_file; файла нет, но есть photo_url — дай ссылку на фото одной "
-        "строкой. Несколько подходящих позиций — коротко назови 2–3 и спроси, какая. "
+        "характеристики, product_id и id фото/видео (media_file_ids). Показать товар клиенту — "
+        "send_product_card(product_id): фото с подписью одним сообщением (в звонке — "
+        "просто назови). Размеры в наличии — sizes_in_stock, остаток по размерам и цветам — "
+        "stock_by_variant. Несколько подходящих позиций — коротко назови 2–3 и спроси, какая. "
         "Если первая попытка пуста — переформулируй query ещё 1–2 раза синонимами. "
         "Товары вне каталога не придумывай: когда и переформулировки не помогли, "
         "попробуй search_knowledge_base по общей базе; если и там пусто — скажи "
@@ -515,6 +515,68 @@ SEND_PROPOSAL_TOOL = {
             },
         },
         "required": ["agent_contact_id", "content"],
+    },
+}
+
+
+# Каталог как у магазина (13.11.2026): карточка товара клиенту одним сообщением, сводка склада и
+# правка остатка по слову владельца. Реализация — services/catalog_service.py.
+SEND_PRODUCT_CARD_TOOL = {
+    "type": "function",
+    "name": "send_product_card",
+    "description": (
+        "Отправить клиенту КАРТОЧКУ ТОВАРА одним аккуратным сообщением: фото (или видео) с подписью — "
+        "название, цена, старая цена и скидка, размеры и цвета в наличии, коротко описание. "
+        "Подпись собирает система из каталога, сам текст не пиши. Используй, когда клиент спросил "
+        "про конкретный товар, попросил показать или фото: это лучше, чем голый текст и отдельные "
+        "файлы. product_id бери из find_products. Несколько товаров — по карточке на каждый, не больше 3 "
+        "за ответ. more_photos=true — следом ещё до 3 фото этого товара без подписи (когда просят «ещё фото»). "
+        "После карточки можно одним коротким сообщением задать вопрос, но не повторяй цену и описание."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
+            "product_id": {"type": "string", "description": "product_id из ответа find_products"},
+            "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram"],
+                        "description": "Канал. Не указан — тот, где клиент писал последним"},
+            "more_photos": {"type": "boolean", "description": "Отправить ещё до 3 фото товара следом"},
+        },
+        "required": ["agent_contact_id", "product_id"],
+    },
+}
+
+CATALOG_OVERVIEW_TOOL = {
+    "type": "function",
+    "name": "get_catalog_overview",
+    "description": (
+        "Сводка склада для владельца: сколько позиций и штук, по коллекциям, что закончилось, где осталось "
+        "мало (до 3 шт.), сколько позиций без фото и без цены. Вызывай, когда владелец спрашивает про "
+        "склад, остатки, что закончилось, что есть в наличии. Конкретный товар и его размеры — find_products."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+UPDATE_PRODUCT_STOCK_TOOL = {
+    "type": "function",
+    "name": "update_product_stock",
+    "description": (
+        "Поменять остаток или наличие товара ПО КОМАНДЕ ВЛАДЕЛЬЦА («кубанки 58 размера осталось 2», "
+        "«берет закончился», «шуба снова есть, 5 штук»). Товар ищется по названию (или product_id из "
+        "find_products). qty — сколько штук теперь; size/color — если остаток по размеру или цвету; "
+        "available=false — нет в наличии, true — снова есть (без числа). Нашлось несколько похожих — "
+        "ничего не меняй, назови их владельцу и спроси, какой. Только по прямой просьбе владельца."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "product_id": {"type": "string", "description": "product_id из find_products, если известен"},
+            "query": {"type": "string", "description": "Название товара словами владельца"},
+            "qty": {"type": "integer", "description": "Сколько штук теперь"},
+            "size": {"type": "string", "description": "Размер, если остаток по размеру"},
+            "color": {"type": "string", "description": "Цвет, если остаток по цвету"},
+            "available": {"type": "boolean", "description": "Есть в наличии / нет (без числа)"},
+        },
     },
 }
 
@@ -2519,6 +2581,143 @@ async def fn_notify_owner_handoff(args: dict, user_id: str, agent_config_id: str
     }
 
 
+# ============================================================================
+# КАТАЛОГ: карточка товара, сводка склада, остаток по слову владельца (13.11.2026)
+# ============================================================================
+
+def _catalog_row(db: Session, agent_config_id, product_id=None, query: str = ""):
+    """(позиция, похожие) — по id или по названию. Похожие — если по названию нашлось несколько."""
+    from backend.models.agent_knowledge import AgentKnowledgeEntry as E
+    from backend.services import agent_knowledge_service as kb
+
+    if product_id:
+        import uuid as _uuid
+        try:
+            pid = _uuid.UUID(str(product_id))
+        except (ValueError, AttributeError):
+            pid = None
+        if pid is not None:
+            row = db.query(E).filter(E.id == pid, E.agent_config_id == agent_config_id, E.kind == "product").first()
+            if row is not None:
+                return row, []
+    query = (query or "").strip()
+    if not query:
+        return None, []
+    rows = kb.search_products(db, agent_config_id, query=query, limit=5)
+    if not rows:
+        return None, []
+    exact = [r for r in rows if kb.normalize(r.title or "") == kb.normalize(query)]
+    if len(exact) == 1:
+        return exact[0], []
+    if len(rows) == 1:
+        return rows[0], []
+    return None, rows
+
+
+async def fn_send_product_card(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
+    """Карточка товара клиенту: первое фото/видео с подписью из каталога, при more_photos — ещё до 3 фото."""
+    from backend.services import catalog_service
+
+    agent_contact_id = args.get("agent_contact_id")
+    if not agent_contact_id or not args.get("product_id"):
+        return {"ok": False, "error": "agent_contact_id и product_id обязательны"}
+    agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+    if agent_config is None:
+        return {"ok": False, "error": "Агент не найден"}
+    contact = db.query(AgentContact).filter(
+        AgentContact.id == agent_contact_id,
+        AgentContact.user_id == user_id,
+        AgentContact.agent_config_id == agent_config_id,
+    ).first()
+    if contact is None:
+        return {"ok": False, "error": "Контакт не найден"}
+    row, _ = _catalog_row(db, agent_config_id, product_id=args.get("product_id"))
+    if row is None:
+        return {"ok": False, "error": "Товар не найден в каталоге — возьми product_id из find_products"}
+    if row.is_active is False:
+        return {"ok": False, "error": "Товар выключен владельцем — не предлагай его"}
+
+    channel = (args.get("channel") or "").strip().lower() or _detect_recent_channel(db, agent_config_id, contact.id)
+    if channel not in ("whatsapp", "telegram", "instagram"):
+        return {"ok": False, "error": "Клиент ещё не писал ни в один мессенджер — некуда отправить карточку"}
+
+    caption = catalog_service.product_card_text(row)
+    media_ids = [str(x) for x in (row.media_file_ids or [])]
+    files = [r for r in (_get_agent_file(db, agent_config_id, fid) for fid in media_ids) if r is not None]
+    # Сначала фото: подпись под фото читается лучше, чем под видео
+    files.sort(key=lambda f: 0 if (f.kind or "") == "image" else 1)
+    send_file = {"whatsapp": fn_whatsapp_send_file, "telegram": fn_telegram_send_file,
+                 "instagram": fn_instagram_send_file}[channel]
+    send_text = {"whatsapp": fn_whatsapp_send_message, "telegram": fn_telegram_send_message,
+                 "instagram": fn_instagram_send_message}[channel]
+    base = {"agent_contact_id": str(contact.id)}
+
+    if files:
+        first = files[0]
+        result = await send_file(dict(base, file_id=str(first.id), caption=caption), user_id, agent_config, db)
+        if not result.get("ok"):
+            return result
+        sent = 1
+        if args.get("more_photos"):
+            for f in files[1:4]:
+                r2 = await send_file(dict(base, file_id=str(f.id)), user_id, agent_config, db)
+                sent += 1 if r2.get("ok") else 0
+        return {"ok": True, "channel": channel, "sent_media": sent, "card": caption,
+                "note": "Карточка отправлена. Цену и описание повторно не пиши."}
+
+    photo_url = (row.attributes or {}).get("_photo_url") if isinstance(row.attributes, dict) else None
+    text = caption + (f"\n\nФото: {photo_url}" if photo_url else "")
+    result = await send_text(dict(base, text=text), user_id, agent_config, db)
+    if not result.get("ok"):
+        return result
+    return {"ok": True, "channel": channel, "sent_media": 0, "card": text,
+            "note": "У товара нет фото — ушла карточка текстом. Цену и описание повторно не пиши."}
+
+
+async def fn_get_catalog_overview(args: dict, agent_config_id: str, db: Session) -> dict:
+    from backend.services import catalog_service
+    ov = catalog_service.catalog_overview(db, agent_config_id)
+    ov["summary"] = catalog_service.overview_text(ov) or "Каталог пуст."
+    return ov
+
+
+async def fn_update_product_stock(args: dict, agent_config_id: str, db: Session) -> dict:
+    from backend.services import catalog_service
+
+    row, similar = _catalog_row(db, agent_config_id, product_id=args.get("product_id"), query=args.get("query") or "")
+    if row is None:
+        if similar:
+            return {"ok": False, "error": "Нашлось несколько похожих товаров — уточни у владельца, какой",
+                    "candidates": [{"product_id": str(r.id), "title": r.title, "collection": r.collection,
+                                    "stock_left": r.stock_qty} for r in similar]}
+        return {"ok": False, "error": "Такого товара в каталоге нет"}
+    before = catalog_service.stock_state(row)
+    qty, available = args.get("qty"), args.get("available")
+    try:
+        if qty is not None and str(qty).strip() != "":
+            done = catalog_service.set_stock(row, int(qty), size=args.get("size"), color=args.get("color"))
+        elif available is not None:
+            ev_rows = [row]
+            catalog_service.apply_bulk(ev_rows, "in_stock" if available else "out_of_stock")
+            done = f"{row.title}: " + ("есть в наличии" if row.in_stock else "нет в наличии")
+        else:
+            return {"ok": False, "error": "Укажи qty (сколько штук) или available (есть/нет)"}
+    except ValueError as e:
+        return {"ok": False, "error": str(e),
+                "stock_by_variant": catalog_service.variant_lines(row)}
+    row.vector_status = "pending"
+    event = catalog_service.stock_event(before, row)
+    db.commit()
+    try:
+        from backend.services import agent_knowledge_vectors as kb_vectors
+        kb_vectors.schedule_sync(agent_config_id)
+    except Exception:
+        pass
+    return {"ok": True, "done": done, "in_stock": bool(row.in_stock), "stock_left": row.stock_qty,
+            "stock_by_variant": catalog_service.variant_lines(row) or None,
+            "event": event}
+
+
 async def fn_send_proposal(args: dict, user_id: str, agent_config_id: str, db: Session) -> dict:
     """
     Атомарная цепочка после звонка: собрать КП → отправить → записать → напомнить → владельцу.
@@ -3117,6 +3316,9 @@ AGENT_CHAT_TOOLS = [
     },
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
+    SEND_PRODUCT_CARD_TOOL,
+    CATALOG_OVERVIEW_TOOL,
+    UPDATE_PRODUCT_STOCK_TOOL,
     NOTIFY_OWNER_HANDOFF_TOOL,
     FIND_CLIENT_TOOL,
     MERGE_CONTACTS_TOOL,
@@ -3207,6 +3409,7 @@ AGENT_POSTCALL_TOOLS = [
     SEND_WEBHOOK_TOOL,
     CHECK_PHONE_OPERATOR_TOOL,
     SEND_PROPOSAL_TOOL,
+    SEND_PRODUCT_CARD_TOOL,
     NOTIFY_OWNER_HANDOFF_TOOL,
     FIND_CLIENT_TOOL,
     MERGE_CONTACTS_TOOL,
@@ -5548,6 +5751,12 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             result = await fn_add_contact_phone(tool_args, user_id, agent_config_id, db)
         elif tool_name == "send_proposal":
             result = await fn_send_proposal(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "send_product_card":
+            result = await fn_send_product_card(tool_args, user_id, agent_config_id, db)
+        elif tool_name == "get_catalog_overview":
+            result = await fn_get_catalog_overview(tool_args, agent_config_id, db)
+        elif tool_name == "update_product_stock":
+            result = await fn_update_product_stock(tool_args, agent_config_id, db)
         elif tool_name == "notify_owner_handoff":
             result = await fn_notify_owner_handoff(tool_args, user_id, agent_config_id, db)
         elif tool_name == "snooze_contact":

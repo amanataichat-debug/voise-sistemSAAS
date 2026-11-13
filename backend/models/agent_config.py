@@ -152,6 +152,8 @@ class AgentConfig(Base):
     notify_new_lead = Column(Boolean, default=True, nullable=False)
     notify_call_summary = Column(Boolean, default=True, nullable=False)
     notify_daily_digest = Column(Boolean, default=True, nullable=False)
+    # Склад: «товар закончился / осталось мало / снова в наличии» (services/catalog_service.py)
+    notify_stock = Column(Boolean, default=True, nullable=False)
     # {"daily_digest": "2026-10-27", ...} — дедуп ежедневных заданий между воркерами
     jobs_ran_on = Column(JSONB, nullable=True)
     # Google Таблица агента (services/sheets_leads.py): лист «Заявки» + прайс на первом листе

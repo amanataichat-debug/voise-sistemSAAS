@@ -326,8 +326,9 @@ def build_price_block(db, agent_config_id, budget: int = PRICE_BUDGET) -> str:
             bud.spend(head + "\n")
         price = kb_fmt.format_price(row.price, row.currency)
         mark = "" if row.in_stock else " (нет в наличии)"
-        sizes = getattr(row, "sizes", None)
-        if row.in_stock and isinstance(sizes, list) and sizes:
+        from backend.services.catalog_service import sizes_in_stock
+        sizes = sizes_in_stock(row)
+        if row.in_stock and sizes:
             mark += " (размеры " + ", ".join(str(x) for x in sizes[:8]) + ")"
         piece = f"- {_clip(title, 70)} — {price}{mark}"
         desc = (row.body or "").strip()

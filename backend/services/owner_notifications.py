@@ -278,7 +278,17 @@ async def run_daily_digest(db: Session, day_local: date) -> int:
             continue  # пустой день — без шума
         if not claim_agent_job(db, agent.id, "daily_digest", day_local):
             continue
-        if await _send(agent, db, format_daily_digest(agent, day_local, stats)):
+        text = format_daily_digest(agent, day_local, stats)
+        try:
+            # Склад в итогах дня: что закончилось и где осталось мало (каталог как у магазина, 13.11.2026)
+            from backend.services import catalog_service
+            ov = catalog_service.catalog_overview(db, agent.id, limit=8)
+            if ov.get("out_of_stock_count") or ov.get("low_stock_count"):
+                text += "\n\n" + catalog_service.overview_text(ov)
+        except Exception as e:
+            logger.warning(f"[OWNER-NOTIFY] склад в итогах дня: {e}")
+            db.rollback()
+        if await _send(agent, db, text):
             sent += 1
     return sent
 
