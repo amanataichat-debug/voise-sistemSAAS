@@ -50,6 +50,8 @@ composio>=0.15.0,<1.0.0
 
 # Telethon — личный Telegram-аккаунт агента (MTProto, коннектор Telegram)
 telethon>=1.36.0,<2.0.0
+# QR-код входа в личный Telegram (SVG, чистый Python)
+segno>=1.6.0,<2.0.0
 
 # Pinecone
 pinecone-client>=3.0.0,<4.0.0

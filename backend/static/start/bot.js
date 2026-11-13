@@ -1765,7 +1765,8 @@
     // Telegram личный
     if (!tg || !tg.configured) html += chRow('#229ED9', 'send', 'Telegram', 'Недоступно на сервере, напишите в поддержку', '');
     else if (tg.status === 'connected') html += chRow('#229ED9', 'send', 'Telegram', 'Подключён: ' + esc(tg.tg_username ? '@' + tg.tg_username : (tg.tg_first_name || tg.phone_masked || '')) + scopeText(tg), btn('tg-set', 'Настройки') + btn('tg-off', 'Отключить', 'btn-ghost'));
-    else if (tg.status === 'pending_code' || tg.status === 'pending_password') html += chRow('#229ED9', 'send', 'Telegram', 'Подключение не завершено', btn('tg-on', 'Продолжить', 'btn-primary'));
+    else if (tg.status === 'pending_code' || tg.status === 'pending_password' || tg.status === 'pending_qr') html += chRow('#229ED9', 'send', 'Telegram', 'Подключение не завершено', btn('tg-on', 'Продолжить', 'btn-primary'));
+    else if (tg.status === 'qr_expired') html += chRow('#229ED9', 'send', 'Telegram', 'QR-код устарел, покажем новый', btn('tg-on', 'Подключить', 'btn-primary'));
     else if (tg.status === 'error') html += chRow('#229ED9', 'send', 'Telegram', '<span style="color:var(--vf-warning)">Сессия недействительна' + (tg.last_error ? ' (' + esc(tg.last_error) + ')' : '') + '. Подключите аккаунт заново</span>', btn('tg-on', 'Переподключить', 'btn-primary'));
     else html += chRow('#229ED9', 'send', 'Telegram', 'Бот отвечает от имени вашего личного аккаунта Telegram', btn('tg-on', 'Подключить', 'btn-primary'));
     // Instagram
@@ -1897,19 +1898,59 @@
     });
   }
 
-  // Telegram: телефон → код → пароль
+  // Telegram: по QR-коду (основной путь) или телефон → код → пароль.
+  // 13.11.2026: код из приложения у части владельцев «не проходит» — вход по QR без кода.
+  var tgTimer = null;
   function openTg() {
-    var d = S.dialog({ title: 'Подключить Telegram', size: 'sm', body: '<div id="tg-box"></div>', onClose: loadChannels });
+    var d = S.dialog({ title: 'Подключить Telegram', size: 'sm', body: '<div id="tg-box"></div>', onClose: function () { clearInterval(tgTimer); tgTimer = null; loadChannels(); } });
     var box = S.$('#tg-box', d.el);
-    function step(status, phone) {
+    var phone = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+    var qrSince = 0;
+    function stopPoll() { clearInterval(tgTimer); tgTimer = null; }
+    function poll() {
+      if (tgTimer) return;
+      tgTimer = setInterval(function () {
+        S.api('/telegram-account').then(function (r) { if (r.ok && box.isConnected) step(r.data); });
+      }, 2000);
+    }
+    function qrStart() {
+      box.innerHTML = '<div class="st-qr"><div class="skeleton" style="width:240px;height:240px;border-radius:12px"></div><div class="muted small">Готовим QR-код…</div></div>';
+      qrSince = Date.now();
+      S.api('/telegram-account/qr/start', { method: 'POST' }).then(function (r) {
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); step({ status: '' }); return; }
+        step(r.data);
+      });
+    }
+    function phoneLink() { return '<button class="btn btn-ghost btn-sm" type="button" id="tg-byphone">Войти по номеру телефона и коду</button>'; }
+    function bindPhoneLink() { var b = S.$('#tg-byphone', d.el); if (b) b.addEventListener('click', function () { stopPoll(); step({ status: 'phone' }); }); }
+    function step(s) {
+      var status = s.status || '';
+      if (status === 'pending_qr') {
+        poll();
+        var stale = !s.qr && Date.now() - qrSince > 15000;
+        if (s.qr_error === 'qr_render_failed') stale = true;
+        box.innerHTML = '<div class="st-qr">' +
+          (s.qr ? '<img src="' + esc(s.qr) + '" alt="QR-код для входа в Telegram">'
+            : (stale ? '<div class="note" style="max-width:300px">QR-код не обновился. Нажмите «Новый QR-код».</div>' : '<div class="skeleton" style="width:240px;height:240px;border-radius:12px"></div>')) +
+          '<ol class="st-tgsteps"><li>Откройте Telegram на телефоне</li><li><b>Настройки → Устройства → Подключить устройство</b></li><li>Наведите камеру на этот код</li></ol>' +
+          (phone && s.qr_link ? '<a class="btn btn-primary" href="' + esc(s.qr_link) + '">' + icon('send') + '<span>Открыть в Telegram на этом телефоне</span></a>' : '') +
+          '<div class="muted small" style="text-align:center;max-width:300px">Код обновляется сам каждые полминуты — окно можно не закрывать.</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">' + (stale ? '<button class="btn btn-sm" type="button" id="tg-qrnew">Новый QR-код</button>' : '') + phoneLink() + '</div></div>';
+        var nb = S.$('#tg-qrnew', d.el); if (nb) nb.addEventListener('click', qrStart);
+        bindPhoneLink();
+        return;
+      }
+      stopPoll();
       if (status === 'pending_code') {
-        box.innerHTML = '<p class="muted" style="margin-top:0">Код отправлен в приложение Telegram на номер ' + esc(phone || '') + '.</p>' +
+        box.innerHTML = '<p class="muted" style="margin-top:0">Код отправлен в приложение Telegram на номер ' + esc(s.phone_masked || '') + '. Пересылать его никому нельзя: Telegram тогда отменяет вход.</p>' +
           '<div class="field"><label class="label">Код из Telegram</label><input class="input" id="tg-code" inputmode="numeric" autocomplete="one-time-code"></div>' +
-          '<button class="btn btn-primary" id="tg-go" type="button">Подтвердить</button>';
+          '<button class="btn btn-primary" id="tg-go" type="button">Подтвердить</button>' +
+          '<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" type="button" id="tg-toqr">' + icon('layout-grid') + '<span>Код не подходит? Войти по QR-коду</span></button></div>';
         S.$('#tg-go', d.el).addEventListener('click', function () {
           var code = S.$('#tg-code', d.el).value.trim(); if (!code) return;
           call('/telegram-account/verify-code', { code: code });
         });
+        S.$('#tg-toqr', d.el).addEventListener('click', qrStart);
       } else if (status === 'pending_password') {
         box.innerHTML = '<p class="muted" style="margin-top:0">У аккаунта включена двухэтапная проверка. Введите облачный пароль Telegram.</p>' +
           '<div class="field"><label class="label">Пароль</label><input class="input" id="tg-pw" type="password" autocomplete="off"></div>' +
@@ -1921,24 +1962,36 @@
       } else if (status === 'connected') {
         box.innerHTML = '<div class="st-qr"><div class="st-empty-ic">' + icon('circle-check') + '</div><b>Telegram подключён</b><div id="tg-scope" style="width:100%"></div></div>';
         scopeStep(S.$('#tg-scope', d.el), '/telegram-account/settings', d.close);
-      } else {
-        box.innerHTML = '<p class="muted" style="margin-top:0">Бот будет отвечать клиентам от имени вашего аккаунта. Введите номер телефона, к которому привязан Telegram.</p>' +
+      } else if (status === 'phone') {
+        box.innerHTML = '<p class="muted" style="margin-top:0">Введите номер телефона, к которому привязан Telegram. Код придёт в приложение Telegram.</p>' +
           '<div class="field"><label class="label">Номер телефона</label><input class="input" id="tg-phone" placeholder="+996 700 123 456" inputmode="tel"></div>' +
-          '<button class="btn btn-primary" id="tg-go" type="button">Получить код</button>';
+          '<button class="btn btn-primary" id="tg-go" type="button">Получить код</button>' +
+          '<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" type="button" id="tg-toqr">' + icon('layout-grid') + '<span>Войти по QR-коду</span></button></div>';
         S.$('#tg-go', d.el).addEventListener('click', function () {
           var p = S.$('#tg-phone', d.el).value.trim(); if (!p) return;
           call('/telegram-account/start', { phone: p });
         });
+        S.$('#tg-toqr', d.el).addEventListener('click', qrStart);
+      } else {
+        var why = status === 'qr_expired' ? '<div class="note" style="margin-bottom:12px">QR-код устарел: его не отсканировали за 3 минуты. Покажем новый.</div>'
+          : (status === 'error' && s.last_error ? '<div class="note note-danger" style="margin-bottom:12px">Не получилось: ' + esc(s.last_error) + '. Попробуйте ещё раз.</div>' : '');
+        box.innerHTML = why + '<p class="muted" style="margin-top:0">Бот будет отвечать клиентам от имени вашего аккаунта Telegram. Быстрее всего — по QR-коду, без кода подтверждения.</p>' +
+          '<button class="btn btn-primary" id="tg-qr" type="button" style="width:100%;justify-content:center">' + icon('layout-grid') + '<span>Показать QR-код</span></button>' +
+          '<div style="margin-top:10px;text-align:center">' + phoneLink() + '</div>';
+        S.$('#tg-qr', d.el).addEventListener('click', qrStart);
+        bindPhoneLink();
       }
     }
     function call(path, body) {
       var go = S.$('#tg-go', d.el); if (go) go.disabled = true;
       S.api(path, { method: 'POST', body: body }).then(function (r) {
         if (!r.ok) { if (go) go.disabled = false; S.toast(S.apiError(r), 'error'); return; }
-        step(r.data.status, r.data.phone_masked);
+        step(r.data);
       });
     }
-    step(ch.tg ? ch.tg.status : '', ch.tg ? ch.tg.phone_masked : '');
+    var cur = ch.tg || {};
+    if (cur.status === 'pending_qr') qrSince = Date.now();
+    step(cur.status === 'pending_qr' ? { status: '' } : cur);
   }
 
   // Instagram, Gmail, Google Календарь: OAuth через Composio (окно входа, результат приходит сообщением)

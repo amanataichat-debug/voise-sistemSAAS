@@ -2,7 +2,7 @@
 Telegram User Service — работа с ЛИЧНЫМ Telegram-аккаунтом агента (MTProto).
 
 НЕ путать с agent_telegram_service.py (Bot API, бот-фронтенд чата владельца).
-Здесь — Telethon: авторизация личного аккаунта (телефон → код → 2FA),
+Здесь — Telethon: авторизация личного аккаунта (телефон → код → 2FA или QR-код → 2FA),
 отправка сообщений клиентам от имени владельца и чтение новых входящих.
 
 Ключевые решения:
@@ -189,6 +189,102 @@ async def confirm_password(session_str: str, password: str) -> Dict[str, Any]:
         logger.warning(f"[TG-USER] confirm_password failed: {type(e).__name__}: {e}")
         return {"ok": False, "error": _error_code(e)}
     finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+# ============================================================================
+# ВХОД ПО QR-КОДУ (13.11.2026: код из приложения у части владельцев «не проходит»)
+# ============================================================================
+
+QR_LOGIN_MAX_SECONDS = 180      # сколько ждём сканирования, потом «QR устарел, обновите»
+QR_STOP_CHECK_SECONDS = 3       # как часто проверяем, не отменил ли владелец вход
+
+
+def qr_svg_data_uri(url: str) -> str:
+    """tg://login?token=… → картинка QR (SVG, data:) для окна подключения. segno — чистый Python."""
+    import base64
+    import io
+    import segno
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="svg", scale=6, border=2, dark="#0e1729", light="#ffffff")
+    return "data:image/svg+xml;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _login_token_url(token: bytes) -> str:
+    import base64
+    return "tg://login?token=" + base64.urlsafe_b64encode(token).decode().rstrip("=")
+
+
+async def qr_login(on_qr, should_stop, max_seconds: int = QR_LOGIN_MAX_SECONDS) -> Dict[str, Any]:
+    """
+    Вход по QR: соединение с Telegram держится, пока владелец сканирует код
+    (Telegram → Настройки → Устройства → Подключить устройство).
+
+    on_qr(url, expires_at)  — async, вызывается для каждого нового QR (токен живёт ~30 с);
+    should_stop()           — async → True, если вход отменили/начали заново (проверяется раз в 3 с).
+
+    Своя версия QRLogin.wait из Telethon: обработчик UpdateLoginToken висит всё время ожидания,
+    поэтому скан между двумя кусками ожидания не теряется. Возвращает как confirm_code:
+      {ok, needs_password, session, me...} | {ok: False, error: qr_expired|cancelled|<код>}
+    """
+    from telethon import errors, events, functions, types
+    client = _new_client()
+    loop = asyncio.get_running_loop()
+    scanned = asyncio.Event()
+
+    async def _on_token(_update):
+        scanned.set()
+
+    try:
+        await client.connect()
+        client.add_event_handler(_on_token, events.Raw(types.UpdateLoginToken))
+        request = functions.auth.ExportLoginTokenRequest(int(str(settings.TELEGRAM_API_ID)), settings.TELEGRAM_API_HASH, [])
+        deadline = loop.time() + max_seconds
+        resp = await client(request)
+        while True:
+            if isinstance(resp, types.auth.LoginToken):
+                await on_qr(_login_token_url(resp.token), resp.expires)
+                expires = resp.expires
+                # ждём скан кусками, между кусками проверяем отмену и срок токена
+                while not scanned.is_set():
+                    now_utc = datetime.now(timezone.utc)
+                    if loop.time() >= deadline:
+                        return {"ok": False, "error": "qr_expired"}
+                    if await should_stop():
+                        return {"ok": False, "error": "cancelled"}
+                    if (expires - now_utc).total_seconds() <= 2:
+                        break        # токен истекает — выпускаем новый QR
+                    try:
+                        await asyncio.wait_for(scanned.wait(), timeout=QR_STOP_CHECK_SECONDS)
+                    except asyncio.TimeoutError:
+                        pass
+                scanned.clear()
+                resp = await client(request)          # после скана — LoginTokenSuccess / MigrateTo
+                continue
+            if isinstance(resp, types.auth.LoginTokenMigrateTo):
+                await client._switch_dc(resp.dc_id)
+                resp = await client(functions.auth.ImportLoginTokenRequest(resp.token))
+                continue
+            if isinstance(resp, types.auth.LoginTokenSuccess):
+                user = resp.authorization.user
+                await client._on_login(user)
+                logger.info(f"[TG-USER] QR login ok: id={getattr(user, 'id', None)}")
+                return {"ok": True, "needs_password": False, "session": client.session.save(), **_me_dict(user)}
+            return {"ok": False, "error": f"telegram_error: unexpected {type(resp).__name__}"}
+    except errors.SessionPasswordNeededError:
+        # QR принят, но у аккаунта облачный пароль — дальше обычный шаг 3 (confirm_password)
+        return {"ok": True, "needs_password": True, "session": client.session.save()}
+    except Exception as e:
+        logger.warning(f"[TG-USER] QR login failed: {type(e).__name__}: {e}")
+        return {"ok": False, "error": _error_code(e)}
+    finally:
+        try:
+            client.remove_event_handler(_on_token)
+        except Exception:
+            pass
         try:
             await client.disconnect()
         except Exception:

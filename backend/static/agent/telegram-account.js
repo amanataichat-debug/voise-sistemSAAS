@@ -38,7 +38,7 @@ function tgAccountConnectorRowHtml(){
       + `<button class="btn btn-secondary btn-sm" onclick="openTgAccountModal()"><i class="fas fa-gear"></i> Настроить</button>`;
     sub = s.auto_reply_enabled ? 'Подключено · автоответ включён' : 'Подключено · автоответ выключен';
     subColor = '#166534';
-  } else if(st === 'pending_code' || st === 'pending_password'){
+  } else if(st === 'pending_code' || st === 'pending_password' || st === 'pending_qr'){
     right = `<button class="btn btn-primary btn-sm" onclick="openTgAccountModal()"><i class="fas fa-link"></i> Продолжить</button>`;
     sub = 'Авторизация не завершена';
     subColor = '#b45309';
@@ -84,6 +84,30 @@ function openTgAccountModal(){
 function closeTgAccountModal(){
   const ov = document.getElementById('tg-account-modal-overlay');
   if(ov) ov.classList.add('hidden');
+  _tgQrPoll(false);
+}
+
+// Вход по QR-коду (13.11.2026): пока показан QR — раз в 2 с спрашиваем статус
+let tgQrTimer = null;
+function _tgQrPoll(on){
+  if(!on){ clearInterval(tgQrTimer); tgQrTimer = null; return; }
+  if(tgQrTimer) return;
+  tgQrTimer = setInterval(async () => {
+    const ov = document.getElementById('tg-account-modal-overlay');
+    if(!ov || ov.classList.contains('hidden')){ _tgQrPoll(false); return; }
+    const was = tgAccState && tgAccState.status;
+    await loadTgAccount();
+    if(tgAccState && tgAccState.status === 'connected' && was !== 'connected') showToast('Telegram подключён', 'success');
+  }, 2000);
+}
+
+async function tgAccQr(){
+  if(tgAccBusy) return;
+  _tgAccLock(true);
+  try{ await _tgAccPost('/qr/start', {}); }
+  catch(e){ showToast('Ошибка сети', 'error'); }
+  _tgAccLock(false);
+  renderTgAccountModal();
 }
 
 function renderTgAccountModal(){
@@ -102,8 +126,29 @@ function renderTgAccountModal(){
       Отправка ограничена лимитами, писать первым по номеру телефона агент может лишь изредка.
     </div>`;
 
-  if(st === 'not_connected' || st === 'error'){
+  if(st !== 'pending_qr') _tgQrPoll(false);
+  if(st === 'pending_qr'){
+    _tgQrPoll(true);
     el.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        ${s.qr ? `<img src="${esc(s.qr)}" alt="QR-код для входа в Telegram" style="width:240px;height:240px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:8px">`
+               : `<div style="width:240px;height:240px;border-radius:12px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:13px">Готовим QR-код…</div>`}
+        <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.7;color:#334155">
+          <li>Откройте Telegram на телефоне</li>
+          <li><b>Настройки → Устройства → Подключить устройство</b></li>
+          <li>Наведите камеру на этот код</li>
+        </ol>
+        <div style="font-size:12px;color:#64748b;text-align:center">Код обновляется сам каждые полминуты.</div>
+        <div><button class="btn btn-secondary btn-sm" onclick="tgAccQr()">Новый QR-код</button>
+        <button class="btn btn-secondary btn-sm" onclick="tgAccRestart()" style="margin-left:6px">По номеру телефона</button></div>
+      </div>`;
+    return;
+  }
+  if(st === 'not_connected' || st === 'error' || st === 'qr_expired'){
+    el.innerHTML = `
+      ${st === 'qr_expired' ? `<div style="background:#FEF9C3;border-left:3px solid #CA8A04;padding:10px 12px;border-radius:8px;font-size:12px;color:#713F12;margin-bottom:14px">QR-код устарел: его не отсканировали за 3 минуты. Покажите новый.</div>` : ''}
+      <button class="btn btn-primary" id="tgacc-qr" onclick="tgAccQr()" style="width:100%;justify-content:center;margin-bottom:12px"><i class="fas fa-qrcode"></i> Войти по QR-коду (без кода)</button>
+      <div style="font-size:12px;color:#64748b;text-align:center;margin-bottom:12px">или по номеру телефона и коду из Telegram:</div>
       ${st === 'error' ? `<div style="background:#FEE2E2;border-left:3px solid #DC2626;padding:10px 12px;border-radius:8px;font-size:12px;color:#7F1D1D;margin-bottom:14px">Сессия недействительна (${esc(s.last_error || 'отозвана')}). Подключите аккаунт заново.</div>` : warn}
       <label class="form-label">Номер телефона аккаунта Telegram</label>
       <input type="tel" class="form-input" id="tgacc-phone" placeholder="+996 700 123 456" value="">
@@ -116,7 +161,8 @@ function renderTgAccountModal(){
       <input type="text" class="form-input" id="tgacc-code" placeholder="12345" autocomplete="one-time-code">
       <div style="height:14px"></div>
       <button class="btn btn-primary" id="tgacc-submit" onclick="tgAccVerifyCode()"><i class="fas fa-check"></i> Подтвердить</button>
-      <button class="btn btn-secondary" onclick="tgAccRestart()" style="margin-left:8px">Начать заново</button>`;
+      <button class="btn btn-secondary" onclick="tgAccRestart()" style="margin-left:8px">Начать заново</button>
+      <div style="margin-top:12px"><button class="btn btn-secondary btn-sm" onclick="tgAccQr()"><i class="fas fa-qrcode"></i> Код не подходит? Войти по QR-коду</button></div>`;
   } else if(st === 'pending_password'){
     el.innerHTML = `
       <div style="font-size:13px;margin-bottom:12px">На аккаунте включена двухэтапная аутентификация. Введите облачный пароль.</div>
