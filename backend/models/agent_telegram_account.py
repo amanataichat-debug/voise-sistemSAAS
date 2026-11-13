@@ -65,7 +65,12 @@ class AgentTelegramAccount(Base):
     status = Column(String(20), default="pending_code", nullable=False)
 
     # Промежуточное состояние между шагами авторизации
+    # (при входе по QR здесь лежит метка текущей попытки — старая попытка по ней понимает, что её отменили)
     phone_code_hash = Column(String(64), nullable=True)
+    # Вход по QR-коду (status=pending_qr): текущая ссылка tg://login и когда она истекает.
+    # Колонки — app.ensure_chat_v2_columns().
+    qr_url = Column(Text, nullable=True)
+    qr_expires_at = Column(DateTime, nullable=True)
 
     # Кто подключён (для UI «Подключён как …»)
     tg_user_id = Column(BigInteger, nullable=True)

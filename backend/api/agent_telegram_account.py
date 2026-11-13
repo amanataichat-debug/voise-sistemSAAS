@@ -15,8 +15,18 @@ MTProto (Telethon): агент пишет клиентам от имени вл�
 
 Промежуточное состояние (частичная сессия + phone_code_hash) живёт в строке
 AgentTelegramAccount между шагами. Сессии шифруются (TELEGRAM_SESSION_KEY).
+
+Вход по QR-коду (13.11.2026: код из приложения у части владельцев «не проходит»):
+  POST /qr/start  → status=pending_qr; фоновая задача этого воркера держит соединение
+                    с Telegram, кладёт в строку свежую ссылку tg://login (qr_url) и,
+                    когда владелец отсканирует код, подключает аккаунт (или pending_password).
+  GET  /          → для pending_qr отдаёт картинку `qr` — окно опрашивает раз в 2 с с любого воркера.
+Новая попытка (или вход по номеру) меняет метку в phone_code_hash — старая задача видит это и выходит.
 """
 
+import asyncio
+import secrets
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -89,6 +99,20 @@ def _get_row(db: Session, agent: AgentConfig) -> Optional[AgentTelegramAccount]:
     ).first()
 
 
+def _qr_payload(row: AgentTelegramAccount) -> dict:
+    """Картинка QR для окна, пока код ещё действует."""
+    if row.status != "pending_qr" or not row.qr_url or not row.qr_expires_at:
+        return {"qr": None}
+    left = (row.qr_expires_at - datetime.utcnow()).total_seconds()
+    if left <= 1:
+        return {"qr": None}
+    try:
+        return {"qr": tg_user.qr_svg_data_uri(row.qr_url), "qr_link": row.qr_url, "qr_expires_in": int(left)}
+    except Exception as e:  # нет segno и т.п. — окно покажет ошибку, а не вечное ожидание
+        logger.warning(f"[TG-ACCOUNT] QR render failed: {e}")
+        return {"qr": None, "qr_error": "qr_render_failed"}
+
+
 def _status_dict(row: Optional[AgentTelegramAccount]) -> dict:
     base = {"configured": tg_user.is_configured()}
     if row is None:
@@ -103,6 +127,8 @@ def _status_dict(row: Optional[AgentTelegramAccount]) -> dict:
         })
         return base
     base.update(row.to_dict())
+    if row.status == "pending_qr":
+        base.update(_qr_payload(row))
     return base
 
 
@@ -155,6 +181,8 @@ def _finalize_connected(db: Session, row: AgentTelegramAccount, result: dict) ->
     row.session_encrypted = tg_user.encrypt_session(result["session"])
     row.status = "connected"
     row.phone_code_hash = None
+    row.qr_url = None
+    row.qr_expires_at = None
     row.tg_user_id = result.get("tg_user_id")
     row.tg_username = result.get("tg_username")
     row.tg_first_name = result.get("tg_first_name")
@@ -209,13 +237,126 @@ async def start_auth(
 
     row.phone = phone
     row.session_encrypted = tg_user.encrypt_session(result["session"])
-    row.phone_code_hash = result["phone_code_hash"]
+    row.phone_code_hash = result["phone_code_hash"]   # заодно гасит идущий вход по QR
+    row.qr_url = None
     row.status = "pending_code"
     row.last_error = None
     db.commit()
 
     logger.info(f"[TG-ACCOUNT] code sent for agent {agent.id} (•••{phone[-4:]})")
     return _status_dict(row)
+
+
+def _qr_attempt_alive(account_id, nonce: str) -> bool:
+    from backend.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        row = db.query(AgentTelegramAccount).filter(AgentTelegramAccount.id == account_id).first()
+        return bool(row and row.status == "pending_qr" and row.phone_code_hash == nonce)
+    finally:
+        db.close()
+
+
+def _qr_store(account_id, nonce: str, url: str, expires) -> None:
+    from backend.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        exp = expires.astimezone(timezone.utc).replace(tzinfo=None) if getattr(expires, "tzinfo", None) else expires
+        db.query(AgentTelegramAccount).filter(
+            AgentTelegramAccount.id == account_id,
+            AgentTelegramAccount.phone_code_hash == nonce,
+            AgentTelegramAccount.status == "pending_qr",
+        ).update({"qr_url": url, "qr_expires_at": exp}, synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _qr_runner(account_id, nonce: str) -> None:
+    """Фон: ждём скан QR, по итогу пишем строку аккаунта (только если попытка ещё наша)."""
+    async def on_qr(url, expires):
+        await asyncio.to_thread(_qr_store, account_id, nonce, url, expires)
+
+    async def should_stop():
+        return not await asyncio.to_thread(_qr_attempt_alive, account_id, nonce)
+
+    result = await tg_user.qr_login(on_qr, should_stop)
+
+    from backend.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        row = db.query(AgentTelegramAccount).filter(AgentTelegramAccount.id == account_id).first()
+        if not row or row.status != "pending_qr" or row.phone_code_hash != nonce:
+            return   # владелец начал заново или подключился по номеру
+        row.qr_url = None
+        row.qr_expires_at = None
+        if not result.get("ok"):
+            err = result.get("error") or "telegram_error"
+            if err == "cancelled":
+                return
+            row.status = "qr_expired" if err == "qr_expired" else "error"
+            row.phone_code_hash = None
+            row.last_error = None if err == "qr_expired" else err
+            db.commit()
+            logger.info(f"[TG-ACCOUNT] QR login ended for account {account_id}: {err}")
+            return
+        if result.get("needs_password"):
+            row.session_encrypted = tg_user.encrypt_session(result["session"])
+            row.status = "pending_password"
+            row.phone_code_hash = None
+            db.commit()
+            logger.info(f"[TG-ACCOUNT] QR scanned, cloud password needed for account {account_id}")
+            return
+        _finalize_connected(db, row, result)
+        await _baseline_dialogs(db, row, result["session"])
+        logger.info(f"[TG-ACCOUNT] connected by QR @{row.tg_username} (account {account_id})")
+    except Exception as e:
+        logger.error(f"[TG-ACCOUNT] QR runner failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.post("/qr/start")
+async def qr_start(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Вход по QR-коду: Telegram → Настройки → Устройства → Подключить устройство → навести камеру."""
+    _require_configured()
+    agent = _get_agent(current_user, db, agent_id)
+    row = _get_row(db, agent)
+    if row and row.status == "connected":
+        raise HTTPException(status_code=400, detail="already_connected")
+    if row is None:
+        row = AgentTelegramAccount(agent_config_id=agent.id, user_id=current_user.id)
+        db.add(row)
+    nonce = "qr:" + secrets.token_hex(12)
+    row.status = "pending_qr"
+    row.phone_code_hash = nonce          # прежняя попытка (QR или код) с этого момента недействительна
+    row.qr_url = None
+    row.qr_expires_at = None
+    row.session_encrypted = None
+    row.last_error = None
+    db.commit()
+    db.refresh(row)
+    from backend.core.spawn import spawn
+    spawn(_qr_runner(row.id, nonce), name=f"tg-qr-{row.id}")
+    # первый QR обычно готов за ~1 с — подождём его, чтобы окно сразу показало картинку
+    for _ in range(12):
+        await asyncio.sleep(0.25)
+        db.expire_all()
+        fresh = _get_row(db, agent)
+        if fresh and fresh.qr_url:
+            return _status_dict(fresh)
+        if not fresh or fresh.status != "pending_qr":
+            break
+    db.expire_all()
+    return _status_dict(_get_row(db, agent))
 
 
 @router.post("/verify-code")

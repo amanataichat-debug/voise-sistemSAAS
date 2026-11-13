@@ -512,3 +512,7 @@
   .st-ccard .bd { padding: 7px 8px 6px; }
   .st-ccard .acts .btn-icon { width: 28px; height: 28px; }
 }
+
+/* Вход в Telegram по QR-коду (13.11.2026) */
+.st-tgsteps { margin: 2px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--vf-text-2); max-width: 300px; }
+.st-qr img[alt^="QR-код для входа"] { image-rendering: pixelated; }

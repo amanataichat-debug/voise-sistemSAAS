@@ -1880,6 +1880,8 @@ def ensure_chat_v2_columns():
             "ADD COLUMN IF NOT EXISTS voice_reply_mode VARCHAR(16) NOT NULL DEFAULT 'on_voice'",
         ],
         "agent_telegram_accounts": [
+            "ADD COLUMN IF NOT EXISTS qr_url TEXT",
+            "ADD COLUMN IF NOT EXISTS qr_expires_at TIMESTAMP",
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
             "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
             "ADD COLUMN IF NOT EXISTS voice_reply_mode VARCHAR(16) NOT NULL DEFAULT 'on_voice'",
