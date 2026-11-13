@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any, List
 
 from openai import AsyncOpenAI
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm.attributes import flag_modified
 
 from backend.core.logging import get_logger
@@ -67,6 +68,22 @@ TIMELINE_DAYS_WINDOW = 30     # окно по времени (дни)
 TIMELINE_CALL_SNIPPET = 300   # длина сниппета транскрипта звонка в ленте
 
 _CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷", "whatsapp": "🟢"}
+
+
+def _flag_memory(obj) -> None:
+    """Пометить memory изменённой, только если поле загружено в объект.
+
+    13.11.2026: «Can't flag attribute 'memory' modified; it's not present in the object state» —
+    разбор сообщения падал в самом конце. Инструменты бота (смена этапа, память клиента, отправка)
+    делают db.commit(), после него поля карточки «истекают»; если дальше никто карточку не читал
+    (переписка + этап сменил сам бот), memory нет в состоянии объекта и flag_modified бросает
+    исключение. Незагруженное поле изменено быть не могло — помечать нечего.
+    """
+    try:
+        if "memory" in sa_inspect(obj).dict:
+            flag_modified(obj, "memory")
+    except Exception as e:  # пометка — страховка, ронять из-за неё разбор нельзя
+        logger.warning(f"[AGENT-POSTCALL] flag memory skipped: {e}")
 
 
 def _timeline_call_events(db, agent_contact, exclude_call_id, since, limit) -> list:
@@ -2079,7 +2096,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                 task.post_call_decision = post_call_decision
                 task.status = TaskStatus.COMPLETED
 
-            flag_modified(agent_contact, 'memory')
+            _flag_memory(agent_contact)
             db.commit()
             logger.info(f"[AGENT-POSTCALL] (v3) ✅ Call {agent_call.id} completed: {post_call_decision} ({len(tool_calls_log)} tool calls), stage={agent_contact.status}")
 
@@ -2109,7 +2126,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
             if task:
                 task.post_call_decision = agent_call.post_call_decision
                 task.status = TaskStatus.COMPLETED
-            flag_modified(agent_contact, 'memory')
+            _flag_memory(agent_contact)
             db.commit()
 
         finally:
@@ -2297,7 +2314,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
                 task.post_call_decision = post_call_decision
                 task.status = TaskStatus.COMPLETED
 
-            flag_modified(agent_contact, 'memory')
+            _flag_memory(agent_contact)
             db.commit()
             logger.info(f"[AGENT-POSTCALL] ✅ Call {agent_call.id} completed: {post_call_decision}, stage={agent_contact.status}")
             logger.info(f"[AGENT-POSTCALL] postcall_log saved: {len(tool_calls_log)} tool calls")
@@ -2329,7 +2346,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
             if task:
                 task.post_call_decision = agent_call.post_call_decision
                 task.status = TaskStatus.COMPLETED
-            flag_modified(agent_contact, 'memory')
+            _flag_memory(agent_contact)
             db.commit()
 
 
