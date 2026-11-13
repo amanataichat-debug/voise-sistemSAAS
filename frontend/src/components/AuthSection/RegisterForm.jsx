@@ -33,7 +33,7 @@ function RegisterForm({ onSwitchToLogin }) {
       const referralData = getReferralData();
 
       const userData = {
-        email: email,
+        email: email.trim(),
         password: password,
         first_name: firstName || null,
         last_name: null,

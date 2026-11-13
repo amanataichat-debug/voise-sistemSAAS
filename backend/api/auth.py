@@ -68,6 +68,21 @@ async def register(
             # ✅ Email НЕ ПОДТВЕРЖДЕН - отправляем новый код
             logger.info(f"🔄 User exists but not verified. Resending code to: {user_data.email}")
             
+            # Клиент регистрируется снова (письмо не дошло) — часто уже с ДРУГИМ паролем.
+            # Раньше пароль оставался от первой попытки: после подтверждения почты «верный»
+            # пароль не подходил (13.11.2026, жалобы «логин и пароль верные, а не пускает»).
+            # Почта не подтверждена — владелец аккаунта ещё не доказан, новый пароль безопасен.
+            try:
+                from backend.core.security import hash_password
+                existing_user.password_hash = hash_password(user_data.password)
+                if user_data.first_name:
+                    existing_user.first_name = user_data.first_name
+                if user_data.company_name:
+                    existing_user.company_name = user_data.company_name
+                db.commit()
+            except Exception as pwd_error:
+                db.rollback()
+                logger.warning(f"Re-registration: password not updated: {pwd_error}")
             try:
                 verification_result = await EmailService.send_verification_code(
                     db=db,
@@ -91,10 +106,7 @@ async def register(
                 
             except Exception as email_error:
                 logger.error(f"Failed to resend verification email: {email_error}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send verification code. Please try again later."
-                )
+                return _let_in_without_email(db, existing_user, "re-register")
         
         # ✅ Новый пользователь - создаем аккаунт
         result = await AuthService.register(db, user_data)
@@ -136,16 +148,16 @@ async def register(
             
         except Exception as email_error:
             logger.error(f"Failed to send verification email: {email_error}")
-            
-            # Даже если email не отправился, регистрация прошла успешно
-            return {
-                "success": True,
-                "message": "Registration successful! Please request verification code.",
-                "user": result.get("user"),
-                "verification_required": True,
-                "verification_sent": False,
-                "error": "Failed to send verification email automatically. Please use resend button."
-            }
+            # Письмо не ушло — не оставляем клиента у закрытой двери (раньше он видел ошибку
+            # и не мог ни ввести код, ни войти): впускаем, а сбой почты видно в логе.
+            from backend.models.user import User as _User
+            new_user = db.query(_User).filter(_User.id == user_id).first()
+            if new_user is None:
+                raise HTTPException(status_code=500, detail="Registration failed - user not found")
+            out = _let_in_without_email(db, new_user, "register")
+            out["referral_info"] = result.get("referral_info")
+            out["partner_program"] = result.get("partner_program")
+            return out
         
     except HTTPException:
         raise
@@ -156,6 +168,34 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed due to server error"
         )
+
+
+def _let_in_without_email(db: Session, user, where: str) -> dict:
+    """
+    Код подтверждения не отправился (сбой почтового сервера) — подтверждаем почту сами и выдаём
+    токен. Иначе клиент не может ни ввести код, ни войти. Выключатель: AUTH_EMAIL_FALLBACK=0.
+    """
+    import os
+    from backend.core.security import create_jwt_token as create_access_token
+    if os.getenv("AUTH_EMAIL_FALLBACK", "1").strip().lower() in ("0", "false", "no", "off"):
+        raise HTTPException(
+            # 400, а не 5xx: на проде текст ответов 5xx заменяется на «Internal server error»
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось отправить код на почту. Попробуйте через несколько минут.",
+        )
+    user.email_verified = True
+    db.commit()
+    logger.error(f"⚠️ SMTP: письмо с кодом не ушло ({where}), почта {user.email} подтверждена автоматически")
+    return {
+        "success": True,
+        "message": "Registration successful",
+        "token": create_access_token(str(user.id)),
+        "token_type": "bearer",
+        "user": {"id": str(user.id), "email": user.email, "email_verified": True},
+        "verification_required": False,
+        "verification_sent": False,
+        "email_fallback": True,
+    }
 
 
 @router.post("/login", response_model=dict)
@@ -195,6 +235,17 @@ async def login(
         # 2. ✅ Проверяем email_verified
         if not user.get("email_verified", False):
             logger.warning(f"Login blocked: Email not verified for {login_data.email}")
+            # Пароль верный, почта не подтверждена: сразу шлём свежий код (форма входа откроет
+            # поле для кода). Письмо не уходит — впускаем, как при регистрации.
+            from backend.models.user import find_user_by_email
+            db_user = find_user_by_email(db, login_data.email)
+            if db_user is not None and not db_user.email_verified:
+                try:
+                    await EmailService.send_verification_code(
+                        db=db, user_id=str(db_user.id), user_email=db_user.email)
+                except Exception as email_error:
+                    logger.error(f"Login: verification email failed: {email_error}")
+                    return _let_in_without_email(db, db_user, "login")
             
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -22,7 +22,9 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     """Schema for user login request"""
     email: EmailStr = Field(..., description="User email")
-    password: str = Field(..., min_length=8, description="User password")
+    # Без min_length: правила длины — для НОВОГО пароля. На входе старый короткий пароль (или выданный
+    # админом) отвергался ещё до проверки, и клиент с верным паролем не мог войти (13.11.2026).
+    password: str = Field(..., min_length=1, max_length=256, description="User password")
 
     class Config:
         schema_extra = {
@@ -84,23 +86,26 @@ class RegisterRequest(BaseModel):
             
         return email_str
 
-    @validator('referral_code')
+    @validator('referral_code', pre=True)
     def referral_code_format(cls, v):
-        """Validate referral code format"""
+        """
+        Код партнёра: 2 буквы + 6 цифр (AB123456). Неверный код НЕ ломает регистрацию — просто
+        игнорируется: он приходит из ссылки и живёт в браузере, и раньше одна кривая ссылка
+        навсегда закрывала регистрацию с этого телефона.
+        """
         if v is None:
-            return v
-            
-        # Приводим к верхнему регистру и убираем пробелы
+            return None
         code = str(v).upper().strip()
-        
-        # Проверяем формат: 2 буквы + 6 цифр (AB123456)
-        if len(code) != 8:
-            raise ValueError('Referral code must be 8 characters long')
-            
-        if not (code[:2].isalpha() and code[2:].isdigit()):
-            raise ValueError('Referral code must be in format: 2 letters + 6 digits (e.g., AB123456)')
-            
+        if len(code) != 8 or not (code[:2].isalpha() and code[2:].isdigit()):
+            return None
         return code
+
+    @validator('utm_data', pre=True)
+    def utm_data_clean(cls, v):
+        """UTM-метки — только строки; мусор (не словарь, числа) не ломает регистрацию."""
+        if not isinstance(v, dict):
+            return None
+        return {str(k)[:50]: (None if val is None else str(val)[:200]) for k, val in list(v.items())[:20]}
 
     @validator('utm_data')
     def utm_data_format(cls, v):

@@ -4,6 +4,7 @@ import InlineNotification from '../InlineNotification';
 import Icon from '../Icon';
 import PasswordField from './PasswordField';
 import ForgotPasswordForm from './ForgotPasswordForm';
+import EmailVerificationSection from './EmailVerificationSection';
 import { useT } from '../../i18n';
 
 // Логика входа не менялась: api.login → auth_token в localStorage → /static/dashboard.html
@@ -13,8 +14,22 @@ function LoginForm({ onSwitchToRegister }) {
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [showVerify, setShowVerify] = useState(false);
   const { t } = useT();
 
+  // Почта не подтверждена, пароль верный: сервер уже отправил свежий код — сразу поле для кода,
+  // а не тупик «проверьте почту» (13.11.2026).
+  if (showVerify) {
+    return (
+      <EmailVerificationSection
+        email={email.trim()}
+        message={t('auth.login_error_not_verified')}
+        onVerified={() => {
+          window.location.href = '/static/dashboard.html';
+        }}
+      />
+    );
+  }
   if (showForgot) {
     return (
       <ForgotPasswordForm
@@ -36,7 +51,7 @@ function LoginForm({ onSwitchToRegister }) {
     setIsLoading(true);
 
     try {
-      const data = await api.login({ email, password });
+      const data = await api.login({ email: email.trim(), password });
 
       localStorage.setItem('auth_token', data.token);
 
@@ -49,7 +64,8 @@ function LoginForm({ onSwitchToRegister }) {
       setIsLoading(false);
 
       if (error.message.includes('not verified') || error.message.includes('не подтвержден')) {
-        setNotification({ type: 'warning', message: t('auth.login_error_not_verified') });
+        setNotification(null);
+        setShowVerify(true);
       } else if (error.message.includes('Invalid') || error.message.includes('password')) {
         setNotification({ type: 'error', message: t('auth.login_error_invalid') });
       } else {
