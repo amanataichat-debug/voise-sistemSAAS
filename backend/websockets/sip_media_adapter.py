@@ -217,6 +217,7 @@ class HandlerSocket:
         in_rate = HANDLER_IN_RATE.get(provider, 24000)
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
+        self._in_batch_sec = INBOUND_BATCH_MS.get(provider, 20) / 1000
         self._cushion_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
         self._cushion_max = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MAX_MS / 1000)
         self._hold_target = self._cushion_bytes
@@ -244,6 +245,9 @@ class HandlerSocket:
         self.in_gap_max = 0.0
         self.in_gaps_long = 0
         self.out_ahead_max = 0.0
+        self.in_backlog_max = 0.0       # с: звук клиента, ждавший в очереди перед моделью (хендлер не успевал)
+        self.loop_stall_max = 0.0       # с: самое долгое «замирание» цикла событий воркера за звонок
+        self._loop_task: Optional[asyncio.Task] = None
         self.frames_out = 0
         self.barge_ins = 0
         self.audio_bytes_out = 0
@@ -259,6 +263,20 @@ class HandlerSocket:
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
         self._reader_task = asyncio.create_task(self._read_bridge())
+        self._loop_task = asyncio.create_task(self._watch_loop())
+
+    async def _watch_loop(self) -> None:
+        """Замирания цикла событий: пока цикл занят чужим кодом, звук клиента не уходит в модель."""
+        loop = asyncio.get_running_loop()
+        try:
+            while not self.closed:
+                t = loop.time()
+                await asyncio.sleep(0.1)
+                stall = loop.time() - t - 0.1
+                if stall > self.loop_stall_max:
+                    self.loop_stall_max = stall
+        except asyncio.CancelledError:
+            pass
 
     async def _read_bridge(self) -> None:
         """Читает реальный сокет моста и складывает сообщения для хендлера в очередь."""
@@ -275,6 +293,9 @@ class HandlerSocket:
                     if len(self._in_buf) >= self._in_batch_bytes:
                         pcm = bytes(self._in_buf)
                         self._in_buf.clear()
+                        backlog = self._queue.qsize() * self._in_batch_sec
+                        if backlog > self.in_backlog_max:
+                            self.in_backlog_max = backlog
                         await self._queue.put({
                             "type": "websocket.receive",
                             "text": json.dumps({
@@ -337,6 +358,8 @@ class HandlerSocket:
             self._hangup_task.cancel()
         if self._cushion_task and not self._cushion_task.done():
             self._cushion_task.cancel()
+        if self._loop_task and not self._loop_task.done():
+            self._loop_task.cancel()
         await self.hangup("handler_finished")
         self.closed = True
         if self._reader_task and not self._reader_task.done():
@@ -535,8 +558,11 @@ class HandlerSocket:
         missing = max(0.0, span - got)
         text = (f"Путь звука: от клиента дошло {got:.1f} с звука за {span:.1f} с (не дошло {missing:.1f} с, "
                 f"самый длинный обрыв {self.in_gap_max:.2f} с, обрывов длиннее {INBOUND_GAP_WARN_SEC:g} с: "
-                f"{self.in_gaps_long}); звук агента опережал проигрывание максимум на {self.out_ahead_max:.2f} с")
-        bad = missing > 3.0 or self.in_gap_max > 1.0 or self.out_ahead_max > 1.5
+                f"{self.in_gaps_long}); звук клиента ждал в очереди перед моделью до {self.in_backlog_max:.2f} с; "
+                f"сервер замирал до {self.loop_stall_max:.2f} с; звук агента опережал проигрывание максимум на "
+                f"{self.out_ahead_max:.2f} с")
+        bad = (missing > 3.0 or self.in_gap_max > 1.0 or self.out_ahead_max > 1.5
+               or self.in_backlog_max > 0.5 or self.loop_stall_max > 0.4)
         return text, bad
 
     def _stream_queued(self, now: float) -> float:

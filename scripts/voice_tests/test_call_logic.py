@@ -393,7 +393,7 @@ def audio_path():
     from backend.websockets import sip_media_adapter as sma
     sock = sma.HandlerSocket.__new__(sma.HandlerSocket)
     sock.in_bytes = 0; sock.in_first_at = 0.0; sock._in_last_at = 0.0; sock.in_gap_max = 0.0
-    sock.in_gaps_long = 0; sock.out_ahead_max = 0.0
+    sock.in_gaps_long = 0; sock.out_ahead_max = 0.0; sock.in_backlog_max = 0.0; sock.loop_stall_max = 0.0
     check("путь звука: без входящего звука строки нет", sock.audio_path_summary() is None)
     t0 = time.time()
     sock.in_first_at = t0; sock._in_last_at = t0 + 10.0; sock.in_bytes = int(6.0 * 16000)
@@ -403,6 +403,13 @@ def audio_path():
           "не дошло 4.0 с" in text and "самый длинный обрыв 1.40" in text and bad, text)
     sock.in_bytes = int(10.0 * 16000); sock.in_gap_max = 0.1; sock.in_gaps_long = 0
     check("путь звука: ровный вход — не проблема", sock.audio_path_summary()[1] is False)
+    sock.in_backlog_max = 1.6
+    text, bad = sock.audio_path_summary()
+    check("путь звука: звук клиента копился перед моделью — видно и это проблема",
+          "ждал в очереди перед моделью до 1.60 с" in text and bad, text)
+    sock.in_backlog_max = 0.0; sock.loop_stall_max = 0.9
+    check("путь звука: замирание сервера видно", "сервер замирал до 0.90 с" in sock.audio_path_summary()[0]
+          and sock.audio_path_summary()[1])
     import re as _re
     doc = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
     check("Анри: ролевую сценку играет смело, цены для примера, из роли не выходит",
