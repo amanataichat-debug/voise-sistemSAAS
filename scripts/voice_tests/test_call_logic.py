@@ -380,6 +380,12 @@ def greeting_personal():
           "сразу замолчи" in hint and "Stop speaking when the user interrupts" in hint and "договори мысль" in hint)
     check("подсказка голосу: обращение по имени к месту", "по имени к месту, не в каждой фразе" in hint)
     check("подсказка голосу: произношение CRM и латиницы", "«си-ар-эм»" in head and "«ватсап»" in head)
+    # 14.11.2026: эталон владельца — демо конкурента (docs/competitor_demo_alo.md)
+    check("подсказка голосу: остроумие на подколку и торг, сразу обратно к делу, что-то взамен «нет»",
+          "Остроумие." in head and "возвращай разговор к делу" in head and "Вместо голого «нет»" in head)
+    from backend.services.agent_prompts import VOICE_AGENT_PROMPT_BASE as _vb
+    check("промпт звонка: «вы робот?» — честно и с юмором, не притворяться человеком",
+          "не притворяйся человеком" in _vb and "с юмором" in _vb.replace("\n  ", " "))
 
 
 def prompt_budget():
