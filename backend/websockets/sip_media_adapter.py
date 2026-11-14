@@ -29,7 +29,7 @@ import audioop
 import base64
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -73,6 +73,8 @@ OUTBOUND_CUSHION_STEP_MS = 100
 OUTBOUND_CUSHION_MAX_MS = 600
 OUTBOUND_REBUFFER_MS = 120
 OUTBOUND_UNDERRUN_TOLERANCE_SEC = 0.04
+# Обрыв входящего звука от моста длиннее этого считается в диагностике пути звука
+INBOUND_GAP_WARN_SEC = 0.3
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
@@ -233,6 +235,15 @@ class HandlerSocket:
         self.end_reason: Optional[str] = None
         self.handler_error: Optional[Dict[str, Any]] = None
         self.frames_in = 0
+        # Диагностика пути звука (14.11.2026, звонок 92ea0445: по записи клиент ждал ответа 4–5 с, а журнал
+        # показывал 1,5–3 с). Вход: сколько звука клиента реально дошло и самые длинные обрывы между кадрами
+        # моста; выход: насколько звук агента опережал проигрывание (очередь у моста = задержка для клиента).
+        self.in_bytes = 0
+        self.in_first_at = 0.0
+        self._in_last_at = 0.0
+        self.in_gap_max = 0.0
+        self.in_gaps_long = 0
+        self.out_ahead_max = 0.0
         self.frames_out = 0
         self.barge_ins = 0
         self.audio_bytes_out = 0
@@ -259,6 +270,7 @@ class HandlerSocket:
                     break
                 if raw.get("bytes") is not None:
                     self.frames_in += 1
+                    self._note_inbound(len(raw["bytes"]))
                     self._in_buf.extend(self._up(raw["bytes"]))
                     if len(self._in_buf) >= self._in_batch_bytes:
                         pcm = bytes(self._in_buf)
@@ -472,6 +484,9 @@ class HandlerSocket:
         self._out_last_at = now
         if self._out_streaming:
             self._stream_sent += len(pcm)
+            ahead = self._stream_queued(now)
+            if ahead > self.out_ahead_max:
+                self.out_ahead_max = ahead
             await self._send_bytes(pcm)
             return
         self._out_hold.extend(pcm)
@@ -497,6 +512,32 @@ class HandlerSocket:
         self._stream_sent = len(data)
         if data:
             await self._send_bytes(data)
+
+    def _note_inbound(self, nbytes: int) -> None:
+        now = time.time()
+        if not self.in_first_at:
+            self.in_first_at = now
+        elif self._in_last_at:
+            gap = now - self._in_last_at
+            if gap > self.in_gap_max:
+                self.in_gap_max = gap
+            if gap > INBOUND_GAP_WARN_SEC:
+                self.in_gaps_long += 1
+        self._in_last_at = now
+        self.in_bytes += nbytes
+
+    def audio_path_summary(self) -> Optional[Tuple[str, bool]]:
+        """Строка для «Логи звонка» о пути звука и признак «есть проблема» (для уровня WARN)."""
+        if not self.in_first_at:
+            return None
+        span = max(0.0, (self._in_last_at or self.in_first_at) - self.in_first_at)
+        got = self.in_bytes / (PHONE_RATE * 2)
+        missing = max(0.0, span - got)
+        text = (f"Путь звука: от клиента дошло {got:.1f} с звука за {span:.1f} с (не дошло {missing:.1f} с, "
+                f"самый длинный обрыв {self.in_gap_max:.2f} с, обрывов длиннее {INBOUND_GAP_WARN_SEC:g} с: "
+                f"{self.in_gaps_long}); звук агента опережал проигрывание максимум на {self.out_ahead_max:.2f} с")
+        bad = missing > 3.0 or self.in_gap_max > 1.0 or self.out_ahead_max > 1.5
+        return text, bad
 
     def _stream_queued(self, now: float) -> float:
         """Оценка очереди моста, с: отдано в этом потоке минус проиграно с его начала (мост играет 1:1)."""

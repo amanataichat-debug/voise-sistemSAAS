@@ -612,6 +612,12 @@ async def sip_media(
             handler_error=str(socket.handler_error) if socket.handler_error else None,
             reply_latencies_s=", ".join(str(x) for x in lat[:30]) if lat else None,
         )
+        try:
+            path = socket.audio_path_summary()
+            if path:
+                call_log.add("diag", path[0], level="warning" if path[1] else "info")
+        except Exception as exc:  # диагностика не должна ломать завершение звонка
+            logger.debug(f"[SIP-MEDIA] call {call_id}: audio path summary failed: {exc}")
         if not call_log.session_id:
             # хендлер без журнала сессии (OpenAI / Gemini): привязываем к звонку
             call_log.session_id = f"sip:{call_uuid}"

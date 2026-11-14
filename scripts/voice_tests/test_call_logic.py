@@ -388,6 +388,28 @@ def greeting_personal():
           "не притворяйся человеком" in _vb and "с юмором" in _vb.replace("\n  ", " "))
 
 
+def audio_path():
+    # 14.11.2026, звонок 92ea0445: диагностика пути звука в «Логи звонка»
+    from backend.websockets import sip_media_adapter as sma
+    sock = sma.HandlerSocket.__new__(sma.HandlerSocket)
+    sock.in_bytes = 0; sock.in_first_at = 0.0; sock._in_last_at = 0.0; sock.in_gap_max = 0.0
+    sock.in_gaps_long = 0; sock.out_ahead_max = 0.0
+    check("путь звука: без входящего звука строки нет", sock.audio_path_summary() is None)
+    t0 = time.time()
+    sock.in_first_at = t0; sock._in_last_at = t0 + 10.0; sock.in_bytes = int(6.0 * 16000)
+    sock.in_gap_max = 1.4; sock.in_gaps_long = 3; sock.out_ahead_max = 0.4
+    text, bad = sock.audio_path_summary()
+    check("путь звука: недошедший звук и обрывы видны, это проблема",
+          "не дошло 4.0 с" in text and "самый длинный обрыв 1.40" in text and bad, text)
+    sock.in_bytes = int(10.0 * 16000); sock.in_gap_max = 0.1; sock.in_gaps_long = 0
+    check("путь звука: ровный вход — не проблема", sock.audio_path_summary()[1] is False)
+    import re as _re
+    doc = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
+    check("Анри: ролевую сценку играет смело, цены для примера, из роли не выходит",
+          "разыграть" in doc and "из роли ради «реальной цены» не выходи" in doc)
+    check("подсказка голосу: не начинать каждый ответ с «понял»", "Не начинай ответы одним и тем же словом" in lc.LIVE_VOICE_RULES)
+
+
 def prompt_budget():
     blk = "# ЗНАНИЯ\n" + "В: цена? О: 5000 сом.\n" * 400
     avc.build_voice_knowledge_block = lambda db, a, budget=0: (blk[:9000], {"knowledge": 9000, "total": 9000})
@@ -442,6 +464,7 @@ async def main():
     phone_voice()
     voice_hints()
     greeting_personal()
+    audio_path()
     prompt_budget()
     session_config()
 
