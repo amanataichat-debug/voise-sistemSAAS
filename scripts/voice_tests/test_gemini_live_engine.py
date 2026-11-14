@@ -278,12 +278,14 @@ hint = lc.VOICE_DELEGATION_HINT
 # 10.11.2026 (звонок af6e4d6a, Марат): без «одну секунду», цена сразу цифрой, разговорный бишкекский кыргызский,
 # делегирование только за функцией; подсказки ужаты с 14,3 до 11 тыс. символов. Тем же днём — без продажи Voksy
 # в общих правилах (их получают агенты всех клиентов): test_platform_neutral.py.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 10.11.2026 — без «одну секунду», цена цифрой)",
-      hashlib.sha256(hint.encode()).hexdigest() == "47cb751e8a6b639f771398d3719a85f912e107a0b55d07aedcec735433eb51c1", len(hint))
+# 14.11.2026 (1411-voice-lean): слой платформы GPT-Live переписан коротко по шаблону OpenAI — LIVE_VOICE_HEAD в начале,
+# LIVE_VOICE_RULES (= VOICE_DELEGATION_HINT) в конце; Gemini по-прежнему на своих подсказках и общих кусках ниже.
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 14.11.2026 — короткий слой по шаблону OpenAI)",
+      hashlib.sha256(hint.encode()).hexdigest() == "ee0201d58cf308d5c510be936b5393d6b3dce2d52016af2669541da83f5931dd", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
-check("куски склеиваются в тот же текст для GPT",
-      hint == lc.VOICE_MANNER_HINT + lc.VOICE_DELEGATION_POLICY + lc.VOICE_DIALOG_RULES + lc.VOICE_ALREADY_KNOW_HINT + lc.VOICE_GREETING_RULE)
+check("GPT-Live: хвост инструкций — LIVE_VOICE_RULES, общие куски Gemini в него не входят",
+      hint == lc.LIVE_VOICE_RULES and lc.VOICE_DIALOG_RULES not in hint and lc.VOICE_CONVERSATION_HEAD not in hint)
 
 fn_list = [{"name": "search_knowledge_base", "description": "Ищет ответ в базе знаний компании. Возвращает текст."},
            {"name": "hangup_call", "description": "Завершает звонок."}]
@@ -295,7 +297,7 @@ check("Gemini получает свою манеру: живой разгово�
       all(k in g for k in ("ЖИВОЙ РАЗГОВОР, А НЕ АНКЕТА", "ПОНИМАЙ ЗАДАЧУ", "ЕСЛИ НЕ РАССЛЫШАЛ", "СТАБИЛЬНЫЙ ГОЛОС",
                            "ЯЗЫК.", "КЫРГЫЗСКИЙ")))
 check("Gemini: не дежурный вопрос в каждой реплике (звонок 01.11.2026) и без правил GPT «одна мысль и спроси»",
-      "НЕ заканчивай каждую реплику вопросом" in g and lc.VOICE_MANNER_HINT not in g
+      "НЕ заканчивай каждую реплику вопросом" in g and lc.LIVE_VOICE_HEAD not in g
       and "спроси, интересно ли дальше" not in g and "ГЛАВНОЕ ПРАВИЛО — КРАТКОСТЬ" not in g)
 check("Gemini: без противоречия «можно мм/угу» против «МОЛЧИ»", "можно одно тихое «мм»" not in g)
 # Потолок поднят 02.11.2026 (дважды): «ЖИВОЙ ПРОФЕССИОНАЛ, А НЕ ЧЕК-ЛИСТ», пункт 5 продаж «не отдавай
@@ -348,13 +350,14 @@ check("журнал звонка: мужской персонаж на женс�
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
 _i = _anri.find("## БЛОК 1"); _a = _anri.find("```", _i) + 3; _block1 = _anri[_a:_anri.find("```", _a)]
 check("шаблон Анри не требует вопроса в каждой реплике (инструкция карточки главнее подсказок)",
-      "любой ответ заканчивай коротким вопросом" not in _block1 and "Один вопрос о деле" in _block1)
+      "любой ответ заканчивай коротким вопросом" not in _block1 and "расспрашиваешь о деле" in _block1)
 check("шаблон Анри: факты сам и сразу из раздела «наизусть», не отправляет на менеджера то, что знает (822daa6f, af6e4d6a)",
       "ЧТО ТЫ ЗНАЕШЬ НАИЗУСТЬ" in _block1 and "называй, только когда клиент решил подключаться" not in _block1
       and "не выдумывай" in _block1)
 # 10.11.2026 (af6e4d6a): прежний Блок 1 был ~10 тыс. символов и противоречил сам себе — теперь короткий сценарий
-check("шаблон Анри: Блок 1 короткий (до 6 тыс. символов), шаг со временем, разговорный кыргызский",
-      len(_block1) < 6000 and "Шаг со временем" in _block1 and "Бишкекче" in _block1, len(_block1))
+# 14.11.2026 (1411-voice-lean): без сценария по шагам — цель и смысл, примеры только для стиля
+check("шаблон Анри: Блок 1 короткий (до 5 тыс. символов), шаг со временем, разговорный кыргызский",
+      len(_block1) < 5000 and "созвон в конкретное время" in _block1 and "бишкекче" in _block1, len(_block1))
 
 # ---------- у Gemini Live ТА ЖЕ база знаний и те же живые функции, что у GPT-Live/Eleven
 # (владелец 02.11.2026: «ощущение, что они не читают базу знаний») ----------
@@ -407,9 +410,9 @@ check("Gemini: голос Puck → мужской род; на сайте без
       "мужском роде" in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False)
       and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
 _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
-check("GPT-Live: произношение носителя (ударения, редукция, без английского акцента) — в самом начале инструкций голоса",
-      "VOICE_PRONUNCIATION_HEAD + VOICE_CONVERSATION_HEAD + voice_instructions" in _lc_src and "NO English" in lc.VOICE_PRONUNCIATION_HEAD
-      and "native Russian speaker" in lc.VOICE_PRONUNCIATION_HEAD and "speak it until the end" in lc.VOICE_PRONUNCIATION_HEAD)
+check("GPT-Live: характер, язык и произношение носителя (без английского акцента) — в самом начале инструкций голоса",
+      "LIVE_VOICE_HEAD + voice_instructions + LIVE_VOICE_RULES" in _lc_src and "без английского" in lc.LIVE_VOICE_HEAD
+      and "как носитель" in lc.LIVE_VOICE_HEAD and "держи его до конца звонка" in lc.LIVE_VOICE_HEAD)
 check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
       "до конца звонка" in _pc and "не додумывай" in _pc)
 check("голоса Gemini размечены по роду", all(lc.voice_gender_hint(v) for v in ("aoede", "kore", "leda", "puck", "charon", "fenrir", "orus")))
@@ -422,15 +425,17 @@ check("живой разговор: не эхо, не повторять себ�
 _cfg = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="Ты Анри. Скажи своими словами, что услышал.",
                                                       functions={}, voice="cedar", greeting_message=None),
                            "cid", telephony=True).build_session_config()["instructions"]
-check("GPT-Live: «Живой разговор» сразу после произношения и ДО инструкции карточки",
-      _cfg.index("НЕ ЭХО") < _cfg.index("Ты Анри") and _cfg.index("Pronunciation") < _cfg.index("НЕ ЭХО"))
+check("GPT-Live: характер и язык ДО инструкции карточки, твёрдые правила — после",
+      _cfg.index("Кто ты и как звучишь") < _cfg.index("Язык и произношение") < _cfg.index("Ты Анри")
+      < _cfg.index("Шесть твёрдых правил"))
+check("GPT-Live: «не эхо» осталось твёрдым правилом", "Не повторяй за собеседником его слова" in lc.LIVE_VOICE_RULES)
 _gh = vh.gemini_prompt_head("Puck", "ru", "Добрый день")
 check("Gemini: «Живой разговор» в начале промпта (в gemini_prompt_head)", "НЕ ЭХО" in _gh and "ВАУ" in _gh)
 check("договорённость: принять коротко, итог один раз — у GPT-Live и Gemini, без «спроси, всё ли верно»",
       "один раз, перед прощанием" in lc.VOICE_DIALOG_RULES and "спроси, всё ли верно" not in lc.VOICE_DIALOG_RULES
       and "без пересказа" in vh.GEMINI_CALL_RULES)
 check("делегирование: менеджер / встреча / перезвон — не к бэкенду",
-      "очную встречу или перезвонить" in lc.VOICE_DELEGATION_POLICY)
+      "просит менеджера или перезвонить" in lc.LIVE_VOICE_RULES)
 check("бэкенд не пересказывает клиента", "Не повторяй за клиентом его слова" in lc.BACKEND_SYSTEM_PROMPT)
 from backend.websockets import handler_live as _hl
 check("Decisions wants_human: время спросить один раз и только если не названо, не к бэкенду",

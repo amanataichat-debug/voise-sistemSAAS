@@ -67,6 +67,14 @@ _voice_doc = open(sas.VOICE_DOC, encoding="utf-8").read()
 _b1 = sas.extract_block1(_voice_doc)
 check("Блок 1 читается из шаблона, без «одну секунду» и устаревших цен",
       _b1.startswith("Ты — Анри") and "одну секунду" not in _b1 and not sas.stale_amounts(_b1, allowed), len(_b1))
+# 14.11.2026 (1411-voice-lean): без нумерованного сценария, примеры — только для стиля, первая фраза с представлением
+check("Блок 1 Анри: короткий (≤ 5 тыс.), без сценария «Звонок по шагам», примеры помечены «не повторяй дословно»",
+      len(_b1) <= 5000 and "Звонок по шагам" not in _b1 and "Не повторяй их дословно" in _b1, len(_b1))
+check("Блок 1 Анри: разговорный кыргызский без книжных слов", not any(w in _b1 for w in ("албетте", "сунуштайм", "өтүнмө")))
+_fp = sas.extract_first_phrase(_voice_doc)
+check("первая фраза входящего: представляется по имени и компании, без «чем могу помочь»",
+      "Анри" in _fp and "Вокси Эй-Ай" in _fp and "чем могу помочь" not in _fp.lower(), _fp)
+check("первая фраза: нет раздела — пустая строка", sas.extract_first_phrase("# x\n## БЛОК 1\n```\nа\n```") == "")
 _orch = open(sas.ORCH_DOC, encoding="utf-8").read()
 check("инструкция переписки: без непроверенного «подключим за 1–2 дня» и «зависит от объёма»",
       _orch.startswith("# Кто ты") and "1–2 дня" not in _orch and "месяц, зависит от объёма" not in _orch)

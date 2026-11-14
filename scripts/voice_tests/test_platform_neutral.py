@@ -61,9 +61,10 @@ _strings = " ".join(n.value for n in ast.walk(_fn) if isinstance(n, ast.Constant
 check("правила разбора звонков и переписки (любой агент) без продажи Voksy", not leaks(_strings), leaks(_strings))
 
 # Сами правила при этом остались: продажа, горячий клиент, цена цифрой, не эхо — для любого бизнеса
-check("общие правила продаж на месте: цена цифрой, горячий клиент, шаг со временем",
-      "Цену называй прямо и сразу, цифрой" in gpt_voice and "ГОРЯЧИЙ КЛИЕНТ" in gpt_voice
-      and "ТЕМП ПРОДАЖИ" in gpt_voice and "ЗВОНОК КЛИЕНТУ" in _strings and "ОДНО СООБЩЕНИЕ ЗА ОТВЕТ" in _strings)
+# 14.11.2026 (1411-voice-lean): у GPT-Live правила продажи — короткие, без жёсткого сценария «ТЕМП ПРОДАЖИ»
+check("общие правила продаж на месте: цена цифрой, закрыть согласного, следующий шаг",
+      "назови цифру сразу" in gpt_voice and "Согласился — закрывай" in gpt_voice
+      and "следующий шаг" in gpt_voice and "ТЕМП ПРОДАЖИ" not in gpt_voice and "ЗВОНОК КЛИЕНТУ" in _strings and "ОДНО СООБЩЕНИЕ ЗА ОТВЕТ" in _strings)
 
 # А продажа Voksy — у Анри: в его сценарии и базе знаний
 _anri = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
@@ -107,7 +108,7 @@ check("нигде не требуется книжный кыргызский «
       {p: v for p, v in _book.items() if v})
 from backend.services.agent_voice_service import SPEECH_NORMS
 check("кыргызский — разговорный бишкекский: звонок, каскад, переписка, голосовые, перевод в инбоксе",
-      "разговорный бишкекский" in lc.VOICE_MANNER_HINT and "разговорном бишкекском" in SPEECH_NORMS["ky"]
+      "как говорят в Бишкеке" in lc.LIVE_VOICE_HEAD and "разговорном бишкекском" in SPEECH_NORMS["ky"]
       and all("разговорный бишкекский" in _strings_all[p] for p in (
           "backend/services/agent_prompts.py", "backend/services/agent_tools.py", "backend/services/inbox_service.py",
           "backend/services/agent_orchestrator.py", "backend/websockets/fish_llm_client.py")))

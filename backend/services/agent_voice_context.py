@@ -484,14 +484,18 @@ def build_voice_knowledge_block(db, agent, budget: int = VOICE_KNOWLEDGE_BUDGET
 
 
 # Заголовок раздела знаний в промпте звонка. На него ссылаются подсказки голосу
-# (live_client.VOICE_CONVERSATION_HEAD, VOICE_DELEGATION_POLICY) — менять вместе.
+# (live_client.LIVE_VOICE_RULES, VOICE_CONVERSATION_HEAD) — менять вместе.
 KNOWLEDGE_HEADING = "ЧТО ТЫ ЗНАЕШЬ НАИЗУСТЬ"
 # Между знаниями (теперь в начале) и правилами карточки; входит в бюджет max_chars.
 _SEP = "\n\n"
 
 # Первая строка VOICE_AGENT_PROMPT_BASE: по ней узнаём промпт карточки, собранный
 # кодом (build_voice_agent_prompt), а не написанный владельцем вручную.
-_GENERATED_PROMPT_MARK = "Ты — голосовой AI-агент. Перед каждым звонком"
+# Старая строка (до 14.11.2026) остаётся: такие промпты лежат в карточках и тоже пересобираются по текущему коду.
+_GENERATED_PROMPT_MARKS = (
+    "Ты разговариваешь с человеком по телефону от имени компании",
+    "Ты — голосовой AI-агент. Перед каждым звонком",
+)
 
 
 # Инструкция для звонков длиннее этого — модель держит её хуже (Анри до 10.11.2026: ~10 тыс. символов, правила
@@ -537,7 +541,7 @@ def fresh_card_prompt(assistant, agent) -> str:
     инструкций агента. Промпт, написанный владельцем руками, не трогаем.
     """
     stored = (getattr(assistant, "system_prompt", None) or "").strip()
-    if agent is None or not stored.startswith(_GENERATED_PROMPT_MARK):
+    if agent is None or not stored.startswith(_GENERATED_PROMPT_MARKS):
         return stored
     try:
         from backend.services.agent_prompts import build_voice_agent_prompt

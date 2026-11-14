@@ -88,6 +88,19 @@ def extract_block1(doc_text: str) -> str:
     return doc_text[a + 3:b].strip()
 
 
+def extract_first_phrase(doc_text: str) -> str:
+    """Первая фраза входящего звонка — блок ``` под «## ПЕРВАЯ ФРАЗА ВХОДЯЩЕГО ЗВОНКА» (14.11.2026)."""
+    i = doc_text.find("## ПЕРВАЯ ФРАЗА ВХОДЯЩЕГО ЗВОНКА")
+    if i < 0:
+        return ""
+    a = doc_text.find("```", i)
+    b = doc_text.find("```", a + 3)
+    next_section = doc_text.find("\n## ", i + 3)
+    if a < 0 or b < 0 or (0 <= next_section < a):
+        return ""
+    return " ".join(doc_text[a + 3:b].split())
+
+
 def _norm(title: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", (title or "").lower().replace("ё", "е")).split())
 
@@ -228,7 +241,9 @@ def apply_prompts(db, agent) -> str:
     from backend.services.agent_prompts import build_voice_agent_prompt
 
     with open(VOICE_DOC, encoding="utf-8") as f:
-        voice = extract_block1(f.read())
+        voice_doc = f.read()
+    voice = extract_block1(voice_doc)
+    first_phrase = extract_first_phrase(voice_doc)
     with open(ORCH_DOC, encoding="utf-8") as f:
         orch = f.read().strip()
 
@@ -237,13 +252,25 @@ def apply_prompts(db, agent) -> str:
         "saved_at": datetime.utcnow().isoformat(),
         "additional_instructions": agent.additional_instructions,
         "voice_additional_instructions": agent.voice_additional_instructions,
+        "inbound_first_phrase": getattr(agent, "inbound_first_phrase", None),
+        "number_first_phrases": {},
     }
+    numbers = []
+    if first_phrase:
+        from backend.models.sip_gateway import SipPhoneNumber
+        numbers = db.query(SipPhoneNumber).filter(SipPhoneNumber.agent_config_id == agent.id).all()
+        backup["number_first_phrases"] = {str(n.id): n.first_phrase for n in numbers if n.first_phrase}
     path = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"anri_prompts_backup_{int(time.time())}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(backup, f, ensure_ascii=False, indent=2)
 
     agent.voice_additional_instructions = voice
     agent.additional_instructions = orch
+    if first_phrase:
+        # Фраза номера главнее фразы агента (SipGatewayService.resolve_greeting) — очищаем её у номеров агента
+        agent.inbound_first_phrase = first_phrase
+        for n in numbers:
+            n.first_phrase = None
     card = None
     if getattr(agent, "eleven_assistant_id", None):
         card = db.query(ElevenAssistantConfig).filter(ElevenAssistantConfig.id == agent.eleven_assistant_id).first()
@@ -252,6 +279,8 @@ def apply_prompts(db, agent) -> str:
     db.commit()
     print(f"\n✓ Инструкция звонков: {len(voice)} симв.; инструкция переписки: {len(orch)} симв."
           + ("; карточка голоса пересобрана" if card is not None else ""))
+    if first_phrase:
+        print(f"✓ Первая фраза входящего: «{first_phrase}» (у номеров агента своя фраза очищена: {len(numbers)})")
     print(f"  Прежние тексты сохранены: {path}")
     return path
 
