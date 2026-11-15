@@ -188,7 +188,7 @@ def _api_key_status(user: User) -> dict:
 
 
 @router.get("/api-key", response_model=dict)
-async def get_api_key_status(
+def get_api_key_status(
     current_user: User = Depends(get_current_user),
 ):
     """Статус персонального API-ключа (есть ли, префикс, дата создания)."""

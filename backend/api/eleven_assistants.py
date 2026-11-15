@@ -262,7 +262,7 @@ def _library_voice(voice: Dict[str, Any], language: str) -> Dict[str, Any]:
 # ============================================================================
 
 @router.get("/options")
-async def get_eleven_options():
+def get_eleven_options():
     """Справочник: модели синтеза с ценами, языки, уровни стабильности, диалоговые модели."""
     return {
         "tts_models": ELEVEN_TTS_MODELS,
@@ -285,7 +285,7 @@ async def get_eleven_options():
 
 
 @router.get("/status", response_model=ElevenServerStatus)
-async def get_eleven_server_status(current_user: User = Depends(get_current_user)):
+def get_eleven_server_status(current_user: User = Depends(get_current_user)):
     openai_ok = bool(settings.OPENAI_API_KEY)
     eleven_ok = bool(settings.ELEVENLABS_API_KEY)
     gemini_ok = bool(settings.GEMINI_API_KEY or current_user.gemini_api_key)
@@ -381,7 +381,7 @@ async def add_library_voice(body: LibraryVoiceAdd, current_user: User = Depends(
 # ============================================================================
 
 @router.get("")
-async def get_eleven_assistants(
+def get_eleven_assistants(
     include_agent_voices: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

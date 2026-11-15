@@ -29,13 +29,13 @@ class TopupRequest(BaseModel):
 
 
 @router.get("/tariffs")
-async def get_tariffs():
+def get_tariffs():
     return {"currency": "KGS", "tariffs": tariffs(), "markup": settings.WALLET_MARKUP,
             "operator_out_som_per_minute": settings.WALLET_OPERATOR_OUT_SOM_PER_MIN}
 
 
 @router.get("/balance")
-async def get_balance(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_balance(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     balance = WalletService.get_balance(db, current_user.id)
     return {
         "balance": to_som(balance),
@@ -50,7 +50,7 @@ async def get_balance(current_user: User = Depends(get_current_user), db: Sessio
 
 
 @router.get("/transactions")
-async def get_transactions(limit: int = Query(30, ge=1, le=200), offset: int = Query(0, ge=0),
+def get_transactions(limit: int = Query(30, ge=1, le=200), offset: int = Query(0, ge=0),
                            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows, total = WalletService.get_transactions(db, current_user.id, limit=limit, offset=offset)
     return {"total": total, "limit": limit, "offset": offset, "transactions": [r.to_dict() for r in rows]}

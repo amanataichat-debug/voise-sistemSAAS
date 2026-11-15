@@ -965,7 +965,7 @@ def _resolve_agent(db: Session, user: User, agent_id: Optional[str] = None) -> O
 
 
 @router.get("/list")
-async def list_agents(
+def list_agents(
     current_user: User = Depends(get_current_user_flexible),
     db: Session = Depends(get_db)
 ):
@@ -988,7 +988,7 @@ async def list_agents(
 
 
 @router.get("/")
-async def get_agent(
+def get_agent(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user_flexible),
     db: Session = Depends(get_db)
@@ -1515,7 +1515,7 @@ def _kb_status_dict(agent: AgentConfig) -> dict:
 
 
 @router.get("/knowledge-base")
-async def get_agent_knowledge_base(
+def get_agent_knowledge_base(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1768,7 +1768,7 @@ def _kb_entry_or_404(db: Session, agent: AgentConfig, entry_id: str):
 
 
 @router.get("/knowledge")
-async def list_knowledge_entries(
+def list_knowledge_entries(
     kind: Optional[str] = Query(None),
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
@@ -2234,7 +2234,7 @@ def _sheet_dict(agent: AgentConfig) -> dict:
 
 
 @router.get("/sheet")
-async def get_agent_sheet(
+def get_agent_sheet(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2583,7 +2583,7 @@ async def remove_knowledge_document(
 
 
 @router.get("/knowledge/gaps")
-async def list_knowledge_gaps(
+def list_knowledge_gaps(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2842,7 +2842,7 @@ def _files_with_roles(db: Session, agent: AgentConfig, rows: list) -> list:
 
 
 @router.get("/files")
-async def list_agent_files(
+def list_agent_files(
     agent_id: Optional[str] = Query(None),
     source: str = Query("library"),
     contact_id: Optional[str] = Query(None),
@@ -2930,7 +2930,7 @@ async def upload_agent_file(
 
 
 @router.get("/files/{file_id}")
-async def get_agent_file(
+def get_agent_file(
     file_id: str,
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
@@ -2944,7 +2944,7 @@ async def get_agent_file(
 
 
 @router.get("/files/{file_id}/link")
-async def get_agent_file_link(
+def get_agent_file_link(
     file_id: str,
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
@@ -3137,7 +3137,7 @@ def _coerce_public_message(payload) -> str:
 
 
 @router.get("/public-access")
-async def get_public_access(
+def get_public_access(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -3369,7 +3369,7 @@ def _voice_messages_state(db: Session, agent: AgentConfig) -> dict:
 
 
 @router.get("/voice-messages")
-async def get_voice_messages_settings(
+def get_voice_messages_settings(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -3887,7 +3887,7 @@ async def agent_public_message(
 
 
 @router.get("/stats")
-async def get_agent_stats(
+def get_agent_stats(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -3952,7 +3952,7 @@ async def get_agent_stats(
 
 
 @router.get("/orchestrator-models")
-async def get_orchestrator_models(
+def get_orchestrator_models(
     current_user: User = Depends(get_current_user_flexible),
 ):
     """Return the list of available orchestrator models for the wizard select. JWT или X-Api-Key."""
@@ -3989,7 +3989,7 @@ def _agent_task_dict(t: Task) -> dict:
 
 
 @router.get("/tasks")
-async def list_agent_tasks(
+def list_agent_tasks(
     status: Optional[str] = Query("scheduled"),
     limit: int = Query(10, ge=1, le=500),
     agent_id: Optional[str] = Query(None),
@@ -4201,7 +4201,7 @@ def _agent_phone_payload(db: Session, user: User, agent: Optional[AgentConfig]) 
 
 
 @router.get("/phone-numbers")
-async def get_phone_numbers(
+def get_phone_numbers(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -4270,7 +4270,7 @@ async def set_agent_phone_number(
 
 
 @router.get("/contacts")
-async def list_agent_contacts(
+def list_agent_contacts(
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="Поиск по name или phone (ILIKE)"),
     limit: int = Query(20, ge=1, le=200),
@@ -4342,7 +4342,7 @@ async def list_agent_contacts(
 
 
 @router.get("/contacts/{contact_id}")
-async def get_agent_contact_details(
+def get_agent_contact_details(
     contact_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -4621,7 +4621,7 @@ async def delete_agent_contact(
 
 
 @router.get("/pipeline/stages")
-async def get_pipeline_stages(
+def get_pipeline_stages(
     agent_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -4748,7 +4748,7 @@ async def resume_agent_for_contact(
 
 
 @router.get("/calls")
-async def list_agent_calls(
+def list_agent_calls(
     agent_contact_id: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -4808,7 +4808,7 @@ async def list_agent_calls(
 
 
 @router.get("/calls/{call_id}")
-async def get_agent_call(
+def get_agent_call(
     call_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -4842,7 +4842,7 @@ XLSX_MEDIA_TYPE = (
 
 
 @router.get("/contacts/import/template")
-async def import_contacts_template(
+def import_contacts_template(
     current_user: User = Depends(get_current_user),
 ):
     """Скачать xlsx-шаблон для импорта контактов (генерируется на лету)."""
@@ -5148,7 +5148,7 @@ async def import_contacts_execute(
 
 
 @router.get("/contacts/import/errors/{preview_token}")
-async def import_contacts_errors(
+def import_contacts_errors(
     preview_token: str,
     current_user: User = Depends(get_current_user),
 ):

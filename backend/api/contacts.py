@@ -265,7 +265,7 @@ def _phone_sessions(db: Session, user_id, phone: str) -> list:
 # ==================== CONTACTS API Endpoints ====================
 
 @router.get("/")
-async def get_contacts(
+def get_contacts(
     status: Optional[str] = Query(None, description="Фильтр по статусу"),
     search: Optional[str] = Query(None, description="Поиск по имени или номеру"),
     limit: int = Query(50, ge=1, le=100, description="Количество записей"),
@@ -373,7 +373,7 @@ async def get_contacts(
 
 
 @router.get("/{contact_id}")
-async def get_contact_detail(
+def get_contact_detail(
     contact_id: str,
     include_conversations: bool = Query(True, description="Включить список всех диалогов"),
     current_user: User = Depends(AuthService.get_current_user),
@@ -837,7 +837,7 @@ async def delete_contact(
 # ==================== CONTACT NOTES API Endpoints ====================
 
 @router.get("/{contact_id}/notes")
-async def get_contact_notes(
+def get_contact_notes(
     contact_id: str,
     current_user: User = Depends(AuthService.get_current_user),
     db: Session = Depends(get_db)
@@ -1065,7 +1065,7 @@ async def delete_contact_note(
 # ==================== TASKS API Endpoints (OpenAI + Gemini + Custom Greeting) ====================
 
 @router.get("/{contact_id}/tasks")
-async def get_contact_tasks(
+def get_contact_tasks(
     contact_id: str,
     current_user: User = Depends(AuthService.get_current_user),
     db: Session = Depends(get_db)
@@ -1165,7 +1165,7 @@ async def get_contact_tasks(
 
 
 @router.get("/tasks/{task_id}")
-async def get_task_detail(
+def get_task_detail(
     task_id: str,
     current_user: User = Depends(AuthService.get_current_user),
     db: Session = Depends(get_db)

@@ -58,5 +58,27 @@ async def main():
 
 
 asyncio.run(main())
+
+# 15.11.2026, звонок bd6e2de4: сторож поймал замирания 1–1,8 с от GET-опросов кабинета (инбокс раз в 6 с, список
+# звонков, дашборд) — async-обработчики с синхронными запросами к БД останавливали звонки на том же воркере.
+# GET-обработчик без await должен быть обычной функцией (FastAPI выполнит его в потоке).
+import ast as _ast
+_files = ["inbox.py", "agent.py", "dashboard.py", "conversations.py", "wallet.py", "contacts.py", "sip_gateway.py",
+          "eleven_assistants.py"]
+_bad = []
+for _f in _files:
+    _src = open(os.path.join(ROOT, "backend", "api", _f), encoding="utf-8").read()
+    for _n in _ast.parse(_src).body:
+        if isinstance(_n, _ast.AsyncFunctionDef) and any(
+                isinstance(d, _ast.Call) and isinstance(d.func, _ast.Attribute) and d.func.attr == "get"
+                for d in _n.decorator_list):
+            _seg = _ast.get_source_segment(_src, _n)
+            if not any(k in _seg for k in ("await ", "async for", "async with", "yield")):
+                _bad.append(f"{_f}:{_n.name}")
+check("API кабинета: GET без await — обычные функции (не держат цикл звонков)", not _bad, _bad[:10])
+_sg = open(os.path.join(ROOT, "backend", "api", "sip_gateway.py"), encoding="utf-8").read()
+check("окончание звонка (стенограмма, разметка, PostCall) — в потоке, не в цикле",
+      "await asyncio.to_thread(_finish_call_sync" in _sg)
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

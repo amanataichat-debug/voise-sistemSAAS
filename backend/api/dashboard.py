@@ -306,7 +306,7 @@ def _safe(db: Session, name: str, fn, default):
 
 
 @router.get("/summary")
-async def summary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def summary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     user = current_user
     mode = user.agent_mode()
     data: Dict[str, Any] = {

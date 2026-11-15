@@ -451,7 +451,7 @@ def attach_functions_to_messages(messages: List[dict], function_calls: List[dict
 # =============================================================================
 
 @router.get("/sessions")
-async def get_conversation_sessions(
+def get_conversation_sessions(
     assistant_id: Optional[str] = Query(None, description="Фильтр по ID ассистента"),
     caller_number: Optional[str] = Query(None, description="Фильтр по номеру телефона"),
     date_from: Optional[str] = Query(None, description="Фильтр: диалоги после даты (ISO format)"),
@@ -657,7 +657,7 @@ async def get_conversation_sessions(
 
 
 @router.get("/")
-async def get_conversations(
+def get_conversations(
     assistant_id: Optional[str] = Query(None, description="Фильтр по ID ассистента"),
     caller_number: Optional[str] = Query(None, description="Фильтр по номеру телефона"),
     session_id: Optional[str] = Query(None, description="Фильтр по ID сессии"),
@@ -1069,7 +1069,7 @@ async def get_conversation_detail(
 
 
 @router.get("/{conversation_id}/log")
-async def get_conversation_call_log(
+def get_conversation_call_log(
     conversation_id: str,
     format: str = Query("json", description="json | txt (файл для скачивания)"),
     current_user: User = Depends(AuthService.get_current_user),
@@ -1241,7 +1241,7 @@ async def delete_conversation(
 
 
 @router.get("/stats")
-async def get_conversations_stats(
+def get_conversations_stats(
     assistant_id: Optional[str] = Query(None, description="Статистика по конкретному ассистенту"),
     days: int = Query(30, ge=1, le=365, description="За сколько дней (1-365)"),
     current_user: User = Depends(AuthService.get_current_user),
@@ -1317,7 +1317,7 @@ async def get_conversations_stats(
 
 
 @router.get("/by-caller/{caller_number}")
-async def get_conversations_by_caller(
+def get_conversations_by_caller(
     caller_number: str,
     assistant_id: Optional[str] = Query(None, description="Фильтр по ID ассистента"),
     limit: int = Query(50, ge=1, le=100, description="Количество записей"),

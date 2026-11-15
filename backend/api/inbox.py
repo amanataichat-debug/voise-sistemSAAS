@@ -82,7 +82,7 @@ def _stages(agent) -> list:
 # ============================================================================
 
 @router.get("/overview")
-async def overview(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def overview(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Всё для первой отрисовки: режим тарифа, боты, каналы, стадии, настройки, языки."""
     _require_access(current_user)
     agents = inbox.user_agents(db, current_user)
@@ -115,7 +115,7 @@ class SettingsBody(BaseModel):
 
 
 @router.get("/settings")
-async def get_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_access(current_user)
     return inbox.get_settings(db, current_user.id)
 
@@ -135,7 +135,7 @@ async def put_settings(body: SettingsBody, current_user: User = Depends(get_curr
 # ============================================================================
 
 @router.get("/dialogs")
-async def list_dialogs(
+def list_dialogs(
     folder: str = Query("all"),
     channel: Optional[str] = Query(None),
     stage: Optional[str] = Query(None),
@@ -162,7 +162,7 @@ async def list_dialogs(
 
 
 @router.get("/updates")
-async def updates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def updates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Дешёвый опрос раз в несколько секунд: время последнего сообщения и непрочитанные."""
     _require_access(current_user)
     latest = inbox.latest_activity(db, current_user)
@@ -175,7 +175,7 @@ async def updates(current_user: User = Depends(get_current_user), db: Session = 
 # ============================================================================
 
 @router.get("/dialogs/{contact_id}")
-async def open_dialog(
+def open_dialog(
     contact_id: str,
     mark_read: bool = Query(True),
     current_user: User = Depends(get_current_user),
@@ -199,7 +199,7 @@ async def open_dialog(
 
 
 @router.get("/dialogs/{contact_id}/timeline")
-async def dialog_timeline(
+def dialog_timeline(
     contact_id: str,
     before: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
@@ -420,7 +420,7 @@ async def translate_message(channel: str, message_id: str, body: TranslateBody,
 # ============================================================================
 
 @router.get("/unlinked/{chat_id}")
-async def unlinked(chat_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def unlinked(chat_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_access(current_user)
     data = inbox.unlinked_timeline(db, current_user, chat_id)
     if not data:

@@ -627,8 +627,19 @@ async def sip_media(
         # Гарантия видимости в «Диалогах»: eleven-звонок (каскад / GPT-Live / Gemini Live) должен оставить
         # карточку диалога, даже если хендлер не создал ни одной реплики (Gemini не соединился или молчал) —
         # иначе владелец не видит ни звонка, ни журнала с причиной. Своей сессией БД, под id журнала.
-        if call.assistant_type == "eleven":
-            _ensure_eleven_dialog_row(str(assistant.id), call_log.session_id, socket, bool(gemini_live))
+        # 15.11.2026, звонок bd6e2de4: эта пост-обработка (запись стенограммы, разметка диалогов, запуск PostCall)
+        # шла синхронно в общем цикле воркера — сторож поймал замирание 1,8 с, пока на том же воркере шёл другой
+        # звонок. Теперь — в отдельном потоке; сессия db здесь больше никем не используется.
+        await asyncio.to_thread(_finish_call_sync, db, call, call_uuid, call_id, assistant, call_log.session_id,
+                                socket, bool(gemini_live), transcript, started_at, number)
+
+
+def _finish_call_sync(db, call, call_uuid, call_id, assistant, session_id, socket, gemini_live, transcript,
+                      started_at, number) -> None:
+    """Пост-обработка звонка (синхронная работа с БД) — вызывается в потоке, не в цикле звонков."""
+    if call.assistant_type == "eleven":
+        _ensure_eleven_dialog_row(str(assistant.id), session_id, socket, gemini_live)
+    if True:
         # 7. Пост-обработка
         try:
             db.rollback()
@@ -740,7 +751,7 @@ def _validate_assistant(db: Session, current_user: User, assistant_type: Optiona
 
 
 @router.get("/api/sip/numbers")
-async def list_numbers(
+def list_numbers(
     all_users: bool = Query(False, alias="all"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -917,7 +928,7 @@ async def upload_recording(call_id: str, request: Request, db: Session = Depends
 
 
 @router.get("/api/sip/calls")
-async def list_calls(
+def list_calls(
     limit: int = Query(50, ge=1, le=500),
     all_users: bool = Query(False, alias="all"),
     current_user: User = Depends(get_current_user),
@@ -932,7 +943,7 @@ async def list_calls(
 
 
 @router.get("/api/sip/calls/{call_id}")
-async def get_call(
+def get_call(
     call_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1026,7 +1037,7 @@ async def hangup_call(
 
 
 @router.get("/api/sip/gateways")
-async def list_gateways(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_gateways(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     now = datetime.utcnow()
