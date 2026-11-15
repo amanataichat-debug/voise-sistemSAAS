@@ -3502,7 +3502,29 @@ async def handle_inbound_sms(sms_message_id: str):
         db.close()
 
 
-async def handle_inbound_telegram(account_id: str, agent_contact_id: str, message_body: str):
+def _reply_timing(client_message_at) -> dict:
+    """Сколько секунд прошло от сообщения клиента до начала разбора (в postcall_log)."""
+    if not client_message_at:
+        return {}
+    lag = (datetime.utcnow() - client_message_at).total_seconds()
+    return {"reply_timing": {"client_message_at": client_message_at.isoformat(),
+                             "picked_after_s": round(lag, 1)}}
+
+
+def _log_reply_lag(channel: str, contact_id, client_message_at) -> None:
+    """Итог в лог: через сколько секунд после сообщения клиента разбор (и ответ) закончился."""
+    if not client_message_at:
+        return
+    total = (datetime.utcnow() - client_message_at).total_seconds()
+    msg = f"[REPLY-LAG] {channel} contact={contact_id}: ответ готов через {total:.0f} с после сообщения клиента"
+    if total > 60:
+        logger.warning(msg + " — медленно")
+    else:
+        logger.info(msg)
+
+
+async def handle_inbound_telegram(account_id: str, agent_contact_id: str, message_body: str,
+                                  client_message_at: Optional[datetime] = None):
     """
     Event-driven обработка входящего сообщения личного Telegram.
 
@@ -3586,7 +3608,7 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
             # Канал — сразу, а не в конце PostCall: если разбор упадёт или его прервёт
             # деплой, строка без пометки читалась как «Звонок (входящий)» и агент
             # считал, что клиенту уже звонили (ветка 0311-call-guard).
-            postcall_log={"call_direction": "telegram_inbound"},
+            postcall_log={"call_direction": "telegram_inbound", **_reply_timing(client_message_at)},
         )
         db.add(inbound_call)
         db.commit()
@@ -3598,6 +3620,7 @@ async def handle_inbound_telegram(account_id: str, agent_contact_id: str, messag
         await PostCallOrchestrator().run_for_telegram(
             inbound_call, contact, agent, user, message_body, db
         )
+        _log_reply_lag("telegram", contact.id, client_message_at)
 
     except Exception as e:
         logger.error(f"[AGENT-TG-USER] handle_inbound_telegram error: {e}", exc_info=True)

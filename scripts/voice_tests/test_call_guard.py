@@ -102,7 +102,9 @@ check("промпт PostCall: просьба клиента о времени �
 # --- строки сообщений помечены каналом сразу при создании ---
 src = open(ao.__file__, encoding="utf-8").read()
 for d in ("sms_inbound", "telegram_inbound", "instagram_inbound", "whatsapp_inbound"):
-    check(f"AgentCall для {d} помечен при создании", f'postcall_log={{"call_direction": "{d}"}}' in src)
+    check(f"AgentCall для {d} помечен при создании",
+          f'postcall_log={{"call_direction": "{d}"}}' in src
+          or f'postcall_log={{"call_direction": "{d}", ' in src)
 sched_src = open(sys.modules[TaskScheduler.__module__].__file__, encoding="utf-8").read()
 check("запланированная отправка в Telegram помечена при создании",
       'postcall_log={"call_direction": "telegram_outbound"}' in sched_src)

@@ -122,7 +122,7 @@ function renderConnectorsList(){
       + `<div style="text-align:right">${right}</div></div>`
       + (c.toolkit === 'instagram' && c.connected && igSettingsOpen
         ? `<div id="ig-settings" style="padding:4px 0 12px;border-bottom:1px solid var(--border,#e2e8f0)">`
-          + messengerSettingsHtml(c, 'igSaveSettings', 'Instagram проверяется раз в 90 секунд, поэтому ответ придёт через указанное время + до 90 секунд.')
+          + messengerSettingsHtml(c, 'igSaveSettings', 'Instagram проверяется раз в 20 секунд, поэтому ответ придёт через указанное время + до 20 секунд.')
           + `</div>`
         : '');
   }).join('');

@@ -77,6 +77,13 @@ LISTENER_BACKOFF_SECONDS = 60
 DUE_MARGIN_SECONDS = 1.0
 # Диалог ещё «пишет» (deferred) — перепроверить через столько.
 DEFERRED_RECHECK_SECONDS = 3.0
+# Страховка к событиям: раз в столько секунд слушатель спрашивает у Telegram
+# состояние ящика (updates.getState — одна маленькая RPC). Изменилось — есть новое
+# сообщение, разбор через reply_delay_seconds. Нужна потому, что Telegram шлёт
+# обновления одному соединению ключа сессии: когда отправка из другого воркера
+# (инбокс владельца) открывает своё соединение, события до слушателя могут не
+# дойти, и без этой проверки ответ ждал бы полного опроса.
+STATE_CHECK_SECONDS = 3.0
 
 
 async def start_telegram_user_poller(check_interval: int = POLL_SECONDS):
@@ -261,26 +268,11 @@ class _Listener:
 
             self._due = loop.time()      # сразу один разбор — догнать пропущенное
             last_full = loop.time()
-            while not self.stopped:
-                if not self.client.is_connected():
-                    logger.warning(f"[TG-LISTEN] account {self.account_id}: соединение потеряно")
-                    break
-                now = loop.time()
-                wait = POLL_SECONDS - (now - last_full)
-                if self._due is not None:
-                    wait = min(wait, self._due - now)
-                if wait > 0:
-                    self._wake.clear()
-                    try:
-                        await asyncio.wait_for(self._wake.wait(), timeout=wait)
-                        continue          # пришло новое сообщение — пересчитать срок
-                    except asyncio.TimeoutError:
-                        pass
-                self._due = None
-                last_full = loop.time()
-                deferred = await self.poll_once()
-                if deferred:
-                    self._due = loop.time() + DEFERRED_RECHECK_SECONDS
+            watcher = spawn(self._watch_state(), name=f"tg-state-{self.account_id[:8]}")
+            try:
+                await self._main_loop(loop, last_full)
+            finally:
+                watcher.cancel()
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -289,6 +281,52 @@ class _Listener:
         finally:
             self.stopped = True
             await self._disconnect()
+
+    async def _watch_state(self) -> None:
+        """Раз в STATE_CHECK_SECONDS: изменилось состояние ящика Telegram → разобрать диалоги."""
+        from telethon import functions
+        last = None
+        fails = 0
+        while not self.stopped:
+            await asyncio.sleep(STATE_CHECK_SECONDS)
+            if self.stopped or self.client is None:
+                return
+            try:
+                st = await self.client(functions.updates.GetStateRequest())
+                key = (getattr(st, "pts", None), getattr(st, "qts", None), getattr(st, "seq", None))
+                fails = 0
+                if last is not None and key != last and self._due is None:
+                    self.note_message(self._delay_cache)
+                last = key
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                fails += 1
+                if fails in (1, 10):
+                    logger.warning(f"[TG-LISTEN] account {self.account_id}: проверка состояния не прошла: "
+                                   f"{type(e).__name__}: {e}")
+
+    async def _main_loop(self, loop, last_full) -> None:
+        while not self.stopped:
+            if not self.client.is_connected():
+                logger.warning(f"[TG-LISTEN] account {self.account_id}: соединение потеряно")
+                break
+            now = loop.time()
+            wait = POLL_SECONDS - (now - last_full)
+            if self._due is not None:
+                wait = min(wait, self._due - now)
+            if wait > 0:
+                self._wake.clear()
+                try:
+                    await asyncio.wait_for(self._wake.wait(), timeout=wait)
+                    continue          # пришло новое сообщение — пересчитать срок
+                except asyncio.TimeoutError:
+                    pass
+            self._due = None
+            last_full = loop.time()
+            deferred = await self.poll_once()
+            if deferred:
+                self._due = loop.time() + DEFERRED_RECHECK_SECONDS
 
     async def poll_once(self) -> int:
         """Разобрать новые сообщения на своём соединении. Возвращает число отложенных диалогов."""
@@ -562,7 +600,13 @@ async def _poll_account(db, account):
             spawn(_process_media_and_dispatch(str(account.id), str(contact_id), items))
         else:
             text_joined = "\n".join(m["text"] for m in inbound)
-            spawn(handle_inbound_telegram(str(account.id), str(contact_id), text_joined))
+            last_at = max((m.get("date") for m in inbound if m.get("date")), default=None)
+            if last_at is not None:
+                lag = (datetime.utcnow() - last_at).total_seconds()
+                (logger.warning if lag > 30 else logger.info)(
+                    f"[TG-POLLER] peer {peer_id}: сообщение клиента подхвачено через {lag:.0f} с")
+            spawn(handle_inbound_telegram(str(account.id), str(contact_id), text_joined,
+                                          client_message_at=last_at))
         runs += 1
 
     db.commit()

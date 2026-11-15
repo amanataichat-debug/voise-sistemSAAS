@@ -95,6 +95,46 @@ async def tg_case():
 
 asyncio.run(tg_case())
 
+
+# ---------- Telegram: события не дошли (обновления ушли другому соединению) — ловим по состоянию ящика ----------
+async def tg_state_case():
+    class StateClient(FakeClient):
+        pts = 100
+        async def __call__(self, req):
+            return types.SimpleNamespace(pts=self.pts, qts=0, seq=0)
+    fake = StateClient()
+    tgs._new_client = lambda s="": fake
+    tgp.STATE_CHECK_SECONDS = 0.2
+    polls = []
+    loop = asyncio.get_running_loop()
+
+    async def fake_poll(db, account):
+        polls.append(loop.time())
+        return 0
+    tgp._poll_account = fake_poll
+    lst = tgp._Listener("a2", token=None)
+    task = asyncio.create_task(lst.run())
+    await asyncio.sleep(0.6)
+    n0 = len(polls)
+    fake.pts = 101                     # новое сообщение, а событие не пришло
+    t0 = loop.time()
+    await asyncio.sleep(2.3)
+    check("без события: состояние ящика изменилось → разбор через «Отвечать через»", len(polls) == n0 + 1,
+          (n0, len(polls)))
+    took = polls[-1] - t0 if len(polls) > n0 else 99
+    check("…и тоже быстро, а не через 30 с", took <= 1.8, round(took, 2))
+    lst.stopped = True
+    lst._wake.set()
+    await asyncio.wait_for(task, 2)
+
+asyncio.run(tg_state_case())
+
+# ---------- Аренда клиента: короткая, продлевается, пока разбор жив ----------
+from backend.services import contact_lease as cl
+check("аренда клиента короткая (оборванный разбор не держит клиента минутами)", cl.LEASE.total_seconds() <= 90)
+check("аренда продлевается чаще, чем истекает", cl.RENEW_SECONDS * 2 < cl.LEASE.total_seconds())
+check("продление ограничено (забытый release не держит клиента вечно)", cl.RENEW_MAX_SECONDS <= 900)
+
 check("опрос раз в 30 с остался страховкой", tgp.POLL_SECONDS <= 600)
 src = open(os.path.join(ROOT, "backend/core/telegram_user_poller.py"), encoding="utf-8").read()
 check("опрос пропускает аккаунты своего слушателя", "in _LISTENERS" in src)

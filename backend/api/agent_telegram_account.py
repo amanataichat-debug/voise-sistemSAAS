@@ -127,6 +127,11 @@ def _status_dict(row: Optional[AgentTelegramAccount]) -> dict:
         })
         return base
     base.update(row.to_dict())
+    # Слушатель (постоянное соединение) держит last_poll_at в будущем — значит, ответы
+    # идут через «Отвечать через N секунд», а не по опросу раз в 30 с.
+    base["live_listener"] = bool(
+        row.status == "connected" and row.last_poll_at and row.last_poll_at > datetime.utcnow()
+    )
     if row.status == "pending_qr":
         base.update(_qr_payload(row))
     return base

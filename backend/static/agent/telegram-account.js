@@ -185,7 +185,7 @@ function renderTgAccountModal(){
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--border,#e2e8f0)">
         <div>
           <div style="font-weight:600;font-size:13px">Автоответ на входящие</div>
-          <div style="font-size:12px;color:#64748b">Агент сам отвечает на новые сообщения в личке (проверка раз в минуту)</div>
+          <div style="font-size:12px;color:#64748b">Агент сам отвечает на новые сообщения в личке (видит их сразу)</div>
         </div>
         <label class="switch"><input type="checkbox" id="tgacc-autoreply" ${s.auto_reply_enabled ? 'checked' : ''} onchange="tgAccToggleAutoReply(this.checked)"><span class="slider"></span></label>
       </div>
@@ -197,7 +197,7 @@ function renderTgAccountModal(){
         </select>
         <div style="font-size:12px;color:#64748b;margin-top:6px">«Всем» — агент будет отвечать даже друзьям и родным, если они напишут. Используйте только для рабочего аккаунта.</div>
       </div>
-      ${messengerSettingsHtml(s, 'tgAccSave', 'Личный Telegram проверяется раз в минуту, поэтому ответ придёт через указанное время + до 60 секунд.')}
+      ${messengerSettingsHtml(s, 'tgAccSave', 'Агент видит новое сообщение сразу и отвечает через указанное время после последнего сообщения клиента.')}
       <div style="padding-top:14px;border-top:1px solid var(--border,#e2e8f0)">
         <button class="btn btn-secondary" onclick="tgAccDisconnect()"><i class="fas fa-link-slash"></i> Отключить аккаунт</button>
       </div>`;
