@@ -94,11 +94,12 @@ function renderConnectorsList(){
       right = `<span style="font-size:12px;color:#94a3b8">Недоступен</span>`;
     } else if(c.connected){
       const who = c.connected_email ? `<div style="font-size:12px;color:#64748b">${esc(c.connected_email)}</div>` : '';
+      const pollErr = c.poll_error ? `<div style="font-size:12px;color:#b91c1c;max-width:340px">⚠ ${esc(c.poll_error)}</div>` : '';
       // Instagram — переписка с клиентами: свои настройки (пауза, задержка ответа).
       const gear = c.toolkit === 'instagram'
         ? `<button class="btn btn-secondary btn-sm" onclick="toggleIgSettings()" style="margin-right:6px"><i class="fas fa-gear"></i> Настроить</button>`
         : '';
-      right = `${who}${gear}<button class="btn btn-secondary btn-sm" onclick="disconnectConnector('${c.toolkit}')">`
+      right = `${who}${pollErr}${gear}<button class="btn btn-secondary btn-sm" onclick="disconnectConnector('${c.toolkit}')">`
         + `<i class="fas fa-link-slash"></i> Отключить</button>`;
     } else {
       const hint = c.status === 'pending' ? ' (ожидание…)'

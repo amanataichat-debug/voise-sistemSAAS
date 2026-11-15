@@ -83,6 +83,60 @@ def _new_client(session_str: str = ""):
     )
 
 
+# Живые клиенты слушателя (backend/core/telegram_user_poller.py): пока аккаунт
+# слушается постоянным соединением, отправка и опрос в том же цикле событий
+# берут ЭТО соединение, а не открывают второе с тем же ключом сессии.
+_LIVE_CLIENTS: Dict[str, Any] = {}
+
+
+def register_live_client(session_str: str, client) -> None:
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    _LIVE_CLIENTS[session_str] = (client, loop)
+
+
+def unregister_live_client(session_str: str, client=None) -> None:
+    cur = _LIVE_CLIENTS.get(session_str)
+    if cur and (client is None or cur[0] is client):
+        _LIVE_CLIENTS.pop(session_str, None)
+
+
+def _live_client(session_str: str):
+    import asyncio
+    cur = _LIVE_CLIENTS.get(session_str)
+    if not cur:
+        return None
+    client, loop = cur
+    try:
+        if loop is not asyncio.get_running_loop() or not client.is_connected():
+            return None
+    except Exception:
+        return None
+    return client
+
+
+async def _open_client(session_str: str):
+    """(client, owned): живое соединение слушателя или новое (owned=True — закрыть после)."""
+    live = _live_client(session_str)
+    if live is not None:
+        return live, False
+    client = _new_client(session_str)
+    await client.connect()
+    return client, True
+
+
+async def _close_client(client, owned: bool) -> None:
+    if client is None or not owned:
+        return
+    try:
+        await client.disconnect()
+    except Exception:
+        pass
+
+
 def _error_code(e: Exception) -> str:
     """Исключение Telethon → стабильный код ошибки для UI/тулз."""
     from telethon import errors
@@ -342,9 +396,9 @@ async def send_message(
     if not text and not file_bytes:
         return {"ok": False, "error": "empty_text"}
 
-    client = _new_client(session_str)
+    client, owned = None, True
     try:
-        await client.connect()
+        client, owned = await _open_client(session_str)
         entity = None
         resolved_via = None
 
@@ -440,10 +494,7 @@ async def send_message(
         logger.error(f"[TG-USER] send_message failed: {type(e).__name__}: {e}")
         return {"ok": False, "error": _error_code(e)}
     finally:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        await _close_client(client, owned)
 
 
 # ============================================================================
@@ -566,9 +617,9 @@ async def poll_dialogs(
     duration, data|None, error|None} — см. _message_item.
     Только личные диалоги: не боты, не группы/каналы, не Saved Messages.
     """
-    client = _new_client(session_str)
+    client, owned = None, True
     try:
-        await client.connect()
+        client, owned = await _open_client(session_str)
         out: List[Dict[str, Any]] = []
         now = datetime.utcnow()
         async for d in client.iter_dialogs(limit=POLL_DIALOGS_LIMIT):
@@ -631,10 +682,7 @@ async def poll_dialogs(
         logger.warning(f"[TG-USER] poll_dialogs failed: {type(e).__name__}: {e}")
         return {"ok": False, "error": _error_code(e)}
     finally:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        await _close_client(client, owned)
 
 
 # ============================================================================

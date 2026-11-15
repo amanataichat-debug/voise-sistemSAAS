@@ -1907,6 +1907,7 @@ def ensure_chat_v2_columns():
         ],
         "agent_connectors": [
             "ADD COLUMN IF NOT EXISTS owner_pause_minutes INTEGER NOT NULL DEFAULT 30",
+            "ADD COLUMN IF NOT EXISTS last_error VARCHAR(500)",
             "ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER NOT NULL DEFAULT 15",
         ],
         "agent_telegram_messages": ["ADD COLUMN IF NOT EXISTS sent_by VARCHAR(16)"],

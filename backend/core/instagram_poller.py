@@ -22,7 +22,10 @@ instagram_send_message.
 ig_message_id), написал владелец из приложения Instagram — они сохраняются в
 тред (sent_by='owner') и ставят паузу агента с клиентом (agent_pause). Пока
 последнее сообщение клиента моложе connector.reply_delay_seconds, тред
-откладывается до следующего тика (реальная задержка = настройка + до 90 с).
+откладывается; воркер помнит срок (_DUE) и опрашивает коннектор снова ровно к
+нему, а не через целый интервал (15.11.2026: раньше задержка = настройка + до 90 с).
+На время опроса claim ставит last_poll_at в будущее (аренда), так что ранний
+повторный опрос не пересекается с опросом другого воркера.
 
 Первый опрос нового треда: чтобы при подключении агент не бросился отвечать
 на всю старую переписку, для тредов без watermark обрабатываются только
@@ -46,8 +49,19 @@ logger = get_logger(__name__)
 
 # Интервал опроса и «протухание» claim'а (чуть меньше интервала; IG_POLL_SECONDS, по умолчанию 45 с).
 from backend.core.config import settings as _settings  # noqa: E402
-CHECK_INTERVAL_SECONDS = max(20, int(getattr(_settings, "IG_POLL_SECONDS", 45) or 45))
+CHECK_INTERVAL_SECONDS = max(15, int(getattr(_settings, "IG_POLL_SECONDS", 20) or 20))
 CLAIM_CUTOFF_SECONDS = CHECK_INTERVAL_SECONDS - 5
+# Пока опрос идёт, last_poll_at стоит в будущем на столько (аренда опроса).
+POLL_LEASE_SECONDS = 120
+# Ранний опрос к сроку «Отвечать через N секунд» — не чаще, чем раз в столько.
+EARLY_MIN_GAP_SECONDS = 2
+# Минимальный шаг цикла поллера.
+LOOP_STEP_SECONDS = 1.0
+
+# connector_id(str) → datetime (UTC), когда отложенный тред пора разобрать.
+_DUE: dict = {}
+# connector_id(str) → {at, ok, error, conversations, fetched} — последний опрос (для кабинета).
+POLL_STATUS: dict = {}
 
 # Сколько тредов смотрим за тик и сколько сообщений берём из треда.
 POLL_CONVERSATIONS_LIMIT = 15
@@ -74,16 +88,24 @@ async def start_instagram_poller(check_interval: int = CHECK_INTERVAL_SECONDS):
         logger.info("[IG-POLLER] Instagram connector not configured, poller disabled")
         return
 
-    logger.info(f"[IG-POLLER] Started (check every {check_interval}s)")
+    logger.info(f"[IG-POLLER] Started (check every {check_interval}s, early re-poll at reply delay)")
+    loop = asyncio.get_running_loop()
+    last_full = 0.0
     while True:
         try:
-            await _tick()
+            now_utc = datetime.utcnow()
+            due_ids = [cid for cid, due in list(_DUE.items()) if due <= now_utc]
+            if loop.time() - last_full >= check_interval:
+                last_full = loop.time()
+                await _tick()
+            elif due_ids:
+                await _tick(only=due_ids, min_gap=EARLY_MIN_GAP_SECONDS)
         except Exception as e:
             logger.error(f"[IG-POLLER] tick error: {e}", exc_info=True)
-        await asyncio.sleep(check_interval)
+        await asyncio.sleep(LOOP_STEP_SECONDS)
 
 
-async def _tick():
+async def _tick(only=None, min_gap=None):
     from backend.models.agent_connector import AgentConnector
 
     db = SessionLocal()
@@ -94,9 +116,16 @@ async def _tick():
                 AgentConnector.status == "connected",
             ).all()
         ]
+        if only is not None:
+            only = {str(x) for x in only}
+            connector_ids = [c for c in connector_ids if str(c) in only]
+            for cid in only - {str(c) for c in connector_ids}:
+                _DUE.pop(cid, None)
         for connector_id in connector_ids:
-            if not _claim(db, connector_id):
+            token = _claim(db, connector_id, min_gap)
+            if token is None:
                 continue
+            _DUE.pop(str(connector_id), None)
             connector = db.query(AgentConnector).filter(
                 AgentConnector.id == connector_id
             ).first()
@@ -106,29 +135,81 @@ async def _tick():
                 await _poll_connector(db, connector)
             except Exception as e:
                 logger.error(f"[IG-POLLER] connector {connector_id} poll error: {e}", exc_info=True)
+                _note_status(connector_id, ok=False, error=f"{type(e).__name__}: {e}")
                 try:
                     db.rollback()
                 except Exception:
                     pass
+            finally:
+                _release(db, connector_id, token)
     finally:
         db.close()
 
 
-def _claim(db, connector_id) -> bool:
-    """Атомарно занять коннектор на этот тик (ровно один воркер из всех)."""
+def _claim(db, connector_id, min_gap=None):
+    """
+    Атомарно занять коннектор (ровно один воркер из всех). На время опроса
+    last_poll_at = now + POLL_LEASE_SECONDS, после — время конца опроса
+    (_release). min_gap — ранний опрос к сроку отложенного треда.
+    Возвращает токен аренды или None.
+    """
     from backend.models.agent_connector import AgentConnector
 
     now = datetime.utcnow()
-    cutoff = now - timedelta(seconds=CLAIM_CUTOFF_SECONDS)
+    gap = CLAIM_CUTOFF_SECONDS if min_gap is None else min_gap
+    cutoff = now - timedelta(seconds=gap)
+    token = now + timedelta(seconds=POLL_LEASE_SECONDS)
     claimed = db.query(AgentConnector).filter(
         AgentConnector.id == connector_id,
         or_(
             AgentConnector.last_poll_at.is_(None),
             AgentConnector.last_poll_at < cutoff,
         ),
-    ).update({"last_poll_at": now}, synchronize_session=False)
+    ).update({"last_poll_at": token}, synchronize_session=False)
     db.commit()
-    return bool(claimed)
+    return token if claimed else None
+
+
+def _release(db, connector_id, token) -> None:
+    from backend.models.agent_connector import AgentConnector
+    try:
+        db.rollback()
+        db.query(AgentConnector).filter(
+            AgentConnector.id == connector_id,
+            AgentConnector.last_poll_at == token,
+        ).update({"last_poll_at": datetime.utcnow()}, synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[IG-POLLER] release failed for {connector_id}: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _note_status(connector_id, **fields) -> None:
+    st = POLL_STATUS.setdefault(str(connector_id), {})
+    st.update(fields)
+    st["at"] = datetime.utcnow()
+
+
+def _set_error(db, connector, error) -> None:
+    """Причина сбоя опроса — в строку коннектора (кабинет читает её с любого воркера)."""
+    value = (str(error)[:500] if error else None)
+    if getattr(connector, "last_error", None) == value:
+        return
+    try:
+        connector.last_error = value
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def schedule_due(connector_id, due: datetime) -> None:
+    key = str(connector_id)
+    cur = _DUE.get(key)
+    if cur is None or due < cur:
+        _DUE[key] = due
 
 
 # Свой аккаунт: id из INSTAGRAM_GET_USER_INFO живут в external_account_id
@@ -303,13 +384,22 @@ async def _poll_connector(db, connector):
 
     own_ids, own_username = await _own_identity(db, connector)
     if not own_ids and not own_username:
+        _note_status(connector.id, ok=False, error="own_account_unknown")
+        _set_error(db, connector, "own_account_unknown")
+        logger.warning(f"[IG-POLLER] connector {connector.id}: не удалось узнать свой аккаунт Instagram — "
+                       f"сообщения не разбираются (проверьте подключение Instagram)")
         return  # не знаем свой аккаунт — направление не отличить, пропускаем тик
 
     composio_user_id = connector.composio_user_id or f"agent_{connector.agent_config_id}"
     convs = await ig.list_conversations(composio_user_id, limit=POLL_CONVERSATIONS_LIMIT)
     if not convs.get("ok"):
         logger.warning(f"[IG-POLLER] list_conversations failed for connector {connector.id}: {convs.get('error')}")
+        _note_status(connector.id, ok=False, error=f"list_conversations: {convs.get('error')}")
+        _set_error(db, connector, f"list_conversations: {convs.get('error')}")
         return
+    _set_error(db, connector, None)
+    _note_status(connector.id, ok=True, error=None, conversations=len(convs.get("conversations") or []),
+                 own_username=own_username or None)
 
     rows = db.query(AgentInstagramConversation).filter(
         AgentInstagramConversation.agent_config_id == connector.agent_config_id
@@ -470,9 +560,14 @@ async def _process_conversation(db, connector, row, conv_id, parsed, own_ids, ow
     # исходящего: отправка агента могла ещё не записаться в базу.
     delay = agent_pause.reply_delay_seconds(connector)
     if inbound and (now - inbound[-1]["ts"]).total_seconds() < delay:
+        # Опросим снова ровно к сроку, а не через целый интервал.
+        schedule_due(connector.id, inbound[-1]["ts"] + timedelta(seconds=delay + 1))
         db.commit()
         return False
-    if any((now - m["ts"]).total_seconds() < OWNER_ECHO_GRACE_SECONDS for m in outbound):
+    pending_echo = [m for m in outbound if (now - m["ts"]).total_seconds() < OWNER_ECHO_GRACE_SECONDS]
+    if pending_echo:
+        schedule_due(connector.id, max(m["ts"] for m in pending_echo)
+                     + timedelta(seconds=OWNER_ECHO_GRACE_SECONDS + 1))
         db.commit()
         return False
 

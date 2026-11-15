@@ -76,6 +76,8 @@ class AgentConnector(Base):
     # атомарным claim'ом в мультиворкере (см. backend/core/instagram_poller.py,
     # та же идея, что last_poll_at у agent_telegram_accounts).
     last_poll_at = Column(DateTime, nullable=True)
+    # Почему опрос не идёт (Instagram): видно владельцу в кабинете. None — всё в порядке.
+    last_error = Column(String(500), nullable=True)
 
     # Переписка v2 (ветка 1210-chat-v2), колонки — app.ensure_chat_v2_columns():
     # сколько минут агент молчит с клиентом после сообщения владельца

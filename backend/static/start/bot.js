@@ -1771,7 +1771,7 @@
     else html += chRow('#229ED9', 'send', 'Telegram', 'Бот отвечает от имени вашего личного аккаунта Telegram', btn('tg-on', 'Подключить', 'btn-primary'));
     // Instagram
     if (!ig || !ch.igCfg || !ig.available) html += chRow('#E1306C', 'instagram', 'Instagram', 'Недоступно на сервере, напишите в поддержку', '');
-    else if (ig.connected) html += chRow('#E1306C', 'instagram', 'Instagram', 'Подключён' + (ig.connected_email ? ': ' + esc(ig.connected_email) : ''), btn('ig-set', 'Настройки') + btn('ig-off', 'Отключить', 'btn-ghost'));
+    else if (ig.connected) html += chRow('#E1306C', 'instagram', 'Instagram', ig.poll_error ? '⚠ ' + esc(ig.poll_error) : 'Подключён' + (ig.connected_email ? ': ' + esc(ig.connected_email) : ''), btn('ig-set', 'Настройки') + btn('ig-off', 'Отключить', 'btn-ghost'));
     else html += chRow('#E1306C', 'instagram', 'Instagram', 'Бот отвечает на сообщения в Direct', btn('ig-on', 'Подключить', 'btn-primary'));
     // Gmail и Google Календарь (через Composio, как у агента Profi)
     html += connRow('gmail', 'mail', '#EA4335', 'Gmail', 'Бот читает письма и отвечает клиентам с вашей почты', 'Подключить', ch.gmail);

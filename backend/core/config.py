@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     # Как часто опрашиваются личный Telegram и Instagram агента (ветка 1111-clean-system: было 60 и 90 с —
     # ответ клиенту приходил через 1–1,5 мин). Чаще не ставить: Telegram ограничивает частые подключения.
     TG_POLL_SECONDS: int = int(os.getenv("TG_POLL_SECONDS", "30"))
-    IG_POLL_SECONDS: int = int(os.getenv("IG_POLL_SECONDS", "45"))
+    IG_POLL_SECONDS: int = int(os.getenv("IG_POLL_SECONDS", "20"))
+    # Личный Telegram: постоянное соединение-слушатель (ответ через reply_delay_seconds); 0 — только опрос.
+    TG_LISTENER_ENABLED: str = os.getenv("TG_LISTENER_ENABLED", "1")
     LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gpt-live-1")
     # Бэкенд-модель делегирования (функции, рассуждения): gpt-5.6-luna — быстрая (ответ ~в 2 раза
     # быстрее), gpt-5.6-terra — медленнее, но «умнее». Живой звонок 17.10.2026: с terra задержка

@@ -3227,7 +3227,25 @@ def _connectors_status(db: Session, agent: AgentConfig) -> dict:
         if toolkit == "instagram":
             items[-1]["owner_pause_minutes"] = agent_pause.owner_pause_minutes(row)
             items[-1]["reply_delay_seconds"] = agent_pause.reply_delay_seconds(row)
+            items[-1]["poll_error"] = _instagram_error_human(getattr(row, "last_error", None)) if row else None
     return {"configured": composio_service.is_configured(), "connectors": items}
+
+
+def _instagram_error_human(err) -> Optional[str]:
+    """Причина, по которой бот не видит сообщения Instagram, — понятным владельцу текстом."""
+    if not err:
+        return None
+    e = str(err).lower()
+    if "own_account_unknown" in e:
+        return ("Не удалось узнать ваш аккаунт Instagram — переподключите Instagram "
+                "(нужен профессиональный аккаунт: Бизнес или Автор).")
+    if "permission" in e or "access" in e or "(#10)" in e or "(#200)" in e or "(#3)" in e:
+        return ("Instagram не даёт читать сообщения. В приложении Instagram: Настройки → "
+                "Сообщения и ответы на истории → Управление сообщениями → «Разрешить доступ к "
+                "сообщениям» (Подключённые инструменты) — включите и переподключите Instagram.")
+    if "token" in e or "expired" in e or "session" in e or "auth" in e:
+        return "Подключение Instagram устарело — нажмите «Отключить» и подключите заново."
+    return "Instagram не отдаёт сообщения: " + str(err)[:200]
 
 
 async def _reconcile_connectors(db: Session, agent: AgentConfig) -> None:

@@ -20,7 +20,17 @@ last_poll_at < cutoff) — та же идея, что claim финализаци
 среди отправок агента, написал владелец сам — они сохраняются в тред
 (sent_by='owner') и ставят паузу агента с клиентом (agent_pause). Пока
 последнее сообщение клиента моложе account.reply_delay_seconds, диалог
-откладывается до следующего тика (реальная задержка = настройка + до 60 с).
+откладывается до следующего тика.
+
+Слушатель (15.11.2026, «Telegram отвечает раз в 2 минуты, а WhatsApp сразу»):
+опрос раз в 30 с плюс откладывание «клиент ещё пишет» ещё на тик давали
+задержку 30–90 с поверх настройки «Отвечать через N секунд». Теперь каждый
+воркер держит ПОСТОЯННОЕ соединение Telethon для аккаунтов, которые ему
+достались (аренда через last_poll_at в будущем, см. _lease_*), и ловит новые
+сообщения событием: через reply_delay_seconds после последнего сообщения
+клиента (5/10/15 с из настроек) диалог разбирается тем же _poll_account.
+Опрос раз в POLL_SECONDS остаётся страховкой: слушатель сам делает его на
+своём соединении, а аккаунт без слушателя (не подключился) — по-старому.
 
 Охват автоответа (account.reply_scope):
   contacts — только диалоги, привязанные к контактам агента (по baseline-снимку,
@@ -57,19 +67,277 @@ OWNER_ECHO_GRACE_SECONDS = 20
 MAX_DIALOG_RUNS_PER_TICK = 5
 
 
+# Слушатель: аренда аккаунта воркером и её продление.
+LISTENER_ENABLED = str(getattr(_settings, "TG_LISTENER_ENABLED", "1") or "1").strip().lower() not in ("0", "false", "no")
+LEASE_SECONDS = 45
+MANAGE_SECONDS = 10
+# После неудачного подключения слушателя этот воркер не пробует аккаунт столько секунд.
+LISTENER_BACKOFF_SECONDS = 60
+# Запас к «Отвечать через N секунд»: дата сообщения в Telegram — секунды сервера.
+DUE_MARGIN_SECONDS = 1.0
+# Диалог ещё «пишет» (deferred) — перепроверить через столько.
+DEFERRED_RECHECK_SECONDS = 3.0
+
+
 async def start_telegram_user_poller(check_interval: int = POLL_SECONDS):
     """Запуск поллера. No-op, если TELEGRAM_API_ID/HASH/SESSION_KEY не заданы."""
     if not tg_user.is_configured():
         logger.info("[TG-POLLER] Telegram user connector not configured, poller disabled")
         return
 
-    logger.info(f"[TG-POLLER] Started (check every {check_interval}s)")
+    logger.info(f"[TG-POLLER] Started (poll every {check_interval}s, live listener "
+                f"{'on' if LISTENER_ENABLED else 'off'})")
+    last_poll = 0.0
+    loop = asyncio.get_running_loop()
     while True:
         try:
-            await _tick()
+            if LISTENER_ENABLED:
+                await _manage_listeners()
+            if loop.time() - last_poll >= check_interval:
+                last_poll = loop.time()
+                await _tick()
         except Exception as e:
             logger.error(f"[TG-POLLER] tick error: {e}", exc_info=True)
-        await asyncio.sleep(check_interval)
+        await asyncio.sleep(MANAGE_SECONDS if LISTENER_ENABLED else check_interval)
+
+
+# ============================================================================
+# СЛУШАТЕЛЬ (постоянное соединение, ответ через reply_delay_seconds)
+# ============================================================================
+
+_LISTENERS: dict = {}       # account_id(str) → _Listener
+_BACKOFF: dict = {}         # account_id(str) → monotonic time, до которого не пробуем
+
+
+def _lease_acquire(db, account_id):
+    """Арендовать аккаунт: last_poll_at = now + LEASE. Токен аренды или None."""
+    from backend.models.agent_telegram_account import AgentTelegramAccount
+    now = datetime.utcnow()
+    token = now + timedelta(seconds=LEASE_SECONDS)
+    got = db.query(AgentTelegramAccount).filter(
+        AgentTelegramAccount.id == account_id,
+        or_(AgentTelegramAccount.last_poll_at.is_(None),
+            AgentTelegramAccount.last_poll_at < now - timedelta(seconds=CLAIM_CUTOFF_SECONDS)),
+    ).update({"last_poll_at": token}, synchronize_session=False)
+    db.commit()
+    return token if got else None
+
+
+def _lease_renew(db, account_id, token):
+    from backend.models.agent_telegram_account import AgentTelegramAccount
+    new = datetime.utcnow() + timedelta(seconds=LEASE_SECONDS)
+    got = db.query(AgentTelegramAccount).filter(
+        AgentTelegramAccount.id == account_id,
+        AgentTelegramAccount.last_poll_at == token,
+    ).update({"last_poll_at": new}, synchronize_session=False)
+    db.commit()
+    return new if got else None
+
+
+def _lease_release(db, account_id, token) -> None:
+    """Отпустить аренду так, чтобы другой воркер мог взять аккаунт сразу."""
+    from backend.models.agent_telegram_account import AgentTelegramAccount
+    db.query(AgentTelegramAccount).filter(
+        AgentTelegramAccount.id == account_id,
+        AgentTelegramAccount.last_poll_at == token,
+    ).update({"last_poll_at": datetime.utcnow() - timedelta(seconds=POLL_SECONDS)},
+             synchronize_session=False)
+    db.commit()
+
+
+async def _manage_listeners() -> None:
+    """Раз в MANAGE_SECONDS: продлить свои аренды, взять свободные аккаунты, убрать лишние."""
+    from backend.models.agent_telegram_account import AgentTelegramAccount
+
+    db = SessionLocal()
+    try:
+        wanted = {
+            str(r.id) for r in db.query(AgentTelegramAccount.id).filter(
+                AgentTelegramAccount.status == "connected",
+                AgentTelegramAccount.auto_reply_enabled == True,  # noqa: E712
+            ).all()
+        }
+        loop = asyncio.get_running_loop()
+        for acc_id, lst in list(_LISTENERS.items()):
+            if acc_id not in wanted or lst.stopped:
+                await lst.stop(db)
+                _LISTENERS.pop(acc_id, None)
+                continue
+            token = _lease_renew(db, acc_id, lst.token)
+            if token is None:
+                logger.warning(f"[TG-LISTEN] account {acc_id}: аренду забрал другой воркер — останавливаю слушатель")
+                lst.token = None
+                await lst.stop(db)
+                _LISTENERS.pop(acc_id, None)
+            else:
+                lst.token = token
+        for acc_id in wanted - set(_LISTENERS):
+            if _BACKOFF.get(acc_id, 0) > loop.time():
+                continue
+            token = _lease_acquire(db, acc_id)
+            if token is None:
+                continue
+            lst = _Listener(acc_id, token)
+            _LISTENERS[acc_id] = lst
+            lst.task = spawn(lst.run(), name=f"tg-listen-{acc_id[:8]}")
+    except Exception as e:
+        logger.error(f"[TG-LISTEN] manage failed: {e}", exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+class _Listener:
+    """Постоянное соединение одного аккаунта: событие → разбор через reply_delay_seconds."""
+
+    def __init__(self, account_id: str, token):
+        self.account_id = account_id
+        self.token = token
+        self.task = None
+        self.client = None
+        self.session_str = None
+        self.stopped = False
+        self._wake = asyncio.Event()
+        self._due = None            # loop.time(), когда разобрать диалоги
+        self._lock = asyncio.Lock()
+
+    def note_message(self, delay_seconds: float) -> None:
+        loop = asyncio.get_running_loop()
+        self._due = loop.time() + max(0.0, float(delay_seconds)) + DUE_MARGIN_SECONDS
+        self._wake.set()
+
+    async def run(self) -> None:
+        from telethon import events
+        from backend.models.agent_telegram_account import AgentTelegramAccount
+
+        loop = asyncio.get_running_loop()
+        db = SessionLocal()
+        try:
+            account = db.query(AgentTelegramAccount).filter(AgentTelegramAccount.id == self.account_id).first()
+            if not account or not account.session_encrypted:
+                self.stopped = True
+                return
+            self.session_str = tg_user.decrypt_session(account.session_encrypted)
+            delay = agent_pause.reply_delay_seconds(account)
+        except Exception as e:
+            logger.error(f"[TG-LISTEN] account {self.account_id}: не удалось прочитать сессию: {e}")
+            self.stopped = True
+            db.close()
+            return
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        try:
+            self.client = tg_user._new_client(self.session_str)
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                logger.warning(f"[TG-LISTEN] account {self.account_id}: сессия не авторизована — слушатель не запущен")
+                _BACKOFF[self.account_id] = loop.time() + LISTENER_BACKOFF_SECONDS
+                self.stopped = True
+                return
+
+            listener = self
+
+            async def on_new(event):
+                try:
+                    if not event.is_private:
+                        return
+                    # Свежая настройка задержки: владелец мог поменять её в кабинете.
+                    listener.note_message(listener._delay_cache)
+                except Exception as e:
+                    logger.warning(f"[TG-LISTEN] event handler: {e}")
+
+            self._delay_cache = delay
+            self.client.add_event_handler(on_new, events.NewMessage())
+            await self.client.get_me()   # Telegram начинает слать обновления этому соединению
+            tg_user.register_live_client(self.session_str, self.client)
+            logger.info(f"[TG-LISTEN] account {self.account_id}: слушаю (ответ через {delay} с после сообщения)")
+
+            self._due = loop.time()      # сразу один разбор — догнать пропущенное
+            last_full = loop.time()
+            while not self.stopped:
+                if not self.client.is_connected():
+                    logger.warning(f"[TG-LISTEN] account {self.account_id}: соединение потеряно")
+                    break
+                now = loop.time()
+                wait = POLL_SECONDS - (now - last_full)
+                if self._due is not None:
+                    wait = min(wait, self._due - now)
+                if wait > 0:
+                    self._wake.clear()
+                    try:
+                        await asyncio.wait_for(self._wake.wait(), timeout=wait)
+                        continue          # пришло новое сообщение — пересчитать срок
+                    except asyncio.TimeoutError:
+                        pass
+                self._due = None
+                last_full = loop.time()
+                deferred = await self.poll_once()
+                if deferred:
+                    self._due = loop.time() + DEFERRED_RECHECK_SECONDS
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[TG-LISTEN] account {self.account_id}: слушатель упал: {type(e).__name__}: {e}", exc_info=True)
+            _BACKOFF[self.account_id] = loop.time() + LISTENER_BACKOFF_SECONDS
+        finally:
+            self.stopped = True
+            await self._disconnect()
+
+    async def poll_once(self) -> int:
+        """Разобрать новые сообщения на своём соединении. Возвращает число отложенных диалогов."""
+        from backend.models.agent_telegram_account import AgentTelegramAccount
+        async with self._lock:
+            db = SessionLocal()
+            try:
+                account = db.query(AgentTelegramAccount).filter(AgentTelegramAccount.id == self.account_id).first()
+                if not account or account.status != "connected" or not account.auto_reply_enabled:
+                    self.stopped = True
+                    return 0
+                self._delay_cache = agent_pause.reply_delay_seconds(account)
+                return await _poll_account(db, account)
+            except Exception as e:
+                logger.error(f"[TG-LISTEN] account {self.account_id}: разбор упал: {e}", exc_info=True)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                return 0
+            finally:
+                db.close()
+
+    async def _disconnect(self) -> None:
+        if self.session_str:
+            tg_user.unregister_live_client(self.session_str, self.client)
+        if self.client is not None:
+            try:
+                await self.client.disconnect()
+            except Exception:
+                pass
+            self.client = None
+
+    async def stop(self, db) -> None:
+        self.stopped = True
+        self._wake.set()
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+            try:
+                await self.task
+            except BaseException:
+                pass
+        await self._disconnect()
+        if self.token is not None:
+            try:
+                _lease_release(db, self.account_id, self.token)
+            except Exception:
+                db.rollback()
+            self.token = None
 
 
 async def _tick():
@@ -84,6 +352,8 @@ async def _tick():
             ).all()
         ]
         for account_id in account_ids:
+            if str(account_id) in _LISTENERS:
+                continue  # слушатель этого воркера разбирает сам
             if not _claim(db, account_id):
                 continue
             account = db.query(AgentTelegramAccount).filter(
@@ -139,7 +409,7 @@ async def _poll_account(db, account):
         account.status = "error"
         account.last_error = "session_decrypt_failed"
         db.commit()
-        return
+        return 0
 
     dialog_rows = db.query(AgentTelegramDialog).filter(
         AgentTelegramDialog.account_id == account.id
@@ -156,13 +426,14 @@ async def _poll_account(db, account):
         account.last_error = err
         db.commit()
         logger.warning(f"[TG-POLLER] poll failed for account {account.id}: {err}")
-        return
+        return 0
 
     if account.last_error:
         account.last_error = None
 
     now = datetime.utcnow()
     runs = 0
+    deferred = 0
     for d in snap.get("dialogs", []):
         peer_id = d["peer_id"]
         row = by_peer.get(peer_id)
@@ -206,6 +477,7 @@ async def _poll_account(db, account):
         # «Отвечать через N секунд»: клиент ещё пишет — маркер не трогаем,
         # вернёмся в следующий тик.
         if d.get("deferred"):
+            deferred += 1
             continue
 
         inbound = [m for m in msgs if not m.get("out")]
@@ -217,11 +489,13 @@ async def _poll_account(db, account):
         # агента за владельца.
         if any(m.get("date") and (now - m["date"]).total_seconds() < OWNER_ECHO_GRACE_SECONDS
                for m in owner_msgs):
+            deferred += 1
             continue
 
         # Превышен лимит запусков за тик — маркер НЕ трогаем, добьём в следующий
         # тик (сообщения останутся «новыми»).
         if inbound and runs >= MAX_DIALOG_RUNS_PER_TICK:
+            deferred += 1
             continue
 
         # Охват автоответа: contacts — только привязанные диалоги.
@@ -292,6 +566,7 @@ async def _poll_account(db, account):
         runs += 1
 
     db.commit()
+    return deferred
 
 
 def _agent_sent_ids(db, account_id, ids) -> set:
