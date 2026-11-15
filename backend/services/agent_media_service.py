@@ -185,37 +185,84 @@ async def _scribe(data: bytes, filename: str, mime: str) -> Dict[str, Any]:
     }
 
 
+def _echoes_prompt(text: str) -> bool:
+    """
+    Whisper на коротком/тихом/кыргызском голосовом часто «галлюцинирует»
+    подсказку (AGENT_STT_PROMPT) — возвращает её же вместо речи клиента.
+    """
+    t = " ".join((text or "").lower().split()).strip(" .,!?…")
+    if not t:
+        return False
+    prompt = " ".join((settings.AGENT_STT_PROMPT or "").lower().split())
+    if not prompt:
+        return False
+    parts = [p.strip(" .,!?…") for p in prompt.replace("?", ".").replace("!", ".").split(".")]
+    return any(p and (t == p or (len(t) >= 20 and t in prompt)) for p in parts)
+
+
+def _usable(res: Optional[Dict[str, Any]]) -> bool:
+    return bool(res) and bool((res.get("text") or "").strip()) and not _echoes_prompt(res.get("text"))
+
+
 async def transcribe(data: bytes, filename: str, mime: str) -> Dict[str, Any]:
     """
     Распознать речь. Возвращает {ok, text, language, duration, provider} или
-    {ok: False, error}. Whisper — основной, Scribe — когда Whisper упал или
-    определил язык не из AGENT_STT_LANGUAGES.
+    {ok: False, error}.
+
+    Порядок (15.11.2026, жалоба клиента Старта «бот не понимает голосовые»):
+    ElevenLabs Scribe — первым (знает и кыргызский, и русский, смешанную речь
+    тоже), Whisper — запасным. Раньше было наоборот: Whisper кыргызского не
+    знает, кыргызскую речь он часто помечал как «russian» и выдавал кашу (Scribe
+    при этом не вызывался), а на коротких голосовых возвращал саму подсказку.
+    AGENT_STT_PRIMARY=whisper возвращает прежний порядок.
     """
     allowed = _allowed_languages()
     scribe_ok = settings.AGENT_STT_SCRIBE_FALLBACK and bool(settings.ELEVENLABS_API_KEY)
-    whisper_res = None
-    try:
-        whisper_res = await _whisper(data, filename, mime)
-    except Exception as e:
-        logger.warning(f"[AGENT-MEDIA] whisper failed: {e}")
+    primary = (settings.AGENT_STT_PRIMARY or "scribe").strip().lower()
 
-    need_scribe = whisper_res is None or (
-        whisper_res["text"] and whisper_res["language"] and whisper_res["language"] not in allowed
-    )
-    if need_scribe and scribe_ok:
+    async def try_scribe(note: str) -> Optional[Dict[str, Any]]:
         try:
             res = await _scribe(data, filename, mime)
+            logger.info(f"[AGENT-MEDIA] scribe ({note}) → lang={res.get('language')} chars={len(res.get('text') or '')}")
+            return res
+        except Exception as e:
+            logger.warning(f"[AGENT-MEDIA] scribe failed ({note}): {e}")
+            return None
+
+    async def try_whisper() -> Optional[Dict[str, Any]]:
+        try:
+            return await _whisper(data, filename, mime)
+        except Exception as e:
+            logger.warning(f"[AGENT-MEDIA] whisper failed: {e}")
+            return None
+
+    if scribe_ok and primary != "whisper":
+        res = await try_scribe("primary")
+        if _usable(res):
+            return {"ok": True, **res}
+        whisper_res = await try_whisper()
+        if _usable(whisper_res):
+            if res and not whisper_res.get("duration"):
+                whisper_res["duration"] = res.get("duration")
+            return {"ok": True, **whisper_res}
+        # Оба вернули пусто: это тишина, а не сбой — пустой текст лучше ошибки.
+        if res is not None:
+            return {"ok": True, **res}
+        if whisper_res is not None and not _echoes_prompt(whisper_res.get("text")):
+            return {"ok": True, **whisper_res}
+        return {"ok": False, "error": "transcription_failed"}
+
+    whisper_res = await try_whisper()
+    need_scribe = whisper_res is None or not _usable(whisper_res) or (
+        whisper_res["language"] and whisper_res["language"] not in allowed
+    )
+    if need_scribe and scribe_ok:
+        res = await try_scribe(f"whisper lang={whisper_res['language'] if whisper_res else 'n/a'}")
+        if res is not None:
             if whisper_res and not res.get("duration"):
                 res["duration"] = whisper_res.get("duration")
-            logger.info(
-                f"[AGENT-MEDIA] scribe used (whisper lang={whisper_res['language'] if whisper_res else 'n/a'}) "
-                f"→ lang={res['language']}"
-            )
             return {"ok": True, **res}
-        except Exception as e:
-            logger.warning(f"[AGENT-MEDIA] scribe failed: {e}")
-
-    if whisper_res is not None:
+    if whisper_res is not None and not _echoes_prompt(whisper_res.get("text")):
         return {"ok": True, **whisper_res}
     return {"ok": False, "error": "transcription_failed"}
 

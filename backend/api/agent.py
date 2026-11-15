@@ -3446,7 +3446,7 @@ async def preview_voice_message(
         voice = {"engine": engine, "voice_id": name, "language": lang,
                  "model": settings.AGENT_VOICE_OPENAI_TTS_MODEL}
     else:
-        current = avs.resolve_voice(db, agent) if (agent.voice_msg_engine or avs.ENGINE_ELEVEN) == avs.ENGINE_ELEVEN else None
+        current = avs.resolve_voice(db, agent, allow_fallback=False) if (agent.voice_msg_engine or avs.ENGINE_ELEVEN) == avs.ENGINE_ELEVEN else None
         voice = dict(current or {}, engine=avs.ENGINE_ELEVEN)
         if body.voice_id:
             voice["voice_id"] = body.voice_id

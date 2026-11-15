@@ -137,6 +137,9 @@ class Settings(BaseSettings):
         "Голосовое сообщение клиента на русском или кыргызском языке. "
         "Кардарлын кыргыз же орус тилиндеги үн билдирүүсү.",
     )
+    # Кто распознаёт первым: scribe (ElevenLabs, есть кыргызский; Whisper — запасной)
+    # или whisper (прежний порядок). Без ELEVENLABS_API_KEY — всегда Whisper.
+    AGENT_STT_PRIMARY: str = os.getenv("AGENT_STT_PRIMARY", "scribe")
     AGENT_STT_SCRIBE_FALLBACK: bool = os.getenv("AGENT_STT_SCRIBE_FALLBACK", "true").lower() == "true"
     AGENT_STT_CREDITS_PER_MINUTE: int = int(os.getenv("AGENT_STT_CREDITS_PER_MINUTE", "15"))
     AGENT_VISION_MODEL: str = os.getenv("AGENT_VISION_MODEL", "google/gemini-3.5-flash")

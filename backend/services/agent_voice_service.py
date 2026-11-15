@@ -176,15 +176,37 @@ def auto_share(agent_config) -> int:
 # ГОЛОС АГЕНТА
 # ============================================================================
 
-def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
+def _openai_default_voice(db, agent_config) -> Optional[Dict[str, Any]]:
+    """GPT-Live голосом по умолчанию — когда у ElevenLabs голос не выбран."""
+    if not is_configured(ENGINE_OPENAI):
+        return None
+    from backend.websockets.live_client import LIVE_VOICE_SET
+    voice = (getattr(agent_config, "voice_msg_openai_voice", None) or DEFAULT_OPENAI_VOICE).lower()
+    if voice not in LIVE_VOICE_SET:
+        voice = DEFAULT_OPENAI_VOICE
+    return {
+        "engine": ENGINE_OPENAI, "voice_id": voice, "voice_name": voice,
+        "language": _agent_language(db, agent_config), "stability": None,
+        "model": settings.AGENT_VOICE_OPENAI_TTS_MODEL, "source": "default",
+    }
+
+
+def resolve_voice(db, agent_config, allow_fallback: bool = True) -> Optional[Dict[str, Any]]:
     """
     Голос для голосовых сообщений: {engine, voice_id, voice_name, language,
     stability, model, source} или None (голос не выбран / движок не настроен).
+
+    allow_fallback: движок ElevenLabs, но голос не выбран (у бота Старта часто нет
+    карточки звонков с голосом) → GPT-Live голосом по умолчанию (source="default").
+    Раньше в этом случае тулза send_voice_message молча пропадала, и бот
+    никогда не отвечал голосом, хотя в настройках канала голосовые включены.
     """
     engine = getattr(agent_config, "voice_msg_engine", None) or ENGINE_ELEVEN
     if engine not in VOICE_ENGINES:
         engine = ENGINE_ELEVEN
     if not is_configured(engine):
+        if allow_fallback and engine == ENGINE_ELEVEN:
+            return _openai_default_voice(db, agent_config)
         return None
     if engine == ENGINE_OPENAI:
         from backend.websockets.live_client import LIVE_VOICE_SET
@@ -205,7 +227,7 @@ def resolve_voice(db, agent_config) -> Optional[Dict[str, Any]]:
         ).first()
     voice_id = agent_config.voice_msg_voice_id or (card.voice_id if card else None)
     if not voice_id:
-        return None
+        return _openai_default_voice(db, agent_config) if allow_fallback else None
     own = bool(agent_config.voice_msg_voice_id)
     language = agent_config.voice_msg_language or (card.language if card else None) or "ky"
     stability = agent_config.voice_msg_stability
