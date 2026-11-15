@@ -84,6 +84,11 @@ DEFERRED_RECHECK_SECONDS = 3.0
 # (инбокс владельца) открывает своё соединение, события до слушателя могут не
 # дойти, и без этой проверки ответ ждал бы полного опроса.
 STATE_CHECK_SECONDS = 3.0
+# Один разбор дольше этого — обрываем (запрос к Telegram без ответа не должен держать аккаунт).
+POLL_TIMEOUT_SECONDS = 90
+# Слушатель не закончил ни одного разбора столько секунд — считаем зависшим: останавливаем,
+# отпускаем аренду, и аккаунт сразу берёт обычный опрос (раньше завис = клиент без ответа).
+STUCK_SECONDS = 150
 
 
 async def start_telegram_user_poller(check_interval: int = POLL_SECONDS):
@@ -166,6 +171,11 @@ async def _manage_listeners() -> None:
         }
         loop = asyncio.get_running_loop()
         for acc_id, lst in list(_LISTENERS.items()):
+            if lst.last_ok is not None and loop.time() - lst.last_ok > STUCK_SECONDS and not lst.stopped:
+                logger.error(f"[TG-LISTEN] account {acc_id}: слушатель {int(loop.time() - lst.last_ok)} с без "
+                             f"разбора — останавливаю, аккаунт переходит на обычный опрос")
+                _BACKOFF[acc_id] = loop.time() + LISTENER_BACKOFF_SECONDS
+                lst.stopped = True
             if acc_id not in wanted or lst.stopped:
                 await lst.stop(db)
                 _LISTENERS.pop(acc_id, None)
@@ -210,6 +220,7 @@ class _Listener:
         self._wake = asyncio.Event()
         self._due = None            # loop.time(), когда разобрать диалоги
         self._lock = asyncio.Lock()
+        self.last_ok = None         # loop.time() последнего законченного разбора (сторож зависания)
 
     def note_message(self, delay_seconds: float) -> None:
         loop = asyncio.get_running_loop()
@@ -242,8 +253,8 @@ class _Listener:
 
         try:
             self.client = tg_user._new_client(self.session_str)
-            await self.client.connect()
-            if not await self.client.is_user_authorized():
+            await asyncio.wait_for(self.client.connect(), timeout=30)
+            if not await asyncio.wait_for(self.client.is_user_authorized(), timeout=30):
                 logger.warning(f"[TG-LISTEN] account {self.account_id}: сессия не авторизована — слушатель не запущен")
                 _BACKOFF[self.account_id] = loop.time() + LISTENER_BACKOFF_SECONDS
                 self.stopped = True
@@ -262,12 +273,13 @@ class _Listener:
 
             self._delay_cache = delay
             self.client.add_event_handler(on_new, events.NewMessage())
-            await self.client.get_me()   # Telegram начинает слать обновления этому соединению
+            await asyncio.wait_for(self.client.get_me(), timeout=30)   # Telegram начинает слать обновления этому соединению
             tg_user.register_live_client(self.session_str, self.client)
             logger.info(f"[TG-LISTEN] account {self.account_id}: слушаю (ответ через {delay} с после сообщения)")
 
             self._due = loop.time()      # сразу один разбор — догнать пропущенное
             last_full = loop.time()
+            self.last_ok = loop.time()
             watcher = spawn(self._watch_state(), name=f"tg-state-{self.account_id[:8]}")
             try:
                 await self._main_loop(loop, last_full)
@@ -339,7 +351,16 @@ class _Listener:
                     self.stopped = True
                     return 0
                 self._delay_cache = agent_pause.reply_delay_seconds(account)
-                return await _poll_account(db, account)
+                result = await asyncio.wait_for(_poll_account(db, account), timeout=POLL_TIMEOUT_SECONDS)
+                self.last_ok = asyncio.get_running_loop().time()
+                return result
+            except asyncio.TimeoutError:
+                logger.error(f"[TG-LISTEN] account {self.account_id}: разбор не уложился в {POLL_TIMEOUT_SECONDS} с")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                return 0
             except Exception as e:
                 logger.error(f"[TG-LISTEN] account {self.account_id}: разбор упал: {e}", exc_info=True)
                 try:
