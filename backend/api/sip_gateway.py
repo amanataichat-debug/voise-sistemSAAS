@@ -616,6 +616,8 @@ async def sip_media(
             path = socket.audio_path_summary()
             if path:
                 call_log.add("diag", path[0], level="warning" if path[1] else "info")
+            for line in socket.stall_lines():
+                call_log.add("diag", line, level="warning")
         except Exception as exc:  # диагностика не должна ломать завершение звонка
             logger.debug(f"[SIP-MEDIA] call {call_id}: audio path summary failed: {exc}")
         if not call_log.session_id:

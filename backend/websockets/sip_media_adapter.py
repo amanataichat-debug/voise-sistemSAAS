@@ -264,6 +264,11 @@ class HandlerSocket:
     def start(self) -> None:
         self._reader_task = asyncio.create_task(self._read_bridge())
         self._loop_task = asyncio.create_task(self._watch_loop())
+        try:  # сторож воркера: при замирании снимает стек — что держало звук (backend/core/loop_watchdog.py)
+            from backend.core import loop_watchdog
+            loop_watchdog.start()
+        except Exception as exc:
+            logger.debug(f"[SIP-MEDIA] loop watchdog not started: {exc}")
 
     async def _watch_loop(self) -> None:
         """Замирания цикла событий: пока цикл занят чужим кодом, звук клиента не уходит в модель."""
@@ -564,6 +569,23 @@ class HandlerSocket:
         bad = (missing > 3.0 or self.in_gap_max > 1.0 or self.out_ahead_max > 1.5
                or self.in_backlog_max > 0.5 or self.loop_stall_max > 0.4)
         return text, bad
+
+    def stall_lines(self, limit: int = 5) -> list:
+        """Замирания сервера за этот звонок: «когда, сколько, какой код» — самые долгие первыми."""
+        try:
+            from backend.core import loop_watchdog
+        except Exception:
+            return []
+        stalls = loop_watchdog.stalls_between(self.started_at, time.time())
+        stalls.sort(key=lambda s: -s["duration"])
+        out = []
+        for s in stalls[:limit]:
+            rel = max(0.0, s["at"] - self.started_at)
+            out.append(f"Сервер замер на {s['duration']:.1f} с ({int(rel // 60):02d}:{rel % 60:04.1f} от начала звонка) — "
+                       f"звук клиента в это время ждал. Код: {s['stack']}")
+        if len(stalls) > limit:
+            out.append(f"…и ещё замираний: {len(stalls) - limit}")
+        return out
 
     def _stream_queued(self, now: float) -> float:
         """Оценка очереди моста, с: отдано в этом потоке минус проиграно с его начала (мост играет 1:1)."""
