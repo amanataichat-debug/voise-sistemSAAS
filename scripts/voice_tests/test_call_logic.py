@@ -335,8 +335,8 @@ def voice_hints():
         check(f"подсказка голосу: {label}", needle in hint)
     check("подсказка голосу: кыргызских образцов-фраз в слое платформы нет (их повторяли дословно)",
           "Чалганыңыз үчүн рахмат" not in lc.LIVE_VOICE_HEAD + hint and "Сизге кантип жардам" not in lc.LIVE_VOICE_HEAD + hint)
-    check("подсказка голосу: слой платформы короткий (было ~11 тыс. символов правил, теперь ≤ 6 тыс.)",
-          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 6000, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
+    check("подсказка голосу: слой платформы короткий (было ~11 тыс. символов правил, теперь ≤ 7,5 тыс. со словариком кыргызского)",
+          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 7500, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
     check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
           "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
     a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},
@@ -388,7 +388,7 @@ def greeting_personal():
           "не притворяйся человеком" in _vb and "с юмором" in _vb.replace("\n  ", " "))
 
 
-def audio_path():
+async def audio_path():
     # 14.11.2026, звонок 92ea0445: диагностика пути звука в «Логи звонка»
     from backend.websockets import sip_media_adapter as sma
     sock = sma.HandlerSocket.__new__(sma.HandlerSocket)
@@ -410,11 +410,32 @@ def audio_path():
     sock.in_backlog_max = 0.0; sock.loop_stall_max = 0.9
     check("путь звука: замирание сервера видно", "сервер замирал до 0.90 с" in sock.audio_path_summary()[0]
           and sock.audio_path_summary()[1])
+    # 15.11.2026, звонок ab66d437: звук, накопленный до подключения модели, не уходит в модель пачкой
+    import asyncio as _aio, json as _json
+    sock2 = sma.HandlerSocket.__new__(sma.HandlerSocket)
+    sock2._queue = _aio.Queue(); sock2._in_batch_sec = 0.02; sock2._consuming = False; sock2.stale_dropped_sec = 0.0
+    for i in range(150):
+        sock2._queue.put_nowait({"type": "websocket.receive",
+                                 "text": _json.dumps({"type": "input_audio_buffer.append", "audio": str(i)})})
+    sock2._queue.put_nowait({"type": "websocket.receive", "text": _json.dumps({"type": "ping"})})
+
+    first = await sock2.receive()
+    left = sock2._queue.qsize() + 1
+    check("старт звонка: 3 с звука до подключения модели отброшены, последние 0,5 с и служебные сообщения остались",
+          abs(sock2.stale_dropped_sec - 2.5) < 0.05 and left == 26 and '"125"' in first["text"],
+          f"dropped={sock2.stale_dropped_sec} left={left} first={first['text'][:60]}")
+    second = await sock2.receive()
+    check("старт звонка: отбрасывание только один раз", sock2.stale_dropped_sec and '"126"' in second["text"])
     import re as _re
     doc = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
     check("Анри: ролевую сценку играет смело, цены для примера, из роли не выходит",
           "разыграть" in doc and "из роли ради «реальной цены» не выходи" in doc)
     check("подсказка голосу: не начинать каждый ответ с «понял»", "Не начинай ответы одним и тем же словом" in lc.LIVE_VOICE_RULES)
+    check("подсказка голосу: ведёт разговор сам, без тупиков после ответа",
+          "Веди разговор сам, не замыкай его" in lc.LIVE_VOICE_RULES and "не тупик" in lc.LIVE_VOICE_RULES)
+    check("подсказка голосу: словарик кыргызских фраз звонящих («өзүм жооп берем», «баасы канча»)",
+          "«өзүм жооп берем» — отвечаю сам" in lc.LIVE_VOICE_HEAD and "«баасы" in lc.LIVE_VOICE_HEAD
+          and "переспроси коротко по-кыргызски" in lc.LIVE_VOICE_HEAD)
 
 
 def prompt_budget():
@@ -471,7 +492,7 @@ async def main():
     phone_voice()
     voice_hints()
     greeting_personal()
-    audio_path()
+    await audio_path()
     prompt_budget()
     session_config()
 

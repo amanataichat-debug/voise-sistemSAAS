@@ -75,6 +75,8 @@ OUTBOUND_REBUFFER_MS = 120
 OUTBOUND_UNDERRUN_TOLERANCE_SEC = 0.04
 # Обрыв входящего звука от моста длиннее этого считается в диагностике пути звука
 INBOUND_GAP_WARN_SEC = 0.3
+# Сколько последнего звука клиента оставить, когда хендлер впервые начинает читать (остальное — устаревшее)
+STALE_AUDIO_KEEP_SEC = 0.5
 
 # события хендлера, после которых нужно сбросить очередь воспроизведения у моста (перебивание)
 BARGE_IN_EVENTS = {"speech.started", "conversation.interrupted", "response.cancelled"}
@@ -245,6 +247,8 @@ class HandlerSocket:
         self.in_gap_max = 0.0
         self.in_gaps_long = 0
         self.out_ahead_max = 0.0
+        self._consuming = False
+        self.stale_dropped_sec = 0.0
         self.in_backlog_max = 0.0       # с: звук клиента, ждавший в очереди перед моделью (хендлер не успевал)
         self.loop_stall_max = 0.0       # с: самое долгое «замирание» цикла событий воркера за звонок
         self._loop_task: Optional[asyncio.Task] = None
@@ -298,7 +302,8 @@ class HandlerSocket:
                     if len(self._in_buf) >= self._in_batch_bytes:
                         pcm = bytes(self._in_buf)
                         self._in_buf.clear()
-                        backlog = self._queue.qsize() * self._in_batch_sec
+                        # До первого чтения хендлер ещё подключается к модели — это не задержка разговора
+                        backlog = self._queue.qsize() * self._in_batch_sec if self._consuming else 0.0
                         if backlog > self.in_backlog_max:
                             self.in_backlog_max = backlog
                         await self._queue.put({
@@ -391,6 +396,9 @@ class HandlerSocket:
         return None  # реальный сокет уже принят роутером
 
     async def receive(self) -> Dict[str, Any]:
+        if not self._consuming:
+            self._consuming = True
+            self._drop_stale_audio()
         msg = await self._queue.get()
         if msg is None:
             raise WebSocketDisconnect(code=1000)
@@ -569,6 +577,32 @@ class HandlerSocket:
         bad = (missing > 3.0 or self.in_gap_max > 1.0 or self.out_ahead_max > 1.5
                or self.in_backlog_max > 0.5 or self.loop_stall_max > 0.4)
         return text, bad
+
+    def _drop_stale_audio(self) -> None:
+        """
+        Звук клиента, накопившийся, пока хендлер подключался к модели (1,5–3 с), модели не нужен: она получила бы
+        его пачкой уже после приветствия и отвечала бы на старое «алло» (звонок ab66d437: 2,86 с в очереди).
+        Оставляем последние STALE_AUDIO_KEEP_SEC — начало фразы, которую клиент говорит прямо сейчас.
+        """
+        items = []
+        while True:
+            try:
+                items.append(self._queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        keep_audio = max(1, int(STALE_AUDIO_KEEP_SEC / self._in_batch_sec)) if self._in_batch_sec else len(items)
+        audio_idx = [i for i, m in enumerate(items) if m and '"input_audio_buffer.append"' in (m.get("text") or "")]
+        drop = set(audio_idx[:-keep_audio]) if len(audio_idx) > keep_audio else set()
+        for i, m in enumerate(items):
+            if i not in drop:
+                self._queue.put_nowait(m)
+        if drop:
+            sec = len(drop) * self._in_batch_sec
+            self.stale_dropped_sec = sec
+            call_log = CallLogRecorder.current()
+            if call_log is not None:
+                call_log.add("sip", f"Звук линии, накопленный до подключения модели ({sec:.1f} с), не отправлен — "
+                                    f"модель слышит разговор с текущего момента")
 
     def stall_lines(self, limit: int = 5) -> list:
         """Замирания сервера за этот звонок: «когда, сколько, какой код» — самые долгие первыми."""
