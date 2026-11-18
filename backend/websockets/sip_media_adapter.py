@@ -35,9 +35,18 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
+from backend.utils.profanity import find_profanity
+from backend.websockets.call_directives import PROFANITY_CORRECTION
 from backend.websockets.call_log import CallLogRecorder
 
 logger = get_logger(__name__)
+
+# Мат в ответе агента (18.11.2026, звонок 17478409): голос «речь в речь» (GPT-Live, Gemini Live) нельзя
+# отфильтровать до синтеза, но стенограмма ответа приходит раньше, чем звук проиграется у клиента (запас
+# адаптера + очередь моста). Нашли мат в стенограмме → очередь моста сбрасывается, следующие
+# PROFANITY_MUTE_SEC звука агента не отдаются, модель получает указание извиниться (session.directive).
+PROFANITY_MUTE_SEC = 1.5
+PROFANITY_DIRECTIVE_GAP_SEC = 6.0
 
 try:
     import numpy
@@ -263,6 +272,51 @@ class HandlerSocket:
         self._speech_started = asyncio.Event()
         self._speech_ended = asyncio.Event()
         self._mark_hangup = asyncio.Event()
+        # Мат в ответе агента: хвост стенограммы ответа, до какого момента глушим звук, сколько раз ловили
+        self._asst_tail = ""
+        self._mute_until = 0.0
+        self._profanity_directive_at = 0.0
+        self.profanity_hits = 0
+
+    # ------------------------------------------------------------- directives
+    async def send_directive(self, kind: str, text: str) -> None:
+        """Служебное указание голосовой модели через хендлер (см. call_directives.py)."""
+        if self.closed:
+            return
+        await self._queue.put({"type": "websocket.receive", "text": json.dumps(
+            {"type": "session.directive", "kind": kind, "text": text}, ensure_ascii=False)})
+
+    async def _check_profanity(self, delta: str) -> None:
+        """Фрагмент стенограммы ответа агента: мат → оборвать звук в линии и велеть агенту извиниться."""
+        self._asst_tail = (self._asst_tail + delta)[-64:]
+        tail = self._asst_tail
+        # Последнее слово может быть недописано («бля…» → «бляшка»): короткий обрывок не проверяем
+        cut = len(tail)
+        while cut > 0 and tail[cut - 1].isalnum():
+            cut -= 1
+        partial = tail[cut:]
+        bad = find_profanity(tail[:cut]) + (find_profanity(partial) if len(partial) >= 4 else [])
+        if not bad:
+            return
+        self._asst_tail = ""
+        now = time.time()
+        self.profanity_hits += 1
+        self._mute_until = now + PROFANITY_MUTE_SEC
+        await self._send_text({"type": "clear"})
+        self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
+        self._voice = PhoneVoice()
+        self._out_hold.clear()
+        self._out_streaming = False
+        self._hold_target = self._cushion_bytes
+        masked = ", ".join(w[:1] + "*" * max(1, len(w) - 1) for w in bad[:3])
+        logger.warning(f"[SIP-MEDIA] call {self.call_id}: profanity in assistant reply ({masked}) — audio cut")
+        call_log = CallLogRecorder.current()
+        if call_log is not None:
+            call_log.add("assistant", f"Агент произнёс нецензурное слово ({masked}) — звук в линии оборван, "
+                                      f"агенту велено извиниться", level="warning")
+        if now - self._profanity_directive_at >= PROFANITY_DIRECTIVE_GAP_SEC:
+            self._profanity_directive_at = now
+            await self.send_directive("profanity", PROFANITY_CORRECTION)
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
@@ -440,6 +494,8 @@ class HandlerSocket:
                 logger.info(f"[SIP-MEDIA] call {self.call_id}: {self.provider} reply latency {latency:.2f}s "
                             f"(user done -> first audio)")
             delta = data.get("delta") or ""
+            if delta and time.time() < self._mute_until:
+                return  # сразу после мата в ответе: остаток фразы в линию не отдаём
             if delta:
                 pcm = self._voice(self._down(base64.b64decode(delta)))
                 if pcm:
@@ -447,6 +503,14 @@ class HandlerSocket:
                     self.audio_bytes_out += len(pcm)
                     self._last_delta_at = time.time()
                     await self._send_audio(pcm)
+            return
+
+        if mtype == "transcript.delta":
+            # Стенограмма речи «речь в речь» (GPT-Live, Gemini Live): мат агента ловим здесь
+            if data.get("role") == "assistant":
+                await self._check_profanity(data.get("delta") or "")
+            else:
+                self._asst_tail = ""
             return
 
         if mtype in BARGE_IN_EVENTS:

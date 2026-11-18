@@ -459,6 +459,13 @@ class GeminiLiveVoiceSession:
                     self.interruption_state["is_assistant_speaking"] = False
                 elif msg_type == "screen.context":
                     pass  # Vision на этом пути не используется
+                elif msg_type == "session.directive":
+                    # Служебное указание адаптера звонка: время вышло (wrap_up) или прозвучал мат (profanity)
+                    text_in = (data.get("text") or "").strip()
+                    if data.get("kind") == "wrap_up":
+                        self.guard.time_limit_at = time.time()
+                    if text_in and self.client.is_connected:
+                        await self.client.send_text_message(text_in)
                 # speech.user_started/stopped: сервер Google сам определяет речь и перебивания
             elif message.get("bytes") is not None:
                 self.audio_chunks_in += 1

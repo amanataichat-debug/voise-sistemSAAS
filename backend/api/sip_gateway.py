@@ -59,6 +59,7 @@ from backend.websockets.handler_gemini import handle_gemini_websocket_connection
 from backend.websockets.handler_fish import handle_fish_websocket_connection, DEFAULT_GREETING as FISH_DEFAULT_GREETING
 from backend.websockets.handler_eleven import handle_eleven_websocket_connection
 from backend.websockets.call_log import CallLogRecorder
+from backend.websockets.call_directives import WRAP_UP_DIRECTIVE
 
 # Браузерный хендлер для каждого типа ассистента, поддерживаемого телефонией.
 # Новый провайдер подключается сюда + в SIP_SUPPORTED_ASSISTANT_TYPES + HANDLER_IN_RATE адаптера.
@@ -314,18 +315,38 @@ def _sweep_stale_calls(db: Session, gateway_id: str) -> None:
 # длительности и тишина — никто на линии ничего не сказал (по стенограмме) дольше
 # SIP_IDLE_HANGUP_SECONDS. 0 = выключено.
 SIP_MAX_CALL_SECONDS = int(os.getenv("SIP_MAX_CALL_SECONDS", "1500"))
-SIP_IDLE_HANGUP_SECONDS = int(os.getenv("SIP_IDLE_HANGUP_SECONDS", "150"))
+# 18.11.2026 (звонок 17478409, 6 мин): тишина 150 с — слишком долго, 60 с хватает с запасом
+SIP_IDLE_HANGUP_SECONDS = int(os.getenv("SIP_IDLE_HANGUP_SECONDS", "60"))
+# Мягкий предел (18.11.2026, владелец: «разговор с агентом — до 5 минут»): по истечении агент сам подводит
+# итог, извиняется («на линии другие звонки»), прощается и кладёт трубку (call_directives.WRAP_UP_DIRECTIVE);
+# не уложился за SIP_WRAP_UP_GRACE_SECONDS — трубку кладёт бэкенд. 0 = выключено.
+SIP_SOFT_CALL_SECONDS = int(os.getenv("SIP_SOFT_CALL_SECONDS", "300"))
+SIP_WRAP_UP_GRACE_SECONDS = int(os.getenv("SIP_WRAP_UP_GRACE_SECONDS", "60"))
 
 
 async def _call_watchdog(socket: HandlerSocket, transcript: CallTranscript, call_id: str) -> None:
     started = time.time()
+    wrap_up_at: Optional[float] = None
     while not socket.closed and not socket.ended_by_bridge:
         await asyncio.sleep(5)
         now = time.time()
+        if SIP_SOFT_CALL_SECONDS and wrap_up_at is None and now - started > SIP_SOFT_CALL_SECONDS:
+            wrap_up_at = now
+            logger.info(f"[SIP-MEDIA] call {call_id}: soft limit {SIP_SOFT_CALL_SECONDS}s — asking agent to wrap up")
+            call_log = CallLogRecorder.current()
+            if call_log is not None:
+                call_log.add("sip", f"Звонок идёт {SIP_SOFT_CALL_SECONDS // 60} мин — агенту велено подвести итог, "
+                                    f"извиниться и попрощаться", level="warning")
+            await socket.send_directive("wrap_up", WRAP_UP_DIRECTIVE)
+            continue
         reason = None
         if SIP_MAX_CALL_SECONDS and now - started > SIP_MAX_CALL_SECONDS:
             reason = "max_duration"
             text = f"Звонок длится дольше {SIP_MAX_CALL_SECONDS // 60} мин — бэкенд завершает его"
+        elif wrap_up_at is not None and SIP_WRAP_UP_GRACE_SECONDS and now - wrap_up_at > SIP_WRAP_UP_GRACE_SECONDS:
+            reason = "time_limit"
+            text = (f"Агент не завершил звонок за {SIP_WRAP_UP_GRACE_SECONDS} с после предела "
+                    f"{SIP_SOFT_CALL_SECONDS // 60} мин — бэкенд кладёт трубку")
         elif SIP_IDLE_HANGUP_SECONDS and now - transcript.last_activity_at > SIP_IDLE_HANGUP_SECONDS:
             reason = "idle_silence"
             text = f"На линии {SIP_IDLE_HANGUP_SECONDS} с никто не говорит — бэкенд завершает звонок"

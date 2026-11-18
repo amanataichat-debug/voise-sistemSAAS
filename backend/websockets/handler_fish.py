@@ -69,6 +69,7 @@ from backend.websockets.function_calls import (
     async_save_to_google_sheets,
 )
 from backend.websockets.sentence_detector import StreamingSentenceDetector
+from backend.utils.profanity import find_profanity, strip_profanity
 
 logger = get_logger(__name__)
 
@@ -284,6 +285,30 @@ class FishVoiceSession:
         self._stt_resampler = None         # 24 кГц → частота распознавания (телефон: 8 кГц)
 
     # ------------------------------------------------------------------ helpers
+    async def _send_directive(self, text: str) -> None:
+        """Служебное указание модели (время звонка вышло): ждём, пока текущий ответ договорён, и просим новый."""
+        deadline = time.time() + 20
+        while time.time() < deadline and not self.closed and (
+                not self._llm_idle.is_set() or self.tts.speaking or self._audible()):
+            await asyncio.sleep(0.3)
+        if self.closed:
+            return
+        async with self._turn_lock:
+            await self.llm.add_user_text(f"[{text}]")
+            await self.llm.create_response()
+        self.call_log.add("session", "Время звонка вышло — агенту велено подвести итог и попрощаться")
+
+    async def _say(self, text: str) -> None:
+        """Фраза ответа модели — в синтез. Мат вырезается ДО синтеза: клиент его не услышит (18.11.2026)."""
+        bad = find_profanity(text)
+        if bad:
+            text = strip_profanity(text)
+            self.call_log.add("assistant", f"Модель написала нецензурное слово ({len(bad)}) — вырезано до озвучки",
+                              level="warning")
+            _log(f"profanity stripped before TTS: {len(bad)} word(s)", "WARNING")
+        if text and text.strip():
+            await self.tts.say(text)
+
     def _new_detector(self) -> StreamingSentenceDetector:
         language = (getattr(self.assistant, "language", None) or "ru")[:2].lower()
         if language not in ("ru", "en"):
@@ -646,7 +671,7 @@ class FishVoiceSession:
                 self.call_log.add("llm", "Первый текст ответа модели" + (f" через {since} мс" if since is not None else ""))
             await self.emit({"type": "response.text.delta", "delta": delta})
             for sentence in self.detector.add_chunk(delta):
-                await self.tts.say(sentence)
+                await self._say(sentence)
             return
 
         if etype == "response.output_text.done":
@@ -656,11 +681,11 @@ class FishVoiceSession:
                 tail = text[len(self.response_text):]
                 await self.emit({"type": "response.text.delta", "delta": tail})
                 for sentence in self.detector.add_chunk(tail):
-                    await self.tts.say(sentence)
+                    await self._say(sentence)
             self.response_text = text
             rest = self.detector.flush()
             if rest:
-                await self.tts.say(rest)
+                await self._say(rest)
             await self.emit({"type": "response.text.done", "text": text})
             return
 
@@ -816,7 +841,7 @@ class FishVoiceSession:
                         self.response_text += part["text"]
             if self.response_text:
                 await self.emit({"type": "response.text.delta", "delta": self.response_text})
-                await self.tts.say(self.response_text)
+                await self._say(self.response_text)
 
         if self.response_text:
             self.tts.end_of_response()
@@ -899,6 +924,11 @@ class FishVoiceSession:
             elif mtype == "speech.user_started":
                 if self.assistant_speaking or self.tts.speaking:
                     await self.barge_in("client_speech")
+            elif mtype == "session.directive":
+                # Служебное указание адаптера звонка (время вышло): модели — после текущего ответа
+                text_in = (data.get("text") or "").strip()
+                if text_in:
+                    self._track(self._send_directive(text_in))
             elif mtype == "input_text":
                 text_in = (data.get("text") or "").strip()
                 if text_in:
