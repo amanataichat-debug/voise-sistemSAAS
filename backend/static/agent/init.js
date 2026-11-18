@@ -13,6 +13,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(!getToken()){ location.href='/static/login.html'; return; }
   initPanels();
   await initAgents();
+  // ?settings=sheet — сразу открыть раздел настроек (ссылка «Из таблицы» из каталога на странице знаний)
+  try {
+    const sec = new URLSearchParams(location.search).get('settings');
+    if (sec && typeof openInstructionsModal === 'function') setTimeout(() => openInstructionsModal(sec), 300);
+  } catch (e) { /* ignore */ }
 
   // ── Кастомный dropdown переключения агентов ──
   document.getElementById('agent-trigger')?.addEventListener('click', (e)=>{

@@ -11,6 +11,16 @@
 
   var S = (window.StartApp = {});
   var API = '/api/agent';
+  // Profi может держать несколько агентов: страница, которая знает своего (agent-knowledge.html), ставит
+  // S.agentId — запросы к /api/agent* получают ?agent_id=. На Старте бот один, поле пустое.
+  S.agentId = null;
+  function apiUrl(path) {
+    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    if (S.agentId && url.indexOf(API) === 0 && !/[?&]agent_id=/.test(url) && !/^\/api\/agent\/(list|create)\b/.test(url)) {
+      url += (url.indexOf('?') >= 0 ? '&' : '?') + 'agent_id=' + encodeURIComponent(S.agentId);
+    }
+    return url;
+  }
 
   // ── Утилиты ─────────────────────────────────────────────────────────────
   S.esc = function (v) {
@@ -66,7 +76,7 @@
     var headers = { 'Content-Type': 'application/json' };
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
-    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    var url = apiUrl(path);
     if (opts.method && opts.method !== 'GET') S.bust();   // данные изменились: кэш страниц больше не верен
     return fetch(url, { method: opts.method || 'GET', headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
       .then(function (r) {
@@ -127,7 +137,7 @@
     var headers = {};
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
-    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    var url = apiUrl(path);
     S.bust();
     return fetch(url, { method: 'POST', headers: headers, body: fd })
       .then(function (r) {
@@ -141,7 +151,7 @@
     var headers = {};
     var t = S.token();
     if (t) headers.Authorization = 'Bearer ' + t;
-    var url = path.indexOf('/api/') === 0 ? path : API + path;
+    var url = apiUrl(path);
     return fetch(url, { headers: headers }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.blob();

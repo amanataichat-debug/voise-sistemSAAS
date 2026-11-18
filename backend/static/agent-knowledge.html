@@ -43,9 +43,13 @@
   <link rel="preload" href="/static/fonts/syne-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/voksiai.css">
+  <!-- каталог — общий с тарифом Старт модуль (start/catalog.js), ему нужны стили и помощники Старта -->
+  <link rel="stylesheet" href="/static/start/start.css">
   <script defer src="/static/js/i18n.js"></script>
   <script defer src="/static/js/ui.js"></script>
   <style>
+    /* Каталог на телефоне: продавец пришёл править товары — полоса «наизусть» и «спросить» не мешают */
+    @media (max-width: 760px) { body.ak-catmode #brain { display: none; } }
     /* ---------- Полоса «что агент знает наизусть» ---------- */
     .brain { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: stretch; margin-bottom: 18px; }
     @media (max-width: 1000px) { .brain { grid-template-columns: minmax(0, 1fr); } }
@@ -269,7 +273,9 @@
   </div>
 </div>
 
-<script defer src="/static/js/knowledge-health.js?v=1"></script>
+<script defer src="/static/js/knowledge-health.js"></script>
+<script defer src="/static/start/common.js"></script>
+<script defer src="/static/start/catalog.js"></script>
 <script defer src="/static/js/agent-knowledge.js"></script>
   <script defer src="/static/js/theme.js"></script>
 </body>

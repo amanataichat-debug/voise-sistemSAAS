@@ -163,7 +163,7 @@
 
   // ------------------------------------------------------------------ состояние
   var state = {
-    agentId: null, agents: [], tab: 'qa',
+    agentId: null, agents: [], tab: /^#(catalog|products?)$/.test(location.hash) ? 'product' : 'qa',
     entries: [], counts: {}, voice: {}, files: [], gaps: [],
     storage: true, editing: null, pickedMedia: [], attrs: [],
   };
@@ -204,6 +204,7 @@
         state.entries = (d && d.entries) || [];
         state.counts = (d && d.counts) || {};
         state.voice = (d && d.voice) || {};
+        state.collections = (d && d.collections) || [];
       }),
       api(API + '/files?source=library').then(function (d) {
         state.files = (d && d.files) || [];
@@ -317,9 +318,29 @@
     });
   }
 
+  // Каталог — тот же модуль, что у Старта (/static/start/catalog.js): коллекции, остатки по размерам и
+  // цветам, массовые действия, позиции из фото и списком, превью карточки товара. Данные — те же
+  // /api/agent/knowledge* этого агента (StartApp.agentId → ?agent_id=).
+  var catKb = { entries: [], collections: [], storage: true, files: [] };
+  function syncCatKb() {
+    catKb.entries = state.entries; catKb.collections = state.collections || [];
+    catKb.storage = state.storage; catKb.files = state.files;
+  }
+  function renderSharedCatalog() {
+    $('btn-add').style.display = 'none';      // у каталога свои кнопки «Добавить позицию», «Из фото», «Списком»
+    $('sec').innerHTML = '<section class="card st-catalog-host" style="padding:18px"><div id="ak-catalog"></div></section>';
+    window.StartApp.agentId = state.agentId;
+    syncCatKb();
+    window.StartCatalog.init({ kb: catKb, reload: function () { return loadAll(); },
+      sheetHref: '/static/agent.html?agent_id=' + encodeURIComponent(state.agentId || '') + '&settings=sheet' });
+    window.StartCatalog.draw($('ak-catalog'));
+  }
+
   function renderSection() {
     var tab = state.tab;
     var add = $('btn-add');
+    document.body.classList.toggle('ak-catmode', tab === 'product');
+    if (tab === 'product' && window.StartCatalog && window.StartApp) { renderSharedCatalog(); return; }
     add.style.display = tab === 'gaps' ? 'none' : '';
     var addLabel = add.querySelector('.btn-text');
     if (addLabel) {
@@ -354,7 +375,9 @@
 
   function renderEntries(kind) {
     var rows = entriesOf(kind);
-    if (kind === 'product') return rows.length ? renderCatalog(rows) : emptyBox('product', 'shopping-cart');
+    // каталог рисует общий модуль (renderSharedCatalog); этот путь — только если он не загрузился
+    if (kind === 'product') return rows.length ? '<div class="note">' + esc(t('load_failed', { reason: 'catalog.js' })) + '</div>'
+      : emptyBox('product', 'shopping-cart');
     if (!rows.length) return emptyBox(kind, kind === 'qa' ? 'zap' : 'building-2');
     return '<div class="rows">' + rows.map(function (e) {
       return '<div class="row-card' + (e.is_active ? '' : ' off') + '">' +
@@ -366,44 +389,6 @@
         '<button class="btn btn-ghost btn-icon btn-sm" data-del="' + esc(e.id) + '" title="Удалить">' + VF.icon('trash-2') + '</button>' +
         '</div></div>';
     }).join('') + '</div>';
-  }
-
-  // ---------- каталог плитками ----------
-  function renderCatalog(rows) {
-    return '<div class="grid">' + rows.map(function (e) {
-      var media = e.media || [];
-      var first = media[0];
-      var photo = first && first.url && !first.is_video
-        ? '<img src="' + esc(first.url) + '" alt="" loading="lazy">'
-        : (first && first.is_video ? VF.icon('play') : VF.icon('image'));
-      var price = (e.price !== null && e.price !== undefined)
-        ? '<div class="p-price">' + fmtNum(e.price) + ' <small>' + esc(curWord(e.currency)) + '</small></div>'
-        : '<div class="p-price"><small>' + esc(t('no_price')) + '</small></div>';
-      var attrs = Object.keys(e.attributes || {}).slice(0, 4).map(function (k) {
-        return '<span class="p-attr">' + esc(k) + ': ' + esc(String(e.attributes[k])) + '</span>';
-      }).join('');
-      return '<div class="p-card' + (e.is_active ? '' : ' off') + '" data-edit="' + esc(e.id) + '">' +
-        '<div class="p-photo">' + photo +
-        (media.length > 1 ? '<span class="p-more">' + esc(t('photos_more', { n: media.length - 1 })) + '</span>' : '') +
-        (e.in_stock === false ? '<span class="p-stock">' + esc(t('out_of_stock')) + '</span>' : '') +
-        '</div>' +
-        '<div class="p-body"><div class="p-name">' + esc(e.title || '') + '</div>' + price +
-        (attrs ? '<div class="p-attrs">' + attrs + '</div>' : '') +
-        (e.hit_count ? '<div class="p-attrs"><span class="tag tag-hits">' + e.hit_count + '×</span></div>' : '') +
-        '</div></div>';
-    }).join('') + '</div>';
-  }
-
-  function fmtNum(n) {
-    try { return Number(n).toLocaleString('ru-RU'); } catch (e) { return String(n); }
-  }
-
-  // Код валюты владельцу ничего не говорит, а «сом» говорит. Тот же список,
-  // что у бэкенда для озвучки цены (agent_knowledge_service.format_price).
-  var CURRENCY_WORDS = { KGS: 'сом', RUB: 'руб.', USD: 'долл.', EUR: 'евро', KZT: 'тенге' };
-  function curWord(code) {
-    code = (code || 'KGS').toUpperCase();
-    return CURRENCY_WORDS[code] || code;
   }
 
   // ---------- файлы ----------
