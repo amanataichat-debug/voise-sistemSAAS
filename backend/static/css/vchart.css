@@ -1,0 +1,71 @@
+/* /static/css/vchart.css — общие графики кабинета (/static/js/vchart.js): «Аналитика» и главная.
+ * Цвета каналов проверены валидатором палитры (skill dataviz): соседние в стопке различимы при
+ * дальтонизме (ΔE ≥ 13) и обычным зрением (ΔE ≥ 24). Порядок в стопке: WhatsApp → Telegram →
+ * Instagram → Звонки → Запись по ссылке. Входящие/исходящие (#2a5ce8 / #0d9488) — как на главной. */
+
+:root {
+  --vc-wa: #1baf7a;
+  --vc-tg: #2a78d6;
+  --vc-ig: #e87ba4;
+  --vc-call: #6250d6;
+  --vc-book: #eb6834;
+  --vc-in: #2a5ce8;
+  --vc-out: #0d9488;
+  --vc-prev: #9aa6b8;
+  --vc-good: #0ca30c;
+  --vc-bad: #d03b3b;
+  --vc-muted: #b6c0cf;
+  --vc-grid: #e9edf3;
+  --vc-axis: #cdd5e2;
+  --vc-ink: #0e1729;
+  --vc-ink-3: #7a879b;
+}
+
+.vc-chart { position: relative; outline: none; }
+.vc-chart:focus-visible { box-shadow: 0 0 0 2px var(--vf-accent-ring); border-radius: 10px; }
+.vc-chart svg { display: block; overflow: visible; }
+.vc-chart .gl { stroke: var(--vc-grid); stroke-width: 1; shape-rendering: crispEdges; }
+.vc-chart .bl { stroke: var(--vc-axis); stroke-width: 1; shape-rendering: crispEdges; }
+.vc-chart text { fill: var(--vc-ink-3); font: 500 11px var(--vf-font); font-variant-numeric: tabular-nums; }
+.vc-chart .hit { fill: transparent; cursor: pointer; }
+.vc-chart .col.hover .hit { fill: var(--vf-surface-3); opacity: .55; }
+.vc-chart .col.future { opacity: .35; }
+.vc-chart .xh { stroke: var(--vc-ink-3); stroke-width: 1; shape-rendering: crispEdges; }
+.vc-chart .prev { fill: none; stroke: var(--vc-prev); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.vc-chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.vc-chart .ar { opacity: .1; }
+.vc-chart .dot { stroke: #fff; stroke-width: 2; }
+.vc-empty { display: grid; place-items: center; color: var(--vc-ink-3); font-size: 13.5px; text-align: center; padding: 0 16px; }
+
+.vc-tip {
+  position: absolute; pointer-events: none; z-index: 5; background: #0e1729; color: #fff; border-radius: 10px; padding: 9px 11px;
+  font-size: 12.5px; line-height: 1.45; min-width: 150px; box-shadow: 0 2px 4px rgba(15, 23, 42, .06), 0 16px 40px -12px rgba(15, 23, 42, .3);
+  transform: translate(-50%, calc(-100% - 10px));
+}
+.vc-tip .t { font-weight: 600; color: rgba(255, 255, 255, .78); margin-bottom: 4px; white-space: nowrap; }
+.vc-tip .r { display: flex; align-items: center; gap: 8px; justify-content: space-between; white-space: nowrap; }
+.vc-tip .r span { display: inline-flex; align-items: center; gap: 7px; color: rgba(255, 255, 255, .82); }
+.vc-tip .r i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.vc-tip .r b { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.vc-tip .h { margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(255, 255, 255, .14); font-size: 11.5px; color: rgba(255, 255, 255, .62); }
+
+.vc-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--vf-text-2, #46556b); margin: 2px 0 8px; }
+.vc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.vc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.vc-legend i.line { height: 2px; border-radius: 1px; width: 14px; }
+.vc-legend b { color: var(--vc-ink); font-weight: 600; }
+
+.vc-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.vc-delta .ic { width: 12px; height: 12px; }
+.vc-delta.good { background: #e7f7ee; color: #127a3c; }
+.vc-delta.bad { background: #fdecec; color: #b42323; }
+.vc-delta.same { background: var(--vf-surface-2, #f6f8fc); color: var(--vc-ink-3); }
+
+.vc-spark { width: 84px; height: 26px; flex: none; }
+.vc-spark path.l { fill: none; stroke: var(--vc-muted); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.vc-spark path.a { fill: var(--vf-accent, #2a5ce8); opacity: .08; }
+.vc-spark circle { fill: var(--vf-accent, #2a5ce8); stroke: #fff; stroke-width: 2; }
+
+@media (max-width: 760px) {
+  .vc-spark { width: 64px; }
+}

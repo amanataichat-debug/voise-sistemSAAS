@@ -322,6 +322,8 @@ app.include_router(business_api.router, prefix="/api/business", tags=["Business"
 from backend.api import booking as booking_api  # онлайн-запись: календарь владельца и запись клиентов по ссылке
 app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
+from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
+app.include_router(analytics_api.router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -900,6 +902,24 @@ def ensure_dialog_indexes():
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_sip_calls_conversation_session_id ON sip_calls (conversation_session_id)",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_eleven_conversations_assistant_session "
         "ON eleven_conversations (assistant_id, session_id, created_at)",
+        # Аналитика (ветка 1811-niche-admin-speed): сообщения клиента по времени, клиенты владельца по дате,
+        # звонки агента по владельцу и дате
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_wa_messages_contact_time "
+        "ON agent_whatsapp_messages (agent_contact_id, created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_tg_messages_contact_time "
+        "ON agent_telegram_messages (agent_contact_id, created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_ig_messages_contact_time "
+        "ON agent_instagram_messages (agent_contact_id, created_at)",
+        # короткий период (сегодня, неделя): сначала время, потом клиенты владельца
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_wa_messages_created ON agent_whatsapp_messages (created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_tg_messages_created ON agent_telegram_messages (created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_ig_messages_created ON agent_instagram_messages (created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_contacts_user_created "
+        "ON agent_contacts (user_id, created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_agent_calls_user_created "
+        "ON agent_calls (user_id, created_at)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_sip_calls_user_created "
+        "ON sip_calls (user_id, created_at)",
     ]
     from sqlalchemy import text
     if engine.dialect.name != 'postgresql':

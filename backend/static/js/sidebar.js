@@ -56,6 +56,8 @@
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item', feature: 'telephony' },
     { href: '/static/crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', feature: 'crm',
       aliases: ['/static/crm-contact.html'] },
+    // Аналитика (ветка 1811-niche-admin-speed) — для всех тарифов: без бота показывает звонки и разговоры ассистентов
+    { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
@@ -75,7 +77,8 @@
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item' },
     // CRM — таблицы и канбан: на телефоне скрыта (13.11.2026), там работают Инбокс и Каталог
     { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', desktop: true },
-    { href: '/static/start-analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
+    { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item',
+      aliases: ['/static/start-analytics.html'] },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },

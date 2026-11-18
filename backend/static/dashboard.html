@@ -1729,6 +1729,7 @@
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <link rel="stylesheet" href="/static/css/vchart.css">
   <link rel="stylesheet" href="/static/css/dashboard-home.css">
   <script defer src="/static/js/i18n.js"></script>
   <script defer src="/static/js/ui.js"></script>
@@ -1754,6 +1755,7 @@
   </aside>
   <script defer src="/static/js/theme.js"></script>
   <script defer src="/static/js/sidebar.js"></script>
+  <script defer src="/static/js/vchart.js"></script>
   <script defer src="/static/js/dashboard-home.js"></script>
   
   <!-- Основной контент -->
@@ -1810,20 +1812,26 @@
         <div class="dh-kpi"><span class="dh-skel"></span></div>
       </section>
 
+      <!-- Главное за период: выводы словами из /api/analytics/report (insights) -->
+      <section class="dh-card dh-insights" id="dh-insights" hidden></section>
+
       <section class="dh-grid">
-        <div class="dh-card dh-span-2">
+        <div class="dh-card dh-span-2" id="dh-chart-card">
           <div class="dh-card-head">
             <div>
-              <h3 class="dh-card-title">Активность за 14 дней</h3>
+              <h3 class="dh-card-title" id="dh-chart-title">Активность за 7 дней</h3>
               <div class="dh-card-sub" id="dh-chart-sub">Звонки по дням, время Бишкека</div>
             </div>
-            <div class="dh-seg" id="dh-chart-tabs" hidden>
-              <button type="button" class="active" data-k="calls">Звонки</button>
-              <button type="button" data-k="messages">Сообщения</button>
+            <div class="dh-seg" id="dh-period" role="group" aria-label="Период">
+              <button type="button" class="active" data-p="7d">7 дней</button>
+              <button type="button" data-p="30d">30 дней</button>
+              <button type="button" data-p="90d">3 месяца</button>
             </div>
           </div>
-          <div class="dh-legend" id="dh-legend"></div>
+          <div class="dh-metrics" id="dh-chart-tabs" role="tablist" hidden></div>
+          <div class="vc-legend" id="dh-legend"></div>
           <div class="dh-chart" id="dh-chart"></div>
+          <div class="dh-chart-foot"><span id="dh-chart-hint"></span><a class="dh-link" id="dh-full" href="/static/analytics.html">Полный отчёт →</a></div>
         </div>
         <div class="dh-card" id="dh-side-card">
           <div class="dh-card-head"><h3 class="dh-card-title" id="dh-side-title">Воронка клиентов</h3></div>

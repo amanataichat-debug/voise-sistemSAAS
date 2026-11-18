@@ -56,6 +56,11 @@
 - `js/business-setup.js` — экран «Чем занимается ваш бизнес?» (`VoksyBusinessSetup.open({me, edit, onDone})`), открывает `sidebar.js`; «Настройки → Мой бизнес» — блок в `settings.html`.
 - `sidebar.js`: профиль бизнеса из `/api/users/me.business` → `localStorage.vf_business` (меню «Клиенты»/«Записи»/«Заказы», нижние вкладки телефона для Старта И Profi, событие `vf:business`).
 
+### Аналитика и графики (ветка 1811-niche-admin-speed)
+- `analytics.html` + `analytics/analytics.js|css` (префикс `an-`) — страница «Аналитика» для всех тарифов; данные — один запрос `/api/analytics/report`. `start-analytics.html` — только перенаправление сюда (старый `start/analytics.js` удалён).
+- `js/vchart.js` + `css/vchart.css` (префикс `vc-`) — общие графики, показатели (`VChart.METRICS`), плитки (`deltaHtml`, `sparkSvg`, `valHtml`); их используют «Аналитика» и главная (`dashboard-home.js`). Новый график кабинета — через `VChart.render`, не своим SVG.
+- Атрибут `data-tip` в кабинете занят глобальными CSS-подсказками (`voksiai.css`, `::after`) — для своих подсказок брать другое имя (`data-hint`).
+
 ### Кэш и скорость (ветка 1811-niche-admin-speed)
 - Сервер сам ставит в HTML метки содержимого `?v=h<хэш>` у своих скриптов и стилей (`app._CabinetStaticFiles`) — ручные `?v=` не нужны; такие файлы кэшируются навсегда, `sw.js` отдаёт страницы сначала из кэша и обновляет их в фоне. Новые страницы подключают скрипты обычным `<script src="/static/...">` — метку поставит сервер.
 - `ui.js` запоминает частые GET (профиль, кошелёк, тариф, непрочитанные) на 20–30 с в sessionStorage; запись к `/api` сбрасывает. `VF.memoClear()` — сбросить вручную.

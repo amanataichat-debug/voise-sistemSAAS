@@ -1,21 +1,36 @@
 /* /static/js/dashboard-home.js — главная кабинета Voksy AI.
  *
- * Один запрос GET /api/dashboard/summary → приветствие с тарифом, KPI, график активности за
- * 14 дней (звонки / сообщения бота), воронка CRM или список ассистентов, последние звонки,
- * подключения, чек-лист запуска и карточка Profi (для всех, кроме оплаченного Profi).
- * Ответ кэшируется в sessionStorage: повторный заход рисуется сразу, свежие данные — следом.
- * Модалки оплаты и блок подписки остаются в коде dashboard.html.
+ * Два запроса параллельно:
+ *   GET /api/dashboard/summary — приветствие с тарифом, кошелёк, последние звонки, подключения, воронка,
+ *                                чек-лист запуска и карточка Profi;
+ *   GET /api/analytics/report?period=7d|30d|90d&sections=… — интерактивные виджеты (ветка 1811-niche-admin-speed):
+ *                                плитки с изменением к прошлому периоду и мини-графиком; клик по плитке
+ *                                переключает график ниже, клик по столбцу открывает полный отчёт «Аналитики»
+ *                                на этом дне / неделе; «Главное» — выводы словами.
+ * Ниша с онлайн-записью: справа «Записи на сегодня» (/api/booking/overview) вместо воронки.
+ * Ответы кэшируются в sessionStorage: повторный заход рисуется сразу, свежие данные — следом.
+ * Модалки оплаты и блок подписки остаются в коде dashboard.html. Графики — общий /static/js/vchart.js.
  */
 (function () {
   'use strict';
 
   var CACHE_KEY = 'vf_dash_summary';
+  var AN_KEY = 'vf_dash_an:';
   var C_IN = '#2a5ce8';   // входящие (проверено validate_palette: CVD ΔE 22)
   var C_OUT = '#0d9488';  // исходящие
-  var data = null;
-  var chartKind = 'calls';
+  var V = window.VChart;
+  var data = null;        // /api/dashboard/summary
+  var an = null;          // /api/analytics/report за выбранный период
+  var period = lsGet('dh_period') || '7d';
+  var metric = lsGet('dh_metric') || '';
+  var chartKind = 'calls';  // запасной график из summary, пока отчёт не пришёл
+  var anSeq = 0;
+  var today = null;       // записи на сегодня (ниши с онлайн-записью)
 
   function $(id) { return document.getElementById(id); }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* приватный режим */ } }
+  function token() { try { return localStorage.getItem('auth_token'); } catch (e) { return null; } }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -49,7 +64,10 @@
     if (d.length === 10 && d[0] === '0') return d.substr(0, 4) + ' ' + d.substr(4, 3) + ' ' + d.substr(7);
     return p || '—';
   }
+  function business() { try { return JSON.parse(localStorage.getItem('vf_business') || 'null') || {}; } catch (e) { return {}; } }
+  function hasBooking() { return !!((business().modules || {}).booking); }
   var isStart = function () { return data && (data.agent_mode === 'reactive' || data.agent_mode === 'full'); };
+  var PERIOD_TITLE = { '7d': 'за 7 дней', '30d': 'за 30 дней', '90d': 'за 3 месяца' };
 
   // ------------------------------------------------------------------ hero
   function renderHero() {
@@ -82,8 +100,52 @@
       '<div class="dh-kpi-value">' + o.value + '</div>' +
       '<div class="dh-kpi-foot">' + (o.foot || '') + '</div></' + tag + '>';
   }
+  function walletTile() {
+    var w = data ? (data.wallet || {}) : {};
+    var low = !w.free && (w.balance || 0) <= 0;
+    return kpi({
+      label: 'Кошелёк', icon: 'wallet', tone: 'amber',
+      value: w.free ? '∞' : num(Math.floor(w.balance || 0)) + '<small>сом</small>',
+      foot: w.free ? 'без списаний' : (low ? '<span class="neg">Пополните, чтобы звонки работали</span>'
+        : '≈ <b>' + num(w.minutes_left) + '</b> мин разговора · ' + (w.som_per_minute || 0).toString().replace('.', ',') + ' сом/мин')
+    });
+  }
+  var KPI_ICON = { inbound: 'messages-square', new_clients: 'users', calls: 'phone-call', reply: 'clock', visits: 'calendar',
+    revenue: 'banknote', won: 'circle-check', pipeline: 'trending-up', dialogs: 'audio-lines', spent: 'coins' };
+  var KPI_TONE = { new_clients: 'green', reply: 'teal', visits: 'teal', revenue: 'green', won: 'green', dialogs: 'teal' };
+  // Плитки из отчёта аналитики: значение, изменение к прошлому периоду, мини-график; клик — график ниже
   function renderKpis() {
-    var c = data.calls || {}, w = data.wallet || {}, d = data.dialogs || {}, crm = data.crm || {}, m = data.messages || {};
+    if (an && an.kpis && an.kpis.length && V) {
+      var cur = currentMetric();
+      var list = an.kpis.filter(function (k) { return k.id !== 'spent'; }).slice(0, 3);
+      $('dh-kpis').innerHTML = list.map(function (k, i) {
+        var m = V.KPI_METRIC[k.id];
+        var on = cur && m === cur.id;
+        return '<button type="button" class="dh-kpi dh-kpi-btn' + (on ? ' on' : '') + '" data-kpi="' + i + '" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+          ' title="Показать на графике">' +
+          '<div class="dh-kpi-top"><span class="dh-kpi-label">' + esc(k.label) + ' <span class="dh-kpi-per">' + esc(PERIOD_TITLE[period] || '') + '</span></span>' +
+          '<span class="dh-kpi-ic ' + (KPI_TONE[k.id] || '') + '">' + ic(KPI_ICON[k.id] || 'activity') + '</span></div>' +
+          '<div class="dh-kpi-value">' + V.valHtml(k.value, k.fmt) + '</div>' +
+          '<div class="dh-kpi-foot dh-kpi-sub">' + esc(k.sub || '') + '</div>' +
+          '<div class="dh-kpi-trend">' + V.deltaHtml(k) + V.sparkSvg(k.spark) + '</div></button>';
+      }).join('') + walletTile();
+      Array.prototype.forEach.call($('dh-kpis').querySelectorAll('[data-kpi]'), function (b) {
+        b.addEventListener('click', function () {
+          var k = list[+b.getAttribute('data-kpi')];
+          var m = V.KPI_METRIC[k.id];
+          if (!m || !V.metricsAvail(an).some(function (x) { return x.id === m; })) {
+            location.href = '/static/analytics.html?period=' + period + '#' + (k.section || 'overview');
+            return;
+          }
+          metric = m; lsSet('dh_metric', m);
+          renderKpis(); renderChart();
+        });
+      });
+      return;
+    }
+    if (!data) return;
+    // запасные плитки из summary (первый заход, пока отчёт аналитики не пришёл)
+    var c = data.calls || {}, d = data.dialogs || {}, crm = data.crm || {}, m2 = data.messages || {};
     var tiles = [];
     tiles.push(kpi({
       label: 'Звонки сегодня', icon: 'phone-call', value: num(c.today),
@@ -94,109 +156,96 @@
       foot: c.answered_month ? 'за 30 дней · в среднем <b>' + dur(c.avg_sec) + '</b>' : 'за 30 дней'
     }));
     if (isStart() && crm.has_bot) {
-      tiles.push(kpi({
-        label: 'Клиенты в CRM', icon: 'users', tone: 'green', value: num(crm.contacts_total),
-        foot: '<b>+' + num(crm.contacts_new_week) + '</b> новых за неделю', href: '/static/' + (data.agent_mode === 'full' ? 'crm.html' : 'start-crm.html')
-      }));
+      tiles.push(kpi({ label: 'Клиенты в CRM', icon: 'users', tone: 'green', value: num(crm.contacts_total),
+        foot: '<b>+' + num(crm.contacts_new_week) + '</b> новых за неделю', href: '/static/' + (data.agent_mode === 'full' ? 'crm.html' : 'start-crm.html') }));
     } else if (isStart()) {
-      tiles.push(kpi({
-        label: 'Сообщения за неделю', icon: 'message-circle', tone: 'green', value: num((m.week_in || 0) + (m.week_out || 0)),
-        foot: 'чат-бот ещё не создан', href: '/static/start-bot.html'
-      }));
+      tiles.push(kpi({ label: 'Сообщения за неделю', icon: 'message-circle', tone: 'green', value: num((m2.week_in || 0) + (m2.week_out || 0)),
+        foot: 'чат-бот ещё не создан', href: '/static/start-bot.html' }));
     } else {
-      tiles.push(kpi({
-        label: 'Диалоги за неделю', icon: 'messages-square', tone: 'green', value: num(d.week),
-        foot: '<b>' + num(d.today) + '</b> сегодня', href: '/static/conversations.html'
-      }));
+      tiles.push(kpi({ label: 'Диалоги за неделю', icon: 'messages-square', tone: 'green', value: num(d.week),
+        foot: '<b>' + num(d.today) + '</b> сегодня', href: '/static/conversations.html' }));
     }
-    var low = !w.free && (w.balance || 0) <= 0;
-    tiles.push(kpi({
-      label: 'Кошелёк', icon: 'wallet', tone: 'amber',
-      value: w.free ? '∞' : num(Math.floor(w.balance || 0)) + '<small>сом</small>',
-      foot: w.free ? 'без списаний' : (low ? '<span class="neg">Пополните, чтобы звонки работали</span>'
-        : '≈ <b>' + num(w.minutes_left) + '</b> мин разговора · ' + (w.som_per_minute || 0).toString().replace('.', ',') + ' сом/мин')
-    }));
-    $('dh-kpis').innerHTML = tiles.join('');
+    $('dh-kpis').innerHTML = tiles.join('') + walletTile();
+  }
+
+  // ------------------------------------------------------------------ «Главное»
+  function renderInsights() {
+    var box = $('dh-insights');
+    var list = (an && an.insights) || [];
+    if (!list.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="dh-card-head"><h3 class="dh-card-title">Главное ' + esc(PERIOD_TITLE[period] || '') + '</h3>' +
+      '<a class="dh-link" href="/static/analytics.html?period=' + period + '">Вся аналитика →</a></div>' +
+      '<div class="dh-ins-list">' + list.slice(0, 3).map(function (x) {
+        return '<div class="dh-ins ' + esc(x.tone) + '"><span class="dh-ins-ic">' + ic(x.icon) + '</span><span>' + esc(x.text) + '</span></div>';
+      }).join('') + '</div>';
   }
 
   // ------------------------------------------------------------------ график
-  function series() {
-    var src = chartKind === 'messages' ? (data.messages || {}).by_day : (data.calls || {}).by_day;
-    return src || [];
+  function currentMetric() {
+    if (!an || !V) return null;
+    return V.metricById(an, metric);
   }
   function renderChart() {
-    var rows = series();
-    var isMsg = chartKind === 'messages';
-    var names = isMsg ? ['От клиентов', 'Ответы бота и ваши'] : ['Входящие', 'Исходящие'];
-    $('dh-chart-sub').textContent = (isMsg ? 'Сообщения WhatsApp, Telegram и Instagram' : 'Звонки') + ' по дням, время Бишкека';
-    $('dh-legend').innerHTML = '<span><i style="background:' + C_IN + '"></i>' + names[0] + '</span><span><i style="background:' + C_OUT + '"></i>' + names[1] + '</span>';
-    var box = $('dh-chart');
-    var total = rows.reduce(function (s, r) { return s + r.inbound + r.outbound; }, 0);
-    if (!rows.length || !total) {
-      box.innerHTML = '<div class="dh-empty" style="padding:60px 0;text-align:center">' +
-        (isMsg ? 'За 14 дней сообщений не было. Подключите WhatsApp, Telegram или Instagram в разделе <a href="/static/start-bot.html#channels">Чат-бот</a>.'
-          : 'За 14 дней звонков не было. Подключите номер +996 в разделе <a href="/static/telephony.html">Телефония</a> или проверьте ассистента в браузере.') + '</div>';
-      return;
-    }
-    var W = Math.max(280, box.clientWidth || 700), H = 220, padL = 28, padB = 24, padT = 8;
-    var max = Math.max.apply(null, rows.map(function (r) { return r.inbound + r.outbound; }));
-    var step = max <= 4 ? 1 : Math.ceil(max / 4);
-    var top = step * Math.ceil(max / step);
-    var ih = H - padB - padT, iw = W - padL;
-    var bw = iw / rows.length, barW = Math.min(26, bw * 0.56);
-    var y = function (v) { return padT + ih - (v / top) * ih; };
-    var g = '<g class="grid">';
-    for (var v = 0; v <= top; v += step) {
-      g += '<line x1="' + padL + '" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '"></line><text x="' + (padL - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>';
-    }
-    g += '</g>';
-    var cols = '', xl = '<g class="xl">';
-    rows.forEach(function (r, i) {
-      var cx = padL + bw * i + bw / 2, x = cx - barW / 2;
-      var hIn = (r.inbound / top) * ih, hOut = (r.outbound / top) * ih;
-      var base = padT + ih;
-      var parts = '';
-      // столбец: входящие снизу, исходящие сверху, 2px зазор, верхний конец скруглён
-      if (r.inbound) parts += rect(x, base - hIn, barW, hIn, C_IN, !r.outbound);
-      if (r.outbound) parts += rect(x, base - hIn - hOut - (r.inbound ? 2 : 0), barW, hOut, C_OUT, true);
-      cols += '<g class="col" data-i="' + i + '"><rect class="hit" x="' + (padL + bw * i) + '" y="' + padT + '" width="' + bw + '" height="' + ih + '" rx="6"></rect>' + parts + '</g>';
-      var every = W < 480 ? 3 : 2;
-      if ((rows.length - 1 - i) % every === 0) {
-        var d = new Date(r.date + 'T00:00:00');
-        xl += '<text x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle">' + d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '') + '</text>';
+    if (an && V) return renderChartAn();
+    renderChartLegacy();
+  }
+  function renderChartAn() {
+    var m = currentMetric();
+    var tabs = $('dh-chart-tabs');
+    var avail = V.metricsAvail(an);
+    tabs.hidden = avail.length < 2;
+    tabs.innerHTML = avail.map(function (x) {
+      return '<button type="button" role="tab" data-m="' + x.id + '" class="' + (x.id === m.id ? 'active' : '') + '" aria-selected="' + (x.id === m.id) + '">' +
+        esc(x.title) + '<b>' + num(V.metricTotal(an, x)) + '</b></button>';
+    }).join('');
+    $('dh-chart-title').textContent = m.title + ' ' + (PERIOD_TITLE[period] || '');
+    $('dh-chart-sub').textContent = m.sub + ' · время Бишкека';
+    var parts = V.metricParts(an, m);
+    var prev = m.prev ? (an.prev || {})[m.prev] || null : null;
+    $('dh-legend').innerHTML = V.legendHtml(parts, prev);
+    var g = an.period.granularity;
+    $('dh-chart-hint').textContent = g === 'hour' ? '' : 'Нажмите на столбец — откроется подробный отчёт ' + (g === 'day' ? 'по часам' : 'по дням');
+    $('dh-full').href = '/static/analytics.html?period=' + period + '&m=' + m.id;
+    V.render($('dh-chart'), {
+      buckets: an.buckets, parts: parts, prev: prev, height: window.innerWidth < 720 ? 200 : 270,
+      drillText: 'Нажмите — подробный отчёт',
+      emptyText: m.id === 'calls' ? 'Звонков за период не было. Подключите номер +996 в разделе «Телефония».'
+        : 'За период данных нет.',
+      drill: function (i) {
+        var b = an.buckets[i];
+        location.href = '/static/analytics.html?period=custom&from=' + b.from + '&to=' + b.to + '&g=' + (b.from === b.to ? 'hour' : 'day') + '&m=' + m.id;
       }
     });
-    xl += '</g>';
-    box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' +
-      esc((isMsg ? 'Сообщения' : 'Звонки') + ' за 14 дней, всего ' + total) + '">' + g + cols + xl + '</svg>';
-    var tip = document.createElement('div'); tip.className = 'dh-tip'; tip.hidden = true; box.appendChild(tip);
-    Array.prototype.forEach.call(box.querySelectorAll('.col'), function (col) {
-      col.addEventListener('mouseenter', function () {
-        var r = rows[+col.getAttribute('data-i')];
-        var d = new Date(r.date + 'T00:00:00');
-        tip.innerHTML = '<b>' + d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' }) + '</b><br>' +
-          '<i style="background:' + C_IN + '"></i>' + names[0] + ': <b>' + r.inbound + '</b><br>' +
-          '<i style="background:' + C_OUT + '"></i>' + names[1] + ': <b>' + r.outbound + '</b>';
-        var bb = col.querySelector('.hit').getBoundingClientRect(), pb = box.getBoundingClientRect();
-        tip.style.left = (bb.left - pb.left + bb.width / 2) + 'px';
-        tip.style.top = (bb.top - pb.top + 6) + 'px';
-        tip.hidden = false;
-      });
-      col.addEventListener('mouseleave', function () { tip.hidden = true; });
+  }
+  // Запасной график из summary: звонки / сообщения за 14 дней (пока отчёт аналитики не пришёл или без vchart.js)
+  function renderChartLegacy() {
+    if (!data) return;
+    var isMsg = chartKind === 'messages';
+    var rows = (isMsg ? (data.messages || {}).by_day : (data.calls || {}).by_day) || [];
+    var names = isMsg ? ['От клиентов', 'Ответы бота и ваши'] : ['Входящие', 'Исходящие'];
+    $('dh-chart-title').textContent = 'Активность за 14 дней';
+    $('dh-chart-sub').textContent = (isMsg ? 'Сообщения WhatsApp, Telegram и Instagram' : 'Звонки') + ' по дням, время Бишкека';
+    $('dh-legend').innerHTML = '<span><i style="background:' + C_IN + '"></i>' + names[0] + '</span><span><i style="background:' + C_OUT + '"></i>' + names[1] + '</span>';
+    if (!V) return;
+    var buckets = rows.map(function (r) {
+      var d = new Date(r.date + 'T00:00:00');
+      return { label: d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', ''),
+        title: d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' }) };
+    });
+    V.render($('dh-chart'), {
+      buckets: buckets, height: 220,
+      parts: [{ label: names[0], color: C_IN, values: rows.map(function (r) { return r.inbound; }) },
+        { label: names[1], color: C_OUT, values: rows.map(function (r) { return r.outbound; }) }],
+      emptyText: isMsg ? 'За 14 дней сообщений не было.' : 'За 14 дней звонков не было.'
     });
   }
-  function rect(x, y, w, h, color, roundTop) {
-    if (h <= 0) return '';
-    var r = Math.min(4, h, w / 2);
-    if (!roundTop) return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + color + '"></rect>';
-    return '<path fill="' + color + '" d="M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y +
-      'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z"></path>';
-  }
 
-  // ------------------------------------------------------------------ правая колонка: воронка или ассистенты
+  // ------------------------------------------------------------------ правая колонка: записи, воронка или ассистенты
   function renderSide() {
     var crm = data.crm || {};
     var body = $('dh-side-body');
+    if (hasBooking()) { renderToday(); return; }
     if (isStart() && crm.has_bot) {
       $('dh-side-title').textContent = 'Воронка клиентов';
       var max = Math.max.apply(null, (crm.stages || []).map(function (s) { return s.count; }).concat([1]));
@@ -223,6 +272,50 @@
       '<div><div class="dh-stage-row"><span>За 7 дней</span><b>' + num(d.week) + '</b></div></div></div>' +
       '<div class="dh-empty" style="margin-top:10px">Переписка, CRM и аналитика клиентов открываются на тарифе Старт.</div>' +
       '<a class="dh-link" href="/static/conversations.html">Открыть диалоги →</a>';
+  }
+
+  // Записи на сегодня (салоны, клиники, СТО): время, клиент, услуга, мастер, статус
+  var STATUS_CLS = { booked: 'wait', confirmed: 'ok', arrived: 'ok', no_show: 'miss', cancelled: 'miss' };
+  function renderToday() {
+    $('dh-side-title').textContent = 'Записи на сегодня';
+    var body = $('dh-side-body');
+    if (!today) { body.innerHTML = '<span class="dh-skel"></span>'; if (!todayLoading) loadToday(); return; }
+    var rows = (today.bookings || []).filter(function (b) { return b.status !== 'cancelled'; })
+      .sort(function (a, b) { return a.start < b.start ? -1 : 1; });
+    var link = '<div class="dh-today-foot"><a class="dh-link" href="/static/booking.html">Открыть календарь →</a></div>';
+    if (!rows.length) {
+      body.innerHTML = '<div class="dh-empty">На сегодня записей нет. Отправьте клиентам ссылку для записи — они выберут время сами.</div>' +
+        (today.page && today.page.url ? '<button type="button" class="dh-copy" id="dh-copy-link">' + ic('link-2') + 'Скопировать ссылку для записи</button>' : '') + link;
+    } else {
+      var now = Date.now();
+      body.innerHTML = '<div class="dh-today">' + rows.slice(0, 7).map(function (b) {
+        var t = new Date(b.start), past = new Date(b.end).getTime() < now;
+        return '<a class="dh-today-row' + (past ? ' past' : '') + '" href="/static/booking.html#' + esc(b.id) + '">' +
+          '<span class="dh-today-time">' + t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bishkek' }) + '</span>' +
+          '<span class="dh-today-main"><b>' + esc(b.client_name || 'Клиент') + '</b><span>' + esc([b.service, b.resource].filter(Boolean).join(' · ')) + '</span></span>' +
+          '<span class="dh-badge ' + (STATUS_CLS[b.status] || 'wait') + '">' + esc(b.status_title || b.status) + '</span></a>';
+      }).join('') + '</div>' + (rows.length > 7 ? '<div class="dh-empty" style="padding-top:4px">и ещё ' + (rows.length - 7) + '</div>' : '') + link;
+    }
+    var copy = $('dh-copy-link');
+    if (copy) copy.addEventListener('click', function () {
+      var url = today.page.url;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () {
+        copy.textContent = 'Ссылка скопирована';
+      }).catch(function () { window.prompt('Ссылка для записи', url); });
+    });
+  }
+  var todayLoading = false;
+  function loadToday() {
+    if (!hasBooking() || todayLoading) return;
+    todayLoading = true;
+    fetch('/api/booking/overview?days=1', { headers: { Authorization: 'Bearer ' + token() } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        todayLoading = false;
+        today = d || { bookings: [] };
+        if (data) renderSide();
+      })
+      .catch(function () { todayLoading = false; today = { bookings: [] }; if (data) renderSide(); });
   }
 
   // ------------------------------------------------------------------ последние звонки
@@ -351,9 +444,6 @@
     if (!data) return;
     renderHero();
     renderKpis();
-    var tabs = $('dh-chart-tabs');
-    tabs.hidden = !isStart();
-    if (!isStart()) chartKind = 'calls';
     renderChart();
     renderSide();
     renderRecent();
@@ -363,16 +453,22 @@
     renderProfi();
     if (window.VF && window.VF.ready) try { window.VF.ready(); } catch (e) { /* ignore */ }
   }
+  function renderAn() {
+    renderKpis();
+    renderInsights();
+    renderChart();
+  }
 
   function load() {
-    var token = null;
-    try { token = localStorage.getItem('auth_token'); } catch (e) { /* ignore */ }
-    if (!token) return;
+    var t = token();
+    if (!t) return;
     try {
       var cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
       if (cached) { data = cached; render(); }
     } catch (e) { /* ignore */ }
-    fetch('/api/dashboard/summary', { headers: { Authorization: 'Bearer ' + token } })
+    loadAn();
+    loadToday();
+    fetch('/api/dashboard/summary', { headers: { Authorization: 'Bearer ' + t } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;
@@ -383,30 +479,63 @@
       .catch(function () { /* сеть: остаётся кэш или скелетоны */ });
   }
 
+  // Отчёт аналитики за выбранный период: из кэша вкладки сразу, свежий — следом
+  function strip(d) { var c = Object.assign({}, d); delete c.generated_at; return JSON.stringify(c); }
+  function loadAn() {
+    var t = token();
+    if (!t || !V) return;
+    var key = AN_KEY + period, my = ++anSeq;
+    var cached = null;
+    try { cached = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (e) { /* ignore */ }
+    if (cached) { an = cached; renderAn(); }
+    else if (an) $('dh-chart-card').classList.add('dh-busy');
+    fetch('/api/analytics/report?period=' + period + '&sections=kpis,series,replies,calls,bot', { headers: { Authorization: 'Bearer ' + t } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (my !== anSeq) return;
+        $('dh-chart-card').classList.remove('dh-busy');
+        if (!d) return;
+        try { sessionStorage.setItem(key, JSON.stringify(d)); } catch (e) { /* ignore */ }
+        if (cached && strip(cached) === strip(d)) return;
+        an = d; renderAn();
+      })
+      .catch(function () { $('dh-chart-card').classList.remove('dh-busy'); });
+  }
+
   function init() {
     $('dh-topup').addEventListener('click', openTopup);
     $('dh-upgrade').addEventListener('click', function () {
       var b = document.getElementById('upgrade-subscription-btn');
       if (b) b.click();
     });
+    Array.prototype.forEach.call($('dh-period').querySelectorAll('button[data-p]'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-p') === period);
+      b.addEventListener('click', function () {
+        period = b.getAttribute('data-p'); lsSet('dh_period', period);
+        Array.prototype.forEach.call($('dh-period').querySelectorAll('button'), function (x) { x.classList.toggle('active', x === b); });
+        loadAn();
+      });
+    });
     $('dh-chart-tabs').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-k]');
+      var b = e.target.closest('button[data-m]');
       if (!b) return;
-      chartKind = b.getAttribute('data-k');
-      Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) { x.classList.toggle('active', x === b); });
-      renderChart();
+      metric = b.getAttribute('data-m'); lsSet('dh_metric', metric);
+      renderKpis(); renderChart();
     });
     load();
-    var rt = null;
+    var rt = null, lastW = window.innerWidth;
     window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return;   // на телефоне resize при прокрутке (панель браузера) — не перерисовываем
+      lastW = window.innerWidth;
       clearTimeout(rt);
-      rt = setTimeout(function () { if (data) renderChart(); }, 150);
+      rt = setTimeout(function () { if (data || an) renderChart(); }, 150);
     });
     document.addEventListener('vf:wallet', function (e) {
       if (!data || !e.detail) return;
       data.wallet = Object.assign({}, data.wallet, { balance: e.detail.balance });
       renderKpis();
     });
+    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

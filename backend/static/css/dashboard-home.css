@@ -63,26 +63,57 @@ a.dh-kpi:hover { box-shadow: var(--vf-shadow-2); border-color: var(--vf-border-s
 
 /* Переключатель */
 .dh-seg { display: inline-flex; padding: 3px; background: var(--vf-surface-2); border: 1px solid var(--vf-border); border-radius: 10px; }
-.dh-seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--vf-text-3); cursor: pointer; }
+.dh-seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--vf-text-3); cursor: pointer; white-space: nowrap; }
 .dh-seg button.active { background: var(--vf-surface); color: var(--vf-text); box-shadow: var(--vf-shadow-1); }
 
-/* График */
-.dh-legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--vf-text-2); margin-bottom: 8px; }
-.dh-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.dh-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.dh-chart { position: relative; }
-.dh-chart { min-height: 220px; }
-.dh-chart svg { display: block; max-width: 100%; overflow: visible; }
-.dh-chart .grid line { stroke: var(--vf-border); stroke-width: 1; }
-.dh-chart .grid text, .dh-chart .xl text { fill: var(--vf-text-4); font-size: 11px; font-family: var(--vf-font); }
-.dh-chart .hit { fill: transparent; cursor: default; }
-.dh-chart .col:hover .hit { fill: var(--vf-surface-3); opacity: .6; }
-.dh-tip {
-  position: absolute; pointer-events: none; background: var(--vf-text); color: #fff; border-radius: 8px; padding: 8px 10px;
-  font-size: 12px; line-height: 1.5; white-space: nowrap; transform: translate(-50%, -100%); box-shadow: var(--vf-shadow-3); z-index: 2;
+/* График (рисует общий /static/js/vchart.js, стили — /static/css/vchart.css) */
+.dh-chart { position: relative; min-height: 200px; }
+.dh-chart-card { transition: opacity .18s ease; }
+.dh-busy .dh-chart, .dh-busy .vc-legend { opacity: .5; }
+.dh-chart-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--vf-text-3); flex-wrap: wrap; }
+.dh-metrics { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: -4px 0 8px; min-width: 0; }
+.dh-metrics::-webkit-scrollbar { display: none; }
+.dh-metrics button {
+  flex: none; border: 0; background: transparent; padding: 6px 10px; border-radius: 9px; font: 600 13px/1.2 var(--vf-font);
+  color: var(--vf-text-3); cursor: pointer; display: grid; gap: 1px; text-align: left;
 }
-.dh-tip b { font-weight: 700; }
-.dh-tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+.dh-metrics button b { font-family: var(--vf-font-display); font-size: 16px; color: var(--vf-text-2); font-weight: 700; }
+.dh-metrics button:hover { background: var(--vf-surface-2); }
+.dh-metrics button.active { background: var(--vf-accent-soft); color: var(--vf-accent); }
+.dh-metrics button.active b { color: var(--vf-accent); }
+
+/* Плитки-переключатели графика */
+button.dh-kpi { font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.dh-kpi-btn:hover { box-shadow: var(--vf-shadow-2); border-color: var(--vf-border-strong); }
+.dh-kpi-btn:focus-visible { outline: 2px solid var(--vf-accent); outline-offset: 2px; }
+.dh-kpi.on { border-color: var(--vf-accent); box-shadow: 0 0 0 3px var(--vf-accent-ring); }
+.dh-kpi-per { font-weight: 500; color: var(--vf-text-4); }
+.dh-kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-kpi-trend { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: auto; min-height: 26px; }
+
+/* Главное за период */
+.dh-insights { margin-bottom: 20px; background: linear-gradient(180deg, #f7f9ff 0%, #fff 70%); }
+.dh-insights .dh-card-head { margin-bottom: 6px; }
+.dh-ins-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dh-ins { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--vf-text-2); line-height: 1.45; padding: 6px 0; }
+.dh-ins-ic { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--vf-accent-soft); color: var(--vf-accent); }
+.dh-ins-ic .ic { width: 15px; height: 15px; }
+.dh-ins.warn .dh-ins-ic { background: #fdf3e2; color: #b45309; }
+.dh-ins.good .dh-ins-ic { background: #e7f7ee; color: #127a3c; }
+
+/* Записи на сегодня */
+.dh-today { display: flex; flex-direction: column; }
+.dh-today-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--vf-border); text-decoration: none; color: inherit; }
+.dh-today-row:first-child { border-top: 0; padding-top: 2px; }
+.dh-today-row.past { opacity: .55; }
+.dh-today-row:hover .dh-today-main b { color: var(--vf-accent); }
+.dh-today-time { font-family: var(--vf-font-display); font-weight: 700; font-size: 15px; color: var(--vf-text); width: 48px; flex: none; font-variant-numeric: tabular-nums; }
+.dh-today-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dh-today-main b { font-size: 13.5px; color: var(--vf-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-today-main span { font-size: 12px; color: var(--vf-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-today-foot { margin-top: 10px; }
+.dh-copy { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--vf-border); background: var(--vf-surface-2); border-radius: 9px; padding: 7px 11px; font: 600 12.5px var(--vf-font); color: var(--vf-text-2); cursor: pointer; margin: 4px 0 6px; }
+.dh-copy .ic { width: 14px; height: 14px; }
 
 /* Воронка */
 .dh-funnel { display: flex; flex-direction: column; gap: 12px; }
@@ -149,6 +180,7 @@ body.vf .subscription-section { margin-top: 0; }
 
 @media (max-width: 1180px) {
   .dh-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dh-ins-list { grid-template-columns: 1fr; gap: 0; }
   .dh-grid { grid-template-columns: 1fr 1fr; }
   .dh-span-2 { grid-column: span 2; }
 }
@@ -162,4 +194,6 @@ body.vf .subscription-section { margin-top: 0; }
   .dh-grid { grid-template-columns: 1fr; }
   .dh-span-2 { grid-column: auto; }
   .dh-table .hide-sm { display: none; }
+  #dh-chart-card .dh-card-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  #dh-period { align-self: flex-start; }
 }
