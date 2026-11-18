@@ -41,6 +41,19 @@ class UserUpdate(BaseModel):
     yandex_api_key: Optional[str] = Field(None, description="Yandex Cloud API key")  # 🆕 Yandex
     yandex_folder_id: Optional[str] = Field(None, description="Yandex Cloud folder ID")  # 🆕 Yandex
     fish_api_key: Optional[str] = Field(None, description="Fish Audio TTS API key")  # 🆕 Fish
+    # Контактный телефон владельца аккаунта (18.11.2026): кабинет просит его у тех, кто
+    # зарегистрировался без телефона. Пустым не делается — только меняется на другой номер.
+    phone: Optional[str] = Field(None, description="Contact phone (E.164)")
+
+    @validator('phone')
+    def phone_e164(cls, v):
+        if v is None:
+            return None
+        from backend.utils.phone import normalize_phone_e164
+        normalized = normalize_phone_e164(v)
+        if not normalized:
+            raise ValueError('Invalid phone number')
+        return normalized
 
     class Config:
         json_schema_extra = {
@@ -106,6 +119,13 @@ class UserResponse(UserBase):
     subscription_end_date: Optional[datetime] = Field(None, description="End date of subscription")
     # 'full' (Profi/триал/админ) | 'reactive' (Старт) | None — по нему меню кабинета выбирает набор разделов
     agent_mode: Optional[str] = Field(None, description="Agent mode of the plan: full | reactive | null")
+    # Профиль бизнеса (ветка 1811-niche-admin-speed)
+    phone: Optional[str] = Field(None, description="Contact phone (E.164)")
+    business_niche: Optional[str] = Field(None, description="Business niche key")
+    business_niche_other: Optional[str] = Field(None, description="Niche in the owner's own words")
+    onboarded_at: Optional[datetime] = Field(None, description="Business setup screen completed at")
+    # Запрос сделан админом из кабинета клиента (кнопка «Войти в кабинет» в админке)
+    impersonated: bool = Field(False, description="Admin is viewing this account")
     
     class Config:
         from_attributes = True

@@ -98,6 +98,19 @@ class User(Base, BaseModel):
     wallet_balance = Column(Integer, default=0, server_default="0", nullable=False)
     wallet_bonus_granted = Column(Boolean, default=False, server_default="false", nullable=False)
 
+    # Профиль бизнеса и работа владельца платформы с клиентом (ветка 1811-niche-admin-speed).
+    # Колонки добавляет app.ensure_user_profile_columns() в самом начале старта, в каждом воркере:
+    # строку users ORM выбирает в каждом запросе с авторизацией.
+    phone = Column(String(32), nullable=True, index=True)            # контактный телефон, E.164 (+996…)
+    business_niche = Column(String(40), nullable=True, index=True)   # ключ ниши (services/niche_presets.py)
+    business_niche_other = Column(String(120), nullable=True)        # «Другое»: сфера своими словами
+    onboarded_at = Column(DateTime(timezone=True), nullable=True)    # прошёл экран «Чем занимается ваш бизнес?»
+    # Мини-CRM админа по клиентам платформы: new | contacted | setup | paying | churned
+    admin_status = Column(String(20), nullable=True, index=True)
+    admin_note = Column(Text, nullable=True)                         # последняя заметка (полная лента — admin_audit_log)
+    admin_next_contact_at = Column(DateTime(timezone=True), nullable=True)
+    signup_notified_at = Column(DateTime(timezone=True), nullable=True)  # админу ушло сообщение о регистрации
+
     # Отношения
     assistants = relationship("AssistantConfig", back_populates="user", cascade="all, delete-orphan")
     gemini_assistants = relationship("GeminiAssistantConfig", back_populates="user", cascade="all, delete-orphan")

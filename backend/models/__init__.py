@@ -116,6 +116,9 @@ from .credit_package import CreditPackage
 # Кошелёк в сомах (минуты голосовых моделей)
 from .wallet_transaction import WalletTransaction, WalletTransactionType
 
+# Журнал владельца платформы по клиентам: вход в кабинет, заметки, статусы (админка «Клиенты»)
+from .admin_audit import AdminAuditLog
+
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 
@@ -192,6 +195,7 @@ __all__ = [
     "CreditTransactionType",
     "WalletTransaction",
     "WalletTransactionType",
+    "AdminAuditLog",
     "CreditPackage",
     "SipPhoneNumber",
     "SipCall",

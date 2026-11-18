@@ -43,7 +43,33 @@ class RegisterRequest(BaseModel):
     first_name: Optional[str] = Field(None, max_length=50, description="User first name")
     last_name: Optional[str] = Field(None, max_length=50, description="User last name")
     company_name: Optional[str] = Field(None, max_length=100, description="Company name")
-    
+    # Контактный телефон владельца аккаунта (18.11.2026): без него владелец платформы не мог
+    # связаться с зарегистрировавшимися. Обязателен; хранится в E.164 (+996…).
+    phone: Optional[str] = Field(None, max_length=40, description="Contact phone")
+
+    @validator('first_name', 'last_name', 'company_name', pre=True)
+    def strip_names(cls, v):
+        if v is None:
+            return None
+        v = " ".join(str(v).split())
+        return v or None
+
+    @validator('first_name', always=True)
+    def first_name_required(cls, v):
+        if not v:
+            raise ValueError('Name is required')
+        return v
+
+    @validator('phone', always=True)
+    def phone_required(cls, v):
+        from backend.utils.phone import normalize_phone_e164
+        if v is None or not str(v).strip():
+            raise ValueError('Phone is required')
+        normalized = normalize_phone_e164(v)
+        if not normalized:
+            raise ValueError('Invalid phone number')
+        return normalized
+
     # 🆕 ПАРТНЕРСКИЕ ПОЛЯ
     referral_code: Optional[str] = Field(
         None, 

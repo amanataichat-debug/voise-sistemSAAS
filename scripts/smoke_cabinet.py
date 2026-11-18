@@ -118,7 +118,7 @@ def _gen():
 EmailService._generate_verification_code = staticmethod(_gen)
 EmailService._send_email_smtp = staticmethod(lambda *a, **k: None)
 new_email = f"newclient-{uuid.uuid4().hex[:6]}@example.com"
-r = call("POST", "/api/auth/register", json={"email": new_email, "password": "Passw0rd!x", "first_name": "Айгерим"})
+r = call("POST", "/api/auth/register", json={"email": new_email, "password": "Passw0rd!x", "first_name": "Айгерим", "phone": "0700 555 101"})
 if r is None or r.status_code >= 400:
     fails.append(f"регистрация: {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:200]}")
 r = call("POST", "/api/auth/login", json={"email": new_email, "password": "Passw0rd!x"})
@@ -148,12 +148,12 @@ else:
         if rv is None or rv.status_code >= 400:
             fails.append(f"вход с email в другом регистре ({variant!r}): {getattr(rv, 'status_code', None)}")
 _cap_email = f"Mobile.Client-{uuid.uuid4().hex[:6]}@Gmail.com"
-call("POST", "/api/auth/register", json={"email": _cap_email, "password": "Passw0rd!x", "first_name": "Мирлан"})
+call("POST", "/api/auth/register", json={"email": _cap_email, "password": "Passw0rd!x", "first_name": "Мирлан", "phone": "0700 555 102"})
 rv = call("POST", "/api/email-verification/verify", json={"email": _cap_email.lower(), "code": _codes[-1] if _codes else "0"})
 if rv is None or rv.status_code >= 400:
     fails.append(f"подтверждение кода строчными после регистрации с заглавной: {getattr(rv, 'status_code', None)} "
                  f"{getattr(rv, 'text', '')[:200]}")
-rv = call("POST", "/api/auth/login", json={"email": _cap_email.lower(), "password": "Passw0rd!x"})
+rv = call("POST", "/api/auth/login", json={"email": _cap_email.lower(), "password": "Passw0rd!x", "first_name": "Мирлан", "phone": "0700 555 102"})
 if rv is None or rv.status_code >= 400:
     fails.append(f"вход строчными после регистрации с заглавной буквы: {getattr(rv, 'status_code', None)} "
                  f"{getattr(rv, 'text', '')[:200]}")

@@ -47,6 +47,11 @@
 - `email_service.py` — SMTP: коды подтверждения email, JWT-токены верификации.
 - `google_sheets_service.py` — запись строк в Google Sheets (service account), детальное логирование, трекинг номера звонящего.
 
+### Клиенты платформы (админка владельца, ветка 1811-niche-admin-speed)
+- `admin_clients.py` — список/сводка/карточка клиентов для `/api/admin/clients*`: SQL с фильтрами и `count(*) over ()`, агрегаты «что настроил клиент» (агенты, ассистенты, WhatsApp/Telegram/Instagram, номера, каталог/знания, клиенты CRM, звонки 30 дней, оплаты) только по id страницы; мини-CRM владельца (`users.admin_status|admin_note|admin_next_contact_at`) и журнал `admin_audit_log` (`log_action`).
+- `signup_notify.py` — сообщение владельцу в Telegram о новой регистрации (имя, телефон, почта, компания, ниша, кнопки «Открыть в админке» и WhatsApp). Канал: бот агента админа (чаты владельца) или `ADMIN_TELEGRAM_BOT_TOKEN` + `ADMIN_TELEGRAM_CHAT_IDS`; выключатель `SIGNUP_TELEGRAM_NOTIFY=0`. Сразу после выбора ниши (`notify_signup`) или через `SIGNUP_NOTIFY_DELAY_SECONDS`=180 фоновым циклом; один раз на клиента — атомарный `UPDATE … signup_notified_at`.
+- `niche_catalog.py` — справочник ниш (ключ, название ru/ky, группа, значок); ключи хранятся в `users.business_niche` и `agent_configs.niche_key` — только добавлять, не переименовывать.
+
 ### Пользователи / файлы / стриминг
 - `auth_service.py` — регистрация/логин, JWT, обработка UTM и реферальных кодов при регистрации.
 - `user_service.py` — управление аккаунтом и пользовательскими API-ключами (gemini/grok; поле `elevenlabs_api_key` сохранилось, но не используется).

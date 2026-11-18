@@ -1022,6 +1022,7 @@
   <link rel="stylesheet" href="/static/css/fonts.css">
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
+  <link rel="stylesheet" href="/static/admin/clients.css?v=3">
   <script defer src="/static/js/i18n.js"></script>
   <script defer src="/static/js/ui.js"></script>
 </head>
@@ -1082,53 +1083,16 @@
     <div class="content-container">
       <!-- Табы -->
       <div class="tabs">
-        <div class="tab active" data-tab="users">Пользователи</div>
+        <div class="tab active" data-tab="users">Клиенты</div>
         <div class="tab" data-tab="agents">Агенты</div>
         <div class="tab" data-tab="stats">Статистика</div>
         <div class="tab" data-tab="user-details" style="display: none;">Детали пользователя</div>
       </div>
       
-      <!-- Таб со списком пользователей -->
+      <!-- Таб «Клиенты» (ветка 1811-niche-admin-speed): сводка регистраций, список, карточка клиента,
+           вход в кабинет — static/admin/clients.js. Прежний список пользователей заменён. -->
       <div class="tab-content active" id="users-tab">
-        <div class="filters">
-          <div class="search-box">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" id="search-users" class="search-input" placeholder="Поиск по имени, email, компании...">
-          </div>
-          
-          <select id="subscription-filter" class="filter-select">
-            <option value="">Все подписки</option>
-            <option value="active">Активные</option>
-            <option value="expired">Истекшие</option>
-            <option value="trial">Пробные</option>
-          </select>
-        </div>
-        
-        <div class="card">
-          <div class="table-container">
-            <table class="table" id="users-table">
-              <thead>
-                <tr>
-                  <th>Пользователь</th>
-                  <th>Email</th>
-                  <th>Подписка</th>
-                  <th>Дней осталось</th>
-                  <th>Ассистенты</th>
-                  <th>Кошелёк</th>
-                  <th>Дата регистрации</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody id="users-list">
-                <!-- Данные будут загружены динамически -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-        
-        <div class="pagination" id="pagination">
-          <!-- Пагинация будет добавлена динамически -->
-        </div>
+        <div id="clients-app"></div>
       </div>
 
       <!-- Таб с использованием агентов (Voksy AI Agent) -->
@@ -2916,7 +2880,12 @@
         }
       }
       
-      async function loadUsers(page = 1, limit = 10) {
+      // Список пользователей теперь — вкладка «Клиенты» (static/admin/clients.js)
+      async function loadUsers() {
+        if (window.VoksyAdminClients) window.VoksyAdminClients.refresh();
+      }
+
+      async function loadUsersLegacy(page = 1, limit = 10) {
         try {
           ui.setLoading(true);
           
@@ -3164,14 +3133,14 @@
         });
       });
 
-      searchInput.addEventListener('input', function() {
+      if (searchInput) searchInput.addEventListener('input', function() {
         clearTimeout(this.searchTimeout);
         this.searchTimeout = setTimeout(() => {
           loadUsers(1);
         }, 300);
       });
 
-      subscriptionFilter.addEventListener('change', function() {
+      if (subscriptionFilter) subscriptionFilter.addEventListener('change', function() {
         loadUsers(1);
       });
 
@@ -3305,6 +3274,7 @@
           }
           ui.showNotification(message, 'success');
           ui.hideModal();
+          document.dispatchEvent(new CustomEvent('vf:admin-changed', { detail: { userId: selectedUserId } }));
           
           if (document.querySelector('.tab[data-tab="user-details"]').style.display !== 'none') {
             viewUserDetails(selectedUserId);
@@ -3326,10 +3296,14 @@
         window.location.href = '/';
       });
       
+      // Окна тарифа, пароля и подробная аналитика — для вкладки «Клиенты» (static/admin/clients.js)
+      window.openSubscriptionModal = openSubscriptionModal;
+      window.openPasswordModal = openPasswordModal;
+      window.viewUserDetails = viewUserDetails;
+
       // Инициализация страницы
       async function init() {
         if (await checkAuth()) {
-          loadUsers();
           loadStats();
         }
       }
@@ -3391,6 +3365,7 @@
         document.getElementById('wallet-amount').value = '';
         document.getElementById('wallet-note').value = '';
         document.querySelectorAll('[data-wallet-user="' + walletUserId + '"]').forEach(function (el) { el.textContent = money(d.balance); });
+        document.dispatchEvent(new CustomEvent('vf:admin-changed', { detail: { userId: walletUserId } }));
         return load();
       }).catch(function (e) { alert(e.message); }).then(function () { btn.disabled = false; });
     };
@@ -3421,8 +3396,10 @@
       });
     }).then(function (d) {
       alert('Готово. Баланс кредитов: ' + Number(d.balance).toLocaleString('ru-RU'));
+      document.dispatchEvent(new CustomEvent('vf:admin-changed', { detail: { userId: userId } }));
     }).catch(function (e) { alert(e.message); });
   };
 </script>
+<script defer src="/static/admin/clients.js?v=3"></script>
 </body>
 </html>

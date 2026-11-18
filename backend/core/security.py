@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import secrets
 import uuid
+from contextvars import ContextVar
 
 from .config import settings
 from .logging import get_logger
@@ -25,9 +26,22 @@ logger = get_logger(__name__)
 # Set up security scheme
 security = HTTPBearer()
 
+# Вход админа в кабинет клиента (ветка 1811-niche-admin-speed): в токене клиента лежит
+# claim «imp» = id админа. get_current_user_id кладёт его сюда на время запроса,
+# get_current_user — в user._impersonator_id. Значение ставится в каждом запросе
+# (None для обычного входа), поэтому между запросами не протекает.
+IMPERSONATOR: ContextVar[Optional[str]] = ContextVar("voksy_impersonator", default=None)
+IMPERSONATION_MINUTES = 120
+
+
+def create_impersonation_token(target_user_id, admin_user_id, minutes: int = IMPERSONATION_MINUTES) -> str:
+    """Короткий токен клиента с отметкой, какой админ вошёл (для баннера и запретов)."""
+    return create_jwt_token(target_user_id, expires_delta_minutes=minutes, extra={"imp": str(admin_user_id)})
+
 def create_jwt_token(
     user_id: Union[str, uuid.UUID], 
-    expires_delta_minutes: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    expires_delta_minutes: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Create a JWT token for the given user ID
@@ -47,6 +61,8 @@ def create_jwt_token(
             "iat": datetime.utcnow(),
             "type": "access_token"
         }
+        if extra:
+            to_encode.update(extra)
         
         encoded_jwt = jwt.encode(
             to_encode, 
@@ -94,7 +110,8 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
             )
         
         logger.debug(f"✅ Token decoded successfully for user: {user_id[:8]}...")
-        return {"sub": user_id, "exp": exp}
+        # imp — id админа, который вошёл в кабинет клиента из админки (impersonation)
+        return {"sub": user_id, "exp": exp, "imp": payload.get("imp")}
         
     except jwt.ExpiredSignatureError:
         logger.warning("❌ Token expired")
@@ -187,6 +204,7 @@ async def get_current_user_id(
         
         token_data = decode_jwt_token(token)
         user_id = token_data["sub"]
+        IMPERSONATOR.set(token_data.get("imp"))
         
         logger.debug(f"✅ User ID extracted: {user_id[:8]}...")
         return user_id

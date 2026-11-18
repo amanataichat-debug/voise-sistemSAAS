@@ -323,6 +323,8 @@ async def create_payment(
     Создание платежа Finik для подписки.
     Возвращает payment_url — фронт делает window.location = payment_url.
     """
+    from backend.core.dependencies import ensure_not_impersonating
+    ensure_not_impersonating(current_user, "Оплата тарифа")
     try:
         plan_code = request_data.plan_code
         duration_months = request_data.duration_months

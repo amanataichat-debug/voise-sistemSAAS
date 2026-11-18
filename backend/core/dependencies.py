@@ -12,7 +12,7 @@ import uuid
 from typing import Optional
 from datetime import datetime, timezone
 
-from backend.core.security import get_current_user_id, decode_jwt_token
+from backend.core.security import get_current_user_id, decode_jwt_token, IMPERSONATOR
 from backend.core.logging import get_logger
 from backend.models.user import User
 from backend.models.assistant import AssistantConfig
@@ -66,6 +66,8 @@ async def get_current_user(
             )
         
         logger.debug(f"✅ User retrieved: {user.email} (ID: {user_id})")
+        # Вход админа в кабинет клиента: id админа из токена (None — обычный вход)
+        user._impersonator_id = IMPERSONATOR.get()
         return user
         
     except ValueError as e:
@@ -81,6 +83,23 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user information"
+        )
+
+
+def is_impersonating(user) -> bool:
+    """Запрос сделан админом из кабинета клиента (кнопка «Войти в кабинет» в админке)."""
+    return bool(getattr(user, "_impersonator_id", None))
+
+
+def ensure_not_impersonating(user, what: str = "Это действие") -> None:
+    """
+    Пароль, удаление аккаунта, API-ключ и оплата — только самим клиентом: при входе
+    из админки отказываем понятной причиной (403), а не делаем это от имени клиента.
+    """
+    if is_impersonating(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"{what} недоступно при входе в кабинет клиента из админки",
         )
 
 
@@ -126,6 +145,7 @@ async def get_current_user_flexible(
     if auth.lower().startswith("bearer "):
         token = auth[7:].strip()
         token_data = decode_jwt_token(token)  # кидает 401 на невалидном токене
+        IMPERSONATOR.set(token_data.get("imp"))
         return await get_current_user(user_id=token_data["sub"], db=db)
 
     raise HTTPException(

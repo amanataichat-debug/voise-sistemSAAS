@@ -81,6 +81,8 @@ class AuthService:
                 first_name=user_data.first_name,
                 last_name=user_data.last_name,
                 company_name=user_data.company_name,
+                phone=getattr(user_data, "phone", None),
+                admin_status="new",
                 subscription_plan="free",
                 is_active=True,
                 is_trial=True,
@@ -167,6 +169,7 @@ class AuthService:
                     "first_name": user.first_name,
                     "last_name": user.last_name,
                     "company_name": user.company_name,
+                    "phone": user.phone,
                     "subscription_plan": user.subscription_plan,
                     "is_trial": user.is_trial,
                     "email_verified": user.email_verified,  # ✅ ДОБАВЛЕНО

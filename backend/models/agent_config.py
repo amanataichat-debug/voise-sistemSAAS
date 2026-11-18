@@ -195,6 +195,11 @@ class AgentConfig(Base):
     # Колонка добавляется app.ensure_crm_v2_columns() в начале startup.
     pipeline_stages = Column(Text, nullable=True)
 
+    # Ниша бизнеса, по которой агенту настроены воронка, каталог и инструкции
+    # (services/niche_presets.py, ветка 1811-niche-admin-speed). NULL — ниша ещё не применялась.
+    # Колонку добавляет app.ensure_user_profile_columns() в начале старта.
+    niche_key = Column(String(40), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

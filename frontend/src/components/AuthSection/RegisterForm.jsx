@@ -8,13 +8,26 @@ import PasswordField from './PasswordField';
 import EmailVerificationSection from './EmailVerificationSection';
 import { useT } from '../../i18n';
 
-// Логика регистрации не менялась: тот же payload в api.register (реферальный код и UTM
-// из useReferralTracker), экран подтверждения почты, редирект на дашборд.
+// Телефон: цифры без кода страны (9 — Кыргызстан) получают +996; «+…» — любая страна.
+// Сервер приводит номер к E.164 сам (backend/utils/phone.py), здесь — только быстрая проверка.
+const phoneDigits = (v) => String(v || '').replace(/\D/g, '');
+function phoneLooksValid(v) {
+  const raw = String(v || '').trim();
+  const d = phoneDigits(raw);
+  if (raw.startsWith('+')) return d.length >= 9 && d.length <= 15;
+  return d.length >= 9 && d.length <= 13;
+}
+
+// Регистрация: имя, телефон, почта, пароль (18.11.2026 — телефон и имя обязательны, чтобы
+// владелец платформы мог связаться с новым клиентом). Реферальный код и UTM — из
+// useReferralTracker; дальше экран подтверждения почты и переход в кабинет, где клиента
+// встречает выбор сферы бизнеса.
 function RegisterForm({ onSwitchToLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [phone, setPhone] = useState('');
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
@@ -26,6 +39,19 @@ function RegisterForm({ onSwitchToLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!firstName.trim()) {
+      setNotification({ type: 'error', message: t('auth.name_required') });
+      return;
+    }
+    if (!phone.trim() || phone.trim() === '+996') {
+      setNotification({ type: 'error', message: t('auth.phone_required') });
+      return;
+    }
+    if (!phoneLooksValid(phone)) {
+      setNotification({ type: 'error', message: t('auth.phone_invalid') });
+      return;
+    }
+
     setNotification({ type: 'loading', message: t('auth.register_status_loading') });
     setIsLoading(true);
 
@@ -35,9 +61,10 @@ function RegisterForm({ onSwitchToLogin }) {
       const userData = {
         email: email.trim(),
         password: password,
-        first_name: firstName || null,
+        first_name: firstName.trim() || null,
         last_name: null,
-        company_name: companyName || null,
+        company_name: companyName.trim() || null,
+        phone: phone.trim(),
         referral_code: referralData?.referral_code || null,
         utm_data: referralData?.utm_data || null,
       };
@@ -79,6 +106,12 @@ function RegisterForm({ onSwitchToLogin }) {
           message = t('auth.pwd_letter');
         } else if (message.includes('at least 8 characters')) {
           message = t('auth.pwd_length');
+        } else if (message.includes('Invalid phone')) {
+          message = t('auth.phone_invalid');
+        } else if (message.includes('Phone is required')) {
+          message = t('auth.phone_required');
+        } else if (message.includes('Name is required')) {
+          message = t('auth.name_required');
         }
         setNotification({ type: 'error', message });
       }
@@ -118,6 +151,7 @@ function RegisterForm({ onSwitchToLogin }) {
               className="input"
               placeholder={t('auth.name_placeholder')}
               autoComplete="given-name"
+              required
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
             />
@@ -134,6 +168,28 @@ function RegisterForm({ onSwitchToLogin }) {
               autoComplete="organization"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="label" htmlFor="register-phone">
+            {t('auth.phone_label')} <span className="muted">{t('auth.phone_hint')}</span>
+          </label>
+          <div className="input-wrap lp-auth-input">
+            <Icon name="phone" className="ic-sm" />
+            <input
+              type="tel"
+              id="register-phone"
+              className="input"
+              inputMode="tel"
+              placeholder={t('auth.phone_placeholder')}
+              autoComplete="tel"
+              required
+              value={phone}
+              onFocus={() => { if (!phone) setPhone('+996 '); }}
+              onBlur={() => { if (phone.trim() === '+996') setPhone(''); }}
+              onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s()-]/g, '').slice(0, 24))}
             />
           </div>
         </div>

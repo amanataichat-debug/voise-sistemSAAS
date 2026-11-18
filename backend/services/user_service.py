@@ -21,6 +21,16 @@ from backend.services.assistant_limit_service import count_user_assistants
 
 logger = get_logger(__name__)
 
+def profile_fields(user) -> dict:
+    """Поля профиля бизнеса для ответа /api/users/me (телефон, ниша, онбординг)."""
+    return {
+        "phone": getattr(user, "phone", None),
+        "business_niche": getattr(user, "business_niche", None),
+        "business_niche_other": getattr(user, "business_niche_other", None),
+        "onboarded_at": getattr(user, "onboarded_at", None),
+    }
+
+
 class UserService:
     """Service for user operations"""
     
@@ -99,7 +109,8 @@ class UserService:
             is_trial=user.is_trial,
             is_admin=user.is_admin,
             subscription_end_date=user.subscription_end_date,
-            agent_mode=user.agent_mode()
+            agent_mode=user.agent_mode(),
+            **profile_fields(user),
         )
 
     @staticmethod
@@ -276,7 +287,9 @@ class UserService:
                 # ✅ Тарифы
                 is_trial=user.is_trial,
                 is_admin=user.is_admin,
-                subscription_end_date=user.subscription_end_date
+                subscription_end_date=user.subscription_end_date,
+                agent_mode=user.agent_mode(),
+                **profile_fields(user),
             )
             
         except IntegrityError as e:

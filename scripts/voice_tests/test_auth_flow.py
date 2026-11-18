@@ -70,7 +70,7 @@ def post(path, body):
 
 
 # 1. Почта работает: код ушёл, токена нет; вход неподтверждённого → 403 и свежий код
-r = post("/api/auth/register", {"email": "Bek@Gmail.com ", "password": "Norka2026", "first_name": "Бек"})
+r = post("/api/auth/register", {"email": "Bek@Gmail.com ", "password": "Norka2026", "first_name": "Бек", "phone": "0700 123 456"})
 check("регистрация: код отправлен, без токена", r.status_code in (200, 201) and r.json().get("verification_sent") and not r.json().get("token"), r.text[:200])
 mail["sent"].clear()
 r = post("/api/auth/login", {"email": "bek@gmail.com", "password": "Norka2026"})
@@ -78,7 +78,7 @@ check("вход неподтверждённого: 403 «не подтверж�
 
 # 2. Письмо снова не ушло, клиент регистрируется ЗАНОВО с другим паролем → впускаем, новый пароль работает
 mail["ok"] = False
-r = post("/api/auth/register", {"email": "bek@gmail.com", "password": "Shapka777", "first_name": "Бек"})
+r = post("/api/auth/register", {"email": "bek@gmail.com", "password": "Shapka777", "first_name": "Бек", "phone": "0700 123 456"})
 j = r.json()
 check("повторная регистрация при сбое почты: токен сразу", r.status_code in (200, 201) and j.get("token") and j.get("email_fallback"), r.text[:200])
 r = post("/api/auth/login", {"email": "BEK@gmail.com", "password": "Shapka777"})
@@ -87,7 +87,7 @@ r = post("/api/auth/login", {"email": "bek@gmail.com", "password": "Norka2026"})
 check("старый пароль больше не подходит", r.status_code == 401, r.status_code)
 
 # 3. Новая регистрация при сбое почты — сразу внутрь
-r = post("/api/auth/register", {"email": "new@mail.ru", "password": "Market2026"})
+r = post("/api/auth/register", {"email": "new@mail.ru", "password": "Market2026", "first_name": "Нурлан", "phone": "+996555112233"})
 check("новая регистрация при сбое почты: токен", r.status_code in (200, 201) and r.json().get("token"), r.text[:200])
 db = SessionLocal()
 u = db.query(User).filter(User.email == "new@mail.ru").first()
@@ -95,7 +95,7 @@ check("почта отмечена подтверждённой", u is not None 
 
 # 4. Неподтверждённый пользователь, почта лежит → вход впускает
 mail["ok"] = True
-post("/api/auth/register", {"email": "late@gmail.com", "password": "Bazar2026"})
+post("/api/auth/register", {"email": "late@gmail.com", "password": "Bazar2026", "first_name": "Айгуль", "phone": "0555 11 22 44"})
 mail["ok"] = False
 r = post("/api/auth/login", {"email": "late@gmail.com", "password": "Bazar2026"})
 check("вход неподтверждённого при сбое почты: впускаем", r.status_code == 200 and r.json().get("token"), r.text[:200])
@@ -110,14 +110,27 @@ check("короткий старый пароль: вход", r.status_code == 2
 
 # 6. Кривая партнёрская ссылка / UTM не ломают регистрацию
 mail["ok"] = True
-r = post("/api/auth/register", {"email": "ref@gmail.com", "password": "Ref12345", "referral_code": "BADCODE",
+r = post("/api/auth/register", {"email": "ref@gmail.com", "password": "Ref12345", "first_name": "Реф", "phone": "0777 000 111", "referral_code": "BADCODE",
                                  "utm_data": {"utm_source": "partner", "utm_campaign": "BADCODE", "x": 5}})
 check("кривой реф. код и UTM: регистрация проходит", r.status_code in (200, 201), r.text[:200])
+
+# 6.1 Телефон и имя обязательны (18.11.2026): без них — 422 с понятной причиной, телефон в E.164
+r = post("/api/auth/register", {"email": "nophone@gmail.com", "password": "Phone2026", "first_name": "Бек"})
+check("без телефона: 422 «Phone is required»", r.status_code == 422 and "Phone is required" in r.text, r.text[:200])
+r = post("/api/auth/register", {"email": "badphone@gmail.com", "password": "Phone2026", "first_name": "Бек", "phone": "12"})
+check("кривой телефон: 422 «Invalid phone number»", r.status_code == 422 and "Invalid phone" in r.text, r.text[:200])
+r = post("/api/auth/register", {"email": "noname@gmail.com", "password": "Phone2026", "phone": "0700123456"})
+check("без имени: 422 «Name is required»", r.status_code == 422 and "Name is required" in r.text, r.text[:200])
+u = db.query(User).filter(User.email == "new@mail.ru").first()
+check("телефон сохранён в E.164", u is not None and u.phone == "+996555112233", getattr(u, "phone", None))
+check("статус в админке «Новый»", u is not None and u.admin_status == "new", getattr(u, "admin_status", None))
+u = db.query(User).filter(User.email == "bek@gmail.com").first()
+check("повторная регистрация обновила телефон", u is not None and u.phone == "+996700123456", getattr(u, "phone", None))
 
 # 7. Выключатель: AUTH_EMAIL_FALLBACK=0 — понятная ошибка, а не 500
 os.environ["AUTH_EMAIL_FALLBACK"] = "0"
 mail["ok"] = False
-r = post("/api/auth/register", {"email": "strict@gmail.com", "password": "Strict2026"})
+r = post("/api/auth/register", {"email": "strict@gmail.com", "password": "Strict2026", "first_name": "Строгий", "phone": "0700 999 888"})
 check("без запасного пути: 400 с понятным текстом по-русски", r.status_code == 400 and "почту" in r.text, r.text[:200])
 os.environ.pop("AUTH_EMAIL_FALLBACK", None)
 

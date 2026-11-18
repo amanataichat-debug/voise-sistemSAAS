@@ -79,6 +79,8 @@ async def register(
                     existing_user.first_name = user_data.first_name
                 if user_data.company_name:
                     existing_user.company_name = user_data.company_name
+                if getattr(user_data, "phone", None):
+                    existing_user.phone = user_data.phone
                 db.commit()
             except Exception as pwd_error:
                 db.rollback()

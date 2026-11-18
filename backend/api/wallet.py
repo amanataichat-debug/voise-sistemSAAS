@@ -58,6 +58,8 @@ def get_transactions(limit: int = Query(30, ge=1, le=200), offset: int = Query(0
 
 @router.post("/topup")
 async def topup(body: TopupRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from backend.core.dependencies import ensure_not_impersonating
+    ensure_not_impersonating(current_user, "Пополнение кошелька")
     amount = round(float(body.amount or 0), 2)
     if amount < settings.WALLET_MIN_TOPUP or amount > settings.WALLET_MAX_TOPUP:
         raise HTTPException(status_code=400, detail=f"Сумма пополнения — от {settings.WALLET_MIN_TOPUP} "

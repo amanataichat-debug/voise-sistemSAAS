@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.core.logging import get_logger  # Изменен импорт core
-from backend.core.dependencies import get_current_user, hash_api_key  # Изменен импорт core
+from backend.core.dependencies import get_current_user, hash_api_key, ensure_not_impersonating, is_impersonating  # Изменен импорт core
 from backend.db.session import get_db  # Уже корректный импорт
 from backend.models.user import User  # Изменен импорт models
 from backend.schemas.user import UserUpdate, UserResponse, UserDetailResponse, UserPasswordUpdate  # Изменен импорт schemas
@@ -42,7 +42,9 @@ async def get_current_user_info(
         UserResponse with user profile information
     """
     try:
-        return await UserService.get_user_profile(db, str(current_user.id))
+        profile = await UserService.get_user_profile(db, str(current_user.id))
+        profile.impersonated = is_impersonating(current_user)
+        return profile
     except HTTPException:
         raise
     except Exception as e:
@@ -123,6 +125,7 @@ async def change_password(
     Returns:
         Confirmation message
     """
+    ensure_not_impersonating(current_user, "Смена пароля")
     try:
         await AuthService.change_password(
             db, 
@@ -155,6 +158,7 @@ async def deactivate_account(
     Returns:
         Confirmation message
     """
+    ensure_not_impersonating(current_user, "Удаление аккаунта")
     try:
         await UserService.deactivate_user(db, str(current_user.id))
         return {"success": True, "message": "Account deactivated successfully"}
@@ -205,6 +209,7 @@ async def regenerate_api_key(
     Старый ключ мгновенно перестаёт работать.
     Полный ключ возвращается только в этом ответе — сохраните его.
     """
+    ensure_not_impersonating(current_user, "Выпуск API-ключа")
     api_key = f"vfy_{secrets.token_urlsafe(32)}"
     current_user.api_key_hash = hash_api_key(api_key)
     current_user.api_key_prefix = f"{api_key[:8]}…{api_key[-4:]}"
@@ -222,6 +227,7 @@ async def revoke_api_key(
     db: Session = Depends(get_db)
 ):
     """Отозвать персональный API-ключ (доступ по нему прекращается сразу)."""
+    ensure_not_impersonating(current_user, "Отзыв API-ключа")
     current_user.api_key_hash = None
     current_user.api_key_prefix = None
     current_user.api_key_created_at = None

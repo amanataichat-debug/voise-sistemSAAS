@@ -385,6 +385,8 @@
   // админа и уводим на лендинг текущего домена.
   // ---------------------------------------------------------------------
   function logout() {
+    // Админ в кабинете клиента: «Выйти» = вернуться в свою админку, а не выйти совсем
+    if (window.VF && window.VF.impersonation && window.VF.impersonation()) { window.VF.returnToAdmin(); return; }
     try { localStorage.removeItem('auth_token'); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem('vf_is_admin'); sessionStorage.removeItem('vf_wallet'); } catch (e) { /* ignore */ }
     window.location.href = '/';

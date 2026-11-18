@@ -315,6 +315,8 @@ app.include_router(healthcheck.router, tags=["Health"])
 app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
 app.include_router(subscription_logs.router, prefix="/api/subscription-logs", tags=["Subscription Logs"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+from backend.api import admin_clients as admin_clients_api  # админка «Клиенты»: список, сводка, вход в кабинет клиента
+app.include_router(admin_clients_api.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -495,6 +497,7 @@ def background_jobs():
     """
     from backend.services.weekly_jobs import start_weekly_jobs_loop
     from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
+    from backend.services.signup_notify import start_signup_notify_loop
     return [
         start_subscription_checker,                                  # раз в час
         lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
@@ -504,6 +507,7 @@ def background_jobs():
         start_weekly_jobs_loop,                                      # вск 21:00 отчёт + пн 10:00 подогрев
         demo_voice.setup_demo_bot_on_startup,                        # демо-бот: вебхук и кнопка Mini App
         wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
+        start_signup_notify_loop,                                    # админу в Telegram: новая регистрация
     ]
 
 
@@ -1778,6 +1782,57 @@ def ensure_wallet_columns():
         logger.error(f"❌ ensure_wallet_columns error: {e}")
 
 
+def ensure_user_profile_columns():
+    """
+    Профиль бизнеса и админка «Клиенты» (ветка 1811-niche-admin-speed): users.phone,
+    business_niche, business_niche_other, onboarded_at, admin_status, admin_note,
+    admin_next_contact_at, signup_notified_at и таблица admin_audit_log (вход в кабинет
+    клиента, заметки, статусы), agent_configs.niche_key (какая ниша применена к агенту).
+    Колонки users ORM выбирает в каждом запросе с авторизацией, поэтому шаг идёт в самом
+    начале старта, в каждом воркере. Идемпотентно.
+    """
+    try:
+        from sqlalchemy import text, inspect
+        from backend.models.base import Base
+        from backend.models.admin_audit import AdminAuditLog
+        inspector = inspect(engine)
+        if not inspector.has_table('users'):
+            return
+        cols = {c['name'] for c in inspector.get_columns('users')}
+        wanted = [
+            ("phone", "VARCHAR(32)"),
+            ("business_niche", "VARCHAR(40)"),
+            ("business_niche_other", "VARCHAR(120)"),
+            ("onboarded_at", "TIMESTAMPTZ"),
+            ("admin_status", "VARCHAR(20)"),
+            ("admin_note", "TEXT"),
+            ("admin_next_contact_at", "TIMESTAMPTZ"),
+            ("signup_notified_at", "TIMESTAMPTZ"),
+        ]
+        stmts = [f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {name} {ddl}" for name, ddl in wanted if name not in cols]
+        if 'phone' not in cols:
+            stmts.append("CREATE INDEX IF NOT EXISTS ix_users_phone ON users (phone)")
+        if 'business_niche' not in cols:
+            stmts.append("CREATE INDEX IF NOT EXISTS ix_users_business_niche ON users (business_niche)")
+        if 'admin_status' not in cols:
+            stmts.append("CREATE INDEX IF NOT EXISTS ix_users_admin_status ON users (admin_status)")
+        if inspector.has_table('agent_configs'):
+            acols = {c['name'] for c in inspector.get_columns('agent_configs')}
+            if 'niche_key' not in acols:
+                stmts.append("ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS niche_key VARCHAR(40)")
+        if stmts:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL lock_timeout = '15s'"))
+                for s in stmts:
+                    conn.execute(text(s))
+            logger.info(f"✅ ensure_user_profile_columns: {len(stmts)} statements")
+        if not inspector.has_table('admin_audit_log'):
+            Base.metadata.create_all(engine, tables=[AdminAuditLog.__table__], checkfirst=True)
+            logger.info("✅ Created admin_audit_log")
+    except Exception as e:
+        logger.error(f"❌ ensure_user_profile_columns error: {e}")
+
+
 def ensure_inbox_schema():
     """
     Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
@@ -2961,6 +3016,7 @@ async def startup_event():
         # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
         ensure_eleven_voice_engine_columns()
         ensure_wallet_columns()
+        ensure_user_profile_columns()  # телефон, ниша, статус клиента в админке — до первого запроса
         ensure_plan_prices()  # цены тарифов из конфига в БД — в каждом воркере, до миграций
         ensure_chat_v2_columns()
         ensure_branding_columns()

@@ -701,7 +701,76 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', faShim);
   else faShim();
 
-  var VF = { icon: icon, logo: logo, voiceMark: voiceMark, faSweep: faSweep, FA_MAP: FA_MAP, enhanceSelect: enhanceSelect, esc: esc, loader: loader, progress: progress, toast: toast, confirm: confirm, alert: alertDialog, modal: modal, select: select, menu: menu, skeleton: skeleton, ready: ready, MODEL_LOGOS: MODEL_LOGOS };
+  // ─────────────────────────────────────────────────────────────────────
+  // Вход админа в кабинет клиента (ветка 1811-niche-admin-speed).
+  // Админка кладёт токен клиента в auth_token, свой — в vf_admin_return, кого смотрим — в
+  // vf_impersonation. Здесь — полоса «Вы в кабинете клиента … · Вернуться в админку» на всех
+  // страницах кабинета (ui.js подключён везде) и возврат. Кэши данных прошлого аккаунта
+  // (sessionStorage, режим меню, выбранный агент) сбрасываются при каждом переключении.
+  // ─────────────────────────────────────────────────────────────────────
+  var USER_CACHE_KEYS = ['vf_agent_mode', 'agent_current_id', 'agent_wizard_v3', 'agent_mode_enabled'];
+  function resetUserCaches() {
+    try { sessionStorage.clear(); } catch (e) { /* ignore */ }
+    try { USER_CACHE_KEYS.forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* ignore */ }
+  }
+  function impersonation() {
+    try {
+      var info = JSON.parse(localStorage.getItem('vf_impersonation') || 'null');
+      return info && info.client_id ? info : null;
+    } catch (e) { return null; }
+  }
+  function returnToAdmin() {
+    var ret = null;
+    try { ret = JSON.parse(localStorage.getItem('vf_admin_return') || 'null'); } catch (e) { /* ignore */ }
+    resetUserCaches();
+    try {
+      localStorage.removeItem('vf_impersonation');
+      localStorage.removeItem('vf_admin_return');
+      if (ret && ret.token) localStorage.setItem('auth_token', ret.token); else localStorage.removeItem('auth_token');
+    } catch (e) { /* ignore */ }
+    location.href = ret && ret.token ? '/static/admin.html' + (ret.client_id ? '#client=' + ret.client_id : '') : '/';
+  }
+  var IMP_STYLE = [
+    'html.vf-imp::before{content:"";position:fixed;left:0;right:0;top:0;height:3px;background:#f97316;z-index:2147483000;pointer-events:none}',
+    '.vf-imp-bar{position:fixed;left:0;right:0;margin:0 auto;width:max-content;bottom:16px;z-index:1150;display:flex;align-items:center;gap:10px;',
+    'max-width:calc(100vw - 24px);padding:8px 8px 8px 14px;border-radius:14px;background:#1f2937;color:#fff;font:500 13px/1.3 var(--vf-font,system-ui);',
+    'box-shadow:0 10px 30px -8px rgba(0,0,0,.45);border:1px solid rgba(249,115,22,.65)}',
+    '.vf-imp-bar .dot{width:8px;height:8px;border-radius:50%;background:#f97316;flex:none;box-shadow:0 0 0 4px rgba(249,115,22,.25)}',
+    '.vf-imp-bar .tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.vf-imp-bar .tx b{font-weight:700}',
+    '.vf-imp-bar button{flex:none;height:32px;padding:0 12px;border-radius:10px;border:0;background:#f97316;color:#fff;font:600 13px var(--vf-font,system-ui);cursor:pointer}',
+    '.vf-imp-bar button:hover{background:#ea580c}',
+    'body.vf-has-tabbar .vf-imp-bar{bottom:calc(76px + env(safe-area-inset-bottom,0px))}',
+    '@media (max-width:560px){.vf-imp-bar .muted{display:none}}'
+  ].join('');
+  function renderImpersonationBar() {
+    var info = impersonation();
+    if (!info || window.top !== window.self) return;
+    if (info.until && Date.now() > info.until) { returnToAdmin(); return; }   // 2 часа вышли — назад в админку
+    document.documentElement.classList.add('vf-imp');
+    if (!document.getElementById('vf-imp-style')) {
+      var st = document.createElement('style'); st.id = 'vf-imp-style'; st.textContent = IMP_STYLE; document.head.appendChild(st);
+    }
+    if (document.getElementById('vf-imp-bar')) return;
+    var who = [info.name, info.company].filter(Boolean).join(' · ') || info.email || 'клиент';
+    var bar = document.createElement('div');
+    bar.id = 'vf-imp-bar'; bar.className = 'vf-imp-bar'; bar.setAttribute('role', 'status');
+    bar.innerHTML = '<span class="dot"></span><span class="tx">Кабинет клиента: <b>' + esc(who) + '</b><span class="muted"> — правки сохраняются у клиента</span></span>' +
+      '<button type="button">Вернуться в админку</button>';
+    bar.querySelector('button').addEventListener('click', returnToAdmin);
+    document.body.appendChild(bar);
+  }
+  if (impersonation()) {
+    document.documentElement.classList.add('vf-imp');
+    if (document.body) renderImpersonationBar(); else document.addEventListener('DOMContentLoaded', renderImpersonationBar);
+  }
+  // Вход/выход в другой вкладке: страница с данными прошлого аккаунта больше не годится
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'vf_impersonation' || (e.key === 'auth_token' && e.newValue !== e.oldValue)) location.reload();
+  });
+
+  var VF = { icon: icon, logo: logo, voiceMark: voiceMark, faSweep: faSweep, FA_MAP: FA_MAP, enhanceSelect: enhanceSelect, esc: esc, loader: loader, progress: progress, toast: toast, confirm: confirm, alert: alertDialog, modal: modal, select: select, menu: menu, skeleton: skeleton, ready: ready, MODEL_LOGOS: MODEL_LOGOS,
+    resetUserCaches: resetUserCaches, impersonation: impersonation, returnToAdmin: returnToAdmin };
   global.VF = VF;
 
   // Автозапуск: загрузчик сразу, каркас после DOM. Страховка: спрятать через 6 с.
