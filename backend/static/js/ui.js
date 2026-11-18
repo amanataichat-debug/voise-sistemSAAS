@@ -702,6 +702,79 @@
   else faShim();
 
   // ─────────────────────────────────────────────────────────────────────
+  // Общие запросы страниц (ветка 1811-niche-admin-speed). Сайдбар, нижняя панель и сама страница
+  // на КАЖДОМ переходе запрашивали одно и то же: профиль, кошелёк, тариф, непрочитанные — 3–5
+  // лишних запросов к серверу во Франкфурте перед тем, как кабинет оживал. Теперь:
+  //  - одинаковые запросы, ушедшие одновременно, идут на сервер один раз;
+  //  - ответ живёт в sessionStorage короткое время (TTL) и следующая страница берёт его сразу;
+  //  - любой POST/PUT/PATCH/DELETE сбрасывает сохранённые ответы (данные могли измениться).
+  // Ключ включает токен — чужой аккаунт (вход админа в кабинет клиента) не увидит эти ответы.
+  // ─────────────────────────────────────────────────────────────────────
+  var MEMO_RULES = [
+    [/^\/api\/users\/me$/, 30000],
+    [/^\/api\/wallet\/balance$/, 30000],
+    [/^\/api\/inbox\/dialogs\?folder=unread&limit=1$/, 20000],
+    [/^\/api\/subscriptions\/my-subscription$/, 30000],
+    [/^\/api\/payments\/plans$/, 600000]
+  ];
+  var MEMO_PREFIX = 'vf_memo:';
+  var inflightMemo = {};
+  function memoTtl(path) {
+    for (var i = 0; i < MEMO_RULES.length; i++) if (MEMO_RULES[i][0].test(path)) return MEMO_RULES[i][1];
+    return 0;
+  }
+  function memoKey(path) {
+    var t = '';
+    try { t = localStorage.getItem('auth_token') || ''; } catch (e) { /* ignore */ }
+    return MEMO_PREFIX + t.slice(-24) + ':' + path;
+  }
+  function memoClear() {
+    inflightMemo = {};
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf(MEMO_PREFIX) === 0) sessionStorage.removeItem(k);
+      }
+    } catch (e) { /* ignore */ }
+  }
+  if (typeof global.fetch === 'function' && !global.fetch.__vfMemo) {
+    var baseFetch = global.fetch;
+    var memoFetch = function (input, init) {
+      var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      var raw = typeof input === 'string' ? input : (input && input.url) || String(input);
+      var path = raw;
+      try { var u = new URL(raw, location.href); if (u.origin === location.origin) path = u.pathname + u.search; } catch (e) { /* ignore */ }
+      if (method !== 'GET') {
+        if (path.indexOf('/api/') === 0) memoClear();
+        return baseFetch.apply(this, arguments);
+      }
+      var ttl = memoTtl(path);
+      if (!ttl) return baseFetch.apply(this, arguments);
+      var key = memoKey(path);
+      try {
+        var hit = JSON.parse(sessionStorage.getItem(key) || 'null');
+        if (hit && Date.now() - hit.at < ttl) {
+          return Promise.resolve(new Response(hit.body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        }
+      } catch (e) { /* ignore */ }
+      if (!inflightMemo[key]) {
+        inflightMemo[key] = baseFetch.apply(this, arguments).then(function (res) {
+          if (res.ok) {
+            res.clone().text().then(function (body) {
+              try { sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), body: body })); } catch (e) { /* ignore */ }
+            }).catch(function () { /* ignore */ });
+          }
+          setTimeout(function () { delete inflightMemo[key]; }, 0);
+          return res;
+        }, function (err) { delete inflightMemo[key]; throw err; });
+      }
+      return inflightMemo[key].then(function (res) { return res.clone(); });
+    };
+    memoFetch.__vfMemo = true;
+    global.fetch = memoFetch;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
   // Вход админа в кабинет клиента (ветка 1811-niche-admin-speed).
   // Админка кладёт токен клиента в auth_token, свой — в vf_admin_return, кого смотрим — в
   // vf_impersonation. Здесь — полоса «Вы в кабинете клиента … · Вернуться в админку» на всех
@@ -770,7 +843,7 @@
   });
 
   var VF = { icon: icon, logo: logo, voiceMark: voiceMark, faSweep: faSweep, FA_MAP: FA_MAP, enhanceSelect: enhanceSelect, esc: esc, loader: loader, progress: progress, toast: toast, confirm: confirm, alert: alertDialog, modal: modal, select: select, menu: menu, skeleton: skeleton, ready: ready, MODEL_LOGOS: MODEL_LOGOS,
-    resetUserCaches: resetUserCaches, impersonation: impersonation, returnToAdmin: returnToAdmin };
+    resetUserCaches: resetUserCaches, impersonation: impersonation, returnToAdmin: returnToAdmin, memoClear: memoClear };
   global.VF = VF;
 
   // Автозапуск: загрузчик сразу, каркас после DOM. Страховка: спрятать через 6 с.
@@ -781,7 +854,8 @@
   var shellSeen = false;
   try { shellSeen = sessionStorage.getItem('vf_shell_seen') === '1'; sessionStorage.setItem('vf_shell_seen', '1'); } catch (e) { /* ignore */ }
   if (document.documentElement.hasAttribute('data-vf-loader') && !shellSeen) {
-    if (document.body) loader.ensure(); else document.addEventListener('DOMContentLoaded', function () { loader.ensure(); });
+    // Заставка — только если страница не успела за 350 мс: быстрый запуск не мигает чёрным экраном
+    setTimeout(function () { loader.ensure(); }, 350);
     setTimeout(function () { loader.hide(); }, 6000);
     // Страницы без VF.ready() (data-vf-loader="auto"): прячем загрузчик, когда DOM готов
     // и завершились первые запросы к API. Раньше ждали window.load, то есть шрифты,

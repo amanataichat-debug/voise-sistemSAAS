@@ -437,7 +437,9 @@
     try {
       if (!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules'))) return;
       if (document.querySelector('script[type="speculationrules"]')) return;
-      var sel = { selector_matches: '#sidebar-nav a[href^="/static/"]:not([data-no-prefetch])' };
+      // Меню слева и нижняя панель телефона: на телефоне «moderate» срабатывает уже при касании
+      // пальцем (pointerdown) — страница готовится, пока палец ещё на экране.
+      var sel = { selector_matches: '#sidebar-nav a[href^="/static/"]:not([data-no-prefetch]), #vf-tabbar a[href^="/static/"]' };
       var sc = document.createElement('script');
       sc.type = 'speculationrules';
       sc.textContent = JSON.stringify({

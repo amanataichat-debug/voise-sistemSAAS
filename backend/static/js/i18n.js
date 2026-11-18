@@ -42,10 +42,13 @@
     return nav.indexOf('ky') === 0 ? 'ky' : 'ru';
   }
 
+  // Словарь (≈150 КБ) хранится в localStorage по версии: раньше он жил в sessionStorage и каждый
+  // запуск приложения с экрана телефона (новая сессия) заново качал его синхронным запросом,
+  // а страница ждала (18.11.2026). Новая версия словаря — новый ключ, старые ключи удаляются.
   function load(lang) {
     var cacheKey = 'vf_i18n_' + lang + '_' + DICT_VERSION;
     try {
-      var cached = sessionStorage.getItem(cacheKey);
+      var cached = sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
       if (cached) return JSON.parse(cached);
     } catch (e) { /* ignore */ }
     try {
@@ -54,6 +57,13 @@
       xhr.send(null);
       if (xhr.status >= 200 && xhr.status < 300) {
         try { sessionStorage.setItem(cacheKey, xhr.responseText); } catch (e) { /* ignore */ }
+        try {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf('vf_i18n_') === 0 && k !== cacheKey) localStorage.removeItem(k);
+          }
+          localStorage.setItem(cacheKey, xhr.responseText);
+        } catch (e) { /* ignore */ }
         return JSON.parse(xhr.responseText);
       }
     } catch (e) { /* словарь недоступен — остаются тексты по умолчанию */ }

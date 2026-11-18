@@ -55,21 +55,48 @@
     try { st.cardOpen = localStorage.getItem('ib_card') !== '0'; } catch (e) { /* ignore */ }
     if (window.innerWidth <= 1180) st.cardOpen = false;
     if (EMBED) addEmbedHead();
-    api('/overview').then(function (r) {
-      if (r.status === 402) { root.innerHTML = noAccess(); S.ready(); return; }
-      if (!r.ok) { root.innerHTML = '<div class="ib-loading"><div class="ib-empty">' + esc(S.apiError(r)) + '</div></div>'; S.ready(); return; }
-      st.ov = r.data;
-      st.mode = r.data.agent_mode;
+    // Скорость (18.11.2026): список диалогов запрашиваем вместе с /overview, а не после него, и
+    // повторный заход рисуем сразу из данных этой вкладки (S.cacheGet), свежие — следом.
+    var firstList = api(listQuery(null));
+    var g0 = S.cacheGen ? S.cacheGen() : undefined;
+    var ovCached = S.cacheGet('ib:/overview');
+    var listCached = S.cacheGet('ib:' + listQuery(null));
+    var fromCache = false;
+    function applyOverview(d) {
+      st.ov = d;
+      st.mode = d.agent_mode;
       try { localStorage.setItem('vf_agent_mode', st.mode || ''); } catch (e) { /* ignore */ }
-      st.agents = r.data.agents || [];
-      st.settings = r.data.settings;
-      st.languages = r.data.languages || [];
-      if (!st.agents.length) { root.innerHTML = noBot(); S.ready(); return; }
-      renderShell();
+      st.agents = d.agents || [];
+      st.settings = d.settings;
+      st.languages = d.languages || [];
+    }
+    function afterShell() {
       S.ready();
       var p = new URLSearchParams(location.search);
       if (p.get('contact')) openDialog('contact:' + p.get('contact'));
-      loadList(true);
+    }
+    if (ovCached && listCached && (ovCached.agents || []).length) {
+      fromCache = true;
+      applyOverview(ovCached);
+      renderShell();
+      st.items = listCached.items || []; st.hasMore = !!listCached.has_more; st.counts = listCached.counts || {};
+      st.latestAt = listCached.latest_at;
+      renderSide(); renderItems();
+      afterShell();
+    }
+    api('/overview').then(function (r) {
+      if (r.status === 402) { root.innerHTML = noAccess(); S.ready(); return; }
+      if (!r.ok) { if (!fromCache) { root.innerHTML = '<div class="ib-loading"><div class="ib-empty">' + esc(S.apiError(r)) + '</div></div>'; S.ready(); } return; }
+      S.cacheSet('ib:/overview', r.data, g0);
+      applyOverview(r.data);
+      if (!st.agents.length) { root.innerHTML = noBot(); S.ready(); return; }
+      if (fromCache) { renderSide(); renderBanner(); }
+      else { renderShell(); afterShell(); }
+      loadList(true, fromCache, firstList).then(function () {
+        if (st.folder === 'all' && !st.channel && !st.stage && !st.q) {
+          S.cacheSet('ib:' + listQuery(null), { items: st.items.slice(0, 40), has_more: st.hasMore, counts: st.counts, latest_at: st.latestAt }, g0);
+        }
+      });
       startPolling();
     });
     document.addEventListener('keydown', onKey);
@@ -245,12 +272,12 @@
     return '/dialogs?' + p.join('&');
   }
 
-  function loadList(reset, silent) {
+  function loadList(reset, silent, pending) {
     var seq = ++st.listSeq;
     var before = reset ? null : (st.items.length ? st.items[st.items.length - 1].last_at : null);
     if (reset && !silent) S.$('#ib-items').innerHTML = skeletonList();
     st.loadingList = true;
-    return api(listQuery(before)).then(function (r) {
+    return (pending || api(listQuery(before))).then(function (r) {
       if (seq !== st.listSeq) return;
       st.loadingList = false;
       if (!r.ok) { S.$('#ib-items').innerHTML = '<div class="ib-empty">' + esc(errText(r)) + '</div>'; return; }

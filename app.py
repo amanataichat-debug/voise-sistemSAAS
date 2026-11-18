@@ -441,11 +441,82 @@ class _CabinetStaticFiles(StaticFiles):
             raise _StarletteHTTPException(status_code=404)
         return await super().get_response(path, scope)
 
+    # Скорость кабинета (ветка 1811-niche-admin-speed). Раньше каждая страница при каждом переходе
+    # перепроверяла на сервере 15–20 своих скриптов и стилей (no-cache → 304): на мобильной связи
+    # Бишкек → Франкфурт это лишний круг 150–300 мс перед тем, как страница вообще начнёт работать.
+    # Теперь сервер сам дописывает в HTML к каждому <script src> и <link href> на /static/*.js|css
+    # метку содержимого ?v=h<10 hex> (хэш файла), а такие запросы отдаются immutable на год:
+    # браузер и service worker берут их из кэша без сети, после деплоя метка меняется сама.
+    # Ручные ?v=… в HTML больше не нужны (их метка заменяется на хэш).
+    _ASSET_REF = re.compile(
+        r'(<(?:script|link)\b[^>]*?\s(?:src|href)=")(/static/[^"?#]+\.(?:js|css))(?:\?v=[^"#]*)?(")', re.I)
+    _CONTENT_V = re.compile(rb"(^|&)v=h[0-9a-f]{10}(&|$)")
+    _asset_hashes: dict = {}
+    _html_cache: dict = {}
+
+    def _asset_version(self, url_path: str):
+        rel = url_path[len("/static/"):]
+        full = os.path.join(str(self.directory), rel)
+        try:
+            st = os.stat(full)
+        except OSError:
+            return None
+        key = (full, st.st_mtime_ns, st.st_size)
+        v = self._asset_hashes.get(key)
+        if v is None:
+            import hashlib
+            with open(full, "rb") as fh:
+                v = "h" + hashlib.sha1(fh.read()).hexdigest()[:10]
+            self._asset_hashes[key] = v
+        return v
+
+    def _versioned_html(self, full_path: str, stat_result):
+        """HTML с метками содержимого у скриптов и стилей; кэш по (файл, mtime, версии зависимостей)."""
+        cached = self._html_cache.get(full_path)
+        if cached and cached[0] == (stat_result.st_mtime_ns, stat_result.st_size):
+            deps = tuple(self._asset_version(u) for u in cached[1])
+            if deps == cached[2]:
+                return cached[3], cached[4]
+        with open(full_path, "rb") as fh:
+            raw = fh.read().decode("utf-8", errors="replace")
+        urls = []
+
+        def _sub(m):
+            v = self._asset_version(m.group(2))
+            if not v:
+                return m.group(0)
+            urls.append(m.group(2))
+            return f"{m.group(1)}{m.group(2)}?v={v}{m.group(3)}"
+
+        body = self._ASSET_REF.sub(_sub, raw).encode("utf-8")
+        import hashlib
+        etag = '"' + hashlib.sha1(body).hexdigest()[:20] + '"'
+        deps = tuple(self._asset_version(u) for u in urls)
+        self._html_cache[full_path] = ((stat_result.st_mtime_ns, stat_result.st_size), urls, deps, body, etag)
+        return body, etag
+
     def file_response(self, full_path, stat_result, scope, status_code=200):
-        response = super().file_response(full_path, stat_result, scope, status_code=status_code)
         path = str(full_path)
-        if self._HASHED.search(path) or path.lower().endswith(".woff2"):
-            # шрифты кабинета (static/fonts) не меняются под тем же именем: новый шрифт — новый файл
+        if path.lower().endswith(".html") and status_code == 200:
+            try:
+                from starlette.datastructures import Headers
+                from starlette.responses import Response as _Resp
+                body, etag = self._versioned_html(path, stat_result)
+                headers = {"ETag": etag, "Cache-Control": "no-cache"}
+                inm = Headers(scope=scope).get("if-none-match", "")
+                if etag in [t.strip() for t in inm.split(",")]:
+                    return _Resp(status_code=304, headers=headers)
+                if scope.get("method") == "HEAD":
+                    return _Resp(status_code=200, headers={**headers, "Content-Length": str(len(body))},
+                                 media_type="text/html")
+                return _Resp(content=body, status_code=200, headers=headers, media_type="text/html")
+            except Exception as e:  # сбой разметки версий не должен ронять страницу
+                logger.warning(f"[STATIC] asset versioning skipped for {path}: {e}")
+        response = super().file_response(full_path, stat_result, scope, status_code=status_code)
+        if self._HASHED.search(path) or path.lower().endswith(".woff2") or \
+                self._CONTENT_V.search(scope.get("query_string", b"") or b""):
+            # шрифты кабинета (static/fonts) не меняются под тем же именем: новый шрифт — новый файл;
+            # ?v=h<хэш> — метка содержимого, которую сервер ставит в HTML (меняется вместе с файлом)
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         elif path.lower().endswith(self._REVALIDATE):
             response.headers["Cache-Control"] = "no-cache"
