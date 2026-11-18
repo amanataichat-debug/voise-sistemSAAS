@@ -319,6 +319,9 @@ from backend.api import admin_clients as admin_clients_api  # админка «�
 app.include_router(admin_clients_api.router, prefix="/api/admin", tags=["Admin"])
 from backend.api import business as business_api  # профиль бизнеса: ниша → модули, каталог, воронка, бот
 app.include_router(business_api.router, prefix="/api/business", tags=["Business"])
+from backend.api import booking as booking_api  # онлайн-запись: календарь владельца и запись клиентов по ссылке
+app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
+app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -571,6 +574,7 @@ def background_jobs():
     from backend.services.weekly_jobs import start_weekly_jobs_loop
     from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
     from backend.services.signup_notify import start_signup_notify_loop
+    from backend.services.booking_notify import start_booking_reminders_loop
     return [
         start_subscription_checker,                                  # раз в час
         lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
@@ -581,6 +585,7 @@ def background_jobs():
         demo_voice.setup_demo_bot_on_startup,                        # демо-бот: вебхук и кнопка Mini App
         wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
         start_signup_notify_loop,                                    # админу в Telegram: новая регистрация
+        start_booking_reminders_loop,                                # онлайн-запись: напоминания клиентам
     ]
 
 
@@ -1911,6 +1916,24 @@ def ensure_user_profile_columns():
         logger.error(f"❌ ensure_user_profile_columns error: {e}")
 
 
+def ensure_booking_tables():
+    """
+    Онлайн-запись (ветка 1811-niche-admin-speed): booking_resources, bookings, booking_pages.
+    Новые таблицы — create_all с checkfirst; идёт в начале старта в каждом воркере.
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.booking import BookingResource, Booking, BookingPage
+        existing = set(inspect(engine).get_table_names())
+        if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
+            return  # пустая база: таблицы создаст общий create_all
+        ModelsBase.metadata.create_all(
+            bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__], checkfirst=True)
+    except Exception as e:
+        logger.error(f"❌ ensure_booking_tables: {e}")
+
+
 def ensure_inbox_schema():
     """
     Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
@@ -3101,6 +3124,7 @@ async def startup_event():
         ensure_knowledge_v2_tables()
         ensure_crm_v2_columns()
         ensure_inbox_schema()
+        ensure_booking_tables()
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.
@@ -3521,6 +3545,15 @@ for _slug in SEO_SERVICE_SLUGS:
     app.add_api_route(f"/{_slug}", _redirect_route(f"/{_slug}/"), methods=["GET", "HEAD"], include_in_schema=False)
     app.add_api_route(f"/ru/{_slug}", _redirect_route(f"/ru/{_slug}/"), methods=["GET", "HEAD"],
                       include_in_schema=False)
+
+# Онлайн-запись клиента по ссылке владельца: /b/<slug> → страница записи (данные — /api/public/booking/<slug>)
+@app.get("/b/{slug}", include_in_schema=False)
+async def booking_public_page(slug: str):
+    import re as _re
+    if not _re.fullmatch(r"[a-z0-9-]{3,64}", slug or ""):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse("backend/static/book.html", headers={"Cache-Control": "no-cache"})
+
 
 # Публичные страницы в /static, которые можно индексировать; остальные (кабинет) — noindex
 PUBLIC_STATIC_PAGES = {

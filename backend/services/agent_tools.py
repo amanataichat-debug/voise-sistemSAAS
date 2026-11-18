@@ -770,8 +770,15 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
+    tools = _augment_with_booking(tools, agent_config, db)
     tools = _patch_move_stage_tool_for_agent(tools, agent_config)
     return _limit_tools_for_mode(tools, agent_config, db, "owner_chat")
+
+
+def _augment_with_booking(tools: list, agent_config, db: Session) -> list:
+    """Онлайн-запись (ветка 1811-niche-admin-speed): инструменты записи, если модуль включён у владельца."""
+    from backend.services import booking_tools
+    return booking_tools.augment(tools, agent_config, db)
 
 
 def _limit_tools_for_mode(tools: list, agent_config, db: Session, surface: str) -> list:
@@ -792,6 +799,7 @@ async def build_postcall_tools(agent_config, db: Session) -> list:
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
+    tools = _augment_with_booking(tools, agent_config, db)
     tools = _patch_move_stage_tool_for_agent(tools, agent_config)
     return _limit_tools_for_mode(tools, agent_config, db, "postcall")
 
@@ -5689,6 +5697,11 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
     if refusal:
         logger.info(f"[AGENT-TOOLS] reactive mode blocked {tool_name} for user {user_id}")
         return json.dumps({"ok": False, "error": refusal}, ensure_ascii=False)
+
+    # Онлайн-запись (ветка 1811-niche-admin-speed) — своя реализация, одна на бота, голос и кабинет
+    from backend.services import booking_tools
+    if tool_name in booking_tools.TOOL_NAMES:
+        return await booking_tools.execute(tool_name, tool_args or {}, context, db)
 
     try:
         if tool_name == "create_agent_contact":

@@ -448,10 +448,14 @@ def build_business_block(agent_config, db=None) -> str:
         mods = modules_of(user)
         on = [label for key, label in (("booking", "онлайн-запись"), ("orders", "заказы"), ("crm", "воронка CRM"))
               if mods.get(key)]
-        return ("\n\n## Сфера бизнеса\n"
-                f"Ниша владельца: {niche_title(user.business_niche, user.business_niche_other)}."
-                + (" Включено: " + ", ".join(on) + "." if on else "")
-                + " Учитывай сферу в ответах клиентам и в отчётах владельцу.")
+        block = ("\n\n## Сфера бизнеса\n"
+                 f"Ниша владельца: {niche_title(user.business_niche, user.business_niche_other)}."
+                 + (" Включено: " + ", ".join(on) + "." if on else "")
+                 + " Учитывай сферу в ответах клиентам и в отчётах владельцу.")
+        if mods.get("booking"):
+            from backend.services.booking_tools import PROMPT_BLOCK
+            block += PROMPT_BLOCK
+        return block
     except Exception as e:
         logger.warning(f"[PROMPT] business block skipped: {e}")
         return ""

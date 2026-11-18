@@ -720,6 +720,45 @@ def apply_live_kb_functions(db, assistant, agent) -> None:
 
 
 # ============================================================================
+# Онлайн-запись на звонке (ветка 1811-niche-admin-speed)
+# ============================================================================
+
+BOOKING_VOICE_FUNCTIONS = {
+    "find_booking_slots": "Находит ближайшее свободное время для записи по услуге, мастеру и дню.",
+    "book_appointment": "Записывает клиента на согласованное время; номер берёт из звонка.",
+}
+
+
+def apply_live_booking_functions(db, assistant, owner_user_id) -> None:
+    """
+    Включить на карточке голоса В ПАМЯТИ функции записи, если у владельца включён модуль «Запись»
+    (тот же приём, что apply_live_kb_functions: в базе карточка не меняется). Нет записи — снять.
+    """
+    try:
+        from sqlalchemy.orm.attributes import set_committed_value
+        from backend.models.user import User
+        from backend.services.business_profile import modules_of
+        user = db.query(User).filter(User.id == owner_user_id).first() if owner_user_id else None
+        enabled = bool(user is not None and modules_of(user).get("booking"))
+        functions = getattr(assistant, "functions", None)
+        names = set(BOOKING_VOICE_FUNCTIONS)
+        if isinstance(functions, dict) and "enabled_functions" in functions:
+            items = [n for n in list(functions.get("enabled_functions", [])) if n not in names]
+            if enabled:
+                items.extend(sorted(names))
+            merged = {"enabled_functions": items}
+        else:
+            items = list(functions) if isinstance(functions, list) else []
+            items = [f for f in items if (f.get("name") if isinstance(f, dict) else f) not in names]
+            if enabled:
+                items.extend({"name": n, "description": d} for n, d in sorted(BOOKING_VOICE_FUNCTIONS.items()))
+            merged = items
+        set_committed_value(assistant, "functions", merged)
+    except Exception as e:
+        logger.warning(f"[VOICE-BOOKING] функции записи не применены: {e}")
+
+
+# ============================================================================
 # Узнавание клиента на звонке (ветка 2110-client-memory)
 # ============================================================================
 

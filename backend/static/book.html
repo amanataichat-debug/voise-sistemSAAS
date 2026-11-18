@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Онлайн-запись</title>
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <!-- Онлайн-запись клиента по ссылке владельца (ветка 1811-niche-admin-speed): услуга → мастер → время → имя и телефон.
+       Данные: /api/public/booking/<slug>. Без входа и без скриптов кабинета. -->
+  <style>
+    :root { --a: #2a5ce8; --t: #0e1729; --t2: #46556b; --t3: #63738b; --b: #e2e7f0; --s2: #f6f8fc; --ok: #159a4a; --err: #dd2a2a; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #fff; color: var(--t); font: 15px/1.45 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    .w { max-width: 560px; margin: 0 auto; padding: 20px 16px 120px; }
+    .hd { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .lg { width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #2a5ce8, #7c3aed); color: #fff; display: grid; place-items: center; font: 700 20px 'Inter', sans-serif; flex: none; }
+    h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.01em; }
+    .sub { color: var(--t3); font-size: 13.5px; margin-top: 2px; }
+    .steps { display: flex; gap: 6px; margin: 4px 0 18px; }
+    .steps i { flex: 1; height: 4px; border-radius: 4px; background: var(--b); }
+    .steps i.on { background: var(--a); }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; padding: 14px 16px; border: 1px solid var(--b); border-radius: 14px; background: #fff; font: inherit; color: inherit; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .1s; }
+    .opt:active { transform: scale(.985); }
+    .opt.on { border-color: var(--a); box-shadow: 0 0 0 3px rgba(42,92,232,.15); }
+    .opt b { display: block; font-weight: 600; }
+    .opt span { color: var(--t3); font-size: 13px; }
+    .opt .pr { font-weight: 700; white-space: nowrap; color: var(--t); }
+    .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+    .grp { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--t3); margin: 14px 2px 6px; }
+    .days { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+    .days::-webkit-scrollbar { display: none; }
+    .day { flex: 0 0 auto; width: 60px; padding: 9px 0; border-radius: 14px; border: 1px solid var(--b); background: #fff; text-align: center; cursor: pointer; font: inherit; color: inherit; }
+    .day .wd { font-size: 11px; color: var(--t3); text-transform: uppercase; }
+    .day .dd { font-size: 19px; font-weight: 700; }
+    .day.on { background: var(--a); border-color: var(--a); color: #fff; }
+    .day.on .wd { color: rgba(255,255,255,.85); }
+    .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+    .slot { height: 44px; border-radius: 12px; border: 1px solid var(--b); background: #fff; font: 600 15px 'Inter', sans-serif; cursor: pointer; color: var(--t); font-variant-numeric: tabular-nums; }
+    .slot.on { background: var(--a); border-color: var(--a); color: #fff; }
+    .muted { color: var(--t3); font-size: 14px; }
+    label { display: block; font-weight: 600; font-size: 13.5px; color: var(--t2); margin: 12px 0 6px; }
+    input, textarea { width: 100%; height: 50px; border: 1px solid var(--b); border-radius: 14px; padding: 0 14px; font: 16px 'Inter', sans-serif; color: var(--t); background: #fff; }
+    textarea { height: 80px; padding: 12px 14px; resize: vertical; }
+    input:focus, textarea:focus { outline: none; border-color: var(--a); box-shadow: 0 0 0 4px rgba(42,92,232,.15); }
+    .sum { background: var(--s2); border-radius: 14px; padding: 12px 14px; font-size: 14px; margin-bottom: 4px; }
+    .sum div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+    .sum span { color: var(--t3); }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: rgba(255,255,255,.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--b); }
+    .bar .in { max-width: 560px; margin: 0 auto; display: flex; gap: 10px; }
+    .btn { flex: 1; height: 52px; border-radius: 16px; border: 0; background: var(--a); color: #fff; font: 600 16px 'Inter', sans-serif; cursor: pointer; box-shadow: 0 10px 24px -10px rgba(42,92,232,.7); }
+    .btn[disabled] { opacity: .45; box-shadow: none; cursor: default; }
+    .btn.gh { flex: 0 0 auto; padding: 0 18px; background: #fff; color: var(--t); border: 1px solid var(--b); box-shadow: none; }
+    .err { color: var(--err); font-size: 14px; margin-top: 10px; }
+    .done { text-align: center; padding-top: 8vh; }
+    .ok { width: 84px; height: 84px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #16a34a, #22c55e); color: #fff; font-size: 40px; box-shadow: 0 16px 40px -16px rgba(22,163,74,.8); animation: pop .45s cubic-bezier(.2,.9,.3,1.3); }
+    @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+    .sk { height: 58px; border-radius: 14px; background: linear-gradient(90deg, #f1f4f9, #e8edf5, #f1f4f9); background-size: 200% 100%; animation: sh 1.2s infinite linear; margin-bottom: 8px; }
+    @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    .pw { text-align: center; color: #93a2b8; font-size: 12px; margin-top: 28px; }
+    .pw a { color: inherit; }
+  </style>
+</head>
+<body>
+<div class="w" id="app"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+<div class="bar" id="bar" hidden><div class="in" id="barin"></div></div>
+<script>
+(function () {
+  var slug = (location.pathname.split('/b/')[1] || '').replace(/\/.*$/, '');
+  var API = '/api/public/booking/' + encodeURIComponent(slug);
+  var TZ = 'Asia/Bishkek';
+  var WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  var st = { info: null, step: 1, service: null, master: null, day: null, slot: null, name: '', phone: '+996 ', note: '' };
+  var app = document.getElementById('app'), bar = document.getElementById('bar'), barin = document.getElementById('barin');
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function get(path) { return fetch(API + path).then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.detail || d.message || 'Ошибка'); return d; }); }); }
+  function key(d) { return d.toLocaleDateString('en-CA', { timeZone: TZ }); }
+  function money(v) { return v == null ? '' : Number(v).toLocaleString('ru-RU') + ' сом'; }
+  function head() {
+    var i = st.info, ini = (i.title || '?').trim().charAt(0).toUpperCase();
+    return '<div class="hd"><div class="lg">' + esc(ini) + '</div><div><h1>' + esc(i.title) + '</h1><div class="sub">' + esc([i.niche, i.address].filter(Boolean).join(' · ') || 'Онлайн-запись') + '</div></div></div>' +
+      '<div class="steps">' + [1, 2, 3, 4].map(function (n) { return '<i class="' + (n <= st.step ? 'on' : '') + '"></i>'; }).join('') + '</div>';
+  }
+  function setBar(html) { bar.hidden = !html; barin.innerHTML = html || ''; }
+  function services() { return st.info.services || []; }
+  function masters() {
+    var sv = st.service;
+    return (st.info.resources || []).filter(function (r) { return !sv || !r.service_ids || r.service_ids.indexOf(sv.id) >= 0; });
+  }
+
+  function step1() {
+    st.step = 1;
+    var list = services(), groups = {};
+    list.forEach(function (s) { (groups[s.collection || ''] = groups[s.collection || ''] || []).push(s); });
+    var html = head() + '<h2>Выберите услугу</h2>';
+    if (!list.length) html += '<div class="list"><button class="opt on" data-svc=""><div><b>Запись на приём</b><span>Уточним детали после записи</span></div></button></div>';
+    Object.keys(groups).forEach(function (g) {
+      if (g) html += '<div class="grp">' + esc(g) + '</div>';
+      html += '<div class="list">' + groups[g].map(function (s) {
+        return '<button class="opt' + (st.service && st.service.id === s.id ? ' on' : '') + '" data-svc="' + esc(s.id) + '"><div><b>' + esc(s.title) + '</b><span>' + s.duration_min + ' мин</span></div><div class="pr">' + esc(money(s.price)) + '</div></button>';
+      }).join('') + '</div>';
+    });
+    app.innerHTML = html + '<div class="pw">Работает на <a href="/" target="_blank" rel="noopener">Voksy AI</a></div>';
+    setBar('');
+  }
+  function step2() {
+    st.step = 2;
+    var ms = masters();
+    if (ms.length <= 1) { st.master = ms[0] || null; return step3(); }
+    app.innerHTML = head() + '<h2>К кому записаться?</h2><div class="list">' +
+      '<button class="opt' + (!st.master ? ' on' : '') + '" data-m=""><div><b>Любой свободный</b><span>Покажем всё свободное время</span></div></button>' +
+      ms.map(function (r) { return '<button class="opt' + (st.master && st.master.id === r.id ? ' on' : '') + '" data-m="' + esc(r.id) + '"><div style="display:flex;gap:10px;align-items:center"><i class="dot" style="background:' + esc(r.color || '#2a5ce8') + '"></i><div><b>' + esc(r.name) + '</b><span>' + esc(r.role || '') + '</span></div></div></button>'; }).join('') +
+      '</div>';
+    setBar('<button class="btn gh" data-back="1">Назад</button><button class="btn" data-next2>Дальше</button>');
+  }
+  function step3() {
+    st.step = 3;
+    var today = new Date(), days = '';
+    if (!st.day) st.day = key(today);
+    for (var i = 0; i < Math.min(st.info.horizon_days || 30, 30); i++) {
+      var d = new Date(today.getTime() + i * 864e5), k = key(d);
+      days += '<button class="day' + (k === st.day ? ' on' : '') + '" data-day="' + k + '"><div class="wd">' + (i === 0 ? 'сег' : i === 1 ? 'зав' : WD[new Date(k + 'T12:00:00+06:00').getUTCDay()]) + '</div><div class="dd">' + +k.slice(8) + '</div></button>';
+    }
+    app.innerHTML = head() + '<h2>Выберите время</h2><div class="days">' + days + '</div><div id="slots"><div class="sk" style="margin-top:14px"></div></div>';
+    var on = app.querySelector('.day.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+    setBar('<button class="btn gh" data-back="' + (masters().length > 1 ? 2 : 1) + '">Назад</button><button class="btn" data-next3' + (st.slot ? '' : ' disabled') + '>Дальше</button>');
+    loadSlots();
+  }
+  function loadSlots() {
+    var p = new URLSearchParams({ date: st.day });
+    if (st.service) p.set('service_id', st.service.id);
+    if (st.master) p.set('resource_id', st.master.id);
+    get('/slots?' + p.toString()).then(function (d) {
+      var slots = (d.days && d.days[0] && d.days[0].slots) || [];
+      var box = document.getElementById('slots'); if (!box) return;
+      box.innerHTML = slots.length ? '<div class="slots">' + slots.map(function (s) {
+        return '<button class="slot' + (st.slot && st.slot.start === s.start ? ' on' : '') + '" data-slot="' + esc(s.start) + '" data-t="' + esc(s.time) + '">' + esc(s.time) + '</button>';
+      }).join('') + '</div>' : '<p class="muted" style="margin-top:16px">На этот день свободного времени нет — выберите другой день.</p>';
+    }).catch(function (e) { var box = document.getElementById('slots'); if (box) box.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; });
+  }
+  function step4(err) {
+    st.step = 4;
+    var dt = new Date(st.slot.start);
+    var when = dt.toLocaleDateString('ru-RU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }) + ', ' + st.slot.time;
+    app.innerHTML = head() + '<h2>Ваши данные</h2><div class="sum">' +
+      '<div><span>Услуга</span><b>' + esc(st.service ? st.service.title : 'Приём') + '</b></div>' +
+      (st.master ? '<div><span>Мастер</span><b>' + esc(st.master.name) + '</b></div>' : '') +
+      '<div><span>Когда</span><b>' + esc(when) + '</b></div>' +
+      (st.service && st.service.price != null ? '<div><span>Цена</span><b>' + esc(money(st.service.price)) + '</b></div>' : '') + '</div>' +
+      '<label for="nm">Имя</label><input id="nm" autocomplete="name" value="' + esc(st.name) + '" placeholder="Как к вам обращаться">' +
+      '<label for="ph">Телефон (WhatsApp)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(st.phone) + '">' +
+      '<label for="nt">Комментарий (необязательно)</label><textarea id="nt" placeholder="Пожелания">' + esc(st.note) + '</textarea>' +
+      (err ? '<div class="err">' + esc(err) + '</div>' : '');
+    setBar('<button class="btn gh" data-back="3">Назад</button><button class="btn" data-book>Записаться</button>');
+  }
+  function book() {
+    st.name = document.getElementById('nm').value.trim();
+    st.phone = document.getElementById('ph').value.trim();
+    st.note = document.getElementById('nt').value.trim();
+    if (!st.name) return step4('Укажите имя');
+    if (st.phone.replace(/\D/g, '').length < 9) return step4('Укажите телефон: например, +996 700 123 456');
+    var b = barin.querySelector('[data-book]'); if (b) { b.disabled = true; b.textContent = 'Записываем…'; }
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      start: st.slot.start, service_id: st.service ? st.service.id : null, resource_id: st.master ? st.master.id : null,
+      name: st.name, phone: st.phone, note: st.note || null }) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.detail || d.message || 'Не получилось записаться'); return d; }); })
+      .then(function (d) {
+        var bk = d.booking || {};
+        app.innerHTML = '<div class="done"><div class="ok">✓</div><h1>Вы записаны!</h1><p class="muted" style="font-size:16px;margin-top:10px">' +
+          esc([bk.label, bk.service, bk.resource].filter(Boolean).join(' · ')) + '</p>' +
+          (bk.address ? '<p class="muted">Адрес: ' + esc(bk.address) + '</p>' : '') +
+          '<p class="muted">Мы напомним о записи в WhatsApp. Если планы изменятся — просто напишите нам.</p></div>';
+        setBar('');
+      })
+      .catch(function (e) {
+        if (/занято|прошло/.test(e.message)) { st.slot = null; step3(); setTimeout(function () { alert(e.message + '. Выберите другое время.'); }, 50); return; }
+        step4(e.message);
+      });
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var sv = t.closest('[data-svc]');
+    if (sv) { var id = sv.getAttribute('data-svc'); st.service = services().filter(function (s) { return s.id === id; })[0] || null; st.master = null; st.slot = null; return step2(); }
+    var m = t.closest('[data-m]');
+    if (m) { var mid = m.getAttribute('data-m'); st.master = masters().filter(function (r) { return r.id === mid; })[0] || null; st.slot = null; return step3(); }
+    if (t.closest('[data-next2]')) return step3();
+    var dy = t.closest('[data-day]');
+    if (dy) { st.day = dy.getAttribute('data-day'); st.slot = null; return step3(); }
+    var sl = t.closest('[data-slot]');
+    if (sl) { st.slot = { start: sl.getAttribute('data-slot'), time: sl.getAttribute('data-t') }; Array.prototype.forEach.call(document.querySelectorAll('.slot'), function (x) { x.classList.toggle('on', x === sl); }); var n = barin.querySelector('[data-next3]'); if (n) n.disabled = false; return; }
+    if (t.closest('[data-next3]')) return step4();
+    var bk = t.closest('[data-back]');
+    if (bk) { var s = +bk.getAttribute('data-back'); return s === 1 ? step1() : s === 2 ? step2() : step3(); }
+    if (t.closest('[data-book]')) return book();
+  });
+  get('').then(function (info) { st.info = info; document.title = 'Запись — ' + info.title; step1(); })
+    .catch(function (e) { app.innerHTML = '<div class="done"><h1>Запись недоступна</h1><p class="muted">' + esc(e.message) + '</p></div>'; });
+})();
+</script>
+</body>
+</html>

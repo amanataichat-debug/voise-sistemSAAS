@@ -119,6 +119,9 @@ from .wallet_transaction import WalletTransaction, WalletTransactionType
 # Журнал владельца платформы по клиентам: вход в кабинет, заметки, статусы (админка «Клиенты»)
 from .admin_audit import AdminAuditLog
 
+# Онлайн-запись: мастера, записи, страница записи (ветка 1811-niche-admin-speed)
+from .booking import BookingResource, Booking, BookingPage
+
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 
@@ -196,6 +199,9 @@ __all__ = [
     "WalletTransaction",
     "WalletTransactionType",
     "AdminAuditLog",
+    "BookingResource",
+    "Booking",
+    "BookingPage",
     "CreditPackage",
     "SipPhoneNumber",
     "SipCall",

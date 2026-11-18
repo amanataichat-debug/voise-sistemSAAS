@@ -508,6 +508,12 @@ async def sip_media(
         if greeting:
             set_committed_value(assistant, "greeting_message", greeting)
         set_committed_value(assistant, "system_prompt", f"{base_prompt}\n\n[Контекст звонка] {context}".strip())
+    # Онлайн-запись (ветка 1811-niche-admin-speed): у ниш с записью голосовой агент сам смотрит
+    # свободное время и записывает клиента — функции включаются в памяти по профилю владельца.
+    try:
+        agent_voice_context.apply_live_booking_functions(db, assistant, getattr(assistant, "user_id", None))
+    except Exception as exc:
+        logger.warning(f"[SIP-MEDIA] call {call_id}: функции записи не включены: {exc}")
     assistant.telephony_mode = True  # не колонка: клиенты провайдеров включают телефонный профиль VAD
     # Не колонка: Fish/Eleven пишут диалог под session_id = id звонка — точная связь звонок ↔ реплики.
     assistant.sip_session_id = str(call.id)

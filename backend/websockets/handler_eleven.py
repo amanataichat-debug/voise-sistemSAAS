@@ -109,6 +109,7 @@ def _apply_agent_knowledge(db: Session, assistant) -> None:
         # Браузерный тест агента: владелец проверяет узнавание клиента
         # («я Айбек, писал вам вчера») без звонка с другого номера.
         agent_voice_context.apply_live_client_functions(assistant, True)
+        agent_voice_context.apply_live_booking_functions(db, assistant, getattr(assistant, "user_id", None))
         _log(f"знания агента {agent.id} в промпте: {stats.get('total', 0)} символов "
              f"(всего промпт {len(prompt)})")
     except Exception as e:
