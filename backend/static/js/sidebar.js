@@ -89,8 +89,33 @@
   function cachedMode() {
     try { return localStorage.getItem(MODE_KEY) || ''; } catch (e) { return ''; }
   }
+  // Профиль бизнеса (ниша → модули, вкладки телефона) из /api/users/me → business. Храним в
+  // localStorage, чтобы меню и вкладки рисовались сразу и не прыгали (ветка 1811-niche-admin-speed).
+  var BIZ_KEY = 'vf_business';
+  function cachedBusiness() {
+    try { return JSON.parse(localStorage.getItem(BIZ_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function adaptMenu(menu) {
+    var biz = cachedBusiness();
+    var mods = (biz && biz.modules) || {};
+    var out = [];
+    menu.forEach(function (item) {
+      if (item.id === 'crm-nav-item' && biz && biz.niche && mods.crm === false) {
+        // CRM-воронка не нужна (салон, магазин): раздел остаётся как «Клиенты» — база с историей
+        item = Object.assign({}, item, { label: 'sidebar.clients', def: 'Клиенты' });
+      }
+      out.push(item);
+      if (item.id === 'inbox-nav-item' || (item.id === 'dashboard-nav-item' && !menu.some(function (m) { return m.id === 'inbox-nav-item'; }))) {
+        (biz && biz.tabs || []).forEach(function (t) {
+          if (t.id === 'booking') out.push({ href: t.href, lucide: 'calendar', label: 'sidebar.booking', def: 'Записи', id: 'booking-nav-item' });
+          if (t.id === 'orders') out.push({ href: t.href, lucide: 'shopping-cart', label: 'sidebar.orders', def: 'Заказы', id: 'orders-nav-item' });
+        });
+      }
+    });
+    return out;
+  }
   function currentMenu() {
-    return cachedMode() === 'reactive' ? START_MENU : MENU;
+    return adaptMenu(cachedMode() === 'reactive' ? START_MENU : MENU);
   }
 
   var ADMIN_ITEMS = [
@@ -495,11 +520,28 @@
   ];
   function isPhone() { try { return window.matchMedia(PHONE).matches; } catch (e) { return false; } }
   function lang() { try { return localStorage.getItem('vs_lang') || 'ru'; } catch (e) { return 'ru'; } }
+  // Profi (решение владельца 18.11.2026): Чаты · Звонки · Агент · Клиенты · Ещё
+  var PROFI_TABS = [
+    { id: 'inbox', href: '/static/inbox.html', icon: 'inbox', label: 'Чаты', ky: 'Чаттар' },
+    { id: 'calls', href: '/static/conversations.html', icon: 'phone', label: 'Звонки', ky: 'Чалуулар' },
+    { id: 'agent', href: '/static/agent.html', icon: 'headset', label: 'Агент', ky: 'Агент' },
+    { id: 'clients', href: '/static/crm.html', icon: 'users', label: 'Клиенты', ky: 'Кардарлар' },
+    { id: 'more', icon: 'menu', label: 'Ещё', ky: 'Дагы' }
+  ];
   function activeTab() {
     var p = currentPath(), h = (location.hash || '').replace('#', '');
-    if (p === '/static/dashboard.html') return 'home';
-    if (p === '/static/inbox.html') return 'inbox';
-    if (p === '/static/start-bot.html') return (h === 'catalog' || h === 'products') ? 'catalog' : 'bot';
+    var tabs = currentTabs();
+    for (var i = 0; i < tabs.length; i++) {
+      var t = tabs[i];
+      if (!t.href) continue;
+      var tp = t.href.split('#')[0], th = t.href.split('#')[1] || '';
+      if (tp !== p) continue;
+      if (th) { if (h === th || (th === 'catalog' && h === 'products')) return t.id; continue; }
+      if (p === '/static/start-bot.html' && (h === 'catalog' || h === 'products') && tabs.some(function (x) { return x.href === '/static/start-bot.html#catalog'; })) continue;
+      return t.id;
+    }
+    if (p === '/static/crm-contact.html' || p === '/static/start-crm.html' || p === '/static/crm.html') return 'clients';
+    if (p === '/static/agent-knowledge.html' || p === '/static/agent.html') return tabs.some(function (t) { return t.id === 'agent'; }) ? 'agent' : 'more';
     return 'more';
   }
   function markTabs() {
@@ -514,8 +556,14 @@
     var sb = document.getElementById('sidebar');
     if (sb) sb.classList.toggle('open');
   }
+  function currentTabs() {
+    var biz = cachedBusiness();
+    if (biz && biz.tabs && biz.tabs.length) return biz.tabs;
+    return cachedMode() === 'full' ? PROFI_TABS : TABS;
+  }
   function renderTabBar() {
-    if (cachedMode() !== 'reactive') return;
+    var mode = cachedMode();
+    if (mode !== 'reactive' && mode !== 'full') return;
     if (window.top !== window.self) return;           // инбокс во фрейме у Profi — без своей панели
     if (document.getElementById('vf-tabbar')) { markTabs(); return; }
     if (!document.getElementById('vf-tabbar-style')) {
@@ -525,7 +573,7 @@
     var ky = lang() === 'ky';
     var bar = document.createElement('nav');
     bar.id = 'vf-tabbar'; bar.className = 'vf-tabbar'; bar.setAttribute('aria-label', 'Меню');
-    bar.innerHTML = TABS.map(function (t) {
+    bar.innerHTML = currentTabs().map(function (t) {
       var inner = icon(t.icon) + '<span>' + (ky ? t.ky : t.label) + '</span>' + (t.id === 'inbox' ? '<span class="vf-badge" id="vf-tab-unread" hidden></span>' : '');
       return t.href ? '<a class="vf-tab" data-tab="' + t.id + '" href="' + t.href + '">' + inner + '</a>'
         : '<button type="button" class="vf-tab" data-tab="' + t.id + '">' + inner + '</button>';
@@ -698,9 +746,37 @@
       var admin = !!user.is_admin || ADMIN_EMAILS.indexOf(user.email) !== -1;
       try { sessionStorage.setItem('vf_is_admin', admin ? '1' : '0'); } catch (e) { /* ignore */ }
       applyAgentMode(user.agent_mode || '');
+      applyBusiness(user.business || null);
       if (admin) injectAdmin(document.getElementById('sidebar-nav') || nav);
       document.dispatchEvent(new CustomEvent('vf:user', { detail: user }));
+      maybeBusinessSetup(user, admin);
     }).catch(function () { /* ignore */ });
+  }
+
+  function applyBusiness(biz) {
+    var prev = localStorage.getItem(BIZ_KEY) || 'null';
+    var next = JSON.stringify(biz || null);
+    if (prev === next) return;
+    try { localStorage.setItem(BIZ_KEY, next); } catch (e) { /* ignore */ }
+    var nav = renderNav();
+    if (nav) { try { if (sessionStorage.getItem('vf_is_admin') === '1') injectAdmin(nav); } catch (e) { /* ignore */ } }
+    var bar = document.getElementById('vf-tabbar');
+    if (bar) { bar.remove(); document.body.classList.remove('vf-has-tabbar'); }
+    renderTabBar();
+  }
+  document.addEventListener('vf:business', function (e) { applyBusiness(e.detail || null); });
+
+  // «Чем занимается ваш бизнес?» — первым экраном после регистрации (и один раз — старым клиентам)
+  function maybeBusinessSetup(user, admin) {
+    var biz = user.business;
+    if (!biz || !biz.needs_setup || admin || user.impersonated) return;
+    if (window.top !== window.self || currentPath() === '/static/admin.html') return;
+    var go = function () { if (window.VoksyBusinessSetup) window.VoksyBusinessSetup.open({ me: user }); };
+    if (window.VoksyBusinessSetup) { go(); return; }
+    var sc = document.createElement('script');
+    sc.src = '/static/js/business-setup.js';
+    sc.onload = go;
+    document.head.appendChild(sc);
   }
 
   window.VoksiAISidebar = {

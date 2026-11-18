@@ -781,7 +781,7 @@
   // страницах кабинета (ui.js подключён везде) и возврат. Кэши данных прошлого аккаунта
   // (sessionStorage, режим меню, выбранный агент) сбрасываются при каждом переключении.
   // ─────────────────────────────────────────────────────────────────────
-  var USER_CACHE_KEYS = ['vf_agent_mode', 'agent_current_id', 'agent_wizard_v3', 'agent_mode_enabled'];
+  var USER_CACHE_KEYS = ['vf_agent_mode', 'agent_current_id', 'agent_wizard_v3', 'agent_mode_enabled', 'vf_business'];
   function resetUserCaches() {
     try { sessionStorage.clear(); } catch (e) { /* ignore */ }
     try { USER_CACHE_KEYS.forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* ignore */ }

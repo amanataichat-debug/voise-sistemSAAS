@@ -422,7 +422,9 @@
   // Всё, что у агента Profi в «Знаниях»: вопрос-ответ, о компании, каталог с фото и характеристиками,
   // файлы с двумя ролями («бот отправляет клиентам» и «бот ищет ответы внутри»), пробелы.
   var kb = { entries: [], counts: {}, voice: null, gaps: [], files: [], generated: [], storage: true, tab: 'qa' };
-  var KB_TABS = [['qa', 'Вопросы и ответы'], ['section', 'О компании'], ['product', 'Каталог'], ['files', 'Файлы'], ['gaps', 'Без ответа']];
+  var KB_TABS = [['qa', 'Вопросы и ответы'], ['section', 'О компании'], ['product', (function () {
+    try { var b = JSON.parse(localStorage.getItem('vf_business') || 'null'); return (b && b.niche && b.catalog && b.catalog.title) || 'Каталог'; } catch (e) { return 'Каталог'; }
+  })()], ['files', 'Файлы'], ['gaps', 'Без ответа']];
   var CURRENCIES = [['KGS', 'сом'], ['USD', 'долл.'], ['RUB', 'руб.'], ['KZT', 'тенге'], ['EUR', 'евро']];
 
   function loadKb() {
@@ -664,14 +666,37 @@
   var NO_COL = '__none';
   var CAT_PAGE = 60;
   var LOW = 3;
-  var SIZE_PRESETS = [
+  // Каталог под нишу владельца (ветка 1811-niche-admin-speed): название («Услуги», «Букеты», «Объекты»),
+  // наборы размеров/вариантов, цвета, быстрые характеристики, учёт остатка или длительность услуги —
+  // из /api/users/me → business.catalog (sidebar.js кладёт его в localStorage.vf_business).
+  // Ниша не выбрана — как раньше (магазин одежды).
+  var BIZ = (function () { try { return JSON.parse(localStorage.getItem('vf_business') || 'null'); } catch (e) { return null; } })();
+  var CATCFG = (BIZ && BIZ.niche && BIZ.catalog) || {};
+  var CAT_TITLE = CATCFG.title || 'Каталог';
+  var CAT_ONE = CATCFG.one || 'позиция';
+  var SHOW_SIZES = !CATCFG.kind || !!CATCFG.variants_label;
+  var SIZES_LABEL = CATCFG.variants_label || 'Размеры';
+  var SHOW_STOCK = !CATCFG.kind || CATCFG.stock !== false;
+  var SHOW_DURATION = !!CATCFG.duration;
+  var SIZE_PRESETS = (CATCFG.size_presets && CATCFG.size_presets.length) ? CATCFG.size_presets : [
     ['Одежда XS–XXL', ['XS', 'S', 'M', 'L', 'XL', 'XXL']],
     ['Одежда 42–56', ['42', '44', '46', '48', '50', '52', '54', '56']],
     ['Головные уборы 54–62', ['54', '55', '56', '57', '58', '59', '60', '61', '62']],
     ['Детская по росту', ['80', '86', '92', '98', '104', '110', '116', '122', '128', '134', '140', '146', '152']],
     ['Обувь 35–45', ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45']]
   ];
-  var COLOR_QUICK = ['чёрный', 'белый', 'серый', 'коричневый', 'бежевый', 'синий', 'красный', 'розовый', 'зелёный'];
+  var COLOR_QUICK = (CATCFG.colors && CATCFG.colors.length) ? CATCFG.colors :
+    (CATCFG.kind ? [] : ['чёрный', 'белый', 'серый', 'коричневый', 'бежевый', 'синий', 'красный', 'розовый', 'зелёный']);
+  var ATTR_QUICK = (CATCFG.attr_keys && CATCFG.attr_keys.length) ? CATCFG.attr_keys : ['Цвет', 'Материал', 'Сезон', 'Пол', 'Возраст', 'Бренд', 'Страна'];
+  var CAT_HINT = {
+    services: 'Услуги с ценой, длительностью, фото и описанием. Бот называет цену и длительность и записывает клиента.',
+    objects: 'Объекты с ценой, районом, площадью, фото и видео. Бот подбирает их по запросу клиента и присылает карточкой.',
+    cars: 'Автомобили с ценой под ключ, годом, пробегом, фото и видео. Бот подбирает их по запросу клиента.',
+    menu: 'Блюда с ценой, составом и фото. Бот принимает заказ по меню.',
+    courses: 'Курсы с ценой, расписанием и форматом. Бот рассказывает и записывает на пробный урок.',
+    tours: 'Туры с датами, ценой и тем, что входит. Бот подбирает тур под запрос клиента.',
+    offers: 'Ваши услуги и предложения с ценой и описанием. Бот отвечает по ним клиентам.'
+  }[CATCFG.kind] || 'Товары с ценой, размерами, остатком, фото и видео. Бот показывает их клиентам карточкой: фото, цена, скидка, размеры в наличии.';
   var CAT_FILTERS = [['all', 'Все позиции'], ['in', 'В наличии'], ['out', 'Нет в наличии'], ['low', 'Мало осталось (до 3 шт.)'],
     ['sale', 'Со скидкой'], ['nophoto', 'Без фото'], ['noprice', 'Без цены'], ['off', 'Выключенные']];
   var CAT_SORTS = [['new', 'Сначала новые'], ['name', 'По названию'], ['price_up', 'Дешевле'], ['price_down', 'Дороже'], ['stock', 'Меньше остаток']];
@@ -764,7 +789,7 @@
     };
     var curCol = cat.col && cat.col !== NO_COL ? cat.col : '';
     box.innerHTML =
-      '<div class="st-cathead"><div><b>Каталог</b><span class="muted small">Товары с ценой, размерами, остатком, фото и видео. Бот показывает их клиентам карточкой: фото, цена, скидка, размеры в наличии.</span></div>' +
+      '<div class="st-cathead"><div><b>' + esc(CAT_TITLE) + '</b><span class="muted small">' + esc(CAT_HINT) + '</span></div>' +
       '<div class="st-catadd"><button class="btn btn-sm" id="cat-photos" type="button" title="Каждое фото станет позицией: потом допишете цены прямо в таблице">' + icon('image') + '<span>Позиции из фото</span></button>' +
       '<button class="btn btn-sm" id="cat-paste" type="button" title="Название; цена; размеры; количество — по строке на товар">' + icon('list') + '<span>Вставить списком</span></button>' +
       '<a class="btn btn-sm" href="#s-sheet" title="Импорт из Google Таблицы">' + icon('layers') + '<span>Из таблицы</span></a>' +
@@ -1268,7 +1293,7 @@
     var cols = catCollections().map(function (c) { return c[0]; });
     var val = function (v) { return v == null ? '' : esc(v); };
     var d = S.dialog({
-      title: e ? 'Изменить позицию' : 'Новая позиция', size: 'xl',
+      title: e ? 'Изменить: ' + CAT_ONE : 'Новая ' + (CAT_ONE === 'позиция' || CAT_ONE === 'услуга' ? CAT_ONE : 'позиция'), size: 'xl',
       body: '<div class="st-pwrap"><div class="st-pform">' +
         '<div class="st-psec"><div class="field"><label class="label">Название *</label><input class="input" id="p-title" value="' + val(src.title) + '" placeholder="Например: Шапка-ушанка из норки"></div>' +
         '<div class="st-grid2"><div class="field"><label class="label">Коллекция</label>' + collectionSelect('p-col', (src.collection || '').trim()) + '</div>' +
@@ -1282,14 +1307,17 @@
         '<div class="field"><label class="label">Скидка, %</label><input class="input" id="p-pct" type="number" min="0" max="95" step="1" placeholder="0"></div>' +
         '<div class="field"><label class="label">Цена до скидки</label><input class="input" id="p-old" type="number" min="0" step="0.01" value="' + val(src.old_price) + '" placeholder="Считается сама"></div>' +
         '<div class="field"><label class="label">Валюта</label><select class="select-native" id="p-cur">' + CURRENCIES.map(function (c) { return '<option value="' + c[0] + '"' + ((src.currency || 'KGS') === c[0] ? ' selected' : '') + '>' + c[1] + '</option>'; }).join('') + '</select></div>' +
-        '</div><div class="hint" id="p-disc"></div></div>' +
+        '</div><div class="hint" id="p-disc"></div>' +
+        (SHOW_DURATION ? '<div class="st-grid4" style="margin-top:8px"><div class="field"><label class="label">Длительность, мин</label><input class="input" id="p-dur" type="number" min="5" max="1440" step="5" value="' + val(src.duration_min) + '" placeholder="Например: 60"></div></div>' +
+          '<div class="hint">По длительности онлайн-запись считает свободное время мастера.</div>' : '') +
+        '</div>' +
 
-        '<div class="st-psec"><div class="st-psec-h">Размеры</div><div class="st-sizes" id="p-sizes"></div>' +
+        '<div class="st-psec"' + (SHOW_SIZES ? '' : ' style="display:none"') + '><div class="st-psec-h">' + esc(SIZES_LABEL) + '</div><div class="st-sizes" id="p-sizes"></div>' +
         '<div class="st-sizeadd"><input class="input" id="p-size" placeholder="Добавить размер и Enter: 46, M, 110"><button class="btn btn-sm" type="button" id="p-size-add">' + icon('plus') + '</button></div>' +
         '<div class="st-quick" style="margin-top:8px">' + SIZE_PRESETS.map(function (p, i) { return '<button type="button" data-ps="' + i + '">' + esc(p[0]) + '</button>'; }).join('') +
         '<button type="button" id="p-size-clear">Очистить</button></div></div>' +
 
-        '<div class="st-psec"><div class="st-psec-h st-psec-hrow"><span>Остаток</span><div class="st-seg st-seg-text"><button type="button" data-sm="total">Одним числом</button><button type="button" data-sm="variants">По размерам и цветам</button></div></div>' +
+        '<div class="st-psec"' + (SHOW_STOCK ? '' : ' style="display:none"') + '><div class="st-psec-h st-psec-hrow"><span>Остаток</span><div class="st-seg st-seg-text"><button type="button" data-sm="total">Одним числом</button><button type="button" data-sm="variants">По размерам и цветам</button></div></div>' +
         '<div id="p-stock-total"><div class="st-grid2">' +
         '<div class="field"><label class="label">Остаток, шт.</label><input class="input" id="p-stock" type="number" min="0" step="1" value="' + val(stockMode === 'total' ? src.stock_qty : '') + '" placeholder="Пусто — не считаем"></div>' +
         '<div class="field"><label class="label">Наличие</label><select class="select-native" id="p-instock"><option value="1">Есть в наличии</option><option value="0"' + (src.in_stock === false ? ' selected' : '') + '>Нет в наличии</option></select></div>' +
@@ -1303,7 +1331,7 @@
         '<div class="st-psec"><div class="st-psec-h">Описание и характеристики</div>' +
         '<div class="field"><label class="label">Описание</label><textarea class="textarea" id="p-body" rows="3" placeholder="Материал, фасон, для кого, уход. Бот возьмёт отсюда 1–2 фразы в карточку">' + val(src.body) + '</textarea></div>' +
         '<div class="field"><label class="label">Характеристики</label><div id="e-attrs"></div><button class="btn btn-ghost btn-sm" type="button" id="e-attr-add">' + icon('plus') + '<span>Добавить характеристику</span></button>' +
-        '<div class="st-quick" style="margin-top:6px">' + ['Цвет', 'Материал', 'Сезон', 'Пол', 'Возраст', 'Бренд', 'Страна'].map(function (k) { return '<button type="button" data-ak2="' + k + '">' + k + '</button>'; }).join('') + '</div></div>' +
+        '<div class="st-quick" style="margin-top:6px">' + ATTR_QUICK.map(function (k) { return '<button type="button" data-ak2="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') + '</div></div>' +
         '<div class="field"><label class="label">Ключевые слова</label><input class="input" id="p-kw" value="' + val(src.keywords) + '" placeholder="через запятую: ушанка, зимняя шапка, мех">' +
         '<div class="hint">По ним бот находит позицию, если клиент назвал её по-другому.</div></div></div>' +
 
@@ -1579,6 +1607,7 @@
         price: p === '' ? null : Number(p), old_price: o === '' ? null : Number(o), currency: $('#p-cur').value,
         sizes: sizes.slice(), media_file_ids: picked.slice(), attributes: obj, is_active: $('#p-active').checked, in_prompt: false
       };
+      if ($('#p-dur')) { var dur = parseInt($('#p-dur').value, 10); body.duration_min = dur > 0 ? dur : null; }
       if (stockMode === 'variants' && buildVariants().length) {
         body.variants = buildVariants();
       } else {

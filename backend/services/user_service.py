@@ -28,7 +28,16 @@ def profile_fields(user) -> dict:
         "business_niche": getattr(user, "business_niche", None),
         "business_niche_other": getattr(user, "business_niche_other", None),
         "onboarded_at": getattr(user, "onboarded_at", None),
+        "business": _business(user),
     }
+
+
+def _business(user):
+    try:
+        from backend.services.business_profile import resolve
+        return resolve(user)
+    except Exception:
+        return None
 
 
 class UserService:

@@ -11,7 +11,7 @@
 
 import uuid
 from sqlalchemy import Column, String, Boolean, JSON, DateTime, Integer, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .pinecone_config import PineconeConfig
@@ -105,6 +105,7 @@ class User(Base, BaseModel):
     business_niche = Column(String(40), nullable=True, index=True)   # ключ ниши (services/niche_presets.py)
     business_niche_other = Column(String(120), nullable=True)        # «Другое»: сфера своими словами
     onboarded_at = Column(DateTime(timezone=True), nullable=True)    # прошёл экран «Чем занимается ваш бизнес?»
+    business_profile = Column(JSONB, nullable=True)                  # ответы на вопросы ниши, модули (services/business_profile.py)
     # Мини-CRM админа по клиентам платформы: new | contacted | setup | paying | churned
     admin_status = Column(String(20), nullable=True, index=True)
     admin_note = Column(Text, nullable=True)                         # последняя заметка (полная лента — admin_audit_log)

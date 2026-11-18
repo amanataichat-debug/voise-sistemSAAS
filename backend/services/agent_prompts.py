@@ -431,6 +431,32 @@ def build_pipeline_stages_block(agent_config) -> str:
     )
 
 
+def build_business_block(agent_config, db=None) -> str:
+    """
+    Сфера бизнеса владельца и включённые модули (ветка 1811-niche-admin-speed) — только факты из
+    профиля, без правил ниши: что спрашивать у клиента, лежит в инструкциях владельца (слой клиента).
+    """
+    if db is None or agent_config is None:
+        return ""
+    try:
+        from backend.models.user import User
+        from backend.services.business_profile import modules_of
+        from backend.services.niche_catalog import niche_title
+        user = db.query(User).filter(User.id == agent_config.user_id).first()
+        if not user or not getattr(user, "business_niche", None):
+            return ""
+        mods = modules_of(user)
+        on = [label for key, label in (("booking", "онлайн-запись"), ("orders", "заказы"), ("crm", "воронка CRM"))
+              if mods.get(key)]
+        return ("\n\n## Сфера бизнеса\n"
+                f"Ниша владельца: {niche_title(user.business_niche, user.business_niche_other)}."
+                + (" Включено: " + ", ".join(on) + "." if on else "")
+                + " Учитывай сферу в ответах клиентам и в отчётах владельцу.")
+    except Exception as e:
+        logger.warning(f"[PROMPT] business block skipped: {e}")
+        return ""
+
+
 def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=None) -> str:
     """
     Собирает финальный промпт оркестратора из шаблона + данных агента.
@@ -451,6 +477,7 @@ def build_orchestrator_prompt(agent_config, include_time_block: bool = True, db=
     )
     prompt = (
         base
+        + build_business_block(agent_config, db)
         + build_pipeline_stages_block(agent_config)
         + build_knowledge_base_block(agent_config, db)
         + build_webhook_block(agent_config)

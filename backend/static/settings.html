@@ -1136,6 +1136,17 @@
     
     <!-- Контейнер для содержимого -->
     <div class="content-container">
+
+      <!-- Мой бизнес (ветка 1811-niche-admin-speed): ниша, модули, «изменить» → экран выбора сферы -->
+      <div class="settings-section" id="business">
+        <div class="section-header">
+          <h2 class="section-title"><i class="fas fa-briefcase"></i> Мой бизнес</h2>
+        </div>
+        <p class="section-description">Сфера бизнеса настраивает кабинет: воронку CRM, каталог, онлайн-запись, заказы и бота.</p>
+        <div id="biz-box" style="display:flex;flex-direction:column;gap:14px">
+          <div class="skeleton" style="height:56px"></div>
+        </div>
+      </div>
       
       <!-- Профиль пользователя -->
       <div class="settings-section">
@@ -2483,5 +2494,52 @@
       if (location.hash === '#wallet') setTimeout(function () { var el = document.getElementById('wallet'); if (el) el.scrollIntoView(); }, 300);
     })();
   </script>
+<script>
+  // «Мой бизнес»: текущая ниша, модули (запись / CRM-воронка / заказы), смена ниши
+  (function () {
+    function esc(x) { var d = document.createElement('div'); d.textContent = x == null ? '' : String(x); return d.innerHTML; }
+    function tok() { try { return localStorage.getItem('auth_token'); } catch (e) { return null; } }
+    function call(method, path, body) {
+      return fetch('/api' + path, { method: method, headers: Object.assign({ Authorization: 'Bearer ' + tok() }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.detail || d.message || 'Ошибка'); return d; }); });
+    }
+    var MODS = [['booking', 'Онлайн-запись', 'Календарь записей, ссылка для клиентов, бот записывает сам'],
+      ['crm', 'CRM-воронка', 'Этапы сделок. Выключена — остаётся клиентская база с историей'],
+      ['orders', 'Заказы', 'Заказы из переписки: оплата, сборка, доставка']];
+    function draw(b) {
+      var box = document.getElementById('biz-box'); if (!box || !b) return;
+      var niche = b.niche ? '<span style="font-size:22px">' + esc(b.icon || '') + '</span> <b>' + esc(b.niche_title) + '</b>' : '<b>Сфера не выбрана</b>';
+      box.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--vf-border,#e2e7f0);border-radius:14px">' +
+        '<div style="display:flex;align-items:center;gap:8px;font-size:15px">' + niche + '</div>' +
+        '<button type="button" class="btn btn-primary" id="biz-change">' + (b.niche ? 'Изменить сферу' : 'Выбрать сферу') + '</button></div>' +
+        MODS.map(function (m) {
+          var on = !!(b.modules || {})[m[0]];
+          return '<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid var(--vf-border,#e2e7f0);border-radius:14px;cursor:pointer">' +
+            '<span><b>' + m[1] + '</b><br><span style="font-size:13px;color:var(--vf-text-3,#63738b)">' + m[2] + '</span></span>' +
+            '<input type="checkbox" data-mod="' + m[0] + '"' + (on ? ' checked' : '') + ' style="width:20px;height:20px"></label>';
+        }).join('');
+      document.getElementById('biz-change').onclick = function () {
+        var go = function () { window.VoksyBusinessSetup.open({ edit: true, onDone: load }); };
+        if (window.VoksyBusinessSetup) return go();
+        var sc = document.createElement('script'); sc.src = '/static/js/business-setup.js'; sc.onload = go; document.head.appendChild(sc);
+      };
+      Array.prototype.forEach.call(box.querySelectorAll('[data-mod]'), function (cb) {
+        cb.onchange = function () {
+          var mods = {}; mods[cb.getAttribute('data-mod')] = cb.checked;
+          call('PUT', '/business/modules', { modules: mods }).then(function (nb) {
+            try { localStorage.setItem('vf_business', JSON.stringify(nb)); } catch (e) { /* ignore */ }
+            document.dispatchEvent(new CustomEvent('vf:business', { detail: nb }));
+          }).catch(function (e) { cb.checked = !cb.checked; alert(e.message); });
+        };
+      });
+    }
+    function load() { call('GET', '/business/profile').then(function (b) {
+      try { localStorage.setItem('vf_business', JSON.stringify(b)); } catch (e) { /* ignore */ }
+      document.dispatchEvent(new CustomEvent('vf:business', { detail: b }));
+      draw(b);
+    }).catch(function () { var box = document.getElementById('biz-box'); if (box) box.innerHTML = ''; }); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
+  })();
+</script>
 </body>
 </html>

@@ -155,6 +155,29 @@ async def notify_signup(db: Session, user_id) -> bool:
     return ok
 
 
+async def notify_signup_new_session(user_id) -> bool:
+    """
+    После выбора ниши — сообщение сразу (уже с нишей), но только для свежей регистрации:
+    старый клиент, впервые заполнивший нишу, «новой регистрацией» не считается.
+    """
+    from backend.db.session import SessionLocal
+    if not enabled():
+        return False
+    db = SessionLocal()
+    try:
+        fresh = db.execute(text("SELECT created_at >= :since FROM users WHERE id = :id"),
+                           {"since": datetime.now(timezone.utc) - LOOKBACK, "id": user_id}).scalar()
+        if not fresh:
+            return False
+        return await notify_signup(db, user_id)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[SIGNUP-NOTIFY] after niche failed: {e}")
+        return False
+    finally:
+        db.close()
+
+
 def due_user_ids(db: Session, now: Optional[datetime] = None, limit: int = 20) -> List:
     """Кому пора отправить: зарегистрировались 3 мин – 6 ч назад, сообщения ещё не было."""
     now = now or datetime.now(timezone.utc)

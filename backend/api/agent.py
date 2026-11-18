@@ -1090,6 +1090,19 @@ async def create_agent(
     db.commit()
     db.refresh(agent)
 
+    # 7b. Ниша владельца (ветка 1811-niche-admin-speed): воронка, разделы каталога, инструкции
+    #     переписки и звонков, частые вопросы клиентов — сразу под его бизнес. То, что владелец
+    #     передал в запросе сам, не трогаем (apply_to_agent заполняет только пустое).
+    try:
+        if getattr(current_user, "business_niche", None):
+            from backend.services.business_profile import apply_to_agent
+            apply_to_agent(db, current_user, agent)
+            db.commit()
+            db.refresh(agent)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[AGENT] niche preset not applied to new agent {agent.id}: {e}", exc_info=True)
+
     # 8. Пробный период бота при ПЕРВОМ создании: 3 дня уровня Старт (режим reactive) +
     #    1500 кредитов. Если trial уже был — не выдаём повторно. Оплаченные Старт и Profi
     #    его не получают: у них свои кредиты в месяц. Автономного агента (Profi) на пробе нет.
@@ -1639,6 +1652,7 @@ class KnowledgeEntryRequest(BaseModel):
     stock_qty: Optional[int] = None
     old_price: Optional[float] = None
     variants: Optional[List[dict]] = None
+    duration_min: Optional[int] = Field(None, ge=0, le=1440)
 
 
 class CatalogBulkRequest(BaseModel):
@@ -1926,6 +1940,7 @@ async def create_knowledge_entry(
         stock_qty=_kb_stock(body.stock_qty) if kind == "product" else None,
         old_price=body.old_price if kind == "product" and body.old_price else None,
         variants=catalog_service.normalize_variants(body.variants) if kind == "product" else None,
+        duration_min=(body.duration_min or None) if kind == "product" else None,
         # Каталог и документы в промпт не вшиваем: их много, они съедят бюджет
         # и замедлят каждый ответ. Они достаются поиском.
         in_prompt=(kind in ("qa", "section")) if body.in_prompt is None else bool(body.in_prompt),
@@ -1963,9 +1978,11 @@ async def update_knowledge_entry(
     data = body.dict(exclude_unset=True)
     for field in ("title", "body", "keywords", "price", "currency", "attributes",
                   "in_stock", "media_file_ids", "in_prompt", "is_active", "position",
-                  "collection", "sizes", "stock_qty", "old_price", "variants"):
+                  "collection", "sizes", "stock_qty", "old_price", "variants", "duration_min"):
         if field in data:
             value = data[field]
+            if field == "duration_min":
+                value = value or None
             if field == "collection":
                 value = _kb_collection(value)
             elif field == "sizes":

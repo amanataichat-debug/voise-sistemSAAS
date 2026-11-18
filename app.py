@@ -317,6 +317,8 @@ app.include_router(subscription_logs.router, prefix="/api/subscription-logs", ta
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 from backend.api import admin_clients as admin_clients_api  # админка «Клиенты»: список, сводка, вход в кабинет клиента
 app.include_router(admin_clients_api.router, prefix="/api/admin", tags=["Admin"])
+from backend.api import business as business_api  # профиль бизнеса: ниша → модули, каталог, воронка, бот
+app.include_router(business_api.router, prefix="/api/business", tags=["Business"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -1875,6 +1877,7 @@ def ensure_user_profile_columns():
             ("business_niche", "VARCHAR(40)"),
             ("business_niche_other", "VARCHAR(120)"),
             ("onboarded_at", "TIMESTAMPTZ"),
+            ("business_profile", "JSONB"),
             ("admin_status", "VARCHAR(20)"),
             ("admin_note", "TEXT"),
             ("admin_next_contact_at", "TIMESTAMPTZ"),
@@ -1891,6 +1894,10 @@ def ensure_user_profile_columns():
             acols = {c['name'] for c in inspector.get_columns('agent_configs')}
             if 'niche_key' not in acols:
                 stmts.append("ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS niche_key VARCHAR(40)")
+        if inspector.has_table('agent_knowledge_entries'):
+            kcols = {c['name'] for c in inspector.get_columns('agent_knowledge_entries')}
+            if 'duration_min' not in kcols:
+                stmts.append("ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS duration_min INTEGER")
         if stmts:
             with engine.begin() as conn:
                 conn.execute(text("SET LOCAL lock_timeout = '15s'"))

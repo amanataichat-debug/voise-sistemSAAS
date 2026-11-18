@@ -124,6 +124,7 @@ class UserResponse(UserBase):
     business_niche: Optional[str] = Field(None, description="Business niche key")
     business_niche_other: Optional[str] = Field(None, description="Niche in the owner's own words")
     onboarded_at: Optional[datetime] = Field(None, description="Business setup screen completed at")
+    business: Optional[Dict[str, Any]] = Field(None, description="Cabinet configuration for the business niche")
     # Запрос сделан админом из кабинета клиента (кнопка «Войти в кабинет» в админке)
     impersonated: bool = Field(False, description="Admin is viewing this account")
     
