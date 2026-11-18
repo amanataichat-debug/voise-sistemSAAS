@@ -353,11 +353,19 @@
     var cached = S.cacheGet('/list');
     var stagesP = S.loadStages();
 
-    function apply(d) { S.agent = (d && d.agents && d.agents[0]) || null; }
+    // Profi открывает общие страницы (CRM клиентов агента) с ?agent_id= — выбираем этого агента, иначе первого
+    var wantedAgent = new URLSearchParams(location.search).get('agent_id');
+    function apply(d) {
+      var list = (d && d.agents) || [];
+      S.agent = list.filter(function (a) { return a.id === wantedAgent; })[0] || list[0] || null;
+      S.mode = (d && d.agent_mode) || '';
+      // у Profi агентов может быть несколько: запросы страницы — к выбранному
+      S.agentId = S.mode === 'full' && S.agent ? S.agent.id : null;
+    }
     function allowed(d) {
       var mode = (d && d.agent_mode) || '';
       try { localStorage.setItem('vf_agent_mode', mode); } catch (e) { /* ignore */ }
-      if (preview || mode === 'reactive') return true;
+      if (preview || mode === 'reactive' || (opts.allowFull && mode === 'full')) return true;
       location.replace(mode === 'full' ? '/static/agent.html' : '/static/dashboard.html#plans');
       return false;
     }
@@ -368,7 +376,8 @@
       return r;
     });
 
-    if (cached && cached.agent_mode === 'reactive' && cached.agents && cached.agents.length) {
+    if (cached && (cached.agent_mode === 'reactive' || (opts.allowFull && cached.agent_mode === 'full'))
+        && cached.agents && cached.agents.length) {
       apply(cached);
       var shown = JSON.stringify(cached.agents);
       fresh.then(function (r) {
@@ -387,8 +396,13 @@
     });
   };
 
-  // Пустое состояние «бот не создан»
+  // Пустое состояние «бот не создан» (у Profi — «агент не создан», ведёт на страницу агента)
   S.noBotHtml = function () {
+    if (S.mode === 'full') {
+      return '<div class="st-empty-big"><div class="st-empty-ic">' + icon('headset') + '</div>' +
+        '<h2>Сначала создайте агента</h2><p>Клиентов в CRM заводит агент: из звонков, WhatsApp, Telegram и Instagram.</p>' +
+        '<a class="btn btn-primary" href="/static/agent.html">' + icon('plus') + '<span>Создать агента</span></a></div>';
+    }
     return '<div class="st-empty-big">' +
       '<div class="st-empty-ic">' + icon('bot') + '</div>' +
       '<h2>Сначала создайте чат-бота</h2>' +

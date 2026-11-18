@@ -68,7 +68,7 @@ def tabs_for(mode: Optional[str], modules: Dict[str, bool], catalog_title: str) 
     Главная · Чаты · (Записи | Заказы | каталог ниши) · Клиенты · Ещё.
     """
     chats = {"id": "inbox", "href": "/static/inbox.html", "icon": "inbox", "label": "Чаты", "ky": "Чаттар"}
-    clients_href = "/static/crm.html" if mode == "full" else "/static/start-crm.html"
+    clients_href = "/static/start-crm.html"   # CRM клиентов агента — одна для Старта и Profi
     clients = {"id": "clients", "href": clients_href, "icon": "users", "label": "Клиенты", "ky": "Кардарлар"}
     more = {"id": "more", "icon": "menu", "label": "Ещё", "ky": "Дагы"}
     booking = {"id": "booking", "href": "/static/booking.html", "icon": "calendar", "label": "Записи", "ky": "Жазуулар"}

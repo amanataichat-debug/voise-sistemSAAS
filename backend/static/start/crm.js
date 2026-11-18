@@ -21,7 +21,9 @@
   document.addEventListener('DOMContentLoaded', function () {
     root = document.getElementById('page');
     S.initMobileMenu();
-    S.boot().then(function (ok) {
+    // CRM клиентов агента — общая для Старта и Profi (ветка 1811-niche-admin-speed): у Profi раньше «CRM»
+    // открывала старую базу контактов голосовых ассистентов, а клиенты агента жили в окнах страницы агента
+    S.boot({ allowFull: true }).then(function (ok) {
       if (!ok) return;
       if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
       // Переход из инбокса: ?contact=<id> — открыть карточку, ?stage=<key> — фильтр по стадии
@@ -34,11 +36,16 @@
   });
 
   // ── Каркас ──────────────────────────────────────────────────────────────
+  var PHONE_MQ = window.matchMedia ? window.matchMedia('(max-width: 760px)') : { matches: false };
+  function isPhone() { return PHONE_MQ.matches; }
+
   function render() {
+    var who = S.mode === 'full' ? 'Агент' : 'Бот';
     root.innerHTML =
-      '<div class="st-head"><div><h2>Клиенты и сделки</h2>' +
-      '<p>Бот записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.</p></div>' +
-      '<div class="st-toolbar"><button class="btn" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>' +
+      '<div class="st-head st-crm-head"><div><h2>Клиенты и сделки</h2>' +
+      '<p>' + who + ' записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.' +
+      (S.mode === 'full' ? ' <a href="/static/crm.html" class="st-oldcrm">Контакты голосовых ассистентов →</a>' : '') + '</p></div>' +
+      '<div class="st-toolbar"><button class="btn st-hide-phone" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>' +
       '<button class="btn btn-primary" id="add-client" type="button">' + icon('plus') + '<span>Добавить клиента</span></button></div></div>' +
       '<div class="card st-tabs-card">' +
       '<div class="tabs" id="tabs">' +
@@ -131,6 +138,7 @@
         : 'Клиентов пока нет. Они появятся, когда кто-то напишет боту или позвонит. Можно добавить клиента вручную.') + '</div>';
       return;
     }
+    if (isPhone()) { drawClientsPhone(list); return; }
     list.innerHTML = '<div class="table-wrap"><table class="table st-table"><thead><tr>' +
       '<th>Клиент</th><th>Телефон</th><th>Стадия</th><th>Каналы</th><th class="num">Сделка</th><th>Обновлён</th></tr></thead><tbody>' +
       c.items.map(function (x) {
@@ -147,6 +155,38 @@
       (c.items.length < c.total ? '<div class="st-more"><button class="btn" id="c-more" type="button">Показать ещё</button></div>' : '');
     S.$$('tr[data-id]', list).forEach(function (tr) {
       tr.addEventListener('click', function () { openClient(tr.dataset.id); });
+    });
+    var more = document.getElementById('c-more');
+    if (more) more.addEventListener('click', function () { more.disabled = true; loadClients(false); });
+  }
+
+  // Телефон: список карточками, как контакты в WhatsApp — имя, стадия, канал, когда; справа «позвонить» и
+  // «написать в WhatsApp» одним нажатием. Нажатие на строку — карточка клиента на весь экран.
+  function waLink(phone) {
+    var d = String(phone || '').replace(/\D/g, '');
+    if (d.length === 10 && d[0] === '0') d = '996' + d.slice(1);
+    return d.length >= 11 ? 'https://wa.me/' + d : '';
+  }
+  function telLink(phone) { return 'tel:' + String(phone || '').replace(/[^+\d]/g, ''); }
+  function drawClientsPhone(list) {
+    var c = st.clients;
+    list.innerHTML = '<div class="st-mlist">' + c.items.map(function (x) {
+      var wa = waLink(x.phone);
+      return '<div class="st-mrow" data-id="' + esc(x.id) + '" role="button" tabindex="0">' +
+        '<span class="st-avatar">' + esc(S.initial(x.name || x.phone)) + '</span>' +
+        '<div class="st-mmain"><div class="nm">' + esc(x.name || S.fmtPhone(x.phone) || 'Без имени') +
+        (x.ai_paused_until ? ' <span class="st-pause">пауза</span>' : '') + '</div>' +
+        '<div class="sub">' + S.stageChip(x.status) + '<span class="st-chs">' + S.channelDots(x.channels) + '</span>' +
+        '<span class="when">' + esc(S.fmtDate(x.updated_at || x.created_at)) + '</span></div></div>' +
+        '<div class="st-mact">' +
+        (x.phone ? '<a class="st-mbtn" href="' + esc(telLink(x.phone)) + '" aria-label="Позвонить">' + icon('phone') + '</a>' : '') +
+        (wa ? '<a class="st-mbtn wa" href="' + esc(wa) + '" target="_blank" rel="noopener" aria-label="Написать в WhatsApp">' + icon('message-circle') + '</a>' : '') +
+        '</div></div>';
+    }).join('') + '</div>' +
+      (c.items.length < c.total ? '<div class="st-more"><button class="btn" id="c-more" type="button">Показать ещё</button></div>' : '');
+    S.$$('.st-mrow', list).forEach(function (row) {
+      row.addEventListener('click', function (e) { if (!e.target.closest('.st-mact')) openClient(row.dataset.id); });
+      row.addEventListener('keydown', function (e) { if (e.key === 'Enter') openClient(row.dataset.id); });
     });
     var more = document.getElementById('c-more');
     if (more) more.addEventListener('click', function () { more.disabled = true; loadClients(false); });

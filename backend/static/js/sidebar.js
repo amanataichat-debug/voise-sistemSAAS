@@ -76,7 +76,8 @@
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item' },
     // CRM — таблицы и канбан: на телефоне скрыта (13.11.2026), там работают Инбокс и Каталог
-    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', desktop: true },
+    // CRM — и на телефоне (18.11.2026): список клиентов карточками со звонком и WhatsApp одним нажатием
+    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item' },
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item',
       aliases: ['/static/start-analytics.html'] },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
@@ -102,7 +103,12 @@
     var biz = cachedBusiness();
     var mods = (biz && biz.modules) || {};
     var out = [];
+    var profi = cachedMode() === 'full';
     menu.forEach(function (item) {
+      if (item.id === 'crm-nav-item' && profi) {
+        // Profi: «CRM» — клиенты агента (общая страница со Стартом), а не старая база контактов ассистентов
+        item = Object.assign({}, item, { href: '/static/start-crm.html', aliases: ['/static/crm.html', '/static/crm-contact.html'] });
+      }
       if (item.id === 'crm-nav-item' && biz && biz.niche && mods.crm === false) {
         // CRM-воронка не нужна (салон, магазин): раздел остаётся как «Клиенты» — база с историей
         item = Object.assign({}, item, { label: 'sidebar.clients', def: 'Клиенты' });
@@ -504,16 +510,6 @@
     'background:#ef4444;color:#fff;font:700 10px/17px Inter,sans-serif;text-align:center}',
     '}',
     '@media (min-width: 761px){.vf-tabbar{display:none}}',
-    '.vf-phone-note{position:fixed;inset:0;z-index:850;background:var(--vf-bg,#f6f8fc);display:flex;align-items:center;justify-content:center;padding:24px}',
-    '.vf-phone-note .box{max-width:340px;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}',
-    '.vf-phone-note .ico{width:64px;height:64px;border-radius:20px;background:var(--vf-accent-soft,#eaf0fe);color:var(--vf-accent,#2a5ce8);display:flex;align-items:center;justify-content:center}',
-    '.vf-phone-note .ico .ic{width:30px;height:30px}',
-    '.vf-phone-note h2{margin:0;font-size:19px}',
-    '.vf-phone-note p{margin:0;color:var(--vf-text-3,#63738b);font-size:14px;line-height:1.5}',
-    '.vf-phone-note .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px}',
-    '.vf-phone-note a.b{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 18px;border-radius:12px;background:var(--vf-accent,#2a5ce8);color:#fff;font-weight:600;text-decoration:none}',
-    '.vf-phone-note a.b.ghost{background:#fff;color:var(--vf-text,#0e1729);border:1px solid var(--vf-border,#e2e8f0)}',
-    '.vf-phone-note button.l{border:0;background:none;color:var(--vf-text-4,#93a2b8);font-size:13px;text-decoration:underline;cursor:pointer;margin-top:6px}'
   ].join('');
   var TABS = [
     { id: 'home', href: '/static/dashboard.html', icon: 'house', label: 'Главная', ky: 'Башкы' },
@@ -529,7 +525,7 @@
     { id: 'inbox', href: '/static/inbox.html', icon: 'inbox', label: 'Чаты', ky: 'Чаттар' },
     { id: 'calls', href: '/static/conversations.html', icon: 'phone', label: 'Звонки', ky: 'Чалуулар' },
     { id: 'agent', href: '/static/agent.html', icon: 'headset', label: 'Агент', ky: 'Агент' },
-    { id: 'clients', href: '/static/crm.html', icon: 'users', label: 'Клиенты', ky: 'Кардарлар' },
+    { id: 'clients', href: '/static/start-crm.html', icon: 'users', label: 'Клиенты', ky: 'Кардарлар' },
     { id: 'more', icon: 'menu', label: 'Ещё', ky: 'Дагы' }
   ];
   function activeTab() {
@@ -614,22 +610,9 @@
     if (!refreshUnread.timer) refreshUnread.timer = setInterval(function () { if (!document.hidden) refreshUnread(); }, 60000);
   }
   // CRM на телефоне: таблицы и канбан не помещаются — понятный экран вместо мелкой каши
-  function phoneCrmNote() {
-    if (cachedMode() !== 'reactive' || !isPhone()) return;
-    if (currentPath() !== '/static/start-crm.html') return;
-    try { if (sessionStorage.getItem('vf_crm_phone_ok') === '1') return; } catch (e) { /* ignore */ }
-    var n = document.createElement('div');
-    n.className = 'vf-phone-note';
-    n.innerHTML = '<div class="box"><div class="ico">' + icon('monitor') + '</div><h2>CRM удобнее на компьютере</h2>' +
-      '<p>Таблица клиентов и воронка открываются на ноутбуке или планшете. С телефона клиентам отвечают в Инбоксе, а товары и остатки правят в Каталоге.</p>' +
-      '<div class="row"><a class="b" href="/static/inbox.html">' + icon('inbox') + 'Инбокс</a><a class="b ghost" href="/static/start-bot.html#catalog">' + icon('package') + 'Каталог</a></div>' +
-      '<button type="button" class="l">Всё равно открыть CRM</button></div>';
-    document.body.appendChild(n);
-    n.querySelector('button.l').addEventListener('click', function () {
-      try { sessionStorage.setItem('vf_crm_phone_ok', '1'); } catch (e) { /* ignore */ }
-      n.remove();
-    });
-  }
+  // Раньше здесь была заглушка «CRM удобнее на компьютере» (13.11.2026). С 18.11.2026 у CRM есть вид для
+  // телефона (start/crm.js → drawClientsPhone), заглушка не нужна. Имя функции оставлено для вызовов.
+  function phoneCrmNote() { /* пусто */ }
 
   // ---------------------------------------------------------------------
   // Приложение на рабочем столе (13.11.2026): manifest.json + /static/sw.js.

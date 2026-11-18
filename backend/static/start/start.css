@@ -554,3 +554,30 @@
 /* Вход в Telegram по QR-коду (13.11.2026) */
 .st-tgsteps { margin: 2px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--vf-text-2); max-width: 300px; }
 .st-qr img[alt^="QR-код для входа"] { image-rendering: pixelated; }
+
+/* ── CRM на телефоне (ветка 1811-niche-admin-speed): список карточками, как контакты в мессенджере ── */
+.st-mlist { display: flex; flex-direction: column; margin: 0 -16px; }
+.st-mrow { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--vf-border); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.st-mrow:active { background: var(--vf-surface-2); }
+.st-mrow .st-avatar { width: 42px; height: 42px; font-size: 16px; flex: none; }
+.st-mmain { flex: 1; min-width: 0; }
+.st-mmain .nm { font-weight: 600; font-size: 15px; color: var(--vf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-mmain .sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.st-mmain .sub .st-stage { height: 22px; font-size: 11.5px; flex: none; }
+.st-mmain .sub .when { font-size: 12px; color: var(--vf-text-4); white-space: nowrap; margin-left: auto; }
+.st-mact { display: flex; gap: 8px; flex: none; }
+.st-mbtn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--vf-accent-soft); color: var(--vf-accent); text-decoration: none; }
+.st-mbtn .ic { width: 18px; height: 18px; }
+.st-mbtn.wa { background: #e7f8ef; color: #128c4b; }
+.st-oldcrm { font-size: 12.5px; font-weight: 600; color: var(--vf-accent); text-decoration: none; white-space: nowrap; }
+@media (max-width: 760px) {
+  .st-hide-phone { display: none !important; }
+  .st-crm-head p { display: none; }
+  .st-crm-head h2 { font-size: 18px; }
+  .st-tabs-card .tab[data-tab="pipeline"] { display: none; }    /* перетаскивание карточек — на компьютере */
+  /* overflow: hidden у карточки делал её «окном прокрутки» для липкого поиска — он съезжал на первую строку */
+  .st-crm-head ~ .st-tabs-card { overflow: visible; }
+  #pane-clients .st-toolbar { position: sticky; top: var(--vf-topbar-h, 64px); z-index: 5; background: var(--vf-surface); margin: -16px -16px 0 !important; padding: 10px 16px; border-bottom: 1px solid var(--vf-border); }
+  #pane-clients .st-search { min-width: 0; max-width: none; }
+  #pane-clients #c-total { display: none; }
+}
