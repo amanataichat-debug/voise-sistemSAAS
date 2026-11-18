@@ -454,6 +454,7 @@
         document.dispatchEvent(new CustomEvent('vf:menu', { detail: { mode: mode } }));
         renderTabBar(); phoneCrmNote();
       }
+      renderVoiceFab();
     }
   }
 
@@ -727,11 +728,87 @@
   registerSW();
   window.VoksyInstall = { open: installApp, standalone: standalone };
 
+  // ---------------------------------------------------------------------
+  // «Спросить голосом» (ветка 1811-niche-admin-speed): голосовой помощник владельца на любой странице
+  // кабинета для Старта и Profi — кнопка справа внизу (на телефоне — над нижней панелью). Скрипт и стили
+  // окна (/static/agent/voice-chat.js + /static/css/voice-live.css) грузятся только по нажатию.
+  // На странице агента Profi своя кнопка «Поговорить» в чате, в iframe и на самой голосовой странице — нет.
+  // ---------------------------------------------------------------------
+  var VOICE_FAB_STYLE = [
+    '.vf-voice-fab{position:fixed;right:22px;bottom:22px;z-index:880;display:inline-flex;align-items:center;gap:9px;height:52px;',
+    'padding:0 20px 0 16px;border:0;border-radius:999px;cursor:pointer;color:#fff;font:650 14.5px/1 Inter,system-ui,sans-serif;',
+    'background:linear-gradient(135deg,#3b6dff 0%,#6d3ff0 100%);box-shadow:0 12px 30px -8px rgba(76,92,255,.6),0 2px 6px rgba(15,23,42,.15);',
+    'transition:transform .15s,box-shadow .15s;-webkit-tap-highlight-color:transparent}',
+    '.vf-voice-fab:hover{transform:translateY(-2px);box-shadow:0 16px 36px -8px rgba(76,92,255,.7),0 2px 6px rgba(15,23,42,.15)}',
+    '.vf-voice-fab:active{transform:scale(.96)}',
+    '.vf-voice-fab:focus-visible{outline:3px solid #a5b8ff;outline-offset:3px}',
+    '.vf-voice-fab .ic{width:21px;height:21px}',
+    '.vf-voice-fab .vf-vf-wave{display:inline-flex;align-items:center;gap:2px;height:18px}',
+    '.vf-voice-fab .vf-vf-wave i{width:3px;border-radius:2px;background:#fff;animation:vf-vf-w 1.2s ease-in-out infinite}',
+    '.vf-voice-fab .vf-vf-wave i:nth-child(1){height:8px}.vf-voice-fab .vf-vf-wave i:nth-child(2){height:16px;animation-delay:.15s}',
+    '.vf-voice-fab .vf-vf-wave i:nth-child(3){height:11px;animation-delay:.3s}.vf-voice-fab .vf-vf-wave i:nth-child(4){height:6px;animation-delay:.45s}',
+    '@keyframes vf-vf-w{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1)}}',
+    '.vf-voice-fab.busy{opacity:.8;cursor:wait}',
+    '@media (max-width:760px){.vf-voice-fab{right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));height:54px;width:54px;padding:0;',
+    'justify-content:center}.vf-voice-fab span.t{display:none}',
+    'body:has(.bk-fab) .vf-voice-fab{bottom:calc(146px + env(safe-area-inset-bottom,0px))}}',
+    'body:not(.vf-has-tabbar) .vf-voice-fab{bottom:calc(18px + env(safe-area-inset-bottom,0px))}',
+    'body.vv-open .vf-voice-fab,body.modal-open .vf-voice-fab{display:none}',
+    '@media (prefers-reduced-motion:reduce){.vf-voice-fab .vf-vf-wave i{animation:none}}'
+  ].join('');
+  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html', '/static/inbox.html'];
+  function renderVoiceFab() {
+    var mode = cachedMode();
+    var old = document.getElementById('vf-voice-fab');
+    var allowed = (mode === 'reactive' || mode === 'full') && window.top === window.self && VOICE_SKIP.indexOf(currentPath()) < 0
+      && !!token();
+    if (!allowed) { if (old) old.remove(); return; }
+    if (old || !document.body) return;
+    if (!document.getElementById('vf-voice-fab-style')) {
+      var st = document.createElement('style'); st.id = 'vf-voice-fab-style'; st.textContent = VOICE_FAB_STYLE;
+      document.head.appendChild(st);
+    }
+    var ky = lang() === 'ky';
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = 'vf-voice-fab'; b.className = 'vf-voice-fab';
+    b.setAttribute('aria-label', ky ? 'Агент менен сүйлөшүү' : 'Поговорить с агентом голосом');
+    b.title = ky ? 'Агенттен үн менен сураңыз: отчёт, ким жазды, ким жазылды' : 'Спросите агента голосом: отчёт, кто писал, кто записан';
+    b.innerHTML = '<span class="vf-vf-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="t">' +
+      (ky ? 'Үн менен сураңыз' : 'Спросить голосом') + '</span>';
+    b.addEventListener('click', openOwnerVoice);
+    document.body.appendChild(b);
+  }
+  function loadVoiceUi(cb) {
+    if (window.VoksyVoice) { cb(); return; }
+    if (!document.getElementById('vf-voice-css')) {
+      var l = document.createElement('link'); l.id = 'vf-voice-css'; l.rel = 'stylesheet'; l.href = '/static/css/voice-live.css';
+      document.head.appendChild(l);
+    }
+    var sc = document.createElement('script');
+    sc.src = '/static/agent/voice-chat.js';
+    sc.onload = cb;
+    sc.onerror = function () { var b = document.getElementById('vf-voice-fab'); if (b) b.classList.remove('busy'); };
+    document.head.appendChild(sc);
+  }
+  function openOwnerVoice() {
+    var b = document.getElementById('vf-voice-fab');
+    if (b) b.classList.add('busy');
+    loadVoiceUi(function () {
+      if (b) b.classList.remove('busy');
+      if (!window.VoksyVoice || window.VoksyVoice.isOpen()) return;
+      window.VoksyVoice.open({
+        agentId: null, token: token, title: lang() === 'ky' ? 'Үн жардамчы' : 'Голосовой помощник',
+        onCredits: function () { location.href = cachedMode() === 'full' ? '/static/agent.html' : '/static/start-bot.html#credits'; }
+      });
+    });
+  }
+  window.VoksyOwnerVoice = { open: openOwnerVoice };
+
   function init() {
     if (redirectStartPages()) return;
     var nav = renderNav();
-    if (document.body) { renderTabBar(); phoneCrmNote(); renderInstallUI(); }
-    else document.addEventListener('DOMContentLoaded', function () { renderTabBar(); phoneCrmNote(); renderInstallUI(); });
+    if (document.body) { renderTabBar(); phoneCrmNote(); renderInstallUI(); renderVoiceFab(); }
+    else document.addEventListener('DOMContentLoaded', function () { renderTabBar(); phoneCrmNote(); renderInstallUI(); renderVoiceFab(); });
     addSpeculation();
     renderLangSwitch();
     if (!nav) return;

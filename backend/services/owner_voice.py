@@ -262,6 +262,24 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "get_bookings",
+        "behavior": "BLOCKING",
+        "description": (
+            "Онлайн-запись: кто записан на день (время, клиент, услуга, мастер, пришёл или нет) и где есть "
+            "свободное время. Для «кто сегодня записан», «сколько записей завтра», «кто к Айдане в пятницу», "
+            "«есть окно сегодня». Отвечает мгновенно и показывает список на экране."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "day": {"type": "string", "description": "today, tomorrow или дата ГГГГ-ММ-ДД"},
+                "days": {"type": "integer", "description": "Сколько дней показать, 1–7 (по умолчанию 1)"},
+                "master": {"type": "string", "description": "Имя мастера / врача, если спросили про конкретного"},
+            },
+            "required": ["day"],
+        },
+    },
+    {
         "name": "ask_agent",
         "behavior": "NON_BLOCKING",
         "description": (
@@ -315,7 +333,8 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
 ]
-FAST_FUNCTIONS = {"get_stats", "get_report", "get_balance", "client_info", "list_dialogs", "get_schedule"}
+FAST_FUNCTIONS = {"get_stats", "get_report", "get_balance", "client_info", "list_dialogs", "get_schedule",
+                  "get_bookings"}
 FUNCTION_NAMES = [f["name"] for f in GEMINI_FUNCTIONS]
 
 
@@ -383,6 +402,7 @@ def build_brief(db, user, agent, now: Optional[datetime] = None) -> str:
     safe("calls", lambda: _brief_calls(db, agent, day_start, today_bk))
     safe("tasks", lambda: _brief_tasks(db, agent, now, today_bk))
     safe("funnel", lambda: _brief_funnel(db, agent))
+    safe("bookings", lambda: _brief_bookings(db, user, now))
     safe("money", lambda: "Деньги: " + _money_sentence(balances(db, user, agent)) +
          ". О деньгах подробнее — get_balance; сам про них не заговаривай, если не спросили и ничего не кончается.")
 
@@ -884,6 +904,138 @@ def fast_get_schedule(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
                                for x in items[:6]]}}
 
 
+# ---------------------------------------------------------------- онлайн-запись (ветка 1811-niche-admin-speed)
+_BOOKING_STATUS = {"booked": "записан", "confirmed": "подтвердил", "arrived": "пришёл", "no_show": "не пришёл",
+                   "cancelled": "отменил"}
+
+
+def booking_on(db, user) -> bool:
+    """Запись включена профилем бизнеса или у владельца уже есть записи (выключил модуль — история остаётся)."""
+    try:
+        from backend.services.business_profile import modules_of
+        if modules_of(user).get("booking"):
+            return True
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        return db.execute(text("SELECT 1 FROM bookings WHERE user_id = :u LIMIT 1"), {"u": str(user.id)}).first() is not None
+    except Exception:
+        db.rollback()
+        return False
+
+
+def _match_master(resources, master: Optional[str]):
+    m = (master or "").strip().lower()
+    if not m:
+        return None
+    for r in resources:
+        name = (r.name or "").lower()
+        if m == name or m in name or (name and name.split()[0][:4] == m[:4]):
+            return r
+    return None
+
+
+def _booking_line(b, names: Dict[str, str], with_day: bool = False) -> str:
+    from backend.services import booking_service as bs
+    loc = bs.to_local(b.start_at)
+    when = (f"{WEEKDAYS_SHORT[loc.weekday()]} {loc:%d.%m} " if with_day else "") + f"{loc:%H:%M}"
+    who = b.client_name or "клиент"
+    what = ", ".join(x for x in (b.service_title, names.get(str(b.resource_id)) and f"мастер {names.get(str(b.resource_id))}") if x)
+    return f"{when} {who}" + (f" — {what}" if what else "") + (f" ({_BOOKING_STATUS.get(b.status, b.status)})"
+                                                               if b.status not in ("booked",) else "")
+
+
+def fast_get_bookings(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Кто записан на день(и): время, клиент, услуга, мастер, статус + свободное время сегодня/завтра."""
+    from backend.services import booking_service as bs
+
+    if not booking_on(db, user):
+        return {"ok": True, "enabled": False,
+                "message": "Онлайн-запись не подключена. Её включают в настройках: «Мой бизнес» → модули."}
+    try:
+        day = bs.parse_day(args.get("day"))
+    except bs.BookingError:
+        day = bs.parse_day(None)
+    try:
+        n_days = max(1, min(int(args.get("days") or 1), 7))
+    except (TypeError, ValueError):
+        n_days = 1
+    resources = bs.resources(db, user.id, active_only=False)
+    names = {str(r.id): r.name for r in resources}
+    master = _match_master(resources, args.get("master"))
+    if args.get("master") and master is None:
+        return {"ok": True, "found_master": False,
+                "message": f"Мастера «{args.get('master')}» не нашёл. Есть: " + ", ".join(r.name for r in resources if r.is_active)}
+    start, _ = bs.day_bounds(day)
+    rows = bs.list_bookings(db, user.id, start, start + timedelta(days=n_days),
+                            resource_id=master.id if master else None, include_cancelled=False)
+    today = bs.to_local(bs.now_utc()).date()
+    if day == today and n_days == 1:
+        label = "сегодня"
+    elif day == today + timedelta(days=1) and n_days == 1:
+        label = "завтра"
+    else:
+        label = f"{WEEKDAYS_SHORT[day.weekday()]} {day:%d.%m}" + (f" + {n_days - 1} дн." if n_days > 1 else "")
+    counts: Dict[str, int] = {}
+    revenue = 0.0
+    for b in rows:
+        counts[b.status] = counts.get(b.status, 0) + 1
+        if b.status == "arrived" and b.price:
+            revenue += float(b.price)
+    items = [{"time": f"{bs.to_local(b.start_at):%H:%M}", "date": f"{bs.to_local(b.start_at):%d.%m}",
+              "client": b.client_name or "клиент", "phone": b.client_phone or "", "service": b.service_title or "",
+              "master": names.get(str(b.resource_id), ""), "status": _BOOKING_STATUS.get(b.status, b.status)}
+             for b in rows[:40]]
+    free: List[str] = []
+    if day <= today + timedelta(days=1):
+        try:
+            got = bs.free_slots(db, user, None, master.id if master else None, day, days=1, limit_per_day=4)
+            free = [x["time"] for x in (got[0]["slots"] if got else [])]
+        except Exception as exc:
+            logger.warning(f"[OWNER-VOICE] free slots failed: {exc}")
+            db.rollback()
+    multi = n_days > 1
+    title = f"Записи · {label} ({len(rows)})" + (f" · {master.name}" if master else "")
+    return {
+        "ok": True, "enabled": True, "period": label, "master": master.name if master else None,
+        "total": len(rows), "arrived": counts.get("arrived", 0), "no_show": counts.get("no_show", 0),
+        "waiting": counts.get("booked", 0) + counts.get("confirmed", 0), "revenue": round(revenue),
+        "items": items, "free_slots": free,
+        "summary": (f"{label}: записей {len(rows)}" + (f", пришли {counts.get('arrived', 0)}" if counts.get("arrived") else "")
+                    + (f", не пришли {counts.get('no_show', 0)}" if counts.get("no_show") else "")
+                    + (f"; свободно: {', '.join(free[:3])}" if free else "")),
+        "card": {"type": "list", "title": title,
+                 "subtitle": ("свободно: " + ", ".join(free[:3])) if free else "",
+                 "items": [{"title": f"{(x['date'] + ' ') if multi else ''}{x['time']} · {x['client']}",
+                            "meta": " · ".join(v for v in (x["service"], x["master"]) if v),
+                            "text": x["status"]} for x in items[:12]]
+                 or [{"title": "Записей нет", "meta": ("свободно: " + ", ".join(free[:3])) if free else ""}]},
+    }
+
+
+def _brief_bookings(db, user, now: datetime) -> str:
+    """Записи сегодня и завтра — в сводку, чтобы «кто сегодня придёт» отвечалось сразу."""
+    from backend.services import booking_service as bs
+
+    if not booking_on(db, user):
+        return ""
+    today = bs.to_local(bs.now_utc()).date()
+    resources = bs.resources(db, user.id, active_only=False)
+    names = {str(r.id): r.name for r in resources}
+    out = []
+    for d, word in ((today, "сегодня"), (today + timedelta(days=1), "завтра")):
+        start, end = bs.day_bounds(d)
+        rows = bs.list_bookings(db, user.id, start, end, include_cancelled=False)
+        if not rows:
+            out.append(f"Записи {word}: нет.")
+            continue
+        lines = [_booking_line(b, names) for b in rows[:12]]
+        more = f" …и ещё {len(rows) - 12}" if len(rows) > 12 else ""
+        out.append(f"Записи {word} ({len(rows)}): " + "; ".join(lines) + more + ".")
+    return _section("Онлайн-запись (подробно и другие дни — get_bookings)", out)
+
+
 # ---------------------------------------------------------------- отчёт-инфографика и балансы
 # Отчёт владелец и слушает, и видит: функция возвращает «сцены» (блоки инфографики) в том порядке,
 # в каком помощник о них рассказывает, и к каждой — слова-подсказки (cue). Окно подсвечивает сцену,
@@ -899,6 +1051,7 @@ REPORT_CUES: Dict[str, List[str]] = {
     "funnel": ["воронк", "этап", "сделк", "срм", "crm", "новых клиент"],
     "tasks": ["задач", "заплан", "календар", "напомин", "завтра", "созвон"],
     "money": ["баланс", "кошел", "кредит", "хватит", "попол", "на счету", "деньг"],
+    "bookings": ["записей", "записал", "визит", "пришл", "не пришл", "неявк", "выручк"],
 }
 
 
@@ -1124,6 +1277,23 @@ def fast_get_report(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
                                     items=[{"title": f"{x['when']} · {x['what']}", "meta": x["client"],
                                             "text": x["title"]} for x in plans[:5]]))
 
+    book = None
+    try:
+        if booking_on(db, user):
+            from backend.services import booking_service as bs
+            book = bs.stats(db, str(user.id), since.replace(tzinfo=timezone.utc), until.replace(tzinfo=timezone.utc))
+    except Exception as exc:
+        logger.warning(f"[OWNER-VOICE] report bookings failed: {exc}")
+        db.rollback()
+        book = None
+    if book is not None:
+        scenes.append(_report_scene("bookings", "Онлайн-запись", "tiles", tiles=[
+            {"label": "Записей", "value": book.get("total", 0), "sub": f"по ссылке {book.get('online', 0)}"},
+            {"label": "Пришли", "value": book.get("arrived", 0), "sub": "клиентов"},
+            {"label": "Не пришли", "value": book.get("no_show", 0), "sub": "неявки", "accent": bool(book.get("no_show"))},
+            {"label": "Выручка", "value": f"{int(book.get('revenue') or 0):,}".replace(",", " ") + " сом", "sub": "по визитам"},
+        ]))
+
     money = balances(db, user, agent)
     scenes.append(_report_scene("money", "Балансы", "balance", rows=_money_rows(money)))
 
@@ -1144,6 +1314,10 @@ def fast_get_report(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
     if plans:
         script.append(f"Запланировано {len(plans)}: ближайшее — {plans[0]['when']}, {plans[0]['what']}, "
                       f"{plans[0]['client']}")
+    if book is not None:
+        script.append(f"Записей {book.get('total', 0)}" + (f", пришли {book.get('arrived', 0)}" if book.get("arrived") else "")
+                      + (f", не пришли {book.get('no_show', 0)}" if book.get("no_show") else "")
+                      + (f", выручка {int(book.get('revenue') or 0)} сом" if book.get("revenue") else ""))
     script.append(_money_sentence(money))
 
     return {
@@ -1226,6 +1400,10 @@ def dashboard_cards(db, user, agent, now: Optional[datetime] = None) -> List[Dic
     card = safe("today", today_card)
     if card:
         cards.append(card)
+    if booking_on(db, user):
+        book = safe("bookings", lambda: fast_get_bookings(db, user, agent, {"day": "today"}))
+        if book and book.get("total"):
+            cards.append(dict(book["card"], title=f"Записи сегодня ({book['total']})"))
     if waiting_items:
         cards.append({"type": "list", "title": f"Ждут ответа ({waiting_total})", "items": waiting_items})
 
@@ -1295,6 +1473,7 @@ FAST_IMPL = {
     "client_info": fast_client_info,
     "list_dialogs": fast_list_dialogs,
     "get_schedule": fast_get_schedule,
+    "get_bookings": fast_get_bookings,
 }
 
 
@@ -1337,7 +1516,7 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 
 ЧТО ТЫ ЗНАЕШЬ И КАК УЗНАЁШЬ
 - Ниже — СВОДКА ДЕЛ на начало разговора: сегодня, по дням за неделю, последние диалоги и звонки, задачи, воронка. На «дай отчёт», «что сегодня», «сколько звонков вчера», «как прошла неделя», «кто писал», «что по задачам» отвечай из неё сразу, без функций.
-- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_report — весь отчёт за период; get_stats — только цифры; get_balance — деньги: кошелёк, кредиты, тариф; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано.
+- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_report — весь отчёт за период; get_stats — только цифры; get_balance — деньги: кошелёк, кредиты, тариф; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано; get_bookings — кто записан (онлайн-запись) на день, к какому мастеру, и где есть свободное время.
 - Владелец любит видеть цифры: на вопрос о цифрах за любой период, о клиенте, о переписке, о планах или о деньгах — вызывай быструю функцию, даже если ответ есть в сводке (сводка — чтобы ты не ошибся и знал общую картину).
 - «Дай отчёт», «что нового», «как дела», «итоги дня (недели, месяца)» — это get_report за нужный период. Одна функция вместо нескольких: в ней уже и звонки, и переписка, и кто ждёт ответа, и воронка, и планы, и балансы.
 - ОТЧЁТ РАССКАЗЫВАЙ ПО ПОРЯДКУ поля script: сначала звонки, потом переписка, по дням, кто ждёт ответа, воронка, планы, деньги. На экране блоки инфографики загораются под твою речь — поэтому называй блок словами («звонков…», «сообщений…», «ждут ответа…», «в воронке…», «запланировано…», «в кошельке…») и не перескакивай. Своими словами, по одной короткой фразе на блок; пустые блоки пропускай. Если владелец просил только часть («только звонки») — расскажи её и остановись.
@@ -1345,7 +1524,7 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 - Ничего не выдумывай: нет в сводке и в ответе функции — значит не знаешь, так и скажи.
 - Пришёл ответ — перескажи главное своими словами, коротко. На экране владелец видит карточку с цифрами — не зачитывай всё подряд, назови главное.
 
-ДЕЙСТВИЯ (написать или отправить клиенту, позвонить, поставить или перенести задачу, сменить этап, заметка, пауза бота, событие в календаре)
+ДЕЙСТВИЯ (написать или отправить клиенту, позвонить, поставить или перенести задачу, записать клиента или перенести и отменить запись, сменить этап, заметка, пауза бота, событие в календаре)
 - Сначала одной фразой повтори, что сделаешь: кому, через какой канал, что именно, когда. Например: «Пишу Нурлану в WhatsApp, что вы перезвоните в три. Отправляю?»
 - Только после явного «да» владельца вызови do_action с confirmed=true и той же командой полностью. Без «да» — не вызывай. Сказал «нет» или поправил — уточни и повтори заново.
 - После выполнения коротко скажи, что сделано. Если оркестратор вернул вопрос или ошибку — передай владельцу своими словами.
@@ -1353,6 +1532,13 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 - Отчёт или сводку самому владельцу в Telegram — send_to_telegram. Подтверждение не нужно, если он сам попросил или согласился на твоё предложение.
 
 Ты не продавец и не консультант клиента: владельцу ничего не продаёшь и не задаёшь лишних вопросов. Не говори о себе как о модели и не называй технологии и провайдеров."""
+
+# Тариф Старт (agent_mode == "reactive"): голос тот же, но действия — как у чата владельца на Старте
+# (agent_mode.check_tool в оркестраторе всё равно не даст лишнего — эта строка, чтобы модель не обещала).
+START_TARIFF_NOTE = ("ТАРИФ СТАРТ. Можно: отчёты и цифры, клиенты и переписка, записи, написать клиенту в WhatsApp, "
+                     "Telegram или Instagram, записать клиента, отправить отчёт в Telegram. Нельзя: звонить клиентам "
+                     "первым, ставить задачи на звонок и массово рассылать — на такую просьбу коротко скажи, что это "
+                     "делает автономный агент на тарифе Profi, и предложи то, что можно (например, написать клиенту).")
 
 GREETING_RULE = "Начало разговора: поздоровайся одной короткой фразой так, как указано в обращении, и скажи, что слушаешь. Отчёт сам не начинай."
 
@@ -1469,6 +1655,12 @@ def build_voice_prompt(user, agent, brief: str, history: Optional[List[Dict[str,
         parts.append(gender)
     if company:
         parts.append(f"Агент и компания: {company}.")
+    try:
+        mode = user.agent_mode()
+    except Exception:
+        mode = None
+    if mode == "reactive":
+        parts.append(START_TARIFF_NOTE)
     parts.append("СВОДКА ДЕЛ:\n" + (brief or "Сводка недоступна — данные узнавай через ask_agent."))
     hist = _history_block(history)
     if hist:

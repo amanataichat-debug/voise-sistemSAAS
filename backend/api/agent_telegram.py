@@ -471,7 +471,7 @@ async def _handle_owner_link(agent: AgentConfig, message: dict, db: Session) -> 
         )
         try:
             owner = db.query(User).filter(User.id == agent.user_id).first()
-            if owner is not None and owner.agent_mode() == "full":
+            if owner is not None and owner.agent_mode() in ("full", "reactive"):
                 await _send_voice_button(agent, chat_id, db)
         except Exception as exc:
             logger.warning(f"[AGENT-TG] voice button after link failed: {exc}")
@@ -518,8 +518,8 @@ async def telegram_webapp_auth(body: WebAppAuthRequest, db: Session = Depends(ge
     owner = db.query(User).filter(User.id == agent.user_id).first()
     if owner is None:
         raise HTTPException(status_code=404, detail="owner_not_found")
-    if owner.agent_mode() != "full":
-        raise HTTPException(status_code=402, detail="profi_required")
+    if owner.agent_mode() not in ("full", "reactive"):   # Старт и Profi (ветка 1811-niche-admin-speed)
+        raise HTTPException(status_code=402, detail="plan_required")
     return {
         "token": ov.make_voice_token(owner.id, agent.id),
         "agent_id": str(agent.id),
@@ -549,7 +549,7 @@ async def _ensure_voice_menu(agent: AgentConfig, chat_id: Optional[str], db: Ses
         return False
     owner = db.query(User).filter(User.id == agent.user_id).first()
     button = _voice_menu_button(agent)
-    if owner is None or owner.agent_mode() != "full" or not button or not agent.telegram_bot_token:
+    if owner is None or owner.agent_mode() not in ("full", "reactive") or not button or not agent.telegram_bot_token:
         return False
     payload: dict = {"menu_button": button}
     if chat_id:
@@ -570,9 +570,9 @@ async def _send_voice_button(agent: AgentConfig, chat_id: str, db: Session, intr
 
     owner = db.query(User).filter(User.id == agent.user_id).first()
     token = agent.telegram_bot_token
-    if owner is None or owner.agent_mode() != "full":
+    if owner is None or owner.agent_mode() not in ("full", "reactive"):
         await AgentTelegramService.send_message(
-            token, chat_id, "Живой голосовой разговор с агентом доступен на тарифе Profi. "
+            token, chat_id, "Живой голосовой разговор с агентом доступен на тарифах Старт и Profi. "
                             "Голосовые сообщения работают и так — просто запишите вопрос.")
         return
     url = ov.webapp_url(agent.id)

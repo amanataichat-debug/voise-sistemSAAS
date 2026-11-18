@@ -352,6 +352,39 @@ def get_schedule(args: Dict[str, Any], now: Optional[datetime] = None) -> Dict[s
                                for x in items[:6]] or [{"title": "Ничего не запланировано", "meta": "", "text": ""}]}}
 
 
+# Записи на замер (у оконной компании «запись» — выезд замерщика): те же поля, что у настоящей get_bookings
+_MEASURES = [
+    ("10:00", "Марат", "Замер: кухня и балкон", "Эрлан"),
+    ("11:30", "Айгерим", "Замер: три комнаты", "Эрлан"),
+    ("14:00", "Нурлан", "Замер: балконный блок", "Бакыт"),
+    ("16:30", "Жылдыз", "Замер: окно в детскую", "Бакыт"),
+    ("18:00", "Самат", "Замер: коттедж, 9 окон", "Эрлан"),
+]
+
+
+def get_bookings(args: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    today = now_bk(now)
+    raw = str(args.get("day") or "today").strip().lower()
+    tomorrow = raw in ("tomorrow", "завтра")
+    day = today + timedelta(days=1) if tomorrow else today
+    n = _wave(day.date(), 41, 2, len(_MEASURES))
+    rows = _MEASURES[:n] if not tomorrow else _MEASURES[-n:]
+    master = str(args.get("master") or "").strip().lower()
+    if master:
+        rows = [r for r in rows if r[3].lower().startswith(master[:4])]
+    now_hm = f"{today:%H:%M}"
+    items = [{"time": t, "date": f"{day:%d.%m}", "client": c, "phone": "", "service": s, "master": m,
+              "status": ("пришёл" if (not tomorrow and t < now_hm) else "записан")} for t, c, s, m in rows]
+    free = [x for x in ("09:00", "12:30", "15:30", "17:00") if not any(r[0] == x for r in rows)][:3]
+    label = "завтра" if tomorrow else "сегодня"
+    return {"ok": True, "demo": True, "enabled": True, "period": label, "total": len(items),
+            "arrived": sum(1 for x in items if x["status"] == "пришёл"), "no_show": 0, "items": items, "free_slots": free,
+            "summary": f"{label}: замеров {len(items)}; свободно: {', '.join(free)}",
+            "card": {"type": "list", "title": f"Записи · {label} ({len(items)})", "subtitle": "свободно: " + ", ".join(free),
+                     "items": [{"title": f"{x['time']} · {x['client']}", "meta": f"{x['service']} · {x['master']}",
+                                "text": x["status"]} for x in items] or [{"title": "Записей нет", "meta": "", "text": ""}]}}
+
+
 _ASK = [
     (("почему", "мало", "упал", "просад"),
      "Меньше заявок, потому что в выходные реклама стоит на паузе: в субботу и воскресенье обращений вдвое меньше, "
@@ -508,7 +541,8 @@ def demo_functions() -> List[Dict[str, Any]]:
 
 DEMO_FUNCTION_NAMES = [f["name"] for f in ov.GEMINI_FUNCTIONS]
 _FAST = {"get_stats": get_stats, "get_report": get_report, "get_balance": get_balance,
-         "client_info": client_info, "list_dialogs": list_dialogs, "get_schedule": get_schedule}
+         "client_info": client_info, "list_dialogs": list_dialogs, "get_schedule": get_schedule,
+         "get_bookings": get_bookings}
 
 
 def run_demo_function(name: str, args: Dict[str, Any]) -> Dict[str, Any]:

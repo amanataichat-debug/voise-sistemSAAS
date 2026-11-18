@@ -7,7 +7,8 @@ transcript.delta, conversation.interrupted, function_call.*). Голос и ра
 (GeminiLiveClient + handle_gemini_messages — те же, что у карточек), знания и действия — функции
 services/owner_voice.py, исполняются своим исполнителем (function_executor), без реестра backend/functions.
 
-Доступ: только владелец агента с режимом full (оплаченный Profi, legacy agent, админ) и кредитами агента.
+Доступ: владелец агента с режимом full (Profi, legacy agent, админ) или reactive (Старт и пробный период)
+и кредитами агента. На Старте действия голосом — те же, что в чате владельца на Старте.
 Деньги: минуты голоса — кредиты агента (voice_live), запросы к оркестратору — кредиты как в чате (voice_chat).
 В конце разговор пишется в историю текстового чата агента (chat_history), чтобы чат продолжил тему.
 """
@@ -60,10 +61,13 @@ def access_error(user, agent) -> Optional[Dict[str, str]]:
     if user is None:
         return {"code": "unauthorized", "message": "Войдите в кабинет заново"}
     if agent is None:
-        return {"code": "not_found", "message": "Агент не найден"}
-    if getattr(user, "agent_mode", None) is None or user.agent_mode() != "full":
-        return {"code": "profi_required",
-                "message": "Голосовой разговор с агентом доступен на тарифе Profi"}
+        return {"code": "not_found",
+                "message": "Сначала создайте агента (на Старте — раздел «Чат-бот»): голосовой помощник работает с его данными"}
+    # Старт и Profi (ветка 1811-niche-admin-speed): на Старте действия ограничены так же, как в чате владельца
+    # (agent_mode.check_tool внутри оркестратора), отчёты, клиенты, записи и сообщения клиентам — доступны.
+    if getattr(user, "agent_mode", None) is None or user.agent_mode() not in ("full", "reactive"):
+        return {"code": "plan_required",
+                "message": "Голосовой разговор с агентом доступен на тарифах Старт и Profi"}
     if (user.credits_balance or 0) < 100:
         return {"code": "insufficient_credits", "message": "Недостаточно кредитов агента — пополните баланс"}
     return None

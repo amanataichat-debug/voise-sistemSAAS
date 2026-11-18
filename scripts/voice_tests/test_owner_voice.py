@@ -86,8 +86,8 @@ check("пустая реплика — отказ (не расслышали «�
 
 # ---------- функции и промпт голосового помощника ----------
 check("функции голосового помощника", ov.FUNCTION_NAMES == ["get_stats", "get_report", "get_balance", "client_info",
-                                                             "list_dialogs", "get_schedule", "ask_agent", "do_action",
-                                                             "send_to_telegram"], ov.FUNCTION_NAMES)
+                                                             "list_dialogs", "get_schedule", "get_bookings", "ask_agent",
+                                                             "do_action", "send_to_telegram"], ov.FUNCTION_NAMES)
 for f in ov.GEMINI_FUNCTIONS:
     check(f"схема {f['name']} не меняется очисткой под Gemini", gemini_schema(f["parameters"]) == f["parameters"])
 _fn = {f["name"]: f for f in ov.GEMINI_FUNCTIONS}
@@ -358,8 +358,8 @@ def u(mode, credits=5000):
     return types.SimpleNamespace(agent_mode=lambda: mode, credits_balance=credits, is_admin=False)
 
 check("Profi — можно", hov.access_error(u("full"), agent) is None)
-check("Старт — только Profi", (hov.access_error(u("reactive"), agent) or {}).get("code") == "profi_required")
-check("без доступа — только Profi", (hov.access_error(u(None), agent) or {}).get("code") == "profi_required")
+check("Старт — тоже можно (действия ограничит оркестратор)", hov.access_error(u("reactive"), agent) is None)
+check("без тарифа — отказ «Старт и Profi»", (hov.access_error(u(None), agent) or {}).get("code") == "plan_required")
 check("мало кредитов — отказ", (hov.access_error(u("full", 50), agent) or {}).get("code") == "insufficient_credits")
 check("чужой/нет агента — отказ", (hov.access_error(u("full"), None) or {}).get("code") == "not_found")
 check("нет пользователя — отказ", (hov.access_error(None, agent) or {}).get("code") == "unauthorized")
@@ -474,9 +474,9 @@ check("сокет: в connection_status — настройки обращени�
 br2, toks2, made2, fin2 = run(ws_flow({"type": "auth", "token": "bad"}), timeout=10)
 err2 = [m for m in br2.sent if m.get("type") == "error"]
 check("сокет: чужой/битый токен — отказ без Gemini", err2 and err2[0]["error"]["code"] == "unauthorized" and not made2, err2)
-br3, _, made3, _ = run(ws_flow({"type": "auth", "token": "jwt-ok"}, mode="reactive"), timeout=10)
+br3, _, made3, _ = run(ws_flow({"type": "auth", "token": "jwt-ok"}, mode=None), timeout=10)
 err3 = [m for m in br3.sent if m.get("type") == "error"]
-check("сокет: тариф Старт — «только Profi», Gemini не открывается", err3 and err3[0]["error"]["code"] == "profi_required"
+check("сокет: без тарифа — отказ, Gemini не открывается", err3 and err3[0]["error"]["code"] == "plan_required"
       and not made3, err3)
 
 # ---------- периоды и цифры для get_stats ----------
@@ -799,7 +799,9 @@ check("Telegram: второй раз тем же воркером — без л�
 check("Telegram: кнопка по умолчанию для бота + команда в меню", _r3 and "chat_id" not in _menu[1]
       and any(m == "setMyCommands" for m, _ in _calls))
 _n1, _n2, _n3, _ncalls = run(menu_flow("reactive"))
-check("Telegram: на Старте кнопку живого голоса не ставим", not _n1 and not _ncalls)
+check("Telegram: на Старте кнопка живого голоса тоже ставится", _n1 and any(m == "setChatMenuButton" for m, _ in _ncalls))
+_m1, _m2, _m3, _mcalls = run(menu_flow(None))
+check("Telegram: без тарифа кнопку живого голоса не ставим", not _m1 and not _mcalls)
 
 
 # ---------- окно разговора: отчёт рисуется сценами и загорается под речь ----------
@@ -943,7 +945,8 @@ else:
     check("PG list_dialogs: фильтр по каналу", [d["name"] for d in ld2["dialogs"]] == ["Айбек"], ld2["dialogs"])
     cards_pg = ov.dashboard_cards(db, owner, ag)
     _types = [c["type"] for c in cards_pg]
-    check("PG дашборд: сегодня, ждут ответа, воронка", _types == ["stats", "list", "funnel"], _types)
+    # карточка балансов в начале разговора появилась в 4-й итерации (09.11.2026) — проверка отставала
+    check("PG дашборд: сегодня, ждут ответа, воронка, балансы", _types == ["stats", "list", "funnel", "balance"], _types)
     _tiles = {t["label"]: t["value"] for t in cards_pg[0]["tiles"]}
     check("PG дашборд: плитки сегодня (звонок 1, сообщений 2, ждут 2) и график 7 дней",
           _tiles.get("Звонки") == 1 and _tiles.get("Сообщения") == 2 and _tiles.get("Ждут ответа") == 2

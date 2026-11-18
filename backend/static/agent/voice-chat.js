@@ -36,6 +36,12 @@
   ];
   const CHIPS = ['Отчёт за сегодня', 'Кто ждёт ответа?', 'Как прошла неделя?', 'Сколько денег на счету?', 'Что запланировано на завтра?'];
   const DEMO_CHIPS = ['Что нового?', 'Кто ждёт ответа?', 'Что писал Нурлан?', 'Как прошла неделя?', 'Сколько денег на счету?'];
+  // Ниши с онлайн-записью (салон, клиника, СТО): первые подсказки — про записи
+  const BOOKING_CHIPS = ['Кто записан сегодня?', 'Отчёт за сегодня', 'Есть свободное время завтра?', 'Кто ждёт ответа?', 'Как прошла неделя?'];
+  function ownerChips() {
+    try { const b = JSON.parse(localStorage.getItem('vf_business') || 'null'); if (b && b.modules && b.modules.booking) return BOOKING_CHIPS; } catch (e) { }
+    return CHIPS;
+  }
   const ADDRESS = [{ id: 'name', t: 'По имени' }, { id: 'chef', t: 'Шеф' }, { id: 'boss', t: 'Босс' }, { id: 'custom', t: 'Своё' }];
   const PALETTES = {
     connecting: ['#64748b', '#475569', '#94a3b8'], listening: ['#22d3ee', '#3b6dff', '#6366f1'],
@@ -193,6 +199,7 @@ registerProcessor('vv-out', VvOut);`;
       case 'client_info': return a.query ? 'Открываю карточку: ' + a.query : 'Открываю карточку клиента…';
       case 'list_dialogs': return 'Смотрю переписку…';
       case 'get_schedule': return 'Смотрю расписание…';
+      case 'get_bookings': return 'Смотрю записи…';
       case 'ask_agent': return 'Думаю над вопросом…';
       case 'do_action': return 'Выполняю…';
       case 'send_to_telegram': return 'Отправляю в Telegram…';
@@ -211,7 +218,7 @@ registerProcessor('vv-out', VvOut);`;
     el.dataset.captions = '1';
     const voices = VOICES.map(v => '<button class="vv-voice" type="button" role="radio" data-voice="' + v.id + '">' + v.id + '<small>' + v.g + ', ' + v.d + '</small></button>').join('');
     const addr = ADDRESS.map(a => '<button type="button" role="radio" data-addr="' + a.id + '">' + a.t + '</button>').join('');
-    const chips = CHIPS.map(c => '<button class="vv-chip" type="button" data-chip="' + esc(c) + '">' + esc(c) + '</button>').join('');
+    const chips = ownerChips().map(c => '<button class="vv-chip" type="button" data-chip="' + esc(c) + '">' + esc(c) + '</button>').join('');
     el.innerHTML =
       '<div class="vv-aurora"><i></i><i></i></div>' +
       '<div class="vv-top"><div class="vv-brand"><span class="vv-logo">' + IC.logo + '</span>' +

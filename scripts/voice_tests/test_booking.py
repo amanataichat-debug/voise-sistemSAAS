@@ -288,6 +288,36 @@ n2 = asyncio.run(bn.run_once(now))
 check("напоминания уходят один раз", n1 == 3 and n2 == 0, (n1, n2))
 check("текст напоминания: время, услуга, мастер", any("Стрижка" in m and "Айдана" in m for m in sent), sent[:1])
 
+# ── голосовой помощник владельца: «кто записан» (Старт и Profi) ──
+from backend.services import owner_voice as ov  # noqa: E402
+from backend.websockets import handler_owner_voice as hov  # noqa: E402
+db.expire_all()
+u_now = db.get(User, u.id)
+ag_now = db.get(AgentConfig, agent.id)
+today_rows = [b for b in bs.list_bookings(db, u.id, *bs.day_bounds(bs.parse_day(None)), include_cancelled=False)]
+vb = ov.fast_get_bookings(db, u_now, ag_now, {"day": "today"})
+check("голос: кто записан сегодня — столько же, сколько в календаре", vb.get("ok") and vb.get("enabled")
+      and vb["total"] == len(today_rows) and vb["card"]["type"] == "list", (vb.get("total"), len(today_rows)))
+check("голос: в строке записи — время, клиент, услуга и мастер", any(i["client"] == "Нурай" and i["master"] == "Айдана"
+      and i["time"] for i in vb["items"]), vb["items"][:2])
+vm = ov.fast_get_bookings(db, u_now, ag_now, {"day": "today", "master": "Бегимай"})
+check("голос: фильтр по мастеру", vm.get("ok") and all(i["master"] == "Бегимай" for i in vm.get("items", [])), vm.get("items"))
+vx = ov.fast_get_bookings(db, u_now, ag_now, {"day": "today", "master": "Несуществующая"})
+check("голос: неизвестный мастер — подсказка, кто есть", vx.get("found_master") is False and "Айдана" in vx.get("message", ""),
+      vx.get("message"))
+brief = ov.build_brief(db, u_now, ag_now)
+check("голос: записи сегодня и завтра — в сводке дел", "Записи сегодня" in brief and "Записи завтра" in brief, brief[-400:])
+rep = ov.fast_get_report(db, u_now, ag_now, {"period": "today"})
+check("голос: отчёт с блоком онлайн-записи", any(sc["id"] == "bookings" for sc in rep["card"]["scenes"])
+      and any("Записей" in line for line in rep["script"]), [sc["id"] for sc in rep["card"]["scenes"]])
+cards = ov.dashboard_cards(db, u_now, ag_now)
+check("голос: на старте разговора — карточка «Записи сегодня»", any(c.get("title", "").startswith("Записи сегодня") for c in cards)
+      or not today_rows, [c.get("title") for c in cards])
+_acc = hov.access_error(u_now, ag_now)
+check("голос открыт Старту (дальше проверяются только кредиты)", _acc is None or _acc.get("code") == "insufficient_credits", _acc)
+prompt = ov.build_voice_prompt(u_now, ag_now, brief)
+check("голос на Старте: в промпте — что можно и что только на Profi", "ТАРИФ СТАРТ" in prompt and "get_bookings" in prompt)
+
 # ── запись выключена у владельца ──
 cl.put("/api/business/modules", headers=H, json={"modules": {"booking": False}})
 db.expire_all()
