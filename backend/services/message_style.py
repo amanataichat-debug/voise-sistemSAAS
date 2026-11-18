@@ -21,8 +21,6 @@
 
 import re
 
-from backend.utils.profanity import strip_profanity
-
 _EMOJI_RE = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\U0001F900-\U0001F9FF]️?"
 )
@@ -83,8 +81,6 @@ def clean_client_text(text: str) -> str:
         return f"\x00{len(urls) - 1}\x00"
 
     body = _URL_RE.sub(_keep, text)
-    # Мат и грубые слова агенту запрещены на уровне кода (18.11.2026): вырезаем слово целиком
-    body = strip_profanity(body)
     lines = [_clean_line(l) for l in body.splitlines()]
     out = "\n".join(lines)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()

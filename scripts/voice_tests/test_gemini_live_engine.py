@@ -280,9 +280,8 @@ hint = lc.VOICE_DELEGATION_HINT
 # в общих правилах (их получают агенты всех клиентов): test_platform_neutral.py.
 # 14.11.2026 (1411-voice-lean): слой платформы GPT-Live переписан коротко по шаблону OpenAI — LIVE_VOICE_HEAD в начале,
 # LIVE_VOICE_RULES (= VOICE_DELEGATION_HINT) в конце; Gemini по-прежнему на своих подсказках и общих кусках ниже.
-# 18.11.2026 (звонок 17478409): правило 7 «без мата» и исключение «время звонка вышло» в правиле 6.
 check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 14.11.2026 — короткий слой по шаблону OpenAI)",
-      hashlib.sha256(hint.encode()).hexdigest() == "41b9b85633b6156a680edbe6632c4a8f7d76e7108a4f740e18da513e720322af", len(hint))
+      hashlib.sha256(hint.encode()).hexdigest() == "663619ed16f2d72adccf172922d84ec6e16be6ef292846493a1739eef34617cd", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("GPT-Live: хвост инструкций — LIVE_VOICE_RULES, общие куски Gemini в него не входят",
@@ -428,7 +427,7 @@ _cfg = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="Т�
                            "cid", telephony=True).build_session_config()["instructions"]
 check("GPT-Live: характер и язык ДО инструкции карточки, твёрдые правила — после",
       _cfg.index("Кто ты и как звучишь") < _cfg.index("Язык и произношение") < _cfg.index("Ты Анри")
-      < _cfg.index("Семь твёрдых правил"))
+      < _cfg.index("Шесть твёрдых правил"))
 check("GPT-Live: «не эхо» осталось твёрдым правилом", "Не повторяй за собеседником его слова" in lc.LIVE_VOICE_RULES)
 _gh = vh.gemini_prompt_head("Puck", "ru", "Добрый день")
 check("Gemini: «Живой разговор» в начале промпта (в gemini_prompt_head)", "НЕ ЭХО" in _gh and "ВАУ" in _gh)

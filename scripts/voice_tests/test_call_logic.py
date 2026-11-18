@@ -331,7 +331,7 @@ def voice_hints():
                           ("Backchannel policy", "метка поддакивания OpenAI"),
                           ("прощальная фраза и hangup_call", "прощание + hangup_call"),
                           ("клиент назвал время или канал", "выбор канала не делегировать"),
-                          ("Семь твёрдых правил", "семь твёрдых правил")]:
+                          ("Шесть твёрдых правил", "шесть твёрдых правил")]:
         check(f"подсказка голосу: {label}", needle in hint)
     check("подсказка голосу: кыргызских образцов-фраз в слое платформы нет (их повторяли дословно)",
           "Чалганыңыз үчүн рахмат" not in lc.LIVE_VOICE_HEAD + hint and "Сизге кантип жардам" not in lc.LIVE_VOICE_HEAD + hint)
@@ -482,7 +482,7 @@ def session_config():
         check(f"подсказка голосу: {label}", needle in hint)
     cfg_i = cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()["instructions"]
     check("конфиг: голова (характер, язык) — в начале, правила — после промпта карточки",
-          cfg_i.startswith(lc.LIVE_VOICE_HEAD) and cfg_i.index("Ты Алия.") < cfg_i.index("Семь твёрдых правил"))
+          cfg_i.startswith(lc.LIVE_VOICE_HEAD) and cfg_i.index("Ты Алия.") < cfg_i.index("Шесть твёрдых правил"))
 
 
 async def main():

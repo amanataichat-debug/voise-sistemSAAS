@@ -516,7 +516,6 @@ class LiveVoiceSession:
         self._last_user_voice_at: float = 0.0
         self._farewell_at: Optional[float] = None
         self._caller_farewell_at: Optional[float] = None   # прощание именно клиента (для hangup_call)
-        self._time_limit_at: Optional[float] = None        # время звонка вышло (session.directive wrap_up)
         self._hangup_sent = False
         # Пейсинг входящего аудио (token bucket): GPT-Live принимает не быстрее 1.2x
         # реального темпа всплесками до ~5 с. Мост копит аудио в очередь при задержке
@@ -1048,8 +1047,6 @@ class LiveVoiceSession:
         """
         if not self._is_phone():
             return None
-        if self._time_limit_at is not None:
-            return None   # время звонка вышло: агент подводит итог и кладёт трубку сам
         args = raw_arguments
         if isinstance(args, str):
             try:
@@ -1207,13 +1204,6 @@ class LiveVoiceSession:
                 await self.emit({"type": f"{mtype}.ack", "event_id": data.get("event_id"), "note": "full_duplex"})
             elif mtype in ("audio_playback.stopped", "speech.user_started", "speech.user_stopped"):
                 pass
-            elif mtype == "session.directive":
-                # Служебное указание адаптера звонка: время вышло (wrap_up) или прозвучал мат (profanity)
-                text_in = (data.get("text") or "").strip()
-                if data.get("kind") == "wrap_up":
-                    self._time_limit_at = time.time()
-                if text_in and self.client.is_connected:
-                    await self.client.append_instructions(text_in)
             elif mtype == "session.close":
                 _log("client requested session close")
                 self.stop_event.set()

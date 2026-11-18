@@ -46,7 +46,6 @@ class CallEndGuard:
         self.last_user_text = ""                           # последняя реплика клиента целиком
         self.hangup_sent = False
         self.rejections = 0
-        self.time_limit_at: Optional[float] = None   # время звонка вышло (session.directive wrap_up)
         self._buf = {"user": "", "assistant": ""}
         self._role: Optional[str] = None
 
@@ -121,8 +120,6 @@ class CallEndGuard:
         """
         if name != "hangup_call" or not self.phone:
             return None
-        if self.time_limit_at is not None:
-            return None   # время звонка вышло: агент подводит итог и кладёт трубку сам
         args: Dict[str, Any] = arguments if isinstance(arguments, dict) else {}
         if isinstance(arguments, str):
             try:
