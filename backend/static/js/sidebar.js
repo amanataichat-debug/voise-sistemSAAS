@@ -54,10 +54,12 @@
       aliases: ['/static/eleven-test.html'] },
     { href: '/static/conversations.html', lucide: 'messages-square', label: 'sidebar.conversations', def: 'Диалоги', id: 'conversations-nav-item' },
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item', feature: 'telephony' },
-    { href: '/static/crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item', feature: 'crm',
+    { href: '/static/crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'Клиенты', id: 'crm-nav-item', feature: 'crm',
       aliases: ['/static/crm-contact.html'] },
     // Аналитика (ветка 1811-niche-admin-speed) — для всех тарифов: без бота показывает звонки и разговоры ассистентов
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
+    // Финансы (19.11.2026): выручка, расходы (аренда, зарплаты мастеров), прибыль — у ниш с записями или заказами
+    { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', modes: ['full', 'reactive'], money: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     // Сотрудники (ветка 1811-niche-admin-speed): свой вход, только выбранные разделы — на Старте и Profi
@@ -79,9 +81,10 @@
     { href: '/static/telephony.html', lucide: 'phone', label: 'sidebar.telephony', def: 'Телефония', id: 'telephony-nav-item' },
     // CRM — таблицы и канбан: на телефоне скрыта (13.11.2026), там работают Инбокс и Каталог
     // CRM — и на телефоне (18.11.2026): список клиентов карточками со звонком и WhatsApp одним нажатием
-    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'CRM', id: 'crm-nav-item' },
+    { href: '/static/start-crm.html', lucide: 'contact-round', label: 'sidebar.crm', def: 'Клиенты', id: 'crm-nav-item' },
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item',
       aliases: ['/static/start-analytics.html'] },
+    { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', money: true },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },
@@ -108,6 +111,8 @@
     var out = [];
     var profi = cachedMode() === 'full';
     menu.forEach(function (item) {
+      // Финансы — где есть выручка: записи или заказы (у ниши без них раздел пустой)
+      if (item.money && biz && biz.niche && !mods.booking && !mods.orders) return;
       if (item.id === 'crm-nav-item' && profi) {
         // Profi: «CRM» — клиенты агента (общая страница со Стартом), а не старая база контактов ассистентов
         item = Object.assign({}, item, { href: '/static/start-crm.html', aliases: ['/static/crm.html', '/static/crm-contact.html'] });
@@ -324,7 +329,16 @@
     '.vf-topup-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}',
     '.vf-topup-actions button{height:38px;padding:0 16px;border-radius:8px;border:1px solid var(--vf-border,#e2e8f0);background:transparent;color:inherit;cursor:pointer;font-weight:600}',
     '.vf-topup-actions .primary{background:var(--vf-accent,#2a5ce8);border-color:var(--vf-accent,#2a5ce8);color:#fff}',
-    '.vf-topup-actions button[disabled]{opacity:.6;cursor:default}'
+    '.vf-topup-actions button[disabled]{opacity:.6;cursor:default}',
+    // Телефон: шторка снизу, суммы — крупные плитки, кнопка оплаты во всю ширину
+    '@media (max-width:760px){.vf-modal-overlay{align-items:flex-end;padding:0}',
+    '.vf-topup{max-width:none;border-radius:20px 20px 0 0;padding:22px 16px calc(14px + env(safe-area-inset-bottom,0px));max-height:92dvh;overflow-y:auto;animation:vf-sheet-up .22s ease-out;position:relative}',
+    '.vf-topup::before{content:"";position:absolute;top:7px;left:50%;width:40px;height:4px;margin-left:-20px;border-radius:4px;background:var(--vf-border-strong,#cbd5e1)}',
+    '.vf-topup-chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}',
+    '.vf-topup-chip{height:48px;font-size:15px;font-weight:600;border-radius:12px}',
+    '.vf-topup input{height:50px;font-size:18px;font-weight:600}',
+    '.vf-topup-actions{flex-direction:column-reverse}.vf-topup-actions button{height:50px;font-size:16px;width:100%}}',
+    '@keyframes vf-sheet-up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}'
   ].join('');
   var walletState = { balance: 0, min: 10, max: 100000, free: false };
 
@@ -560,6 +574,11 @@
     'background:#ef4444;color:#fff;font:700 10px/17px Inter,sans-serif;text-align:center}',
     '}',
     '@media (min-width: 761px){.vf-tabbar{display:none}}',
+    // Полоса загрузки при переходе по вкладке (body.vf-nav-pending снимается новой страницей сама)
+    'body.vf-nav-pending::before{content:"";position:fixed;top:0;left:0;height:3px;z-index:9999;width:100%;',
+    'background:linear-gradient(90deg,transparent,var(--vf-accent,#2a5ce8) 30%,#6d3ff0 70%,transparent);',
+    'background-size:50% 100%;background-repeat:no-repeat;animation:vf-navbar 1s linear infinite}',
+    '@keyframes vf-navbar{from{background-position:-50% 0}to{background-position:150% 0}}',
   ].join('');
   var TABS = [
     { id: 'home', href: '/static/dashboard.html', icon: 'house', label: 'Главная', ky: 'Башкы' },
@@ -600,11 +619,269 @@
     var on = activeTab();
     Array.prototype.forEach.call(bar.querySelectorAll('.vf-tab'), function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === on); });
   }
+  // «Ещё» (19.11.2026): раньше кнопка пыталась открыть боковое меню, которого на страницах телефона нет, —
+  // нажатие ничего не делало. Теперь своя шторка снизу: тариф, кошелёк, кредиты бота (оплата с телефона),
+  // крупная плитка «Отчёты» и все разделы, которых нет в нижней панели.
+  var MORE_STYLE = [
+    '.vf-more-ov{position:fixed;inset:0;z-index:9500;background:rgba(14,23,41,.5);display:flex;align-items:flex-end;opacity:0;transition:opacity .18s}',
+    '.vf-more-ov.show{opacity:1}',
+    '.vf-more{width:100%;max-height:90dvh;overflow-y:auto;overscroll-behavior:contain;background:var(--vf-bg,#f6f8fb);border-radius:22px 22px 0 0;',
+    'padding:10px 14px calc(16px + env(safe-area-inset-bottom,0px));transform:translateY(30px);transition:transform .22s ease-out;font-family:Inter,system-ui,sans-serif;color:var(--vf-text,#0e1729)}',
+    '.vf-more-ov.show .vf-more{transform:none}',
+    '.vf-more-grip{width:40px;height:4px;border-radius:4px;background:var(--vf-border-strong,#cbd5e1);margin:0 auto 12px}',
+    '.vf-more-head{display:flex;align-items:center;gap:12px;margin:0 2px 14px}',
+    '.vf-more-ava{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#2a5ce8,#6d3ff0);color:#fff;display:flex;align-items:center;justify-content:center;font:700 18px/1 Inter,sans-serif;flex:0 0 auto}',
+    '.vf-more-who{min-width:0;flex:1}.vf-more-who b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.vf-more-who span{font-size:13px;color:var(--vf-text-3,#63738b)}',
+    '.vf-more-x{width:36px;height:36px;border-radius:12px;border:0;background:var(--vf-surface,#fff);color:var(--vf-text-3,#63738b);display:flex;align-items:center;justify-content:center;flex:0 0 auto}',
+    '.vf-more-x .ic{width:18px;height:18px}',
+    '.vf-more-money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}',
+    '.vf-more-m{background:var(--vf-surface,#fff);border:1px solid var(--vf-border,#e2e8f0);border-radius:16px;padding:11px 10px 10px;display:flex;flex-direction:column;gap:3px;min-width:0;text-align:left;color:inherit;font:inherit;cursor:pointer}',
+    '.vf-more-m .l{font-size:11.5px;color:var(--vf-text-3,#63738b);display:flex;align-items:center;gap:4px}.vf-more-m .l .ic{width:13px;height:13px}',
+    '.vf-more-m .v{font:700 16px/1.2 Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.vf-more-m .v.neg{color:#dc2626}',
+    '.vf-more-m .a{margin-top:4px;font-size:12.5px;font-weight:650;color:var(--vf-accent,#2a5ce8)}',
+    '.vf-more-rep{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;margin-bottom:10px;text-decoration:none;color:#fff;',
+    'background:linear-gradient(135deg,#2a5ce8 0%,#4a46e0 60%,#6d3ff0 100%);box-shadow:0 10px 24px -12px rgba(42,92,232,.7)}',
+    '.vf-more-rep .ic{width:26px;height:26px;flex:0 0 auto}.vf-more-rep b{display:block;font-size:16px}.vf-more-rep span{font-size:12.5px;opacity:.85}',
+    '.vf-more-rep .go{margin-left:auto;width:20px;height:20px;opacity:.9}',
+    '.vf-more-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}',
+    '.vf-more-it{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:84px;padding:10px 6px;border-radius:16px;',
+    'background:var(--vf-surface,#fff);border:1px solid var(--vf-border,#e2e8f0);text-decoration:none;color:var(--vf-text,#0e1729);font-size:12.5px;font-weight:550;text-align:center;line-height:1.2;position:relative}',
+    '.vf-more-it .ic{width:24px;height:24px;color:var(--vf-accent,#2a5ce8)}',
+    '.vf-more-it.on{border-color:var(--vf-accent,#2a5ce8);background:var(--vf-accent-soft,#eaf0fe)}',
+    '.vf-more-it .lk{position:absolute;top:6px;right:6px;font-size:9.5px;font-weight:700;color:#8a5a00;background:#ffe7a8;border-radius:999px;padding:1px 6px}',
+    '.vf-more-foot{display:flex;align-items:center;gap:8px}',
+    '.vf-more-foot .vf-more-lang{display:inline-flex;padding:3px;border-radius:999px;background:var(--vf-surface,#fff);border:1px solid var(--vf-border,#e2e8f0)}',
+    '.vf-more-foot .vf-more-lang button{border:0;background:none;font:600 13px/1 Inter,sans-serif;padding:9px 14px;border-radius:999px;color:var(--vf-text-3,#63738b)}',
+    '.vf-more-foot .vf-more-lang button.on{background:var(--vf-accent-soft,#eaf0fe);color:var(--vf-accent,#2a5ce8)}',
+    '.vf-more-out{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 16px;border-radius:12px;border:1px solid var(--vf-border,#e2e8f0);background:var(--vf-surface,#fff);color:#dc2626;font:600 14px/1 Inter,sans-serif}',
+    '.vf-more-out .ic{width:16px;height:16px}',
+    '.vf-credit-pk{display:flex;align-items:center;gap:12px;width:100%;padding:14px;margin-bottom:8px;border-radius:14px;border:1px solid var(--vf-border,#e2e8f0);background:var(--vf-surface,#fff);color:inherit;font:inherit;text-align:left;cursor:pointer}',
+    '.vf-credit-pk b{font-size:16px}.vf-credit-pk span{display:block;font-size:12.5px;color:var(--vf-text-3,#63738b)}',
+    '.vf-credit-pk .p{margin-left:auto;font:700 16px/1 Inter,sans-serif;color:var(--vf-accent,#2a5ce8);white-space:nowrap}',
+    '.vf-credit-pk[disabled]{opacity:.6}'
+  ].join('');
+  var moreData = null;   // {me, credits} — последний ответ, чтобы шторка открывалась сразу
+  function planTitle(code) {
+    return { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный' }[code] || (code || '');
+  }
+  function closeMore() {
+    var ov = document.getElementById('vf-more');
+    if (!ov) return;
+    ov.classList.remove('show');
+    setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 200);
+    document.body.style.overflow = '';
+    if (history.state && history.state.vfMore) history.back();
+  }
+  function moreHtml() {
+    var ky = lang() === 'ky';
+    var staff = cachedStaff();
+    var me = (moreData && moreData.me) || {};
+    var cr = (moreData && moreData.credits) || {};
+    var name = me.company_name || [me.first_name, me.last_name].filter(Boolean).join(' ') || me.email || 'Voksy AI';
+    if (staff) name = staff.name || name;
+    var sub = (moreData && moreData.sub) || {};
+    var code = (sub.subscription_plan && sub.subscription_plan.code) || '';
+    var days = sub.days_left != null ? sub.days_left : (cr.days_remaining != null ? cr.days_remaining : null);
+    var trial = sub.is_trial || me.is_trial || code === 'free';
+    var line = staff ? (staff.role_title || (ky ? 'Кызматкер' : 'Сотрудник'))
+      : ((trial ? (ky ? 'Сыноо мөөнөтү' : 'Пробный период') : (ky ? 'Тариф ' : 'Тариф ') + planTitle(code)) +
+        (days != null ? ' · ' + (ky ? 'калды ' + days + ' күн' : 'осталось ' + days + ' дн.') : ''));
+    var tabHrefs = currentTabs().map(function (t) { return (t.href || '').split('#')[0]; });
+    var items = [];
+    currentMenu().forEach(function (it) {
+      if (!it.href || it.section || it.action) return;
+      var mode = cachedMode();
+      if (it.mode && it.mode !== mode) return;
+      if (it.modes && it.modes.indexOf(mode) < 0) return;
+      var p = it.href.split('#')[0];
+      if (tabHrefs.indexOf(p) >= 0 || p === '/static/analytics.html') return;
+      items.push(it);
+    });
+    // Каталог живёт на странице бота (#catalog): если его нет внизу — отдельная плитка
+    if (!staff && cachedMode() === 'reactive' && !currentTabs().some(function (t) { return t.id === 'catalog' || (t.href || '').indexOf('#catalog') >= 0; })) {
+      var biz = cachedBusiness() || {};
+      items.push({ href: '/static/start-bot.html#catalog', lucide: 'package', def: (biz.catalog && biz.catalog.title) || 'Каталог' });
+    }
+    // Сначала то, чем пользуются каждый день; настройки и редкое — в конце
+    // Profi: каталог живёт в «Знаниях агента»; главной в нижней панели нет — она первой плиткой
+    if (!staff && cachedMode() === 'full' && !currentTabs().some(function (t) { return t.id === 'catalog'; })) {
+      var bz = cachedBusiness() || {};
+      items.push({ href: '/static/agent-knowledge.html#catalog', lucide: 'package', def: (bz.catalog && bz.catalog.title) || 'Каталог' });
+    }
+    items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
+    var ORDER = ['dashboard', 'finance', 'booking', 'orders', 'catalog', 'crm', 'inbox', 'team', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    function rank(it) {
+      var id = (it.id || '').replace('-nav-item', '');
+      if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';
+      if ((it.href || '').indexOf('finance') >= 0) id = 'finance';
+      if ((it.href || '').indexOf('admin') >= 0) id = 'admin';
+      var i = ORDER.indexOf(id); return i < 0 ? 50 : i;
+    }
+    items.sort(function (x, y) { return rank(x) - rank(y); });
+    var admin = false; try { admin = sessionStorage.getItem('vf_is_admin') === '1'; } catch (e) { /* ignore */ }
+    if (admin) items.push({ href: '/static/admin.html', lucide: 'shield-check', label: 'sidebar.admin', def: 'Управление' });
+    var showReports = !staff || (staff.menu || []).some(function (m) { return m.id === 'analytics'; });
+    var bal = walletState.balance;
+    var html = '<div class="vf-more" role="dialog" aria-modal="true" aria-label="' + (ky ? 'Дагы' : 'Ещё') + '">' +
+      '<div class="vf-more-grip"></div>' +
+      '<div class="vf-more-head"><div class="vf-more-ava">' + esc((name || 'V').trim().charAt(0).toUpperCase()) + '</div>' +
+      '<div class="vf-more-who"><b>' + esc(name) + '</b><span>' + esc(line) + '</span></div>' +
+      '<button type="button" class="vf-more-x" data-more="close" aria-label="Закрыть">' + icon('x') + '</button></div>';
+    if (!staff) {
+      html += '<div class="vf-more-money">' +
+        '<button type="button" class="vf-more-m" data-more="topup"><span class="l">' + icon('wallet') + (ky ? 'Капчык' : 'Кошелёк') + '</span>' +
+        '<span class="v' + (bal < 0 ? ' neg' : '') + '">' + esc(fmtSom(bal)) + '</span><span class="a">' + (ky ? 'Толуктоо' : 'Пополнить') + '</span></button>' +
+        '<button type="button" class="vf-more-m" data-more="credits"><span class="l">' + icon('coins') + (ky ? 'Бот кредити' : 'Кредиты бота') + '</span>' +
+        '<span class="v">' + (cr.credits_balance != null ? Number(cr.credits_balance).toLocaleString('ru-RU') : '…') + '</span><span class="a">' + (ky ? 'Сатып алуу' : 'Купить') + '</span></button>' +
+        '<button type="button" class="vf-more-m" data-more="plans"><span class="l">' + icon('crown') + (ky ? 'Тариф' : 'Тариф') + '</span>' +
+        '<span class="v">' + esc(trial ? (ky ? 'Сыноо' : 'Пробный') : planTitle(code) || '—') + '</span><span class="a">' + (ky ? 'Өзгөртүү' : 'Сменить') + '</span></button>' +
+        '</div>';
+    }
+    if (showReports) {
+      html += '<a class="vf-more-rep" href="/static/analytics.html">' + icon('chart-column') +
+        '<div><b>' + (ky ? 'Отчёттор жана аналитика' : 'Отчёты и аналитика') + '</b><span>' +
+        (ky ? 'Киреше, кардарлар, кызматтар, каналдар' : 'Выручка, клиенты, услуги, каналы') + '</span></div>' + icon('chevron-right', 'go') + '</a>';
+    }
+    html += '<div class="vf-more-grid">' + items.map(function (it) {
+      var locked = profiLocked(it);
+      var href = locked ? PLANS_URL : it.href;
+      var on = isActive(it) ? ' on' : '';
+      return '<a class="vf-more-it' + on + '" href="' + esc(href) + '">' + icon(it.lucide || it.icon || 'circle') +
+        '<span>' + esc(it.label ? T(it.label, it.def) : it.def) + '</span>' + (locked ? '<span class="lk">Profi</span>' : '') + '</a>';
+    }).join('') + '</div>';
+    html += '<div class="vf-more-foot"><div class="vf-more-lang">' +
+      '<button type="button" data-lang="ru" class="' + (ky ? '' : 'on') + '">RU</button>' +
+      '<button type="button" data-lang="ky" class="' + (ky ? 'on' : '') + '">KY</button></div>' +
+      '<button type="button" class="vf-more-out" data-more="logout">' + icon('log-out') + (ky ? 'Чыгуу' : 'Выйти') + '</button></div>';
+    return html + '</div>';
+  }
+  function bindMore(ov) {
+    ov.addEventListener('click', function (e) {
+      if (e.target === ov) { closeMore(); return; }
+      var b = e.target.closest('[data-more],[data-lang],a');
+      if (!b) return;
+      var act = b.getAttribute('data-more');
+      if (b.hasAttribute('data-lang')) { if (window.I18N) window.I18N.setLang(b.getAttribute('data-lang')); else { try { localStorage.setItem('vs_lang', b.getAttribute('data-lang')); } catch (x) { /* ignore */ } location.reload(); } return; }
+      if (act === 'close') closeMore();
+      else if (act === 'topup') { closeMore(); openTopupModal(); }
+      else if (act === 'credits') { closeMore(); openCreditsModal(); }
+      else if (act === 'plans') { closeMore(); openPlans(); }
+      else if (act === 'logout') logout();
+      else if (b.tagName === 'A') {
+        // Ссылка на эту же страницу с другим якорем (каталог ↔ бот) — без перезагрузки
+        var url = b.getAttribute('href'), path = url.split('#')[0];
+        if (path !== currentPath()) { document.body.classList.add('vf-nav-pending'); return; }
+        if (path === currentPath()) {
+          e.preventDefault(); closeMore();
+          var h = url.indexOf('#') >= 0 ? url.split('#')[1] : '';
+          setTimeout(function () { if (h) location.hash = h; else location.hash = ''; }, 60);
+        }
+      }
+    });
+  }
+  function openPlans() {
+    if (currentPath() === '/static/dashboard.html') {
+      if (location.hash === '#plans') history.replaceState(null, '', location.pathname);
+      location.hash = 'plans';
+    } else location.href = PLANS_URL;
+  }
+  function refreshMoreData() {
+    if (!token()) return Promise.resolve();
+    var reqs = [apiFetch('/users/me').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })];
+    if (!cachedStaff()) {
+      reqs.push(apiFetch('/credits/balance').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }));
+      reqs.push(apiFetch('/subscriptions/my-subscription').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }));
+      reqs.push(refreshWallet());
+    }
+    return Promise.all(reqs).then(function (res) {
+      var old = moreData || {};
+      moreData = { me: res[0] || old.me, credits: res[1] || old.credits, sub: res[2] || old.sub };
+      try { sessionStorage.setItem('vf_more', JSON.stringify(moreData)); } catch (e) { /* ignore */ }
+    });
+  }
   function openMoreMenu() {
-    var btn = document.getElementById('sidebar-toggle');
-    if (btn) { btn.click(); return; }
-    var sb = document.getElementById('sidebar');
-    if (sb) sb.classList.toggle('open');
+    if (!isPhone()) {
+      var btn = document.getElementById('sidebar-toggle');
+      if (btn) { btn.click(); return; }
+      var sb = document.getElementById('sidebar');
+      if (sb) { sb.classList.toggle('open'); return; }
+    }
+    if (document.getElementById('vf-more')) { closeMore(); return; }
+    if (!document.getElementById('vf-more-style')) {
+      var st = document.createElement('style'); st.id = 'vf-more-style'; st.textContent = MORE_STYLE;
+      document.head.appendChild(st);
+    }
+    if (!moreData) { try { moreData = JSON.parse(sessionStorage.getItem('vf_more') || 'null'); } catch (e) { /* ignore */ } }
+    cachedBalanceText();
+    var ov = document.createElement('div');
+    ov.className = 'vf-more-ov'; ov.id = 'vf-more';
+    ov.innerHTML = moreHtml();
+    document.body.appendChild(ov);
+    document.body.style.overflow = 'hidden';
+    bindMore(ov);
+    requestAnimationFrame(function () { ov.classList.add('show'); });
+    // Кнопка «Назад» телефона закрывает шторку, а не уходит со страницы
+    try { history.pushState({ vfMore: 1 }, ''); } catch (e) { /* ignore */ }
+    refreshMoreData().then(function () {
+      var cur = document.getElementById('vf-more');
+      if (cur) { cur.innerHTML = moreHtml(); }
+    });
+  }
+  window.addEventListener('popstate', function () {
+    var ov = document.getElementById('vf-more');
+    if (ov) { ov.classList.remove('show'); setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 200); document.body.style.overflow = ''; }
+  });
+
+  // Кредиты бота (переписка, разбор звонков, голосовые) — купить пакет с телефона одним нажатием
+  function openCreditsModal() {
+    if (document.getElementById('vf-credits-modal')) return;
+    if (!document.getElementById('vf-wallet-style')) {
+      var st0 = document.createElement('style'); st0.id = 'vf-wallet-style'; st0.textContent = WALLET_STYLE; document.head.appendChild(st0);
+    }
+    if (!document.getElementById('vf-more-style')) {
+      var st = document.createElement('style'); st.id = 'vf-more-style'; st.textContent = MORE_STYLE; document.head.appendChild(st);
+    }
+    var ky = lang() === 'ky';
+    var ov = document.createElement('div');
+    ov.className = 'vf-modal-overlay'; ov.id = 'vf-credits-modal';
+    var cr = (moreData && moreData.credits) || {};
+    ov.innerHTML = '<div class="vf-topup" role="dialog" aria-modal="true"><h3>' + (ky ? 'Бот кредиттери' : 'Кредиты бота') + '</h3>' +
+      '<p>' + (ky ? 'Кредиттер ботко жумшалат: жооптор, чалууларды талдоо, кардарлардын үн каттары жана сүрөттөрү.'
+        : 'Кредиты тратит бот: ответы клиентам, разбор звонков, голосовые и фото клиентов.') +
+      (cr.credits_balance != null ? ' ' + (ky ? 'Калдык: ' : 'Сейчас: ') + '<b>' + Number(cr.credits_balance).toLocaleString('ru-RU') + '</b>.' : '') + '</p>' +
+      '<div id="vf-credit-list"><p>' + (ky ? 'Жүктөлүүдө…' : 'Загружаем пакеты…') + '</p></div>' +
+      '<div class="vf-topup-actions"><button type="button" data-x="1">' + (ky ? 'Жабуу' : 'Закрыть') + '</button></div></div>';
+    document.body.appendChild(ov);
+    function close() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov || e.target.getAttribute('data-x')) close(); });
+    apiFetch('/credits/packages').then(function (r) { return r.ok ? r.json() : { packages: [] }; }).then(function (d) {
+      var list = ov.querySelector('#vf-credit-list');
+      var pk = (d && d.packages) || [];
+      if (!pk.length) { list.innerHTML = '<p>' + (ky ? 'Пакеттер азыр жок.' : 'Пакетов пока нет — напишите в поддержку.') + '</p>'; return; }
+      list.innerHTML = pk.map(function (p) {
+        return '<button type="button" class="vf-credit-pk" data-pk="' + esc(p.code) + '"><div><b>' + esc(p.name || p.code) + '</b><span>' +
+          Number(p.credits || 0).toLocaleString('ru-RU') + ' ' + (ky ? 'кредит' : 'кредитов') + '</span></div><span class="p">' +
+          esc(fmtSom(p.price_rub)) + '</span></button>';
+      }).join('');
+      Array.prototype.forEach.call(list.querySelectorAll('[data-pk]'), function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true;
+          apiFetch('/credits/purchase', { method: 'POST', body: JSON.stringify({ package_code: b.getAttribute('data-pk') }) })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, d: j }; }); })
+            .then(function (res) {
+              var url = res.d && (res.d.payment_url || res.d.url);
+              if (res.ok && url) { location.href = url; return; }
+              b.disabled = false;
+              var why = res.d && res.d.detail === 'subscription_required'
+                ? (ky ? 'Кредит сатып алуу үчүн тариф керек.' : 'Кредиты можно купить при действующем тарифе.')
+                : (ky ? 'Төлөмдү ачуу мүмкүн болгон жок.' : 'Не удалось открыть оплату.');
+              alert(why);
+            }).catch(function () { b.disabled = false; });
+        });
+      });
+    });
   }
   function currentTabs() {
     var staff = cachedStaff();
@@ -641,6 +918,12 @@
     Array.prototype.forEach.call(bar.querySelectorAll('a.vf-tab'), function (a) {
       a.addEventListener('click', function (e) {
         var url = a.getAttribute('href'), path = url.split('#')[0];
+        if (path !== currentPath()) {
+          // Отклик сразу: вкладка подсвечена, сверху бежит полоса — пока телефон открывает страницу
+          Array.prototype.forEach.call(bar.querySelectorAll('.vf-tab'), function (t) { t.classList.toggle('on', t === a); });
+          document.body.classList.add('vf-nav-pending');
+          return;
+        }
         if (path === currentPath()) {
           e.preventDefault();
           var h = url.indexOf('#') >= 0 ? url.split('#')[1] : '';
@@ -654,6 +937,41 @@
     window.addEventListener('hashchange', markTabs);
     markTabs();
     refreshUnread();
+    scheduleWarm();
+  }
+  // Вернулись «Назад» (страница из кэша браузера) — полосы загрузки быть не должно
+  window.addEventListener('pageshow', function () { if (document.body) document.body.classList.remove('vf-nav-pending'); });
+  // Прогрев вкладок (19.11.2026): через пару секунд после открытия кабинета телефон в фоне скачивает
+  // страницы нижней панели и их скрипты/стили (через service worker они ложатся в кэш) — первое
+  // нажатие на вкладку открывает страницу без ожидания сети. Раз за сессию, только при Wi-Fi/4G без «экономии».
+  function warmTabs() {
+    try {
+      if (sessionStorage.getItem('vf_warm') === '1') return;
+      if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+      var c = navigator.connection;
+      if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ''))) return;
+      sessionStorage.setItem('vf_warm', '1');
+    } catch (e) { return; }
+    var pages = currentTabs().filter(function (t) { return t.href; }).map(function (t) { return t.href.split('#')[0]; })
+      .concat(['/static/analytics.html', '/static/finance.html']);
+    pages = pages.filter(function (p, i) { return pages.indexOf(p) === i && p !== currentPath(); });
+    var i = 0;
+    (function next() {
+      if (i >= pages.length) return;
+      var p = pages[i++];
+      fetch(p, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (html) {
+        // скрипты и стили страницы с меткой содержимого (?v=h…) — неизменяемые, кэшируются навсегда
+        var re = /(?:src|href)="(\/static\/[^"]+\?v=h[0-9a-f]{10})"/g, m, seen = {};
+        var jobs = [];
+        while ((m = re.exec(html))) { if (!seen[m[1]]) { seen[m[1]] = 1; jobs.push(fetch(m[1]).catch(function () { /* ignore */ })); } }
+        return Promise.all(jobs);
+      }).catch(function () { /* ignore */ }).then(function () { setTimeout(next, 150); });
+    })();
+  }
+  function scheduleWarm() {
+    if (!isPhone()) return;
+    var go = function () { setTimeout(warmTabs, 2500); };
+    if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
   }
   // Непрочитанные в инбоксе — точка на вкладке (раз в минуту, только пока страница открыта)
   function refreshUnread() {
@@ -788,14 +1106,19 @@
     '.vf-voice-fab .vf-vf-wave i:nth-child(3){height:11px;animation-delay:.3s}.vf-voice-fab .vf-vf-wave i:nth-child(4){height:6px;animation-delay:.45s}',
     '@keyframes vf-vf-w{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1)}}',
     '.vf-voice-fab.busy{opacity:.8;cursor:wait}',
+    '.vf-voice-fab.vf-fab-away{opacity:0;transform:translateY(14px) scale(.9);pointer-events:none;transition:opacity .15s,transform .15s}',
     '@media (max-width:760px){.vf-voice-fab{right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));height:54px;width:54px;padding:0;',
     'justify-content:center}.vf-voice-fab span.t{display:none}',
     'body:has(.bk-fab) .vf-voice-fab,body:has(.od-fab) .vf-voice-fab{bottom:calc(146px + env(safe-area-inset-bottom,0px))}}',
     'body:not(.vf-has-tabbar) .vf-voice-fab{bottom:calc(18px + env(safe-area-inset-bottom,0px))}',
     'body.vv-open .vf-voice-fab,body.modal-open .vf-voice-fab{display:none}',
+    '@media (max-width:860px){body.ib-chat-open .vf-voice-fab{display:none}}',
+    // Инбокс на компьютере: справа внизу поле ввода чата — кнопка становится кругом и уходит выше
+    '@media (min-width:761px){body.ib-page .vf-voice-fab{width:48px;height:48px;padding:0;justify-content:center;bottom:96px;right:18px}body.ib-page .vf-voice-fab span.t{display:none}}',
     '@media (prefers-reduced-motion:reduce){.vf-voice-fab .vf-vf-wave i{animation:none}}'
   ].join('');
-  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html', '/static/inbox.html'];
+  // Инбокс (19.11.2026): кнопка есть и там — в списке диалогов; в открытом чате прячется (поле ввода)
+  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html'];
   function renderVoiceFab() {
     var mode = cachedMode();
     var old = document.getElementById('vf-voice-fab');
@@ -816,6 +1139,18 @@
       (ky ? 'Үн менен сураңыз' : 'Спросить голосом') + '</span>';
     b.addEventListener('click', openOwnerVoice);
     document.body.appendChild(b);
+    // Телефон: пока листаете, кнопка уходит и не закрывает кнопки списка (позвонить, WhatsApp); вернётся через 0,7 с
+    if (!renderVoiceFab.scrollBound) {
+      renderVoiceFab.scrollBound = true;
+      var tm = null;
+      window.addEventListener('scroll', function () {
+        if (!isPhone()) return;
+        var f = document.getElementById('vf-voice-fab'); if (!f) return;
+        f.classList.add('vf-fab-away');
+        clearTimeout(tm);
+        tm = setTimeout(function () { f.classList.remove('vf-fab-away'); }, 700);
+      }, { passive: true });
+    }
   }
   function loadVoiceUi(cb) {
     if (window.VoksyVoice) { cb(); return; }
@@ -998,6 +1333,8 @@
     logout: logout,
     refreshWallet: refreshWallet,
     openTopup: openTopupModal,
+    openCredits: openCreditsModal,
+    openMore: openMoreMenu,
     MENU: MENU
   };
 

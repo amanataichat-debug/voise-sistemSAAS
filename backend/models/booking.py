@@ -42,6 +42,8 @@ class BookingResource(Base):
     service_ids = Column(JSONB, nullable=True)                  # null — делает все услуги
     is_active = Column(Boolean, nullable=False, default=True)
     position = Column(Integer, nullable=False, default=0)
+    pay_percent = Column(Float, nullable=True)                  # % мастеру с выручки его записей «пришёл»
+    pay_fixed = Column(Float, nullable=True)                    # оклад в месяц, сом
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

@@ -848,11 +848,12 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
                     "FROM bookings WHERE user_id = :uid AND start_at >= :s AND start_at < :u AND status <> 'cancelled' "
                     "GROUP BY 1 ORDER BY 2 DESC LIMIT 8"), {"uid": uid, "s": s, "u": u}).fetchall()]
     by_res: Dict[str, Dict[str, float]] = {}
-    for rid, cnt, minutes in db.execute(text(
-        "SELECT resource_id, count(*), COALESCE(sum(extract(epoch FROM end_at - start_at)) / 60.0, 0) FROM bookings "
+    for rid, cnt, minutes, rev in db.execute(text(
+        "SELECT resource_id, count(*), COALESCE(sum(extract(epoch FROM end_at - start_at)) / 60.0, 0), "
+        "COALESCE(sum(price) FILTER (WHERE status = 'arrived'), 0) FROM bookings "
         "WHERE user_id = :uid AND start_at >= :s AND start_at < :u AND status <> 'cancelled' GROUP BY 1"
     ), {"uid": uid, "s": s, "u": u}).fetchall():
-        by_res[str(rid)] = {"count": int(cnt or 0), "minutes": float(minutes or 0)}
+        by_res[str(rid)] = {"count": int(cnt or 0), "minutes": float(minutes or 0), "revenue": float(rev or 0)}
     repeat = int(db.execute(text(
         "SELECT count(DISTINCT b.contact_id) FROM bookings b WHERE b.user_id = :uid AND b.start_at >= :s "
         "AND b.start_at < :u AND b.status <> 'cancelled' AND b.contact_id IS NOT NULL AND EXISTS ("
@@ -874,13 +875,13 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
             for wa, wb in bs._work_intervals(r, d):
                 cap += (wb - wa).total_seconds() / 60.0
             d += timedelta(days=1)
-        st = by_res.get(str(r.id), {"count": 0, "minutes": 0.0})
+        st = by_res.get(str(r.id), {"count": 0, "minutes": 0.0, "revenue": 0.0})
         if not r.is_active and not st["count"]:
             continue
         capacity_total += cap
         masters.append({"id": str(r.id), "name": r.name, "color": r.color, "count": st["count"],
                         "booked_min": int(round(st["minutes"])), "capacity_min": int(round(cap)),
-                        "load_pct": _pct(st["minutes"], cap)})
+                        "load_pct": _pct(st["minutes"], cap), "revenue": round(st["revenue"], 2)})
     masters.sort(key=lambda m: -m["count"])
     decided = tot["arrived"] + tot["no_show"]
     return {
@@ -1100,7 +1101,7 @@ def _kpi(kid: str, label: str, value, prev, *, unit: str = "", good: str = "up",
 
 
 SECTIONS = ("kpis", "series", "channels", "replies", "heatmap", "funnel", "calls", "bookings", "orders", "catalog",
-            "money", "bot")
+            "money", "bot", "finance")
 
 
 def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Optional[str] = None,
@@ -1146,10 +1147,18 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
     outcomes = _safe(db, "outcomes", lambda: _outcomes_block(db, uid, rng), {}) if has_bot and "calls" in want else {}
     bookings = (_safe(db, "bookings", lambda: _bookings_block(db, user, rng, idx, pidx), None)
                 if (modules.get("booking") or "bookings" in want) and want & {"bookings", "kpis", "series"} else None)
+    if bookings and not modules.get("booking") and not bookings.get("total") and not bookings.get("prev_total"):
+        bookings = None   # запись выключена и записей нет — пустой раздел «Записи» магазину не нужен
     orders = (_safe(db, "orders", lambda: _orders_block(db, user, rng, idx, pidx, bool(modules.get("orders"))), None)
               if want & {"orders", "kpis", "series"} else None)
     catalog = _safe(db, "catalog", lambda: _catalog_block(db, uid), None) if has_bot and "catalog" in want else None
     money = _safe(db, "money", lambda: _money_block(db, user, rng), None) if "money" in want else None
+    finance = None
+    if want & {"finance", "kpis"} and (bookings or orders):
+        def _fin():
+            from backend.services import finance_service
+            return finance_service.summary(db, user, rng=rng, with_series=False)
+        finance = _safe(db, "finance", _fin, None)
     dialogs = (_safe(db, "dialogs", lambda: _dialogs_block(db, uid, rng, idx), None)
                if (not has_bot) and want & {"series", "kpis"} else None)
     gaps = _safe(db, "gaps", lambda: _gaps_count(db, uid, rng), 0) if has_bot and want & {"bot", "kpis"} else 0
@@ -1254,6 +1263,10 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
         kpis.append(_kpi("order_revenue", "Выручка по заказам", orders["revenue"], orders["prev_revenue"], fmt="som",
                          sub=(f"средний чек {_money(orders['avg_check'])}" if orders.get("avg_check") else "заказов пока нет"),
                          section="orders"))
+    if finance and (finance.get("expenses_count") or finance.get("payroll_total")):
+        kpis.append(_kpi("profit", "Прибыль", finance["profit"], finance["prev_profit"], fmt="som",
+                         sub=f"выручка {_money(finance['revenue'])} − расходы {_money(finance['expenses'])}",
+                         section="finance"))
     if has_bot and funnel and modules.get("crm", True) and not bookings and not orders:
         co = (clients or {}).get("cohort") or {}
         kpis.append(_kpi("won", "Купили", co.get("won", 0), None,
@@ -1269,6 +1282,10 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
         kpis.append(_kpi("spent", "Потрачено на минуты", money["wallet_spent"], None, fmt="som",
                          sub=f"{money['paid_minutes']} мин разговора", section="money"))
 
+    if bookings or orders:
+        # Салон, магазин, доставка: сначала деньги и записи/заказы, потом обращения
+        _prio = ["revenue", "order_revenue", "profit", "visits", "orders", "new_clients", "inbound", "reply", "calls"]
+        kpis.sort(key=lambda k: _prio.index(k["id"]) if k.get("id") in _prio else 99)
     rep: Dict[str, Any] = {
         "period": {
             "key": rng.key, "title": PERIODS.get(rng.key), "label": rng.label, "from": rng.a.isoformat(),
@@ -1312,6 +1329,7 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
         "orders": ({k: v for k, v in orders.items() if k not in ("series", "prev_orders")} if orders else None),
         "catalog": catalog,
         "money": money,
+        "finance": ({k: v for k, v in finance.items() if k not in ("items", "categories_all")} if finance else None),
         "bot": {
             "replies": int(_sum(series["bot_out"])), "owner_replies": int(_sum(series["owner_out"])),
             "bot_share": _pct(_sum(series["bot_out"]), _sum(series["bot_out"]) + _sum(series["owner_out"])),

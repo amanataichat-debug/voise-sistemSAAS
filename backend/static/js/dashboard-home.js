@@ -184,6 +184,9 @@
   // ------------------------------------------------------------------ график
   function currentMetric() {
     if (!an || !V) return null;
+    // Салон / клиника: по умолчанию график записей, магазин — заказов (обращения — по выбору)
+    if (!metric && hasBooking() && V.metricsAvail(an).some(function (x) { return x.id === 'visits'; })) return V.metricById(an, 'visits');
+    if (!metric && hasOrders() && V.metricsAvail(an).some(function (x) { return x.id === 'orders'; })) return V.metricById(an, 'orders');
     return V.metricById(an, metric);
   }
   function renderChart() {
@@ -318,6 +321,110 @@
       .catch(function () { todayLoading = false; today = { bookings: [] }; if (data) renderSide(); });
   }
 
+  // ------------------------------------------------------------------ деньги: сегодня и этот месяц
+  // Салоны, клиники, магазины, доставка (19.11.2026): на главной сразу видно, сколько заработали
+  // сегодня и с начала месяца, прибыль (если внесены расходы), что популярно и как работают мастера.
+  function hasOrders() { return !!((business().modules || {}).orders); }
+  function hasMoney() { return hasBooking() || hasOrders(); }
+  var money = { today: null, month: null };
+  function moneyDelta(cur, prev) {
+    if (prev == null || (!cur && !prev)) return '';
+    var diff = cur - prev;
+    if (!diff) return '<span class="dh-md same">как раньше</span>';
+    var up = diff > 0;
+    var txt = prev > 0 ? (up ? '+' : '') + Math.round(diff * 100 / prev) + '%' : (up ? '+' : '−') + som(Math.abs(diff));
+    return '<span class="dh-md ' + (up ? 'up' : 'down') + '">' + ic(up ? 'trending-up' : 'trending-down') + txt + '</span>';
+  }
+  function renderMoney() {
+    var box = $('dh-money'), biz = $('dh-biz');
+    if (!hasMoney()) { box.hidden = true; biz.hidden = true; document.body.classList.remove('dh-has-money'); return; }
+    document.body.classList.add('dh-has-money');
+    box.hidden = false;
+    var t = money.today, m = money.month;
+    if (!t && !m) {
+      box.innerHTML = '<div class="dh-mcard"><span class="dh-skel"></span><span class="dh-skel" style="width:40%"></span></div>' +
+        '<div class="dh-mcard"><span class="dh-skel"></span><span class="dh-skel" style="width:40%"></span></div>';
+      return;
+    }
+    function rev(rep) {
+      if (!rep) return { v: 0, p: 0 };
+      var b = rep.bookings || {}, o = rep.orders || {};
+      return { v: (b.revenue || 0) + (o.revenue || 0), p: (b.prev_revenue || 0) + (o.prev_revenue || 0) };
+    }
+    var tr = rev(t), mr = rev(m);
+    var tb = (t && t.bookings) || null, to = (t && t.orders) || null;
+    var todayLine = [];
+    if (tb) {
+      todayLine.push('<b>' + num(tb.arrived) + '</b> пришли');
+      if (tb.upcoming) todayLine.push('<b>' + num(tb.upcoming) + '</b> ещё впереди');
+      if (tb.expected_revenue) todayLine.push('ожидается ещё ' + som(tb.expected_revenue));
+    }
+    if (to) todayLine.push('<b>' + num(to.total) + '</b> ' + plural(to.total, 'заказ', 'заказа', 'заказов'));
+    var fin = m && m.finance;
+    var monthName = new Date().toLocaleDateString('ru-RU', { month: 'long' });
+    var profitHtml = fin && (fin.expenses_count || fin.payroll_total)
+      ? '<div class="dh-mrow"><span>Прибыль</span><b class="' + (fin.profit < 0 ? 'neg' : '') + '">' + (fin.profit < 0 ? '−' : '') + som(Math.abs(fin.profit)) + '</b></div>' +
+        '<div class="dh-mrow"><span>Расходы</span><b>' + som(fin.expenses) + '</b></div>'
+      : '<div class="dh-mhint">Внесите аренду и зарплаты — покажем прибыль</div>';
+    box.innerHTML =
+      '<a class="dh-mcard today" href="/static/analytics.html?period=today">' +
+      '<div class="dh-mtop"><span>' + ic('sun') + 'Сегодня</span>' + (tb && tb.total ? '<span class="dh-md same">' + num(tb.total) + ' ' + plural(tb.total, 'запись', 'записи', 'записей') + '</span>' : '') + '</div>' +
+      '<div class="dh-mval">' + som(tr.v) + '</div>' +
+      '<div class="dh-msub">' + (todayLine.join(' · ') || 'выручка за сегодня') + '</div></a>' +
+      '<a class="dh-mcard month" href="/static/finance.html?period=mtd">' +
+      '<div class="dh-mtop"><span>' + ic('calendar') + monthName.charAt(0).toUpperCase() + monthName.slice(1) + '</span>' + moneyDelta(mr.v, m ? mr.p : null) + '</div>' +
+      '<div class="dh-mval">' + som(mr.v) + '</div>' +
+      '<div class="dh-msub">выручка с 1 числа' + (m && m.bookings && m.bookings.avg_check ? ' · средний чек ' + som(m.bookings.avg_check) : (m && m.orders && m.orders.avg_check ? ' · средний чек ' + som(m.orders.avg_check) : '')) + '</div>' +
+      profitHtml + '</a>';
+    renderBiz();
+  }
+  function renderBiz() {
+    var m = money.month, biz = $('dh-biz');
+    if (!m) return;
+    var b = m.bookings || {}, o = m.orders || {};
+    var top = (b.services && b.services.length) ? b.services.map(function (x) { return { t: x.title, n: x.count, a: x.revenue }; })
+      : (o.top || []).map(function (x) { return { t: x.title, n: x.qty, a: x.amount }; });
+    var unit = (b.services && b.services.length) ? ['запись', 'записи', 'записей'] : ['шт.', 'шт.', 'шт.'];
+    var title = (b.services && b.services.length) ? 'Популярные услуги' : 'Что покупают';
+    var masters = b.masters || [];
+    if (!top.length && !masters.length) { biz.hidden = true; return; }
+    biz.hidden = false;
+    var max = Math.max.apply(null, top.map(function (x) { return x.n; }).concat([1]));
+    $('dh-top-card').hidden = !top.length;
+    $('dh-top-card').innerHTML = '<div class="dh-card-head"><h3 class="dh-card-title">' + title + ' <span class="dh-kpi-per">в этом месяце</span></h3>' +
+      '<a class="dh-link" href="/static/analytics.html?period=mtd#' + (b.services && b.services.length ? 'bookings' : 'orders') + '">Отчёт →</a></div>' +
+      '<div class="dh-top">' + top.slice(0, 5).map(function (x, i) {
+        return '<div class="dh-top-row"><span class="dh-top-n">' + (i + 1) + '</span><div class="dh-top-m"><div class="dh-top-t"><span>' + esc(x.t) + '</span>' +
+          '<b>' + som(x.a) + '</b></div><div class="dh-bar"><span style="width:' + Math.max(4, x.n / max * 100) + '%;background:' + C_IN + '"></span></div>' +
+          '<div class="dh-top-s">' + num(x.n) + ' ' + plural(x.n, unit[0], unit[1], unit[2]) + '</div></div></div>';
+      }).join('') + '</div>';
+    $('dh-team-card').hidden = !masters.length;
+    $('dh-team-card').innerHTML = '<div class="dh-card-head"><h3 class="dh-card-title">Мастера <span class="dh-kpi-per">в этом месяце</span></h3>' +
+      '<a class="dh-link" href="/static/finance.html?period=mtd">Зарплаты →</a></div>' +
+      '<div class="dh-list">' + masters.slice(0, 6).map(function (x) {
+        return '<div class="dh-item"><span class="dh-ava" style="background:' + esc(x.color || C_IN) + '">' + esc(String(x.name || '?').charAt(0).toUpperCase()) + '</span>' +
+          '<div class="dh-item-main"><div class="dh-item-title">' + esc(x.name) + '</div><div class="dh-item-sub">' + num(x.count) + ' ' + plural(x.count, 'запись', 'записи', 'записей') +
+          (x.load_pct != null ? ' · загрузка ' + x.load_pct + '%' : '') + '</div></div><span class="dh-go dh-strong">' + som(x.revenue || 0) + '</span></div>';
+      }).join('') + '</div>';
+  }
+  function loadMoney() {
+    var t = token();
+    if (!t || !hasMoney()) { renderMoney(); return; }
+    var sec = 'kpis,bookings,orders,finance';
+    [['today', 'today'], ['month', 'mtd']].forEach(function (p) {
+      var key = 'vf_dash_money:' + p[1];
+      try { var c = JSON.parse(sessionStorage.getItem(key) || 'null'); if (c) money[p[0]] = c; } catch (e) { /* ignore */ }
+      fetch('/api/analytics/report?period=' + p[1] + '&sections=' + sec, { headers: { Authorization: 'Bearer ' + t } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d) return;
+          try { sessionStorage.setItem(key, JSON.stringify(d)); } catch (e) { /* ignore */ }
+          money[p[0]] = d; renderMoney();
+        }).catch(function () { /* сеть */ });
+    });
+    renderMoney();
+  }
+
   // ------------------------------------------------------------------ последние звонки
   function renderRecent() {
     var rows = data.recent_calls || [];
@@ -447,6 +554,8 @@
     renderChart();
     renderSide();
     renderRecent();
+    // Звонков нет — блок не занимает место на телефоне (на компьютере — подсказка)
+    var rc = $('dh-calls-grid'); if (rc) rc.classList.toggle('dh-no-calls', !(data.recent_calls || []).length);
     renderConnect();
     renderSetup();
     renderAssistants();
@@ -468,6 +577,7 @@
     } catch (e) { /* ignore */ }
     loadAn();
     loadToday();
+    loadMoney();
     fetch('/api/dashboard/summary', { headers: { Authorization: 'Bearer ' + t } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
@@ -535,7 +645,9 @@
       data.wallet = Object.assign({}, data.wallet, { balance: e.detail.balance });
       renderKpis();
     });
-    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } });
+    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } loadMoney(); });
+    // Первый вход на этом телефоне: ниша приходит с /users/me позже, чем рисуется страница
+    document.addEventListener('vf:user', function () { if (hasMoney() && !money.month) { loadMoney(); if (data) { loadToday(); renderSide(); } } });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

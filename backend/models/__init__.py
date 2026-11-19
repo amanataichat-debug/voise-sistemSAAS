@@ -128,6 +128,9 @@ from .team import TeamMember
 # Заказы магазинов и доставки (ветка 1811-niche-admin-speed)
 from .order import Order, OrderSettings
 
+# Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
+from .finance import BusinessExpense
+
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 

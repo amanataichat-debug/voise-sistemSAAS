@@ -10,7 +10,7 @@
 }catch(e){} })();
 </script>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Панель управления — Voksy AI</title>
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
@@ -1805,6 +1805,9 @@
         </div>
       </section>
 
+      <!-- Деньги сегодня и за месяц (ниши с записью или заказами) — рисует dashboard-home.js → renderMoney -->
+      <section class="dh-money" id="dh-money" hidden></section>
+
       <section class="dh-kpis" id="dh-kpis">
         <div class="dh-kpi"><span class="dh-skel"></span></div>
         <div class="dh-kpi"><span class="dh-skel"></span></div>
@@ -1839,7 +1842,13 @@
         </div>
       </section>
 
-      <section class="dh-grid">
+      <!-- Популярные услуги / товары и мастера (ниши с записью или заказами) -->
+      <section class="dh-grid dh-biz" id="dh-biz" hidden>
+        <div class="dh-card dh-span-2" id="dh-top-card"></div>
+        <div class="dh-card" id="dh-team-card"></div>
+      </section>
+
+      <section class="dh-grid" id="dh-calls-grid">
         <div class="dh-card dh-span-2">
           <div class="dh-card-head">
             <h3 class="dh-card-title">Последние звонки</h3>

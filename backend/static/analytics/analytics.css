@@ -262,3 +262,16 @@
   .an-hbar-track > div { transition: none; }
   .an-kpi, .an-heat .c { transition: none; }
 }
+
+/* Телефон (19.11.2026): отчёт по разделам — вкладки как в приложении банка, на экране один раздел */
+@media (max-width: 760px) {
+  .an-body.an-tabs .an-section { display: none; }
+  .an-body.an-tabs .an-section.on { display: flex; }
+  .an-body.an-tabs { padding-top: 6px; }
+  .an-nav.an-nav-sticky { position: sticky; top: 64px; z-index: 5; margin: 8px -12px 0; padding: 8px 12px; background: var(--vf-bg, #f6f8fb);
+    border-bottom: 1px solid var(--vf-border); gap: 6px; }
+  .an-nav.an-nav-sticky a { padding: 9px 14px; border-radius: 999px; font-size: 14px; background: var(--vf-surface); border: 1px solid var(--vf-border); }
+  .an-nav.an-nav-sticky a.active { background: var(--an-ink, #0e1729); border-color: var(--an-ink, #0e1729); color: #fff; }
+  .an-stats { grid-template-columns: 1fr 1fr !important; }
+  .an-section-title h3 { font-size: 17px; }
+}
