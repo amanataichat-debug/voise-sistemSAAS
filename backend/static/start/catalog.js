@@ -181,7 +181,8 @@
       '<div class="st-cathead"><div><b>' + esc(CAT_TITLE) + '</b><span class="muted small">' + esc(CAT_HINT) + '</span></div>' +
       '<div class="st-catadd"><button class="btn btn-sm" id="cat-photos" type="button" title="Каждое фото станет позицией: потом допишете цены прямо в таблице">' + icon('image') + '<span>Позиции из фото</span></button>' +
       '<button class="btn btn-sm" id="cat-paste" type="button" title="Название; цена; размеры; количество — по строке на товар">' + icon('list') + '<span>Вставить списком</span></button>' +
-      '<a class="btn btn-sm" href="' + esc(catOpts.sheetHref || '#s-sheet') + '" title="Импорт из Google Таблицы">' + icon('layers') + '<span>Из таблицы</span></a>' +
+      (catOpts.sheetHref === false ? '' :   // сотруднику Google Таблица не открыта (подключает владелец)
+        '<a class="btn btn-sm" href="' + esc(catOpts.sheetHref || '#s-sheet') + '" title="Импорт из Google Таблицы">' + icon('layers') + '<span>Из таблицы</span></a>') +
       '<button class="btn btn-primary btn-sm" id="kb-add" type="button">' + icon('plus') + '<span>Добавить' + (curCol ? ' в «' + esc(curCol) + '»' : ' позицию') + '</span></button></div></div>' +
       '<div class="st-colbar">' + chip('', 'Все', all.length) + cols.map(function (c) { return chip(c[0], c[0], c[1]); }).join('') +
       (cols.length && noCol ? chip(NO_COL, 'Без коллекции', noCol) : '') +

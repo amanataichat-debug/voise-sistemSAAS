@@ -54,11 +54,15 @@ function LoginForm({ onSwitchToRegister }) {
       const data = await api.login({ email: email.trim(), password });
 
       localStorage.setItem('auth_token', data.token);
+      // Сотрудник кабинета: меню и первая страница — его разделы (sidebar.js читает vf_staff)
+      try {
+        localStorage.setItem('vf_staff', JSON.stringify({ t: String(data.token || '').slice(-24), staff: data.staff || null }));
+      } catch (e) { /* ignore */ }
 
       setNotification({ type: 'success', message: t('auth.login_status_success') });
 
       setTimeout(() => {
-        window.location.href = '/static/dashboard.html';
+        window.location.href = data.redirect_to || '/static/dashboard.html';
       }, 500);
     } catch (error) {
       setIsLoading(false);

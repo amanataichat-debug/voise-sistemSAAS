@@ -33,6 +33,16 @@
   S.$$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
   S.token = function () { try { return localStorage.getItem('auth_token'); } catch (e) { return null; } };
+  // Сотрудник кабинета (вход по своей почте, ветка 1811-niche-admin-speed): профиль из /api/users/me → staff,
+  // его кладёт sidebar.js в localStorage.vf_staff вместе с хвостом токена. null — это владелец.
+  S.staff = function () {
+    try {
+      var c = JSON.parse(localStorage.getItem('vf_staff') || 'null');
+      return c && c.t === (S.token() || '').slice(-24) ? (c.staff || null) : null;
+    } catch (e) { return null; }
+  };
+  // Открыт ли раздел (inbox, crm, booking, booking_setup, catalog, analytics). Владельцу — всё.
+  S.staffCan = function (key) { var s = S.staff(); return !s || (s.permissions || []).indexOf(key) >= 0; };
 
   function icon(name, cls) { return window.VF ? window.VF.icon(name, cls) : ''; }
   S.icon = icon;

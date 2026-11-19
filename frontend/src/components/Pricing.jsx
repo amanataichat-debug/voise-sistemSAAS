@@ -26,6 +26,7 @@ const ROWS = [
   ['leads', [true, true, true, true]],
   ['selfcall', ['msg_first', false, 'msg_first', true]],
   ['documents', ['docs_reply', false, 'docs_reply', true]],
+  ['team', ['team_seat', false, 'team_seat', 'team_seat']],
   ['credits', ['credits_trial', false, 'credits_start', 'credits']],
   ['support', [null, null, 'priority', 'vip']],
 ];

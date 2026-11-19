@@ -20,6 +20,7 @@ class WalletTransactionType:
     BONUS = "bonus"          # подарок на тест
     ADMIN = "admin"          # начисление / корректировка админом
     CHARGE = "charge"        # минуты голосовой модели
+    TEAM = "team"            # место сотрудника кабинета (TEAM_SEAT_SOM за TEAM_SEAT_DAYS)
 
 
 class WalletTransaction(Base):

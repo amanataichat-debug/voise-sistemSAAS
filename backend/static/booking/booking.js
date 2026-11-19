@@ -497,14 +497,18 @@
     var q = new URLSearchParams(location.search);
     st.day = q.get('date') || keyOf(new Date());
     var acts = document.getElementById('bk-actions');
-    acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
-      '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' +
+    // Мастера, график, правила и ссылка — у владельца и сотрудника с разделом «Мастера и график»
+    var setup = S.staffCan ? S.staffCan('booking_setup') : true;
+    acts.innerHTML = (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
+      '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' : '') +
       '<button class="btn btn-primary btn-sm" type="button" id="bk-new">' + icon('plus') + '<span class="lbl">Записать</span></button>';
     document.getElementById('bk-new').addEventListener('click', function () { newBooking({}); });
-    document.getElementById('bk-set').addEventListener('click', settings);
-    document.getElementById('bk-link-btn').addEventListener('click', function () {
-      settings(); setTimeout(function () { var t = document.querySelector('[data-tab="l"]'); if (t) t.click(); }, 30);
-    });
+    if (setup) {
+      document.getElementById('bk-set').addEventListener('click', settings);
+      document.getElementById('bk-link-btn').addEventListener('click', function () {
+        settings(); setTimeout(function () { var t = document.querySelector('[data-tab="l"]'); if (t) t.click(); }, 30);
+      });
+    }
     var fab = document.createElement('button');
     fab.className = 'bk-fab'; fab.type = 'button'; fab.innerHTML = icon('plus') + 'Записать';
     fab.addEventListener('click', function () { newBooking({ date: st.day }); });

@@ -52,6 +52,14 @@ async def register(
     try:
         logger.info(f"📝 Registration request for: {user_data.email}")
         
+        # Email сотрудника чужого кабинета — отдельный кабинет на него не заводим (вход был бы неоднозначным)
+        from backend.services import team_service
+        if team_service.find_member_by_email(db, user_data.email) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Этот email уже используется сотрудником кабинета. Войдите с ним или укажите другой email.",
+            )
+
         # ✅ ВАРИАНТ A: Проверяем существует ли пользователь
         from backend.models.user import find_user_by_email
         existing_user = find_user_by_email(db, user_data.email)
@@ -222,7 +230,15 @@ async def login(
     """
     try:
         logger.info(f"🔐 Login attempt for: {login_data.email}")
-        
+
+        # 0. Сотрудник кабинета (своя почта и пароль, данные владельца). Владелец с таким email — главнее:
+        #    email сотрудника не может совпадать с email кабинета (проверяется при добавлении и регистрации).
+        from backend.models.user import find_user_by_email as _find_user
+        if _find_user(db, login_data.email) is None:
+            staff_login = _staff_login(db, login_data.email, login_data.password)
+            if staff_login is not None:
+                return staff_login
+
         # 1. Authenticate user (проверка credentials)
         result = await AuthService.login(db, login_data)
         
@@ -279,6 +295,34 @@ async def login(
         )
 
 
+def _staff_login(db: Session, email: str, password: str):
+    """Вход сотрудника: токен с данными владельца и правами сотрудника. None — это не сотрудник."""
+    from backend.core.security import create_staff_token
+    from backend.services import team_service
+    member, err = team_service.authenticate(db, email, password)
+    if member is None:
+        if err and err.startswith("disabled:"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail=team_service.DISABLED_MESSAGES.get(err.split(":", 1)[1],
+                                                                          team_service.DISABLED_MESSAGES["owner"]))
+        if err == "owner_inactive":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Кабинет владельца отключён.")
+        return None
+    owner = db.query(User).filter(User.id == member.owner_id).first()
+    profile = team_service.staff_profile(db, owner, member.id) or {}
+    logger.info(f"✅ Staff login: {member.email} → owner {owner.id}")
+    return {
+        "success": True,
+        "message": "Login successful",
+        "token": create_staff_token(owner.id, member.id, member.token_version),
+        "token_type": "bearer",
+        "user": {"id": str(owner.id), "email": member.email, "first_name": member.name,
+                 "email_verified": True, "staff": profile},
+        "staff": profile,
+        "redirect_to": profile.get("home") or "/static/inbox.html",
+    }
+
+
 @router.post("/reset-password", response_model=dict)
 async def reset_password_request(
     reset_data: PasswordResetRequest,
@@ -294,6 +338,12 @@ async def reset_password_request(
     Returns:
         Confirmation message (same whether the account exists or not)
     """
+    from backend.models.user import find_user_by_email as _find_user
+    from backend.services import team_service
+    if _find_user(db, reset_data.email) is None and team_service.find_member_by_email(db, reset_data.email) is not None:
+        # Пароль сотрудника хранится у владельца кабинета: письмо с кодом тут не поможет
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Пароль сотрудника меняет владелец кабинета — попросите его в разделе «Сотрудники».")
     try:
         await AuthService.reset_password_request(db, reset_data.email)
         # Always return success for security reasons

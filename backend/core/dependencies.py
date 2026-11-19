@@ -12,7 +12,7 @@ import uuid
 from typing import Optional
 from datetime import datetime, timezone
 
-from backend.core.security import get_current_user_id, decode_jwt_token, IMPERSONATOR
+from backend.core.security import get_current_user_id, decode_jwt_token, IMPERSONATOR, STAFF, staff_claims
 from backend.core.logging import get_logger
 from backend.models.user import User
 from backend.models.assistant import AssistantConfig
@@ -68,6 +68,19 @@ async def get_current_user(
         logger.debug(f"✅ User retrieved: {user.email} (ID: {user_id})")
         # Вход админа в кабинет клиента: id админа из токена (None — обычный вход)
         user._impersonator_id = IMPERSONATOR.get()
+        # Сотрудник кабинета: данные владельца, права — только его разделы (middleware
+        # app.staff_access_guard уже пропустил путь). Здесь — что сотрудник ещё действует.
+        user._staff_member_id = None
+        user._staff = None
+        staff = STAFF.get()
+        if staff:
+            from backend.services import team_service
+            snap = await team_service.snapshot_async(staff["id"])
+            err = team_service.session_error(snap, str(user.id), staff.get("v"))
+            if err:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=err)
+            user._staff_member_id = staff["id"]
+            user._staff = snap
         return user
         
     except ValueError as e:
@@ -89,6 +102,20 @@ async def get_current_user(
 def is_impersonating(user) -> bool:
     """Запрос сделан админом из кабинета клиента (кнопка «Войти в кабинет» в админке)."""
     return bool(getattr(user, "_impersonator_id", None))
+
+
+def is_staff(user) -> bool:
+    """Запрос сделан сотрудником кабинета (вход по почте сотрудника), а не владельцем."""
+    return bool(getattr(user, "_staff_member_id", None))
+
+
+def ensure_owner(user, what: str = "Это действие") -> None:
+    """Деньги, тарифы, настройки бота и сотрудников — только владелец кабинета (403 сотруднику)."""
+    if is_staff(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "staff_forbidden", "message": f"{what} доступно только владельцу кабинета"},
+        )
 
 
 def ensure_not_impersonating(user, what: str = "Это действие") -> None:
@@ -146,6 +173,7 @@ async def get_current_user_flexible(
         token = auth[7:].strip()
         token_data = decode_jwt_token(token)  # кидает 401 на невалидном токене
         IMPERSONATOR.set(token_data.get("imp"))
+        STAFF.set(staff_claims(token_data))
         return await get_current_user(user_id=token_data["sub"], db=db)
 
     raise HTTPException(

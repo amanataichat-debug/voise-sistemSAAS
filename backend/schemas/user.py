@@ -127,6 +127,9 @@ class UserResponse(UserBase):
     business: Optional[Dict[str, Any]] = Field(None, description="Cabinet configuration for the business niche")
     # Запрос сделан админом из кабинета клиента (кнопка «Войти в кабинет» в админке)
     impersonated: bool = Field(False, description="Admin is viewing this account")
+    # Сотрудник кабинета (вход по своей почте): кто он, его разделы, меню, домашняя страница.
+    # Для сотрудника ключи API в ответе пустые, is_admin = False, email и имя — его собственные.
+    staff: Optional[Dict[str, Any]] = Field(None, description="Staff member profile when a staff member is signed in")
     
     class Config:
         from_attributes = True

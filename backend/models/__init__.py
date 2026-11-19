@@ -122,6 +122,9 @@ from .admin_audit import AdminAuditLog
 # Онлайн-запись: мастера, записи, страница записи (ветка 1811-niche-admin-speed)
 from .booking import BookingResource, Booking, BookingPage
 
+# Сотрудники кабинета: вход по своей почте, права по разделам, место 150 сом/мес (ветка 1811-niche-admin-speed)
+from .team import TeamMember
+
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 

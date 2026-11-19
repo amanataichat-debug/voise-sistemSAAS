@@ -60,7 +60,7 @@ from backend.services import agent_pause
 from backend.services import catalog_service
 from backend.services import agent_voice_context
 from backend.core.config import settings
-from backend.core.dependencies import get_current_user, get_current_user_flexible
+from backend.core.dependencies import get_current_user, get_current_user_flexible, is_staff
 from backend.core.pipeline_stages import (
     AGENT_CONTACT_STAGES, is_valid_stage, get_agent_stages,
     is_valid_stage_for_agent, save_agent_stages, normalize_stages_list,
@@ -976,6 +976,15 @@ def list_agents(
         .order_by(AgentConfig.created_at.asc())
         .all()
     )
+    if is_staff(current_user):
+        # Сотруднику — только чтобы выбрать бота: без инструкций, промптов и вебхука владельца
+        return {
+            "total": len(agents), "max_agents": len(agents), "can_create_more": False,
+            "has_agent_access": current_user.has_agent_chat_access(), "agent_mode": current_user.agent_mode(),
+            "staff": True,
+            "agents": [{"id": str(a.id), "name": a.name, "is_active": a.is_active,
+                        "assistant_type": a.assistant_type} for a in agents],
+        }
     return {
         "total": len(agents),
         "max_agents": _max_agents_for(current_user),
@@ -1765,6 +1774,14 @@ def _kb_media_ids(db: Session, agent: AgentConfig, ids) -> Optional[list]:
     return out or None
 
 
+def _staff_kb_guard(user: User, kind: Optional[str]) -> None:
+    """Сотрудник с разделом «Каталог» меняет только позиции каталога — не «вопрос-ответ»,
+    не «о компании» и не файлы-источники: это знания бота, их правит владелец."""
+    if is_staff(user) and (kind or "") != "product":
+        raise HTTPException(status_code=403, detail={
+            "error": "staff_forbidden", "message": "Сотрудник меняет только позиции каталога"})
+
+
 def _kb_entry_or_404(db: Session, agent: AgentConfig, entry_id: str):
     from backend.models.agent_knowledge import AgentKnowledgeEntry
     try:
@@ -1918,6 +1935,7 @@ async def create_knowledge_entry(
     kind = (body.kind or "section").strip()
     if kind not in KB_KINDS:
         raise HTTPException(status_code=400, detail="invalid_kind")
+    _staff_kb_guard(current_user, kind)
     title = (body.title or "").strip()
     text = (body.body or "").strip()
     if not title and not text:
@@ -1973,6 +1991,7 @@ async def update_knowledge_entry(
     if not agent:
         raise HTTPException(status_code=404, detail="not_found")
     row = _kb_entry_or_404(db, agent, entry_id)
+    _staff_kb_guard(current_user, row.kind)
     stock_before = catalog_service.stock_state(row)
 
     data = body.dict(exclude_unset=True)
@@ -2219,6 +2238,7 @@ async def delete_knowledge_entry(
     if not agent:
         raise HTTPException(status_code=404, detail="not_found")
     row = _kb_entry_or_404(db, agent, entry_id)
+    _staff_kb_guard(current_user, row.kind)
     deleted_id = str(row.id)
     db.delete(row)
     db.flush()

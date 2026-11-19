@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.core.dependencies import get_current_user
+from backend.core.dependencies import get_current_user, is_staff
 from backend.core.logging import get_logger
 from backend.core.pipeline_stages import get_agent_stages, is_valid_stage_for_agent
 from backend.core.timezone_utils import iso_utc
@@ -70,6 +70,26 @@ def _err(e: "inbox.SendError", status: int = 400):
     raise HTTPException(status_code=status, detail={"code": e.code, "message": e.message})
 
 
+def _settings(db: Session, user: User) -> Dict[str, Any]:
+    """Настройки инбокса: владельца, а у сотрудника — поверх них его личные (язык, звук, Enter…)."""
+    base = inbox.get_settings(db, user.id)
+    sid = getattr(user, "_staff_member_id", None)
+    if not sid:
+        return base
+    from backend.services import team_service
+    mine = team_service.member_prefs(db, sid).get("inbox") or {}
+    try:
+        return inbox.clean_settings(mine, base)
+    except ValueError:
+        return base
+
+
+def _author(user: User) -> Optional[str]:
+    """Имя сотрудника, ответившего клиенту (у владельца — None: в ленте «Вы»)."""
+    snap = getattr(user, "_staff", None)
+    return (snap or {}).get("name") if getattr(user, "_staff_member_id", None) else None
+
+
 def _stages(agent) -> list:
     try:
         return get_agent_stages(agent)
@@ -86,7 +106,7 @@ def overview(current_user: User = Depends(get_current_user), db: Session = Depen
     """Всё для первой отрисовки: режим тарифа, боты, каналы, стадии, настройки, языки."""
     _require_access(current_user)
     agents = inbox.user_agents(db, current_user)
-    settings = inbox.get_settings(db, current_user.id)
+    settings = _settings(db, current_user)
     return {
         "agent_mode": current_user.agent_mode(),
         "agents": [{
@@ -97,6 +117,8 @@ def overview(current_user: User = Depends(get_current_user), db: Session = Depen
             "stages": _stages(a),
         } for a in agents],
         "settings": settings,
+        # Сотрудник: каналы и бота настраивает владелец — окно «Каналы» и ссылки на бота скрыты
+        "staff": is_staff(current_user),
         "languages": [{"code": c, "label": l} for c, l in inbox.LANGUAGES],
         "pause_options": list(inbox.PAUSE_OPTIONS),
     }
@@ -117,7 +139,7 @@ class SettingsBody(BaseModel):
 @router.get("/settings")
 def get_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_access(current_user)
-    return inbox.get_settings(db, current_user.id)
+    return _settings(db, current_user)
 
 
 @router.put("/settings")
@@ -125,6 +147,12 @@ async def put_settings(body: SettingsBody, current_user: User = Depends(get_curr
                        db: Session = Depends(get_db)):
     _require_access(current_user)
     try:
+        if is_staff(current_user):
+            # Личные настройки сотрудника не меняют инбокс владельца
+            from backend.services import team_service
+            data = inbox.clean_settings(body.model_dump(exclude_none=True), _settings(db, current_user))
+            team_service.save_member_prefs(db, current_user._staff_member_id, "inbox", data)
+            return data
         return inbox.save_settings(db, current_user.id, body.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -183,7 +211,7 @@ def open_dialog(
 ):
     _require_access(current_user)
     contact = _contact(db, current_user, contact_id)
-    settings = inbox.get_settings(db, current_user.id)
+    settings = _settings(db, current_user)
     card = inbox.contact_card(db, current_user, contact)
     tl = inbox.timeline(db, contact, settings=settings)
     agent = db.query(AgentConfig).filter(AgentConfig.id == contact.agent_config_id).first() if contact.agent_config_id else None
@@ -207,7 +235,7 @@ def dialog_timeline(
 ):
     _require_access(current_user)
     contact = _contact(db, current_user, contact_id)
-    return inbox.timeline(db, contact, before=_parse_dt(before), settings=inbox.get_settings(db, current_user.id))
+    return inbox.timeline(db, contact, before=_parse_dt(before), settings=_settings(db, current_user))
 
 
 @router.post("/dialogs/{contact_id}/read")
@@ -261,6 +289,7 @@ async def send(
         result = await inbox.send_message(
             db, current_user, contact, channel=channel, text=text, upload=upload, voice=voice_data,
             library_file_id=(library_file_id or None), pause_minutes=pause_val, original=original,
+            author=_author(current_user),
         )
     except inbox.SendError as e:
         db.rollback()
@@ -397,7 +426,7 @@ async def translate_message(channel: str, message_id: str, body: TranslateBody,
     msg = inbox.find_message(db, current_user, channel, message_id)
     if msg is None:
         raise HTTPException(status_code=404, detail="not_found")
-    settings = inbox.get_settings(db, current_user.id)
+    settings = _settings(db, current_user)
     language = body.language or settings.get("my_language") or "ru"
     cached = db.query(InboxTranslation).filter(
         InboxTranslation.channel == channel, InboxTranslation.message_id == msg.id,

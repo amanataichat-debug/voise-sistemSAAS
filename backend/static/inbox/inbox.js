@@ -143,11 +143,18 @@
   // ── Пустые состояния ────────────────────────────────────────────────────
   function botHref() { return st.mode === 'reactive' ? '/static/start-bot.html' : '/static/agent.html'; }
   function channelsHref() { return st.mode === 'reactive' ? '/static/start-bot.html#channels' : '/static/agent.html'; }
+  // Сотрудник кабинета (вход по своей почте): каналы и бота настраивает владелец, CRM — если открыт раздел
+  function staffMe() { return S.staff(); }
+  function staffCan(key) { return S.staffCan(key); }
+  function channelsLink(text) {
+    return staffMe() ? '<span>каналы подключает владелец кабинета</span>' : '<a href="' + channelsHref() + '" target="_top">' + text + '</a>';
+  }
   function noBot() {
     return '<div class="ib-loading"><div class="st-empty-big"><div class="st-empty-ic">' + icon('bot') + '</div>' +
       '<h2>Сначала создайте чат-бота</h2><p>Инбокс собирает переписку бота с клиентами из WhatsApp, Instagram и Telegram. ' +
       'Создайте бота и подключите каналы — диалоги появятся здесь.</p>' +
-      '<a class="btn btn-primary" href="' + botHref() + '"' + (EMBED ? ' target="_top"' : '') + '>' + icon('plus') + '<span>Создать бота</span></a></div></div>';
+      (staffMe() ? '<p class="muted">Бота создаёт владелец кабинета.</p>' :
+        '<a class="btn btn-primary" href="' + botHref() + '"' + (EMBED ? ' target="_top"' : '') + '>' + icon('plus') + '<span>Создать бота</span></a>') + '</div></div>';
   }
   function noAccess() {
     return '<div class="ib-loading"><div class="st-empty-big"><div class="st-empty-ic">' + icon('lock') + '</div>' +
@@ -213,15 +220,16 @@
     }).join('');
     S.$('#ib-side').innerHTML =
       '<div><div class="ib-group-h">Папки</div><div class="ib-nav">' + folders + '</div></div>' +
-      '<div><div class="ib-group-h">Каналы <button type="button" id="ib-ch-set" title="Настроить каналы">' + icon('settings') + '</button></div><div class="ib-nav">' + chans + '</div></div>' +
+      '<div><div class="ib-group-h">Каналы' + (staffMe() ? '' : ' <button type="button" id="ib-ch-set" title="Настроить каналы">' + icon('settings') + '</button>') +
+      '</div><div class="ib-nav">' + chans + '</div></div>' +
       '<div><div class="ib-group-h">Стадии CRM</div><div class="ib-nav">' + stages + '</div></div>' +
       '<div class="ib-side-foot"><button class="btn btn-sm" type="button" id="ib-settings">' + icon('sliders-horizontal') + '<span>Настройки инбокса</span></button>' +
-      '<a class="btn btn-ghost btn-sm" href="' + crmHref() + '"' + (EMBED ? ' data-crm' : '') + '>' + icon('contact-round') + '<span>Открыть CRM</span></a></div>';
+      (staffCan('crm') ? '<a class="btn btn-ghost btn-sm" href="' + crmHref() + '"' + (EMBED ? ' data-crm' : '') + '>' + icon('contact-round') + '<span>Открыть CRM</span></a>' : '') + '</div>';
     S.$$('[data-folder]', S.$('#ib-side')).forEach(function (b) { b.addEventListener('click', function () { setFolder(b.dataset.folder); }); });
     S.$$('[data-channel]', S.$('#ib-side')).forEach(function (b) { b.addEventListener('click', function () { st.channel = st.channel === b.dataset.channel ? null : b.dataset.channel; renderSide(); loadList(true); }); });
     S.$$('[data-stage]', S.$('#ib-side')).forEach(function (b) { b.addEventListener('click', function () { st.stage = st.stage === b.dataset.stage ? null : b.dataset.stage; renderSide(); renderChips(); loadList(true); }); });
     S.$('#ib-settings').addEventListener('click', settingsDialog);
-    S.$('#ib-ch-set').addEventListener('click', channelsDialog);
+    if (S.$('#ib-ch-set')) S.$('#ib-ch-set').addEventListener('click', channelsDialog);
     var crm = S.$('[data-crm]', S.$('#ib-side'));
     if (crm) crm.addEventListener('click', function (e) { e.preventDefault(); openCrm(null); });
     renderChips();
@@ -258,7 +266,7 @@
     if (!el) return;
     var off = CH_ORDER.filter(function (k) { return visibleChannel(k) && !channelState(k).connected; });
     if (off.length === CH_ORDER.length) {
-      el.innerHTML = '<div class="ib-banner">' + icon('plug') + '<div>Каналы не подключены. <a href="' + channelsHref() + '" target="_top">Подключите WhatsApp, Instagram или Telegram</a> — переписка появится здесь.</div></div>';
+      el.innerHTML = '<div class="ib-banner">' + icon('plug') + '<div>Каналы не подключены: ' + channelsLink('подключите WhatsApp, Instagram или Telegram') + ' — переписка появится здесь.</div></div>';
     } else el.innerHTML = '';
   }
 
@@ -489,7 +497,7 @@
     var c = st.d.contact;
     pop(btn, [{ header: 'Перенести на стадию' }].concat((st.d.stages || allStages()).map(function (s) {
       return { label: s.label, dot: s.color, sel: s.key === c.status, fn: function () { moveStage(s.key); } };
-    })).concat(window.innerWidth <= 760 ? [] : [{ sep: true }, { label: 'Все клиенты этой стадии в CRM', icon: 'external-link', fn: function () { openCrm(null, c.status); } }]));
+    })).concat(window.innerWidth <= 760 || !staffCan('crm') ? [] : [{ sep: true }, { label: 'Все клиенты этой стадии в CRM', icon: 'external-link', fn: function () { openCrm(null, c.status); } }]));
   }
   function moveStage(key) {
     var c = st.d.contact;
@@ -614,7 +622,10 @@
     else if (!a) body += m.voice ? '<span class="muted">🎤 Голосовое</span>' : '';
     if (m.translation) body += '<div class="ib-tr"><small>Перевод</small>' + esc(m.translation.text) + '</div>';
     if (m.original) body += '<div class="ib-tr"><small>Вы написали</small>' + esc(m.original.text) + '</div>';
-    var by = m.who === 'owner' ? '<span class="by">Вы</span>' : m.who === 'bot' ? '<span class="by bot">Бот</span>' : '';
+    // Ответ сотрудника подписан его именем; у сотрудника свои ответы — «Вы», ответы владельца — «Владелец»
+    var me = staffMe();
+    var ownerBy = m.author ? (me && me.name === m.author ? 'Вы' : m.author) : (me ? 'Владелец' : 'Вы');
+    var by = m.who === 'owner' ? '<span class="by">' + esc(ownerBy) + '</span>' : m.who === 'bot' ? '<span class="by bot">Бот</span>' : '';
     var trBtn = (m.who === 'client' && m.text && !m.translation && looksForeign(m.text)) ? '<button class="lnk" type="button" data-tr="' + esc(m.id) + '" data-ch="' + esc(m.channel) + '">Перевести</button>' : '';
     return '<div class="ib-msg ' + dir + ' ' + m.who + (same ? ' same' : '') + '" data-id="' + esc(m.id) + '">' +
       '<div class="ib-bubble">' + (body || '<span class="muted">—</span>') + '</div>' +
@@ -686,7 +697,7 @@
     if (!any) {
       box.innerHTML = '<div class="ib-disabled-compose">' + icon('plug') + ' Написать этому клиенту пока некуда: ' +
         esc(CH_ORDER.map(function (k) { return (sc[k] || {}).reason; }).filter(Boolean)[0] || 'нет подключённых каналов') +
-        '. <a href="' + channelsHref() + '" target="_top">Подключить каналы</a></div>';
+        '. ' + channelsLink('Подключить каналы') + '</div>';
       return;
     }
     var chBtns = CH_ORDER.map(function (k) {
@@ -954,7 +965,7 @@
       '<div class="ib-card-head"><button class="btn btn-ghost btn-icon btn-sm x" type="button" id="ib-card-x" aria-label="Скрыть">' + icon('x') + '</button>' +
       '<div class="ib-ava lg">' + esc(S.initial(c.display_name)) + '</div><div class="nm">' + esc(c.display_name) + '</div>' +
       '<div class="sub">' + esc(c.agent ? 'Бот: ' + c.agent.name : '') + '</div>' +
-      '<div class="acts"><button class="btn btn-sm btn-primary vf-desktop-only" type="button" id="ib-crm">' + icon('external-link') + '<span>Открыть в CRM</span></button>' +
+      '<div class="acts">' + (staffCan('crm') ? '<button class="btn btn-sm btn-primary vf-desktop-only" type="button" id="ib-crm">' + icon('external-link') + '<span>Открыть в CRM</span></button>' : '') +
       '<button class="btn btn-sm" type="button" id="ib-call2">' + icon('phone') + '<span>Позвонить</span></button></div></div>' +
       '<div class="ib-sec"><h4>Контакты</h4><div class="ib-kv">' + (kv.map(function (x) { return icon(x[0]) + '<div class="v">' + x[1] + '</div>'; }).join('') || '<span></span><div class="muted small">Нет данных</div>') + '</div></div>' +
       '<div class="ib-sec ib-know"><h4>Что узнал бот</h4>' + know + (docs ? '<div style="margin-top:10px">' + docs + '</div>' : '') + '</div>' +
@@ -970,7 +981,7 @@
       '<div class="ib-field"><label>Заметки</label><textarea class="textarea" id="cf-notes" rows="3">' + esc(c.notes || '') + '</textarea></div>' +
       '<button class="btn btn-sm" type="button" id="cf-save" style="width:100%">' + icon('save') + '<span>Сохранить</span></button></div>';
     S.$('#ib-card-x').addEventListener('click', toggleCard);
-    S.$('#ib-crm').addEventListener('click', function () { openCrm(c.id); });
+    if (S.$('#ib-crm')) S.$('#ib-crm').addEventListener('click', function () { openCrm(c.id); });
     S.$('#ib-call2').addEventListener('click', callNow);
     S.$('#ib-rem').addEventListener('click', reminderDialog);
     S.$('#cf-stage').addEventListener('change', function (e) { moveStage(e.target.value); });
@@ -1008,7 +1019,8 @@
   }
 
   function crmHref(contactId, stage) {
-    if (st.mode === 'reactive') return '/static/start-crm.html' + (contactId ? '?contact=' + contactId : stage ? '?stage=' + encodeURIComponent(stage) : '');
+    // Старт, сотрудник и Profi вне страницы агента — общая CRM клиентов агента (start-crm.html)
+    if (st.mode === 'reactive' || staffMe() || !EMBED) return '/static/start-crm.html' + (contactId ? '?contact=' + contactId : stage ? '?stage=' + encodeURIComponent(stage) : '');
     if (contactId) return '/static/agent.html?tab=clients&client=' + contactId;
     return '/static/agent.html?tab=' + (stage ? 'pipeline' : 'clients');
   }

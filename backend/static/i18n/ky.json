@@ -70,7 +70,12 @@
     "translate": "Котормочу",
     "knowledge": "Билим базасы",
     "jarvis": "JARVIS AI",
-    "agent_knowledge": "Агенттин билими"
+    "agent_knowledge": "Агенттин билими",
+    "team": "Кызматкерлер",
+    "section_work": "Иш",
+    "booking": "Жазуулар",
+    "clients": "Кардарлар",
+    "orders": "Заказдар"
   },
   "wallet": {
     "currency": "сом",
@@ -2042,5 +2047,12 @@
     "storage_off": "Хранилище файлов не настроено — загрузка недоступна. Сообщите администратору.",
     "load_failed": "Не удалось загрузить: {reason}",
     "request_error": "Сурам катасы"
+  },
+  "staff": {
+    "inbox": "Чаттар",
+    "booking": "Жазуулар",
+    "crm": "Кардарлар",
+    "analytics": "Аналитика",
+    "password": "Сырсөздү өзгөртүү"
   }
 }

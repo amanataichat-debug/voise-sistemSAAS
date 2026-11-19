@@ -70,7 +70,12 @@
     "translate": "Переводчик",
     "knowledge": "База знаний",
     "jarvis": "JARVIS AI",
-    "agent_knowledge": "Знания агента"
+    "agent_knowledge": "Знания агента",
+    "team": "Сотрудники",
+    "section_work": "Работа",
+    "booking": "Записи",
+    "clients": "Клиенты",
+    "orders": "Заказы"
   },
   "wallet": {
     "currency": "сом",
@@ -2042,5 +2047,12 @@
     "storage_off": "Хранилище файлов не настроено — загрузка недоступна. Сообщите администратору.",
     "load_failed": "Не удалось загрузить: {reason}",
     "request_error": "Ошибка запроса"
+  },
+  "staff": {
+    "inbox": "Чаты",
+    "booking": "Записи",
+    "crm": "Клиенты",
+    "analytics": "Аналитика",
+    "password": "Сменить пароль"
   }
 }

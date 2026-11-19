@@ -228,6 +228,48 @@ async def auth_rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
+# Сотрудники кабинета (ветка 1811-niche-admin-speed, services/team_service.py): токен сотрудника открывает
+# ТОЛЬКО пути из team_service.STAFF_RULES по его разделам — всё остальное 403 до эндпоинта (новый
+# эндпоинт сотруднику закрыт, пока его явно не добавят в правила). Выключенный / удалённый сотрудник
+# или сменённый пароль — 401. Вход, регистрация и подтверждение почты не проверяются: лендинг шлёт
+# туда сохранённый токен, и сотрудник не смог бы войти владельцем на том же телефоне.
+_STAFF_GUARD_SKIP = ("/api/auth/", "/api/email-verification/", "/api/public/")
+
+
+@app.middleware("http")
+async def staff_access_guard(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path.startswith(_STAFF_GUARD_SKIP):
+        return await call_next(request)
+    auth = request.headers.get("authorization") or ""
+    if auth[:7].lower() != "bearer ":
+        return await call_next(request)
+    try:
+        import jwt as _jwt
+        payload = _jwt.decode(auth[7:].strip(), settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except Exception:
+        return await call_next(request)  # неверный токен — эндпоинт сам ответит 401
+    sid = payload.get("staff") if isinstance(payload, dict) else None
+    if not sid:
+        return await call_next(request)
+    from backend.services import team_service
+    try:
+        snap = await team_service.snapshot_async(sid)
+    except Exception as e:
+        logger.error(f"staff guard: {e}")
+        return JSONResponse(status_code=503, content={"detail": "staff_check_failed",
+                                                      "message": "Не удалось проверить доступ. Попробуйте ещё раз."})
+    err = team_service.session_error(snap, payload.get("sub"), payload.get("stv"))
+    if err:
+        return JSONResponse(status_code=401, content={"detail": err, "message": team_service.SESSION_MESSAGES.get(err)})
+    if not team_service.staff_allowed(snap["permissions"], request.method, path):
+        logger.info(f"🚫 staff {str(sid)[:8]} {request.method} {path}")
+        return JSONResponse(status_code=403, content={
+            "detail": "staff_forbidden",
+            "message": "Этот раздел вам не открыт. Доступы выдаёт владелец кабинета."})
+    return await call_next(request)
+
+
 # ✅ DEBUG: API access log — uvicorn access-логи отключены в logging.py,
 # поэтому без этого middleware в логах Render не видно даже факта прихода запроса.
 @app.middleware("http")
@@ -324,6 +366,8 @@ app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
+from backend.api import team as team_api  # сотрудники кабинета: вход по почте, права, место 150 сом/мес
+app.include_router(team_api.router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -577,6 +621,7 @@ def background_jobs():
     from backend.services.whatsapp_inbound import start_sweep_loop as wa_sweep_loop
     from backend.services.signup_notify import start_signup_notify_loop
     from backend.services.booking_notify import start_booking_reminders_loop
+    from backend.services.team_service import start_team_seats_loop
     return [
         start_subscription_checker,                                  # раз в час
         lambda: start_task_scheduler(check_interval=30),             # задачи обзвона
@@ -588,6 +633,7 @@ def background_jobs():
         wa_sweep_loop,                                               # WhatsApp: неотвеченные после деплоя
         start_signup_notify_loop,                                    # админу в Telegram: новая регистрация
         start_booking_reminders_loop,                                # онлайн-запись: напоминания клиентам
+        start_team_seats_loop,                                       # сотрудники: продление мест с кошелька
     ]
 
 
@@ -1954,6 +2000,25 @@ def ensure_booking_tables():
         logger.error(f"❌ ensure_booking_tables: {e}")
 
 
+def ensure_team_tables():
+    """
+    Сотрудники кабинета (ветка 1811-niche-admin-speed): таблица team_members. Нужна до первого
+    запроса с токеном сотрудника — шаг в начале старта, в каждом воркере, идемпотентно.
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.team import TeamMember
+        existing = set(inspect(engine).get_table_names())
+        if "users" not in existing:
+            return  # пустая база: таблицы создаст общий create_all
+        if "team_members" not in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[TeamMember.__table__], checkfirst=True)
+            logger.info("✅ Created team_members")
+    except Exception as e:
+        logger.error(f"❌ ensure_team_tables: {e}")
+
+
 def ensure_inbox_schema():
     """
     Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
@@ -3145,6 +3210,7 @@ async def startup_event():
         ensure_crm_v2_columns()
         ensure_inbox_schema()
         ensure_booking_tables()
+        ensure_team_tables()  # сотрудники кабинета — до первого запроса с их токеном
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.

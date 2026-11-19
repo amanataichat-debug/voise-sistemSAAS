@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.core.dependencies import get_current_user
+from backend.core.dependencies import get_current_user, is_staff
 from backend.db.session import get_db
 from backend.models.user import User
 from backend.services import analytics_service as an
@@ -31,6 +31,14 @@ def _sections(raw: Optional[str]):
     return out or None
 
 
+def _for_viewer(user: User, sections):
+    """Сотруднику — без расходов (кошелёк и кредиты владельца). Отдельный ключ кэша, а не вырезка
+    из отчёта владельца: отчёт владельца с расходами сотруднику не достаётся никогда."""
+    if not is_staff(user):
+        return sections
+    return [s for s in (sections or an.SECTIONS) if s != "money"] or ["kpis"]
+
+
 @router.get("/report")
 def report(period: str = Query("30d", max_length=16),
            date_from: Optional[str] = Query(None, alias="from", max_length=10),
@@ -39,7 +47,7 @@ def report(period: str = Query("30d", max_length=16),
            sections: Optional[str] = Query(None, max_length=200),
            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return an.cached_report(db, current_user, period=period, date_from=date_from, date_to=date_to,
-                            granularity=granularity, sections=_sections(sections))
+                            granularity=granularity, sections=_for_viewer(current_user, _sections(sections)))
 
 
 @router.get("/export.csv")
@@ -49,7 +57,7 @@ def export_csv(period: str = Query("30d", max_length=16),
                granularity: Optional[str] = Query(None, max_length=8),
                current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rep = an.cached_report(db, current_user, period=period, date_from=date_from, date_to=date_to,
-                           granularity=granularity, sections=None)
+                           granularity=granularity, sections=_for_viewer(current_user, None))
     name = f"voksy-analytics-{rep['period']['from']}_{rep['period']['to']}.csv"
     return Response(content=an.report_csv(rep).encode("utf-8"), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})

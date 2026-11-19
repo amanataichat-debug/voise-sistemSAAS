@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.core.logging import get_logger  # Изменен импорт core
-from backend.core.dependencies import get_current_user, hash_api_key, ensure_not_impersonating, is_impersonating  # Изменен импорт core
+from backend.core.dependencies import get_current_user, hash_api_key, ensure_not_impersonating, is_impersonating, is_staff  # Изменен импорт core
 from backend.db.session import get_db  # Уже корректный импорт
 from backend.models.user import User  # Изменен импорт models
 from backend.schemas.user import UserUpdate, UserResponse, UserDetailResponse, UserPasswordUpdate  # Изменен импорт schemas
@@ -44,6 +44,8 @@ async def get_current_user_info(
     try:
         profile = await UserService.get_user_profile(db, str(current_user.id))
         profile.impersonated = is_impersonating(current_user)
+        if is_staff(current_user):
+            _as_staff(db, current_user, profile)
         return profile
     except HTTPException:
         raise
@@ -53,6 +55,24 @@ async def get_current_user_info(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user information"
         )
+
+_STAFF_HIDDEN_KEYS = ("openai_api_key", "elevenlabs_api_key", "gemini_api_key", "grok_api_key", "cartesia_api_key",
+                      "openrouter_api_key", "yandex_api_key", "yandex_folder_id", "fish_api_key")
+
+
+def _as_staff(db: Session, owner: User, profile) -> None:
+    """Сотрудник видит свой профиль и разделы, а не ключи и права владельца."""
+    from backend.services import team_service
+    info = team_service.staff_profile(db, owner, owner._staff_member_id) or {}
+    for k in _STAFF_HIDDEN_KEYS:
+        setattr(profile, k, None)
+    profile.is_admin = False
+    profile.email = info.get("email") or profile.email
+    profile.first_name = info.get("name") or profile.first_name
+    profile.last_name = None
+    profile.phone = None
+    profile.staff = info
+
 
 @router.get("/me/details", response_model=UserDetailResponse)
 async def get_user_details(

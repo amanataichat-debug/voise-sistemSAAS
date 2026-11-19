@@ -645,6 +645,7 @@ def _msg_item(channel: str, m, files: Dict[str, Any], tr: Dict[Tuple[str, str], 
     key = str(m.id)
     translation = tr.get((key, "translation"))
     original = tr.get((key, "original"))
+    author = tr.get((key, "author"))
     return {
         "id": key,
         "type": "message",
@@ -657,6 +658,7 @@ def _msg_item(channel: str, m, files: Dict[str, Any], tr: Dict[Tuple[str, str], 
         "attachment": _file_dict(f),
         "translation": ({"text": translation.text, "language": translation.language} if translation else None),
         "original": ({"text": original.text, "language": original.language} if original else None),
+        "author": author.text if author else None,   # сотрудник, ответивший клиенту
     }
 
 
@@ -1020,13 +1022,15 @@ async def send_message(
     db: Session, user, contact, *, channel: str, text: str = "",
     upload: Optional[Dict[str, Any]] = None, voice: Optional[Dict[str, Any]] = None,
     library_file_id: Optional[str] = None, pause_minutes=None,
-    original: Optional[Dict[str, str]] = None,
+    original: Optional[Dict[str, str]] = None, author: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Отправить клиенту от имени владельца. upload = {data, filename, mime},
     voice = {data, mime}. pause_minutes: None/"channel" — настройка канала,
     минуты, -1 — до ручного включения, 0 — не ставить паузу.
     original = {text, language} — что владелец написал до перевода.
+    author — имя сотрудника, если ответил сотрудник (в ленте вместо «Вы»; для бота это по-прежнему
+    сообщение владельца: sent_by="owner", пауза бота та же).
     """
     from backend.core.config import settings as app_settings
     from backend.models.agent_config import AgentConfig
@@ -1132,6 +1136,9 @@ async def send_message(
     row_id = result.get("message_row_id")
     if original and row_id and (original.get("text") or "").strip():
         _save_translation(db, channel, row_id, "original", original.get("text"), original.get("language"))
+    if author and row_id:
+        # Кто из сотрудников ответил — рядом с переводами (та же таблица, kind «author»)
+        _save_translation(db, channel, row_id, "author", author[:120], None)
 
     if voice_payload is not None and file_row is not None and row_id:
         _spawn(_transcribe_owner_voice(str(file_row.id), channel, row_id))

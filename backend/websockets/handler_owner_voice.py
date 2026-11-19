@@ -366,6 +366,9 @@ def _load_owner(db, token: str, agent_id: Optional[str]):
             user_uuid = uuid.UUID(str(payload.get("sub")))
         except Exception:
             return None, None
+        if payload.get("staff"):
+            # Сотрудник кабинета: голосовой помощник делает действия от имени владельца — только владелец
+            return None, None
     user = db.query(User).filter(User.id == user_uuid).first()
     if user is None:
         return None, None

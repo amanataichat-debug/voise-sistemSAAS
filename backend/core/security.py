@@ -33,6 +33,29 @@ security = HTTPBearer()
 IMPERSONATOR: ContextVar[Optional[str]] = ContextVar("voksy_impersonator", default=None)
 IMPERSONATION_MINUTES = 120
 
+# Сотрудник кабинета (models/team.py): токен с sub = id владельца, staff = id сотрудника,
+# stv = версия токена сотрудника. Как и IMPERSONATOR, ставится в каждом запросе (None —
+# владелец), get_current_user кладёт id сотрудника в user._staff_member_id.
+STAFF: ContextVar[Optional[Dict[str, Any]]] = ContextVar("voksy_staff", default=None)
+
+
+def create_staff_token(owner_id, member_id, token_version: int,
+                       minutes: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES) -> str:
+    """Токен сотрудника: данные владельца, но права — только разделы сотрудника."""
+    return create_jwt_token(owner_id, expires_delta_minutes=minutes,
+                            extra={"staff": str(member_id), "stv": int(token_version or 1)})
+
+
+def staff_claims(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """{"id", "v"} сотрудника из расшифрованного токена или None для владельца."""
+    sid = token_data.get("staff")
+    if not sid:
+        return None
+    try:
+        return {"id": str(sid), "v": int(token_data.get("stv") or 0)}
+    except (TypeError, ValueError):
+        return {"id": str(sid), "v": 0}
+
 
 def create_impersonation_token(target_user_id, admin_user_id, minutes: int = IMPERSONATION_MINUTES) -> str:
     """Короткий токен клиента с отметкой, какой админ вошёл (для баннера и запретов)."""
@@ -110,8 +133,10 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
             )
         
         logger.debug(f"✅ Token decoded successfully for user: {user_id[:8]}...")
-        # imp — id админа, который вошёл в кабинет клиента из админки (impersonation)
-        return {"sub": user_id, "exp": exp, "imp": payload.get("imp")}
+        # imp — id админа, который вошёл в кабинет клиента из админки (impersonation);
+        # staff/stv — сотрудник кабинета (вход по своей почте, права по разделам)
+        return {"sub": user_id, "exp": exp, "imp": payload.get("imp"),
+                "staff": payload.get("staff"), "stv": payload.get("stv")}
         
     except jwt.ExpiredSignatureError:
         logger.warning("❌ Token expired")
@@ -205,6 +230,7 @@ async def get_current_user_id(
         token_data = decode_jwt_token(token)
         user_id = token_data["sub"]
         IMPERSONATOR.set(token_data.get("imp"))
+        STAFF.set(staff_claims(token_data))
         
         logger.debug(f"✅ User ID extracted: {user_id[:8]}...")
         return user_id

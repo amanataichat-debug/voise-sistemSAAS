@@ -60,6 +60,8 @@
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
+    // Сотрудники (ветка 1811-niche-admin-speed): свой вход, только выбранные разделы — на Старте и Profi
+    { href: '/static/team.html', lucide: 'users', label: 'sidebar.team', def: 'Сотрудники', id: 'team-nav-item', modes: ['full', 'reactive'] },
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
   ];
 
@@ -85,6 +87,7 @@
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
+    { href: '/static/team.html', lucide: 'users', label: 'sidebar.team', def: 'Сотрудники', id: 'team-nav-item' },
     { href: '/static/settings.html', lucide: 'settings', label: 'sidebar.settings', def: 'Настройки', id: 'settings-nav-item' }
   ];
 
@@ -123,8 +126,48 @@
     });
     return out;
   }
+  // Сотрудник кабинета (вход по своей почте): /api/users/me → staff = {name, role_title, permissions, menu, home}.
+  // Кэш привязан к токену: другой вход на этом телефоне не увидит чужое меню.
+  var STAFF_KEY = 'vf_staff';
+  function tokenTail() { var t = token() || ''; return t.slice(-24); }
+  function cachedStaff() {
+    try {
+      var c = JSON.parse(localStorage.getItem(STAFF_KEY) || 'null');
+      return c && c.t === tokenTail() ? (c.staff || null) : null;
+    } catch (e) { return null; }
+  }
+  function staffMenu(staff) {
+    var out = [{ section: 'sidebar.section_work', def: 'Работа' }];
+    (staff.menu || []).forEach(function (m) {
+      var lucide = { inbox: 'inbox', booking: 'calendar', crm: 'contact-round', catalog: 'package', analytics: 'chart-column' }[m.id] || m.icon;
+      var item = { href: m.href, lucide: lucide, label: 'staff.' + m.id, def: m.label, id: m.id + '-nav-item' };
+      if (m.id === 'crm') item.aliases = ['/static/crm.html', '/static/crm-contact.html'];
+      if (m.id === 'analytics') item.aliases = ['/static/start-analytics.html'];
+      if (m.id === 'catalog') item.label = '';
+      out.push(item);
+    });
+    out.push({ section: 'sidebar.section_account', def: 'Аккаунт', account: true });
+    out.push({ href: '#password', lucide: 'key-round', label: 'staff.password', def: 'Сменить пароль', id: 'staff-password-item', action: 'password' });
+    return out;
+  }
   function currentMenu() {
+    var staff = cachedStaff();
+    if (staff) return staffMenu(staff);
     return adaptMenu(cachedMode() === 'reactive' ? START_MENU : MENU);
+  }
+  // Страницы, открытые сотруднику; остальные (дашборд с кошельком, настройки, бот…) → его первая страница
+  function staffGuard() {
+    var staff = cachedStaff();
+    if (!staff || window.top !== window.self) return false;
+    var p = currentPath();
+    var ok = (staff.menu || []).some(function (m) {
+      var hp = m.href.split('#')[0];
+      return hp === p || (m.id === 'crm' && (p === '/static/crm.html' || p === '/static/crm-contact.html'))
+        || (m.id === 'analytics' && p === '/static/start-analytics.html');
+    });
+    if (ok) return false;
+    location.replace(staff.home || '/static/inbox.html');
+    return true;
   }
 
   var ADMIN_ITEMS = [
@@ -207,8 +250,13 @@
       });
       return a;
     }
-    a.innerHTML = icon(item.lucide) + '<span>' + T(item.label, item.def) + '</span>' +
+    a.innerHTML = icon(item.lucide) + '<span>' + (item.label ? T(item.label, item.def) : item.def) + '</span>' +
       (item.feature ? icon('lock', 'lock') : '');
+    if (item.action === 'password') {
+      a.classList.remove('active');
+      a.setAttribute('data-no-prefetch', '1');
+      a.addEventListener('click', function (e) { e.preventDefault(); openStaffPassword(); });
+    }
     return a;
   }
 
@@ -219,6 +267,7 @@
     var mode = cachedMode();
     currentMenu().forEach(function (item) {
       if (item.mode && item.mode !== mode) return;   // пункт только для режима агента (инбокс — у Profi)
+      if (item.modes && item.modes.indexOf(mode) < 0) return;
       nav.appendChild(renderItem(item));
     });
     return nav;
@@ -296,6 +345,7 @@
   function renderWalletCard(nav) {
     var aside = nav ? nav.closest('.sidebar') : document.querySelector('.sidebar');
     if (!aside || aside.querySelector('.vf-wallet')) return;
+    if (cachedStaff()) return;   // кошелёк и оплата — только владелец
     if (!document.getElementById('vf-wallet-style')) {
       var st = document.createElement('style');
       st.id = 'vf-wallet-style';
@@ -317,7 +367,7 @@
 
   function refreshWallet() {
     var el = document.getElementById('vf-wallet-balance');
-    if (!token()) return Promise.resolve(null);
+    if (!token() || cachedStaff()) return Promise.resolve(null);
     return apiFetch('/wallet/balance').then(function (r) {
       if (!r.ok) throw new Error('balance ' + r.status);
       return r.json();
@@ -421,7 +471,7 @@
   function logout() {
     // Админ в кабинете клиента: «Выйти» = вернуться в свою админку, а не выйти совсем
     if (window.VF && window.VF.impersonation && window.VF.impersonation()) { window.VF.returnToAdmin(); return; }
-    try { localStorage.removeItem('auth_token'); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem('auth_token'); localStorage.removeItem(STAFF_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem('vf_is_admin'); sessionStorage.removeItem('vf_wallet'); } catch (e) { /* ignore */ }
     window.location.href = '/';
   }
@@ -557,13 +607,19 @@
     if (sb) sb.classList.toggle('open');
   }
   function currentTabs() {
+    var staff = cachedStaff();
+    if (staff) {
+      return (staff.menu || []).slice(0, 4).map(function (m) {
+        return { id: m.id, href: m.href, icon: m.icon, label: m.label, ky: m.ky || m.label };
+      }).concat([{ id: 'more', icon: 'menu', label: 'Ещё', ky: 'Дагы' }]);
+    }
     var biz = cachedBusiness();
     if (biz && biz.tabs && biz.tabs.length) return biz.tabs;
     return cachedMode() === 'full' ? PROFI_TABS : TABS;
   }
   function renderTabBar() {
     var mode = cachedMode();
-    if (mode !== 'reactive' && mode !== 'full') return;
+    if (mode !== 'reactive' && mode !== 'full' && !cachedStaff()) return;
     if (window.top !== window.self) return;           // инбокс во фрейме у Profi — без своей панели
     if (document.getElementById('vf-tabbar')) { markTabs(); return; }
     if (!document.getElementById('vf-tabbar-style')) {
@@ -744,7 +800,7 @@
     var mode = cachedMode();
     var old = document.getElementById('vf-voice-fab');
     var allowed = (mode === 'reactive' || mode === 'full') && window.top === window.self && VOICE_SKIP.indexOf(currentPath()) < 0
-      && !!token();
+      && !!token() && !cachedStaff();   // голосом помощник делает действия от имени владельца — сотруднику нет
     if (!allowed) { if (old) old.remove(); return; }
     if (old || !document.body) return;
     if (!document.getElementById('vf-voice-fab-style')) {
@@ -787,7 +843,101 @@
   }
   window.VoksyOwnerVoice = { open: openOwnerVoice };
 
+  // ---------------------------------------------------------------------
+  // Сотрудник: кто вошёл (над «Выйти») и смена своего пароля
+  // ---------------------------------------------------------------------
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+  }
+  var STAFF_STYLE = [
+    '.vf-staff{display:flex;align-items:center;gap:10px;margin:0 12px 10px;padding:10px 12px;border:1px solid var(--vf-border,#e2e8f0);',
+    'border-radius:12px;background:var(--vf-surface-2,#f8fafc)}',
+    '.vf-staff-ava{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;background:var(--vf-accent,#2a5ce8);',
+    'color:#fff;font:700 13px/1 Inter,sans-serif}',
+    '.vf-staff-t{min-width:0;display:flex;flex-direction:column;gap:1px}',
+    '.vf-staff-t b{font-size:13.5px;color:var(--vf-text,#0e1729);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.vf-staff-t span{font-size:12px;color:var(--vf-text-3,#63738b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+  ].join('');
+  function renderStaffBadge() {
+    var staff = cachedStaff();
+    var old = document.getElementById('vf-staff-badge');
+    if (!staff) { if (old) old.remove(); return; }
+    var aside = document.querySelector('.sidebar');
+    if (old || !aside) return;
+    if (!document.getElementById('vf-staff-style')) {
+      var st = document.createElement('style'); st.id = 'vf-staff-style'; st.textContent = STAFF_STYLE; document.head.appendChild(st);
+    }
+    var parts = String(staff.name || '?').trim().split(/\s+/);
+    var ini = ((parts[0] || '?')[0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+    var el = document.createElement('div');
+    el.id = 'vf-staff-badge'; el.className = 'vf-staff';
+    el.innerHTML = '<div class="vf-staff-ava">' + esc(ini) + '</div><div class="vf-staff-t"><b>' + esc(staff.name) + '</b><span>' +
+      esc((staff.role_title || 'Сотрудник') + (staff.company ? ' · ' + staff.company : '')) + '</span></div>';
+    var footer = aside.querySelector('.sidebar-footer');
+    if (footer) aside.insertBefore(el, footer); else aside.appendChild(el);
+  }
+  function openStaffPassword() {
+    if (!window.VF || document.getElementById('vf-staff-pw')) return;
+    var bd = document.createElement('div');
+    bd.className = 'vf-backdrop'; bd.id = 'vf-staff-pw';
+    bd.innerHTML = '<div class="vf-dialog vf-dialog-sm" role="dialog" aria-modal="true">' +
+      '<div class="vf-dialog-head"><h3>Сменить пароль</h3></div>' +
+      '<form class="vf-dialog-body" id="vf-spw-form">' +
+      '<div class="field"><label class="label" for="vf-spw-old">Текущий пароль</label><input class="input" id="vf-spw-old" type="password" autocomplete="current-password" required></div>' +
+      '<div class="field"><label class="label" for="vf-spw-new">Новый пароль</label><input class="input" id="vf-spw-new" type="password" autocomplete="new-password" minlength="6" required>' +
+      '<div style="font-size:12px;color:var(--vf-text-4,#93a2b8);margin-top:4px">Не короче 6 символов. На других устройствах нужно будет войти заново.</div></div>' +
+      '<div id="vf-spw-err" style="color:var(--vf-danger,#dc2626);font-size:13px" hidden></div></form>' +
+      '<div class="vf-dialog-foot"><button type="button" class="btn" data-x>Отмена</button><button type="button" class="btn btn-primary" id="vf-spw-save">Сохранить</button></div></div>';
+    document.body.appendChild(bd);
+    var m = window.VF.modal(bd, { onClose: function () { setTimeout(function () { bd.remove(); }, 260); } });
+    bd.querySelector('[data-x]').addEventListener('click', function () { m.close('cancel'); });
+    function err(t) { var e = bd.querySelector('#vf-spw-err'); e.textContent = t || ''; e.hidden = !t; }
+    function save(ev) {
+      if (ev) ev.preventDefault();
+      var a = bd.querySelector('#vf-spw-old').value, b = bd.querySelector('#vf-spw-new').value;
+      if (!a) { err('Введите текущий пароль'); return; }
+      if ((b || '').trim().length < 6) { err('Новый пароль — не короче 6 символов'); return; }
+      var btn = bd.querySelector('#vf-spw-save'); btn.disabled = true;
+      apiFetch('/team/me/password', { method: 'POST', body: JSON.stringify({ current_password: a, new_password: b }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          btn.disabled = false;
+          if (!res.ok || !res.d.token) {
+            var x = res.d.detail || res.d.message;
+            err((x && x.message) || x || 'Не удалось сменить пароль');
+            return;
+          }
+          var staff = cachedStaff();
+          try {
+            localStorage.setItem('auth_token', res.d.token);
+            localStorage.setItem(STAFF_KEY, JSON.stringify({ t: res.d.token.slice(-24), staff: staff }));
+          } catch (e) { /* ignore */ }
+          m.close('done');
+          window.VF.toast('Пароль изменён', { type: 'success' });
+        });
+    }
+    bd.querySelector('#vf-spw-form').addEventListener('submit', save);
+    bd.querySelector('#vf-spw-save').addEventListener('click', save);
+    m.open();
+  }
+  function applyStaff(staff) {
+    var prev = JSON.stringify(cachedStaff());
+    try { localStorage.setItem(STAFF_KEY, JSON.stringify({ t: tokenTail(), staff: staff || null })); } catch (e) { /* ignore */ }
+    if (prev === JSON.stringify(staff || null)) return false;
+    if (staffGuard()) return true;
+    var nav = renderNav();
+    var bar = document.getElementById('vf-tabbar');
+    if (bar) { bar.remove(); document.body.classList.remove('vf-has-tabbar'); }
+    renderTabBar(); renderVoiceFab(); renderStaffBadge();
+    var w = document.getElementById('vf-wallet-card');
+    if (staff && w) w.remove();
+    else if (!staff && nav) { renderWalletCard(nav); refreshWallet(); }
+    return false;
+  }
+  window.VoksyStaff = { current: cachedStaff, changePassword: openStaffPassword };
+
   function init() {
+    if (staffGuard()) return;
     if (redirectStartPages()) return;
     var nav = renderNav();
     if (document.body) { renderTabBar(); phoneCrmNote(); renderInstallUI(); renderVoiceFab(); }
@@ -804,9 +954,11 @@
     if (!token()) return;
     renderWalletCard(nav);
     refreshWallet();
+    renderStaffBadge();
     apiFetch('/users/me').then(function (r) { return r.ok ? r.json() : null; }).then(function (user) {
       if (!user) return;
-      var admin = !!user.is_admin || ADMIN_EMAILS.indexOf(user.email) !== -1;
+      if (applyStaff(user.staff || null)) return;   // сотрудник на чужой странице — ушёл на свою
+      var admin = !user.staff && (!!user.is_admin || ADMIN_EMAILS.indexOf(user.email) !== -1);
       try { sessionStorage.setItem('vf_is_admin', admin ? '1' : '0'); } catch (e) { /* ignore */ }
       applyAgentMode(user.agent_mode || '');
       applyBusiness(user.business || null);
@@ -832,7 +984,7 @@
   // «Чем занимается ваш бизнес?» — первым экраном после регистрации (и один раз — старым клиентам)
   function maybeBusinessSetup(user, admin) {
     var biz = user.business;
-    if (!biz || !biz.needs_setup || admin || user.impersonated) return;
+    if (!biz || !biz.needs_setup || admin || user.impersonated || user.staff) return;
     if (window.top !== window.self || currentPath() === '/static/admin.html') return;
     var go = function () { if (window.VoksyBusinessSetup) window.VoksyBusinessSetup.open({ me: user }); };
     if (window.VoksyBusinessSetup) { go(); return; }

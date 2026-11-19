@@ -44,8 +44,9 @@
     root.innerHTML =
       '<div class="st-head st-crm-head"><div><h2>Клиенты и сделки</h2>' +
       '<p>' + who + ' записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.' +
-      (S.mode === 'full' ? ' <a href="/static/crm.html" class="st-oldcrm">Контакты голосовых ассистентов →</a>' : '') + '</p></div>' +
-      '<div class="st-toolbar"><button class="btn st-hide-phone" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>' +
+      (S.mode === 'full' && !S.staff() ? ' <a href="/static/crm.html" class="st-oldcrm">Контакты голосовых ассистентов →</a>' : '') + '</p></div>' +
+      // Импорт и удаление клиентов — только владелец (сотруднику сервер ответит 403)
+      '<div class="st-toolbar">' + (S.staff() ? '' : '<button class="btn st-hide-phone" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>') +
       '<button class="btn btn-primary" id="add-client" type="button">' + icon('plus') + '<span>Добавить клиента</span></button></div></div>' +
       '<div class="card st-tabs-card">' +
       '<div class="tabs" id="tabs">' +
@@ -57,7 +58,7 @@
       '<div class="tab-pane" data-pane="tasks"><div class="st-pane" id="pane-tasks"></div></div>' +
       '</div>';
     document.getElementById('add-client').addEventListener('click', addClientDialog);
-    document.getElementById('import-clients').addEventListener('click', importDialog);
+    if (document.getElementById('import-clients')) document.getElementById('import-clients').addEventListener('click', importDialog);
     S.initTabs(document.getElementById('tabs'), openPane);
     refreshCounts();
   }
@@ -378,7 +379,7 @@
       '</div>' +
       field('Заметки', '<textarea class="textarea" id="f-notes" rows="3">' + esc(c.notes || '') + '</textarea>') +
       '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:4px">' +
-      '<button class="btn btn-danger btn-sm" type="button" id="cl-del">' + icon('trash-2') + '<span>Удалить клиента</span></button>' +
+      (S.staff() ? '' : '<button class="btn btn-danger btn-sm" type="button" id="cl-del">' + icon('trash-2') + '<span>Удалить клиента</span></button>') +
       '<button class="btn btn-primary" type="button" id="cl-save">Сохранить</button></div></div>' +
       '<div class="st-sec" id="sec-thread"></div>' +
       '<div class="st-sec" id="sec-calls"></div>' +
@@ -386,7 +387,7 @@
 
     S.$('#cl-stage', dr.body).addEventListener('change', function () { changeStage(this.value); });
     S.$('#cl-save', dr.body).addEventListener('click', saveClient);
-    S.$('#cl-del', dr.body).addEventListener('click', deleteClient);
+    if (S.$('#cl-del', dr.body)) S.$('#cl-del', dr.body).addEventListener('click', deleteClient);
     var rs = S.$('#cl-resume', dr.body);
     if (rs) rs.addEventListener('click', function () { setPause(null); });
     var ps = S.$('#cl-pause', dr.body);
