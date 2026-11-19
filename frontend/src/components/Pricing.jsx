@@ -26,6 +26,7 @@ const ROWS = [
   ['leads', [true, true, true, true]],
   ['selfcall', ['msg_first', false, 'msg_first', true]],
   ['documents', ['docs_reply', false, 'docs_reply', true]],
+  ['booking', [true, false, true, true]],
   ['team', ['team_seat', false, 'team_seat', 'team_seat']],
   ['credits', ['credits_trial', false, 'credits_start', 'credits']],
   ['support', [null, null, 'priority', 'vip']],
@@ -50,7 +51,7 @@ function Pricing({ onOpenModal }) {
   return (
     <section className="sec sec-tint tint-blue" id="pricing">
       <div className="lp-container">
-        <SectionHead index="08" title={t('pricing.title')} lead={t('pricing.lead')} />
+        <SectionHead index="09" title={t('pricing.title')} lead={t('pricing.lead')} />
         <Reveal className="plans-card" y={20}>
           <div className="plans-wrap table-wrap">
             <table className="plans">

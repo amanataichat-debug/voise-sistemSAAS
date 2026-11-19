@@ -133,3 +133,9 @@
   .bk-date { font-size: 16px; }
   .bk-bar .bk-seg { display: none; }
 }
+
+/* QR и кнопка на сайт (вкладка «Ссылка для клиентов») */
+.bk-kit { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--vf-border, #e2e7f0); }
+.bk-kit-row { display: flex; gap: 14px; align-items: flex-start; }
+.bk-qr { width: 120px; height: 120px; flex: none; border-radius: 12px; border: 1px solid var(--vf-border, #e2e7f0); background: #fff; }
+@media (max-width: 480px) { .bk-qr { width: 96px; height: 96px; } }

@@ -113,7 +113,15 @@ def resolve(user) -> Dict[str, Any]:
                                               "size_presets", "colors", "variants_label")},
         "collections_hint": p["collections"],
         "tabs": tabs_for(mode, mods, cat.get("title")),
+        # Страницы модулей для бокового меню — все включённые, а не только влезшие в 5 вкладок телефона
+        # (у Profi с магазином и у СТО с записью и заказами «Заказы» иначе не было в меню)
+        "pages": module_pages(mods),
     }
+
+
+def module_pages(modules: Dict[str, bool]) -> Dict[str, Optional[str]]:
+    return {"booking": "/static/booking.html" if modules.get("booking") and page_ready("booking.html") else None,
+            "orders": "/static/orders.html" if modules.get("orders") and page_ready("orders.html") else None}
 
 
 # ───────────────────────────── тексты для бота (слой ниши) ─────────────────────────────

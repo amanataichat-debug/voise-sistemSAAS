@@ -10,6 +10,7 @@ import CrmSection from './components/CrmSection';
 import AgentSection from './components/AgentSection';
 import Start from './components/Start';
 import Scenarios from './components/Scenarios';
+import BusinessSection from './components/BusinessSection';
 import Pricing from './components/Pricing';
 import Faq from './components/Faq';
 import FinalCta from './components/FinalCta';
@@ -110,6 +111,7 @@ function App() {
         <ProductTour />
         <Start onOpenModal={openModal} />
         <Scenarios />
+        <BusinessSection onOpenModal={openModal} />
         <Pricing onOpenModal={openModal} />
         <Faq />
         <FinalCta onOpenModal={openModal} />

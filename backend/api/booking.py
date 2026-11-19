@@ -9,6 +9,7 @@
   DELETE /bookings/{id}               — отменить
   GET    /resources, POST /resources, PATCH /resources/{id}, DELETE /resources/{id} — мастера и график
   PUT    /settings                    — шаг, буфер, за сколько записываться, горизонт, напоминания, адрес, ссылка
+  GET    /link-kit                    — ссылка, QR-код (SVG) и код кнопки-виджета для сайта (static/booking-widget.js)
 
 Клиенты по ссылке — /api/public/booking/{slug} (без входа):
   GET  /{slug}                — название, адрес, услуги, мастера
@@ -279,6 +280,32 @@ def booking_settings(body: SettingsIn, current_user: User = Depends(get_current_
         page.slug = slug
     db.commit()
     return {"ok": True, "page": _page_dict(page)}
+
+
+def widget_code(host: str, slug: str) -> str:
+    """Код кнопки «Записаться онлайн» для сайта владельца (static/booking-widget.js)."""
+    return (f'<script src="{host}/static/booking-widget.js" data-slug="{slug}" '
+            f'data-text="Записаться онлайн" async></script>')
+
+
+@router.get("/link-kit")
+def booking_link_kit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Всё, чем владелец делится с клиентами: ссылка, QR (печать на ресепшн, в Instagram), код виджета на сайт."""
+    from backend.core.config import settings
+    page = bs.get_page(db, current_user)
+    db.commit()
+    host = (getattr(settings, "HOST_URL", "") or "").rstrip("/") or "https://voksyai.online"
+    info = _page_dict(page)
+    qr = None
+    if info.get("url"):
+        try:
+            from backend.services.telegram_user_service import qr_svg_data_uri
+            qr = qr_svg_data_uri(info["url"])
+        except Exception as e:   # нет segno — ссылка и код всё равно нужны
+            logger.warning("booking qr: %s", e)
+    return {"ok": True, "page": info, "qr": qr,
+            "widget_code": widget_code(host, page.slug) if page.slug else None,
+            "button_code": (f'<a href="{info["url"]}" data-voksy-booking>Записаться онлайн</a>' if info.get("url") else None)}
 
 
 # ───────────────────────────── клиенты по ссылке ─────────────────────────────

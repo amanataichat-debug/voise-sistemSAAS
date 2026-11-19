@@ -390,6 +390,7 @@
         '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(page.url || '#') + '">' + icon('external-link') + 'Открыть</a></div>' +
         '<div class="field" style="margin-top:12px"><label class="label">Адрес ссылки</label><div style="display:flex;gap:8px"><input class="input" id="bk-slug" value="' + esc(page.slug || '') + '"><button class="btn" type="button" id="bk-slug-save">Сохранить</button></div><div class="hint">Латиница и цифры, например: salon-aidana</div></div>' +
         tgl('enabled', 'Онлайн-запись по ссылке включена', 'Выключите, если временно не принимаете запись', page.enabled) +
+        '<div id="bk-kit" class="bk-kit"><div class="muted">Загружаем QR-код и кнопку для сайта…</div></div>' +
         '</div>',
       foot: '<button class="btn" type="button" data-c>Закрыть</button>'
     });
@@ -398,6 +399,7 @@
       b.addEventListener('click', function () {
         S.$$('[data-tab]', d.el).forEach(function (x) { x.classList.toggle('on', x === b); });
         S.$$('[data-pane]', d.el).forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== b.getAttribute('data-tab'); });
+        if (b.getAttribute('data-tab') === 'l') drawLinkKit(d);
       });
     });
     drawMasters(d);
@@ -424,6 +426,33 @@
       S.api('/api/booking/settings', { method: 'PUT', body: { slug: S.$('#bk-slug', d.el).value } }).then(function (r) {
         if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
         st.data.page = r.data.page; S.$('#bk-url', d.el).textContent = r.data.page.url; S.$('#bk-slug', d.el).value = r.data.page.slug; S.toast('Адрес ссылки сохранён');
+        d._kit = false; drawLinkKit(d);
+      });
+    });
+  }
+  // QR-код для печати и Instagram + код кнопки «Записаться онлайн» на сайт (static/booking-widget.js)
+  function drawLinkKit(d) {
+    var box = S.$('#bk-kit', d.el);
+    if (!box || d._kit) return;
+    d._kit = true;
+    S.api('/api/booking/link-kit').then(function (r) {
+      if (!r.ok) { d._kit = false; box.innerHTML = '<div class="muted">' + esc(S.apiError(r)) + '</div>'; return; }
+      var k = r.data;
+      var slugName = (k.page && k.page.slug) || 'zapis';
+      box.innerHTML =
+        (k.qr ? '<div class="bk-kit-row"><img class="bk-qr" alt="QR-код записи" src="' + esc(k.qr) + '">' +
+          '<div><b>QR-код</b><div class="muted">Распечатайте на ресепшн, кассу, визитку или поставьте в сторис — клиент наведёт камеру и запишется.</div>' +
+          '<a class="btn btn-sm" style="margin-top:8px" download="zapis-' + esc(slugName) + '.svg" href="' + esc(k.qr) + '">' + icon('download') + 'Скачать QR</a></div></div>' : '') +
+        (k.widget_code ? '<div class="field" style="margin-top:14px"><label class="label">Кнопка «Записаться онлайн» на ваш сайт</label>' +
+          '<textarea class="input" id="bk-wcode" readonly rows="3" style="font:12.5px/1.4 ui-monospace,Menlo,monospace;height:auto;padding:10px">' + esc(k.widget_code) + '</textarea>' +
+          '<div class="hint">Вставьте перед &lt;/body&gt; на сайте (Tilda: блок «HTML-код»; WordPress: виджет «HTML»). Справа внизу появится кнопка, запись откроется окном прямо на сайте. Свои кнопки: добавьте им атрибут <code>data-voksy-booking</code>.</div>' +
+          '<div class="bk-actions"><button class="btn btn-sm" type="button" id="bk-wcopy">' + icon('copy') + 'Скопировать код</button></div></div>' : '') +
+        (k.page && k.page.url ? '<div class="hint" style="margin-top:10px">Ссылку можно поставить в шапку Instagram, 2ГИС, Google Карты и автоответ WhatsApp.</div>' : '');
+      var wc = S.$('#bk-wcopy', box);
+      if (wc) wc.addEventListener('click', function () {
+        var t = S.$('#bk-wcode', box).value;
+        (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { S.toast('Код скопирован'); })
+          .catch(function () { S.$('#bk-wcode', box).select(); });
       });
     });
   }
