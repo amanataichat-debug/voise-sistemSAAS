@@ -318,6 +318,19 @@ check("голос открыт Старту (дальше проверяются
 prompt = ov.build_voice_prompt(u_now, ag_now, brief)
 check("голос на Старте: в промпте — что можно и что только на Profi", "ТАРИФ СТАРТ" in prompt and "get_bookings" in prompt)
 
+# ── QR и кнопка на сайт ──
+r = cl.get("/api/booking/link-kit", headers=H)
+kit = r.json() if r.status_code == 200 else {}
+slug_now = (kit.get("page") or {}).get("slug") or ""
+check("link-kit: QR (SVG) и код виджета с адресом записи",
+      r.status_code == 200 and str(kit.get("qr") or "").startswith("data:image/svg+xml")
+      and f'data-slug="{slug_now}"' in (kit.get("widget_code") or "") and "booking-widget.js" in kit.get("widget_code", ""))
+r = cl.get("/static/booking-widget.js")
+check("виджет записи отдаётся статикой", r.status_code == 200 and "VoksyBooking" in r.text)
+r = cl.get(f"/b/{slug_now}?embed=1")
+check("страницу записи можно открыть окном на чужом сайте (нет X-Frame-Options)",
+      r.status_code == 200 and "x-frame-options" not in {k.lower() for k in r.headers})
+
 # ── запись выключена у владельца ──
 cl.put("/api/business/modules", headers=H, json={"modules": {"booking": False}})
 db.expire_all()

@@ -63,6 +63,9 @@
     @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
     .pw { text-align: center; color: #93a2b8; font-size: 12px; margin-top: 28px; }
     .pw a { color: inherit; }
+    /* Внутри виджета на сайте клиента (booking-widget.js → ?embed=1): место под крестик окна */
+    .embed .w { padding-top: 14px; }
+    .embed .hd { padding-right: 44px; }
   </style>
 </head>
 <body>
@@ -71,6 +74,9 @@
 <script>
 (function () {
   var slug = (location.pathname.split('/b/')[1] || '').replace(/\/.*$/, '');
+  var EMBED = /[?&]embed=1/.test(location.search) && window.parent !== window;
+  if (EMBED) document.documentElement.classList.add('embed');
+  function closeWidget() { try { window.parent.postMessage({ source: 'voksy-booking', type: 'close' }, '*'); } catch (e) {} }
   var API = '/api/public/booking/' + encodeURIComponent(slug);
   var TZ = 'Asia/Bishkek';
   var WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
@@ -173,8 +179,11 @@
         app.innerHTML = '<div class="done"><div class="ok">✓</div><h1>Вы записаны!</h1><p class="muted" style="font-size:16px;margin-top:10px">' +
           esc([bk.label, bk.service, bk.resource].filter(Boolean).join(' · ')) + '</p>' +
           (bk.address ? '<p class="muted">Адрес: ' + esc(bk.address) + '</p>' : '') +
-          '<p class="muted">Мы напомним о записи в WhatsApp. Если планы изменятся — просто напишите нам.</p></div>';
+          '<p class="muted">Мы напомним о записи в WhatsApp. Если планы изменятся — просто напишите нам.</p>' +
+          (EMBED ? '<button class="btn" type="button" id="bk-close-w" style="flex:none;width:100%;margin-top:18px">Готово</button>' : '') + '</div>';
         setBar('');
+        var cw = document.getElementById('bk-close-w');
+        if (cw) cw.addEventListener('click', closeWidget);
       })
       .catch(function (e) {
         if (/занято|прошло/.test(e.message)) { st.slot = null; step3(); setTimeout(function () { alert(e.message + '. Выберите другое время.'); }, 50); return; }

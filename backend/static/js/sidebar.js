@@ -118,10 +118,13 @@
       }
       out.push(item);
       if (item.id === 'inbox-nav-item' || (item.id === 'dashboard-nav-item' && !menu.some(function (m) { return m.id === 'inbox-nav-item'; }))) {
+        // biz.pages — все включённые модули; старый кэш без pages — по вкладкам телефона
+        var pages = Object.assign({}, (biz && biz.pages) || {});
         (biz && biz.tabs || []).forEach(function (t) {
-          if (t.id === 'booking') out.push({ href: t.href, lucide: 'calendar', label: 'sidebar.booking', def: 'Записи', id: 'booking-nav-item' });
-          if (t.id === 'orders') out.push({ href: t.href, lucide: 'shopping-cart', label: 'sidebar.orders', def: 'Заказы', id: 'orders-nav-item' });
+          if ((t.id === 'booking' || t.id === 'orders') && !(t.id in pages)) pages[t.id] = t.href;
         });
+        if (pages.booking) out.push({ href: pages.booking, lucide: 'calendar', label: 'sidebar.booking', def: 'Записи', id: 'booking-nav-item' });
+        if (pages.orders) out.push({ href: pages.orders, lucide: 'shopping-cart', label: 'sidebar.orders', def: 'Заказы', id: 'orders-nav-item' });
       }
     });
     return out;

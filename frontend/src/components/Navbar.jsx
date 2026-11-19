@@ -11,7 +11,7 @@ const LINKS = [
   { href: '#agent', key: 'nav.agent' },
   { href: '#crm', key: 'nav.crm' },
   { href: '#platform', key: 'nav.platform' },
-  { href: '#how', key: 'nav.how' },
+  { href: '#business', key: 'nav.business' },
   { href: '#pricing', key: 'nav.pricing' },
   { href: SUPPORT_URL, key: 'nav.support', external: true },
 ];

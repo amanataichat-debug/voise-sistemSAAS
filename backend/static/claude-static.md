@@ -120,3 +120,6 @@
 - `../websockets/claude-websockets.md` — WS-протокол виджетов
 - `../../chrome-extension/claude-chrome-extension.md` — расширение на базе `widget.js`
 - `../../claude-index.md` — корневой индекс
+
+### Виджет записи на сайт (ветка 1811-niche-admin-speed)
+`booking-widget.js` — кнопка «Записаться онлайн» для сайта владельца, окно с `/b/<slug>?embed=1`; код и QR — `GET /api/booking/link-kit`, вкладка «Ссылка для клиентов» в `booking/booking.js` (`drawLinkKit`). Не требует входа и не читает данные сайта.
