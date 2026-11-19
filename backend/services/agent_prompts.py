@@ -455,6 +455,9 @@ def build_business_block(agent_config, db=None) -> str:
         if mods.get("booking"):
             from backend.services.booking_tools import PROMPT_BLOCK
             block += PROMPT_BLOCK
+        if mods.get("orders"):
+            from backend.services.order_tools import PROMPT_BLOCK as ORDERS_BLOCK
+            block += ORDERS_BLOCK
         return block
     except Exception as e:
         logger.warning(f"[PROMPT] business block skipped: {e}")

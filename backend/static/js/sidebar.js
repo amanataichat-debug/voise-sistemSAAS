@@ -139,7 +139,7 @@
   function staffMenu(staff) {
     var out = [{ section: 'sidebar.section_work', def: 'Работа' }];
     (staff.menu || []).forEach(function (m) {
-      var lucide = { inbox: 'inbox', booking: 'calendar', crm: 'contact-round', catalog: 'package', analytics: 'chart-column' }[m.id] || m.icon;
+      var lucide = { inbox: 'inbox', booking: 'calendar', orders: 'shopping-cart', crm: 'contact-round', catalog: 'package', analytics: 'chart-column' }[m.id] || m.icon;
       var item = { href: m.href, lucide: lucide, label: 'staff.' + m.id, def: m.label, id: m.id + '-nav-item' };
       if (m.id === 'crm') item.aliases = ['/static/crm.html', '/static/crm-contact.html'];
       if (m.id === 'analytics') item.aliases = ['/static/start-analytics.html'];
@@ -790,7 +790,7 @@
     '.vf-voice-fab.busy{opacity:.8;cursor:wait}',
     '@media (max-width:760px){.vf-voice-fab{right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));height:54px;width:54px;padding:0;',
     'justify-content:center}.vf-voice-fab span.t{display:none}',
-    'body:has(.bk-fab) .vf-voice-fab{bottom:calc(146px + env(safe-area-inset-bottom,0px))}}',
+    'body:has(.bk-fab) .vf-voice-fab,body:has(.od-fab) .vf-voice-fab{bottom:calc(146px + env(safe-area-inset-bottom,0px))}}',
     'body:not(.vf-has-tabbar) .vf-voice-fab{bottom:calc(18px + env(safe-area-inset-bottom,0px))}',
     'body.vv-open .vf-voice-fab,body.modal-open .vf-voice-fab{display:none}',
     '@media (prefers-reduced-motion:reduce){.vf-voice-fab .vf-vf-wave i{animation:none}}'

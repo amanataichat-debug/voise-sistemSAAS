@@ -86,7 +86,7 @@ check("пустая реплика — отказ (не расслышали «�
 
 # ---------- функции и промпт голосового помощника ----------
 check("функции голосового помощника", ov.FUNCTION_NAMES == ["get_stats", "get_report", "get_balance", "client_info",
-                                                             "list_dialogs", "get_schedule", "get_bookings", "ask_agent",
+                                                             "list_dialogs", "get_schedule", "get_bookings", "get_orders", "ask_agent",
                                                              "do_action", "send_to_telegram"], ov.FUNCTION_NAMES)
 for f in ov.GEMINI_FUNCTIONS:
     check(f"схема {f['name']} не меняется очисткой под Gemini", gemini_schema(f["parameters"]) == f["parameters"])

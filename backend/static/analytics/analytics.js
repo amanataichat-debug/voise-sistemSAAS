@@ -133,6 +133,7 @@
     if (rep.has_bot) out.push({ id: 'channels', title: 'Каналы' }, { id: 'clients', title: 'Клиенты' });
     out.push({ id: 'calls', title: 'Звонки' });
     if (rep.bookings) out.push({ id: 'bookings', title: 'Записи' });
+    if (rep.orders) out.push({ id: 'orders', title: 'Заказы' });
     if (rep.bot) out.push({ id: 'bot', title: 'Бот' });
     if (rep.catalog) out.push({ id: 'catalog', title: (rep.niche && rep.niche.catalog_title) || 'Каталог' });
     if (rep.money) out.push({ id: 'money', title: 'Расходы' });
@@ -264,7 +265,7 @@
   // ── разделы ────────────────────────────────────────────────────────────
   function bodyHtml() {
     return overviewHtml() + (rep.has_bot ? channelsHtml() + clientsHtml() : '') + callsHtml() +
-      (rep.bookings ? bookingsHtml() : '') + (rep.bot ? botHtml() : '') + (rep.catalog ? catalogHtml() : '') +
+      (rep.bookings ? bookingsHtml() : '') + (rep.orders ? ordersHtml() : '') + (rep.bot ? botHtml() : '') + (rep.catalog ? catalogHtml() : '') +
       (rep.money ? moneyHtml() : '');
   }
   function section(id, ic, title, inner, link) {
@@ -464,6 +465,36 @@
       card('Откуда записи', 'Кто записал клиента за период', sources.length ? hbars(sources) : '<div class="an-empty">За период новых записей нет.</div>') +
       '</div>';
     return section('bookings', 'calendar', 'Онлайн-запись', inner, ['/static/booking.html', 'Открыть календарь']);
+  }
+
+  // Заказы (магазины, доставка): сколько, выдано, отменено, выручка и средний чек, откуда, что берут
+  function ordersHtml() {
+    var o = rep.orders;
+    var stats = '<div class="an-stats">' +
+      stat('Заказов', fmtNum(o.total), o.clients ? fmtNum(o.clients) + ' ' + plural(o.clients, 'клиент', 'клиента', 'клиентов') : '') +
+      stat('Выдано', fmtNum(o.done), '', 'good') +
+      stat('В работе', fmtNum(o.open), '') +
+      stat('Выручка', fmtNum(o.revenue) + '<small>сом</small>', o.avg_check ? 'средний чек ' + fmtSom(o.avg_check) : '', '', true) +
+      stat('Оформил бот', fmtNum(o.by_bot), o.total ? pct(o.by_bot, o.total) + '% заказов' : '') +
+      (o.cancelled ? stat('Отменено', fmtNum(o.cancelled), o.cancel_pct != null ? o.cancel_pct + '% заказов' : '', o.cancel_pct >= 20 ? 'warn' : '') : '') + '</div>';
+    var srcNames = { bot: 'Бот в переписке', owner: 'Вы', staff: 'Сотрудники' };
+    var srcColors = { bot: 'var(--vc-in)', owner: 'var(--vc-out)', staff: 'var(--vc-tg)' };
+    var sources = Object.keys(o.sources || {}).sort(function (x, y) { return o.sources[y] - o.sources[x]; }).map(function (k) {
+      return { label: srcNames[k] || k, value: o.sources[k], color: srcColors[k] || 'var(--vc-prev)' };
+    });
+    var dlv = o.delivery || {};
+    var how = segbar([
+      { label: 'Доставка', value: dlv.delivery || 0, color: 'var(--vc-tg)' },
+      { label: 'Самовывоз', value: dlv.pickup || 0, color: 'var(--vc-book)' }
+    ], 'заказов');
+    var top = (o.top || []).length ? '<div class="an-table-wrap" style="max-height:none"><table class="an-table"><thead><tr><th>Позиция</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>' +
+      o.top.map(function (t) { return '<tr><td>' + esc(t.title) + '</td><td>' + fmtNum(t.qty) + '</td><td>' + fmtSom(t.amount) + '</td></tr>'; }).join('') +
+      '</tbody></table></div>' : '<div class="an-empty">Заказов за период нет.</div>';
+    var inner = card('', '', stats + '<div style="margin-top:12px">' + how + '</div>') +
+      '<div class="an-grid-2">' + card('Что заказывают', 'Позиции в заказах за период (без отменённых)', top) +
+      card('Кто оформил', 'Откуда заказы за период', sources.length ? hbars(sources) : '<div class="an-empty">За период заказов нет.</div>') +
+      '</div>';
+    return section('orders', 'shopping-cart', 'Заказы', inner, ['/static/orders.html', 'Открыть заказы']);
   }
 
   function botHtml() {

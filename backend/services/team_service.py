@@ -56,6 +56,8 @@ PERMISSIONS: List[Dict[str, str]] = [
      "hint": "Календарь: записать, перенести, отменить, отметить визит"},
     {"key": "booking_setup", "title": "Мастера и график", "icon": "clock",
      "hint": "Мастера, график работы и правила записи"},
+    {"key": "orders", "title": "Заказы", "icon": "shopping-cart",
+     "hint": "Заказы клиентов: оформить, собрать, отправить, отметить выдачу"},
     {"key": "catalog", "title": "Каталог", "icon": "package",
      "hint": "Позиции каталога: цены, наличие, фото"},
     {"key": "analytics", "title": "Аналитика", "icon": "chart-column",
@@ -68,6 +70,7 @@ BOOKING_PERMS = ("booking", "booking_setup")
 SECTION_PAGES = [
     ("inbox", "/static/inbox.html", "inbox", "Чаты", "Чаттар"),
     ("booking", "/static/booking.html", "calendar", "Записи", "Жазуулар"),
+    ("orders", "/static/orders.html", "shopping-cart", "Заказы", "Заказдар"),
     ("crm", "/static/start-crm.html", "users", "Клиенты", "Кардарлар"),
     ("catalog", "/static/catalog.html", "package", "Каталог", "Каталог"),
     ("analytics", "/static/analytics.html", "chart-column", "Аналитика", "Аналитика"),
@@ -89,7 +92,7 @@ STAFF_RULES = [
     _rule("GET POST PUT DELETE", r"^/api/inbox(/.*)?$", "inbox"),
     # — клиенты (CRM): карточки, этапы, задачи, звонки агента —
     _rule("GET POST", r"^/api/agent/contacts/?$", "crm"),
-    _rule("GET", r"^/api/agent/contacts/?$", "inbox", "booking", "booking_setup"),   # поиск клиента
+    _rule("GET", r"^/api/agent/contacts/?$", "inbox", "booking", "booking_setup", "orders"),   # поиск клиента
     _rule("GET PUT", r"^/api/agent/contacts/[^/]+/?$", "crm", "inbox"),
     _rule("PATCH", r"^/api/agent/contacts/[^/]+/status/?$", "crm", "inbox"),
     _rule("POST DELETE", r"^/api/agent/contacts/[^/]+/ai-pause/?$", "crm", "inbox"),
@@ -115,6 +118,11 @@ STAFF_RULES = [
     _rule("POST", r"^/api/booking/resources/?$", "booking_setup"),
     _rule("PATCH DELETE", r"^/api/booking/resources/[^/]+/?$", "booking_setup"),
     _rule("PUT", r"^/api/booking/settings/?$", "booking_setup"),
+    # — заказы (настройки заказов — только владелец: api/orders.py → ensure_owner) —
+    _rule("GET POST", r"^/api/orders/?$", "orders"),
+    _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),
+    _rule("GET PATCH", r"^/api/orders/[^/]+/?$", "orders"),
+    _rule("POST", r"^/api/orders/[^/]+/status/?$", "orders"),
     # — аналитика (расходы сотруднику не отдаются — api/analytics.py) —
     _rule("GET", r"^/api/analytics/(report|export\.csv)/?$", "analytics"),
 ]
@@ -455,10 +463,12 @@ def member_dict(m, now: Optional[datetime] = None) -> Dict[str, Any]:
 
 def available_permissions(owner) -> List[Dict[str, Any]]:
     """Разделы для галочек владельца: запись — только если модуль записи включён."""
-    booking_on = False
+    booking_on = orders_on = False
     try:
         from backend.services import business_profile
-        booking_on = bool(business_profile.modules_of(owner).get("booking")) and business_profile.page_ready("booking.html")
+        mods = business_profile.modules_of(owner)
+        booking_on = bool(mods.get("booking")) and business_profile.page_ready("booking.html")
+        orders_on = bool(mods.get("orders")) and business_profile.page_ready("orders.html")
         catalog_title = (business_profile.resolve(owner).get("catalog") or {}).get("title")
     except Exception:
         catalog_title = None
@@ -467,7 +477,7 @@ def available_permissions(owner) -> List[Dict[str, Any]]:
         item = dict(p)
         if p["key"] == "catalog" and catalog_title:
             item["title"] = catalog_title
-        item["available"] = booking_on if p["key"] in BOOKING_PERMS else True
+        item["available"] = booking_on if p["key"] in BOOKING_PERMS else (orders_on if p["key"] == "orders" else True)
         out.append(item)
     return out
 

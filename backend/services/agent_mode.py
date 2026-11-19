@@ -64,7 +64,9 @@ OWNER_CHAT_READONLY_ALLOWED = {"get_period_report", "get_agent_stats", "notify_o
                                "schedule_telegram_message", "block_spam_contact",
                                "update_product_stock",
                                # онлайн-запись: владелец Старта записывает и переносит клиентов командой
-                               "create_booking", "reschedule_booking", "cancel_booking"} | SEND_TOOLS
+                               "create_booking", "reschedule_booking", "cancel_booking",
+                               # заказы: оформить и поменять статус по команде владельца
+                               "create_order", "update_order"} | SEND_TOOLS
 
 REFUSAL_INITIATIVE = (
     "На вашем тарифе агент не звонит и не планирует звонки, не делает рассылки и не выполняет "

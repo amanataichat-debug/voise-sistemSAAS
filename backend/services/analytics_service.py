@@ -719,6 +719,71 @@ def _funnel_block(db: Session, uid: str, rng: Range, agent, light: bool = False)
     }
 
 
+def _orders_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: BucketIndex,
+                  enabled: bool) -> Optional[Dict[str, Any]]:
+    """Заказы за период (модуль «Заказы»): по дате оформления; выручка — не отменённые заказы."""
+    if not _has_table(db, "orders"):
+        return None
+    uid = str(user.id)
+    s, u = rng.aware()
+    ps, _pu = rng.aware(prev=True)
+    bk = _bk_tz("created_at")
+    series = {"orders": _zeros(idx.n), "orders_done": _zeros(idx.n), "orders_open": _zeros(idx.n), "order_revenue": _zeros(idx.n)}
+    prev_orders = _zeros(pidx.n)
+    tot = {"total": 0, "done": 0, "open": 0, "cancelled": 0, "revenue": 0.0, "prev_total": 0, "prev_revenue": 0.0}
+    rows = db.execute(text(
+        f"SELECT date({bk}) AS d, CAST(extract(hour FROM {bk}) AS int) AS h, status, count(*), COALESCE(sum(total), 0) "
+        f"FROM orders WHERE user_id = :uid AND created_at >= :s AND created_at < :u GROUP BY 1, 2, 3"
+    ), {"uid": uid, "s": ps, "u": u}).fetchall()
+    if not rows and not enabled:
+        return None
+    for d, h, status, cnt, total in rows:
+        cnt, total = int(cnt or 0), float(total or 0)
+        cur = rng.a <= d <= rng.b
+        if status == "cancelled":
+            if cur:
+                tot["cancelled"] += cnt
+            continue
+        if cur:
+            tot["total"] += cnt
+            tot["revenue"] += total
+            tot["done" if status == "done" else "open"] += cnt
+            i = idx.index(d, h)
+            if i is not None:
+                series["orders"][i] += cnt
+                series["orders_done" if status == "done" else "orders_open"][i] += cnt
+                series["order_revenue"][i] += total
+        else:
+            tot["prev_total"] += cnt
+            tot["prev_revenue"] += total
+            j = pidx.index(d, h)
+            if j is not None:
+                prev_orders[j] += cnt
+    sources = {str(k or "owner"): int(v or 0) for k, v in db.execute(text(
+        "SELECT source, count(*) FROM orders WHERE user_id = :uid AND created_at >= :s AND created_at < :u "
+        "AND status <> 'cancelled' GROUP BY 1"), {"uid": uid, "s": s, "u": u}).fetchall()}
+    top = [{"title": t, "qty": int(q or 0), "amount": round(float(a or 0), 2)} for t, q, a in db.execute(text(
+        "SELECT it->>'title', sum(COALESCE((it->>'qty')::int, 1)), "
+        "sum(COALESCE((it->>'qty')::int, 1) * COALESCE((it->>'price')::float, 0)) "
+        "FROM orders o, jsonb_array_elements(o.items) it WHERE o.user_id = :uid AND o.created_at >= :s "
+        "AND o.created_at < :u AND o.status <> 'cancelled' GROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 8"),
+        {"uid": uid, "s": s, "u": u}).fetchall()]
+    delivery = {str(k): int(v or 0) for k, v in db.execute(text(
+        "SELECT delivery_type, count(*) FROM orders WHERE user_id = :uid AND created_at >= :s AND created_at < :u "
+        "AND status <> 'cancelled' GROUP BY 1"), {"uid": uid, "s": s, "u": u}).fetchall()}
+    clients = int(db.execute(text(
+        "SELECT count(DISTINCT COALESCE(CAST(contact_id AS text), client_phone, CAST(id AS text))) FROM orders "
+        "WHERE user_id = :uid AND created_at >= :s AND created_at < :u AND status <> 'cancelled'"),
+        {"uid": uid, "s": s, "u": u}).scalar() or 0)
+    return {
+        **tot, "revenue": round(tot["revenue"], 2), "prev_revenue": round(tot["prev_revenue"], 2),
+        "avg_check": round(tot["revenue"] / tot["total"]) if tot["total"] else 0,
+        "cancel_pct": _pct(tot["cancelled"], tot["total"] + tot["cancelled"]),
+        "by_bot": sources.get("bot", 0), "sources": sources, "top": top, "delivery": delivery, "clients": clients,
+        "series": series, "prev_orders": prev_orders,
+    }
+
+
 def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: BucketIndex) -> Optional[Dict[str, Any]]:
     if not _has_table(db, "bookings"):
         return None
@@ -1034,7 +1099,8 @@ def _kpi(kid: str, label: str, value, prev, *, unit: str = "", good: str = "up",
             "spark": _spark(spark or []), "sub": sub, "section": section, "fmt": fmt}
 
 
-SECTIONS = ("kpis", "series", "channels", "replies", "heatmap", "funnel", "calls", "bookings", "catalog", "money", "bot")
+SECTIONS = ("kpis", "series", "channels", "replies", "heatmap", "funnel", "calls", "bookings", "orders", "catalog",
+            "money", "bot")
 
 
 def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Optional[str] = None,
@@ -1080,6 +1146,8 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
     outcomes = _safe(db, "outcomes", lambda: _outcomes_block(db, uid, rng), {}) if has_bot and "calls" in want else {}
     bookings = (_safe(db, "bookings", lambda: _bookings_block(db, user, rng, idx, pidx), None)
                 if (modules.get("booking") or "bookings" in want) and want & {"bookings", "kpis", "series"} else None)
+    orders = (_safe(db, "orders", lambda: _orders_block(db, user, rng, idx, pidx, bool(modules.get("orders"))), None)
+              if want & {"orders", "kpis", "series"} else None)
     catalog = _safe(db, "catalog", lambda: _catalog_block(db, uid), None) if has_bot and "catalog" in want else None
     money = _safe(db, "money", lambda: _money_block(db, user, rng), None) if "money" in want else None
     dialogs = (_safe(db, "dialogs", lambda: _dialogs_block(db, uid, rng, idx), None)
@@ -1108,6 +1176,8 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
         series["visits"] = bookings["series"]["visits"]
         series["arrived"] = bookings["series"]["arrived"]
         series["no_show"] = bookings["series"]["no_show"]
+    if orders:
+        series.update(orders["series"])
     if dialogs:
         series["dialogs"] = dialogs["series"]
 
@@ -1121,6 +1191,8 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
     prev["new_clients"] = (clients or {}).get("prev_series") or _zeros(pn)
     if bookings:
         prev["visits"] = bookings["prev_visits"]
+    if orders:
+        prev["orders"] = orders["prev_orders"]
 
     # ── каналы ──
     channels: List[Dict[str, Any]] = []
@@ -1175,7 +1247,14 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
                          sub=(f"ещё {_money(bookings['expected_revenue'])} в записях" if bookings.get("expected_revenue")
                               else (f"средний чек {_money(bookings['avg_check'])}" if bookings.get("avg_check") else "")),
                          section="bookings"))
-    if has_bot and funnel and modules.get("crm", True) and not bookings:
+    if orders:
+        kpis.append(_kpi("orders", "Заказы", orders["total"], orders["prev_total"], spark=series.get("orders"),
+                         sub=(f"{orders['done']} выдано" + (f", {orders['by_bot']} оформил бот" if orders["by_bot"] else "")),
+                         section="orders"))
+        kpis.append(_kpi("order_revenue", "Выручка по заказам", orders["revenue"], orders["prev_revenue"], fmt="som",
+                         sub=(f"средний чек {_money(orders['avg_check'])}" if orders.get("avg_check") else "заказов пока нет"),
+                         section="orders"))
+    if has_bot and funnel and modules.get("crm", True) and not bookings and not orders:
         co = (clients or {}).get("cohort") or {}
         kpis.append(_kpi("won", "Купили", co.get("won", 0), None,
                          sub=(f"{_pct(co.get('won', 0), co.get('new', 0))}% новых клиентов" if co.get("new") else "из новых клиентов"),
@@ -1230,6 +1309,7 @@ def build_report(db: Session, user, period: Optional[str] = "30d", date_from: Op
         "funnel": funnel if "funnel" in want else None,
         "heatmap": heat,
         "bookings": bookings,
+        "orders": ({k: v for k, v in orders.items() if k not in ("series", "prev_orders")} if orders else None),
         "catalog": catalog,
         "money": money,
         "bot": {

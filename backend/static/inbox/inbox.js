@@ -144,6 +144,15 @@
   function botHref() { return st.mode === 'reactive' ? '/static/start-bot.html' : '/static/agent.html'; }
   function channelsHref() { return st.mode === 'reactive' ? '/static/start-bot.html#channels' : '/static/agent.html'; }
   // Сотрудник кабинета (вход по своей почте): каналы и бота настраивает владелец, CRM — если открыт раздел
+  // Заказы (магазины, доставка): из карточки клиента — сразу новый заказ на него
+  function ordersOn() {
+    try { var b = JSON.parse(localStorage.getItem('vf_business') || 'null'); return !!(b && b.modules && b.modules.orders); } catch (e) { return false; }
+  }
+  function orderHref(c) {
+    var ph = c.real_phone || c.phone || '';
+    return '/static/orders.html?new=1&contact=' + encodeURIComponent(c.id) + '&name=' + encodeURIComponent(c.display_name || '') +
+      (/^\+/.test(ph) ? '&phone=' + encodeURIComponent(ph) : '');
+  }
   function staffMe() { return S.staff(); }
   function staffCan(key) { return S.staffCan(key); }
   function channelsLink(text) {
@@ -966,7 +975,9 @@
       '<div class="ib-ava lg">' + esc(S.initial(c.display_name)) + '</div><div class="nm">' + esc(c.display_name) + '</div>' +
       '<div class="sub">' + esc(c.agent ? 'Бот: ' + c.agent.name : '') + '</div>' +
       '<div class="acts">' + (staffCan('crm') ? '<button class="btn btn-sm btn-primary vf-desktop-only" type="button" id="ib-crm">' + icon('external-link') + '<span>Открыть в CRM</span></button>' : '') +
-      '<button class="btn btn-sm" type="button" id="ib-call2">' + icon('phone') + '<span>Позвонить</span></button></div></div>' +
+      '<button class="btn btn-sm" type="button" id="ib-call2">' + icon('phone') + '<span>Позвонить</span></button>' +
+      (ordersOn() && staffCan('orders') ? '<a class="btn btn-sm" target="_top" href="' + esc(orderHref(c)) + '">' + icon('shopping-cart') + '<span>Заказ</span></a>' : '') +
+      '</div></div>' +
       '<div class="ib-sec"><h4>Контакты</h4><div class="ib-kv">' + (kv.map(function (x) { return icon(x[0]) + '<div class="v">' + x[1] + '</div>'; }).join('') || '<span></span><div class="muted small">Нет данных</div>') + '</div></div>' +
       '<div class="ib-sec ib-know"><h4>Что узнал бот</h4>' + know + (docs ? '<div style="margin-top:10px">' + docs + '</div>' : '') + '</div>' +
       '<div class="ib-sec"><h4>Задачи <button class="btn btn-ghost btn-sm" type="button" id="ib-rem">' + icon('plus') + 'Напоминание</button></h4>' +

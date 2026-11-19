@@ -385,6 +385,29 @@ def get_bookings(args: Dict[str, Any], now: Optional[datetime] = None) -> Dict[s
                                 "text": x["status"]} for x in items] or [{"title": "Записей нет", "meta": "", "text": ""}]}}
 
 
+_ORDERS = [  # (клиент, что, сумма, статус)
+    ("Айбек", "Окно в кухню × 2", 24000, "новый"),
+    ("Жылдыз", "Балконный блок", 32000, "подтверждён"),
+    ("Марат", "Москитные сетки × 3", 4500, "в пути"),
+    ("Нурлан", "Подоконник 1,5 м", 3800, "выдан"),
+]
+
+
+def get_orders(args: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Демо: заказы «Окна Комфорт» — придуманные, без базы."""
+    today = now_bk(now)
+    n = _wave(today.date(), 43, 2, len(_ORDERS))
+    rows = _ORDERS[:n]
+    revenue = sum(r[2] for r in rows)
+    label = {"yesterday": "вчера", "7d": "за 7 дней", "30d": "за 30 дней"}.get(str(args.get("period") or ""), "сегодня")
+    return {"ok": True, "demo": True, "enabled": True, "period": label,
+            "summary": f"{label}: заказов {len(rows)}, выручка {revenue} сом",
+            "card": {"type": "list", "title": f"Заказы · {label}: {len(rows)} · {revenue:,} сом".replace(",", " "),
+                     "subtitle": f"новых {sum(1 for r in rows if r[3] == 'новый')}",
+                     "items": [{"title": f"№ {1021 + i} · {r[0]}", "meta": f"{r[1]} · {r[2]:,} сом".replace(",", " "), "text": r[3]}
+                               for i, r in enumerate(rows)]}}
+
+
 _ASK = [
     (("почему", "мало", "упал", "просад"),
      "Меньше заявок, потому что в выходные реклама стоит на паузе: в субботу и воскресенье обращений вдвое меньше, "
@@ -542,7 +565,7 @@ def demo_functions() -> List[Dict[str, Any]]:
 DEMO_FUNCTION_NAMES = [f["name"] for f in ov.GEMINI_FUNCTIONS]
 _FAST = {"get_stats": get_stats, "get_report": get_report, "get_balance": get_balance,
          "client_info": client_info, "list_dialogs": list_dialogs, "get_schedule": get_schedule,
-         "get_bookings": get_bookings}
+         "get_bookings": get_bookings, "get_orders": get_orders}
 
 
 def run_demo_function(name: str, args: Dict[str, Any]) -> Dict[str, Any]:

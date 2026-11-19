@@ -280,6 +280,24 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "get_orders",
+        "behavior": "BLOCKING",
+        "description": (
+            "Заказы магазина: новые (ждут подтверждения), в работе, в пути, выданные сегодня; выручка и средний чек "
+            "за период; что берут чаще. Для «сколько заказов сегодня», «есть новые заказы?», «что в пути», "
+            "«выручка за неделю». Отвечает мгновенно и показывает список на экране."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["today", "yesterday", "7d", "30d"], "description": "За какой период считать выручку"},
+                "status": {"type": "string", "enum": ["open", "new", "confirmed", "packed", "delivering", "done"],
+                           "description": "Какие заказы перечислить (по умолчанию открытые)"},
+            },
+            "required": ["period"],
+        },
+    },
+    {
         "name": "ask_agent",
         "behavior": "NON_BLOCKING",
         "description": (
@@ -334,7 +352,7 @@ GEMINI_FUNCTIONS: List[Dict[str, Any]] = [
     },
 ]
 FAST_FUNCTIONS = {"get_stats", "get_report", "get_balance", "client_info", "list_dialogs", "get_schedule",
-                  "get_bookings"}
+                  "get_bookings", "get_orders"}
 FUNCTION_NAMES = [f["name"] for f in GEMINI_FUNCTIONS]
 
 
@@ -403,6 +421,7 @@ def build_brief(db, user, agent, now: Optional[datetime] = None) -> str:
     safe("tasks", lambda: _brief_tasks(db, agent, now, today_bk))
     safe("funnel", lambda: _brief_funnel(db, agent))
     safe("bookings", lambda: _brief_bookings(db, user, now))
+    safe("orders", lambda: _brief_orders(db, user, now))
     safe("money", lambda: "Деньги: " + _money_sentence(balances(db, user, agent)) +
          ". О деньгах подробнее — get_balance; сам про них не заговаривай, если не спросили и ничего не кончается.")
 
@@ -1014,6 +1033,73 @@ def fast_get_bookings(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------- заказы (ветка 1811-niche-admin-speed)
+def orders_on(db, user) -> bool:
+    """Модуль «Заказы» включён или заказы уже есть (выключил модуль — история остаётся)."""
+    from backend.services import order_service as osvc
+    if osvc.orders_enabled(user):
+        return True
+    try:
+        from sqlalchemy import text
+        return db.execute(text("SELECT 1 FROM orders WHERE user_id = :u LIMIT 1"), {"u": str(user.id)}).first() is not None
+    except Exception:
+        db.rollback()
+        return False
+
+
+def fast_get_orders(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Заказы: сколько в каждом статусе, выручка за период, открытые заказы списком (карточка на экране)."""
+    from backend.api.orders import _period
+    from backend.services import order_service as osvc
+
+    if not orders_on(db, user):
+        return {"ok": True, "enabled": False,
+                "message": "Заказы не подключены. Их включают в настройках: «Мой бизнес» → модули."}
+    period = args.get("period") if args.get("period") in ("today", "yesterday", "7d", "30d") else "today"
+    since, until = _period(period)
+    stats = osvc.stats(db, user.id, since, until)
+    counts = osvc.counts(db, user.id)
+    status = args.get("status") if args.get("status") in ("open", "new", "confirmed", "packed", "delivering", "done") else "open"
+    rows, total = osvc.list_orders(db, user.id, status=status, limit=12,
+                                   since=since if status == "done" else None, until=until if status == "done" else None)
+    titles = osvc.status_titles(user)
+    label = {"today": "сегодня", "yesterday": "вчера", "7d": "за 7 дней", "30d": "за 30 дней"}[period]
+    items = [{"number": o.number, "client": o.client_name or "клиент", "what": osvc.items_text(o.items or [], 2),
+              "total": round(o.total or 0), "status": titles.get(o.status, o.status),
+              "delivery": "самовывоз" if o.delivery_type == "pickup" else (o.delivery_when or "доставка")} for o in rows]
+    top = ", ".join(f"{t['title']} ({t['qty']})" for t in (stats.get("top") or [])[:3])
+    summary = (f"{label}: заказов {stats['orders']}, выручка {osvc.money(stats['revenue'])}"
+               + (f", средний чек {osvc.money(stats['avg_check'])}" if stats.get("orders") else "")
+               + f". Сейчас: новых {counts.get('new', 0)}, в работе {counts.get('confirmed', 0) + counts.get('packed', 0)}, "
+               f"в пути {counts.get('delivering', 0)}, выдано сегодня {counts.get('done_today', 0)}"
+               + (f". Чаще берут: {top}" if top else ""))
+    return {
+        "ok": True, "enabled": True, "period": label, "stats": {k: v for k, v in stats.items() if k != "top"},
+        "counts": counts, "top": stats.get("top") or [], "items": items, "summary": summary,
+        "card": {"type": "list", "title": f"Заказы · {label}: {stats['orders']} · {osvc.money(stats['revenue'])}",
+                 "subtitle": f"новых {counts.get('new', 0)} · в работе {counts.get('confirmed', 0) + counts.get('packed', 0)} · в пути {counts.get('delivering', 0)}",
+                 "items": [{"title": f"№ {x['number']} · {x['client']}", "meta": f"{x['what']} · {x['total']} сом",
+                            "text": f"{x['status']} · {x['delivery']}"} for x in items]
+                 or [{"title": "Открытых заказов нет", "meta": ""}]},
+    }
+
+
+def _brief_orders(db, user, now: datetime) -> str:
+    """Заказы сегодня — в сводку: «есть новые заказы?» отвечается сразу."""
+    from backend.services import order_service as osvc
+
+    if not orders_on(db, user):
+        return ""
+    c = osvc.counts(db, user.id)
+    rows, _ = osvc.list_orders(db, user.id, status="new", limit=8)
+    lines = [f"Заказов сегодня: {c.get('today', 0)}; новых (ждут подтверждения) {c.get('new', 0)}, в работе "
+             f"{c.get('confirmed', 0) + c.get('packed', 0)}, в пути {c.get('delivering', 0)}, выдано сегодня {c.get('done_today', 0)}."]
+    if rows:
+        lines.append("Новые: " + "; ".join(f"№ {o.number} {o.client_name or 'клиент'} — {osvc.items_text(o.items or [], 2)}, "
+                                           f"{osvc.money(o.total)}" for o in rows) + ".")
+    return _section("Заказы (подробно, выручка за период — get_orders)", lines)
+
+
 def _brief_bookings(db, user, now: datetime) -> str:
     """Записи сегодня и завтра — в сводку, чтобы «кто сегодня придёт» отвечалось сразу."""
     from backend.services import booking_service as bs
@@ -1404,6 +1490,10 @@ def dashboard_cards(db, user, agent, now: Optional[datetime] = None) -> List[Dic
         book = safe("bookings", lambda: fast_get_bookings(db, user, agent, {"day": "today"}))
         if book and book.get("total"):
             cards.append(dict(book["card"], title=f"Записи сегодня ({book['total']})"))
+    if orders_on(db, user):
+        od = safe("orders", lambda: fast_get_orders(db, user, agent, {"period": "today"}))
+        if od and (od.get("items") or (od.get("stats") or {}).get("orders")):
+            cards.append(od["card"])
     if waiting_items:
         cards.append({"type": "list", "title": f"Ждут ответа ({waiting_total})", "items": waiting_items})
 
@@ -1474,6 +1564,7 @@ FAST_IMPL = {
     "list_dialogs": fast_list_dialogs,
     "get_schedule": fast_get_schedule,
     "get_bookings": fast_get_bookings,
+    "get_orders": fast_get_orders,
 }
 
 
@@ -1516,7 +1607,7 @@ VOICE_ROLE = """ТЫ — ГОЛОСОВОЙ ПОМОЩНИК ВЛАДЕЛЬЦА 
 
 ЧТО ТЫ ЗНАЕШЬ И КАК УЗНАЁШЬ
 - Ниже — СВОДКА ДЕЛ на начало разговора: сегодня, по дням за неделю, последние диалоги и звонки, задачи, воронка. На «дай отчёт», «что сегодня», «сколько звонков вчера», «как прошла неделя», «кто писал», «что по задачам» отвечай из неё сразу, без функций.
-- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_report — весь отчёт за период; get_stats — только цифры; get_balance — деньги: кошелёк, кредиты, тариф; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано; get_bookings — кто записан (онлайн-запись) на день, к какому мастеру, и где есть свободное время.
+- Быстрые функции отвечают мгновенно и ПОКАЗЫВАЮТ владельцу карточку на экране (цифры, графики, клиента, список) — ничего не говори перед ними: get_report — весь отчёт за период; get_stats — только цифры; get_balance — деньги: кошелёк, кредиты, тариф; client_info — всё о конкретном клиенте, его переписка и звонки; list_dialogs — кто ждёт ответа, непрочитанные; get_schedule — что запланировано; get_bookings — кто записан (онлайн-запись) на день, к какому мастеру, и где есть свободное время; get_orders — заказы магазина: новые, в работе, в пути, выручка за период.
 - Владелец любит видеть цифры: на вопрос о цифрах за любой период, о клиенте, о переписке, о планах или о деньгах — вызывай быструю функцию, даже если ответ есть в сводке (сводка — чтобы ты не ошибся и знал общую картину).
 - «Дай отчёт», «что нового», «как дела», «итоги дня (недели, месяца)» — это get_report за нужный период. Одна функция вместо нескольких: в ней уже и звонки, и переписка, и кто ждёт ответа, и воронка, и планы, и балансы.
 - ОТЧЁТ РАССКАЗЫВАЙ ПО ПОРЯДКУ поля script: сначала звонки, потом переписка, по дням, кто ждёт ответа, воронка, планы, деньги. На экране блоки инфографики загораются под твою речь — поэтому называй блок словами («звонков…», «сообщений…», «ждут ответа…», «в воронке…», «запланировано…», «в кошельке…») и не перескакивай. Своими словами, по одной короткой фразе на блок; пустые блоки пропускай. Если владелец просил только часть («только звонки») — расскажи её и остановись.

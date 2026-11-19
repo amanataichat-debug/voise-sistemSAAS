@@ -58,12 +58,15 @@
       parts: [['calls_in', 'Входящие', 'var(--vc-in)'], ['calls_out', 'Исходящие', 'var(--vc-out)']] },
     { id: 'visits', title: 'Записи', sub: 'Визиты клиентов по дате записи', need: 'bookings', prev: 'visits',
       parts: [['arrived', 'Пришли', 'var(--vc-good)'], ['no_show', 'Не пришли', 'var(--vc-bad)'], ['_upcoming', 'Записаны', 'var(--vc-tg)']] },
+    { id: 'orders', title: 'Заказы', sub: 'Заказы по дате оформления (без отменённых)', need: 'orders', prev: 'orders',
+      parts: [['orders_done', 'Выданы', 'var(--vc-good)'], ['orders_open', 'В работе', 'var(--vc-book)']] },
     { id: 'replies', title: 'Ответы', sub: 'Сколько сообщений отправили клиентам бот и вы', need: 'bot',
       parts: [['bot_out', 'Бот', 'var(--vc-in)'], ['owner_out', 'Вы', 'var(--vc-out)']] },
     { id: 'dialogs', title: 'Разговоры', sub: 'Разговоры голосовых ассистентов на сайте и по телефону', need: 'nobot',
       parts: [['dialogs', 'Разговоры', 'var(--vc-in)']] }
   ];
   var KPI_METRIC = { inbound: 'inbound', new_clients: 'new_clients', calls: 'calls', visits: 'visits', revenue: 'visits',
+    orders: 'orders', order_revenue: 'orders',
     reply: 'replies', dialogs: 'dialogs', won: 'new_clients', pipeline: 'new_clients', spent: 'calls' };
 
   function metricsAvail(rep) {
@@ -71,6 +74,7 @@
       if (m.need === 'bot') return !!rep.has_bot;
       if (m.need === 'nobot') return !rep.has_bot && !!(rep.series || {}).dialogs;
       if (m.need === 'bookings') return !!rep.bookings && !!(rep.series || {}).visits;
+      if (m.need === 'orders') return !!rep.orders && !!(rep.series || {}).orders;
       return true;
     });
   }

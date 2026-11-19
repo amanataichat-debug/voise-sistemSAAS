@@ -38,8 +38,13 @@
   const DEMO_CHIPS = ['Что нового?', 'Кто ждёт ответа?', 'Что писал Нурлан?', 'Как прошла неделя?', 'Сколько денег на счету?'];
   // Ниши с онлайн-записью (салон, клиника, СТО): первые подсказки — про записи
   const BOOKING_CHIPS = ['Кто записан сегодня?', 'Отчёт за сегодня', 'Есть свободное время завтра?', 'Кто ждёт ответа?', 'Как прошла неделя?'];
+  const ORDER_CHIPS = ['Есть новые заказы?', 'Выручка за неделю', 'Что сейчас в пути?', 'Кто ждёт ответа?', 'Отчёт за сегодня'];
   function ownerChips() {
-    try { const b = JSON.parse(localStorage.getItem('vf_business') || 'null'); if (b && b.modules && b.modules.booking) return BOOKING_CHIPS; } catch (e) { }
+    try {
+      const b = JSON.parse(localStorage.getItem('vf_business') || 'null');
+      if (b && b.modules && b.modules.booking) return BOOKING_CHIPS;
+      if (b && b.modules && b.modules.orders) return ORDER_CHIPS;
+    } catch (e) { }
     return CHIPS;
   }
   const ADDRESS = [{ id: 'name', t: 'По имени' }, { id: 'chef', t: 'Шеф' }, { id: 'boss', t: 'Босс' }, { id: 'custom', t: 'Своё' }];
@@ -200,6 +205,7 @@ registerProcessor('vv-out', VvOut);`;
       case 'list_dialogs': return 'Смотрю переписку…';
       case 'get_schedule': return 'Смотрю расписание…';
       case 'get_bookings': return 'Смотрю записи…';
+      case 'get_orders': return 'Смотрю заказы…';
       case 'ask_agent': return 'Думаю над вопросом…';
       case 'do_action': return 'Выполняю…';
       case 'send_to_telegram': return 'Отправляю в Telegram…';

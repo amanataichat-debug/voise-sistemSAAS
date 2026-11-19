@@ -11,12 +11,13 @@
 
   var root = null;
   var st = { data: null, busy: false };
-  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', catalog: 'package', analytics: 'chart-column' };
+  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', orders: 'shopping-cart', catalog: 'package', analytics: 'chart-column' };
   var PRESETS = [
-    { id: 'admin', title: 'Администратор', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'catalog', 'analytics'] },
-    { id: 'sales', title: 'Менеджер', perms: ['inbox', 'crm', 'catalog'] },
+    { id: 'admin', title: 'Администратор', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics'] },
+    { id: 'sales', title: 'Менеджер', perms: ['inbox', 'crm', 'orders', 'catalog'] },
     { id: 'master', title: 'Мастер', perms: ['booking'] },
-    { id: 'seller', title: 'Продавец', perms: ['inbox', 'catalog'] },
+    { id: 'seller', title: 'Продавец', perms: ['inbox', 'orders', 'catalog'] },
+    { id: 'courier', title: 'Курьер', perms: ['orders'] },
     { id: 'operator', title: 'Оператор чатов', perms: ['inbox'] }
   ];
   var COLORS = ['#2a5ce8', '#0d9488', '#7c3aed', '#db2777', '#ea580c', '#0891b2', '#4f46e5', '#16a34a'];

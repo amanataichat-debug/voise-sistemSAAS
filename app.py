@@ -368,6 +368,8 @@ from backend.api import analytics as analytics_api  # аналитика: отч
 app.include_router(analytics_api.router)
 from backend.api import team as team_api  # сотрудники кабинета: вход по почте, права, место 150 сом/мес
 app.include_router(team_api.router)
+from backend.api import orders as orders_api  # заказы магазинов и доставки: из переписки, статусы, склад
+app.include_router(orders_api.router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -2019,6 +2021,25 @@ def ensure_team_tables():
         logger.error(f"❌ ensure_team_tables: {e}")
 
 
+def ensure_order_tables():
+    """
+    Заказы (ветка 1811-niche-admin-speed): таблицы orders и order_settings. Идёт в начале старта в
+    каждом воркере, идемпотентно (create_all с checkfirst).
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.order import Order, OrderSettings
+        existing = set(inspect(engine).get_table_names())
+        if not {"users", "agent_contacts"} <= existing:
+            return  # пустая база: таблицы создаст общий create_all
+        if not {"orders", "order_settings"} <= existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[Order.__table__, OrderSettings.__table__], checkfirst=True)
+            logger.info("✅ Created orders / order_settings")
+    except Exception as e:
+        logger.error(f"❌ ensure_order_tables: {e}")
+
+
 def ensure_inbox_schema():
     """
     Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
@@ -3211,6 +3232,7 @@ async def startup_event():
         ensure_inbox_schema()
         ensure_booking_tables()
         ensure_team_tables()  # сотрудники кабинета — до первого запроса с их токеном
+        ensure_order_tables()  # заказы магазинов и доставки
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.
