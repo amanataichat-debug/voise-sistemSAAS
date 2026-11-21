@@ -1,6 +1,6 @@
 # backend/websockets/live_client.py
 """
-Клиент OpenAI GPT-Live (gpt-live-1) — голосовой транспорт OpenAI-ассистентов.
+Клиент OpenAI GPT-Live (gpt-live-1.1, запасная gpt-live-1) — голосовой транспорт OpenAI-ассистентов.
 
 Отличия от Realtime API (openai_client_new.py, легаси):
 - URL wss://api.openai.com/v1/live/sessions; первое сообщение session.start,
@@ -50,7 +50,27 @@ from backend.models.conversation import Conversation
 logger = get_logger(__name__)
 
 LIVE_WS_URL = "wss://api.openai.com/v1/live/sessions"
-LIVE_MODEL = getattr(settings, "LIVE_MODEL", None) or "gpt-live-1"
+LIVE_MODEL = getattr(settings, "LIVE_MODEL", None) or "gpt-live-1.1"
+# Запасная модель: если ключ не открыл LIVE_MODEL (нет доступа, модель не найдена),
+# старт один раз повторяется на ней — звонок важнее. gpt-live-1.1 (20.11.2026) ставится
+# в ту же конфигурацию session.start, что и gpt-live-1 (changelog OpenAI).
+STABLE_LIVE_MODEL = "gpt-live-1"
+
+
+def is_model_error(err: Dict[str, Any]) -> bool:
+    """Отказ session.start из-за самой модели (нет доступа / не найдена / не поддерживается)."""
+    code = str(err.get("code") or "").lower()
+    param = str(err.get("param") or "").lower()
+    msg = str(err.get("message") or "").lower()
+    if "delegation" in param or "responses" in param:
+        return False  # отказ бэкенд-модели делегирования, а не голосовой
+    if param == "session.model":
+        return True
+    if code in ("model_not_found", "model_not_available", "unsupported_model"):
+        return "gpt-live" in msg or not param
+    return "gpt-live" in msg and any(m in msg for m in (
+        "does not exist", "not found", "do not have access", "does not have access",
+        "not supported", "not available", "unknown model", "invalid model"))
 
 # Голоса GPT-Live-1: 12 новых + 10 голосов Realtime (те, что выбираются в кабинете).
 # Голос по умолчанию у OpenAI — marin. Если API отклонит голос, connect() один раз
@@ -495,6 +515,9 @@ class OpenAILiveClient:
         self.closed_event: Optional[Dict[str, Any]] = None
         self._pending_byte = b""
         self._voice_retry_done = False
+        # Модель голоса этой сессии: LIVE_MODEL, после отказа — STABLE_LIVE_MODEL
+        self.model = LIVE_MODEL
+        self.model_fallback_reason = ""
         # Делегирования бэкенда: delegation_id → {"pending": set(call_id), "completed": bool}
         self._delegations: Dict[str, Dict[str, Any]] = {}
         self._call_delegation: Dict[str, str] = {}
@@ -581,7 +604,7 @@ class OpenAILiveClient:
             responses_cfg["parallel_tool_calls"] = parallel == "true"
 
         cfg: Dict[str, Any] = {
-            "model": LIVE_MODEL,
+            "model": self.model,
             "instructions": voice_instructions,
             "audio": {
                 "format": ({"type": "audio/pcmu", "rate": 8000} if self.audio_codec == "pcmu"
@@ -646,7 +669,7 @@ class OpenAILiveClient:
             "session": session_cfg,
         }))
         logger.info(
-            f"[LIVE-CLIENT] session.start sent (model={LIVE_MODEL}, voice={self.voice}, rate={self.audio_rate}, "
+            f"[LIVE-CLIENT] session.start sent (model={self.model}, voice={self.voice}, rate={self.audio_rate}, "
             f"codec={self.audio_codec}, triggers={len(session_cfg.get('triggers') or [])}, "
             f"backend={self.delegation_model}, tools={self.enabled_functions}, telephony={self.telephony})"
         )
@@ -677,6 +700,12 @@ class OpenAILiveClient:
                 msg = json.dumps(err, ensure_ascii=False)
                 logger.error(f"[LIVE-CLIENT] session.start rejected: {msg}")
                 await self._safe_close_ws()
+                # Ключ не открыл новую модель — один раз повторяем на стабильной
+                if self.model != STABLE_LIVE_MODEL and isinstance(err, dict) and is_model_error(err):
+                    self.model_fallback_reason = str(err.get("message") or err.get("code") or "")[:200]
+                    logger.warning(f"[LIVE-CLIENT] Model '{self.model}' rejected, retrying with '{STABLE_LIVE_MODEL}'")
+                    self.model = STABLE_LIVE_MODEL
+                    return await self.connect(start_timeout=start_timeout)
                 # Триггеры Decisions (beta) не приняты — повторяем старт без них, звонок важнее
                 if (self.decision_triggers and not self._triggers_retry_done
                         and any(m in msg.lower() for m in ("trigger", "decision"))):
@@ -719,7 +748,7 @@ class OpenAILiveClient:
                 assistant_message="",
             )
             if self.conversation_model is Conversation:
-                fields["client_info"] = {"transport": LIVE_MODEL}
+                fields["client_info"] = {"transport": self.model}
             conv = self.conversation_model(**fields)
             self.db_session.add(conv)
             self.db_session.commit()

@@ -1285,7 +1285,7 @@ class LiveVoiceSession:
             if pairs:
                 saved = await _save_dialog(str(self.assistant.id), self.client.dialog_session_id or self.client_id, pairs,
                                            usage_seconds if usage_seconds is not None else elapsed,
-                                           self.client.conversation_record_id, LIVE_MODEL,
+                                           self.client.conversation_record_id, self.client.model,
                                            conversation_model=self.client.conversation_model)
                 sheet_id = getattr(self.assistant, "google_sheet_id", None)
                 if sheet_id:
@@ -1415,9 +1415,11 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
                                   **live_media_options(assistant))
         connect_started = time.time()
         if not await client.connect():
-            await fail("openai_connection_failed", "Failed to open gpt-live-1 session", 1011)
+            await fail("openai_connection_failed", f"Failed to open {LIVE_MODEL} session", 1011)
             return
-        _log(f"session {client_id} started in {time.time() - connect_started:.2f}s: assistant={assistant.id} "
+        if client.model_fallback_reason:
+            _log(f"model {LIVE_MODEL} rejected, using {client.model}: {client.model_fallback_reason}", "WARNING")
+        _log(f"session {client_id} started in {time.time() - connect_started:.2f}s: model={client.model} assistant={assistant.id} "
              f"'{assistant.name}' voice={client.voice} telephony={telephony} functions={client.enabled_functions} "
              f"conversation_record={client.conversation_record_id}")
 
@@ -1425,10 +1427,10 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
             "type": "connection_status",
             "status": "connected",
             "provider": "openai",
-            "transport": LIVE_MODEL,
-            "model": LIVE_MODEL,
+            "transport": client.model,
+            "model": client.model,
             "backend_model": client.delegation_model,
-            "message": f"Connected to OpenAI {LIVE_MODEL} (full-duplex)",
+            "message": f"Connected to OpenAI {client.model} (full-duplex)",
             "full_duplex": True,
             "audio_rate": client.io_rate,
             "voice": client.voice,

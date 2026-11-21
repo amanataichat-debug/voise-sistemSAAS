@@ -59,11 +59,11 @@ class Settings(BaseSettings):
     IG_POLL_SECONDS: int = int(os.getenv("IG_POLL_SECONDS", "20"))
     # Личный Telegram: постоянное соединение-слушатель (ответ через reply_delay_seconds); 0 — только опрос.
     TG_LISTENER_ENABLED: str = os.getenv("TG_LISTENER_ENABLED", "1")
-    LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gpt-live-1")
+    LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gpt-live-1.1")  # не открылась на ключе → gpt-live-1
     # Бэкенд-модель делегирования (функции, рассуждения): gpt-5.6-luna — быстрая (ответ ~в 2 раза
     # быстрее), gpt-5.6-terra — медленнее, но «умнее». Живой звонок 17.10.2026: с terra задержка
     # ответа доходила до 11 с и убивала ощущение живого разговора; luna выбрана ради скорости.
-    # Голос и произношение задаёт голосовая модель gpt-live-1 — смена бэкенда их НЕ меняет.
+    # Голос и произношение задаёт голосовая модель GPT-Live (LIVE_MODEL) — смена бэкенда их НЕ меняет.
     LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-luna")
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")

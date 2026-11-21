@@ -530,12 +530,15 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         call_log.meta.update({
             "assistant_name": assistant.name,
             "engine": "gpt_live",
-            "llm_model": f"{LIVE_MODEL} + {client.delegation_model}",
+            "llm_model": f"{client.model} + {client.delegation_model}",
             "voice": client.voice,
             "language": assistant.language,
             "telephony_profile": telephony,
         })
-        call_log.add("session", f"Сессия начата: OpenAI {LIVE_MODEL} (речь в речь), голос {client.voice}, "
+        if client.model_fallback_reason:
+            call_log.add("session", f"Модель {LIVE_MODEL} не открылась на ключе — звонок идёт на {client.model}: "
+                                    f"{client.model_fallback_reason}", level="warning")
+        call_log.add("session", f"Сессия начата: OpenAI {client.model} (речь в речь), голос {client.voice}, "
                                 f"функции — {client.delegation_model}; подключение {connect_ms} мс",
                      functions=", ".join(client.enabled_functions) or None)
 
@@ -544,8 +547,8 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         "status": "connected",
         "provider": "eleven",
         "engine": "gpt_live",
-        "transport": LIVE_MODEL,
-        "model": LIVE_MODEL,
+        "transport": client.model,
+        "model": client.model,
         "backend_model": client.delegation_model,
         "message": "Connected: Voksy Live (full-duplex)",
         "full_duplex": True,
