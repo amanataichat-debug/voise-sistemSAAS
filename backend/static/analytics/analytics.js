@@ -128,16 +128,42 @@
   }
 
   // ── каркас страницы ────────────────────────────────────────────────────
+  // Порядок разделов: у салона / клиники / магазина сначала деньги, записи и заказы — потом переписка
+  function moneyNiche() { return !!(rep.bookings || rep.orders); }
   function sections() {
-    var out = [{ id: 'overview', title: 'Обзор' }];
-    if (rep.has_bot) out.push({ id: 'channels', title: 'Каналы' }, { id: 'clients', title: 'Клиенты' });
-    out.push({ id: 'calls', title: 'Звонки' });
-    if (rep.bookings) out.push({ id: 'bookings', title: 'Записи' });
-    if (rep.orders) out.push({ id: 'orders', title: 'Заказы' });
-    if (rep.bot) out.push({ id: 'bot', title: 'Бот' });
-    if (rep.catalog) out.push({ id: 'catalog', title: (rep.niche && rep.niche.catalog_title) || 'Каталог' });
-    if (rep.money) out.push({ id: 'money', title: 'Расходы' });
+    var out = [{ id: 'overview', title: 'Обзор', html: overviewHtml }];
+    var sales = [];
+    if (rep.finance) sales.push({ id: 'finance', title: 'Финансы', html: financeHtml });
+    if (rep.bookings) sales.push({ id: 'bookings', title: 'Записи', html: bookingsHtml });
+    if (rep.orders) sales.push({ id: 'orders', title: 'Заказы', html: ordersHtml });
+    var talk = [];
+    if (rep.has_bot) {
+      if (moneyNiche()) talk.push({ id: 'clients', title: 'Клиенты', html: clientsHtml }, { id: 'channels', title: 'Каналы', html: channelsHtml });
+      else talk.push({ id: 'channels', title: 'Каналы', html: channelsHtml }, { id: 'clients', title: 'Клиенты', html: clientsHtml });
+    }
+    talk.push({ id: 'calls', title: 'Звонки', html: callsHtml });
+    out = out.concat(moneyNiche() ? sales.concat(talk) : talk.concat(sales));
+    if (rep.bot) out.push({ id: 'bot', title: 'Бот', html: botHtml });
+    if (rep.catalog) out.push({ id: 'catalog', title: (rep.niche && rep.niche.catalog_title) || 'Каталог', html: catalogHtml });
+    if (rep.money) out.push({ id: 'money', title: 'Платформа', html: moneyHtml });
     return out;
+  }
+  // Телефон: по одному разделу на экране (вкладки сверху), а не 20 экранов подряд
+  function tabMode() { return window.matchMedia('(max-width: 760px)').matches; }
+  function curSec() {
+    var ids = sections().map(function (x) { return x.id; });
+    var h = (location.hash || '').slice(1);
+    return ids.indexOf(h) >= 0 ? h : 'overview';
+  }
+  function showSec(id, scroll) {
+    S.$$('.an-section', root).forEach(function (x) { x.classList.toggle('on', x.id === id); });
+    S.$$('#an-nav a', root).forEach(function (a) { a.classList.toggle('active', a.dataset.sec === id); });
+    var link = root.querySelector('#an-nav a[data-sec="' + id + '"]');
+    var nav = document.getElementById('an-nav');
+    if (link && nav) nav.scrollLeft = Math.max(0, link.offsetLeft - nav.clientWidth / 2 + link.clientWidth / 2);
+    try { history.replaceState(null, '', '?' + params(true) + '#' + id); } catch (er) { /* ignore */ }
+    drawCharts();
+    if (scroll) { var tb = root.querySelector('.an-toolbar'); window.scrollTo(0, tb ? Math.max(0, tb.offsetTop - 8) : 0); }
   }
 
   function render() {
@@ -147,9 +173,15 @@
       '<div class="an-head"><div><h2>Аналитика</h2><p>' + niche + '<b>' + esc(cap(p.label)) + '</b>' +
       (p.days > 1 ? ' · стрелки — сравнение с прошлым периодом такой же длины' : ' · сравнение с прошлым днём') + '</p></div></div>' +
       toolbarHtml() +
-      '<div class="an-body" id="an-body">' + bodyHtml() + '</div>';
+      '<div class="an-body' + (tabMode() ? ' an-tabs' : '') + '" id="an-body">' + bodyHtml() + '</div>';
     bindToolbar();
     bindBody();
+    if (tabMode()) {
+      // Вкладки разделов — отдельной липкой полосой над отчётом (внутри панели периода липкость не работает)
+      var nav = document.getElementById('an-nav'), body = document.getElementById('an-body');
+      if (nav && body) { nav.classList.add('an-nav-sticky'); body.parentNode.insertBefore(nav, body); }
+      showSec(curSec(), false); S.ready(); return;
+    }
     drawCharts();
     observeSections();
     if (location.hash && !render.scrolled) {
@@ -197,6 +229,7 @@
     S.$$('#an-nav a', root).forEach(function (a) {
       a.addEventListener('click', function (e) {
         e.preventDefault();
+        if (tabMode()) { showSec(a.dataset.sec, true); return; }
         var t = document.getElementById(a.dataset.sec);
         if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
         try { history.replaceState(null, '', '?' + params(true) + '#' + a.dataset.sec); } catch (er) { /* ignore */ }
@@ -264,9 +297,30 @@
 
   // ── разделы ────────────────────────────────────────────────────────────
   function bodyHtml() {
-    return overviewHtml() + (rep.has_bot ? channelsHtml() + clientsHtml() : '') + callsHtml() +
-      (rep.bookings ? bookingsHtml() : '') + (rep.orders ? ordersHtml() : '') + (rep.bot ? botHtml() : '') + (rep.catalog ? catalogHtml() : '') +
-      (rep.money ? moneyHtml() : '');
+    return sections().map(function (x) { return x.html(); }).join('');
+  }
+
+  // Финансы: выручка − расходы (аренда, зарплаты мастеров, закупки) = прибыль; подробно — на странице «Финансы»
+  function financeHtml() {
+    var f = rep.finance;
+    var CAT = { salary: 'var(--vc-in)', rent: 'var(--vc-book)', supplies: 'var(--vc-out)', ads: 'var(--vc-ig)', utilities: 'var(--vc-call)', taxes: 'var(--vc-prev)', other: 'var(--vc-muted)' };
+    var noExp = !f.expenses_count && !f.payroll_total;
+    var parts = f.revenue_parts || {};
+    var stats = '<div class="an-stats">' +
+      stat('Выручка', fmtNum(f.revenue) + '<small>сом</small>', (parts.orders && parts.bookings) ? 'записи ' + fmtSom(parts.bookings) + ' · заказы ' + fmtSom(parts.orders) : 'было ' + fmtSom(f.prev_revenue), 'good', true) +
+      stat('Расходы', fmtNum(f.expenses) + '<small>сом</small>', noExp ? 'не внесены' : 'было ' + fmtSom(f.prev_expenses), '', true) +
+      stat('Прибыль', (f.profit < 0 ? '−' : '') + fmtNum(Math.abs(f.profit)) + '<small>сом</small>', 'было ' + fmtSom(f.prev_profit), f.profit < 0 ? 'warn' : 'good', true) +
+      (f.margin_pct != null ? stat('Рентабельность', f.margin_pct + '<small>%</small>', 'прибыль от выручки', '', true) : '') + '</div>';
+    var cats = (f.categories || []).map(function (c) { return { label: c.title, value: Math.round(c.amount), color: CAT[c.key] || 'var(--vc-prev)', suffix: ' сом', sub: (c.share || 0) + '%' }; });
+    var pay = (f.payroll || []).map(function (m) {
+      return { label: m.name, value: Math.round(m.salary), color: m.color || 'var(--vc-in)', suffix: ' сом',
+        sub: m.configured ? 'выручка ' + fmtNum(m.revenue) + (m.pay_percent ? ' × ' + m.pay_percent + '%' : '') : 'процент не задан' };
+    });
+    var inner = card('', '', stats + (noExp ? '<p class="an-note">Внесите аренду, зарплаты и закупки на странице «Финансы» — прибыль посчитается сама. Процент мастеров задаётся там же.</p>' : '')) +
+      '<div class="an-grid-2">' + card('Куда уходят деньги', 'Расходы за период по категориям', cats.length ? hbars(cats) : '<div class="an-empty">Расходов за период нет.</div>') +
+      (pay.length ? card('Зарплаты мастеров', 'Процент с выручки + оклад', hbars(pay)) : '') + '</div>';
+    var per = st.period === 'custom' ? '30d' : st.period;
+    return section('finance', 'banknote', 'Финансы', inner, ['/static/finance.html?period=' + encodeURIComponent(per), 'Расходы и зарплаты']);
   }
   function section(id, ic, title, inner, link) {
     return '<section class="an-section" id="' + id + '"><div class="an-section-title"><h3>' + icon(ic) + esc(title) + '</h3>' +
@@ -299,7 +353,14 @@
   var deltaHtml = V.deltaHtml, sparkSvg = V.sparkSvg;
 
   function metricsAvail() { return V.metricsAvail(rep); }
-  function currentMetric() { return V.metricById(rep, st.m); }
+  function currentMetric() {
+    if (!st.m && rep) {
+      var av = metricsAvail().map(function (x) { return x.id; });
+      if (rep.bookings && av.indexOf('visits') >= 0) return V.metricById(rep, 'visits');
+      if (rep.orders && av.indexOf('orders') >= 0) return V.metricById(rep, 'orders');
+    }
+    return V.metricById(rep, st.m);
+  }
   function metricTotal(m) { return V.metricTotal(rep, m); }
 
   function mainCardHtml() {

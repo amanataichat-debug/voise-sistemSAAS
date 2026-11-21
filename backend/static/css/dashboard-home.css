@@ -188,7 +188,7 @@ body.vf .subscription-section { margin-top: 0; }
   .dh-hero { padding: 22px 18px; }
   .dh-hero-side { align-items: flex-start; }
   .dh-hero .dh-hero-title { font-size: 21px; }
-  .dh-kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dh-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .dh-kpi { padding: 14px; min-height: 0; }
   .dh-kpi-value { font-size: 22px; }
   .dh-grid { grid-template-columns: 1fr; }
@@ -196,4 +196,106 @@ body.vf .subscription-section { margin-top: 0; }
   .dh-table .hide-sm { display: none; }
   #dh-chart-card .dh-card-head { flex-direction: column; align-items: stretch; gap: 10px; }
   #dh-period { align-self: flex-start; }
+}
+
+/* ---------- Телефон (19.11.2026): выбор тарифа и «Подписка истекла» — шторка снизу ----------
+   Раньше тарифы и сроки стояли столбиком по кнопке на строку, окно было выше экрана,
+   а кнопка «Оплатить» уезжала вниз. Теперь: тарифы и сроки — сегменты в ряд, цена крупно,
+   кнопка оплаты всегда видна внизу. */
+@keyframes dh-sheet-up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+@media (max-width: 760px) {
+  body.vf .payment-modal, body.vf .subscription-expired-modal { align-items: flex-end !important; padding: 0 !important; }
+  body.vf .payment-modal-content, body.vf .subscription-expired-content {
+    margin: 0 !important; max-width: none !important; width: 100% !important; border-radius: 20px 20px 0 0 !important;
+    max-height: 92dvh !important; display: flex; flex-direction: column; overflow: hidden !important; animation: dh-sheet-up .22s ease-out;
+  }
+  body.vf .payment-modal-header { padding: 14px 16px 10px; flex: 0 0 auto; }
+  body.vf .payment-modal-header::before, body.vf .subscription-expired-header::before {
+    content: ""; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 4px; background: var(--vf-border-strong, #cbd5e1);
+  }
+  body.vf .payment-modal-title { font-size: 18px; }
+  body.vf .payment-modal-body, body.vf .subscription-expired-body { padding: 12px 16px 16px !important; overflow-y: auto; flex: 1 1 auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  body.vf .subscription-expired-header { position: relative; padding: 18px 16px 10px !important; flex: 0 0 auto; }
+  body.vf .payment-modal-footer, body.vf .subscription-expired-footer {
+    flex: 0 0 auto; display: flex !important; flex-direction: row !important; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    border-top: 1px solid var(--vf-border, #e2e8f0); background: var(--vf-surface, #fff);
+  }
+  body.vf .payment-modal-footer .btn, body.vf .subscription-expired-footer .btn { min-height: 48px; margin: 0 !important; }
+  body.vf .payment-modal-footer .payment-cancel-btn, body.vf .subscription-expired-footer .btn-secondary { flex: 0 0 auto; padding: 0 16px; }
+  body.vf .payment-modal-footer .payment-pay-btn, body.vf .subscription-expired-footer .btn-primary { flex: 1 1 auto; justify-content: center; font-size: 16px; }
+  body.vf .plan-tabs, body.vf .period-tabs, body.vf .expired-plan-tabs, body.vf .expired-period-tabs {
+    flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; padding: 4px !important; margin-bottom: 12px !important;
+  }
+  body.vf .plan-tab, body.vf .period-tab, body.vf .expired-plan-tab, body.vf .expired-period-tab {
+    flex: 1 1 0 !important; min-width: 0 !important; padding: 9px 4px !important; font-size: 13px !important; min-height: 52px;
+  }
+  body.vf .plan-tab .tab-price, body.vf .expired-plan-tab .tab-price { font-size: 11px !important; white-space: nowrap; }
+  body.vf .plan-tab .recommended-badge, body.vf .period-tab .best-value-badge,
+  body.vf .expired-plan-tab .recommended-badge, body.vf .expired-period-tab .best-value-badge {
+    top: -7px !important; right: 2px !important; transform: none !important; font-size: 9px !important; padding: 1px 5px !important;
+  }
+  body.vf .payment-plan-info { margin-bottom: 12px; }
+  body.vf .price-amount { font-size: 34px !important; }
+  body.vf .payment-plan-features h3 { font-size: 15px; }
+}
+
+/* ---------- Деньги на главной (19.11.2026): сегодня и этот месяц, популярные услуги, мастера ---------- */
+.dh-money { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.dh-mcard { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border-radius: var(--vf-r-xl, 18px); text-decoration: none; color: var(--vf-text);
+  background: var(--vf-surface); border: 1px solid var(--vf-border); box-shadow: var(--vf-shadow-1); min-width: 0; transition: transform .15s, box-shadow .15s; }
+.dh-mcard:hover { transform: translateY(-2px); box-shadow: var(--vf-shadow-2); }
+.dh-mcard.today { background: linear-gradient(160deg, #ecfdf3 0%, #ffffff 70%); border-color: #c8efd7; }
+.dh-mcard.month { background: linear-gradient(160deg, #eef3ff 0%, #ffffff 70%); border-color: #d6e1fd; }
+.dh-mtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; color: var(--vf-text-2); }
+.dh-mtop > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.dh-mtop .ic { width: 16px; height: 16px; }
+.dh-mcard.today .dh-mtop .ic { color: #0b8f43; } .dh-mcard.month .dh-mtop .ic { color: var(--vf-accent); }
+.dh-mval { font: 700 28px/1.15 var(--vf-font-display, Syne, sans-serif); letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-msub { font-size: 12.5px; color: var(--vf-text-3); line-height: 1.4; }
+.dh-msub b { color: var(--vf-text); }
+.dh-mrow { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding-top: 6px; border-top: 1px dashed var(--vf-border); }
+.dh-mrow + .dh-mrow { border-top: 0; padding-top: 0; }
+.dh-mrow span { color: var(--vf-text-3); } .dh-mrow b.neg { color: #dc2626; }
+.dh-mhint { font-size: 12.5px; color: var(--vf-accent); font-weight: 600; padding-top: 6px; border-top: 1px dashed var(--vf-border); }
+.dh-md { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.dh-md .ic { width: 12px; height: 12px; }
+.dh-md.up { background: #e6f7ec; color: #0b7a3b; } .dh-md.down { background: #fdecec; color: #b42323; } .dh-md.same { background: var(--vf-surface-3); color: var(--vf-text-3); }
+
+.dh-top { display: flex; flex-direction: column; gap: 12px; }
+.dh-top-row { display: flex; gap: 10px; align-items: flex-start; }
+.dh-top-n { width: 24px; height: 24px; border-radius: 8px; background: var(--vf-accent-soft); color: var(--vf-accent); font-weight: 700; font-size: 12.5px;
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.dh-top-m { flex: 1; min-width: 0; }
+.dh-top-t { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; margin-bottom: 5px; }
+.dh-top-t span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-top-s { font-size: 12px; color: var(--vf-text-3); margin-top: 3px; }
+.dh-ava { width: 34px; height: 34px; border-radius: 11px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 auto; }
+.dh-strong { font-weight: 700; color: var(--vf-text) !important; white-space: nowrap; }
+
+/* ---------- Главная на телефоне: сначала то, что нужно каждый день ---------- */
+@media (max-width: 760px) {
+  .dh-money { gap: 10px; margin-bottom: 12px; }
+  .dh-mcard { padding: 14px; border-radius: 16px; }
+  .dh-mval { font-size: 21px; }
+  .dh-msub { font-size: 12px; }
+  body.vf .content-container { display: flex; flex-direction: column; }
+  body.vf .content-container > * { min-width: 0; }
+  /* Приветствие компактнее: дата, тариф и две кнопки — без абзаца текста */
+  .dh-hero { padding: 16px !important; margin-bottom: 12px !important; }
+  .dh-hero .dh-hero-sub { display: none; }
+  .dh-hero .dh-hero-title { font-size: 19px !important; margin: 2px 0 6px !important; }
+  .dh-hero-actions { width: 100%; } .dh-hero-actions .dh-btn { flex: 1; justify-content: center; white-space: nowrap; padding-left: 10px; padding-right: 10px; font-size: 14px; }
+  /* Ниша с записью/заказами: деньги → записи на сегодня → плитки → услуги и мастера → главное → график → остальное */
+  body.dh-has-money .content-container > * { order: 10; }
+  body.dh-has-money .content-container > .dh-hero { order: 1; }
+  body.dh-has-money #dh-money { order: 2; }
+  body.dh-has-money .content-container > .dh-grid:has(#dh-side-card) { display: contents; }
+  body.dh-has-money #dh-side-card { order: 3; margin-bottom: 12px; }
+  body.dh-has-money #dh-chart-card { order: 7; margin-bottom: 12px; }
+  body.dh-has-money #dh-kpis { order: 4; }
+  body.dh-has-money #dh-biz { order: 5; }
+  body.dh-has-money #dh-insights { order: 6; }
+  #dh-calls-grid.dh-no-calls > .dh-span-2 { display: none; }
+  /* Старый блок «Ваша подписка» повторяет приветствие — на телефоне не нужен */
+  body.vf .subscription-section { display: none; }
 }

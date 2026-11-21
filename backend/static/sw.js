@@ -10,10 +10,11 @@
  *  - остальная статика без метки — из кэша сразу + обновление в фоне;
  *  - без сети всё открывается из кэша (кабинет работает офлайн на уровне интерфейса).
  * Новый SW включается сразу (skipWaiting); при изменении логики кэша поднимайте CACHE. */
-var CACHE = 'voksy-app-v2';
+var CACHE = 'voksy-app-v3';   // v3 (19.11.2026): телефон — «Ещё», финансы, главная; старый кэш страниц сбрасывается
 var PAGE_MAX_AGE = 5 * 24 * 3600 * 1000;
 var SHELL = [
   '/static/dashboard.html', '/static/inbox.html', '/static/start-bot.html', '/static/agent.html',
+  '/static/booking.html', '/static/start-crm.html', '/static/analytics.html', '/static/finance.html', '/static/orders.html',
   '/static/css/voksiai.css', '/static/css/fonts.css', '/static/js/sidebar.js', '/static/js/ui.js',
   '/static/js/i18n.js', '/static/icons/ui.svg'
 ];

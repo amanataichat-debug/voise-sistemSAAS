@@ -78,7 +78,13 @@ tabs = [t["id"] for t in bp.tabs_for("full", np_.modules_for("clothing", {}), "�
 check("Profi без записи: Чаты · Звонки · Агент · Клиенты · Ещё", tabs == ["inbox", "calls", "agent", "clients", "more"], tabs)
 tabs = [t["id"] for t in bp.tabs_for("reactive", np_.modules_for("clothing", {}), "Товары")]
 check("Старт, магазин: Главная · Чаты · Заказы · Клиенты · Ещё", tabs == ["home", "inbox", "orders", "clients", "more"], tabs)
-bp.page_ready = lambda name: False     # страницы модуля ещё нет — вкладка не ведёт в пустоту
+pg = bp.module_pages(np_.modules_for("clothing", {}))
+check("меню: у магазина «Заказы» есть и у Profi (вкладок телефона на неё нет)",
+      pg["orders"] == "/static/orders.html" and pg["booking"] is None, pg)
+pg = bp.module_pages(np_.modules_for("auto_service", {"booking": "yes", "parts": "yes"}))
+check("меню: СТО с записью и запчастями — и «Записи», и «Заказы»", pg["orders"] and pg["booking"], pg)
+bp.page_ready = lambda name: False
+check("меню: страницы модуля нет — пункта нет", bp.module_pages({"booking": True, "orders": True}) == {"booking": None, "orders": None})     # страницы модуля ещё нет — вкладка не ведёт в пустоту
 tabs = [t["id"] for t in bp.tabs_for("reactive", np_.modules_for("clothing", {}), "Товары")]
 check("страницы «Заказы» нет — вместо неё каталог", tabs == ["home", "inbox", "catalog", "clients", "more"], tabs)
 tabs = [t["id"] for t in bp.tabs_for("full", np_.modules_for("massage_spa", {}), "Услуги")]

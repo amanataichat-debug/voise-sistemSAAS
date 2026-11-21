@@ -370,6 +370,8 @@ from backend.api import team as team_api  # сотрудники кабинет�
 app.include_router(team_api.router)
 from backend.api import orders as orders_api  # заказы магазинов и доставки: из переписки, статусы, склад
 app.include_router(orders_api.router)
+from backend.api import finance as finance_api  # доходы, расходы (аренда, зарплаты), прибыль — только владелец
+app.include_router(finance_api.router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -2040,6 +2042,33 @@ def ensure_order_tables():
         logger.error(f"❌ ensure_order_tables: {e}")
 
 
+def ensure_finance_tables():
+    """
+    Доходы и расходы (ветка 1811-niche-admin-speed, 19.11.2026): таблица business_expenses и колонки
+    booking_resources.pay_percent / pay_fixed (оплата мастера). В начале старта, в каждом воркере, идемпотентно.
+    """
+    try:
+        from sqlalchemy import inspect, text as _text
+        from backend.models.base import Base as ModelsBase
+        from backend.models.finance import BusinessExpense
+        inspector = inspect(engine)
+        existing = set(inspector.get_table_names())
+        if "users" not in existing:
+            return  # пустая база: таблицы создаст общий create_all
+        if "booking_resources" in existing:
+            cols = {c["name"] for c in inspector.get_columns("booking_resources")}
+            with engine.begin() as conn:
+                if "pay_percent" not in cols:
+                    conn.execute(_text("ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS pay_percent DOUBLE PRECISION"))
+                if "pay_fixed" not in cols:
+                    conn.execute(_text("ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS pay_fixed DOUBLE PRECISION"))
+        if "business_expenses" not in existing and "booking_resources" in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[BusinessExpense.__table__], checkfirst=True)
+            logger.info("✅ Created business_expenses")
+    except Exception as e:
+        logger.error(f"❌ ensure_finance_tables: {e}")
+
+
 def ensure_inbox_schema():
     """
     Инбокс (ветка 0411-inbox): колонка tasks.created_by (кто поставил задачу:
@@ -3233,6 +3262,7 @@ async def startup_event():
         ensure_booking_tables()
         ensure_team_tables()  # сотрудники кабинета — до первого запроса с их токеном
         ensure_order_tables()  # заказы магазинов и доставки
+        ensure_finance_tables()  # расходы бизнеса и оплата мастеров (прибыль)
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.

@@ -22,6 +22,17 @@
 
   var SPRITE = '/static/icons/ui.svg';
 
+  // Телефон (19.11.2026): кабинет — как приложение, масштаб жестом выключен.
+  // iPhone игнорирует user-scalable=no в мета-теге — гасим жест щипка и двойной тап сами.
+  (function () {
+    var d = global.document; if (!d || !d.addEventListener) return;
+    ['gesturestart', 'gesturechange'].forEach(function (ev) {
+      d.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+    });
+    d.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    // Двойной тап-зум выключает touch-action: manipulation (voksiai.css) — клики при этом не теряются.
+  })();
+
   // Строки интерфейса из словаря (js/i18n.js); без него — русские по умолчанию
   function L(key, def) { return global.I18N ? global.I18N.t(key, null, def) : def; }
 
@@ -855,7 +866,7 @@
   try { shellSeen = sessionStorage.getItem('vf_shell_seen') === '1'; sessionStorage.setItem('vf_shell_seen', '1'); } catch (e) { /* ignore */ }
   if (document.documentElement.hasAttribute('data-vf-loader') && !shellSeen) {
     // Заставка — только если страница не успела за 350 мс: быстрый запуск не мигает чёрным экраном
-    setTimeout(function () { loader.ensure(); }, 350);
+    setTimeout(function () { loader.ensure(); }, 1200);   // 19.11.2026: 350 → 1200 мс — обычная загрузка идёт под скелетонами, без белого экрана заставки
     setTimeout(function () { loader.hide(); }, 6000);
     // Страницы без VF.ready() (data-vf-loader="auto"): прячем загрузчик, когда DOM готов
     // и завершились первые запросы к API. Раньше ждали window.load, то есть шрифты,

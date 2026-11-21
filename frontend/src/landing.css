@@ -937,3 +937,26 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
   .sp-hero { padding: 36px 0 28px; }
   .sp-sec { padding: 40px 0; }
 }
+
+/* ---------- Под ваш бизнес (ниша → модули) ---------- */
+.bz-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.bz-chip { height: 38px; padding: 0 16px; border-radius: 19px; border: 1px solid var(--vf-border); background: var(--vf-surface); color: var(--vf-text-2); font: 600 14px var(--vf-font, inherit); cursor: pointer; transition: border-color var(--vf-fast), background var(--vf-fast), color var(--vf-fast); }
+.bz-chip:hover { border-color: color-mix(in srgb, var(--vf-accent) 40%, var(--vf-border)); color: var(--vf-text); }
+.bz-chip.on { background: var(--vf-accent); border-color: var(--vf-accent); color: #fff; }
+.bz-result { display: flex; gap: 18px; align-items: flex-start; padding: 18px 22px; margin-bottom: 24px; border-radius: 18px; background: var(--vf-accent-soft); border: 1px solid color-mix(in srgb, var(--vf-accent) 22%, transparent); }
+.bz-result-k { flex: 0 0 auto; font-size: 13px; font-weight: 700; color: var(--vf-accent); text-transform: uppercase; letter-spacing: .04em; padding-top: 3px; }
+.bz-result ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 22px; flex: 1; }
+.bz-result li { display: flex; gap: 8px; font-size: 14.5px; line-height: 1.45; color: var(--vf-text); }
+.bz-result li .ic { flex: 0 0 auto; color: var(--vf-accent); margin-top: 3px; }
+.bz-2, .bz-5 { --c: var(--vf-success); --cs: var(--vf-success-soft); }
+.bz-3, .bz-6 { --c: var(--lp-violet); --cs: var(--lp-violet-soft); }
+.bz-4 { --c: var(--vf-warning); --cs: var(--vf-warning-soft); }
+.bz-cta { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+.bz-cta-note { font-size: 14px; color: var(--vf-text-3); }
+@media (max-width: 760px) {
+  .bz-pick { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px; }
+  .bz-pick::-webkit-scrollbar { display: none; }
+  .bz-chip { flex: 0 0 auto; }
+  .bz-result { flex-direction: column; gap: 10px; padding: 16px; }
+  .bz-result ul { grid-template-columns: 1fr; }
+}

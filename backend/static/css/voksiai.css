@@ -535,3 +535,21 @@ i.vf-fa::before, span.vf-fa::before, i.vf-fa::after, span.vf-fa::after { content
   a, button, [role="button"], .btn, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .btn:active { transform: scale(.97); }
 }
+
+/* ---------- Телефон (19.11.2026): экран не «плывёт» и не увеличивается сам ----------
+   1) Всё, что шире экрана, обрезается по краю, а не растягивает страницу: иначе браузер
+      открывает её уменьшенной или сдвинутой, и владелец «отдаляет двумя пальцами».
+   2) Поля ввода 16px: iPhone увеличивает экран при фокусе в поле мельче 16px и обратно не отдаляет.
+   3) Без двойного тапа-зума; масштаб жестом выключен мета-тегом и ui.js (gesturestart). */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html:has(body.vf) { touch-action: manipulation; }
+@media (max-width: 760px) {
+  html:has(body.vf), body.vf { overflow-x: clip; max-width: 100%; }
+  body.vf input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  body.vf select, body.vf textarea { font-size: 16px !important; }
+  body.vf img, body.vf video, body.vf canvas { max-width: 100%; }
+  body.vf .main-content, body.vf .vf-main, body.vf .content-container, body.vf .vf-content { min-width: 0; max-width: 100vw; }
+  /* Элементы сеток и флексов могут сжиматься: иначе длинное слово или число раздвигает колонку за край */
+  body.vf .card, body.vf [class*="-card"], body.vf [class*="-kpi"] { min-width: 0; }
+  body.vf h1, body.vf h2, body.vf h3, body.vf p { overflow-wrap: anywhere; }
+}

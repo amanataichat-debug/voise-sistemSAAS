@@ -118,6 +118,7 @@ STAFF_RULES = [
     _rule("POST", r"^/api/booking/resources/?$", "booking_setup"),
     _rule("PATCH DELETE", r"^/api/booking/resources/[^/]+/?$", "booking_setup"),
     _rule("PUT", r"^/api/booking/settings/?$", "booking_setup"),
+    _rule("GET", r"^/api/booking/link-kit/?$", "booking_setup"),
     # — заказы (настройки заказов — только владелец: api/orders.py → ensure_owner) —
     _rule("GET POST", r"^/api/orders/?$", "orders"),
     _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),
