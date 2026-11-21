@@ -3,10 +3,10 @@
 Запуск в Render Shell (нужен OPENAI_API_KEY и DATABASE_URL, как у сервера):
 
     python scripts/create_live_voice.py --list                 # свои голоса в базе
-    python scripts/create_live_voice.py --preset aigul         # женский голос «Бишкек», русский + кыргызский
-    python scripts/create_live_voice.py --preset azamat        # мужской голос «Бишкек»
-    python scripts/create_live_voice.py --preset aigul --dry-run   # показать запрос, ничего не создавать
-    python scripts/create_live_voice.py --disable aigul        # убрать голос из выбора (звонки уйдут на голос по умолчанию)
+    python scripts/create_live_voice.py --preset aliya         # женский голос «Бишкек», русский + кыргызский
+    python scripts/create_live_voice.py --preset azim        # мужской голос «Бишкек»
+    python scripts/create_live_voice.py --preset aliya --dry-run   # показать запрос, ничего не создавать
+    python scripts/create_live_voice.py --disable aliya        # убрать голос из выбора (звонки уйдут на голос по умолчанию)
     python scripts/create_live_voice.py --key mira --title "Мира" --gender f --prompt "..." --script "..."
 
 Как это работает (OpenAI, docs «Custom voices», 21.11.2026): POST /v1/audio/voices {type: "prompt", name,
@@ -51,16 +51,16 @@ _SCRIPT_RU_KY = (
 )
 
 PRESETS = {
-    "aigul": {
-        "title": "Айгуль — Бишкек (рус + кырг)",
+    "aliya": {
+        "title": "Алия — Бишкек (рус + кырг)",
         "gender": "f",
         "prompt": ("An original adult feminine voice, perceived age 28–35, from Bishkek, Kyrgyzstan. Warm, clear "
                    "mid-range pitch, lightly bright timbre, smooth natural texture, moderate vocal effort, relaxed "
                    "conversational pace, moderately distinctive. " + _RU_KY_ACCENT),
         "script": _SCRIPT_RU_KY,
     },
-    "azamat": {
-        "title": "Азамат — Бишкек (рус + кырг)",
+    "azim": {
+        "title": "Азим — Бишкек (рус + кырг)",
         "gender": "m",
         "prompt": ("An original adult masculine voice, perceived age 30–40, from Bishkek, Kyrgyzstan. Calm, "
                    "confident lower-middle pitch, warm resonant timbre, clean texture with a little natural grain, "
@@ -110,7 +110,7 @@ def list_voices() -> None:
     try:
         rows = db.query(LiveCustomVoice).order_by(LiveCustomVoice.id).all()
         if not rows:
-            print("Своих голосов нет. Создать: python scripts/create_live_voice.py --preset aigul")
+            print("Своих голосов нет. Создать: python scripts/create_live_voice.py --preset aliya")
         for r in rows:
             print(f"{'✓' if r.active else '✗'} {r.key:12} {r.voice_id:30} {r.gender or '-'}  {r.title}")
     finally:
@@ -158,7 +158,7 @@ def main() -> None:
     if not (key and title and prompt):
         ap.error("нужен --preset или --key, --title и --prompt")
     if not KEY_RE.match(key):
-        ap.error("key — латиница в нижнем регистре, цифры и _, 2–40 символов (например aigul)")
+        ap.error("key — латиница в нижнем регистре, цифры и _, 2–40 символов (например aliya)")
     from backend.websockets.live_client import LIVE_VOICE_SET
     if key in LIVE_VOICE_SET:
         ap.error(f"{key} — имя встроенного голоса OpenAI, выберите другое")

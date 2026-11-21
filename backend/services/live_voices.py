@@ -88,7 +88,7 @@ def is_live_voice(key: Optional[str]) -> bool:
 
 
 def labels() -> Dict[str, str]:
-    """Подписи своих голосов для кабинета: key → «Айгуль (Бишкек, ru+ky)»."""
+    """Подписи своих голосов для кабинета: key → «Алия — Бишкек (рус + кырг)»."""
     return {v["key"]: v["title"] for v in custom_voices()}
 
 

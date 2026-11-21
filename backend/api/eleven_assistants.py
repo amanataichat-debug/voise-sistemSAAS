@@ -280,7 +280,7 @@ def get_eleven_options():
         "voice_engines": [{**e, "som_per_minute": som_per_minute(e["id"])} for e in VOICE_ENGINES],
         "default_voice_engine": DEFAULT_VOICE_ENGINE,
         "live_voices": live_voices.all_live_voices(),
-        # свои голоса (prompt-to-voice): key → подпись, например «Айгуль (Бишкек, ru+ky)»
+        # свои голоса (prompt-to-voice): key → подпись, например «Алия — Бишкек (рус + кырг)»
         "live_voice_labels": live_voices.labels(),
         "default_live_voice": LIVE_DEFAULT_VOICE,
         "gemini_voices": GEMINI_LIVE_VOICES,

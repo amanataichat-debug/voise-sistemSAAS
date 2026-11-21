@@ -6,7 +6,7 @@ OpenAI (docs «Custom voices»): POST /v1/audio/voices {type: "prompt", name, pr
 `audio.output.voice = {"id": "voice_…"}`, а исходное описание голоса OpenAI советует класть в instructions.
 Создание бесплатное, до 100 голосов на организацию; работают только с GPT-Live.
 
-Голос платформы: `key` — короткое имя латиницей (например `aigul`), его хранит колонка `live_voice` карточки
+Голос платформы: `key` — короткое имя латиницей (например `aliya`), его хранит колонка `live_voice` карточки
 и агента, как имя встроенного голоса. Создаёт голос скрипт `scripts/create_live_voice.py` (Render Shell),
 реестр в памяти — `backend/services/live_voices.py`. Таблицу создаёт app.ensure_live_voice_table().
 """
