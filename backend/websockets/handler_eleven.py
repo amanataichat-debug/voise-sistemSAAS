@@ -538,6 +538,9 @@ async def run_gpt_live_session(websocket: WebSocket, assistant: ElevenAssistantC
         if client.model_fallback_reason:
             call_log.add("session", f"Модель {LIVE_MODEL} не открылась на ключе — звонок идёт на {client.model}: "
                                     f"{client.model_fallback_reason}", level="warning")
+        if client.delegation_fallback_reason:
+            call_log.add("session", f"Модель функций не открылась — звонок идёт на {client.delegation_model}: "
+                                    f"{client.delegation_fallback_reason}", level="warning")
         call_log.add("session", f"Сессия начата: OpenAI {client.model} (речь в речь), голос {client.voice}, "
                                 f"функции — {client.delegation_model}; подключение {connect_ms} мс",
                      functions=", ".join(client.enabled_functions) or None)

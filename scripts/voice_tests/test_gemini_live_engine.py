@@ -280,8 +280,8 @@ hint = lc.VOICE_DELEGATION_HINT
 # в общих правилах (их получают агенты всех клиентов): test_platform_neutral.py.
 # 14.11.2026 (1411-voice-lean): слой платформы GPT-Live переписан коротко по шаблону OpenAI — LIVE_VOICE_HEAD в начале,
 # LIVE_VOICE_RULES (= VOICE_DELEGATION_HINT) в конце; Gemini по-прежнему на своих подсказках и общих кусках ниже.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 14.11.2026 — короткий слой по шаблону OpenAI)",
-      hashlib.sha256(hint.encode()).hexdigest() == "663619ed16f2d72adccf172922d84ec6e16be6ef292846493a1739eef34617cd", len(hint))
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 21.11.2026 — строка делегирования из шаблона gpt-live-1.1)",
+      hashlib.sha256(hint.encode()).hexdigest() == "5a0da1326208f726fdd1c05311a48d7d1993557b05dbfa79bdb3c15db3116835", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("GPT-Live: хвост инструкций — LIVE_VOICE_RULES, общие куски Gemini в него не входят",
@@ -411,7 +411,7 @@ check("Gemini: голос Puck → мужской род; на сайте без
       and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
 _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
 check("GPT-Live: характер, язык и произношение носителя (без английского акцента) — в самом начале инструкций голоса",
-      "LIVE_VOICE_HEAD + voice_instructions + LIVE_VOICE_RULES" in _lc_src and "без английского" in lc.LIVE_VOICE_HEAD
+      "LIVE_VOICE_HEAD + voice_note + voice_instructions + LIVE_VOICE_RULES" in _lc_src and "без английского" in lc.LIVE_VOICE_HEAD
       and "как носитель" in lc.LIVE_VOICE_HEAD and "держи его до конца звонка" in lc.LIVE_VOICE_HEAD)
 check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
       "до конца звонка" in _pc and "не додумывай" in _pc)

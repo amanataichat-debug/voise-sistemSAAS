@@ -149,6 +149,9 @@ def _valid_live_voice(voice: Optional[str]) -> Optional[str]:
     v = (voice or "").strip().lower()
     if v in LIVE_VOICE_SET:
         return v
+    import backend.services.live_voices as live_voices
+    if v and live_voices.get(v):
+        return v  # свой голос GPT-Live (prompt-to-voice)
     from backend.models.eleven_assistant import GEMINI_LIVE_VOICES  # голоса Gemini Live: тот же столбец live_voice
     return v if v in {g.lower() for g in GEMINI_LIVE_VOICES} else None
 
@@ -161,7 +164,8 @@ def _live_voice_for_engine(engine: Optional[str], voice: Optional[str]) -> Optio
     if engine == "gemini_live":
         return v if v in {g.lower() for g in GEMINI_LIVE_VOICES} else None
     if engine == "gpt_live":
-        return v if v in LIVE_VOICE_SET else None
+        import backend.services.live_voices as live_voices  # свои голоса prompt-to-voice тоже годятся
+        return v if live_voices.is_live_voice(v) else None
     return v or None
 
 
@@ -442,7 +446,7 @@ class ImportExecuteRequest(BaseModel):
 VOICE_AGENT_SYSTEM_PROMPT = """Ты голосовой AI-агент компании {company_name}.
 Перед каждым звонком ты получаешь задачу и стратегию от оркестратора
 в поле custom_greeting — это твоё первое сообщение и контекст звонка.
-Говори на русском языке. Будь вежлив, конкретен, не затягивай разговор.
+Говори на языке собеседника: русский или разговорный бишкекский кыргызский. Будь вежлив, конкретен, не затягивай разговор.
 Цель каждого звонка указана в задаче. Следуй стратегии оркестратора.
 Если клиент просит перезвонить — уточни удобное время и заверши звонок.
 Если клиент отказывается — вежливо попрощайся, не дави."""

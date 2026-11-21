@@ -335,8 +335,8 @@ def voice_hints():
         check(f"подсказка голосу: {label}", needle in hint)
     check("подсказка голосу: кыргызских образцов-фраз в слое платформы нет (их повторяли дословно)",
           "Чалганыңыз үчүн рахмат" not in lc.LIVE_VOICE_HEAD + hint and "Сизге кантип жардам" not in lc.LIVE_VOICE_HEAD + hint)
-    check("подсказка голосу: слой платформы короткий (было ~11 тыс. символов правил, теперь ≤ 7,5 тыс. со словариком кыргызского)",
-          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 7500, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
+    check("подсказка голосу: слой платформы короткий (было ~11 тыс. символов правил, ≤ 8,5 тыс.: словарик кыргызского + пары регистра 1.1)",
+          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 8500, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
     check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
           "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
     a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},

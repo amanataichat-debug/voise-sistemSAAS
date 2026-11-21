@@ -269,6 +269,14 @@ async function loadVoiceEnginePrices(){
       const o = await r.json();
       voiceEnginePrices = {};
       (o.voice_engines || []).forEach(e => { voiceEnginePrices[e.id] = e.som_per_minute; });
+      Object.assign(LIVE_VOICE_LABELS, o.live_voice_labels || {});
+      (o.live_voices || []).forEach(v => { if(!LIVE_VOICES.includes(v)) LIVE_VOICES.push(v); });
+      // Открытые селекты голоса GPT-Live перерисовываем, чтобы появились свои голоса
+      [typeof W_VOICE_IDS !== 'undefined' ? W_VOICE_IDS : null, typeof I_VOICE_IDS !== 'undefined' ? I_VOICE_IDS : null]
+        .forEach(ids => {
+          const sel = ids && document.getElementById(ids.lvoice);
+          if(sel && sel.querySelector('option[value="marin"]')) sel.innerHTML = liveVoiceOptionsHtml('gpt_live', String(sel.value || '').toLowerCase());
+        });
     }
   }catch(e){}
   document.querySelectorAll('.eng-tile [data-price-for]').forEach(el => {
@@ -282,9 +290,15 @@ const LIVE_VOICES = ['marin','cedar','alloy','ash','ballad','coral','echo','sage
 // Голоса Gemini Live — зеркало GEMINI_LIVE_VOICES (backend/models/eleven_assistant.py); в БД — в нижнем регистре
 const GEMINI_LIVE_VOICE_NAMES = ['Aoede','Kore','Leda','Zephyr','Puck','Charon','Fenrir','Orus','Callirrhoe','Sulafat'];
 const LIVE_ENGINE_IDS = ['gpt_live','gemini_live'];
+// Свои голоса GPT-Live (prompt-to-voice, backend/services/live_voices.py): дописываются в LIVE_VOICES
+// из /api/eleven-assistants/options (live_voices + live_voice_labels) в loadVoiceEnginePrices.
+const LIVE_VOICE_LABELS = {};
 function liveVoiceOptionsHtml(engine, cur){
-  const list = engine === 'gemini_live' ? GEMINI_LIVE_VOICE_NAMES.map(v => v.toLowerCase()) : LIVE_VOICES;
-  const names = engine === 'gemini_live' ? GEMINI_LIVE_VOICE_NAMES : LIVE_VOICES;
+  const gem = engine === 'gemini_live';
+  const list = gem ? GEMINI_LIVE_VOICE_NAMES.map(v => v.toLowerCase()) : LIVE_VOICES.slice();
+  const names = gem ? GEMINI_LIVE_VOICE_NAMES.slice() : list.map(v => LIVE_VOICE_LABELS[v] || v);
+  // Сохранённый голос, которого ещё нет в списке (свой голос до загрузки options), — не теряем
+  if(!gem && cur && !list.includes(cur)){ list.unshift(cur); names.unshift(LIVE_VOICE_LABELS[cur] || cur); }
   const sel = list.includes(cur) ? cur : list[0];
   return list.map((v, i) => `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(names[i])}</option>`).join('');
 }

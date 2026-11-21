@@ -44,6 +44,7 @@ from websockets.exceptions import ConnectionClosed
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
+import backend.services.live_voices as live_voices
 from backend.functions import get_enabled_functions, normalize_function_name
 from backend.models.conversation import Conversation
 
@@ -84,7 +85,22 @@ LIVE_VOICE_SET = set(LIVE_VOICES)
 LIVE_DEFAULT_VOICE = (getattr(settings, "LIVE_DEFAULT_VOICE", None) or "marin").lower()
 
 # Бэкенд-модель для delegation.responses: gpt-5.6-luna — быстрая, gpt-5.6-terra — медленнее/умнее.
-LIVE_DELEGATION_MODEL = getattr(settings, "LIVE_DELEGATION_MODEL", None) or "gpt-5.6-luna"
+LIVE_DELEGATION_MODEL = getattr(settings, "LIVE_DELEGATION_MODEL", None) or "gpt-6-luna"
+# 21.11.2026: OpenAI в гайде делегирования советует начинать с gpt-6-luna (reasoning.effort none…max, по
+# умолчанию medium — у нас low из LIVE_DELEGATION_REASONING_EFFORT). Если старт сессии отклонил настройку
+# бэкенда (модель, service_tier, effort), повторяем на проверенной gpt-5.6-luna с теми же полями.
+STABLE_DELEGATION_MODEL = "gpt-5.6-luna"
+
+
+def is_delegation_error(err: Dict[str, Any], model: str = "") -> bool:
+    """Отказ из-за настройки бэкенда делегирования (модель, service_tier, reasoning), а не голосовой модели."""
+    param = str(err.get("param") or "").lower()
+    msg = str(err.get("message") or "").lower()
+    if "delegation" in param:
+        return True
+    return bool(model) and model.lower() in msg and any(m in msg for m in (
+        "does not exist", "not found", "do not have access", "does not have access", "not supported",
+        "unsupported", "not available", "invalid"))
 
 # У голосовой модели ограниченный контекст: длинный промпт ассистента целиком
 # уходит бэкенд-модели, голосовой части отдаём первые N символов.
@@ -116,8 +132,9 @@ BACKEND_SYSTEM_PROMPT = """Ты — бэкенд голосового ассис
 - Независимые вызовы делай параллельно, зависимые — последовательно.
 
 ФОРМАТ ОТВЕТА
-- Отвечай на языке клиента (русский или кыргызский, как носитель, без акцента, диалекта и сложных \
-книжных слов — простые повседневные слова). Одна-две короткие живые фразы: сразу суть и следующий шаг.
+- Отвечай на языке клиента: русский — разговорный, как носитель, без канцелярита; кыргызский — разговорный \
+бишкекский, как говорят люди в Бишкеке (деловые слова можно по-русски: заказ, доставка, скидка, тариф), без книжных \
+слов. Суммы словами, точно и с валютой (сом). Одна-две короткие живые фразы: сразу суть и следующий шаг.
 - Без филлеров и канцелярита: не пиши «одну секунду», «сейчас посмотрю», «одну минуту», «уточню», «отмечаю», \
 «поняла, сейчас уточню по параметрам». Голосовая модель озвучит это дословно — звучать должно по-человечески.
 - Это текст для озвучивания: без markdown, списков, ссылок, кода, эмодзи и служебных пометок. \
@@ -162,22 +179,33 @@ LIVE_VOICE_HEAD = (
     "Говори как в обычном телефонном разговоре, а не как текст, прочитанный вслух: короткие фразы, простые слова, "
     "живые связки («смотрите», «слушайте», «кстати», «ну вот»; по-кыргызски «мына», «эми», «анан») — разные, не "
     "одни и те же.\n\n"
+    # 21.11.2026 (gpt-live-1.1): OpenAI, «Prompting GPT-Live for languages and regional accents» (19.11.2026):
+    # языковая политика = язык последней ясной фразы, короткое слово/число/имя язык не меняет; региональный вариант
+    # фиксирован (бишкекский), даже если звонящий говорит на другом говоре; регистр задавать ПАРАМИ «так, а не так»
+    # (это яснее, чем «звучи по-деловому»), образцы — как манера, не готовые ответы; суммы — словами на языке
+    # разговора с точным значением и валютой; инструкцию для языка — на этом языке (кыргызский абзац ниже).
     "# Язык и произношение\n"
     "- Два рабочих языка — русский и кыргызский. Говори на языке собеседника как носитель. Начинай на языке "
-    "приветствия; переходи, если человек попросил или сказал целую фразу на другом языке; попросил язык — держи его "
-    "до конца звонка. Короткое «алло», «ооба» или русское слово в кыргызской речи — не повод менять язык.\n"
+    "приветствия; дальше отвечай на языке его последней ясной фразы. Переходи, если человек попросил или сказал "
+    "целую фразу на другом языке; попросил язык — держи его до конца звонка. Короткое «алло», «ок», «ооба», число, "
+    "имя или русское слово внутри кыргызской фразы — не повод менять язык.\n"
     "- Русский — как носитель: правильные ударения, естественная русская интонация и ритм, без английского или "
-    "иностранного акцента.\n"
-    "- Кыргызский — как говорят в Бишкеке: кыргызская грамматика и звуки (ө, ү, ы, ударение обычно на последний "
-    "слог), а деловые слова — так, как их реально говорят, часто по-русски: заказ, заявка, доставка, скидка, прайс, "
-    "тариф, ссылка, адрес. Разговорные слова: ооба, макул, жакшы, болот, азыр, анан, туура, чын эле, мына, эми. "
-    "Без книжных слов: не «албетте», «мыкты», «сунуштайм», «маалымат берем», «өтүнмө», «коммерциялык сунуш», "
-    "«жүзөгө ашыруу». Окончания договаривай, фразы заканчивай. Кыргызча: Бишкекте кадимки адамдар кандай "
-    "сүйлөсө, ошондой сүйлө — жөнөкөй, жылуу, кыска сүйлөмдөр менен; кардар орусча сөз кошсо, бул кадимки нерсе, "
-    "кыргызча уланта бер.\n"
+    "иностранного акцента. Разговорно, а не канцелярски: «эта услуга», а не «данная услуга»; «привезём», а не "
+    "«осуществим доставку»; «а что именно нужно?», а не «уточните, пожалуйста, ваш запрос».\n"
+    "- Кыргызский — как говорят в Бишкеке, даже если собеседник говорит с южным или другим говором (его понимай, "
+    "а сам говори по-бишкекски): кыргызская грамматика и звуки (ө, ү, ы, ударение обычно на последний слог), а "
+    "деловые слова — так, как их реально говорят, часто по-русски: заказ, заявка, доставка, скидка, прайс, тариф, "
+    "ссылка, адрес. Разговорные слова: ооба, макул, жакшы, болот, азыр, анан, туура, чын эле, мына, эми. Без "
+    "книжных слов: не «албетте», «мыкты», «сунуштайм», «маалымат берем», «өтүнмө», «коммерциялык сунуш», «жүзөгө "
+    "ашыруу». Регистр парами (это манера, не готовые ответы — не повторяй дословно): «ооба, болот», а не «албетте»; "
+    "«айтып берейин», а не «маалымат берейин»; «заявка калтырыңыз», а не «өтүнмө калтырыңыз»; «жеткирип беребиз», "
+    "а не «жеткирүү кызматы көрсөтүлөт». Окончания договаривай, фразы заканчивай. Кыргызча: Бишкекте кадимки "
+    "адамдар кандай сүйлөсө, ошондой сүйлө — жөнөкөй, жылуу, кыска сүйлөмдөр менен; кардар орусча сөз кошсо, бул "
+    "кадимки нерсе, кыргызча уланта бер.\n"
     "- Латиницу и сокращения произноси, как их говорят у нас: CRM — «си-ар-эм» (или просто «база клиентов»), "
-    "WhatsApp — «ватсап», Instagram — «инстаграм», Telegram — «телеграм», AI — «эй-ай», QR — «кью-ар». Цены, "
-    "числа и даты — словами и чётко.\n"
+    "WhatsApp — «ватсап», Instagram — «инстаграм», Telegram — «телеграм», AI — «эй-ай», QR — «кью-ар». Суммы — "
+    "словами на языке разговора, точно и с валютой: «пять тысяч пятьсот сомов» / «беш миң беш жүз сом». Дату — "
+    "с названием месяца: «пятого декабря» / «бешинчи декабрда».\n"
     # 15.11.2026, звонок ab66d437: «Өзүм жооп берем» (отвечаю сам) агент пропустил мимо, «баасы канча» понял.
     # Словарик частых фраз звонящих — как у Gemini (voice_hints.GEMINI_KYRGYZ_UNDERSTANDING), короче.
     "- Как понимать кыргызскую речь по телефону: слова часто звучат как казахские или узбекские — это кыргызский, "
@@ -233,6 +261,7 @@ LIVE_VOICE_RULES = (
     "Do not delegate to the backend when:\n"
     "- Ответ есть в фактах, инструкции или разговоре; нужно короткое уточнение; клиент назвал время или канал; "
     "просит менеджера или перезвонить — это сделает система после звонка, просто подтверди.\n"
+    "Delegate to the backend before giving an answer that depends on backend work. "
     "Пока ждёшь бэкенд — продолжай разговор тем, что знаешь, или спроси о его деле. Do not guess the result while "
     "waiting: не выдавай действие за сделанное, пока бэкенд не подтвердил. Уже полученный и всё ещё верный результат "
     "используй снова без нового поиска.\n\n"
@@ -341,12 +370,13 @@ _FEMININE_VOICES = {"marin", "coral", "sage", "shimmer", "quartz", "willow", "gl
                     "aoede", "kore", "leda", "callirrhoe", "sulafat"}
 
 
-def voice_gender_hint(voice: str) -> str:
+def voice_gender_hint(voice: str, gender: Optional[str] = None) -> str:
     v = (voice or "").lower()
-    if v in _MASCULINE_VOICES:
+    g = (gender or "").lower()[:1]
+    if g == "m" or (not g and v in _MASCULINE_VOICES):
         return ("\n\nТвой голос мужской: о себе говори только в мужском роде («рад», «готов», «записал», "
                 "«отправил»), даже если в инструкции выше написано в женском.")
-    if v in _FEMININE_VOICES:
+    if g == "f" or (not g and v in _FEMININE_VOICES):
         return ("\n\nТвой голос женский: о себе говори только в женском роде («рада», «готова», «записала», "
                 "«отправила»), даже если в инструкции выше написано в мужском.")
     return ""
@@ -486,6 +516,7 @@ class OpenAILiveClient:
         self.decision_triggers = list(decision_triggers or [])
         self._triggers_retry_done = False
         self.delegation_model = delegation_model or LIVE_DELEGATION_MODEL
+        self.delegation_fallback_reason = ""
         self.voice_override = (voice_override or "").strip().lower() or None
         self.telephony = telephony
         # Таблица диалогов (conversations у OpenAI-ассистентов, eleven_conversations у карточек
@@ -505,6 +536,7 @@ class OpenAILiveClient:
         self.session_id: Optional[str] = None
         self.session_info: Dict[str, Any] = {}
         self.voice = LIVE_DEFAULT_VOICE
+        self.custom_voice: Optional[Dict[str, Any]] = None  # свой голос (live_voices), если выбран
         self.tools: List[Dict[str, Any]] = []
         self.enabled_functions: List[str] = []
         # Пустая запись в conversations для привязки function_logs (как у Realtime-клиента)
@@ -554,6 +586,8 @@ class OpenAILiveClient:
         v = (getattr(self.assistant_config, "voice", None) or "").strip().lower()
         if v in LIVE_VOICE_SET:
             return v
+        if v and live_voices.get(v):
+            return v  # свой голос (prompt-to-voice): key → {"id": voice_…} в build_session_config
         if v:
             logger.info(f"[LIVE-CLIENT] Voice '{v}' is not a GPT-Live voice, using '{LIVE_DEFAULT_VOICE}'")
         return LIVE_DEFAULT_VOICE if LIVE_DEFAULT_VOICE in LIVE_VOICE_SET else "marin"
@@ -570,11 +604,14 @@ class OpenAILiveClient:
                 f"{LIVE_VOICE_INSTRUCTIONS_MAX_CHARS}, backend gets the full prompt"
             )
             voice_instructions = voice_instructions[:LIVE_VOICE_INSTRUCTIONS_MAX_CHARS]
-        voice_instructions = LIVE_VOICE_HEAD + voice_instructions + LIVE_VOICE_RULES
+        custom_voice = live_voices.get(self.voice) if self.voice not in LIVE_VOICE_SET else None
+        self.custom_voice = custom_voice
+        voice_note = live_voices.voice_note(custom_voice) if custom_voice else ""
+        voice_instructions = LIVE_VOICE_HEAD + voice_note + voice_instructions + LIVE_VOICE_RULES
         voice_instructions += backend_tools_hint(self.tools)
         if self.telephony:
             voice_instructions += VOICE_TELEPHONY_HINT
-        voice_instructions += voice_gender_hint(self.voice)
+        voice_instructions += voice_gender_hint(self.voice, (custom_voice or {}).get("gender"))
 
         responses_cfg: Dict[str, Any] = {
             "model": self.delegation_model,
@@ -609,7 +646,7 @@ class OpenAILiveClient:
             "audio": {
                 "format": ({"type": "audio/pcmu", "rate": 8000} if self.audio_codec == "pcmu"
                            else {"type": "audio/pcm", "rate": self.audio_rate}),
-                "output": {"voice": self.voice},
+                "output": {"voice": {"id": custom_voice["voice_id"]} if custom_voice else self.voice},
             },
             "delegation": {"type": "responses", "responses": responses_cfg},
         }
@@ -705,6 +742,14 @@ class OpenAILiveClient:
                     self.model_fallback_reason = str(err.get("message") or err.get("code") or "")[:200]
                     logger.warning(f"[LIVE-CLIENT] Model '{self.model}' rejected, retrying with '{STABLE_LIVE_MODEL}'")
                     self.model = STABLE_LIVE_MODEL
+                    return await self.connect(start_timeout=start_timeout)
+                # Бэкенд делегирования (новая модель или её настройка) не принят — повторяем на проверенной
+                if (self.delegation_model != STABLE_DELEGATION_MODEL and isinstance(err, dict)
+                        and is_delegation_error(err, self.delegation_model)):
+                    self.delegation_fallback_reason = str(err.get("message") or err.get("code") or "")[:200]
+                    logger.warning(f"[LIVE-CLIENT] Delegation model '{self.delegation_model}' rejected, "
+                                   f"retrying with '{STABLE_DELEGATION_MODEL}'")
+                    self.delegation_model = STABLE_DELEGATION_MODEL
                     return await self.connect(start_timeout=start_timeout)
                 # Триггеры Decisions (beta) не приняты — повторяем старт без них, звонок важнее
                 if (self.decision_triggers and not self._triggers_retry_done
@@ -999,6 +1044,17 @@ class OpenAILiveClient:
         if itype in ("response.failed", "response.incomplete"):
             logger.warning(f"[LIVE-CLIENT] backend response {itype}: {json.dumps(inner, ensure_ascii=False)[:400]}")
             self._delegations.pop(delegation_id, None)
+            # Новая модель бэкенда отказала уже в разговоре — один раз переключаем на проверенную (session.update
+            # меняет delegation.responses.model на лету, docs «Managing GPT-Live sessions»)
+            err = (inner.get("response") or {}).get("error") or inner.get("error") or {}
+            if (isinstance(err, dict) and self.delegation_model != STABLE_DELEGATION_MODEL
+                    and is_delegation_error(err, self.delegation_model)):
+                self.delegation_fallback_reason = str(err.get("message") or err.get("code") or "")[:200]
+                logger.warning(f"[LIVE-CLIENT] Delegation model '{self.delegation_model}' failed mid-call, "
+                               f"switching to '{STABLE_DELEGATION_MODEL}'")
+                self.delegation_model = STABLE_DELEGATION_MODEL
+                await self._send({"type": "session.update", "event_id": _short_id("upd_"),
+                                  "session": {"delegation": {"responses": {"model": STABLE_DELEGATION_MODEL}}}})
 
     async def _handle_error_event(self, event: Dict[str, Any]) -> None:
         """

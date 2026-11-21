@@ -107,7 +107,118 @@ ok, c, models = asyncio.run(run({"gpt-live-1.1": ACCESS, "gpt-live-1": ACCESS}))
 check("обе модели не открылись — без бесконечных повторов", not ok and models == ["gpt-live-1.1", "gpt-live-1"], models)
 
 ok, c, models = asyncio.run(run({"gpt-live-1.1": DELEG}))
-check("отказ модели делегирования не переключает голосовую модель", not ok and models == ["gpt-live-1.1"], models)
+check("отказ модели делегирования не переключает голосовую модель (повтор — на запасном бэкенде)",
+      models == ["gpt-live-1.1", "gpt-live-1.1"] and c.model == "gpt-live-1.1"
+      and c.delegation_model == lc.STABLE_DELEGATION_MODEL, models)
+
+# ── Бэкенд делегирования: gpt-6-luna, отказ → gpt-5.6-luna (21.11.2026) ─────────────────────────────────
+check("бэкенд по умолчанию — gpt-6-luna, запасной — gpt-5.6-luna",
+      lc.LIVE_DELEGATION_MODEL == "gpt-6-luna" and lc.STABLE_DELEGATION_MODEL == "gpt-5.6-luna")
+DELEG6 = {"code": "invalid_value", "message": "service_tier 'priority' is not supported for gpt-6-luna",
+          "param": "session.delegation.responses.service_tier"}
+
+
+class FakeWS2(FakeWS):
+    async def send(self, raw):
+        msg = json.loads(raw)
+        self.sent.append(msg)
+        if msg.get("type") == "session.start":
+            dm = msg["session"]["delegation"]["responses"]["model"]
+            self._replies.append({"type": "error", "error": DELEG6} if dm == "gpt-6-luna"
+                                 else {"type": "session.started", "session": {"id": "s2"}})
+
+
+async def run_deleg():
+    sockets = []
+
+    async def fake_connect(*a, **k):
+        ws = FakeWS2({})
+        sockets.append(ws)
+        return ws
+    orig = lc.websockets.connect
+    lc.websockets.connect = fake_connect
+    try:
+        c = make_client()
+        c._create_conversation_record = lambda: None
+        ok = await c.connect(start_timeout=2)
+        models = [m["session"]["delegation"]["responses"]["model"] for ws in sockets for m in ws.sent
+                  if m.get("type") == "session.start"]
+        return ok, c, models
+    finally:
+        lc.websockets.connect = orig
+
+ok, c, models = asyncio.run(run_deleg())
+check("настройку gpt-6-luna не приняли — повтор на gpt-5.6-luna, голосовая модель прежняя",
+      ok and models == ["gpt-6-luna", "gpt-5.6-luna"] and c.model == "gpt-live-1.1" and c.delegation_fallback_reason,
+      models)
+
+
+async def mid_call():
+    c = make_client()
+    sent = []
+
+    async def fake_send(payload):
+        sent.append(payload)
+        return True
+    c._send = fake_send
+    env = {"delegation_id": "d1", "event": {"type": "response.failed", "response": {"error": {
+        "code": "model_not_found", "message": "The model gpt-6-luna does not exist or you do not have access to it."}}}}
+    async for _ in c._handle_backend_event(env):
+        pass
+    async for _ in c._handle_backend_event(env):
+        pass
+    return c, sent
+
+c, sent = asyncio.run(mid_call())
+check("отказ gpt-6-luna посреди звонка — один session.update на gpt-5.6-luna",
+      c.delegation_model == "gpt-5.6-luna" and len(sent) == 1
+      and sent[0]["session"]["delegation"]["responses"]["model"] == "gpt-5.6-luna", sent)
+check("отказ голосовой модели не считается отказом бэкенда",
+      not lc.is_delegation_error(ACCESS, "gpt-6-luna"))
+
+# ── Свои голоса prompt-to-voice ─────────────────────────────────────────────────────────────────────────
+import backend.services.live_voices as lv
+lv.set_cache([{"key": "aigul", "voice_id": "voice_abc", "title": "Айгуль — Бишкек", "gender": "f",
+               "description": "An original adult feminine voice from Bishkek."}])
+a = types.SimpleNamespace(id="x", system_prompt="Ты Алия.", functions={}, voice="aigul", greeting_message=None)
+cl = lc.OpenAILiveClient("k", a, "cid", telephony=True)
+cfg = cl.build_session_config()
+check("свой голос: в session.start объект {id}", cfg["audio"]["output"]["voice"] == {"id": "voice_abc"},
+      cfg["audio"]["output"]["voice"])
+check("свой голос: описание голоса в instructions (совет OpenAI), после слоя платформы и до карточки",
+      "# Твой голос\nAn original adult feminine voice from Bishkek." in cfg["instructions"]
+      and cfg["instructions"].startswith(lc.LIVE_VOICE_HEAD)
+      and cfg["instructions"].index("# Твой голос") < cfg["instructions"].index("Ты Алия."))
+check("свой голос: род из реестра (f → женский)", "женском роде" in cfg["instructions"])
+check("встроенный голос: строка, без описания голоса",
+      lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="p", functions={}, voice="cedar",
+                                                    greeting_message=None), "cid").build_session_config()
+      ["audio"]["output"]["voice"] == "cedar")
+check("реестр: свой голос в списке и проходит проверку выбора, чужой — нет",
+      "aigul" in lv.all_live_voices() and lv.is_live_voice("AIGUL") and not lv.is_live_voice("nope")
+      and lv.labels() == {"aigul": "Айгуль — Бишкек"})
+lv.set_cache([])
+check("голос выключили — карточка звонит голосом по умолчанию",
+      lc.OpenAILiveClient("k", a, "cid").build_session_config()["audio"]["output"]["voice"] == lc.LIVE_DEFAULT_VOICE)
+
+# ── Слой платформы: язык по гайду OpenAI для 1.1 ───────────────────────────────────────────────────────
+head = lc.LIVE_VOICE_HEAD
+check("язык: последняя ясная фраза, короткое слово/число/имя язык не меняют",
+      "последней ясной фразы" in head and "число" in head and "держи его до конца звонка" in head)
+check("кыргызский: бишкекский даже при другом говоре собеседника", "южным или другим говором" in head)
+check("регистр парами для обоих языков (манера, не готовые ответы)",
+      "«данная услуга»" in head and "«ооба, болот», а не «албетте»" in head and "не повторяй дословно" in head)
+check("суммы словами на языке разговора с валютой", "«пять тысяч пятьсот сомов» / «беш миң беш жүз сом»" in head)
+check("делегирование: строка шаблона gpt-live-1.1",
+      "Delegate to the backend before giving an answer that depends on backend work." in lc.LIVE_VOICE_RULES)
+check("промпт бэкенда: бишкекский кыргызский, без «без диалекта»",
+      "разговорный бишкекский" in lc.BACKEND_SYSTEM_PROMPT and "диалекта" not in lc.BACKEND_SYSTEM_PROMPT)
+from backend.services import agent_prompts as ap
+check("оркестратор: клиенту на его языке, не «всегда по-русски»",
+      "Всегда отвечай на русском языке" not in ap.ORCHESTRATOR_PROMPT_BASE
+      and "Клиенту (переписка, звонок) — на его языке" in ap.ORCHESTRATOR_PROMPT_BASE)
+check("промпт звонка: перешёл целой фразой — отвечай на нём",
+      "Перешёл человек целой фразой" in ap.VOICE_AGENT_PROMPT_BASE)
 
 print(f"\n{'OK' if not failures else 'FAILURES: ' + str(failures)}")
 sys.exit(1 if failures else 0)

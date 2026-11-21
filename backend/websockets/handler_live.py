@@ -1419,6 +1419,9 @@ async def handle_live_websocket_connection(websocket: WebSocket, assistant_id: s
             return
         if client.model_fallback_reason:
             _log(f"model {LIVE_MODEL} rejected, using {client.model}: {client.model_fallback_reason}", "WARNING")
+        if client.delegation_fallback_reason:
+            _log(f"delegation model rejected, using {client.delegation_model}: {client.delegation_fallback_reason}",
+                 "WARNING")
         _log(f"session {client_id} started in {time.time() - connect_started:.2f}s: model={client.model} assistant={assistant.id} "
              f"'{assistant.name}' voice={client.voice} telephony={telephony} functions={client.enabled_functions} "
              f"conversation_record={client.conversation_record_id}")

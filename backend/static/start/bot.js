@@ -249,7 +249,8 @@
       var values = list.map(function (v) { return gem ? String(v).toLowerCase() : v; });
       var cur = values.indexOf(prev) !== -1 ? prev : def;
       S.$('#v-live').innerHTML = list.map(function (v, i) {
-        return '<option value="' + esc(values[i]) + '"' + (values[i] === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+        var label = gem ? v : ((voiceOpts.live_voice_labels || {})[v] || v);
+        return '<option value="' + esc(values[i]) + '"' + (values[i] === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
       }).join('');
       S.$('#v-live-label').textContent = gem ? 'Голос Voksy Live Go' : 'Голос Voksy Live';
     }

@@ -46,6 +46,7 @@ from backend.models.eleven_assistant import (
 from backend.services.wallet_service import som_per_minute
 from backend.websockets.live_client import LIVE_DEFAULT_VOICE, LIVE_VOICE_SET, LIVE_VOICES
 from backend.models.user import User
+import backend.services.live_voices as live_voices
 from backend.services.assistant_limit_service import exclude_agent_owned
 
 logger = get_logger(__name__)
@@ -155,9 +156,11 @@ def _validate(data) -> None:
     if engine is not None and engine not in VOICE_ENGINE_IDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown voice engine. Available: {VOICE_ENGINE_IDS}")
     live_voice = (getattr(data, "live_voice", None) or "").strip().lower()
-    if live_voice and live_voice not in LIVE_VOICE_SET and live_voice not in {v.lower() for v in GEMINI_LIVE_VOICES}:
+    if (live_voice and not live_voices.is_live_voice(live_voice)
+            and live_voice not in {v.lower() for v in GEMINI_LIVE_VOICES}):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"Unknown live voice. Voksy Live: {LIVE_VOICES}; Voksy Live Go: {GEMINI_LIVE_VOICES}")
+                            f"Unknown live voice. Voksy Live: {live_voices.all_live_voices()}; "
+                            f"Voksy Live Go: {GEMINI_LIVE_VOICES}")
     language = getattr(data, "language", None)
     if language is not None and language.lower() not in LANGUAGE_CODES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown language. Available: {sorted(LANGUAGE_CODES)}")
@@ -276,7 +279,9 @@ def get_eleven_options():
         # цена минуты из кошелька (сом) — для плиток выбора модели
         "voice_engines": [{**e, "som_per_minute": som_per_minute(e["id"])} for e in VOICE_ENGINES],
         "default_voice_engine": DEFAULT_VOICE_ENGINE,
-        "live_voices": LIVE_VOICES,
+        "live_voices": live_voices.all_live_voices(),
+        # свои голоса (prompt-to-voice): key → подпись, например «Айгуль (Бишкек, ru+ky)»
+        "live_voice_labels": live_voices.labels(),
         "default_live_voice": LIVE_DEFAULT_VOICE,
         "gemini_voices": GEMINI_LIVE_VOICES,
         "default_gemini_voice": GEMINI_LIVE_DEFAULT_VOICE,

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # быстрее), gpt-5.6-terra — медленнее, но «умнее». Живой звонок 17.10.2026: с terra задержка
     # ответа доходила до 11 с и убивала ощущение живого разговора; luna выбрана ради скорости.
     # Голос и произношение задаёт голосовая модель GPT-Live (LIVE_MODEL) — смена бэкенда их НЕ меняет.
-    LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-5.6-luna")
+    LIVE_DELEGATION_MODEL: str = os.getenv("LIVE_DELEGATION_MODEL", "gpt-6-luna")  # отказ → gpt-5.6-luna
     # Голос по умолчанию, если у ассистента выбран голос, которого нет у GPT-Live
     LIVE_DEFAULT_VOICE: str = os.getenv("LIVE_DEFAULT_VOICE", "marin")
     # Сколько СИМВОЛОВ промпта ассистента получает голосовой слой (полный промпт идёт бэкенду).

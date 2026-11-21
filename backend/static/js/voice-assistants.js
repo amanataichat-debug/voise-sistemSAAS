@@ -446,7 +446,7 @@
     var engineHtml = engineTilesHtml(d.voice_engine);
     if (live) {
       var lv = (gemini ? (o.gemini_voices || ['Aoede', 'Kore']).map(function (x) { return { value: String(x).toLowerCase(), label: x }; })
-                       : (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: x }; }));
+                       : (o.live_voices || ['marin', 'cedar']).map(function (x) { return { value: x, label: (o.live_voice_labels || {})[x] || x }; }));
       if (lv.every(function (x) { return x.value !== d.live_voice; })) lv.unshift({ value: d.live_voice, label: d.live_voice });
       // Язык карточки движки «речь в речь» не используют: язык ответа модель выбирает по промпту и собеседнику
       box.innerHTML = engineHtml +

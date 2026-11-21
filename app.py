@@ -2004,6 +2004,25 @@ def ensure_booking_tables():
         logger.error(f"❌ ensure_booking_tables: {e}")
 
 
+def ensure_live_voice_table():
+    """
+    Свои голоса GPT-Live по описанию (21.11.2026): таблица live_custom_voices. Голоса создаёт
+    scripts/create_live_voice.py, реестр — backend/services/live_voices.py. Идемпотентно, в каждом воркере.
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.live_voice import LiveCustomVoice
+        existing = set(inspect(engine).get_table_names())
+        if "users" not in existing:
+            return  # пустая база: таблицы создаст общий create_all
+        if "live_custom_voices" not in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[LiveCustomVoice.__table__], checkfirst=True)
+            logger.info("✅ Created live_custom_voices")
+    except Exception as e:
+        logger.error(f"❌ ensure_live_voice_table: {e}")
+
+
 def ensure_team_tables():
     """
     Сотрудники кабинета (ветка 1811-niche-admin-speed): таблица team_members. Нужна до первого
@@ -3263,6 +3282,7 @@ async def startup_event():
         ensure_team_tables()  # сотрудники кабинета — до первого запроса с их токеном
         ensure_order_tables()  # заказы магазинов и доставки
         ensure_finance_tables()  # расходы бизнеса и оплата мастеров (прибыль)
+        ensure_live_voice_table()  # свои голоса GPT-Live (prompt-to-voice)
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.
