@@ -35,7 +35,10 @@ PRIVILEGED_UNLIMITED_EMAILS = {
 }
 
 
-async def get_current_user(
+# Обычная функция, не async (22.11.2026): FastAPI выполняет её в потоке. Async-версия делала запрос к базе
+# прямо в цикле событий воркера, где идёт звук звонков, — каждый запрос кабинета замораживал звонок
+# (журнал звонка a72651fc: замирания 1,4–2,5 с в get_current_user → psycopg2 connect).
+def get_current_user(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ) -> User:
@@ -75,7 +78,7 @@ async def get_current_user(
         staff = STAFF.get()
         if staff:
             from backend.services import team_service
-            snap = await team_service.snapshot_async(staff["id"])
+            snap = team_service.snapshot(staff["id"])  # уже в потоке: кэш воркера или база
             err = team_service.session_error(snap, str(user.id), staff.get("v"))
             if err:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=err)
@@ -135,7 +138,7 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
-async def get_current_user_flexible(
+def get_current_user_flexible(
     request: Request,
     db: Session = Depends(get_db)
 ) -> User:
@@ -174,7 +177,7 @@ async def get_current_user_flexible(
         token_data = decode_jwt_token(token)  # кидает 401 на невалидном токене
         IMPERSONATOR.set(token_data.get("imp"))
         STAFF.set(staff_claims(token_data))
-        return await get_current_user(user_id=token_data["sub"], db=db)
+        return get_current_user(user_id=token_data["sub"], db=db)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -182,7 +185,7 @@ async def get_current_user_flexible(
     )
 
 
-async def get_assistant_by_id(
+def get_assistant_by_id(
     assistant_id: str,
     db: Session = Depends(get_db)
 ) -> AssistantConfig:

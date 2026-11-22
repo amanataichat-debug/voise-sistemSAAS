@@ -411,7 +411,7 @@ check("Gemini: голос Puck → мужской род; на сайте без
       and "телефонный звонок" not in vh.build_gemini_voice_hints(fn_list, "Puck", telephony=False))
 _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
 check("GPT-Live: характер, язык и произношение носителя (без английского акцента) — в самом начале инструкций голоса",
-      "LIVE_VOICE_HEAD + voice_note + voice_instructions + LIVE_VOICE_RULES" in _lc_src and "без английского" in lc.LIVE_VOICE_HEAD
+      "LIVE_VOICE_HEAD + voice_note + line_language_note(self.assistant_config)" in _lc_src and "без английского" in lc.LIVE_VOICE_HEAD
       and "как носитель" in lc.LIVE_VOICE_HEAD and "держи его до конца звонка" in lc.LIVE_VOICE_HEAD)
 check("промпт звонков агента: просьба о языке держится до конца, факты — только из базы",
       "до конца звонка" in _pc and "не додумывай" in _pc)

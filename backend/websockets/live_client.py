@@ -188,7 +188,9 @@ LIVE_VOICE_HEAD = (
     "- Два рабочих языка — русский и кыргызский. Говори на языке собеседника как носитель. Начинай на языке "
     "приветствия; дальше отвечай на языке его последней ясной фразы. Переходи, если человек попросил или сказал "
     "целую фразу на другом языке; попросил язык — держи его до конца звонка. Короткое «алло», «ок», «ооба», число, "
-    "имя или русское слово внутри кыргызской фразы — не повод менять язык.\n"
+    "имя или русское слово внутри кыргызской фразы — не повод менять язык. Просьба о кыргызском по телефону часто "
+    "звучит неразборчиво: «кыргызча», «кыргызский», «по-кыргызски», «кыргыз тилинде» — и даже похоже на «кабельский», "
+    "«кыргыский» (звонок a72651fc). Услышал похожее — это просьба о языке, а не о связи: сразу переходи на кыргызский.\n"
     "- Русский — как носитель: правильные ударения, естественная русская интонация и ритм, без английского или "
     "иностранного акцента. Разговорно, а не канцелярски: «эта услуга», а не «данная услуга»; «привезём», а не "
     "«осуществим доставку»; «а что именно нужно?», а не «уточните, пожалуйста, ваш запрос».\n"
@@ -368,6 +370,23 @@ _FEMININE_VOICES = {"marin", "coral", "sage", "shimmer", "quartz", "willow", "gl
                     "nuri", "juni", "brise", "nira", "harema", "noeul",
                     # Gemini Live
                     "aoede", "kore", "leda", "callirrhoe", "sulafat"}
+
+
+# Карточка с основным языком «кыргызский» (eleven_assistant_configs.language = "ky"). Язык ответа модель по-прежнему
+# выбирает по собеседнику (не «начни по-кыргызски» — так Gemini 01.11.2026 отказывался говорить по-русски); заметка
+# только настраивает слух: неразборчивое сначала проверять как кыргызское. Звонок a72651fc (22.11.2026): клиент
+# дважды сказал «кыргызский», модель услышала «кабельский» и ответила про связь.
+KYRGYZ_LINE_NOTE = (
+    "# Линия\n"
+    "Основной язык этой линии — кыргызский: многие звонящие говорят по-кыргызски или смешанно с русским. "
+    "Неразборчивую фразу сначала проверь как кыргызскую; не уверен — переспроси коротко по-кыргызски. "
+    "Тому, кто говорит по-русски, отвечай по-русски.\n\n"
+)
+
+
+def line_language_note(assistant_config: Any) -> str:
+    lang = str(getattr(assistant_config, "language", "") or "").strip().lower()
+    return KYRGYZ_LINE_NOTE if lang == "ky" else ""
 
 
 def voice_gender_hint(voice: str, gender: Optional[str] = None) -> str:
@@ -607,7 +626,8 @@ class OpenAILiveClient:
         custom_voice = live_voices.get(self.voice) if self.voice not in LIVE_VOICE_SET else None
         self.custom_voice = custom_voice
         voice_note = live_voices.voice_note(custom_voice) if custom_voice else ""
-        voice_instructions = LIVE_VOICE_HEAD + voice_note + voice_instructions + LIVE_VOICE_RULES
+        voice_instructions = (LIVE_VOICE_HEAD + voice_note + line_language_note(self.assistant_config)
+                              + voice_instructions + LIVE_VOICE_RULES)
         voice_instructions += backend_tools_hint(self.tools)
         if self.telephony:
             voice_instructions += VOICE_TELEPHONY_HINT

@@ -506,7 +506,7 @@ class AuthService:
         return create_access_token(data)
     
     @staticmethod
-    async def get_current_user(
+    def get_current_user(  # обычная функция: FastAPI выполнит её в потоке, не в цикле звонков
         db: Session = Depends(get_db),
         credentials: HTTPAuthorizationCredentials = Depends(security)
     ) -> User:

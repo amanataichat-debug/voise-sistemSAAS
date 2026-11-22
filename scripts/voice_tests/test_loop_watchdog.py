@@ -80,5 +80,17 @@ _sg = open(os.path.join(ROOT, "backend", "api", "sip_gateway.py"), encoding="utf
 check("окончание звонка (стенограмма, разметка, PostCall) — в потоке, не в цикле",
       "await asyncio.to_thread(_finish_call_sync" in _sg)
 
+# 22.11.2026, звонок a72651fc: замирания 1,4–2,5 с в get_current_user → psycopg2 connect. Авторизация кабинета
+# делала запрос к базе в цикле звонков, а без пула каждый запрос открывал новое SSL-соединение.
+import inspect as _inspect
+from backend.core import dependencies as _deps
+from backend.services.auth_service import AuthService as _AS
+check("авторизация кабинета — обычные функции (FastAPI выполняет их в потоке)",
+      not any(_inspect.iscoroutinefunction(f) for f in (
+          _deps.get_current_user, _deps.get_current_user_flexible, _deps.get_assistant_by_id, _AS.get_current_user)))
+_sess = open(os.path.join(ROOT, "backend", "db", "session.py"), encoding="utf-8").read()
+check("база: пул соединений для Postgres (DB_POOL=0 — прежний NullPool), безопасен после fork",
+      "pool_size=DB_POOL_SIZE" in _sess and "register_at_fork" in _sess and 'startswith(("postgres"' in _sess)
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

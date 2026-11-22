@@ -220,5 +220,20 @@ check("оркестратор: клиенту на его языке, не «в�
 check("промпт звонка: перешёл целой фразой — отвечай на нём",
       "Перешёл человек целой фразой" in ap.VOICE_AGENT_PROMPT_BASE)
 
+# ── 22.11.2026, звонок a72651fc: «кабельский» вместо «кыргызский», ответ про связь ───────────────────────
+check("просьба о кыргызском узнаётся и в искажённом виде («кабельский»), это про язык, а не про связь",
+      "«кабельский»" in lc.LIVE_VOICE_HEAD and "а не о связи" in lc.LIVE_VOICE_HEAD)
+ky = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={}, voice="cedar", greeting_message=None,
+                           language="ky")
+ru = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={}, voice="cedar", greeting_message=None,
+                           language="ru")
+cfg_ky = lc.OpenAILiveClient("k", ky, "cid", telephony=True).build_session_config()["instructions"]
+cfg_ru = lc.OpenAILiveClient("k", ru, "cid", telephony=True).build_session_config()["instructions"]
+check("карточка ky: заметка «кыргызская линия» до карточки, русским — по-русски",
+      lc.KYRGYZ_LINE_NOTE in cfg_ky and cfg_ky.index("# Линия") < cfg_ky.index("Ты Анри.")
+      and "отвечай по-русски" in lc.KYRGYZ_LINE_NOTE)
+check("карточка ru и старые ассистенты без языка — без заметки",
+      "# Линия" not in cfg_ru and lc.line_language_note(types.SimpleNamespace()) == "")
+
 print(f"\n{'OK' if not failures else 'FAILURES: ' + str(failures)}")
 sys.exit(1 if failures else 0)
