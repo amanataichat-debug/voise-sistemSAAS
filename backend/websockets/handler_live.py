@@ -69,6 +69,7 @@ from backend.websockets.live_client import audioop
 from backend.websockets.live_client import (
     CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient, is_decision_error,
 )
+from backend.websockets.live_language import LOCK_INSTRUCTIONS, LOCK_LOG, LanguageLock, is_kyrgyz_speech, mentions_language
 
 logger = get_logger(__name__)
 
@@ -137,8 +138,11 @@ MOOD_HINTS = {
     "irritated": "Клиент сейчас звучит раздражённо или нетерпеливо. Не оправдывайся и не спорь: "
                  "спокойно признай это одной короткой фразой, говори ещё короче и сразу предложи один "
                  "понятный следующий шаг.",
-    "confused": "Клиент, похоже, не до конца понял. Объясни проще и другими словами, одной короткой "
-                "фразой. Не переспрашивай, понял ли он, и не уточняй, что он имел в виду.",
+    # Звонок a128fccf (22.11.2026): «confused» сработал, когда клиент заговорил по-кыргызски, а расшифровка дала
+    # кашу; по подсказке «объясни проще» агент заново представился («Это Анри из Вокси, я звоню…») — по шаблону.
+    "confused": "Клиент, похоже, не понял или говорит на другом языке. Не повторяй то, что уже сказал, и не "
+                "представляйся заново. Если он говорит по-кыргызски — отвечай по-кыргызски. Иначе скажи проще и "
+                "другими словами, одной короткой фразой.",
 }
 # Эмоциональные сигналы клиента (Decisions, вопрос caller_cue): живая реакция голосом на лету.
 # Подсказка — не чаще CUE_HINT_GAP_SEC на один и тот же сигнал и CUE_ANY_GAP_SEC на любой.
@@ -170,7 +174,9 @@ INTENT_HINTS = {
     "wants_human": "Клиент просит живого человека или встречу. Не отказывай, не спорь и не уходи к бэкенду: одной "
                    "короткой фразой скажи, что передашь менеджеру (это сделает система после звонка). Время "
                    "спроси, только если клиент его ещё не называл, и только один раз. Не пересказывай его просьбу. "
-                   "Дальше продолжай помогать сам: на вопросы, которые знаешь, отвечай.",
+                   "Дальше продолжай помогать сам: на вопросы, которые знаешь, отвечай. Если человек просит того, "
+                   "кто говорит по-кыргызски или по-русски, — это просьба о языке: сам перейди на этот язык, "
+                   "менеджера не предлагай.",
 }
 INTENT_LOG = {
     "call_back_later": "Клиент занят, просит поговорить позже",
@@ -542,6 +548,9 @@ class LiveVoiceSession:
         self._cue_hint_at: Dict[str, float] = {}
         self.emotion_hints = 0
         self.direction = getattr(assistant, "sip_direction", None)
+        # Язык разговора держит код (live_language.py): явная просьба / две кыргызские реплики → постоянная инструкция
+        self.lang_lock = LanguageLock()
+        self._last_user_text = ""
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -752,11 +761,31 @@ class LiveVoiceSession:
             self._flush_log(self._log_role)
         self._log_role = role
         self._log_buf[role] += delta
+        if role == "user" and delta.strip():
+            lang = self.lang_lock.feed_partial(self._log_buf[role], time.time())
+            if lang:
+                self._track(self._lock_language(lang))
         if AUTO_HANGUP and delta.strip():
             self._scan_farewell(role, self._log_buf[role])
 
+    async def _lock_language(self, lang: str) -> None:
+        """Постоянная инструкция голосовой модели на выбранном языке (до конца сессии или до новой просьбы)."""
+        why = "клиент попросил" if self.lang_lock.reason == "request" else "клиент говорит по-кыргызски"
+        _log(f"language lock: {lang} ({self.lang_lock.reason})")
+        if self.call_log:
+            self.call_log.add("session", f"{LOCK_LOG[lang]} ({why})")
+        try:
+            await self.client.append_instructions(LOCK_INSTRUCTIONS[lang])
+        except Exception as exc:
+            _log(f"language lock failed: {exc}", "WARNING")
+
     def _flush_log(self, role: str) -> None:
         text = " ".join(self._log_buf.get(role, "").split())
+        if role == "user" and text:
+            self._last_user_text = text
+            lang = self.lang_lock.feed_turn(text)
+            if lang:
+                self._track(self._lock_language(lang))
         if text:
             _log(f"{role}: {text[:300]}")
             if self.call_log:
@@ -997,6 +1026,18 @@ class LiveVoiceSession:
                     self.call_log.add("session", "Прощание клиента (Decisions): ждём тишины, чтобы завершить звонок")
                 self._farewell_at = now
                 self._caller_farewell_at = now
+        elif intent == "wants_language" or (intent == "wants_human" and self._is_language_request(now)):
+            # «Бизге кыргызча сүйлөй турган адам керек» (звонок a128fccf) — просьба о ЯЗЫКЕ, не о менеджере:
+            # подсказку «передай менеджеру» не даём, язык закрепляет LanguageLock.
+            if "language_request" not in self._intents_done:
+                self._intents_done.add("language_request")
+                if self.call_log:
+                    self.call_log.add("session", "Клиент просит другой язык (не менеджера) — подсказку «передай "
+                                      "менеджеру» не даём")
+            if self.lang_lock.locked is None and is_kyrgyz_speech(self._log_buf.get("user") or self._last_user_text):
+                self.lang_lock.reason = "speech"
+                self.lang_lock.locked = "ky"
+                await self._lock_language("ky")
         elif intent in INTENT_HINTS and intent not in self._intents_done:
             self._intents_done.add(intent)
             _log(f"decisions: intent {intent}")
@@ -1013,6 +1054,9 @@ class LiveVoiceSession:
         if mood != self._mood:
             if mood not in MOOD_HINTS:
                 self._mood = mood
+            elif mood == "confused" and (self.lang_lock.locked or (self.call_log and self.call_log.user_turns < 2)):
+                # начало звонка или язык уже сменили — «непонимание» здесь почти всегда язык/расшифровка
+                pass
             elif streak >= MOOD_CONFIRM.get(mood, 1) and now - self._mood_hint_at >= MOOD_HINT_GAP_SEC.get(mood, 45.0):
                 self._mood = mood
                 self._mood_hint_at = now
@@ -1020,6 +1064,10 @@ class LiveVoiceSession:
                 if self.call_log:
                     self.call_log.add("session", f"Настроение клиента: {mood} (Decisions) — подсказка голосовой модели")
                 await self.client.append_thinking(MOOD_HINTS[mood])
+
+    def _is_language_request(self, now: float) -> bool:
+        recent = (self._log_buf.get("user") or "") + " " + self._last_user_text
+        return mentions_language(recent) or (self.lang_lock.last_request_at and now - self.lang_lock.last_request_at < 20)
 
     async def _on_cue(self, cue: str, now: float) -> None:
         """Шутка / проблема / хорошая новость клиента → подсказка живой реакции (не озвучивается)."""

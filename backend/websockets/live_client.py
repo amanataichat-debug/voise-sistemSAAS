@@ -380,7 +380,11 @@ KYRGYZ_LINE_NOTE = (
     "# Линия\n"
     "Основной язык этой линии — кыргызский: многие звонящие говорят по-кыргызски или смешанно с русским. "
     "Неразборчивую фразу сначала проверь как кыргызскую; не уверен — переспроси коротко по-кыргызски. "
-    "Тому, кто говорит по-русски, отвечай по-русски.\n\n"
+    "Тому, кто говорит по-русски, отвечай по-русски.\n"
+    # Звонок a128fccf: «Бизге кыргызча сүйлөй турган адам керек» модель поняла как «нужен менеджер». Гайд OpenAI:
+    # инструкцию писать на языке, на котором агент должен говорить, — поэтому эта строка по-кыргызски.
+    "Кардар кыргызча сүйлөсө же «кыргызча сүйлөй турган адам керек» десе — бул менеджер эмес, тил жөнүндө өтүнүч: "
+    "дароо өзүң кыргызча сүйлө жана чалуунун аягына чейин кыргызча уланта бер.\n\n"
 )
 
 
@@ -430,6 +434,9 @@ CALL_DECISION_TRIGGER: Dict[str, Any] = {
                     "goodbye: the caller is saying goodbye or clearly wants to end the call. "
                     "call_back_later: the caller is busy now and asks to talk later. "
                     "wants_human: the caller asks for a real person, a manager or the owner. "
+                    "wants_language: the caller asks to speak another language, or asks for someone who speaks "
+                    "Kyrgyz or Russian (e.g. 'кыргызча сүйлөй турган адам керек', 'говорите по-кыргызски', "
+                    "'орусча сүйлөңүз'). This is NOT wants_human. "
                     "answering_machine: this is a voicemail greeting, an answering machine, an operator "
                     "recording or a phone menu, not a live person. "
                     "none: anything else, or not sure."
@@ -439,6 +446,7 @@ CALL_DECISION_TRIGGER: Dict[str, Any] = {
                     {"value": "goodbye"},
                     {"value": "call_back_later"},
                     {"value": "wants_human"},
+                    {"value": "wants_language"},
                     {"value": "answering_machine"},
                 ],
             },

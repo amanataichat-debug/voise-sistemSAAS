@@ -683,7 +683,9 @@ class SipGatewayService:
             if meta.get("call_strategy"):
                 parts.append(f"Стратегия разговора: {meta['call_strategy']}")
         else:
-            parts.append("Это входящий телефонный звонок.")
+            # Звонок a128fccf (22.11.2026): на входящем агент сказал «я звоню показать…» — фраза исходящего сценария.
+            parts.append("Это входящий телефонный звонок: позвонил клиент, а не ты — не говори «я вам звоню», "
+                         "ты уже представился в приветствии, не представляйся снова.")
             if call.caller:
                 parts.append(f"Номер звонящего: +{call.caller}.")
         now = bishkek_now()

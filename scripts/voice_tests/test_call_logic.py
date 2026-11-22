@@ -99,11 +99,16 @@ async def hangup_guard():
 async def decisions():
     ev = lambda intent, mood: {"type": "decision.event", "event": {"type": "decision.completed", "decision": {"answers": [
         {"name": "caller_intent", "choice": intent}, {"name": "caller_mood", "choice": mood}]}}}
-    s, out, _ = session()
+    s, out, cl = session()
+    # 22.11.2026 (a128fccf): в первых двух репликах клиента «запутался» не подсказываем — там это язык/расшифровка
+    await s._on_live_event(ev("none", "confused")); await s._on_live_event(ev("none", "confused"))
+    check("decisions: «запутался» в начале звонка — без подсказки", len(s.client.thinking) == 0)
+    s, out, cl = session(); cl.user_turns = 2
     await s._on_live_event(ev("none", "confused"))
     check("decisions: «запутался» с первого раза — без подсказки", len(s.client.thinking) == 0)
     await s._on_live_event(ev("none", "confused"))
-    check("decisions: два подряд — подсказка, и она не велит переспрашивать", len(s.client.thinking) == 1 and "Не переспрашивай" in s.client.thinking[0])
+    check("decisions: два подряд — подсказка: не повторять сказанное, не представляться заново",
+          len(s.client.thinking) == 1 and "Не повторяй" in s.client.thinking[0] and "заново" in s.client.thinking[0])
     s, out, _ = session()
     await s._on_live_event(ev("none", "positive"))
     check("decisions: «доволен» подсказки не даёт", len(s.client.thinking) == 0)
