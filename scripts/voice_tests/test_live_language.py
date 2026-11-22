@@ -67,9 +67,9 @@ check("Decisions знает wants_language", {"value": "wants_language"} in q["c
 check("заметка кыргызской линии: по-кыргызски, просьба о кыргызском — не менеджер",
       "бул менеджер эмес" in lc.KYRGYZ_LINE_NOTE)
 check("подсказка «нужен менеджер»: просьба о языке — перейти самому",
-      "это просьба о языке" in h.INTENT_HINTS["wants_human"])
+      "that is a language request" in h.INTENT_HINTS["wants_human"])
 check("подсказка «запутался»: не представляться заново, кыргызский — отвечать по-кыргызски",
-      "не представляйся заново" in h.MOOD_HINTS["confused"] and "по-кыргызски" in h.MOOD_HINTS["confused"])
+      "introduce yourself again" in h.MOOD_HINTS["confused"] and "answer in Kyrgyz" in h.MOOD_HINTS["confused"])
 
 
 # ── реплей звонка a128fccf через настоящий хендлер ─────────────────────────────────────────────────────
@@ -129,7 +129,10 @@ async def replay():
     await say(s, "user", "Саламатсызбы. Бизге кыргызча сүйлөй турган адам керек")
     await asyncio.sleep(0.01)
     check("просьба о кыргызском → постоянная инструкция на кыргызском, сразу, до ответа",
-          s.client.instructions == [ll.LOCK_INSTRUCTIONS["ky"]], len(s.client.instructions))
+          len(s.client.instructions) == 1 and s.client.instructions[0].startswith(ll.LOCK_INSTRUCTIONS["ky"]),
+          len(s.client.instructions))
+    check("смена языка — тот же разговор: в инструкции то, что клиент уже сказал (не переспрашивать)",
+          "кайра сураба" in s.client.instructions[0] and "Скажите, а с Юля у вас номер был" in s.client.instructions[0])
     await s._on_decision(decision(intent="wants_human"))
     check("Decisions wants_human на просьбу о языке → подсказки «передай менеджеру» нет",
           not any("менеджер" in t for t in s.client.thinking), s.client.thinking)
@@ -155,10 +158,59 @@ async def replay():
     await say(s3, "user", "сиз эмне деп жатасыз")
     await s3._on_decision(decision(intent="wants_language"))
     check("wants_language на кыргызской речи → кыргызский закреплён", s3.lang_lock.locked == "ky"
-          and s3.client.instructions and s3.client.instructions[-1] == ll.LOCK_INSTRUCTIONS["ky"])
+          and s3.client.instructions and s3.client.instructions[-1].startswith(ll.LOCK_INSTRUCTIONS["ky"]))
 
 
 asyncio.run(replay())
+
+# ── метрики журнала: язык и шаблонная речь ─────────────────────────────────────────────────────────────
+check("ответ по-русски на закреплённом кыргызском — несовпадение",
+      not ll.reply_in_language("ky", "Кстати, вы сейчас говорите как раз с таким голосовым агентом."))
+check("кыргызский ответ с русскими словами (аралаш) — совпадение",
+      ll.reply_in_language("ky", "Ооба, түшүндүм, тариф боюнча азыр айтып берем, заявкаңызды жазып коёбуз."))
+check("короткое «ооба» не считается", ll.reply_in_language("ky", "Ооба.") and ll.reply_in_language("ru", "Да, конечно."))
+ll._PHRASE_MEMORY.clear()
+first = ll.repeated_from_past_calls("a1", ["Добрый день!", "Смотрите, агент отвечает всем клиентам сразу и днём и ночью."])
+second = ll.repeated_from_past_calls("a1", ["Смотрите, агент отвечает всем клиентам сразу и днём и ночью. А у вас как?"])
+check("фраза из прошлого звонка того же ассистента — найдена; первый звонок — без повторов",
+      first == [] and second == ["смотрите агент отвечает всем клиентам сразу и днём и ночью"], second)
+check("другой ассистент — своя память", ll.repeated_from_past_calls("a2", ["Смотрите, агент отвечает всем клиентам сразу и днём и ночью."]) == [])
+
+
+async def diag():
+    s, cl = session()
+    s.started_at = time.time() - 60
+    await say(s, "assistant", "Добрый день! Это Анри.")
+    await say(s, "user", "Кыргызча сүйлөңүзчү")
+    await asyncio.sleep(0.01)
+    await say(s, "assistant", "Кстати, вы сейчас говорите как раз с таким голосовым агентом, он отвечает всем.")
+    await say(s, "user", "кыргызча деп жатам го")
+    await say(s, "assistant", "Ооба, кечиресиз, азыр кыргызча сүйлөйм, сиздин бизнес кандай?")
+    await say(s, "user", "")
+    s._flush_log("assistant")
+    s._log_diagnostics(60.0)
+    text = " | ".join(e.get("text", "") for e in cl.events)
+    check("журнал: агент перешёл на язык не сразу — видно, через сколько ответов",
+          "перешёл не сразу: через 1 ответ" in text, text[-400:])
+    check("журнал: ответов не на языке клиента — цифрой", "ответов не на языке клиента (кыргызский): 1" in text)
+
+
+asyncio.run(diag())
+
+# ── предупреждения владельцу (журнал звонка + «Проверить базу знаний») ───────────────────────────────
+import backend.services.agent_voice_context as avc
+card = types.SimpleNamespace(language="ky", greeting_message="Здравствуйте! Чем могу помочь?")
+ag = types.SimpleNamespace(voice_additional_instructions="Ты — Анри.", additional_instructions="",
+                           inbound_first_phrase="Добрый день! Это Анри из Вокси.", eleven_assistant=card)
+w = avc.instruction_warnings(ag)
+check("кыргызская линия, а приветствие только по-русски — предупреждение владельцу",
+      any("Линия кыргызская" in x for x in w), w)
+ag.inbound_first_phrase = "Саламатсызбы! Здравствуйте! Это Анри."
+check("двуязычное приветствие — без предупреждения", not any("Линия кыргызская" in x for x in avc.instruction_warnings(ag)))
+ag.voice_additional_instructions = ("Скажи «Саат бештерде чалсам болобу?». Говори «Ой, автосалон — жакшы экен!». "
+                                    "Спроси «Күнүнө канча заявка келет?». Ответ «Вы что, робот? — Робот, да».")
+check("готовые фразы в инструкции звонков — предупреждение «агент повторит дословно»",
+      any("готовых фраз" in x for x in avc.instruction_warnings(ag)))
 
 # ── входящий звонок: «я вам звоню» не говорить ──────────────────────────────────────────────────────────
 from backend.services import sip_gateway_service as sgs

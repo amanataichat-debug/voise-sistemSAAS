@@ -69,7 +69,10 @@ from backend.websockets.live_client import audioop
 from backend.websockets.live_client import (
     CALL_DECISION_TRIGGER, LIVE_MODEL, LIVE_VOICES, OpenAILiveClient, is_decision_error,
 )
-from backend.websockets.live_language import LOCK_INSTRUCTIONS, LOCK_LOG, LanguageLock, is_kyrgyz_speech, mentions_language
+from backend.websockets.live_language import (
+    LOCK_LOG, LanguageLock, is_kyrgyz_speech, lock_instruction, mentions_language, repeated_from_past_calls,
+    reply_in_language,
+)
 
 logger = get_logger(__name__)
 
@@ -134,15 +137,17 @@ AMD_WINDOW_SEC = 25.0       # автоответчик ищем только в 
 MOOD_HINT_GAP_SEC = {"irritated": 15.0, "confused": 45.0}
 MOOD_CONFIRM = {"confused": 2}  # сколько решений подряд нужно, чтобы поверить настроению
 # Подсказки голосовой модели (session.thinking.append — не озвучиваются, влияют на манеру)
+# 22.11.2026 (2211-live-kyrgyz): подсказки по ходу звонка — на английском и без готовых фраз. OpenAI: «The assistant may
+# repeat information supplied through any of these events»; русские подсказки посреди кыргызского разговора тянули
+# агента в русский и в заготовки (звонок a128fccf). Язык ответа — всегда язык разговора.
+_HINT_LANG = " Reply in the language of the conversation (Russian or Kyrgyz), in your own words; never in English."
 MOOD_HINTS = {
-    "irritated": "Клиент сейчас звучит раздражённо или нетерпеливо. Не оправдывайся и не спорь: "
-                 "спокойно признай это одной короткой фразой, говори ещё короче и сразу предложи один "
-                 "понятный следующий шаг.",
-    # Звонок a128fccf (22.11.2026): «confused» сработал, когда клиент заговорил по-кыргызски, а расшифровка дала
-    # кашу; по подсказке «объясни проще» агент заново представился («Это Анри из Вокси, я звоню…») — по шаблону.
-    "confused": "Клиент, похоже, не понял или говорит на другом языке. Не повторяй то, что уже сказал, и не "
-                "представляйся заново. Если он говорит по-кыргызски — отвечай по-кыргызски. Иначе скажи проще и "
-                "другими словами, одной короткой фразой.",
+    "irritated": "The caller sounds irritated or impatient. Do not justify yourself or argue: acknowledge it calmly in "
+                 "a few words, be even shorter and offer one clear next step." + _HINT_LANG,
+    # Звонок a128fccf: «confused» сработал на каше расшифровки кыргызской речи — агент заново представился.
+    "confused": "The caller may not have understood, or may be speaking another language. Do not repeat what you "
+                "already said and do not introduce yourself again. If they speak Kyrgyz, answer in Kyrgyz. Otherwise "
+                "say it more simply in one short sentence." + _HINT_LANG,
 }
 # Эмоциональные сигналы клиента (Decisions, вопрос caller_cue): живая реакция голосом на лету.
 # Подсказка — не чаще CUE_HINT_GAP_SEC на один и тот же сигнал и CUE_ANY_GAP_SEC на любой.
@@ -151,33 +156,32 @@ MOOD_HINTS = {
 # 14.11.2026 (1411-voice-lean): «тем же ровным голосом» убирало интонацию — эмоции звучали как текст. Теперь
 # интонация меняется по ситуации, а голос (тембр, громкость) тот же: без шёпота и замедления, как в 27.10.2026.
 CUE_HINTS = {
-    "joke": "Клиент пошутил или смеётся. Когда он договорит — коротко и естественно рассмейся вместе с ним и ответь "
-            "с улыбкой в голосе; можно одну лёгкую добрую шутку в тему, потом вернись к делу.",
-    "problem": "Клиент расстроен. Когда он договорит — тёплой, участливой интонацией одной фразой посочувствуй, без "
-               "шуток (голос не тише и не медленнее обычного), потом коротко предложи, чем поможешь.",
-    "good_news": "Клиент поделился хорошей новостью. Когда он договорит — искренне и живо порадуйся одной фразой "
-                 "(«о, здорово, поздравляю!») и продолжай разговор.",
+    "joke": "The caller is joking or laughing. When they finish, laugh along naturally and answer with a smile in your "
+            "voice; one light friendly joke is fine, then back to business." + _HINT_LANG,
+    "problem": "The caller is upset. When they finish, show warm, sincere sympathy in a sentence, no jokes (same voice, "
+               "not quieter or slower), then briefly say how you can help." + _HINT_LANG,
+    "good_news": "The caller shared good news. When they finish, be genuinely and warmly happy for them in a sentence, "
+                 "then continue." + _HINT_LANG,
 }
+
 CUE_LOG = {"joke": "шутит / смеётся", "problem": "делится проблемой", "good_news": "хорошая новость"}
 CUE_HINT_GAP_SEC = 40.0
 CUE_ANY_GAP_SEC = 30.0
 CUE_MAX_PER_CALL = 3  # больше — эмоции превращаются в театр
 INTENT_HINTS = {
-    # Звонок 25.10.2026 (сессия 043c4070): здесь стояло «…и вежливо попрощайся» — модель сразу вызвала
-    # hangup_call, пока клиент ещё называл время и номер Telegram, и связь оборвалась на полуслове.
-    "call_back_later": "Клиент сейчас занят или просит связаться позже. Не продолжай рассказ: если время ещё не "
-                       "названо — спроси удобное время и канал (звонок или сообщение) одним вопросом; назвал — "
-                       "коротко «договорились», без пересказа его слов, и дождись, пока клиент сам попрощается. Не "
-                       "завершай звонок сам, пока клиент не закончил говорить.",
-    # Звонок 07.11.2026 (5bf12c2d): по этой подсказке агент ответил «Пока да, я передам запрос менеджеру. Когда вам
-    # удобно…», а на следующую реплику снова спросил «когда вам удобно, чтобы он перезвонил» — и ушёл к бэкенду.
-    "wants_human": "Клиент просит живого человека или встречу. Не отказывай, не спорь и не уходи к бэкенду: одной "
-                   "короткой фразой скажи, что передашь менеджеру (это сделает система после звонка). Время "
-                   "спроси, только если клиент его ещё не называл, и только один раз. Не пересказывай его просьбу. "
-                   "Дальше продолжай помогать сам: на вопросы, которые знаешь, отвечай. Если человек просит того, "
-                   "кто говорит по-кыргызски или по-русски, — это просьба о языке: сам перейди на этот язык, "
-                   "менеджера не предлагай.",
+    # Звонок 25.10.2026 (043c4070): «…и вежливо попрощайся» → модель сразу вызвала hangup_call, пока клиент ещё
+    # называл время. Звонок 07.11.2026 (5bf12c2d): «передам менеджеру», а потом снова «когда удобно» и поход к бэкенду.
+    "call_back_later": "The caller is busy or asks to talk later. Stop your pitch. If no time was given, ask once for a "
+                       "convenient time and channel (call or message); if it was given, confirm briefly without "
+                       "repeating their words, and wait for the caller to say goodbye. Do not end the call while they "
+                       "are still talking." + _HINT_LANG,
+    "wants_human": "The caller asks for a real person or a meeting. Do not refuse, argue or go to the backend: in one "
+                   "short sentence say a manager will get in touch (the system does it after the call). Ask for a time "
+                   "only if not given yet, and only once. Keep helping with what you know. If they ask for someone "
+                   "who speaks Kyrgyz or Russian, that is a language request: switch to that language yourself and do "
+                   "not offer a manager." + _HINT_LANG,
 }
+
 INTENT_LOG = {
     "call_back_later": "Клиент занят, просит поговорить позже",
     "wants_human": "Клиент просит живого человека / менеджера",
@@ -551,6 +555,12 @@ class LiveVoiceSession:
         # Язык разговора держит код (live_language.py): явная просьба / две кыргызские реплики → постоянная инструкция
         self.lang_lock = LanguageLock()
         self._last_user_text = ""
+        self._user_turns: List[str] = []  # законченные реплики клиента — что он уже рассказал (смена языка)
+        # Метрики языка и шаблонности для журнала звонка
+        self._assistant_turns: List[str] = []
+        self.lang_mismatch = 0                 # ответы агента не на закреплённом языке
+        self.lang_switch_lag: Optional[int] = None  # сколько ответов агента прошло, пока он перешёл на язык
+        self._since_lock = 0
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -770,12 +780,14 @@ class LiveVoiceSession:
 
     async def _lock_language(self, lang: str) -> None:
         """Постоянная инструкция голосовой модели на выбранном языке (до конца сессии или до новой просьбы)."""
+        self.lang_switch_lag = None
+        self._since_lock = 0
         why = "клиент попросил" if self.lang_lock.reason == "request" else "клиент говорит по-кыргызски"
         _log(f"language lock: {lang} ({self.lang_lock.reason})")
         if self.call_log:
             self.call_log.add("session", f"{LOCK_LOG[lang]} ({why})")
         try:
-            await self.client.append_instructions(LOCK_INSTRUCTIONS[lang])
+            await self.client.append_instructions(lock_instruction(lang, self._user_turns))
         except Exception as exc:
             _log(f"language lock failed: {exc}", "WARNING")
 
@@ -783,6 +795,7 @@ class LiveVoiceSession:
         text = " ".join(self._log_buf.get(role, "").split())
         if role == "user" and text:
             self._last_user_text = text
+            self._user_turns = (self._user_turns + [text])[-8:]
             lang = self.lang_lock.feed_turn(text)
             if lang:
                 self._track(self._lock_language(lang))
@@ -796,6 +809,16 @@ class LiveVoiceSession:
                     self.call_log.assistant_turns += 1
                     self.call_log.add("assistant", f"Ассистент: «{text}»")
         if role == "assistant" and text:
+            self._assistant_turns.append(text)
+            lang = self.lang_lock.locked
+            if lang:
+                ok = reply_in_language(lang, text)
+                if self.lang_switch_lag is None:
+                    if ok:
+                        self.lang_switch_lag = self._since_lock
+                    self._since_lock += 1
+                if not ok:
+                    self.lang_mismatch += 1
             for name, rx in REPEAT_WORDS.items():
                 found = len(rx.findall(text))
                 if found:
@@ -858,6 +881,27 @@ class LiveVoiceSession:
         stall = self.repeats.get("одну секунду/минутку", 0) + self.repeats.get("сейчас уточню/посмотрю", 0)
         if stall:
             issues.append(f"агент тянул время («одну секунду», «сейчас уточню») {stall} раз — для клиента это «не знаю»")
+
+        # 22.11.2026 (2211-live-kyrgyz): язык и шаблонность — цифрами
+        if self.lang_lock.locked:
+            word = {"ky": "кыргызский", "ru": "русский"}[self.lang_lock.locked]
+            if self.lang_switch_lag is None:
+                issues.append(f"язык закреплён ({word}), но агент так и не ответил на нём")
+            elif self.lang_switch_lag > 0:
+                issues.append(f"на {word} агент перешёл не сразу: через {self.lang_switch_lag} ответ(а) после просьбы")
+            if self.lang_mismatch:
+                issues.append(f"ответов не на языке клиента ({word}): {self.lang_mismatch}")
+            else:
+                info.append(f"язык: {word}, все ответы на нём")
+        try:
+            past = repeated_from_past_calls(getattr(self.assistant, "id", None), self._assistant_turns[1:])
+        except Exception:
+            past = []
+        if len(past) >= 2:
+            issues.append(f"агент повторил {len(past)} фраз(ы) из прошлых звонков дословно (шаблонная речь), "
+                          f"например «{past[0][:80]}» — уберите готовые фразы из инструкции")
+        elif past:
+            info.append(f"фраза из прошлых звонков: «{past[0][:80]}»")
 
         if self.repeats and any(v >= REPEAT_WARN_AT for v in self.repeats.values()):
             top = max(self.repeats.items(), key=lambda x: x[1])

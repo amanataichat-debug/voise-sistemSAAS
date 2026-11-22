@@ -504,6 +504,29 @@ VOICE_INSTRUCTIONS_SOFT_LIMIT = 6000
 _TEMPLATE_GAP = re.compile(r"<[^<>\n]{2,80}>")
 
 
+# Фраза в кавычках из трёх и больше слов — готовая реплика; столько их в инструкции — уже шаблонная речь.
+_QUOTED = re.compile(r"«([^«»\n]{8,160})»")
+QUOTED_PHRASES_WARN = 4
+_KY_MARK = re.compile(r"[ңөүҢӨҮ]|саламат|салам\b", re.IGNORECASE)
+
+
+def _ky_line_greeting_warning(agent) -> str:
+    """Линия кыргызская (язык карточки ky), а первая фраза входящего только по-русски — агент начнёт по-русски."""
+    try:
+        card = getattr(agent, "eleven_assistant", None)
+        lang = str(getattr(card, "language", "") or "").strip().lower()
+        if lang != "ky":
+            return ""
+        phrase = (getattr(agent, "inbound_first_phrase", None) or getattr(card, "greeting_message", None) or "")
+        phrase = " ".join(str(phrase).split())
+        if not phrase or _KY_MARK.search(phrase):
+            return ""
+        return (f"Линия кыргызская, а первая фраза входящего звонка только по-русски («{phrase[:70]}»): агент начнёт "
+                f"разговор по-русски. Добавьте кыргызское приветствие, например «Саламатсызбы!» в начало")
+    except Exception:  # предупреждение не должно ломать звонок
+        return ""
+
+
 def instruction_warnings(agent) -> List[str]:
     """
     Что в инструкциях владельца мешает звонку — строки для журнала звонка (видны владельцу).
@@ -522,6 +545,15 @@ def instruction_warnings(agent) -> List[str]:
         if gaps:
             out.append(f"В инструкции {label} остались места шаблона {', '.join(gaps[:3])} — агент скажет их "
                        f"дословно; замените своим текстом")
+    # 22.11.2026 (звонок a128fccf): образец «Саат бештерде чалсам болобу?» из инструкции агент сказал почти дословно.
+    quotes = [q for q in _QUOTED.findall(voice) if len(q.split()) >= 3]
+    if len(quotes) >= QUOTED_PHRASES_WARN:
+        out.append(f"В инструкции для звонков {len(quotes)} готовых фраз в кавычках (например «{quotes[0][:60]}») — "
+                   f"агент произносит их дословно и звучит по шаблону у каждого клиента. Опишите смысл, что нужно "
+                   f"сказать или узнать, — слова он подберёт сам")
+    greeting_note = _ky_line_greeting_warning(agent)
+    if greeting_note:
+        out.append(greeting_note)
     if len(voice) > VOICE_INSTRUCTIONS_SOFT_LIMIT:
         out.append(f"Инструкция для звонков длинная: {len(voice)} симв. (лучше до {VOICE_INSTRUCTIONS_SOFT_LIMIT}). "
                    f"Чем длиннее, тем хуже модель держит правила; цены и факты держите в базе знаний, а не в инструкции")

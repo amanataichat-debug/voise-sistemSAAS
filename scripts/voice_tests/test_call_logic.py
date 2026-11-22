@@ -108,15 +108,15 @@ async def decisions():
     check("decisions: «запутался» с первого раза — без подсказки", len(s.client.thinking) == 0)
     await s._on_live_event(ev("none", "confused"))
     check("decisions: два подряд — подсказка: не повторять сказанное, не представляться заново",
-          len(s.client.thinking) == 1 and "Не повторяй" in s.client.thinking[0] and "заново" in s.client.thinking[0])
+          len(s.client.thinking) == 1 and "Do not repeat" in s.client.thinking[0] and "introduce yourself again" in s.client.thinking[0])
     s, out, _ = session()
     await s._on_live_event(ev("none", "positive"))
     check("decisions: «доволен» подсказки не даёт", len(s.client.thinking) == 0)
     s, out, _ = session()
     await s._on_live_event(ev("call_back_later", "neutral"))
     check("decisions: «занят» не велит прощаться, а коротко принять договорённость без пересказа (07.11.2026)",
-          "попрощайся" not in s.client.thinking[0].lower().replace("сам попрощается", "")
-          and "договорились" in s.client.thinking[0] and "без пересказа" in s.client.thinking[0])
+          "say goodbye" not in s.client.thinking[0].lower().replace("caller to say goodbye", "")
+          and "confirm briefly" in s.client.thinking[0] and "without repeating" in s.client.thinking[0])
     s, out, _ = session()
     await s._on_live_event(ev("goodbye", "positive"))
     check("decisions: прощание → автозавершение ждёт тишины", s._farewell_at is not None)
@@ -127,13 +127,13 @@ async def decisions():
         {"name": "caller_mood", "choice": "neutral"}]}}}
     s, out, cl = session()
     await s._on_live_event(cue("joke"))
-    check("эмоции: клиент пошутил → подсказка посмеяться вместе", len(s.client.thinking) == 1 and "рассмейся" in s.client.thinking[0])
+    check("эмоции: клиент пошутил → подсказка посмеяться вместе", len(s.client.thinking) == 1 and "laugh along" in s.client.thinking[0])
     await s._on_live_event(cue("joke"))
     check("эмоции: вторая шутка сразу — без повторной подсказки", len(s.client.thinking) == 1)
     s._cue_hint_at["joke"] -= 35
     await s._on_live_event(cue("problem"))
-    check("эмоции: проблема клиента → сочувствие, без шуток", len(s.client.thinking) == 2 and "посочувствуй" in s.client.thinking[1]
-          and "без шуток" in s.client.thinking[1])
+    check("эмоции: проблема клиента → сочувствие, без шуток", len(s.client.thinking) == 2 and "sympathy" in s.client.thinking[1]
+          and "no jokes" in s.client.thinking[1])
     check("эмоции: реакция записана в журнал звонка", any("Decisions) — подсказка живой реакции" in e["text"] for e in cl.events))
     s, out, _ = session(); s._farewell_at = time.time()
     await s._on_live_event(cue("good_news"))
@@ -143,10 +143,12 @@ async def decisions():
     hints_all = " ".join(h.CUE_HINTS.values()) + " " + lc.LIVE_VOICE_HEAD + lc.LIVE_VOICE_RULES
     check("голос: нигде не просим говорить тише/медленнее (27.10.2026 — проседал до шёпота)",
           not any(w in hints_all for w in ("медленнее и тише", "говори тише", "слышимый вдох")))
-    check("голос: один и тот же весь звонок, меняется интонация, без шёпота и крика",
-          "Голос весь звонок один и тот же" in lc.LIVE_VOICE_HEAD and "без шёпота и крика" in lc.LIVE_VOICE_HEAD
+    # 22.11.2026: владелец хочет живые эмоции, смех, вдох; шёпот — только пара слов (по линии 8 кГц не слышно)
+    check("голос: один и тот же весь звонок, меняется интонация, без крика, шёпот — не больше пары слов",
+          "Голос весь звонок один и тот же" in lc.LIVE_VOICE_HEAD and "без крика" in lc.LIVE_VOICE_HEAD
+          and "шёпотом — не больше пары слов" in lc.LIVE_VOICE_HEAD
           and "СТАБИЛЬНЫЙ ГОЛОС" not in hints_all)
-    check("эмоции: реакция — после того, как клиент договорит", all("договорит" in v for v in h.CUE_HINTS.values()))
+    check("эмоции: реакция — после того, как клиент договорит", all("When they finish" in v for v in h.CUE_HINTS.values()))
     s, out, _ = session()
     for i, c in enumerate(["joke", "problem", "good_news", "joke"]):
         s._cue_hint_at = {k: v - 100 for k, v in s._cue_hint_at.items()}
@@ -159,7 +161,10 @@ async def decisions():
     check("эмоции: в начале инструкций голоса — смех, сочувствие, радость, удивление по ситуации",
           all(w in lc.LIVE_VOICE_HEAD for w in ("рассмеяться", "посочувствуй", "порадуйся", "удивись", "без театра")))
     check("эмоции: подсказки Decisions без «ровного голоса» (интонация живая)",
-          all("ровн" not in v for v in h.CUE_HINTS.values()) and "рассмейся" in h.CUE_HINTS["joke"])
+          all("ровн" not in v for v in h.CUE_HINTS.values()) and "laugh along" in h.CUE_HINTS["joke"])
+    check("подсказки Decisions на английском и без готовых фраз: язык ответа — язык разговора (звонок a128fccf)",
+          all("language of the conversation" in v and "«" not in v
+              for v in list(h.CUE_HINTS.values()) + list(h.MOOD_HINTS.values()) + list(h.INTENT_HINTS.values())))
 
 
 async def diagnostics():
@@ -377,8 +382,9 @@ def greeting_personal():
     hint = lc.VOICE_DELEGATION_HINT
     head = lc.LIVE_VOICE_HEAD
     # 07.11.2026: по узкополосной линии вдохи и вздохи слышны как шум — дыхание вслух не просим
-    check("подсказка голосу: живые связки есть, дыхания вслух не просим",
-          "живые связки" in head and "вдох" not in head + hint and "вздох" not in head + hint)
+    # 07.11.2026 дыхание убрали (шум по 8 кГц); 22.11.2026 владелец вернул: лёгкий вдох и паузы — в меру
+    check("подсказка голосу: живые связки, лёгкий вдох и смех — в меру, без театра",
+          "живые связки" in head and "лёгкий" in head and "вдох" in head and "в меру" in head and "вздох" not in head + hint)
     check("подсказка голосу: диалог, а не монолог; каждый разговор свой, без заготовок",
           "Диалог, а не монолог" in hint and "три-четыре фразы" not in hint and "не под заготовку" in head)
     check("подсказка голосу: перебили — замолчи и выслушай (шаблон OpenAI), поддакивание — договорить",
@@ -434,12 +440,12 @@ async def audio_path():
     import re as _re
     doc = open(os.path.join(ROOT, "docs/voice_agent_prompt_anri.md"), encoding="utf-8").read()
     check("Анри: ролевую сценку играет смело, цены для примера, из роли не выходит",
-          "разыграть" in doc and "из роли ради «реальной цены» не выходи" in doc)
+          "разыграть" in doc and "из роли не выходи" in doc)
     check("подсказка голосу: не начинать каждый ответ с «понял»", "Не начинай ответы одним и тем же словом" in lc.LIVE_VOICE_RULES)
     check("подсказка голосу: не больше двух вопросов подряд — дальше решение на деталях клиента (звонок bd6e2de4)",
           "Больше двух вопросов подряд без рассказа о решении — это допрос" in lc.LIVE_VOICE_RULES)
     check("подсказка голосу: ведёт разговор сам, без тупиков после ответа",
-          "Веди разговор сам, не замыкай его" in lc.LIVE_VOICE_RULES and "не тупик" in lc.LIVE_VOICE_RULES)
+          "Веди разговор сам, не замыкай его" in lc.LIVE_VOICE_RULES and "сделай ход дальше" in lc.LIVE_VOICE_RULES)
     check("подсказка голосу: словарик кыргызских фраз звонящих («өзүм жооп берем», «баасы канча»)",
           "«өзүм жооп берем» — отвечаю сам" in lc.LIVE_VOICE_HEAD and "«баасы" in lc.LIVE_VOICE_HEAD
           and "переспроси коротко по-кыргызски" in lc.LIVE_VOICE_HEAD)
@@ -483,7 +489,7 @@ def session_config():
     hint = lc.VOICE_DELEGATION_HINT
     for needle, label in [("ПОСЛЕ звонка", "правило про отправку КП после звонка"),
                           ("спрашивай то, что он уже сказал", "не переспрашивать"),
-                          ("«договорились»", "подтверждать договорённость коротко")]:
+                          ("Итог договорённости — один раз", "итог договорённости один раз")]:
         check(f"подсказка голосу: {label}", needle in hint)
     cfg_i = cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()["instructions"]
     check("конфиг: голова (характер, язык) — в начале, правила — после промпта карточки",

@@ -59,7 +59,8 @@ check("переписка: Старт — правило «сам не звон�
       and "{call_rule}" not in sysm)
 vsys = ib.generate_messages("voice", "Звонят по объявлениям.", prof)[0]["content"]
 check("звонок: шаги, сомнения, «оформить», разговорный кыргызский; факты — в базу знаний, не в инструкцию",
-      all(k in vsys for k in ("Звонок по шагам", "Сомнения", "оформить", "бишкекском кыргызском", ib.KB_MARK)))
+      all(k in vsys for k in ("Сомнения", "оформить", "бишкекский", "Никаких готовых реплик", ib.KB_MARK))
+      and "реплик-образцов под этот бизнес" not in vsys)
 check("оба генератора: не выдумывать скидки и сроки, без markdown, без Voksy у чужой компании",
       all(k in sysm and k in vsys for k in ("Не выдумывай", "Без markdown", "Не упоминай платформу Voksy AI")))
 cur = ib.generate_messages("voice", "x" * 30, prof, current="Скидки не обещай.")[1]["content"]

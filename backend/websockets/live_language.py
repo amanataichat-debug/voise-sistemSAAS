@@ -93,6 +93,31 @@ LOCK_INSTRUCTIONS = {
     ),
 }
 
+# Смена языка — тот же разговор (владелец 22.11.2026: «на русском у него одна память, на кыргызском другая — переспросил
+# сколько заявок, хотя клиент уже сказал по-русски»). К инструкции добавляем то, что клиент уже рассказал.
+_EARLIER = {
+    "ky": "\nКардар буга чейин айткандары (бул маалымат сенде бар, кайра сураба, ошол жерден уланта бер): ",
+    "ru": "\nЧто собеседник уже рассказал (это ты знаешь, не переспрашивай, продолжай с того же места): ",
+}
+
+
+def lock_instruction(lang: str, earlier_turns=None, limit: int = 600) -> str:
+    """Постоянная инструкция языка + то, что клиент уже сказал (последние реплики, не длиннее limit)."""
+    text = LOCK_INSTRUCTIONS[lang]
+    turns = [" ".join(str(t).split()) for t in (earlier_turns or []) if str(t).strip()]
+    tail, size = [], 0
+    for t in reversed(turns):
+        if len(re.findall(r"\w+", t)) < 3:
+            continue  # «алло», «ооба» — не факты
+        if size + len(t) > limit:
+            break
+        tail.insert(0, t)
+        size += len(t)
+    if tail:
+        text += _EARLIER[lang] + " / ".join(tail)
+    return text[:1990]
+
+
 LOCK_LOG = {
     "ky": "Язык закреплён: кыргызский — постоянная инструкция голосовой модели на кыргызском",
     "ru": "Язык закреплён: русский — постоянная инструкция голосовой модели",
@@ -137,3 +162,47 @@ class LanguageLock:
         if self.locked is None and self.ky_turns >= self.KY_TURNS_TO_LOCK:
             return self._set("ky", "speech")
         return None
+
+
+# ── Метрики для журнала звонка (22.11.2026): после тест-звонка — цифры, а не «агент тупит» ────────────────────
+def reply_in_language(lang: str, text: str) -> bool:
+    """Ответ агента на закреплённом языке? Короткие ответы («ооба», «да») не считаем."""
+    t = " ".join((text or "").split())
+    if len(re.findall(r"\w+", t)) < 4:
+        return True
+    letters = len(_KY_LETTERS.findall(t))
+    if lang == "ky":
+        return is_kyrgyz_speech(t)
+    return letters < 2
+
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_PHRASE_MEMORY: dict = {}  # ключ ассистента → список множеств фраз последних звонков (в памяти воркера)
+PHRASE_MEMORY_CALLS = 20
+
+
+def _norm_phrases(texts) -> set:
+    out = set()
+    for t in texts or []:
+        for s in _SENT_SPLIT.split(" ".join(str(t).split())):
+            words = re.findall(r"\w+", s.lower())
+            if len(words) >= 5:
+                out.add(" ".join(words))
+    return out
+
+
+def repeated_from_past_calls(key, assistant_texts) -> list:
+    """
+    Фразы этого звонка, которые агент уже говорил в прошлых звонках того же ассистента (шаблонная речь).
+    Помнит последние PHRASE_MEMORY_CALLS звонков в памяти воркера; сам звонок запоминает.
+    Приветствие (первую реплику) вызывающий не передаёт — оно одинаковое по определению.
+    """
+    if not key:
+        return []
+    phrases = _norm_phrases(assistant_texts)
+    past = _PHRASE_MEMORY.setdefault(str(key), [])
+    seen = set().union(*past) if past else set()
+    repeated = sorted(p for p in phrases if p in seen)
+    past.append(phrases)
+    del past[:-PHRASE_MEMORY_CALLS]
+    return repeated

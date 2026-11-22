@@ -280,8 +280,8 @@ hint = lc.VOICE_DELEGATION_HINT
 # в общих правилах (их получают агенты всех клиентов): test_platform_neutral.py.
 # 14.11.2026 (1411-voice-lean): слой платформы GPT-Live переписан коротко по шаблону OpenAI — LIVE_VOICE_HEAD в начале,
 # LIVE_VOICE_RULES (= VOICE_DELEGATION_HINT) в конце; Gemini по-прежнему на своих подсказках и общих кусках ниже.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 21.11.2026 — строка делегирования из шаблона gpt-live-1.1)",
-      hashlib.sha256(hint.encode()).hexdigest() == "5a0da1326208f726fdd1c05311a48d7d1993557b05dbfa79bdb3c15db3116835", len(hint))
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 22.11.2026 — слой переписан без готовых фраз, 2211-live-kyrgyz)",
+      hashlib.sha256(hint.encode()).hexdigest() == "2689d4901b6fb48785e778c233b191824aedb9216001c4eb4f44819df4956839", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("GPT-Live: хвост инструкций — LIVE_VOICE_RULES, общие куски Gemini в него не входят",
@@ -357,7 +357,8 @@ check("шаблон Анри: факты сам и сразу из раздел�
 # 10.11.2026 (af6e4d6a): прежний Блок 1 был ~10 тыс. символов и противоречил сам себе — теперь короткий сценарий
 # 14.11.2026 (1411-voice-lean): без сценария по шагам — цель и смысл, примеры только для стиля
 check("шаблон Анри: Блок 1 короткий (до 6 тыс. символов), шаг со временем, разговорный кыргызский",
-      len(_block1) <= 6000 and "созвон в конкретное время" in _block1 and "Бишкекте" in _block1, len(_block1))
+      len(_block1) <= 6000 and "созвон в конкретное время" in _block1
+      and "Кыргызча сүйлөгөндө" not in _block1 and "Примеры живой речи" not in _block1, len(_block1))
 
 # ---------- у Gemini Live ТА ЖЕ база знаний и те же живые функции, что у GPT-Live/Eleven
 # (владелец 02.11.2026: «ощущение, что они не читают базу знаний») ----------
@@ -426,7 +427,7 @@ _cfg = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="Т�
                                                       functions={}, voice="cedar", greeting_message=None),
                            "cid", telephony=True).build_session_config()["instructions"]
 check("GPT-Live: характер и язык ДО инструкции карточки, твёрдые правила — после",
-      _cfg.index("Кто ты и как звучишь") < _cfg.index("Язык и произношение") < _cfg.index("Ты Анри")
+      _cfg.index("Кто ты и как звучишь") < _cfg.index("# Язык") < _cfg.index("Ты Анри")
       < _cfg.index("Шесть твёрдых правил"))
 check("GPT-Live: «не эхо» осталось твёрдым правилом", "Не повторяй за собеседником его слова" in lc.LIVE_VOICE_RULES)
 _gh = vh.gemini_prompt_head("Puck", "ru", "Добрый день")
@@ -439,8 +440,8 @@ check("делегирование: менеджер / встреча / пере�
 check("бэкенд не пересказывает клиента", "Не повторяй за клиентом его слова" in lc.BACKEND_SYSTEM_PROMPT)
 from backend.websockets import handler_live as _hl
 check("Decisions wants_human: время спросить один раз и только если не названо, не к бэкенду",
-      "только если клиент его ещё не называл" in _hl.INTENT_HINTS["wants_human"]
-      and "не уходи к бэкенду" in _hl.INTENT_HINTS["wants_human"])
+      "only if not given yet, and only once" in _hl.INTENT_HINTS["wants_human"]
+      and "go to the backend" in _hl.INTENT_HINTS["wants_human"])
 
 # ---------- функции карточки: BLOCKING, без scheduling; у Gemini-ассистентов прежнее NON_BLOCKING ----------
 async def setup_payload(blocking):
