@@ -15,6 +15,7 @@
 
 ### Транспортный слой
 - [`backend/api/claude-api.md`](backend/api/claude-api.md) — FastAPI-роутеры: все HTTP- и WS-эндпоинты, префиксы, webhooks (Finik, Telegram).
+- [`docs/voice_live_standard.md`](docs/voice_live_standard.md) — **стандарт голоса GPT-Live**: что можно и нельзя в промпте звонка, куда смотреть по симптому, лимиты, порядок улучшения (страж — `scripts/voice_tests/test_voice_standard.py`).
 - [`backend/websockets/claude-websockets.md`](backend/websockets/claude-websockets.md) — реал-тайм голосовые хендлеры (OpenAI, Gemini, Fish, Eleven, Grok) и WS-клиенты провайдеров + адаптер телефонии `sip_media_adapter`.
 
 ### Бизнес-логика
