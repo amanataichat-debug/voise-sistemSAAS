@@ -5,6 +5,7 @@ Defines schemas for authentication-related requests and responses with partner r
 ✅ v2.6: Исправлен баг затенения переменной в utm_data_format валидаторе
 """
 
+import re
 from pydantic import BaseModel, Field, EmailStr, validator
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -18,6 +19,12 @@ class Token(BaseModel):
     """Schema for authentication token response"""
     token: str
     token_type: str = "bearer"
+
+POPULAR_EMAIL_DOMAINS = (
+    'gmail.com', 'mail.ru', 'inbox.ru', 'list.ru', 'bk.ru', 'yandex.ru', 'icloud.com',
+    'outlook.com', 'hotmail.com', 'yahoo.com', 'rambler.ru',
+)
+
 
 class LoginRequest(BaseModel):
     """Schema for user login request"""
@@ -68,6 +75,9 @@ class RegisterRequest(BaseModel):
         normalized = normalize_phone_e164(v)
         if not normalized:
             raise ValueError('Invalid phone number')
+        # Кыргызстан: +996 и 9 цифр, первая — код оператора/города (2–9), не 0 и не 1.
+        if normalized.startswith('+996') and not re.fullmatch(r'\+996[2-9]\d{8}', normalized):
+            raise ValueError('Invalid phone number')
         return normalized
 
     # 🆕 ПАРТНЕРСКИЕ ПОЛЯ
@@ -109,6 +119,14 @@ class RegisterRequest(BaseModel):
         
         if domain in blocked_domains:
             raise ValueError('This email domain is not allowed')
+
+        # Опечатки в популярных доменах (23.11.2026): «gmail.comc», «mail.ru1» — такие ящики не
+        # существуют, клиент потом не может войти. Форма лендинга подсказывает раньше; это — страховка.
+        if not email_str.isascii():
+            raise ValueError('Email must be written in Latin letters')
+        for popular in POPULAR_EMAIL_DOMAINS:
+            if domain != popular and domain.startswith(popular) and domain[len(popular)].isalnum():
+                raise ValueError(f'Email domain looks mistyped, did you mean {popular}?')
             
         return email_str
 

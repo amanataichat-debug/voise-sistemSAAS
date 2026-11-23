@@ -6,6 +6,8 @@ import PasswordField from './PasswordField';
 import ForgotPasswordForm from './ForgotPasswordForm';
 import EmailVerificationSection from './EmailVerificationSection';
 import { useT } from '../../i18n';
+import EmailAdvice from './EmailAdvice';
+import { checkEmail, normalizeEmail } from '../../utils/emailCheck';
 
 // Логика входа не менялась: api.login → auth_token в localStorage → /static/dashboard.html
 function LoginForm({ onSwitchToRegister }) {
@@ -51,7 +53,7 @@ function LoginForm({ onSwitchToRegister }) {
     setIsLoading(true);
 
     try {
-      const data = await api.login({ email: email.trim(), password });
+      const data = await api.login({ email: normalizeEmail(email), password });
 
       localStorage.setItem('auth_token', data.token);
       // Сотрудник кабинета: меню и первая страница — его разделы (sidebar.js читает vf_staff)
@@ -101,10 +103,17 @@ function LoginForm({ onSwitchToRegister }) {
               placeholder={t('auth.email_placeholder')}
               autoComplete="email"
               required
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(normalizeEmail(e.target.value))}
             />
           </div>
+          {checkEmail(email).suggestion && (
+            <EmailAdvice email={email} touched onFix={(v) => setEmail(v)} t={t} />
+          )}
         </div>
 
         <div className="field">

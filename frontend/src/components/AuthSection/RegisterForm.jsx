@@ -7,17 +7,14 @@ import Icon from '../Icon';
 import PasswordField from './PasswordField';
 import EmailVerificationSection from './EmailVerificationSection';
 import { useT } from '../../i18n';
+import { checkEmail, normalizeEmail } from '../../utils/emailCheck';
+import EmailAdvice from './EmailAdvice';
+import { checkPhone, formatPhoneInput } from '../../utils/phoneCheck';
 
-// Телефон: цифры без кода страны (9 — Кыргызстан) получают +996; «+…» — любая страна.
-// Сервер приводит номер к E.164 сам (backend/utils/phone.py), здесь — только быстрая проверка.
-const phoneDigits = (v) => String(v || '').replace(/\D/g, '');
-function phoneLooksValid(v) {
-  const raw = String(v || '').trim();
-  const d = phoneDigits(raw);
-  if (raw.startsWith('+')) return d.length >= 9 && d.length <= 15;
-  return d.length >= 9 && d.length <= 13;
-}
 
+
+// Телефон и почта проверяются прямо при вводе (23.11.2026): клиенты писали «gmail.comc»,
+// «0700…» после +996, русской раскладкой — и потом не могли войти.
 // Регистрация: имя, телефон, почта, пароль (18.11.2026 — телефон и имя обязательны, чтобы
 // владелец платформы мог связаться с новым клиентом). Реферальный код и UTM — из
 // useReferralTracker; дальше экран подтверждения почты и переход в кабинет, где клиента
@@ -28,6 +25,9 @@ function RegisterForm({ onSwitchToLogin }) {
   const [firstName, setFirstName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [keepEmail, setKeepEmail] = useState('');
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
@@ -43,12 +43,24 @@ function RegisterForm({ onSwitchToLogin }) {
       setNotification({ type: 'error', message: t('auth.name_required') });
       return;
     }
-    if (!phone.trim() || phone.trim() === '+996') {
-      setNotification({ type: 'error', message: t('auth.phone_required') });
+    const phoneRes = checkPhone(phone);
+    if (!phoneRes.ok) {
+      setPhoneTouched(true);
+      setNotification({ type: 'error', message: t(phoneRes.problem === 'empty' ? 'auth.phone_required' : 'auth.phone_problem_' + phoneRes.problem) });
+      document.getElementById('register-phone')?.focus();
       return;
     }
-    if (!phoneLooksValid(phone)) {
-      setNotification({ type: 'error', message: t('auth.phone_invalid') });
+    const emailRes = checkEmail(email);
+    if (emailRes.problem) {
+      setEmailTouched(true);
+      setNotification({ type: 'error', message: t('auth.email_problem_' + emailRes.problem) });
+      document.getElementById('register-email')?.focus();
+      return;
+    }
+    if (emailRes.suggestion && keepEmail !== normalizeEmail(email)) {
+      setEmailTouched(true);
+      setNotification({ type: 'error', message: t('auth.email_check_first') });
+      document.getElementById('register-email')?.focus();
       return;
     }
 
@@ -59,12 +71,12 @@ function RegisterForm({ onSwitchToLogin }) {
       const referralData = getReferralData();
 
       const userData = {
-        email: email.trim(),
+        email: normalizeEmail(email),
         password: password,
         first_name: firstName.trim() || null,
         last_name: null,
         company_name: companyName.trim() || null,
-        phone: phone.trim(),
+        phone: phoneRes.e164,
         referral_code: referralData?.referral_code || null,
         utm_data: referralData?.utm_data || null,
       };
@@ -106,6 +118,8 @@ function RegisterForm({ onSwitchToLogin }) {
           message = t('auth.pwd_letter');
         } else if (message.includes('at least 8 characters')) {
           message = t('auth.pwd_length');
+        } else if (/valid email|@-sign|email address|domain|Latin letters/i.test(message)) {
+          message = message.includes('did you mean') ? t('auth.email_check_first') : message.includes('Latin') ? t('auth.email_problem_cyrillic') : t('auth.email_problem_bad');
         } else if (message.includes('Invalid phone')) {
           message = t('auth.phone_invalid');
         } else if (message.includes('Phone is required')) {
@@ -188,10 +202,16 @@ function RegisterForm({ onSwitchToLogin }) {
               required
               value={phone}
               onFocus={() => { if (!phone) setPhone('+996 '); }}
-              onBlur={() => { if (phone.trim() === '+996') setPhone(''); }}
-              onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s()-]/g, '').slice(0, 24))}
+              onBlur={() => { if (phone.trim() === '+996') setPhone(''); else setPhoneTouched(true); }}
+              onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
             />
           </div>
+          {(() => {
+            const r = checkPhone(phone);
+            if (r.ok) return <p className="lp-field-ok">✓ {r.e164.replace(/^(\+996)(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4')}</p>;
+            if (phoneTouched && r.problem && r.problem !== 'empty') return <p className="lp-field-error">{t('auth.phone_problem_' + r.problem)}</p>;
+            return <p className="lp-field-note">{t('auth.phone_format_hint')}</p>;
+          })()}
         </div>
 
         <div className="field">
@@ -207,10 +227,23 @@ function RegisterForm({ onSwitchToLogin }) {
               placeholder={t('auth.email_placeholder')}
               autoComplete="email"
               required
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setEmailTouched(true)}
+              onChange={(e) => setEmail(normalizeEmail(e.target.value))}
             />
           </div>
+          <EmailAdvice
+            email={email}
+            touched={emailTouched}
+            dismissed={keepEmail}
+            onFix={(v) => { setEmail(v); setNotification(null); }}
+            onDismiss={() => { setKeepEmail(normalizeEmail(email)); setNotification(null); }}
+            t={t}
+          />
         </div>
 
         <div className="field">

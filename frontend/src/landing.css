@@ -960,3 +960,20 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
   .bz-result { flex-direction: column; gap: 10px; padding: 16px; }
   .bz-result ul { grid-template-columns: 1fr; }
 }
+
+/* Подсказки под полями формы (почта, телефон) — 23.11.2026 */
+.lp-form .lp-field-note,
+.lp-form .lp-field-error,
+.lp-form .lp-field-ok { margin: 6px 2px 0; font-size: 12.5px; line-height: 1.4; }
+.lp-form .lp-field-note { color: var(--vf-text-3); }
+.lp-form .lp-field-error { color: var(--vf-danger, #d64545); font-weight: 500; }
+.lp-form .lp-field-ok { color: var(--vf-success, #1a9a63); }
+.lp-form .lp-field-suggest {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: #fff7e6; border: 1px solid #f3c66b; color: #7a4b00;
+  font-size: 13.5px; line-height: 1.4;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+}
+.lp-form .lp-field-suggest b { word-break: break-all; }
+.lp-form .lp-field-suggest-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.lp-form .lp-field-suggest .btn-sm { height: auto; padding: 6px 12px; font-size: 13px; min-height: 0; }
