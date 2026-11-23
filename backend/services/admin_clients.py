@@ -531,7 +531,7 @@ def log_action(db: Session, admin, target_id, action: str, text_value: Optional[
 def update_client(db: Session, admin, user, data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Правка своих полей владельцем: статус, дата следующего звонка, заметка (в ленту),
-    телефон / имя / компания / ниша клиента. Каждое изменение — строка в журнале.
+    телефон / имя / компания / email / ниша клиента. Каждое изменение — строка в журнале.
     """
     from backend.utils.phone import normalize_phone_e164
     changed: Dict[str, Any] = {}
@@ -585,6 +585,25 @@ def update_client(db: Session, admin, user, data: Dict[str, Any]) -> Dict[str, A
             if value != getattr(user, field):
                 profile_changes[field] = [getattr(user, field), value]
                 setattr(user, field, value)
+    if "email" in data:
+        email = (data.get("email") or "").strip().lower()
+        if email and email != (user.email or "").lower():
+            import re
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,24}", email):
+                raise ValueError("Неверный email")
+            other = db.query(type(user)).filter(type(user).email.ilike(email), type(user).id != user.id).first()
+            if other:
+                raise ValueError("Этот email уже занят другим кабинетом")
+            try:
+                from backend.models.team import TeamMember
+                if db.query(TeamMember).filter(TeamMember.email == email).first():
+                    raise ValueError("Этот email занят сотрудником другого кабинета")
+            except ImportError:
+                pass
+            profile_changes["email"] = [user.email, email]
+            user.email = email
+            # Почту исправил админ — считаем её подтверждённой, чтобы клиент сразу вошёл.
+            user.email_verified = True
     if "niche" in data:
         from backend.services.niche_catalog import is_known_niche
         niche = (data.get("niche") or "").strip() or None

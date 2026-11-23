@@ -396,7 +396,7 @@
     if (t.action === 'status') return 'Статус: ' + ((STATUS[d.from] || {}).label || d.from || '—') + ' → ' + ((STATUS[d.to] || {}).label || d.to);
     if (t.action === 'next_contact') return d.at ? 'Следующий звонок: ' + future(d.at) : 'Дата звонка снята';
     if (t.action === 'profile') {
-      var names = { phone: 'телефон', first_name: 'имя', company_name: 'компания', business_niche: 'ниша' };
+      var names = { phone: 'телефон', first_name: 'имя', company_name: 'компания', email: 'email', business_niche: 'ниша' };
       return 'Профиль: ' + Object.keys(d).map(function (k) { var v = d[k] || []; return (names[k] || k) + ' «' + (v[1] || '—') + '»'; }).join(', ');
     }
     if (t.action === 'subscription') return 'Подписка: ' + (t.text || '') + (d.plan ? ' (' + (PLAN_LABEL[d.plan] || d.plan) + ')' : '');
@@ -439,11 +439,12 @@
       '<dt>Регистрация</dt><dd>' + esc(when(c.created_at)) + '</dd>' +
       '<dt>Последний вход</dt><dd>' + esc(c.last_login ? when(c.last_login) : 'не входил') + '</dd>' +
       '</dl>' +
-      '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--vf-accent)">Изменить телефон, имя, компанию, нишу</summary>' +
+      '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--vf-accent)">Изменить телефон, имя, компанию, email, нишу</summary>' +
       '<div class="ac-edit" style="margin-top:10px">' +
       '<label>Телефон<input id="ac-e-phone" type="tel" value="' + esc(c.phone || '') + '" placeholder="+996 700 123 456"></label>' +
       '<label>Имя<input id="ac-e-name" value="' + esc(c.first_name || '') + '"></label>' +
       '<label>Компания<input id="ac-e-company" value="' + esc(c.company_name || '') + '"></label>' +
+      '<label>Email (логин)<input id="ac-e-email" type="email" value="' + esc(c.email || '') + '"></label>' +
       '<label>Ниша<select id="ac-e-niche"><option value="">Не выбрана</option>' + niches + '</select></label>' +
       '</div><div style="margin-top:8px"><button class="ac-go" type="button" data-save-profile>' + icon('save') + 'Сохранить</button></div></details>' +
       '</section>' +
@@ -529,6 +530,7 @@
         phone: drawer.querySelector('#ac-e-phone').value.trim(),
         first_name: drawer.querySelector('#ac-e-name').value.trim(),
         company_name: drawer.querySelector('#ac-e-company').value.trim(),
+        email: drawer.querySelector('#ac-e-email').value.trim(),
         niche: drawer.querySelector('#ac-e-niche').value
       }, 'Профиль обновлён');
     }
