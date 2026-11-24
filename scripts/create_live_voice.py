@@ -6,6 +6,7 @@
     python scripts/create_live_voice.py --preset aliya         # женский голос «Бишкек», русский + кыргызский
     python scripts/create_live_voice.py --preset azim        # мужской голос «Бишкек»
     python scripts/create_live_voice.py --preset aliya --dry-run   # показать запрос, ничего не создавать
+    python scripts/create_live_voice.py --preset aliya --voice-id voice_…   # подключить УЖЕ созданный голос (без нового)
     python scripts/create_live_voice.py --disable aliya        # убрать голос из выбора (звонки уйдут на голос по умолчанию)
     python scripts/create_live_voice.py --key mira --title "Мира" --gender f --prompt "..." --script "..."
 
@@ -144,6 +145,7 @@ def main() -> None:
     ap.add_argument("--prompt")
     ap.add_argument("--script", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--voice-id", help="id уже созданного голоса OpenAI (voice_…): только записать в базу")
     a = ap.parse_args()
     if a.list:
         return list_voices()
@@ -165,6 +167,13 @@ def main() -> None:
     if a.dry_run:
         print(json.dumps({"type": "prompt", "name": title, "prompt": prompt, "script_hint": script[:2000],
                           "model": "auto"}, ensure_ascii=False, indent=2))
+        return
+    if a.voice_id:
+        vid = a.voice_id.strip()
+        if not vid.startswith("voice_"):
+            ap.error("--voice-id — id вида voice_…")
+        save_voice(key, vid, title, gender or "", prompt, script)
+        print(f"Готово: голос «{title}» = {vid} подключён, в карточке — «{key}» (новый голос у OpenAI не создавался).")
         return
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
