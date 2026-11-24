@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sys
+import re
 import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -200,6 +201,39 @@ check("реестр: свой голос в списке и проходит п�
 lv.set_cache([])
 check("голос выключили — карточка звонит голосом по умолчанию",
       lc.OpenAILiveClient("k", a, "cid").build_session_config()["audio"]["output"]["voice"] == lc.LIVE_DEFAULT_VOICE)
+
+# ── Запасной голос того же рода (24.11.2026: свой мужской «Азим» не открылся → звучал женский marin) ─────
+lv.set_cache([{"key": "azim", "voice_id": "voice_m", "title": "Азим", "gender": "m", "description": "d"},
+              {"key": "aliya", "voice_id": "voice_f", "title": "Алия", "gender": "f", "description": "d"}])
+def _fb(voice):
+    c = lc.OpenAILiveClient("k", types.SimpleNamespace(id="x", system_prompt="p", functions={}, voice=voice,
+                                                       greeting_message=None), "cid")
+    c.build_session_config()
+    return c._fallback_voice()
+check("запасной голос: свой мужской → cedar, свой женский → голос по умолчанию",
+      _fb("azim") == "cedar" and _fb("aliya") == lc.LIVE_DEFAULT_VOICE, [_fb("azim"), _fb("aliya")])
+check("запасной голос: встроенный мужской (ash) → cedar, женский (marin) → по умолчанию",
+      _fb("ash") == "cedar" and _fb("marin") == lc.LIVE_DEFAULT_VOICE)
+_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
+check("отказ голоса: повтор голосом того же рода и строка «не открылся на ключе» в журнале",
+      "fallback = self._fallback_voice()" in _src and "не открылся на ключе" in _src)
+lv.set_cache([])
+
+# ── Свои голоса v2: харизма, смех, оба языка (scripts/create_live_voice.py) ──────────────────────────
+sys.argv = ["x"]
+import scripts.create_live_voice as clv
+check("готовые голоса: azim, azim2, aliya, aliya2", set(clv.PRESETS) == {"azim", "azim2", "aliya", "aliya2"})
+for _k, _p in clv.PRESETS.items():
+    _ok = (len(_p["prompt"]) <= 2000 and 300 <= len(_p["script"]) <= 2000
+           and ("masculine" in _p["prompt"]) == (_p["gender"] == "m")
+           and "laugh" in _p["prompt"] and "Bishkek" in _p["prompt"] and "smile" in _p["prompt"]
+           and "caricature" in _p["prompt"] and re.search("[ңөү]", _p["script"]) and "здравствуйте" in _p["script"])
+    check(f"голос {_k}: описание ≤2000, род, смех, улыбка, Бишкек без пародии, образец ru+ky", bool(_ok))
+check("образец речи в роде голоса (рад / рада)",
+      "очень рад," in clv.PRESETS["azim"]["script"] and "очень рада," in clv.PRESETS["aliya"]["script"])
+import scripts.voice_samples as vsm
+check("прослушивание: сцены чтения ru/ky и живые (шутка, сочувствие, радость)",
+      {"read_ru", "read_ky", "joke_ru", "pain_ky", "news_ky"} <= set(vsm.SCENES))
 
 # ── Слой платформы: язык по гайду OpenAI для 1.1 ───────────────────────────────────────────────────────
 head = lc.LIVE_VOICE_HEAD

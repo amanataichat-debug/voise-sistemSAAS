@@ -618,6 +618,17 @@ class OpenAILiveClient:
             "parameters": d.get("parameters") or {"type": "object", "properties": {}},
         } for d in defs]
 
+    def _fallback_voice(self) -> str:
+        """Голос на случай отказа — того же рода, что выбранный: свой или встроенный мужской → cedar."""
+        custom = getattr(self, "custom_voice", None)
+        if custom is None and self.voice and self.voice not in LIVE_VOICE_SET:
+            custom = live_voices.get(self.voice)
+        if custom and (custom.get("gender") or "").startswith("m"):
+            return "cedar"
+        if not custom and (self.voice or "").lower() in _MASCULINE_VOICES:
+            return "cedar"
+        return LIVE_DEFAULT_VOICE
+
     def _resolve_voice(self) -> str:
         if self.voice_override:
             if self.voice_override in LIVE_VOICE_SET:
@@ -804,12 +815,23 @@ class OpenAILiveClient:
                     self._input_retry_done = True
                     logger.warning("[LIVE-CLIENT] Retrying session.start without greeting in session.input")
                     return await self.connect(start_timeout=start_timeout)
-                # Голос из кабинета не принят этой моделью — один раз повторяем с голосом по умолчанию
-                if (not self._voice_retry_done and self.voice != LIVE_DEFAULT_VOICE
+                # Голос из кабинета не принят — один раз повторяем голосом того же рода (24.11.2026: свой
+                # мужской «Азим» не открылся на ключе Render, и звонок молча пошёл женским marin).
+                fallback = self._fallback_voice()
+                if fallback == self.voice:
+                    fallback = LIVE_DEFAULT_VOICE
+                if (not self._voice_retry_done and self.voice != fallback
                         and any(m in msg.lower() for m in _VOICE_ERROR_MARKERS)):
                     self._voice_retry_done = True
-                    self.voice_override = LIVE_DEFAULT_VOICE
-                    logger.warning(f"[LIVE-CLIENT] Retrying session.start with voice '{LIVE_DEFAULT_VOICE}'")
+                    custom = getattr(self, "custom_voice", None)
+                    self.voice_override = fallback
+                    if custom:
+                        logger.warning(
+                            f"[LIVE-CLIENT] Свой голос «{custom.get('title') or self.voice}» не открылся на ключе "
+                            f"OpenAI сервера — звонок идёт голосом {fallback}. Голос привязан к проекту OpenAI: "
+                            f"создайте его ключом сервера (python scripts/create_live_voice.py --preset {self.voice})")
+                    else:
+                        logger.warning(f"[LIVE-CLIENT] Retrying session.start with voice '{fallback}'")
                     return await self.connect(start_timeout=start_timeout)
                 return False
             logger.info(f"[LIVE-CLIENT] pre-start event: {etype}")
