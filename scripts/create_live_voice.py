@@ -36,7 +36,9 @@ API_URL = "https://api.openai.com/v1/audio/voices"
 # loudness, speech rate, distinctiveness) в форме рецептов live-prompting: строка-теги + описание словами.
 # v2 (24.11.2026, ветка 2411-live-voices): v1 был «calm / moderate / moderately distinctive» — вежливый, но плоский.
 # Теперь харизма, улыбка в голосе, живая смена высоты, естественные вдохи и смех; без пародии на акцент.
-# Звучание описывает голос; поведение (что говорить, когда шутить) — промпт платформы, он общий для всех голосов.
+# Описание — ТОЛЬКО звучание (OpenAI: «describe sound and behavior separately»); поведение (что говорить, когда
+# шутить) — промпт платформы, общий для всех голосов. v2 первой версии 24.11.2026 содержал черты характера
+# («playful humour, curiosity») — описание уходит в инструкции, и голос «тупил» по сравнению с cedar.
 _SOUND = (
     "Clean, full-bandwidth recording with intelligible consonants, natural breaths and complete word endings. "
     "Lively conversational pitch variation and enough vocal flexibility for both calm explanations and animated, "
@@ -77,9 +79,8 @@ PRESETS = {
         "gender": "m",
         "prompt": ("Bishkek Russian and Kyrgyz. approximately 30. masculine voice. warm velvety baritone timbre. "
                    "smooth texture with a little natural grain. lower-middle pitch. moderate-to-lively loudness. "
-                   "medium-fast speech rate. high distinctiveness. A charismatic, confident young man who loves "
-                   "talking to people: easy charm, playful humour and genuine curiosity, relaxed self-assurance, "
-                   "every word clear. " + _SOUND + " " + _BISHKEK),
+                   "medium-fast speech rate. high distinctiveness. Charismatic, confident, smiling delivery with "
+                   "relaxed self-assurance and an easy natural laugh; every word clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рад"),
     },
     "azim2": {
@@ -87,9 +88,8 @@ PRESETS = {
         "gender": "m",
         "prompt": ("Bishkek Russian and Kyrgyz. mid-20s to 30. masculine voice. bright, energetic baritone timbre. "
                    "clear texture with light natural raspiness. middle pitch. lively loudness. fast but "
-                   "easy-to-follow speech rate. high distinctiveness. A witty, upbeat, quick-thinking guy with "
-                   "infectious energy and a quick laugh; sounds like a friend who is also an expert. "
-                   + _SOUND + " " + _BISHKEK),
+                   "easy-to-follow speech rate. high distinctiveness. Upbeat, energetic, smiling delivery with a "
+                   "quick, infectious laugh; every word clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рад"),
     },
     "aliya": {
@@ -97,8 +97,8 @@ PRESETS = {
         "gender": "f",
         "prompt": ("Bishkek Russian and Kyrgyz. approximately 28 to 32. feminine voice. warm, bright mezzo timbre. "
                    "smooth, clear texture. mid pitch. lively loudness. medium-fast speech rate. high "
-                   "distinctiveness. A charming, sparkling, friendly woman with a ready, ringing laugh, playful "
-                   "warmth and quick wit; confident and clear. " + _SOUND + " " + _BISHKEK),
+                   "distinctiveness. Sparkling, friendly, smiling delivery with a ready, ringing laugh and playful "
+                   "warmth; confident and clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рада"),
     },
     "aliya2": {
@@ -106,8 +106,8 @@ PRESETS = {
         "gender": "f",
         "prompt": ("Bishkek Russian and Kyrgyz. early 30s. feminine voice. lower, velvety alto timbre. smooth "
                    "texture with soft breathiness. lower-middle pitch. moderate loudness. medium speech rate. high "
-                   "distinctiveness. Elegant, self-assured and warm, with a clever, gentle sense of humour and a "
-                   "soft low chuckle; calm charisma, every word clear. " + _SOUND + " " + _BISHKEK),
+                   "distinctiveness. Elegant, self-assured, warm delivery with calm charisma and a soft low "
+                   "chuckle; every word clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рада"),
     },
 }

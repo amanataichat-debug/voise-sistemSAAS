@@ -10,13 +10,13 @@
 Для каждого голоса — одна живая сессия GPT-Live с настоящим слоем платформы (LIVE_VOICE_HEAD /
 LIVE_VOICE_RULES) и нейтральной карточкой магазина. Сцены:
   read_ru, read_ky — один и тот же живой текст со смехом (чёткость, акцент, интонация, смех);
-  joke_ru  — собеседник шутит «вы не робот?» (юмор, находчивость);
+  joke_ru, joke_ky — собеседник шутит (смех вслух, юмор, находчивость) по-русски и по-кыргызски;
   pain_ky  — собеседник по-кыргызски жалуется на потерянных клиентов (сочувствие + решение);
   news_ky  — собеседник радуется (радость, живая реакция).
 Сцены read_* — модель читает текст, live-сцены — отвечает своими словами (видно «ум» и характер).
 
-На выходе по каждому голосу два mp3: «как в виджете» (24 кГц) и «как по телефону» (полоса 300–3400 Гц,
-8 кГц) — клиент слышит второй. Ссылки живут 7 дней. Если свой голос не открылся на ключе, это пишется
+На выходе по каждому голосу два mp3: «как в виджете» (24 кГц) и «как по телефону» (8 кГц, та же обработка голоса
+в линию, что на звонке — PhoneVoice, и кодек G.711) — клиент слышит второй. Ссылки живут 7 дней. Если свой голос не открылся на ключе, это пишется
 строкой «НЕ ОТКРЫЛСЯ» (звучит голос по умолчанию) — тогда создайте голос этим ключом:
 python scripts/create_live_voice.py --preset <ключ>.
 
@@ -59,6 +59,9 @@ SCENES = {
     "joke_ru": ("live", "Сейчас собеседник по телефону сказал тебе по-русски: «Слушайте, а вы случайно не робот? "
                         "А то я с роботами разговаривать не люблю, ха-ха». Ответь ему вслух прямо сейчас — живо, "
                         "с юмором, коротко, как в настоящем разговоре."),
+    "joke_ky": ("live", "Сейчас собеседник со смехом сказал тебе по-кыргызски: «Ха-ха, сиздин бул робот менин аялымдан "
+                        "да көп сүйлөйт экен!». Ответь ему вслух по-кыргызски — рассмейся вместе с ним и ответь "
+                        "коротко, с юмором."),
     "pain_ky": ("live", "Сейчас собеседник сказал тебе по-кыргызски: «Кечээ эки кардар жазып, жооп ала албай кетип "
                         "калышты, жиним келип жатат». Ответь ему вслух по-кыргызски: коротко и тепло посочувствуй "
                         "и предложи решение."),
@@ -78,23 +81,49 @@ def ffmpeg_path():
         return None
 
 
-def to_mp3(pcm: bytes, phone: bool) -> bytes:
+def _ffmpeg(args: list, data: bytes) -> bytes:
     ff = ffmpeg_path()
     if not ff:
         raise SystemExit("Нет ffmpeg (imageio-ffmpeg в requirements)")
-    af = ["-af", "highpass=f=300,lowpass=f=3400", "-ar", "8000"] if phone else ["-ar", str(RATE)]
-    with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as f:
-        f.write(pcm)
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as f:
+        f.write(data)
         raw = f.name
     try:
-        out = subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-f", "s16le", "-ar", str(RATE), "-ac", "1",
-                              "-i", raw, *af, "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "pipe:1"],
+        out = subprocess.run([ff, "-hide_banner", "-loglevel", "error", *[raw if a == "{in}" else a for a in args]],
                              capture_output=True, timeout=120)
     finally:
         os.unlink(raw)
     if out.returncode != 0:
         raise RuntimeError(out.stderr.decode(errors="ignore")[:300])
     return out.stdout
+
+
+def phone_path(pcm24: bytes) -> bytes:
+    """Как в настоящем звонке: 8 кГц, обработка голоса в линию (PhoneVoice: срез НЧ, уровень, ограничитель) и G.711."""
+    pcm8 = _ffmpeg(["-f", "s16le", "-ar", str(RATE), "-ac", "1", "-i", "{in}", "-af", "lowpass=f=3400",
+                    "-ar", "8000", "-f", "s16le", "pipe:1"], pcm24)
+    try:
+        from backend.websockets.sip_media_adapter import PhoneVoice
+        pcm8 = PhoneVoice(rate=8000)(pcm8)
+    except Exception as e:  # обработка — для точности, без неё тоже слышно
+        print(f"  (PhoneVoice не применён: {e})")
+    try:
+        try:
+            import audioop  # type: ignore
+        except ImportError:
+            import audioop_lts as audioop  # type: ignore
+        pcm8 = audioop.ulaw2lin(audioop.lin2ulaw(pcm8, 2), 2)
+    except Exception:
+        pass
+    return pcm8
+
+
+def to_mp3(pcm: bytes, phone: bool) -> bytes:
+    if phone:
+        return _ffmpeg(["-f", "s16le", "-ar", "8000", "-ac", "1", "-i", "{in}", "-c:a", "libmp3lame", "-b:a", "32k",
+                        "-f", "mp3", "pipe:1"], phone_path(pcm))
+    return _ffmpeg(["-f", "s16le", "-ar", str(RATE), "-ac", "1", "-i", "{in}", "-c:a", "libmp3lame", "-b:a", "64k",
+                    "-f", "mp3", "pipe:1"], pcm)
 
 
 async def record_voice(voice: str, scenes: list) -> dict:

@@ -47,7 +47,7 @@ check("стандарт docs/voice_live_standard.md существует и сс
       "test_voice_standard.py" in doc and "НЕЛЬЗЯ" in doc and "Журнал изменений" in doc)
 
 # ── 2. Слой платформы: поведение вместо фраз ─────────────────────────────────────────────────────────
-check("слой платформы ≤ 8 500 символов (раздел 6)", len(layer) <= 8500, len(layer))
+check("слой платформы ≤ 9 300 символов (раздел 6)", len(layer) <= 9300, len(layer))
 check("в слое платформы нет пар «так, а не так» (НЕЛЬЗЯ 2)", "», а не «" not in layer)
 check("фраз в кавычках в слое платформы ≤ 50 — только словарик понимания, латиница, книжные слова (раздел 6)",
       len(QUOTE.findall(layer)) <= 50, len(QUOTE.findall(layer)))
@@ -55,9 +55,16 @@ check("модель подбирает слова сама: «ни одну фр
       "ни одну фразу из этих инструкций не произноси дословно" in head)
 check("нет «стабильного голоса / ровного тона» (НЕЛЬЗЯ 7)",
       "СТАБИЛЬНЫЙ ГОЛОС" not in layer and "ровн" not in layer.lower())
-check("эмоции по-человечески: смех, сочувствие, радость, удивление, лёгкий вдох, в меру (МОЖНО 5)",
-      all(w in head for w in ("рассмеяться", "посочувствуй", "порадуйся", "удивись", "вдох", "в меру", "без театра"))
-      and "шёпотом — не больше пары слов" in head)
+check("эмоции по рецептам OpenAI: смех вслух, сочувствие одной фразой, радость, удивление, вдох, не актёр (МОЖНО 5)",
+      all(w in head for w in ("рассмейся вслух", "смейся открыто", "посочувствуй тепло и коротко, одной фразой",
+                              "порадуйся", "удивись", "вдох", "живой человек, а не актёр", "без крика и наигранности"))
+      and "шёпотом — не больше пары слов" in head and "в меру" not in head and "без театра" not in head)
+check("эмоции и на кыргызском — правило написано по-кыргызски (OpenAI: инструкция на языке речи)",
+      "үн чыгарып күл" in head and "боор ооруп" in head)
+check("отклики по рецепту OpenAI: частые, короткие, разные, лёгкие; смех поверх речи — да, слова — нет (МОЖНО 5)",
+      "Use frequent short, varied backchannels" in rules and "тёплый смешок на смешное" in rules
+      and "You may briefly overlap the user with a short laugh or listening sound, never with words." in rules
+      and "Stop speaking when the user interrupts" in rules)
 check("кыргызское правило написано по-кыргызски и про бишкекский аралаш (МОЖНО 2)",
       "Бишкекте кадимки адамдар" in head and "орусча сөздөр кадимкидей кошулат" in head
       and len(KY_LETTERS.findall(head)) >= 20)
@@ -92,8 +99,8 @@ check("подсказки Decisions без кириллицы и без гото
       all(not CYR.search(x) and "«" not in x for x in hints))
 check("каждая подсказка говорит: отвечай на языке разговора, не по-английски",
       all(h._HINT_LANG in x for x in hints))
-check("лимиты эмоций: ≤3 за звонок, 40 с / 30 с (раздел 6)",
-      h.CUE_MAX_PER_CALL == 3 and h.CUE_HINT_GAP_SEC == 40.0 and h.CUE_ANY_GAP_SEC == 30.0)
+check("лимиты эмоций: ≤5 за звонок, 30 с / 20 с (раздел 6)",
+      h.CUE_MAX_PER_CALL == 5 and h.CUE_HINT_GAP_SEC == 30.0 and h.CUE_ANY_GAP_SEC == 20.0)
 
 # ── 5. Модели и лимиты ───────────────────────────────────────────────────────────────────────────────
 _lc_src = open(os.path.join(ROOT, "backend/websockets/live_client.py"), encoding="utf-8").read()
@@ -135,7 +142,7 @@ check("рассуждать вслух вместо слов ожидания; �
 check("рецепт OpenAI: No recap, без повторных подтверждений и дежурных предложений в конце",
       "No recap." in rules and "Avoid repeated acknowledgments and generic closing offers." in rules)
 check("смех и вдох — голосом, без ремарок (OpenAI: perform the sounds, never read stage directions)",
-      "Смех и вдох делай голосом" in head and "не читай ремарки" in head.replace('"\n    "', ""))
+      "Смех, вдох, хмыканье исполняй голосом" in head and "не читай ремарки" in head.replace('"\n    "', ""))
 check("не делегировать «как работает / подойдёт ли / сколько стоит» и согласие прислать материалы",
       "отвечай сам из того, что знаешь" in rules and "просит прислать материалы" in rules and "просит менеджера или перезвонить" in rules)
 
