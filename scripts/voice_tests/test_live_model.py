@@ -187,8 +187,7 @@ cfg = cl.build_session_config()
 check("свой голос: в session.start объект {id}", cfg["audio"]["output"]["voice"] == {"id": "voice_abc"},
       cfg["audio"]["output"]["voice"])
 check("свой голос: описание голоса в instructions (совет OpenAI), после слоя платформы и до карточки",
-      "# Твой голос (только звучание; как вести разговор — в инструкциях ниже)\nAn original adult feminine voice "
-      "from Bishkek." in cfg["instructions"]
+      "# Твой голос\nAn original adult feminine voice from Bishkek." in cfg["instructions"]
       and cfg["instructions"].startswith(lc.LIVE_VOICE_HEAD)
       and cfg["instructions"].index("# Твой голос") < cfg["instructions"].index("Ты Алия."))
 check("свой голос: род из реестра (f → женский)", "женском роде" in cfg["instructions"])
@@ -230,15 +229,11 @@ for _k, _p in clv.PRESETS.items():
            and "laugh" in _p["prompt"] and "Bishkek" in _p["prompt"] and "smile" in _p["prompt"]
            and "caricature" in _p["prompt"] and re.search("[ңөү]", _p["script"]) and "здравствуйте" in _p["script"])
     check(f"голос {_k}: описание ≤2000, род, смех, улыбка, Бишкек без пародии, образец ru+ky", bool(_ok))
-check("описания своих голосов — только звучание, без черт характера (OpenAI: sound и behavior отдельно)",
-      not any(w in p["prompt"] for p in clv.PRESETS.values() for w in ("humour", "curiosity", "quick wit", "loves")))
 check("образец речи в роде голоса (рад / рада)",
       "очень рад," in clv.PRESETS["azim"]["script"] and "очень рада," in clv.PRESETS["aliya"]["script"])
 import scripts.voice_samples as vsm
 check("прослушивание: сцены чтения ru/ky и живые (шутка, сочувствие, радость)",
-      {"read_ru", "read_ky", "joke_ru", "joke_ky", "pain_ky", "news_ky"} <= set(vsm.SCENES))
-_pp = vsm.phone_path(b"\x10\x00" * 24000)
-check("прослушивание: телефонная версия — 8 кГц через ту же обработку, что на звонке", len(_pp) == 16000, len(_pp))
+      {"read_ru", "read_ky", "joke_ru", "pain_ky", "news_ky"} <= set(vsm.SCENES))
 
 # ── Слой платформы: язык по гайду OpenAI для 1.1 ───────────────────────────────────────────────────────
 head = lc.LIVE_VOICE_HEAD

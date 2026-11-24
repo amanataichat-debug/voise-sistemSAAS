@@ -150,19 +150,16 @@ async def decisions():
           and "СТАБИЛЬНЫЙ ГОЛОС" not in hints_all)
     check("эмоции: реакция — после того, как клиент договорит", all("When they finish" in v for v in h.CUE_HINTS.values()))
     s, out, _ = session()
-    for i, c in enumerate(["joke", "problem", "good_news", "joke", "good_news", "problem", "joke"]):
+    for i, c in enumerate(["joke", "problem", "good_news", "joke"]):
         s._cue_hint_at = {k: v - 100 for k, v in s._cue_hint_at.items()}
         await s._on_live_event(cue(c))
-    check("эмоции: не больше 5 подсказок за звонок", len(s.client.thinking) == 5, str(len(s.client.thinking)))
-    check("эмоции: на шутку — смех голосом сразу, на проблему — одна короткая фраза сочувствия",
-          "voiced laugh" in h.CUE_HINTS["joke"] and "one short sentence" in h.CUE_HINTS["problem"]
-          and "no long consoling" in h.CUE_HINTS["problem"])
+    check("эмоции: не больше 3 подсказок за звонок", len(s.client.thinking) == 3, str(len(s.client.thinking)))
     check("материалы: не говорить «уже отправил» (голос и бэкенд)",
           "«уже отправил»" in lc.LIVE_VOICE_RULES and "никогда «уже отправил»" in lc.BACKEND_SYSTEM_PROMPT)
     names = [q["name"] for q in lc.CALL_DECISION_TRIGGER["decisions"]["questions"]]
     check("эмоции: Decisions спрашивает caller_cue (joke/problem/good_news)", "caller_cue" in names)
     check("эмоции: в начале инструкций голоса — смех, сочувствие, радость, удивление по ситуации",
-          all(w in lc.LIVE_VOICE_HEAD for w in ("рассмейся вслух", "посочувствуй", "порадуйся", "удивись", "а не актёр")))
+          all(w in lc.LIVE_VOICE_HEAD for w in ("рассмеяться", "посочувствуй", "порадуйся", "удивись", "без театра")))
     check("эмоции: подсказки Decisions без «ровного голоса» (интонация живая)",
           all("ровн" not in v for v in h.CUE_HINTS.values()) and "laugh along" in h.CUE_HINTS["joke"])
     check("подсказки Decisions на английском и без готовых фраз: язык ответа — язык разговора (звонок a128fccf)",
@@ -349,7 +346,7 @@ def voice_hints():
     check("подсказка голосу: кыргызских образцов-фраз в слое платформы нет (их повторяли дословно)",
           "Чалганыңыз үчүн рахмат" not in lc.LIVE_VOICE_HEAD + hint and "Сизге кантип жардам" not in lc.LIVE_VOICE_HEAD + hint)
     check("подсказка голосу: слой платформы короткий (было ~11 тыс. символов правил, ≤ 8,5 тыс.: словарик кыргызского + пары регистра 1.1)",
-          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 9300, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
+          len(lc.LIVE_VOICE_HEAD) + len(hint) <= 8500, str(len(lc.LIVE_VOICE_HEAD) + len(hint)))
     check("подсказка звонка: не предлагать «созвониться» на звонке и не выдумывать «помню»",
           "созвониться" in lc.VOICE_TELEPHONY_HINT and "помню" in lc.VOICE_TELEPHONY_HINT)
     a = types.SimpleNamespace(id="x", system_prompt="Ты Анри.", functions={"enabled_functions": ["hangup_call"]},
@@ -388,10 +385,8 @@ def greeting_personal():
     head = lc.LIVE_VOICE_HEAD
     # 07.11.2026: по узкополосной линии вдохи и вздохи слышны как шум — дыхание вслух не просим
     # 07.11.2026 дыхание убрали (шум по 8 кГц); 22.11.2026 владелец вернул: лёгкий вдох и паузы — в меру
-    # 24.11.2026: «в меру, без театра» глушило смех (звонок 3c036e63) — по рецептам OpenAI смех вслух, но не актёр
-    check("подсказка голосу: живые связки, лёгкий вдох и смех вслух, без наигранности",
-          "живые связки" in head and "лёгкий" in head and "вдох" in head and "рассмейся вслух" in head
-          and "без крика и наигранности" in head and "вздох" not in head + hint)
+    check("подсказка голосу: живые связки, лёгкий вдох и смех — в меру, без театра",
+          "живые связки" in head and "лёгкий" in head and "вдох" in head and "в меру" in head and "вздох" not in head + hint)
     check("подсказка голосу: диалог, а не монолог; каждый разговор свой, без заготовок",
           "Диалог, а не монолог" in hint and "три-четыре фразы" not in hint and "не под заготовку" in head)
     check("подсказка голосу: перебили — замолчи и выслушай (шаблон OpenAI), поддакивание — договорить",

@@ -36,9 +36,7 @@ API_URL = "https://api.openai.com/v1/audio/voices"
 # loudness, speech rate, distinctiveness) в форме рецептов live-prompting: строка-теги + описание словами.
 # v2 (24.11.2026, ветка 2411-live-voices): v1 был «calm / moderate / moderately distinctive» — вежливый, но плоский.
 # Теперь харизма, улыбка в голосе, живая смена высоты, естественные вдохи и смех; без пародии на акцент.
-# Описание — ТОЛЬКО звучание (OpenAI: «describe sound and behavior separately»); поведение (что говорить, когда
-# шутить) — промпт платформы, общий для всех голосов. v2 первой версии 24.11.2026 содержал черты характера
-# («playful humour, curiosity») — описание уходит в инструкции, и голос «тупил» по сравнению с cedar.
+# Звучание описывает голос; поведение (что говорить, когда шутить) — промпт платформы, он общий для всех голосов.
 _SOUND = (
     "Clean, full-bandwidth recording with intelligible consonants, natural breaths and complete word endings. "
     "Lively conversational pitch variation and enough vocal flexibility for both calm explanations and animated, "
@@ -79,8 +77,9 @@ PRESETS = {
         "gender": "m",
         "prompt": ("Bishkek Russian and Kyrgyz. approximately 30. masculine voice. warm velvety baritone timbre. "
                    "smooth texture with a little natural grain. lower-middle pitch. moderate-to-lively loudness. "
-                   "medium-fast speech rate. high distinctiveness. Charismatic, confident, smiling delivery with "
-                   "relaxed self-assurance and an easy natural laugh; every word clear. " + _SOUND + " " + _BISHKEK),
+                   "medium-fast speech rate. high distinctiveness. A charismatic, confident young man who loves "
+                   "talking to people: easy charm, playful humour and genuine curiosity, relaxed self-assurance, "
+                   "every word clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рад"),
     },
     "azim2": {
@@ -88,8 +87,9 @@ PRESETS = {
         "gender": "m",
         "prompt": ("Bishkek Russian and Kyrgyz. mid-20s to 30. masculine voice. bright, energetic baritone timbre. "
                    "clear texture with light natural raspiness. middle pitch. lively loudness. fast but "
-                   "easy-to-follow speech rate. high distinctiveness. Upbeat, energetic, smiling delivery with a "
-                   "quick, infectious laugh; every word clear. " + _SOUND + " " + _BISHKEK),
+                   "easy-to-follow speech rate. high distinctiveness. A witty, upbeat, quick-thinking guy with "
+                   "infectious energy and a quick laugh; sounds like a friend who is also an expert. "
+                   + _SOUND + " " + _BISHKEK),
         "script": _script("рад"),
     },
     "aliya": {
@@ -97,8 +97,8 @@ PRESETS = {
         "gender": "f",
         "prompt": ("Bishkek Russian and Kyrgyz. approximately 28 to 32. feminine voice. warm, bright mezzo timbre. "
                    "smooth, clear texture. mid pitch. lively loudness. medium-fast speech rate. high "
-                   "distinctiveness. Sparkling, friendly, smiling delivery with a ready, ringing laugh and playful "
-                   "warmth; confident and clear. " + _SOUND + " " + _BISHKEK),
+                   "distinctiveness. A charming, sparkling, friendly woman with a ready, ringing laugh, playful "
+                   "warmth and quick wit; confident and clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рада"),
     },
     "aliya2": {
@@ -106,8 +106,8 @@ PRESETS = {
         "gender": "f",
         "prompt": ("Bishkek Russian and Kyrgyz. early 30s. feminine voice. lower, velvety alto timbre. smooth "
                    "texture with soft breathiness. lower-middle pitch. moderate loudness. medium speech rate. high "
-                   "distinctiveness. Elegant, self-assured, warm delivery with calm charisma and a soft low "
-                   "chuckle; every word clear. " + _SOUND + " " + _BISHKEK),
+                   "distinctiveness. Elegant, self-assured and warm, with a clever, gentle sense of humour and a "
+                   "soft low chuckle; calm charisma, every word clear. " + _SOUND + " " + _BISHKEK),
         "script": _script("рада"),
     },
 }
@@ -118,15 +118,8 @@ def create_voice(api_key: str, name: str, prompt: str, script: str) -> dict:
     body = {"type": "prompt", "name": name, "prompt": prompt, "model": "auto"}
     if script:
         body["script_hint"] = script[:2000]
-    # 24.11.2026: OpenAI иногда отвечает 500 «Voice generation failed. Please try again.» — повторяем сами
-    import time
-    for attempt in range(1, 4):
-        r = httpx.post(API_URL, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                       json=body, timeout=120)
-        if r.status_code < 500 or attempt == 3:
-            break
-        print(f"OpenAI: временная ошибка ({r.status_code}), повтор {attempt + 1} из 3 через {5 * attempt} с…")
-        time.sleep(5 * attempt)
+    r = httpx.post(API_URL, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                   json=body, timeout=120)
     if r.status_code >= 400:
         raise SystemExit(f"OpenAI отклонил создание голоса ({r.status_code}): {r.text[:800]}")
     data = r.json()
@@ -204,16 +197,8 @@ def main() -> None:
     if len(presets) > 1:
         if a.voice_id or a.key:
             ap.error("--voice-id и --key — только для одного голоса")
-        failed = []
         for name in presets:
-            try:
-                _run_one(ap, a, name, dict(PRESETS[name]))
-            except SystemExit as e:  # один сбой не обрывает остальные голоса
-                print(f"✗ {name}: {e}")
-                failed.append(name)
-        if failed:
-            print("\nНе создались: " + ", ".join(failed) + ". Повторите: python scripts/create_live_voice.py --preset "
-                  + " ".join(failed))
+            _run_one(ap, a, name, dict(PRESETS[name]))
         return
     _run_one(ap, a, presets[0] if presets else None, dict(PRESETS.get(presets[0]) or {}) if presets else {})
 

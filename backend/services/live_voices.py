@@ -97,5 +97,4 @@ def voice_note(voice: Dict[str, Any]) -> str:
     desc = (voice.get("description") or "").strip()
     if not desc:
         return ""
-    # 24.11.2026: описание — только звучание; модель не должна брать из него манеру разговора
-    return "# Твой голос (только звучание; как вести разговор — в инструкциях ниже)\n" + desc + "\n\n"
+    return "# Твой голос\n" + desc + "\n\n"

@@ -155,24 +155,19 @@ MOOD_HINTS = {
 # а реакция начиналась поверх ещё говорящего клиента. Теперь: только слова, тот же ровный голос, после клиента.
 # 14.11.2026 (1411-voice-lean): «тем же ровным голосом» убирало интонацию — эмоции звучали как текст. Теперь
 # интонация меняется по ситуации, а голос (тембр, громкость) тот же: без шёпота и замедления, как в 27.10.2026.
-# 24.11.2026 (2411-live-voices): смех — голосом (не словом), после того как собеседник договорил (звонок 23273f67:
-# смех поверх речи сделал агента трудно перебиваемым), сочувствие — одной короткой фразой: на звонке 3c036e63 подсказка
-# «problem» дала 17 с утешений.
 CUE_HINTS = {
-    "joke": "The caller is joking or laughing. When they finish, laugh along out loud: a real, voiced laugh, not "
-            "the word; then answer with a smile in your voice; one light friendly joke is "
-            "fine, then back to business." + _HINT_LANG,
-    "problem": "The caller is upset or shares a problem. When they finish, show warm, sincere sympathy in one short "
-               "sentence, no jokes and no long consoling (same voice, not quieter or slower), then right away say how "
-               "you can help." + _HINT_LANG,
-    "good_news": "The caller shared good news. When they finish, be genuinely happy for them out loud, a joyful "
-                 "exclamation or a warm laugh is welcome, in one sentence, then continue." + _HINT_LANG,
+    "joke": "The caller is joking or laughing. When they finish, laugh along naturally and answer with a smile in your "
+            "voice; one light friendly joke is fine, then back to business." + _HINT_LANG,
+    "problem": "The caller is upset. When they finish, show warm, sincere sympathy in a sentence, no jokes (same voice, "
+               "not quieter or slower), then briefly say how you can help." + _HINT_LANG,
+    "good_news": "The caller shared good news. When they finish, be genuinely and warmly happy for them in a sentence, "
+                 "then continue." + _HINT_LANG,
 }
 
 CUE_LOG = {"joke": "шутит / смеётся", "problem": "делится проблемой", "good_news": "хорошая новость"}
-CUE_HINT_GAP_SEC = 30.0
-CUE_ANY_GAP_SEC = 20.0
-CUE_MAX_PER_CALL = 5  # 24.11.2026: было 3 — владелец хочет больше живых реакций; больше 5 — уже театр
+CUE_HINT_GAP_SEC = 40.0
+CUE_ANY_GAP_SEC = 30.0
+CUE_MAX_PER_CALL = 3  # больше — эмоции превращаются в театр
 INTENT_HINTS = {
     # Звонок 25.10.2026 (043c4070): «…и вежливо попрощайся» → модель сразу вызвала hangup_call, пока клиент ещё
     # называл время. Звонок 07.11.2026 (5bf12c2d): «передам менеджеру», а потом снова «когда удобно» и поход к бэкенду.
