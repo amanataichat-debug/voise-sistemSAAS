@@ -74,14 +74,9 @@ from backend.websockets.function_calls import execute_and_send_function_result
 
 logger = get_logger(__name__)
 
-# Force immediate log flushing to stdout for Render
+# logging.basicConfig(force=True) убран 23.11.2026: он стирал настройку логов приложения (backend/core/logging.py)
+# и возвращал синхронную запись в stdout в цикле звонков. Логгер модуля наследует корневой.
 import logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
-)
 
 # Active connections
 active_gemini_connections: Dict[str, List[WebSocket]] = {}

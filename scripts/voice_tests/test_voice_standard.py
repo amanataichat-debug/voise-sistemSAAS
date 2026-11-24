@@ -125,5 +125,40 @@ ins = lc.OpenAILiveClient("k", card, "cid", telephony=True).build_session_config
 check("порядок: голова платформы → кыргызская линия → карточка → правила платформы",
       ins.startswith(head) and ins.index("# Линия") < ins.index("Ты — Анри") < ins.index("# Шесть твёрдых правил"))
 
+# ── 8. Разговор как у человека (23.11.2026, звонок c3847245) ──────────────────────────────────────────
+check("согласие — решение, а не новый вопрос; не проверять «правильно ли понял»",
+      "Согласие — это решение, а не повод спросить ещё раз" in rules and "Не проверяй, правильно ли понял" in rules)
+check("вопрос — не в конце каждой реплики; ответ на обычный вопрос — одна-две фразы, без перечня вариантов",
+      "а не в конце каждой реплики" in rules and "одна-две короткие фразы" in rules and "без перечня всех вариантов" in rules)
+check("рассуждать вслух вместо слов ожидания; кыргызские «бир карап айтайын», «тактап айтайын» запрещены",
+      "подумай вслух" in rules and "«бир карап айтайын»" in rules and "«тактап айтайын»" in rules)
+check("рецепт OpenAI: No recap, без повторных подтверждений и дежурных предложений в конце",
+      "No recap." in rules and "Avoid repeated acknowledgments and generic closing offers." in rules)
+check("смех и вдох — голосом, без ремарок (OpenAI: perform the sounds, never read stage directions)",
+      "Смех и вдох делай голосом" in head and "не читай ремарки" in head.replace('"\n    "', ""))
+check("не делегировать «как работает / подойдёт ли / сколько стоит» и согласие прислать материалы",
+      "отвечай сам из того, что знаешь" in rules and "просит прислать материалы" in rules and "просит менеджера или перезвонить" in rules)
+
+# ── 9. Механика звука (раздел 7) ─────────────────────────────────────────────────────────────────────
+_app = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
+_mon = _app[_app.find("async def monitor_resources"):_app.find("psutil not available")]
+check("нет принудительного gc.collect() в middleware запросов (замораживал звук до 1,6 с)",
+      "gc.collect()" not in _mon.replace("# gc.collect()", "") and "gc.freeze()" in _app)
+_bad = []
+for d, _, fs in os.walk(os.path.join(ROOT, "backend")):
+    for f in fs:
+        if f.endswith(".py"):
+            t = open(os.path.join(d, f), encoding="utf-8", errors="ignore").read()
+            if re.search(r"^logging\.basicConfig\(", t, re.M):
+                _bad.append(f)
+check("никто не перенастраивает корневой логгер basicConfig (стирал очередь логов)", not _bad, _bad)
+_logsrc = open(os.path.join(ROOT, "backend/core/logging.py"), encoding="utf-8").read()
+check("логи пишет отдельный поток (QueueHandler + QueueListener), после fork очередь пересоздаётся",
+      "QueueListener" in _logsrc and "register_at_fork(after_in_child=_after_fork_in_child)" in _logsrc)
+from backend.services.sip_gateway_service import spoken_name
+check("латинское имя в приветствии — кириллицей (Nurlan → Нурлан, Aibek → Айбек, Meerim → Мээрим)",
+      spoken_name("Nurlan") == "Нурлан" and spoken_name("Aibek") == "Айбек" and spoken_name("Meerim") == "Мээрим"
+      and spoken_name("Айгуль") == "Айгуль", [spoken_name(x) for x in ("Nurlan", "Aibek", "Meerim")])
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

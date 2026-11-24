@@ -44,14 +44,9 @@ from backend.functions import execute_function, normalize_function_name
 
 logger = get_logger(__name__)
 
-# Force immediate log flushing
+# logging.basicConfig(force=True) убран 23.11.2026: он стирал настройку логов приложения (backend/core/logging.py)
+# и возвращал синхронную запись в stdout в цикле звонков. Логгер модуля наследует корневой.
 import logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
-)
 
 # Active connections
 active_grok_connections: Dict[str, List[WebSocket]] = {}

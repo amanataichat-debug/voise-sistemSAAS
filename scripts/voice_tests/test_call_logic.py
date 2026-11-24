@@ -377,6 +377,8 @@ def greeting_personal():
     check("имя: ник из мессенджера («VeTeR», «AIBEK») — не имя, «Анна-Мария» и «Aibek» — имя (07.11.2026)",
           sgs.first_name("VeTeR") == "" and sgs.first_name("AIBEK") == "" and sgs.first_name("Анна-Мария") == "Анна-Мария"
           and sgs.first_name("Aibek") == "Aibek")
+    check("приветствие: латинское имя произносится кириллицей (23.11.2026, «Добрый день, Nurlan!»)",
+          p("Добрый день! Это Анри.", sgs.spoken_name(sgs.first_name("Nurlan Asanov")), day) == "Добрый день, Нурлан! Это Анри.")
     call = types.SimpleNamespace(direction="inbound", caller="996700000000", call_metadata={})
     check("контекст звонка: время Бишкека и время суток", "Сейчас в Бишкеке" in sgs.SipGatewayService.call_context_text(call))
     hint = lc.VOICE_DELEGATION_HINT

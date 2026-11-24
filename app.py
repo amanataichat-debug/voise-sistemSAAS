@@ -312,8 +312,9 @@ if PSUTIL_AVAILABLE:
             # Логируем если использование памяти высокое
             if memory_after > 500:  # 500 MB
                 logger.warning(f"High memory usage: {memory_after:.2f} MB (diff: {memory_diff:.2f} MB)")
-                # Принудительная сборка мусора
-                gc.collect()
+                # gc.collect() здесь убран (23.11.2026): полная сборка мусора в общем цикле событий замораживала
+                # звук идущих звонков до 1,6 с (сторож цикла, звонок c3847245: app.py:316 monitor_resources).
+                # Python собирает мусор сам; объекты старта заморожены gc.freeze() в конце startup_event.
             
             # Добавляем заголовок с информацией о памяти (только в development)
             if not settings.PRODUCTION:
@@ -3639,6 +3640,15 @@ async def startup_event():
             logger.error(f"❌ Error initializing Partners API: {str(e)}")
         
         logger.info("✅ Application started successfully (v3.0 with Grok Voice API)")
+
+        # Всё, что создано при старте (модули, ORM, роутеры), живёт до конца процесса: убираем его из обхода
+        # сборщика мусора, чтобы полные проходы gc были короче и не замораживали звук звонков (23.11.2026).
+        try:
+            gc.collect()
+            gc.freeze()
+            logger.info(f"🧊 gc.freeze: {gc.get_freeze_count()} объектов старта исключены из сборки мусора")
+        except Exception as e:
+            logger.warning(f"gc.freeze не выполнен: {e}")
         
     except Exception as e:
         logger.error(f"❌ Startup error: {str(e)}", exc_info=True)

@@ -23,14 +23,9 @@ from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Force immediate log flushing
+# logging.basicConfig(force=True) убран 23.11.2026: он стирал настройку логов приложения (backend/core/logging.py)
+# и возвращал синхронную запись в stdout в цикле звонков. Логгер модуля наследует корневой.
 import logging
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
-)
 
 def log_sheets(message: str, level: str = "INFO"):
     """Force log to stdout immediately"""

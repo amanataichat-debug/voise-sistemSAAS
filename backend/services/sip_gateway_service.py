@@ -86,6 +86,48 @@ def first_name(name: Optional[str]) -> str:
     return word
 
 
+# Латинское имя из мессенджера («Nurlan», «Aibek») голосовая модель читает в приветствии с английским акцентом
+# (звонок c3847245, 23.11.2026: «Добрый день, Nurlan!»). Для РЕЧИ переводим его в кириллицу по правилам
+# кыргызских и русских имён; в сообщениях имя остаётся как его написал клиент.
+_LAT_DIGRAPHS = (("shch", "щ"), ("sh", "ш"), ("ch", "ч"), ("zh", "ж"), ("kh", "х"), ("ts", "ц"),
+                 ("ya", "я"), ("yu", "ю"), ("yo", "ё"), ("ye", "е"), ("ee", "ээ"), ("ia", "ия"), ("iu", "ию"))
+_LAT_SINGLE = {"a": "а", "b": "б", "c": "к", "d": "д", "e": "е", "f": "ф", "g": "г", "h": "х", "i": "и",
+               "j": "ж", "k": "к", "l": "л", "m": "м", "n": "н", "o": "о", "p": "п", "q": "к", "r": "р",
+               "s": "с", "t": "т", "u": "у", "v": "в", "w": "в", "x": "кс", "y": "ы", "z": "з"}
+_LAT_VOWELS = set("aeiouy")
+
+
+def _translit_part(part: str) -> str:
+    low, out, i = part.lower(), [], 0
+    while i < len(low):
+        prev = low[i - 1] if i else ""
+        for lat, cyr in _LAT_DIGRAPHS:
+            # «ia/iu» после гласной — это «йа»: Aiana → Айана, а не Аияна
+            if low.startswith(lat, i) and not (lat[0] == "i" and prev in _LAT_VOWELS):
+                out.append(cyr)
+                i += len(lat)
+                break
+        else:
+            ch = low[i]
+            if ch in "iy" and prev in _LAT_VOWELS:
+                out.append("й")  # Aibek → Айбек, Aiday → Айдай, Kairat → Кайрат
+            elif ch == "e" and (not prev or prev in _LAT_VOWELS):
+                out.append("э")  # Emil → Эмил, Aelita → Аэлита
+            else:
+                out.append(_LAT_SINGLE.get(ch, ch))
+            i += 1
+    s = "".join(out)
+    return s[:1].upper() + s[1:]
+
+
+def spoken_name(name: str) -> str:
+    """Имя для произношения голосом: латиница → кириллица («Nurlan» → «Нурлан»), остальное как есть."""
+    n = (name or "").strip()
+    if not n or not re.fullmatch(r"[A-Za-z\-]+", n):
+        return n
+    return "-".join(_translit_part(p) for p in n.split("-"))
+
+
 def personalize_greeting(greeting: str, name: str = "", now: Optional[datetime] = None) -> str:
     """
     «Здравствуйте. Чем могу помочь?» → «Добрый вечер, Айбек. Чем могу помочь?» (время — Бишкек).
@@ -925,5 +967,5 @@ class SipGatewayService:
                 greeting = re.sub(r",?\s*\{name\}", "", greeting)
             greeting = " ".join(greeting.split())
         if greeting and personalize:
-            greeting = personalize_greeting(greeting, first_name(contact_name))
+            greeting = personalize_greeting(greeting, spoken_name(first_name(contact_name)))
         return greeting
