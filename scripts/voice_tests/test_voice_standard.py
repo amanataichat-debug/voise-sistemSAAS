@@ -130,8 +130,12 @@ check("согласие — решение, а не новый вопрос; н�
       "Согласие — это решение, а не повод спросить ещё раз" in rules and "Не проверяй, правильно ли понял" in rules)
 check("вопрос — не в конце каждой реплики; ответ на обычный вопрос — одна-две фразы, без перечня вариантов",
       "а не в конце каждой реплики" in rules and "одна-две короткие фразы" in rules and "без перечня всех вариантов" in rules)
-check("рассуждать вслух вместо слов ожидания; кыргызские «бир карап айтайын», «тактап айтайын» запрещены",
-      "подумай вслух" in rules and "«бир карап айтайын»" in rules and "«тактап айтайын»" in rules)
+check("не объявлять, что думаешь; кыргызские «бир карап айтайын», «тактап айтайын», «ойлонуп турайын» запрещены",
+      "Не объявляй, что думаешь" in rules and "подумай вслух" not in rules and "«бир карап айтайын»" in rules
+      and "«тактап айтайын»" in rules and "«ойлонуп турайын»" in rules)
+check("сочувствие — одной короткой фразой, без долгих утешений, сразу помощь (звонок 3c036e63)",
+      "one short sentence" in h.CUE_HINTS["problem"] and "no long consoling" in h.CUE_HINTS["problem"]
+      and "right away say how you can help" in h.CUE_HINTS["problem"])
 check("рецепт OpenAI: No recap, без повторных подтверждений и дежурных предложений в конце",
       "No recap." in rules and "Avoid repeated acknowledgments and generic closing offers." in rules)
 check("смех и вдох — голосом, без ремарок (OpenAI: perform the sounds, never read stage directions)",

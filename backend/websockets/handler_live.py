@@ -158,8 +158,10 @@ MOOD_HINTS = {
 CUE_HINTS = {
     "joke": "The caller is joking or laughing. When they finish, laugh along naturally and answer with a smile in your "
             "voice; one light friendly joke is fine, then back to business." + _HINT_LANG,
-    "problem": "The caller is upset. When they finish, show warm, sincere sympathy in a sentence, no jokes (same voice, "
-               "not quieter or slower), then briefly say how you can help." + _HINT_LANG,
+    # 24.11.2026, звонок 3c036e63: агент утешал 17 с — сочувствие одной короткой фразой, дальше помощь.
+    "problem": "The caller is upset. When they finish, show warm, sincere sympathy in one short sentence, no jokes and "
+               "no long consoling (same voice, not quieter or slower), then right away say how you can help."
+               + _HINT_LANG,
     "good_news": "The caller shared good news. When they finish, be genuinely and warmly happy for them in a sentence, "
                  "then continue." + _HINT_LANG,
 }
