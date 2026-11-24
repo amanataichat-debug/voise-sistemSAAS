@@ -61,10 +61,16 @@ check("эмоции по рецептам OpenAI: смех вслух, сочу�
       and "шёпотом — не больше пары слов" in head and "в меру" not in head and "без театра" not in head)
 check("эмоции и на кыргызском — правило написано по-кыргызски (OpenAI: инструкция на языке речи)",
       "үн чыгарып күл" in head and "боор ооруп" in head)
-check("отклики по рецепту OpenAI: частые, короткие, разные, лёгкие; смех поверх речи — да, слова — нет (МОЖНО 5)",
-      "Use frequent short, varied backchannels" in rules and "тёплый смешок на смешное" in rules
-      and "You may briefly overlap the user with a short laugh or listening sound, never with words." in rules
-      and "Stop speaking when the user interrupts" in rules)
+# 24.11.2026, звонок 23273f67: частые отклики + «можно поверх собеседника» — агента трудно перебить. Баланс:
+check("отклики по шаблону OpenAI 1.1: moderate, смех и сочувствие — в паузах, не поверх слов собеседника (МОЖНО 5)",
+      "Use moderate backchannels. Acknowledge naturally without competing with the main response." in rules
+      and "тёплый смешок на смешное" in rules and "не поверх его слов" in rules
+      and "overlap" not in rules and "frequent" not in rules)
+check("перебивание по шаблону OpenAI 1.1: Stop speaking… Listen to what they say; просьба остановиться — замолчи",
+      "Stop speaking when the user interrupts. Listen to what they say." in rules
+      and "хорошо-хорошо" in rules and "токтоңуз" in rules)
+check("не расслышал — переспроси сам, не к бэкенду (звонок 23273f67: 4 похода к бэкенду с «секундочку»)",
+      "Не расслышал или не понял собеседника — переспроси сам" in rules)
 check("кыргызское правило написано по-кыргызски и про бишкекский аралаш (МОЖНО 2)",
       "Бишкекте кадимки адамдар" in head and "орусча сөздөр кадимкидей кошулат" in head
       and len(KY_LETTERS.findall(head)) >= 20)
@@ -137,8 +143,11 @@ check("согласие — решение, а не новый вопрос; н�
       "Согласие — это решение, а не повод спросить ещё раз" in rules and "Не проверяй, правильно ли понял" in rules)
 check("вопрос — не в конце каждой реплики; ответ на обычный вопрос — одна-две фразы, без перечня вариантов",
       "а не в конце каждой реплики" in rules and "одна-две короткие фразы" in rules and "без перечня всех вариантов" in rules)
-check("рассуждать вслух вместо слов ожидания; кыргызские «бир карап айтайын», «тактап айтайын» запрещены",
-      "подумай вслух" in rules and "«бир карап айтайын»" in rules and "«тактап айтайын»" in rules)
+check("не объявлять, что думаешь; кыргызские «бир карап айтайын», «тактап айтайын», «ойлонуп турайын» запрещены",
+      "Не объявляй, что думаешь, вникаешь или уточняешь" in rules and "подумай вслух" not in rules
+      and "«бир карап айтайын»" in rules and "«тактап айтайын»" in rules and "«ойлонуп турайын»" in rules)
+check("кыргызская инструкция языка запрещает книжные слова (албетте прозвучало на звонке 23273f67)",
+      "албетте" in ll.LOCK_INSTRUCTIONS["ky"])
 check("рецепт OpenAI: No recap, без повторных подтверждений и дежурных предложений в конце",
       "No recap." in rules and "Avoid repeated acknowledgments and generic closing offers." in rules)
 check("смех и вдох — голосом, без ремарок (OpenAI: perform the sounds, never read stage directions)",

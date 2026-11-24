@@ -155,12 +155,12 @@ MOOD_HINTS = {
 # а реакция начиналась поверх ещё говорящего клиента. Теперь: только слова, тот же ровный голос, после клиента.
 # 14.11.2026 (1411-voice-lean): «тем же ровным голосом» убирало интонацию — эмоции звучали как текст. Теперь
 # интонация меняется по ситуации, а голос (тембр, громкость) тот же: без шёпота и замедления, как в 27.10.2026.
-# 24.11.2026 (2411-live-voices): смех — голосом сразу (рецепт OpenAI «laughter-focused backchannels»: смех может
-# коротко наложиться на речь собеседника), сочувствие — одной короткой фразой: на звонке 3c036e63 подсказка
+# 24.11.2026 (2411-live-voices): смех — голосом (не словом), после того как собеседник договорил (звонок 23273f67:
+# смех поверх речи сделал агента трудно перебиваемым), сочувствие — одной короткой фразой: на звонке 3c036e63 подсказка
 # «problem» дала 17 с утешений.
 CUE_HINTS = {
-    "joke": "The caller is joking or laughing. Right away, laugh along out loud: a real, voiced laugh, not the word; "
-            "it may briefly overlap them. When they finish, answer with a smile in your voice; one light friendly joke is "
+    "joke": "The caller is joking or laughing. When they finish, laugh along out loud: a real, voiced laugh, not "
+            "the word; then answer with a smile in your voice; one light friendly joke is "
             "fine, then back to business." + _HINT_LANG,
     "problem": "The caller is upset or shares a problem. When they finish, show warm, sincere sympathy in one short "
                "sentence, no jokes and no long consoling (same voice, not quieter or slower), then right away say how "
