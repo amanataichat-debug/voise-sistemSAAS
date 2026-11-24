@@ -118,8 +118,15 @@ def create_voice(api_key: str, name: str, prompt: str, script: str) -> dict:
     body = {"type": "prompt", "name": name, "prompt": prompt, "model": "auto"}
     if script:
         body["script_hint"] = script[:2000]
-    r = httpx.post(API_URL, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                   json=body, timeout=120)
+    # 24.11.2026: OpenAI иногда отвечает 500 «Voice generation failed. Please try again.» — повторяем сами
+    import time
+    for attempt in range(1, 4):
+        r = httpx.post(API_URL, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                       json=body, timeout=120)
+        if r.status_code < 500 or attempt == 3:
+            break
+        print(f"OpenAI: временная ошибка ({r.status_code}), повтор {attempt + 1} из 3 через {5 * attempt} с…")
+        time.sleep(5 * attempt)
     if r.status_code >= 400:
         raise SystemExit(f"OpenAI отклонил создание голоса ({r.status_code}): {r.text[:800]}")
     data = r.json()
@@ -197,8 +204,16 @@ def main() -> None:
     if len(presets) > 1:
         if a.voice_id or a.key:
             ap.error("--voice-id и --key — только для одного голоса")
+        failed = []
         for name in presets:
-            _run_one(ap, a, name, dict(PRESETS[name]))
+            try:
+                _run_one(ap, a, name, dict(PRESETS[name]))
+            except SystemExit as e:  # один сбой не обрывает остальные голоса
+                print(f"✗ {name}: {e}")
+                failed.append(name)
+        if failed:
+            print("\nНе создались: " + ", ".join(failed) + ". Повторите: python scripts/create_live_voice.py --preset "
+                  + " ".join(failed))
         return
     _run_one(ap, a, presets[0] if presets else None, dict(PRESETS.get(presets[0]) or {}) if presets else {})
 
