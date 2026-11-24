@@ -104,7 +104,7 @@ def is_delegation_error(err: Dict[str, Any], model: str = "") -> bool:
 
 # У голосовой модели ограниченный контекст: длинный промпт ассистента целиком
 # уходит бэкенд-модели, голосовой части отдаём первые N символов.
-LIVE_VOICE_INSTRUCTIONS_MAX_CHARS = int(getattr(settings, "LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", 0) or 6000)
+LIVE_VOICE_INSTRUCTIONS_MAX_CHARS = int(getattr(settings, "LIVE_VOICE_INSTRUCTIONS_MAX_CHARS", 0) or 24000)
 
 DEFAULT_SYSTEM_MESSAGE = "Ты голосовой ассистент Voksy AI. Отвечай коротко и по делу."
 
