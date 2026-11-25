@@ -1,0 +1,105 @@
+/* Админка «Тарифы» (ветка 2511-beauty): каталог тарифов Voksy Beauty.
+   Только токены дизайн-системы кабинета (voksiai.css). Префикс классов — ap-. */
+
+#plans-tab, #plans-app { min-width: 0; max-width: 100%; }
+.ap-wrap { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.ap-hero { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: var(--vf-r-lg);
+  border: 1px solid var(--vf-border); background: linear-gradient(135deg, #fff5f8 0%, #f4f2ff 55%, #fff 100%); }
+.ap-hero-ic { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; flex: none;
+  background: #fff; border: 1px solid #f1d5e2; color: #c2416f; box-shadow: var(--vf-shadow-1); }
+.ap-hero-ic .ic { width: 24px; height: 24px; }
+.ap-hero-main { flex: 1; min-width: 0; }
+.ap-hero-main h2 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+.ap-hero-main p { margin: 4px 0 0; color: var(--vf-text-3); font-size: 13.5px; line-height: 1.45; }
+.ap-hero .btn { flex: none; }
+
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.ap-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px 16px 14px; border-radius: var(--vf-r-lg);
+  border: 1px solid var(--vf-border); background: var(--vf-surface); transition: box-shadow var(--vf-fast), border-color var(--vf-fast); min-width: 0; }
+.ap-card:hover { border-color: var(--vf-border-strong); box-shadow: var(--vf-shadow-1); }
+.ap-card.off { opacity: .72; background: var(--vf-surface-2, #f8fafc); }
+.ap-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ap-name { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ap-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #fde7ef; color: #b4245a; white-space: nowrap; }
+.ap-price { font-family: "Syne", Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.ap-price small { font: 500 13px Inter, sans-serif; color: var(--vf-text-3); margin-left: 5px; letter-spacing: 0; }
+.ap-facts { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--vf-text-2); }
+.ap-facts span { display: flex; align-items: center; gap: 7px; }
+.ap-facts .ic { width: 15px; height: 15px; color: var(--vf-text-4); flex: none; }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ap-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--vf-border); color: var(--vf-text-3); background: var(--vf-surface); }
+.ap-chip .ic { width: 12px; height: 12px; }
+.ap-chip.on { color: #0f7a3a; background: #e7f7ee; border-color: #c4ead4; }
+.ap-chip.off { color: #b91c1c; background: #fdecec; border-color: #f6c9c9; }
+.ap-chip.hid { color: #92400e; background: #fdf3e2; border-color: #f3dcb4; }
+.ap-chip.ind { color: #5b21b6; background: #f1ecff; border-color: #ddd2fb; }
+.ap-chip.trial { color: #1d4ed8; background: #ebf0ff; border-color: #cfdcff; }
+.ap-chip.full { color: #0f766e; background: #e6f7f5; border-color: #bfe8e2; }
+.ap-feats { list-style: none; margin: 2px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--vf-border); display: flex; flex-direction: column; gap: 5px; }
+.ap-feats li { display: flex; gap: 7px; font-size: 12.5px; color: var(--vf-text-2); line-height: 1.35; }
+.ap-feats li .ic { width: 14px; height: 14px; color: var(--vf-success, #16a34a); flex: none; margin-top: 1px; }
+.ap-feats li.more { color: var(--vf-text-4); padding-left: 21px; }
+.ap-code { font-size: 11.5px; color: var(--vf-text-4); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: auto; }
+
+.ap-h { margin: 10px 0 0; font-size: 15px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.ap-h span { font-size: 12.5px; font-weight: 500; color: var(--vf-text-4); }
+.ap-empty { padding: 20px; border: 1px dashed var(--vf-border); border-radius: var(--vf-r-lg); color: var(--vf-text-3); text-align: center; font-size: 14px; }
+.ap-empty.small { padding: 14px; font-size: 13px; text-align: left; }
+.ap-skel { height: 120px; border-radius: var(--vf-r-lg); background: linear-gradient(90deg, #f1f5f9, #f8fafc, #f1f5f9); background-size: 200% 100%;
+  animation: ap-sk 1.2s linear infinite; margin-bottom: 12px; }
+@keyframes ap-sk { to { background-position: -200% 0; } }
+
+.ap-table { border: 1px solid var(--vf-border); border-radius: var(--vf-r-lg); overflow-x: auto; background: var(--vf-surface); }
+.ap-table table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ap-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--vf-text-4); padding: 10px 14px; border-bottom: 1px solid var(--vf-border); }
+.ap-table td { padding: 10px 14px; border-bottom: 1px solid var(--vf-border); vertical-align: top; }
+.ap-table tr:last-child td { border-bottom: 0; }
+.ap-table .muted { color: var(--vf-text-4); font-size: 12px; margin-top: 2px; }
+
+/* ── окно тарифа ── */
+.ap-dlg { max-width: 980px; }
+.ap-edit { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.ap-form .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.ap-form .field { margin-bottom: 12px; }
+.ap-form textarea.input { resize: vertical; min-height: 120px; height: auto; padding: 10px 12px; line-height: 1.45; }
+/* кнопки окна всегда видны: окно длинное, на ноутбуке низа не видно без прокрутки */
+.ap-dlg .vf-dialog-foot { position: sticky; bottom: 0; z-index: 2; background: var(--vf-surface); padding-top: 14px;
+  border-top: 1px solid var(--vf-border); margin-top: 0; }
+.ap-toggles { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ap-toggle { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: 12px; cursor: pointer; }
+.ap-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.ap-toggle .sw { width: 36px; height: 20px; border-radius: 999px; background: #d4d9e2; position: relative; flex: none; margin-top: 1px; transition: background var(--vf-fast); }
+.ap-toggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform var(--vf-fast); }
+.ap-toggle input:checked + .sw { background: var(--vf-accent); }
+.ap-toggle input:checked + .sw::after { transform: translateX(16px); }
+.ap-toggle input:focus-visible + .sw { box-shadow: 0 0 0 3px var(--vf-accent-ring); }
+.ap-toggle .t { display: block; font-weight: 600; font-size: 13.5px; }
+.ap-toggle .d { display: block; font-size: 12px; color: var(--vf-text-3); margin-top: 2px; line-height: 1.35; }
+.ap-err { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #fdecec; color: #b91c1c; font-size: 13px; }
+
+.ap-preview { position: sticky; top: 0; }
+.ap-prev-k { font-size: 12px; font-weight: 600; color: var(--vf-text-4); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+.ap-pv { border: 2px solid var(--vf-accent); border-radius: 16px; padding: 16px; background: var(--vf-surface); box-shadow: var(--vf-shadow-2, 0 8px 24px rgba(15,23,42,.08)); }
+.ap-pv-top { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.ap-pv-price { font-family: "Syne", Inter, sans-serif; font-size: 28px; font-weight: 700; margin-top: 6px; letter-spacing: -.02em; }
+.ap-pv-price small { font: 500 13px Inter, sans-serif; color: var(--vf-text-3); margin-left: 5px; letter-spacing: 0; }
+.ap-pv-staff { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--vf-accent);
+  background: var(--vf-accent-soft, #ebf0ff); padding: 4px 10px; border-radius: 999px; }
+.ap-pv-staff .ic { width: 14px; height: 14px; }
+.ap-pv-desc { font-size: 13px; color: var(--vf-text-3); margin-top: 8px; }
+.ap-pv ul { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.ap-pv li { display: flex; gap: 7px; font-size: 13px; line-height: 1.35; }
+.ap-pv li .ic { width: 15px; height: 15px; color: var(--vf-success, #16a34a); flex: none; margin-top: 1px; }
+
+@media (max-width: 860px) {
+  .ap-edit { grid-template-columns: 1fr; }
+  .ap-preview { position: static; }
+}
+@media (max-width: 560px) {
+  .ap-hero { flex-wrap: wrap; }
+  .ap-hero .btn { width: 100%; justify-content: center; }
+  .ap-form .grid2 { grid-template-columns: 1fr; }
+}

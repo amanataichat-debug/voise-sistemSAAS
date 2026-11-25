@@ -340,6 +340,8 @@ class User(Base, BaseModel):
             return True
         if self.is_profi_plan():
             return True
+        if self._beauty_full_agent():      # Beauty-тариф с автономным агентом (настройка суперадмина)
+            return True
         return self._legacy_agent_plan_active()
 
     def has_active_agent_subscription(self) -> bool:
@@ -370,6 +372,38 @@ class User(Base, BaseModel):
         except Exception:
             return False
 
+    # ------------------------------------------------------------------
+    # Voksy Beauty (ветка 2511-beauty, services/plan_catalog.py)
+    # ------------------------------------------------------------------
+    # Тариф салона (product="beauty"): бот отвечает и записывает (reactive, как Старт), либо
+    # автономный агент, если суперадмин поставил тарифу limits.agent_mode="full".
+
+    def beauty_plan(self):
+        """Активный (не истёкший) Beauty-тариф или None."""
+        try:
+            plan = self.subscription_plan_rel
+            if plan is None or (getattr(plan, "product", None) or "voksy") != "beauty":
+                return None
+            if not self.subscription_end_date:
+                return None
+            from datetime import datetime, timezone
+            end = self.subscription_end_date
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            return plan if end > datetime.now(timezone.utc) else None
+        except Exception:
+            return None
+
+    def is_beauty_plan(self) -> bool:
+        return self.beauty_plan() is not None
+
+    def _beauty_full_agent(self) -> bool:
+        plan = self.beauty_plan()
+        if plan is None:
+            return False
+        limits = plan.limits if isinstance(getattr(plan, "limits", None), dict) else {}
+        return limits.get("agent_mode") == "full"
+
     def agent_mode(self):
         """'full' | 'reactive' | None — см. комментарий выше."""
         if self.agent_subscription_blocked:
@@ -378,8 +412,8 @@ class User(Base, BaseModel):
             return "full"
         if self.has_agent_access():          # оплаченный Profi / legacy agent
             return "full"
-        # Оплаченный Старт или пробный период (3 дня, уровень Старта)
-        if self.is_start_plan() or self.start_trial_active():
+        # Оплаченный Старт, Beauty-тариф или пробный период (3 дня, уровень Старта)
+        if self.is_start_plan() or self.is_beauty_plan() or self.start_trial_active():
             return "reactive"
         return None
 
@@ -398,7 +432,7 @@ class User(Base, BaseModel):
                 started = started.replace(tzinfo=timezone.utc)
             candidates.append(started + timedelta(days=self.AGENT_TRIAL_DAYS))
         if (self.is_profi_plan() or self._legacy_agent_plan_active() or self.is_start_plan()
-                or self.base_trial_active()) and self.subscription_end_date:
+                or self.is_beauty_plan() or self.base_trial_active()) and self.subscription_end_date:
             end = self.subscription_end_date
             if end.tzinfo is None:
                 end = end.replace(tzinfo=timezone.utc)
@@ -413,7 +447,7 @@ class User(Base, BaseModel):
             return "active"
         if self.agent_mode() == "reactive":
             # «trial» — доступ держится только на пробном периоде (уровень Старта)
-            return "active" if self.is_start_plan() else "trial"
+            return "active" if (self.is_start_plan() or self.is_beauty_plan()) else "trial"
         if self.agent_trial_used:
             return "expired"
         return "none"

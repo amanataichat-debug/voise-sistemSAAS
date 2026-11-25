@@ -203,6 +203,8 @@ def booking_resource_create(body: ResourceIn, current_user: User = Depends(get_c
     count = len(bs.resources(db, current_user.id, active_only=False))
     if count >= 50:
         raise HTTPException(status_code=400, detail="Не больше 50 мастеров")
+    if body.is_active is not False:
+        _check_master_limit(db, current_user)
     r = BookingResource(user_id=current_user.id, name="Мастер", color=bs.COLORS[count % len(bs.COLORS)],
                         schedule=dict(bs.DEFAULT_SCHEDULE), days_off=[], position=count)
     try:
@@ -212,6 +214,14 @@ def booking_resource_create(body: ResourceIn, current_user: User = Depends(get_c
     db.add(r)
     db.commit()
     return {"ok": True, "resource": bs.resource_to_dict(r)}
+
+
+def _check_master_limit(db: Session, user: User) -> None:
+    """Voksy Beauty: мастеров в журнале — не больше, чем даёт тариф (plan_catalog.master_limit_error)."""
+    from backend.services.plan_catalog import master_limit_error
+    msg = master_limit_error(db, user)
+    if msg:
+        raise HTTPException(status_code=402, detail=msg)
 
 
 def _resource_or_404(db: Session, user_id, rid: str) -> BookingResource:
@@ -228,6 +238,8 @@ def _resource_or_404(db: Session, user_id, rid: str) -> BookingResource:
 def booking_resource_update(resource_id: str, body: ResourceIn, current_user: User = Depends(get_current_user),
                             db: Session = Depends(get_db)) -> Dict[str, Any]:
     r = _resource_or_404(db, current_user.id, resource_id)
+    if body.is_active is True and not r.is_active:
+        _check_master_limit(db, current_user)   # снова включить мастера — в пределах тарифа
     try:
         _apply_resource(r, body)
     except bs.BookingError as e:

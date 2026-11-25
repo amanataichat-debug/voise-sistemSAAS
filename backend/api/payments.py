@@ -27,7 +27,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -270,9 +270,23 @@ def get_all_plans_with_prices(db: Optional[Session] = None) -> Dict[str, Any]:
 # =============================================================================
 
 class CreatePaymentRequest(BaseModel):
-    """Модель запроса на создание платежа"""
-    plan_code: Literal["ai_voice", "start", "profi"] = "ai_voice"
+    """Модель запроса на создание платежа. plan_code — тариф из конфига (ai_voice, start, profi) или
+    Beauty-тариф из базы (beauty_*); что именно можно оплатить — plan_catalog.purchasable."""
+    plan_code: str = Field("ai_voice", min_length=2, max_length=20)
     duration_months: Literal[1, 6, 12] = 1
+
+
+def _beauty_price_info(plan, months: int) -> Dict[str, Any]:
+    """Цена Beauty-тарифа за период — тем же расчётом скидок, что у прежних тарифов."""
+    base_price = float(plan.price or 0)
+    return {
+        "plan_code": plan.code,
+        "plan_name": plan.name,
+        "max_assistants": int(plan.max_assistants or 0),
+        "description": plan.description or "",
+        "features": list(plan.features or []),
+        **calculate_period_price(base_price, months),
+    }
 
 
 # =============================================================================
@@ -290,6 +304,18 @@ async def get_subscription_plans(db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get subscription plans"
         )
+
+
+@router.get("/my-plans", response_model=Dict[str, Any])
+def get_my_plans(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Тарифы для окна оплаты именно этого кабинета: салонам — Voksy Beauty (+ индивидуальный
+    тариф, если его завёл суперадмин), остальным — AI Voice / Старт / Profi. product = beauty | voksy."""
+    from backend.services.plan_catalog import catalog_for
+    try:
+        return catalog_for(db, current_user)
+    except Exception as e:
+        logger.error(f"❌ Error in get_my_plans: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get plans")
 
 
 @router.get("/plans/{plan_code}", response_model=Dict[str, Any])
@@ -334,11 +360,20 @@ async def create_payment(
         logger.info(f"🚀 Creating Finik payment for user {current_user.id}")
         logger.info(f"   Plan: {plan_code}, Duration: {duration_months} months")
 
-        if plan_code not in SUBSCRIPTION_PLANS_CONFIG:
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if not user:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Неизвестный тариф: {plan_code}. Доступные: {ALLOWED_PLAN_CODES}"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
             )
+
+        # Салонам — только Voksy Beauty, остальным — только прежние тарифы (решение 25.11.2026);
+        # индивидуальный тариф — только своему клиенту.
+        from backend.services.plan_catalog import PlanError, purchasable
+        try:
+            beauty_plan = purchasable(db, user, plan_code)
+        except PlanError as pe:
+            raise HTTPException(status_code=pe.status, detail=pe.message)
 
         if not FinikService.is_configured():
             logger.error("❌ Finik is not configured (FINIK_API_KEY / FINIK_PRIVATE_PEM / FINIK_ACCOUNT_ID)")
@@ -347,15 +382,8 @@ async def create_payment(
                 detail="Payment system not configured. Contact administrator."
             )
 
-        user = db.query(User).filter(User.id == current_user.id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        # Получаем или создаем план подписки в БД
-        plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == plan_code).first()
+        # Получаем или создаем план подписки в БД (Beauty-тариф уже найден и проверен выше)
+        plan = beauty_plan or db.query(SubscriptionPlan).filter(SubscriptionPlan.code == plan_code).first()
         if not plan:
             plan_config = SUBSCRIPTION_PLANS_CONFIG[plan_code]
             plan = SubscriptionPlan(
@@ -370,9 +398,17 @@ async def create_payment(
             db.flush()
             logger.info(f"✅ Created subscription plan in DB: {plan_code}")
 
-        # Информация о цене (цена — из БД)
-        price_info = get_plan_price_info(plan_code, duration_months, db)
+        # Информация о цене: прежние тарифы — из конфига, Beauty — из базы (правит суперадмин)
+        if beauty_plan is not None:
+            price_info = _beauty_price_info(beauty_plan, duration_months)
+        else:
+            price_info = get_plan_price_info(plan_code, duration_months, db)
         subscription_price = price_info["final_price"]
+        if subscription_price <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Этот тариф бесплатный — его включает администратор"
+            )
         subscription_days = price_info["days"]
         plan_name = price_info["plan_name"]
         discount_percent = price_info["discount_percent"]

@@ -530,7 +530,8 @@
   // ------------------------------------------------------------------ Profi
   function renderProfi() {
     var box = $('dh-profi');
-    if (data.agent_mode === 'full') { box.hidden = true; return; }
+    // Салонам (Voksy Beauty) тариф Profi не продаётся — карточку не показываем
+    if (data.agent_mode === 'full' || (data.plan && data.plan.beauty)) { box.hidden = true; return; }
     box.hidden = false;
     box.innerHTML = '<span class="dh-profi-tag">' + ic('lock') + 'Profi</span>' +
       '<h3>Автономный агент обзвона</h3>' +

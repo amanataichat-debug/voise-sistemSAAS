@@ -405,6 +405,11 @@
     drawMasters(d);
     S.$('#bk-add-m', d.el).addEventListener('click', function () {
       S.api('/api/booking/resources', { method: 'POST', body: { name: 'Мастер ' + (resources().length + 1) } }).then(function (r) {
+        if (!r.ok && r.status === 402 && window.VF && VF.toast) {   // мастеров больше, чем даёт тариф
+          VF.toast(S.apiError(r), { type: 'error', duration: 10000, actionLabel: 'Сменить тариф',
+            action: function () { location.href = '/static/dashboard.html#plans'; } });
+          return;
+        }
         if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
         st.data.resources.push(r.data.resource); drawMasters(d);
       });

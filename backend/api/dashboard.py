@@ -95,8 +95,11 @@ def _plan(user: User) -> Dict[str, Any]:
     if end is not None:
         left = max(0, (end - datetime.now(timezone.utc)).total_seconds())
     trial = bool(plan and plan.code in ("free", "referral_trial"))
+    from backend.services.plan_catalog import is_beauty_user, plan_product
     return {
         "code": plan.code if plan else None,
+        "product": plan_product(plan),                 # voksy | beauty (ветка 2511-beauty)
+        "beauty": is_beauty_user(user),                # салон: тарифы Voksy Beauty, без апселла Profi
         "name": ("Пробный период" if trial else plan.name) if plan else None,
         "is_trial": trial,
         "end_date": _iso(end),

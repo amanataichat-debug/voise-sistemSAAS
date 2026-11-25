@@ -14,6 +14,12 @@
   * Внутри разрешённых эндпоинтов — точечные запреты: в каталоге сотрудник меняет только позиции
     (не «вопрос-ответ» и не инструкции), в аналитике не видит расходов, /api/users/me не отдаёт ключи.
 
+Voksy Beauty (ветка 2511-beauty): у салона на Beauty-тарифе места ВХОДЯТ в тариф — бесплатно, но не
+больше limits.staff тарифа (Beauty Start 3, AI 10, Pro 20; на пробном — лимит тарифа с limits.trial).
+Срок места = срок тарифа: цикл продления переносит его на новый срок после оплаты тарифа; тариф
+кончился — сотрудник выключается («тариф»), тариф понизили — выключаются самые новые сверх лимита
+(«лимит»). Условия — plan_catalog.staff_terms, проверка — pay_seat под блокировкой строки владельца.
+
 Разделы (PERMISSIONS): inbox — чаты, crm — клиенты/задачи/звонки агента, booking — записи,
 booking_setup — мастера, график и правила записи, catalog — каталог, analytics — аналитика.
 Деньги, тарифы, настройки бота, каналы, телефония, голосовой помощник — только владелец.
@@ -377,11 +383,40 @@ def owner_is_free(owner) -> bool:
 
 
 def owner_plan_ok(owner) -> bool:
-    """Сотрудники — на тарифах с ботом (Старт, Profi, пробный)."""
+    """Сотрудники — на тарифах с ботом (Старт, Profi, Voksy Beauty, пробный)."""
     try:
         return owner.agent_mode() in ("full", "reactive")
     except Exception:
         return False
+
+
+def included_terms(db: Session, owner) -> Optional[Dict[str, Any]]:
+    """Места входят в тариф (Voksy Beauty): {limit, until, plan_name, trial}. None — прежние правила
+    (место за TEAM_SEAT_SOM с кошелька)."""
+    try:
+        from backend.services.plan_catalog import staff_terms
+        return staff_terms(db, owner)
+    except Exception as e:
+        logger.warning(f"[TEAM] staff terms of {getattr(owner, 'id', '?')}: {e}")
+        return None
+
+
+def _total_cap(terms: Optional[Dict[str, Any]]) -> int:
+    """Сколько сотрудников (вместе с выключенными) можно держать в списке."""
+    if terms is None:
+        return TEAM_MAX_MEMBERS
+    limit = terms.get("limit")
+    return (int(limit) + 20) if limit else 200
+
+
+def _active_others(db: Session, owner_id, member, older_only: bool = False) -> int:
+    """Сколько ещё сотрудников владельца включено (older_only — только добавленных раньше этого)."""
+    from backend.models.team import TeamMember
+    q = db.query(TeamMember.id).filter(TeamMember.owner_id == owner_id, TeamMember.is_active.is_(True),
+                                       TeamMember.id != member.id)
+    if older_only and member.created_at is not None:
+        q = q.filter(TeamMember.created_at < member.created_at)
+    return q.count()
 
 
 class TeamError(Exception):
@@ -395,12 +430,17 @@ def _som(tyiyn: int) -> str:
     return (f"{v:,.0f}" if v == int(v) else f"{v:,.2f}").replace(",", " ")
 
 
-def charge_seat(db: Session, owner_id, member, *, now: Optional[datetime] = None) -> bool:
+def pay_seat(db: Session, owner_id, member, *, now: Optional[datetime] = None, renewal: bool = False) -> str:
     """
-    Оплатить место сотрудника на TEAM_SEAT_DAYS дней с кошелька владельца (строка владельца — под
-    блокировкой, как у кошелька). True — оплачено (paid_until продлён), False — не хватает денег
-    (ничего не изменено, транзакция откатана). Бесплатным владельцам (админ) — без списания.
-    Коммитит сам.
+    Оплатить (продлить) место сотрудника. Строка владельца — под блокировкой (как у кошелька), поэтому
+    два одновременных добавления не обойдут ни баланс, ни лимит тарифа. Коммитит сам.
+
+      "ok"         — место продлено (paid_until);
+      "no_money"   — на кошельке меньше TEAM_SEAT_SOM (прежние тарифы);
+      "over_limit" — Beauty: включённых сотрудников уже столько, сколько даёт тариф (при продлении —
+                     считаются только добавленные раньше: остаются первые по дате добавления);
+      "plan_ended" — Beauty: срок тарифа уже прошёл (или владелец не найден).
+    При отказе ничего не меняется (транзакция откатана). Админу места бесплатны и без срока.
     """
     from backend.models.wallet_transaction import WalletTransactionType
     from backend.services.wallet_service import WalletService
@@ -408,23 +448,56 @@ def charge_seat(db: Session, owner_id, member, *, now: Optional[datetime] = None
     owner = WalletService._lock_user(db, owner_id)
     if owner is None:
         db.rollback()
-        return False
+        return "plan_ended"
     base = _aware(member.paid_until)
     base = base if base and base > now else now
     if owner_is_free(owner):
         member.paid_until = None   # без срока: продлевать нечего
         db.commit()
-        return True
+        return "ok"
+    terms = included_terms(db, owner)
+    if terms is not None:
+        until = _aware(terms.get("until"))
+        if until is None or until <= now:
+            db.rollback()
+            return "plan_ended"
+        limit = terms.get("limit")
+        if limit and _active_others(db, owner.id, member, older_only=renewal) >= int(limit):
+            db.rollback()
+            return "over_limit"
+        member.paid_until = until    # место живёт, пока живёт тариф; продление — вместе с тарифом
+        db.commit()
+        logger.info(f"[TEAM] seat {member.id} included in {terms.get('plan_name')} → owner {owner.id}, until {until}")
+        return "ok"
     price = seat_price_tyiyn()
     if int(owner.wallet_balance or 0) < price:
         db.rollback()
-        return False
+        return "no_money"
     WalletService._add(db, owner, WalletTransactionType.TEAM, -price,
                        note=f"Сотрудник «{member.name}» — {TEAM_SEAT_DAYS} дней")
     member.paid_until = base + timedelta(days=TEAM_SEAT_DAYS)
     db.commit()
     logger.info(f"[TEAM] seat {member.id} paid {price / 100:.0f} KGS → owner {owner.id}, until {member.paid_until}")
-    return True
+    return "ok"
+
+
+def charge_seat(db: Session, owner_id, member, *, now: Optional[datetime] = None) -> bool:
+    """Совместимость: True — место оплачено/продлено (см. pay_seat)."""
+    return pay_seat(db, owner_id, member, now=now) == "ok"
+
+
+def _limit_error(terms: Dict[str, Any]) -> TeamError:
+    from backend.services.plan_catalog import limit_message
+    return TeamError("plan_limit", limit_message(terms), 402,
+                     {"limit": terms.get("limit"), "plan": terms.get("plan_name")})
+
+
+def _seat_error(result: str, owner, terms: Optional[Dict[str, Any]]) -> TeamError:
+    if result == "over_limit" and terms:
+        return _limit_error(terms)
+    if result == "plan_ended":
+        return TeamError("plan_required", "Тариф закончился — продлите его, чтобы включить сотрудников", 402)
+    return _need_money_error(owner)
 
 
 def _need_money_error(owner, count: int = 1) -> TeamError:
@@ -494,14 +567,28 @@ def team_summary(db: Session, owner) -> Dict[str, Any]:
     members = list_members(db, owner.id)
     active = [m for m in members if m.is_active]
     free = owner_is_free(owner)
-    return {
+    terms = None if free else included_terms(db, owner)
+    out = {
         "members": [member_dict(m, now) for m in members],
         "seat_som": TEAM_SEAT_SOM, "seat_days": TEAM_SEAT_DAYS, "max_members": TEAM_MAX_MEMBERS,
         "active_count": len(active), "monthly_som": 0 if free else TEAM_SEAT_SOM * len(active),
         "can_add": len(members) < TEAM_MAX_MEMBERS, "free": free, "plan_ok": owner_plan_ok(owner) or free,
         "wallet_som": round(int(owner.wallet_balance or 0) / 100, 2),
         "permissions": available_permissions(owner),
+        "included": False,
     }
+    if terms is not None:
+        # Voksy Beauty: места входят в тариф — без оплаты, но не больше лимита тарифа
+        limit = terms.get("limit")
+        until = _aware(terms.get("until"))
+        out.update({
+            "included": True, "seat_som": 0, "monthly_som": 0, "limit": limit,
+            "plan_name": terms.get("plan_name"), "trial": bool(terms.get("trial")),
+            "plan_until": until.isoformat() if until else None,
+            "max_members": limit or _total_cap(terms),
+            "can_add": (not limit or len(active) < int(limit)) and len(members) < _total_cap(terms),
+        })
+    return out
 
 
 def generate_password() -> str:
@@ -573,25 +660,35 @@ def create_member(db: Session, owner, *, name: str, email: str, password: Option
     from backend.models.team import TeamMember
     free = owner_is_free(owner)
     if not owner_plan_ok(owner) and not free:
-        raise TeamError("plan_required", "Сотрудники доступны на тарифах Старт и Profi", 402)
+        raise TeamError("plan_required", "Сотрудники доступны на тарифах Старт, Profi и Voksy Beauty", 402)
     perms = clean_permissions(permissions)
     if not perms:
         raise TeamError("no_permissions", "Отметьте хотя бы один раздел, с которым будет работать сотрудник")
     clean_name = _clean_name(name)
     key = _check_email(db, email)
     pw = _check_password(password) if password else generate_password()
-    if len(list_members(db, owner.id)) >= TEAM_MAX_MEMBERS:
-        raise TeamError("limit", f"Можно добавить до {TEAM_MAX_MEMBERS} сотрудников")
-    if not free and int(owner.wallet_balance or 0) < seat_price_tyiyn():
-        raise _need_money_error(owner)
+    terms = None if free else included_terms(db, owner)
+    members = list_members(db, owner.id)
+    if terms is not None:
+        limit = terms.get("limit")
+        if limit and sum(1 for x in members if x.is_active) >= int(limit):
+            raise _limit_error(terms)
+        if len(members) >= _total_cap(terms):
+            raise TeamError("limit", f"В списке уже {len(members)} сотрудников вместе с выключенными — удалите лишних")
+    else:
+        if len(members) >= TEAM_MAX_MEMBERS:
+            raise TeamError("limit", f"Можно добавить до {TEAM_MAX_MEMBERS} сотрудников")
+        if not free and int(owner.wallet_balance or 0) < seat_price_tyiyn():
+            raise _need_money_error(owner)
     m = TeamMember(owner_id=owner.id, email=key, name=clean_name, phone=_clean_phone(phone),
                    role_title=(role_title or "").strip()[:80] or None, password_hash=hash_password(pw),
                    permissions=perms, is_active=True, token_version=1)
     db.add(m)
     db.flush()
-    if not charge_seat(db, owner.id, m):   # rollback внутри — сотрудник не создан
+    result = pay_seat(db, owner.id, m)   # при отказе rollback внутри — сотрудник не создан
+    if result != "ok":
         db.rollback()
-        raise _need_money_error(owner)
+        raise _seat_error(result, owner, terms)
     db.refresh(m)
     logger.info(f"[TEAM] owner {owner.id} added member {m.id} ({key}), perms={perms}")
     return m, pw
@@ -649,15 +746,23 @@ def activate(db: Session, owner, member_id):
     now = _now()
     free = owner_is_free(owner)
     if not owner_plan_ok(owner) and not free:
-        raise TeamError("plan_required", "Сотрудники доступны на тарифах Старт и Profi", 402)
+        raise TeamError("plan_required", "Сотрудники доступны на тарифах Старт, Profi и Voksy Beauty", 402)
+    terms = None if free else included_terms(db, owner)
     m = _get_member(db, owner.id, member_id, lock=True)
     if m.is_active:
         db.rollback()
         return m
     paid = _aware(m.paid_until)
-    if not free and (paid is None or paid <= now):
-        if not charge_seat(db, owner.id, m, now=now):
-            raise _need_money_error(owner)
+    if terms is not None:
+        # Beauty: место входит в тариф — проверяем лимит и ставим срок места = срок тарифа
+        result = pay_seat(db, owner.id, m, now=now)
+        if result != "ok":
+            raise _seat_error(result, owner, terms)
+        m = _get_member(db, owner.id, member_id, lock=True)
+    elif not free and (paid is None or paid <= now):
+        result = pay_seat(db, owner.id, m, now=now)
+        if result != "ok":
+            raise _seat_error(result, owner, terms)
         m = _get_member(db, owner.id, member_id, lock=True)
     m.is_active = True
     m.status_reason = None
@@ -769,21 +874,33 @@ def renew_due_seats(now: Optional[datetime] = None) -> Dict[str, Any]:
                                               "Продлите тариф и включите сотрудника в Настройках → Сотрудники."))
                     continue
                 name = m.name
-                if charge_seat(db, owner.id, m, now=now):
+                terms = None if free else included_terms(db, owner)
+                result = pay_seat(db, owner.id, m, now=now, renewal=True)
+                if result == "ok":
                     out["renewed"] += 1
                     continue
                 m = db.query(TeamMember).filter(TeamMember.id == mid).with_for_update().first()
                 if m is None:
                     db.rollback()
                     continue
-                m.is_active, m.status_reason = False, "unpaid"
+                reason = {"over_limit": "limit", "plan_ended": "plan"}.get(result, "unpaid")
+                m.is_active, m.status_reason = False, reason
                 m.token_version = int(m.token_version or 1) + 1
                 db.commit()
                 invalidate(mid)
                 out["disabled"] += 1
-                out["notify"].append((str(owner.id), f"👤 Сотрудник «{name}» отключён: на кошельке не хватило "
-                                      f"{TEAM_SEAT_SOM} сом на продление места. Пополните кошелёк и включите "
-                                      "сотрудника в Настройках → Сотрудники."))
+                if reason == "limit" and terms:
+                    from backend.services.plan_catalog import upto
+                    text_ = (f"👤 Сотрудник «{name}» отключён: в тарифе {terms.get('plan_name')} — до "
+                             f"{upto(terms.get('limit') or 0)}. Перейдите на тариф больше или выключите другого "
+                             "сотрудника и включите этого в разделе «Сотрудники».")
+                elif reason == "plan":
+                    text_ = (f"👤 Сотрудник «{name}» отключён: закончился тариф. Продлите тариф и включите "
+                             "сотрудника в разделе «Сотрудники».")
+                else:
+                    text_ = (f"👤 Сотрудник «{name}» отключён: на кошельке не хватило {TEAM_SEAT_SOM} сом на "
+                             "продление места. Пополните кошелёк и включите сотрудника в Настройках → Сотрудники.")
+                out["notify"].append((str(owner.id), text_))
             except Exception as e:
                 db.rollback()
                 logger.error(f"[TEAM] renew {mid}: {e}")

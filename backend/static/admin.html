@@ -1023,6 +1023,7 @@
   <link rel="stylesheet" href="/static/css/voksiai.css">
   <link rel="stylesheet" href="/static/css/voksiai-legacy.css">
   <link rel="stylesheet" href="/static/admin/clients.css?v=3">
+  <link rel="stylesheet" href="/static/admin/plans.css">
   <script defer src="/static/js/i18n.js"></script>
   <script defer src="/static/js/ui.js"></script>
 </head>
@@ -1086,6 +1087,7 @@
         <div class="tab active" data-tab="users">Клиенты</div>
         <div class="tab" data-tab="agents">Агенты</div>
         <div class="tab" data-tab="stats">Статистика</div>
+        <div class="tab" data-tab="plans">Тарифы</div>
         <div class="tab" data-tab="user-details" style="display: none;">Детали пользователя</div>
       </div>
       
@@ -1093,6 +1095,11 @@
            вход в кабинет — static/admin/clients.js. Прежний список пользователей заменён. -->
       <div class="tab-content active" id="users-tab">
         <div id="clients-app"></div>
+      </div>
+
+      <!-- Таб «Тарифы» (ветка 2511-beauty): каталог тарифов Voksy Beauty — static/admin/plans.js -->
+      <div class="tab-content" id="plans-tab">
+        <div id="plans-app"></div>
       </div>
 
       <!-- Таб с использованием агентов (Voksy AI Agent) -->
@@ -3401,5 +3408,6 @@
   };
 </script>
 <script defer src="/static/admin/clients.js?v=3"></script>
+<script defer src="/static/admin/plans.js"></script>
 </body>
 </html>

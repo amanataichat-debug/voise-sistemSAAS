@@ -89,6 +89,15 @@
 .tm-cost { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; background: #fff8e8; border: 1px solid #f5dfa6; font-size: 13px;
   color: #6b4d00; line-height: 1.4; }
 .tm-cost .ic { width: 18px; height: 18px; flex: none; }
+/* Voksy Beauty: место входит в тариф */
+.tm-cost.ok { background: #ecfdf3; border-color: #b7ebcd; color: #0f5f33; }
+.tm-stat .v.tm-plan { font-size: 16px; line-height: 1.25; }
+.tm-upsell { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; margin-top: 12px;
+  background: linear-gradient(135deg, #eef3ff, #fff); border: 1px solid #cfdcff; font-size: 13.5px; color: var(--vf-text-2); line-height: 1.4; }
+.tm-upsell > .ic { width: 20px; height: 20px; flex: none; color: var(--vf-accent); }
+.tm-upsell > div { flex: 1; min-width: 0; }
+.tm-upsell .btn { flex: none; }
+@media (max-width: 560px) { .tm-upsell { flex-wrap: wrap; } .tm-upsell .btn { width: 100%; justify-content: center; } }
 
 /* кнопки окна сотрудника всегда видны: окно длинное, на ноутбуке низа не видно без прокрутки */
 .tm-dlg .vf-dialog-foot { position: sticky; bottom: 0; z-index: 2; background: var(--vf-surface); padding-top: 14px;

@@ -44,7 +44,10 @@ async def get_my_subscription(
         # Проверяем, что у пользователя есть даты подписки
         # Если нет - возможно, стоит создать триальную подписку
         now = datetime.now(timezone.utc)  # Используем UTC для согласованности
-        if not current_user.subscription_start_date or not current_user.subscription_end_date:
+        # Только кабинет без срока подписки. Раньше хватало отсутствия даты НАЧАЛА — и оплаченный
+        # тариф (срок есть, начала нет: ручная правка, старые записи) молча заменялся пробным
+        # периодом (ветка 2511-beauty).
+        if not current_user.subscription_end_date:
             try:
                 # Импортируем здесь, чтобы избежать циклических импортов
                 from backend.services.subscription_service import SubscriptionService

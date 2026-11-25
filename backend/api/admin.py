@@ -5,7 +5,7 @@ Admin API endpoints for WellcomeAI application.
 ✅ v2.2: Исправлен эндпоинт смены тарифа (Body вместо Query)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Path, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sql_func, case
 from typing import List, Dict, Any, Optional
@@ -93,8 +93,8 @@ AGENT_ACCESS_PLAN_CODES = {"profi", "agent"}
 PLAN_DISPLAY_ORDER = ["free", "referral_trial", "ai_voice", "start", "profi", "agent"]
 
 
-def get_admin_plan_grid() -> Dict[str, Dict[str, Any]]:
-    """Полная тарифная сетка, доступная админу для назначения."""
+def get_admin_plan_grid(db: Optional[Session] = None) -> Dict[str, Dict[str, Any]]:
+    """Полная тарифная сетка, доступная админу для назначения (с db — и Beauty-тарифы из базы)."""
     from backend.api.payments import SUBSCRIPTION_PLANS_CONFIG
 
     grid: Dict[str, Dict[str, Any]] = {}
@@ -124,6 +124,27 @@ def get_admin_plan_grid() -> Dict[str, Dict[str, Any]]:
     for code, entry in grid.items():
         entry["grants_agent_access"] = code in AGENT_ACCESS_PLAN_CODES
 
+    # Voksy Beauty (ветка 2511-beauty): тарифы салонов живут только в базе, правит их вкладка
+    # «Тарифы» (/api/admin/plans/catalog); здесь — чтобы админ мог назначить такой тариф вручную.
+    if db is not None:
+        from backend.models.subscription import SubscriptionPlan
+        from backend.services import plan_catalog
+        rows = (db.query(SubscriptionPlan).filter(SubscriptionPlan.product == plan_catalog.PRODUCT_BEAUTY)
+                .order_by(SubscriptionPlan.for_user_id.isnot(None), SubscriptionPlan.sort_order).all())
+        for p in rows:
+            staff = plan_catalog.staff_limit_of(p)
+            grid[p.code] = {
+                "code": p.code,
+                "name": p.name + (" (индивидуальный)" if p.for_user_id else ""),
+                "price": float(p.price or 0),
+                "max_assistants": int(p.max_assistants or 0),
+                "description": (p.description or "") + (f" · до {plan_catalog.upto(staff)}" if staff else ""),
+                "is_trial_default": False,
+                "payable": bool(p.is_active),
+                "product": plan_catalog.PRODUCT_BEAUTY,
+                "grants_agent_access": plan_catalog.agent_mode_of(p) == "full",
+            }
+
     return grid
 
 
@@ -138,6 +159,10 @@ def _sync_plan_row(db: Session, code: str, entry: Dict[str, Any]):
     from backend.models.subscription import SubscriptionPlan
 
     plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == code).first()
+
+    # Beauty-тариф: строка в базе и есть источник истины — ничего не «чиним»
+    if entry.get("product") == "beauty":
+        return plan
 
     if not plan:
         plan = SubscriptionPlan(
@@ -428,6 +453,43 @@ async def get_user_details(
         )
 
 
+# ─────────────── Каталог тарифов (ветка 2511-beauty): вкладка «Тарифы» админки ───────────────
+# Beauty-тарифы живут только в базе — здесь меняются цена, лимит сотрудников, режим ИИ, кредиты,
+# текст «что входит», показ и продажа; заводятся новые и индивидуальные (для одного клиента).
+# Каждая правка пишется в admin_audit_log (action="plan"). Логика — services/plan_catalog.py.
+
+@router.get("/plans/catalog", response_model=Dict[str, Any])
+def admin_plan_catalog(current_user: User = Depends(check_admin_access), db: Session = Depends(get_db)):
+    from backend.services import plan_catalog
+    return plan_catalog.admin_overview(db)
+
+
+@router.patch("/plans/catalog/{code}", response_model=Dict[str, Any])
+def admin_plan_update(code: str = Path(..., max_length=20), data: Dict[str, Any] = Body(...),
+                      current_user: User = Depends(check_admin_access), db: Session = Depends(get_db)):
+    from backend.services import plan_catalog
+    try:
+        plan_catalog.admin_update(db, current_user, code, data)
+    except plan_catalog.PlanError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return plan_catalog.admin_overview(db)
+
+
+@router.post("/plans/catalog", response_model=Dict[str, Any])
+def admin_plan_create(data: Dict[str, Any] = Body(...), current_user: User = Depends(check_admin_access),
+                      db: Session = Depends(get_db)):
+    from backend.services import plan_catalog
+    try:
+        row = plan_catalog.admin_create(db, current_user, data)
+    except plan_catalog.PlanError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=e.message)
+    out = plan_catalog.admin_overview(db)
+    out["created"] = row["code"]
+    return out
+
+
 @router.get("/plans", response_model=List[Dict[str, Any]])
 async def get_admin_plans(
     current_user: User = Depends(check_admin_access),
@@ -442,13 +504,17 @@ async def get_admin_plans(
     """
     from backend.models.subscription import SubscriptionPlan
 
-    grid = get_admin_plan_grid()
+    grid = get_admin_plan_grid(db)
     db_plans = {p.code: p for p in db.query(SubscriptionPlan).all()}
 
     result = []
-    for code in PLAN_DISPLAY_ORDER:
+    order = PLAN_DISPLAY_ORDER + [c for c, e in grid.items() if e.get("product") == "beauty"]
+    for code in order:
         entry = grid.get(code)
         if not entry:
+            continue
+        if entry.get("product") == "beauty":
+            result.append({**entry, "in_db": True, "in_db_mismatch": False})
             continue
         row = db_plans.get(code)
         result.append({
@@ -570,7 +636,7 @@ async def update_user_subscription(
         # Get user with validation
         user = await UserService.get_user_by_id(db, user_id)
 
-        grid = get_admin_plan_grid()
+        grid = get_admin_plan_grid(db)
         entry = grid.get(request.plan_code)
         if not entry:
             raise HTTPException(

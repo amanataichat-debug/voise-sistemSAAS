@@ -113,6 +113,8 @@
     menu.forEach(function (item) {
       // Финансы — где есть выручка: записи или заказы (у ниши без них раздел пустой)
       if (item.money && biz && biz.niche && !mods.booking && !mods.orders) return;
+      // Салону (Voksy Beauty) тариф Profi не продаётся — пункт с замком «Profi» не показываем
+      if (item.profi && biz && biz.beauty && !profi) return;
       if (item.id === 'crm-nav-item' && profi) {
         // Profi: «CRM» — клиенты агента (общая страница со Стартом), а не старая база контактов ассистентов
         item = Object.assign({}, item, { href: '/static/start-crm.html', aliases: ['/static/crm.html', '/static/crm-contact.html'] });

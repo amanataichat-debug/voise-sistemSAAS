@@ -286,10 +286,19 @@ class FinikPaymentService:
         # Тариф profi даёт доступ к агенту-оркестратору и месячный пакет
         # кредитов (идемпотентно по payment_transaction)
         # Тариф start — агент «только отвечает»: свой меньший пакет кредитов.
-        if plan_code in ("profi", "start"):
+        # Beauty-тариф: кредиты бота — только если суперадмин включил их в тариф (limits.credits_month);
+        # по умолчанию 0 — ИИ-переписка оплачивается кредитами отдельно.
+        beauty_credits = 0
+        if (getattr(plan, "product", None) or "voksy") == "beauty":
+            from backend.services.plan_catalog import credits_month_of
+            beauty_credits = credits_month_of(plan)
+        if plan_code in ("profi", "start") or beauty_credits > 0:
             try:
                 from backend.services.credit_service import CreditService
-                credits = CreditService.SUBSCRIPTION_CREDITS if plan_code == "profi" else CreditService.START_CREDITS
+                if beauty_credits > 0:
+                    credits = beauty_credits
+                else:
+                    credits = CreditService.SUBSCRIPTION_CREDITS if plan_code == "profi" else CreditService.START_CREDITS
                 CreditService.grant_subscription(
                     db, user, transaction, credits=credits * max(1, duration_months),
                     notes=f"{plan_code} plan agent credits ({duration_months} мес)",

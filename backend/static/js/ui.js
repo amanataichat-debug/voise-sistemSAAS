@@ -726,7 +726,8 @@
     [/^\/api\/wallet\/balance$/, 30000],
     [/^\/api\/inbox\/dialogs\?folder=unread&limit=1$/, 20000],
     [/^\/api\/subscriptions\/my-subscription$/, 30000],
-    [/^\/api\/payments\/plans$/, 600000]
+    [/^\/api\/payments\/plans$/, 600000],
+    [/^\/api\/payments\/my-plans$/, 120000]
   ];
   var MEMO_PREFIX = 'vf_memo:';
   var inflightMemo = {};

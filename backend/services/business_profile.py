@@ -116,7 +116,17 @@ def resolve(user) -> Dict[str, Any]:
         # Страницы модулей для бокового меню — все включённые, а не только влезшие в 5 вкладок телефона
         # (у Profi с магазином и у СТО с записью и заказами «Заказы» иначе не было в меню)
         "pages": module_pages(mods),
+        # Салон (Voksy Beauty, ветка 2511-beauty): свои тарифы, Profi в меню не предлагаем
+        "beauty": _is_beauty(user),
     }
+
+
+def _is_beauty(user) -> bool:
+    try:
+        from backend.services.plan_catalog import is_beauty_user
+        return is_beauty_user(user)
+    except Exception:
+        return False
 
 
 def module_pages(modules: Dict[str, bool]) -> Dict[str, Optional[str]]:

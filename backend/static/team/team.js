@@ -89,37 +89,52 @@
     var d = st.data;
     if (!d.plan_ok) {
       root.innerHTML = '<div class="tm-empty"><div class="ic-big">' + icon('users') + '</div>' +
-        '<h3>Сотрудники — на тарифах Старт и Profi</h3>' +
+        '<h3>Сотрудники — на тарифах Старт, Profi и Voksy Beauty</h3>' +
         '<p>Администратор, менеджер или мастер получают свой вход и работают с чатами, клиентами и записями. Вы решаете, какие разделы им открыть.</p>' +
         '<a class="btn btn-primary" href="/static/dashboard.html#plans">Выбрать тариф</a></div>';
       return;
     }
     var members = d.members || [];
     var active = members.filter(function (m) { return m.is_active; }).length;
-    var monthly = d.free ? 'бесплатно' : som(d.monthly_som);
-    var low = !d.free && d.wallet_som < (d.monthly_som || 0);
+    var inc = !!d.included;                      // Voksy Beauty: места входят в тариф
+    var full = inc && d.limit && active >= d.limit;
+    var monthly = d.free ? 'бесплатно' : inc ? 'в тарифе' : som(d.monthly_som);
+    var low = !d.free && !inc && d.wallet_som < (d.monthly_som || 0);
+    var addTitle = inc && d.limit ? 'В тарифе ' + d.plan_name + ' — до ' + d.limit + ' ' + staffWord(d.limit) : 'Можно добавить до ' + d.max_members + ' сотрудников';
+    var third = inc
+      ? '<div class="tm-stat"><div class="k">Тариф</div><div class="v tm-plan">' + esc(d.plan_name || '') + (d.plan_until ? ' <small>до ' + esc(fmtDay(d.plan_until)) + '</small>' : '') + '</div></div>'
+      : '<div class="tm-stat' + (low ? ' warn' : '') + '"><div class="k">На кошельке</div><div class="v">' + esc(d.free ? '—' : som(d.wallet_som)) + '</div></div>';
     var html = '<section class="tm-hero">' +
       '<div class="tm-hero-ic">' + icon('users') + '</div>' +
       '<div class="tm-hero-main"><h2>Ваша команда</h2><p>У каждого сотрудника свой вход по email и паролю и только те разделы, которые вы открыли. ' +
       'Деньги, тариф, настройки бота и каналы видите только вы.</p></div>' +
-      '<button type="button" class="btn btn-primary" id="tm-add"' + (d.can_add ? '' : ' disabled title="Можно добавить до ' + d.max_members + ' сотрудников"') + '>' +
+      '<button type="button" class="btn btn-primary" id="tm-add"' + (d.can_add ? '' : ' disabled title="' + esc(addTitle) + '"') + '>' +
       icon('user-plus') + '<span>Добавить сотрудника</span></button>' +
       '<div class="tm-stats">' +
-      '<div class="tm-stat"><div class="k">Сотрудники</div><div class="v">' + active + ' <small>из ' + d.max_members + '</small></div></div>' +
+      '<div class="tm-stat' + (full ? ' warn' : '') + '"><div class="k">Сотрудники</div><div class="v">' + active +
+        (inc && !d.limit ? ' <small>без лимита</small>' : ' <small>из ' + (inc ? d.limit : d.max_members) + '</small>') + '</div></div>' +
       '<div class="tm-stat"><div class="k">В месяц</div><div class="v">' + esc(monthly) + '</div></div>' +
-      '<div class="tm-stat' + (low ? ' warn' : '') + '"><div class="k">На кошельке</div><div class="v">' + esc(d.free ? '—' : som(d.wallet_som)) + '</div></div>' +
+      third +
       '</div></section>';
+    if (full) {
+      html += '<div class="tm-upsell">' + icon('sparkles') + '<div><b>Все места тарифа заняты: ' + active + ' из ' + d.limit + '.</b> ' +
+        'Нужен ещё сотрудник — перейдите на тариф больше, места добавятся сразу после оплаты.</div>' +
+        '<a class="btn btn-sm btn-primary" href="/static/dashboard.html#plans">Сменить тариф</a></div>';
+    }
     if (!members.length) {
       html += '<div class="tm-empty"><div class="ic-big">' + icon('user-plus') + '</div><h3>Пока вы работаете один</h3>' +
         '<p>Добавьте сотрудника — он войдёт на сайте со своей почтой и паролем и увидит только свои разделы. ' +
-        (d.free ? 'Для вашего аккаунта места бесплатные.' : 'Место стоит ' + d.seat_som + ' сом в месяц, списывается с кошелька.') + '</p>' +
+        (d.free ? 'Для вашего аккаунта места бесплатные.'
+          : inc ? 'Сотрудники входят в тариф ' + esc(d.plan_name) + (d.limit ? ': до ' + d.limit + ' ' + staffWord(d.limit) + ', без доплаты.' : ' без доплаты и лимита.')
+          : 'Место стоит ' + d.seat_som + ' сом в месяц, списывается с кошелька.') + '</p>' +
         '<div class="tm-roles-demo"><span>Администратор: всё, кроме денег</span><span>Мастер: свои записи</span><span>Продавец: чаты и каталог</span></div>' +
         '<button type="button" class="btn btn-primary" id="tm-add2">' + icon('user-plus') + '<span>Добавить сотрудника</span></button></div>';
     } else {
       html += '<div class="tm-list">' + members.map(memberCard).join('') + '</div>';
       html += '<div class="tm-note"><b>Как сотрудник войдёт:</b> откройте ему ' + esc(location.host) + ' → «Войти», email и пароль из окна доступа. ' +
         'Ответы сотрудника клиентам подписаны его именем в чатах. ' +
-        (d.free ? '' : 'Место продлевается само раз в ' + d.seat_days + ' дней (' + d.seat_som + ' сом); не хватит денег на кошельке — доступ сотрудника приостановится, вам придёт сообщение.') + '</div>';
+        (d.free ? '' : inc ? 'Места входят в тариф: пока тариф оплачен, сотрудники работают без доплаты. Закончится тариф — доступ сотрудников приостановится до продления, вам придёт сообщение.'
+          : 'Место продлевается само раз в ' + d.seat_days + ' дней (' + d.seat_som + ' сом); не хватит денег на кошельке — доступ сотрудника приостановится, вам придёт сообщение.') + '</div>';
     }
     root.innerHTML = html;
     var add = document.getElementById('tm-add'), add2 = document.getElementById('tm-add2');
@@ -139,12 +154,13 @@
   function find(id) { return (st.data.members || []).filter(function (m) { return m.id === id; })[0]; }
 
   function memberCard(m) {
-    var reason = { unpaid: 'не оплачено', plan: 'закончился тариф', owner: 'вручную' }[m.status_reason] || 'вручную';
+    var reason = { unpaid: 'не оплачено', plan: 'закончился тариф', limit: 'сверх лимита тарифа', owner: 'вручную' }[m.status_reason] || 'вручную';
     var status = !m.is_active ? '<span class="tm-pill off">Выключен · ' + esc(reason) + '</span>'
       : m.online ? '<span class="tm-pill on">В сети</span>'
       : '<span class="tm-pill idle">' + (m.last_login_at ? 'Последний вход ' + esc(ago(m.last_seen_at || m.last_login_at)) : 'Ещё не входили') + '</span>';
     var meta = [];
-    if (m.paid_until) meta.push((m.is_active ? 'Оплачено до ' : 'Было оплачено до ') + esc(fmtDay(m.paid_until)));
+    if (st.data.included) { if (m.is_active) meta.push('Входит в тариф'); }
+    else if (m.paid_until) meta.push((m.is_active ? 'Оплачено до ' : 'Было оплачено до ') + esc(fmtDay(m.paid_until)));
     else if (st.data.free) meta.push('Место бесплатное');
     if (m.created_at) meta.push('Добавлен ' + esc(fmtDay(m.created_at)));
     return '<div class="tm-card' + (m.is_active ? '' : ' off') + '">' +
@@ -200,9 +216,13 @@
       var ok = p.perms.filter(function (k) { return perms.some(function (x) { return x.key === k; }); });
       return ok.length ? Object.assign({}, p, { perms: ok }) : null;
     }).filter(Boolean);
-    var cost = isNew && !d.free
-      ? '<div class="tm-cost">' + icon('wallet') + '<span>Сейчас с кошелька спишется <b>' + d.seat_som + ' сом</b>, дальше — раз в ' + d.seat_days +
-        ' дней. На кошельке ' + esc(som(d.wallet_som)) + '. Выключить сотрудника можно в любой момент.</span></div>' : '';
+    var activeNow = (d.members || []).filter(function (x) { return x.is_active; }).length;
+    var cost = !isNew || d.free ? ''
+      : d.included
+        ? '<div class="tm-cost ok">' + icon('check') + '<span>Входит в тариф <b>' + esc(d.plan_name) + '</b>' +
+          (d.limit ? ': будет ' + (activeNow + 1) + ' из ' + d.limit + ' ' + staffWord(d.limit) : '') + '. Без доплаты.</span></div>'
+        : '<div class="tm-cost">' + icon('wallet') + '<span>Сейчас с кошелька спишется <b>' + d.seat_som + ' сом</b>, дальше — раз в ' + d.seat_days +
+          ' дней. На кошельке ' + esc(som(d.wallet_som)) + '. Выключить сотрудника можно в любой момент.</span></div>';
     var dlg = dialog(
       '<div class="vf-dialog-head"><div><h3>' + (isNew ? 'Новый сотрудник' : 'Сотрудник: ' + esc(m.name)) + '</h3>' +
       '<div class="muted" style="font-size:13px;margin-top:4px">' + (isNew ? 'Свой вход по email и паролю, только выбранные разделы' : 'Изменения доступа действуют сразу') + '</div></div>' +
@@ -233,7 +253,7 @@
       '<div id="tm-err" class="hint" style="color:var(--vf-danger);font-size:13px;margin-top:10px" hidden></div>' +
       '</form>' +
       '<div class="vf-dialog-foot"><button type="button" class="btn" data-close>Отмена</button>' +
-      '<button type="button" class="btn btn-primary" id="tm-save">' + (isNew ? (d.free ? 'Добавить' : 'Добавить за ' + d.seat_som + ' сом') : 'Сохранить') + '</button></div>',
+      '<button type="button" class="btn btn-primary" id="tm-save">' + (isNew ? (d.free || d.included ? 'Добавить' : 'Добавить за ' + d.seat_som + ' сом') : 'Сохранить') + '</button></div>',
       'vf-dialog-lg tm-dlg');
     var el = dlg.el;
     function sync() {
@@ -308,6 +328,7 @@
           var er = errOf(res);
           showErr(er.text);
           if (er.code === 'wallet_low') walletLow(er.text);
+          if (er.code === 'plan_limit') planLimit(er.text);
           return;
         }
         dlg.close();
@@ -324,6 +345,19 @@
     if (!m) return;
     var list = st.data.members || [];
     for (var i = 0; i < list.length; i++) if (list[i].id === m.id) list[i] = m;
+  }
+
+  // после «до» и «из»: до 21 сотрудника, до 3 сотрудников (родительный падеж)
+  function staffWord(n) {
+    n = Math.abs(n);
+    return (n % 10 === 1 && n % 100 !== 11) ? 'сотрудника' : 'сотрудников';
+  }
+
+  function planLimit(text) {
+    toast(text, 'error', {
+      action: function () { location.href = '/static/dashboard.html#plans'; },
+      actionLabel: 'Сменить тариф', duration: 10000
+    });
   }
 
   function walletLow(text) {
@@ -388,7 +422,10 @@
   }
 
   function deactivate(m) {
-    VF.confirm({ title: 'Выключить доступ для ' + m.name + '?', message: 'Сотрудник сразу выйдет из кабинета. Оплаченный срок сохранится — включить снова можно без доплаты до ' + (m.paid_until ? fmtDay(m.paid_until) : 'конца срока') + '.',
+    var offMsg = st.data.included
+      ? 'Сотрудник сразу выйдет из кабинета, а его место в тарифе освободится — можно отдать другому. Включить снова можно в любой момент, если есть свободное место.'
+      : 'Сотрудник сразу выйдет из кабинета. Оплаченный срок сохранится — включить снова можно без доплаты до ' + (m.paid_until ? fmtDay(m.paid_until) : 'конца срока') + '.';
+    VF.confirm({ title: 'Выключить доступ для ' + m.name + '?', message: offMsg,
       confirmText: 'Выключить', danger: true, icon: 'power' }).then(function (ok) {
       if (!ok) return;
       call('POST', '/' + m.id + '/deactivate').then(function (res) {
@@ -407,20 +444,24 @@
       if (btn) btn.disabled = true;
       call('POST', '/' + m.id + '/activate').then(function (res) {
         if (btn) btn.disabled = false;
-        if (!res.ok) { var e = errOf(res); if (e.code === 'wallet_low') walletLow(e.text); else toast(e.text, 'error'); return; }
+        if (!res.ok) {
+          var e = errOf(res);
+          if (e.code === 'wallet_low') walletLow(e.text); else if (e.code === 'plan_limit') planLimit(e.text); else toast(e.text, 'error');
+          return;
+        }
         st.data = res.data.team || st.data;
         if (window.VoksiAISidebar && window.VoksiAISidebar.refreshWallet) window.VoksiAISidebar.refreshWallet();
         draw();
         toast(m.name + ': доступ включён', 'success');
       });
     };
-    if (paid || st.data.free) { go(); return; }
+    if (paid || st.data.free || st.data.included) { go(); return; }
     VF.confirm({ title: 'Включить ' + m.name + '?', message: 'С кошелька спишется ' + st.data.seat_som + ' сом за следующие ' + st.data.seat_days + ' дней.',
       confirmText: 'Включить за ' + st.data.seat_som + ' сом', icon: 'wallet' }).then(function (ok) { if (ok) go(); });
   }
 
   function remove(m) {
-    VF.confirm({ title: 'Удалить ' + m.name + '?', message: 'Сотрудник больше не сможет войти. Оплаченные дни не возвращаются. Переписка и клиенты, с которыми он работал, остаются у вас.',
+    VF.confirm({ title: 'Удалить ' + m.name + '?', message: 'Сотрудник больше не сможет войти.' + (st.data.included || st.data.free ? '' : ' Оплаченные дни не возвращаются.') + ' Переписка и клиенты, с которыми он работал, остаются у вас.',
       confirmText: 'Удалить', danger: true }).then(function (ok) {
       if (!ok) return;
       call('DELETE', '/' + m.id).then(function (res) {

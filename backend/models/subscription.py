@@ -6,7 +6,7 @@ Subscription models for WellcomeAI application.
 
 import uuid
 from sqlalchemy import Column, String, Boolean, Numeric, Integer, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -27,6 +27,22 @@ class SubscriptionPlan(Base, BaseModel):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Каталог тарифов (ветка 2511-beauty, services/plan_catalog.py). Колонки добавляет
+    # app.ensure_plan_catalog() в начале старта. Тарифы product="beauty" живут ТОЛЬКО в базе
+    # (цену, лимиты и текст правит суперадмин), тарифы "voksy" — по-прежнему из
+    # SUBSCRIPTION_PLANS_CONFIG (backend/api/payments.py).
+    product = Column(String(20), nullable=False, default="voksy", server_default="voksy")
+    # {"staff": 3, "agent_mode": "reactive", "credits_month": 0, "trial": false}
+    limits = Column(JSONB, nullable=True)
+    features = Column(JSONB, nullable=True)        # строки «что входит» для окна оплаты
+    badge = Column(String(40), nullable=True)      # «Хит», «Выгодно»
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    is_public = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Индивидуальный тариф одного клиента (без внешнего ключа: users уже ссылается сюда через
+    # subscription_plan_id, взаимные ключи мешали бы порядку создания таблиц).
+    for_user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    admin_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         """String representation of SubscriptionPlan"""

@@ -40,7 +40,8 @@
   ];
   var SORTS = [['created_desc', 'Сначала новые'], ['login_desc', 'Недавно заходили'], ['next_contact', 'По дате звонка'],
     ['end_asc', 'Скоро кончится тариф'], ['name', 'По имени'], ['created_asc', 'Сначала старые']];
-  var PLAN_LABEL = { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный', referral_trial: 'Пробный' };
+  var PLAN_LABEL = { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный', referral_trial: 'Пробный',
+    beauty_start: 'Beauty Start', beauty_ai: 'Beauty AI', beauty_pro: 'Beauty Pro' };
   var AVA_COLORS = ['#2a5ce8', '#0d9488', '#7c3aed', '#db2777', '#ea580c', '#0891b2', '#4d7c0f', '#b45309'];
 
   var st = {

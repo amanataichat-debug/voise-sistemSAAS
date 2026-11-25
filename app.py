@@ -1650,6 +1650,19 @@ def ensure_cascade_credit_packages():
         logger.error(f"❌ ensure_cascade_credit_packages error: {e}")
 
 
+def ensure_plan_catalog():
+    """
+    Каталог тарифов (ветка 2511-beauty): колонки subscription_plans (product, limits, features, …)
+    и Beauty-тарифы по умолчанию — services/plan_catalog.ensure_schema. Самым первым делом в каждом
+    воркере: связь User.subscription_plan_rel читает эти колонки при любом запросе с тарифом.
+    """
+    try:
+        from backend.services.plan_catalog import ensure_schema
+        ensure_schema(engine)
+    except Exception as e:
+        logger.error(f"❌ ensure_plan_catalog error: {e}")
+
+
 def ensure_plan_prices():
     """
     Переносит цены платных тарифов из SUBSCRIPTION_PLANS_CONFIG (backend/api/payments.py)
@@ -3272,6 +3285,7 @@ async def startup_event():
         # в каждом воркере (идемпотентно), не дожидаясь длинной цепочки под блокировкой
         ensure_eleven_voice_engine_columns()
         ensure_wallet_columns()
+        ensure_plan_catalog()  # колонки каталога тарифов + Beauty-тарифы — до первого запроса с тарифом
         ensure_user_profile_columns()  # телефон, ниша, статус клиента в админке — до первого запроса
         ensure_plan_prices()  # цены тарифов из конфига в БД — в каждом воркере, до миграций
         ensure_chat_v2_columns()

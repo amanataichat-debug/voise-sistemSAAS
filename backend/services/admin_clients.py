@@ -43,6 +43,8 @@ ADMIN_STATUSES = [
 ADMIN_STATUS_KEYS = {s["key"] for s in ADMIN_STATUSES}
 
 PAID_PLANS = ("start", "profi", "ai_voice", "agent", "pro", "business")
+# Voksy Beauty (ветка 2511-beauty): все тарифы салонов, в т.ч. индивидуальные, — с этим префиксом
+BEAUTY_PAID_SQL = "p.code LIKE 'beauty\\_%'"
 TRIAL_PLANS = ("free", "referral_trial")
 
 SEGMENTS = (
@@ -129,7 +131,7 @@ def _segment_sql(segment: str, params: Dict[str, Any]) -> Optional[str]:
         return "p.code IN ('free', 'referral_trial') AND u.subscription_end_date > :now"
     if segment == "paying":
         params["paid_plans"] = list(PAID_PLANS)
-        return "p.code = ANY(:paid_plans) AND u.subscription_end_date > :now"
+        return f"(p.code = ANY(:paid_plans) OR {BEAUTY_PAID_SQL}) AND u.subscription_end_date > :now"
     if segment == "expiring":
         params["in3"] = now + timedelta(days=3)
         return "u.subscription_end_date > :now AND u.subscription_end_date <= :in3"
@@ -268,7 +270,7 @@ def _plan_state(row) -> Dict[str, Any]:
         kind = "admin"
     elif code in TRIAL_PLANS:
         kind = "trial" if active else "trial_over"
-    elif code in PAID_PLANS:
+    elif code in PAID_PLANS or str(code or "").startswith("beauty_"):
         kind = "paid" if active else "expired"
     else:
         kind = "none"
@@ -356,7 +358,7 @@ def summary(db: Session) -> Dict[str, Any]:
           count(*) FILTER (WHERE u.created_at >= :month_ago) AS new_month,
           count(*) FILTER (WHERE (u.phone IS NULL OR u.phone = '') AND NOT coalesce(u.is_admin, false)) AS no_phone,
           count(*) FILTER (WHERE p.code = ANY(:trial_plans) AND u.subscription_end_date > :now) AS trial,
-          count(*) FILTER (WHERE p.code = ANY(:paid_plans) AND u.subscription_end_date > :now) AS paying,
+          count(*) FILTER (WHERE (p.code = ANY(:paid_plans) OR """ + BEAUTY_PAID_SQL + """) AND u.subscription_end_date > :now) AS paying,
           count(*) FILTER (WHERE u.subscription_end_date > :now AND u.subscription_end_date <= :in3
                            AND NOT coalesce(u.is_admin, false)) AS expiring,
           count(*) FILTER (WHERE (u.admin_next_contact_at IS NOT NULL AND u.admin_next_contact_at < :day_end) OR

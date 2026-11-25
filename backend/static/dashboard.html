@@ -2324,6 +2324,22 @@
       let currentUser = null;
       let subscriptionStatus = null;
       let currentUserPlanCode = 'free';
+      // Каталог тарифов (ветка 2511-beauty): салонам сервер отдаёт тарифы Voksy Beauty (product=beauty),
+      // остальным — AI Voice / Старт / Profi. Тарифы и вкладки окна оплаты строятся из ответа /payments/my-plans.
+      let PLAN_PRODUCT = 'voksy';
+      let PLAN_DEFAULT = null;
+      let plansReady = null;
+      function ensurePlans() {
+        if (!plansReady) plansReady = loadPlanPrices();
+        return plansReady;
+      }
+      function defaultPlan(fallback) {
+        if (PLAN_PRODUCT === 'beauty') {
+          if (SUBSCRIPTION_PLANS[currentUserPlanCode]) return currentUserPlanCode;
+          return PLAN_DEFAULT || Object.keys(SUBSCRIPTION_PLANS)[0];
+        }
+        return fallback;
+      }
 
       // ========================================
       // УТИЛИТЫ
@@ -2341,9 +2357,57 @@
       }
 
       // ✅ Подтягиваем актуальные цены (сомы, из БД) с бэкенда и обновляем UI
+      function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+
+      // Салон: заменить тарифы окна оплаты на тарифы Voksy Beauty из ответа сервера
+      function applyBeautyCatalog(data) {
+        const order = (data.order && data.order.length) ? data.order : Object.keys(data.plans || {});
+        if (!order.length) return false;
+        Object.keys(SUBSCRIPTION_PLANS).forEach(code => { delete SUBSCRIPTION_PLANS[code]; });
+        order.forEach(code => {
+          const p = data.plans[code];
+          if (!p) return;
+          SUBSCRIPTION_PLANS[code] = {
+            code: code,
+            name: p.name,
+            basePrice: p.base_price,
+            maxAssistants: p.max_assistants,
+            description: p.description || '',
+            restrictedFeatures: [],
+            assistantsLabel: p.staff_label,
+            badge: p.badge || (p.individual ? 'Для вас' : ''),
+            features: (p.features || []).map(text => ({ icon: 'fa-check', text: text, available: true }))
+          };
+        });
+        PLAN_PRODUCT = 'beauty';
+        PLAN_DEFAULT = data.default_plan || order[0];
+        const tabHtml = (cls, priceSuffix) => order.filter(code => SUBSCRIPTION_PLANS[code]).map(code => {
+          const p = SUBSCRIPTION_PLANS[code];
+          return '<button class="' + cls + '" data-plan="' + escHtml(code) + '">' +
+            '<span class="tab-name">' + escHtml(p.name) + '</span>' +
+            '<span class="tab-price">' + formatPrice(p.basePrice) + priceSuffix + '</span>' +
+            (p.badge ? '<span class="recommended-badge">' + escHtml(p.badge) + '</span>' : '') + '</button>';
+        }).join('');
+        planTabs.innerHTML = tabHtml('plan-tab', ' сом/мес');
+        expiredPlanTabs.innerHTML = tabHtml('expired-plan-tab', ' сом');
+        planTabs.classList.add('beauty-tabs');
+        expiredPlanTabs.classList.add('beauty-tabs');
+        const title = document.querySelector('#payment-modal .payment-modal-title');
+        if (title) title.innerHTML = '<i class="fas fa-crown"></i> Тарифы Voksy Beauty';
+        const featTitle = document.querySelector('#payment-modal .payment-plan-features h3');
+        if (featTitle) featTitle.textContent = 'Что входит в тариф:';
+        selectedPlan = expiredSelectedPlan = defaultPlan(PLAN_DEFAULT);
+        return true;
+      }
+
       async function loadPlanPrices() {
         try {
-          const data = await api.get('/payments/plans');
+          let data = null;
+          try { data = await api.get('/payments/my-plans'); } catch (e) { data = null; }
+          if (data && data.product === 'beauty' && applyBeautyCatalog(data)) return;
+          if (!data || !data.plans) data = await api.get('/payments/plans');
           if (data && data.plans) {
             Object.keys(data.plans).forEach(code => {
               if (SUBSCRIPTION_PLANS[code] && data.plans[code].base_price) {
@@ -2393,6 +2457,7 @@
 
       function canAccessFeature(feature, planCode) {
         if (!planCode) return true;
+        if (String(planCode).indexOf('beauty_') === 0) return true;   // Voksy Beauty: CRM и телефония включены
         const allowedPlans = FEATURE_ACCESS[feature];
         if (!allowedPlans) return true; // Если функция не в матрице, она доступна всем
         return allowedPlans.includes(planCode);
@@ -2732,7 +2797,7 @@
           
           // По умолчанию — текущий тариф пользователя (agent продлевается как agent),
           // для остальных сбрасываем на ai_voice и 1 месяц
-          expiredSelectedPlan = (currentUserPlanCode === 'agent') ? 'profi' : 'ai_voice';
+          expiredSelectedPlan = defaultPlan((currentUserPlanCode === 'agent') ? 'profi' : 'ai_voice');
           expiredSelectedPeriod = 1;
           updateExpiredModalUI();
           
@@ -3149,12 +3214,13 @@
       // МОДАЛЬНОЕ ОКНО ОПЛАТЫ
       // ========================================
       
-      function showPaymentModal() {
-        // Устанавливаем начальные значения
-        selectedPlan = 'ai_voice';
+      async function showPaymentModal(preferred) {
+        // Тарифы окна (у салона — Voksy Beauty) должны быть загружены до показа
+        await ensurePlans();
+        selectedPlan = (typeof preferred === 'string' && SUBSCRIPTION_PLANS[preferred]) ? preferred : defaultPlan('ai_voice');
         selectedPeriod = 1;
         updatePaymentModalUI();
-        
+
         paymentModal.classList.add('show');
         document.body.style.overflow = 'hidden';
       }
@@ -3170,17 +3236,16 @@
       }
       
       if (upgradeSubscriptionBtn) {
-        upgradeSubscriptionBtn.addEventListener('click', showPaymentModal);
+        upgradeSubscriptionBtn.addEventListener('click', function () { showPaymentModal(); });
       }
 
       // Ссылка /static/dashboard.html#plans (например, «Profi» на странице агента
-      // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi.
+      // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi; у салона — тариф Beauty
+      // по умолчанию (текущий или рекомендованный).
       function openPlansFromHash() {
         if (location.hash !== '#plans') return;
         setTimeout(function () {
-          showPaymentModal();
-          selectedPlan = 'profi';
-          updatePaymentModalUI();
+          showPaymentModal(PLAN_PRODUCT === 'beauty' ? null : 'profi');
         }, 300);
       }
       openPlansFromHash();
@@ -3300,7 +3365,7 @@
         // (проверка админа читает его email), но запрос к серверу у неё уже в пути.
         const subscriptionRequest = api.get('/subscriptions/my-subscription');
         subscriptionRequest.catch(() => {});
-        const pricesRequest = loadPlanPrices();      // цены тарифов (сомы, из БД)
+        const pricesRequest = ensurePlans();         // тарифы окна оплаты (салонам — Voksy Beauty)
         const userRequest = loadUserData();          // ошибка не блокирует дальнейшую инициализацию
 
         await pricesRequest;
