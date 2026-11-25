@@ -606,8 +606,10 @@ class _GzipTextAssets:
 
 
 # Монтируем статику
+_STATIC_FILES = None
 try:
-    app.mount("/static", _GzipTextAssets(_CabinetStaticFiles(directory=static_dir, html=True)), name="static")
+    _STATIC_FILES = _CabinetStaticFiles(directory=static_dir, html=True)   # им же версии ассетов страницы салона
+    app.mount("/static", _GzipTextAssets(_STATIC_FILES), name="static")
     app.mount("/js", _GzipTextAssets(_CabinetStaticFiles(directory=js_dir)), name="js")
 except Exception as e:
     logger.error(f"Error mounting static files: {e}")
@@ -2089,10 +2091,12 @@ def ensure_master_card_columns():
     missing = [(n, t) for n, t in MASTER_CARD_COLUMNS if n not in cols]
     bcols = {c["name"] for c in insp.get_columns("bookings")}
     bmissing = [(n, t) for n, t in BOOKING_SERVICE_COLUMNS if n not in bcols]
-    if not missing and not bmissing:
+    pcols = {c["name"] for c in insp.get_columns("booking_pages")}
+    if not missing and not bmissing and "profile" in pcols:
         return
     with engine.begin() as conn:
         conn.execute(_text("SELECT pg_advisory_xact_lock(25112027)"))
+        conn.execute(_text("ALTER TABLE booking_pages ADD COLUMN IF NOT EXISTS profile JSONB"))   # страница салона (1.5)
         for name, ddl in missing:
             conn.execute(_text(f"ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS {name} {ddl}"))
         for name, ddl in bmissing:
@@ -3782,7 +3786,7 @@ async def serve_landing_ru():
 # ============================================================================
 # Страницы услуг пререндерит frontend/scripts/prerender.mjs (список — frontend/src/seo/services.js):
 #   ky: /<slug>/ → backend/static/landing/<slug>/index.html, ru: /ru/<slug>/ → landing/ru/<slug>/index.html
-SEO_SERVICE_SLUGS = ("voice-agent", "whatsapp-chatbot", "crm", "analytics", "sales-agent")
+SEO_SERVICE_SLUGS = ("voice-agent", "whatsapp-chatbot", "crm", "analytics", "sales-agent", "beauty-salon")
 _LANDING_DIR = "backend/static/landing"
 
 
@@ -3814,13 +3818,65 @@ for _slug in SEO_SERVICE_SLUGS:
     app.add_api_route(f"/ru/{_slug}", _redirect_route(f"/ru/{_slug}/"), methods=["GET", "HEAD"],
                       include_in_schema=False)
 
-# Онлайн-запись клиента по ссылке владельца: /b/<slug> → страница записи (данные — /api/public/booking/<slug>)
-@app.get("/b/{slug}", include_in_schema=False)
-async def booking_public_page(slug: str):
-    import re as _re
-    if not _re.fullmatch(r"[a-z0-9-]{3,64}", slug or ""):
+# Страница салона (Voksy Beauty, шаг 1.5) — одна страница static/salon.html на трёх адресах:
+#   /beauty/<slug> — витрина салона с записью по шагам; /p/<slug> — то же для других ниш с записью;
+#   /b/<slug> — только запись (QR, кнопка-виджет на сайте клиента, ссылка из бота и напоминаний).
+# Данные страница берёт из /api/public/booking/<slug>; <head> (название, описание, превью ссылки для
+# WhatsApp/Telegram/Instagram — они не выполняют JS, разметка JSON-LD для Google) собирается здесь.
+# Обработчик синхронный: запрос к базе не должен стоять в цикле событий звонков.
+def _salon_page_response(slug: str, mode: str, request: Request):
+    from starlette.responses import Response as _Resp
+    from backend.services import salon_page as sp
+    if not sp.is_valid_slug(slug):
         return RedirectResponse(url="/", status_code=302)
-    return FileResponse("backend/static/book.html", headers={"Cache-Control": "no-cache"})
+    path = os.path.join(os.getcwd(), "backend/static/salon.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    head, status = "<title>Онлайн-запись</title>", 200
+    from backend.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        from backend.models.booking import BookingPage
+        from backend.models.user import User as _User
+        page = db.query(BookingPage).filter(BookingPage.slug == slug.lower()).first()
+        owner = db.get(_User, page.user_id) if page is not None else None
+        if page is None or owner is None or not owner.is_active or not page.enabled:
+            head, status = "<title>Страница не найдена</title>\n  <meta name=\"robots\" content=\"noindex\">", 404
+        else:
+            view = sp.public_view(db, page, owner)
+            host = (getattr(settings, "HOST_URL", "") or "").rstrip("/") or str(request.base_url).rstrip("/")
+            head = sp.head_html(view, host, view["page_path"])
+            if mode == "book":    # прямая запись — не отдельная страница для поиска
+                head += '\n  <meta name="robots" content="noindex">'
+    except Exception as e:
+        logger.warning(f"[SALON-PAGE] head for {slug}: {e}")
+    finally:
+        db.close()
+    text = text.replace("<!--SALON_HEAD-->", head, 1).replace('data-mode="page"', f'data-mode="{mode}"', 1)
+    return _Resp(content=text, status_code=status, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/beauty/{slug}", include_in_schema=False)
+def salon_public_page(slug: str, request: Request):
+    return _salon_page_response(slug, "page", request)
+
+
+@app.get("/p/{slug}", include_in_schema=False)
+def business_public_page(slug: str, request: Request):
+    return _salon_page_response(slug, "page", request)
+
+
+@app.get("/b/{slug}", include_in_schema=False)
+def booking_public_page(slug: str, request: Request):
+    return _salon_page_response(slug, "book", request)
 
 
 # Публичные страницы в /static, которые можно индексировать; остальные (кабинет) — noindex

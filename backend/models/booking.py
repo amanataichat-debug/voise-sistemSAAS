@@ -170,4 +170,7 @@ class BookingPage(Base):
     enabled = Column(Boolean, nullable=False, default=True)      # онлайн-запись по ссылке
     # step_min, buffer_min, lead_min, horizon_days, reminders (bool), address, title, thanks (bool)
     settings = Column(JSONB, nullable=True)
+    # Страница салона /beauty/<slug> (шаг 1.5): слоган, о салоне, логотип, обложка, галерея, контакты,
+    # соцсети, карта, удобства, акции, цвет — services/salon_page.py
+    profile = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

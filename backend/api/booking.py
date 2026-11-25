@@ -21,6 +21,13 @@
   POST   /services/categories/rename  — переименовать категорию или подкатегорию
   POST   /services/categories/order   — порядок категорий
 
+Страница салона (шаг 1.5, services/salon_page.py):
+  GET    /page                        — профиль страницы, готовность, ссылки, QR, код виджета
+  PUT    /page                        — тексты, контакты, соцсети, удобства, акции, цвет, порядок галереи
+  POST   /page/media?kind=logo|cover|gallery, DELETE /page/media/{id} — фото страницы
+  Публично: GET /api/public/booking/{slug} отдаёт ещё и `salon` (витрина), /slots — до 14 дней,
+  POST /{slug}/visit-slots и /{slug}/visit — визит из нескольких услуг по ссылке.
+
 Журнал v2 (шаг 1.4):
   POST   /blocks, DELETE /blocks/{id}  — блок времени (перерыв, обучение, отпуск, больничный; мастер или все)
   GET    /rooms, POST /rooms, PATCH /rooms/{id}, DELETE /rooms/{id} — кабинеты, кресла, аппараты
@@ -104,11 +111,17 @@ def _names(db: Session, user_id) -> Dict[str, str]:
     return {str(r.id): r.name for r in bs.resources(db, user_id, active_only=False)}
 
 
-def _page_dict(page: BookingPage) -> Dict[str, Any]:
+def _host() -> str:
     from backend.core.config import settings
-    host = (getattr(settings, "HOST_URL", "") or "").rstrip("/")
+    return (getattr(settings, "HOST_URL", "") or "").rstrip("/") or "https://voksyai.online"
+
+
+def _page_dict(page: BookingPage, niche: Optional[str] = None) -> Dict[str, Any]:
+    from backend.services.salon_page import page_path
+    host = _host()
     return {"slug": page.slug, "enabled": bool(page.enabled), "settings": bs.settings_of(page),
-            "url": f"{host}/b/{page.slug}" if page.slug else None}
+            "url": f"{host}/b/{page.slug}" if page.slug else None,
+            "page_url": f"{host}{page_path(page, niche)}" if page.slug else None}
 
 
 # ───────────────────────────── кабинет ─────────────────────────────
@@ -135,7 +148,7 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=4
         "blocks": [bs.block_to_dict(k) for k in bs.list_blocks(db, current_user.id, start, end)],
         "rooms": [bs.room_to_dict(r) for r in bs.rooms(db, current_user.id, active_only=False)],
         "logins": _logins(db, current_user),
-        "page": _page_dict(page),
+        "page": _page_dict(page, current_user.business_niche),
         "stats": bs.stats(db, current_user.id, start, end),
         "plan_limit": _plan_limit(db, current_user),
     }
@@ -561,7 +574,18 @@ def booking_settings(body: SettingsIn, current_user: User = Depends(get_current_
             raise HTTPException(status_code=400, detail="Такой адрес уже занят — придумайте другой")
         page.slug = slug
     db.commit()
-    return {"ok": True, "page": _page_dict(page)}
+    return {"ok": True, "page": _page_dict(page, current_user.business_niche)}
+
+
+def _qr(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        from backend.services.telegram_user_service import qr_svg_data_uri
+        return qr_svg_data_uri(url)
+    except Exception as e:   # нет segno — ссылка и код всё равно нужны
+        logger.warning("booking qr: %s", e)
+        return None
 
 
 def widget_code(host: str, slug: str) -> str:
@@ -573,21 +597,118 @@ def widget_code(host: str, slug: str) -> str:
 @router.get("/link-kit")
 def booking_link_kit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     """Всё, чем владелец делится с клиентами: ссылка, QR (печать на ресепшн, в Instagram), код виджета на сайт."""
-    from backend.core.config import settings
     page = bs.get_page(db, current_user)
     db.commit()
-    host = (getattr(settings, "HOST_URL", "") or "").rstrip("/") or "https://voksyai.online"
-    info = _page_dict(page)
-    qr = None
-    if info.get("url"):
-        try:
-            from backend.services.telegram_user_service import qr_svg_data_uri
-            qr = qr_svg_data_uri(info["url"])
-        except Exception as e:   # нет segno — ссылка и код всё равно нужны
-            logger.warning("booking qr: %s", e)
-    return {"ok": True, "page": info, "qr": qr,
+    host = _host()
+    info = _page_dict(page, current_user.business_niche)
+    qr = _qr(info.get("url"))
+    return {"ok": True, "page": info, "qr": qr, "qr_page": _qr(info.get("page_url")),
             "widget_code": widget_code(host, page.slug) if page.slug else None,
             "button_code": (f'<a href="{info["url"]}" data-voksy-booking>Записаться онлайн</a>' if info.get("url") else None)}
+
+
+# ───────────────────────────── страница салона (шаг 1.5) ─────────────────────────────
+
+def _page_payload(db: Session, user: User, page: BookingPage) -> Dict[str, Any]:
+    from backend.services import salon_page as sp
+    info = _page_dict(page, user.business_niche)
+    prof = sp.profile_of(page)
+    host = _host()
+    return {
+        "ok": True, "page": info,
+        "profile": {**{k: prof.get(k) for k in ("tagline", "about", "phone", "whatsapp", "instagram", "telegram",
+                                               "website", "map_url", "hours_note", "amenities", "promos", "accent",
+                                               "show_prices")},
+                    "title": bs.settings_of(page).get("title") or "", "address": bs.settings_of(page).get("address") or "",
+                    "logo": {"id": prof.get("logo_id"), "url": sm.url_of(prof.get("logo_id"))} if prof.get("logo_id") else None,
+                    "cover": {"id": prof.get("cover_id"), "url": sm.url_of(prof.get("cover_id"))} if prof.get("cover_id") else None,
+                    "gallery": [{"id": it["id"], "url": sm.url_of(it["id"]), "caption": it.get("caption") or ""}
+                                for it in prof.get("gallery") or [] if isinstance(it, dict) and it.get("id")]},
+        "default_title": user.company_name or user.first_name or "",
+        "readiness": sp.readiness(db, page, user),
+        "hours": sp.salon_hours(bs.resources(db, user.id)),
+        "amenities": [{"key": k, "title": t} for k, t in sp.AMENITIES.items()],
+        "accents": list(sp.ACCENTS),
+        "qr": _qr(info.get("page_url")), "qr_book": _qr(info.get("url")),
+        "widget_code": widget_code(host, page.slug) if page.slug else None,
+        "limits": {"gallery": sp.MAX_GALLERY, "promos": sp.MAX_PROMOS},
+    }
+
+
+@router.get("/page")
+def booking_page_get(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    page = bs.get_page(db, current_user)
+    db.commit()
+    return _page_payload(db, current_user, page)
+
+
+@router.put("/page")
+def booking_page_put(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import salon_page as sp
+    page = bs.get_page(db, current_user)
+    try:
+        sp.save_profile(db, page, data or {})
+        db.commit()
+    except sp.PageError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    return _page_payload(db, current_user, page)
+
+
+@router.post("/page/media")
+def booking_page_media(kind: str = Query(...), file: UploadFile = File(...), caption: Optional[str] = Form(None),
+                       current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Логотип и обложка заменяют прежние (старое фото удаляется), галерея — до MAX_GALLERY фото."""
+    from backend.services import salon_page as sp
+    if kind not in ("logo", "cover", "gallery"):
+        raise HTTPException(status_code=400, detail="Вид фото: logo, cover или gallery")
+    page = bs.get_page(db, current_user)
+    prof = sp.profile_of(page)
+    if kind == "gallery" and len(prof.get("gallery") or []) >= sp.MAX_GALLERY:
+        raise HTTPException(status_code=400, detail=f"В галерее не больше {sp.MAX_GALLERY} фото — удалите лишние")
+    data = _read_upload(file)
+    try:
+        row = sm.store(db, current_user.id, "logo" if kind == "logo" else "salon", data)
+    except sm.MediaError as e:
+        db.rollback()
+        _err(e)
+    if kind in ("logo", "cover"):
+        old = prof.get(f"{kind}_id")
+        prof[f"{kind}_id"] = str(row.id)
+        if old:
+            sm.delete(db, current_user.id, old)
+    else:
+        prof["gallery"] = list(prof.get("gallery") or []) + [{"id": str(row.id), "caption": " ".join(str(caption or "").split())[:120]}]
+    page.profile = prof
+    bs.notify_changed(db, current_user.id)
+    db.commit()
+    return _page_payload(db, current_user, page)
+
+
+@router.delete("/page/media/{media_id}")
+def booking_page_media_delete(media_id: str, current_user: User = Depends(get_current_user),
+                              db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import salon_page as sp
+    page = bs.get_page(db, current_user)
+    prof = sp.profile_of(page)
+    mid = str(media_id)
+    found = False
+    for k in ("logo_id", "cover_id"):
+        if str(prof.get(k) or "") == mid:
+            prof[k] = None
+            found = True
+    gal = [it for it in prof.get("gallery") or [] if str((it or {}).get("id")) != mid]
+    if len(gal) != len(prof.get("gallery") or []):
+        prof["gallery"] = gal
+        found = True
+    if not found:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    sm.delete(db, current_user.id, mid)
+    page.profile = prof
+    bs.notify_changed(db, current_user.id)
+    db.commit()
+    return _page_payload(db, current_user, page)
 
 
 # ───────────────────────────── журнал v2: блоки, кабинеты, визиты, поток ─────────────────────────────
@@ -1070,17 +1191,33 @@ def _public_page(db: Session, slug: str):
 
 @public_router.get("/{slug}")
 def public_booking_info(slug: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import salon_page as sp
+    from backend.services.niche_catalog import niche_title
     page, owner = _public_page(db, slug)
     cfg = bs.settings_of(page)
-    from backend.services.niche_catalog import niche_title
+    salon = sp.public_view(db, page, owner)
+    rows = [e for e in _sorted_services(db, owner) if bs.service_online(e)]
+    photos = sp.service_photos(db, owner.id, rows)
+    services = []
+    for e in rows:
+        d = bs.service_to_dict(e)
+        d["photo_url"] = photos.get(d["id"])
+        if not salon["show_prices"]:
+            d.update(price=None, price_to=None, price_text="")
+        services.append(d)
+    masters = [public_master(r) for r in bs.resources(db, owner.id) if bs.bookable_online(r)]
+    if not salon["show_prices"]:
+        for m in masters:
+            m["service_prices"] = {k: {"duration_min": (v or {}).get("duration_min")} for k, v in (m.get("service_prices") or {}).items()}
     return {
-        "title": cfg.get("title") or owner.company_name or owner.first_name or "Онлайн-запись",
+        "title": salon["name"],
         "niche": niche_title(owner.business_niche, owner.business_niche_other),
         "address": cfg.get("address") or "",
         "horizon_days": cfg["horizon_days"],
-        "services": [bs.service_to_dict(e) for e in _sorted_services(db, owner) if bs.service_online(e)],
-        "resources": [public_master(r) for r in bs.resources(db, owner.id) if bs.bookable_online(r)],
+        "services": services,
+        "resources": masters,
         "prepay_info": cfg.get("prepay_info") or "",
+        "salon": salon,
     }
 
 
@@ -1093,11 +1230,13 @@ def public_master(r: BookingResource) -> Dict[str, Any]:
 
 @public_router.get("/{slug}/slots")
 def public_booking_slots(slug: str, service_id: Optional[str] = None, resource_id: Optional[str] = None,
-                         date: Optional[str] = None, db: Session = Depends(get_db)) -> Dict[str, Any]:
+                         date: Optional[str] = None, days: int = Query(1, ge=1, le=14),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Свободное время: один день или до 14 (страница салона отмечает дни без мест)."""
     page, owner = _public_page(db, slug)
     try:
         service = bs.find_service(db, owner.id, service_id) if service_id else None
-        days = bs.free_slots(db, owner, service, resource_id, date, 1, online_only=True)
+        days = bs.free_slots(db, owner, service, resource_id, date, days, online_only=True)
     except bs.BookingError as e:
         _err(e)
     return {"days": [{"date": d["date"], "weekday": d["weekday"],
@@ -1113,11 +1252,24 @@ class PublicBookingIn(BaseModel):
     note: Optional[str] = Field(None, max_length=500)
 
 
+def _client_ip(request: Request) -> str:
+    return request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "?")
+
+
+def _notify_owner_later(owner_id, booking_id) -> None:
+    """Владельцу в Telegram — в фоновом цикле (обработчик синхронный, своего цикла у него нет)."""
+    try:
+        from backend.core.background_loop import submit
+        from backend.services.booking_notify import notify_owner_new_booking
+        submit(notify_owner_new_booking(owner_id, booking_id))
+    except Exception as e:
+        logger.warning(f"[BOOKING] owner notify not scheduled: {e}")
+
+
 @public_router.post("/{slug}")
-async def public_booking_create(slug: str, body: PublicBookingIn, request: Request,
-                                db: Session = Depends(get_db)) -> Dict[str, Any]:
-    ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "?"))
-    _public_rate(ip)
+def public_booking_create(slug: str, body: PublicBookingIn, request: Request,
+                          db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _public_rate(_client_ip(request))
     page, owner = _public_page(db, slug)
     try:
         b = bs.create_booking(db, owner, start=body.start, service_id=body.service_id, resource_id=body.resource_id,
@@ -1129,13 +1281,66 @@ async def public_booking_create(slug: str, body: PublicBookingIn, request: Reque
         _err(e)
     names = _names(db, owner.id)
     out = bs.booking_to_dict(b, names)
-    try:
-        from backend.core.spawn import spawn
-        from backend.services.booking_notify import notify_owner_new_booking
-        spawn(notify_owner_new_booking(owner.id, b.id))
-    except Exception as e:
-        logger.warning(f"[BOOKING] owner notify not scheduled: {e}")
+    _notify_owner_later(owner.id, b.id)
     cfg = bs.settings_of(page)
     return {"ok": True, "booking": {"label": out["label"], "service": out["service"], "resource": out["resource"],
                                     "address": cfg.get("address") or "", "price": out["price"],
-                                    "prepay_amount": out["prepay_amount"], "prepay_info": cfg.get("prepay_info") or ""}}
+                                    "prepay_amount": out["prepay_amount"], "prepay_info": cfg.get("prepay_info") or "",
+                                    "start": out["start"], "end": out["end"]}}
+
+
+class PublicVisitSlotsIn(BaseModel):
+    items: List[VisitItem] = Field(..., min_length=1, max_length=6)
+    date: Optional[str] = None
+
+
+@public_router.post("/{slug}/visit-slots")
+def public_visit_slots(slug: str, body: PublicVisitSlotsIn, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Когда помещается визит из нескольких услуг (только онлайн-услуги и мастера с онлайн-записью)."""
+    page, owner = _public_page(db, slug)
+    for it in body.items:            # «только через администратора» — сразу понятный отказ, а не пустое время
+        svc = bs.find_service(db, owner.id, it.service_id) if it.service_id else None
+        if it.service_id and svc is None:
+            raise HTTPException(status_code=400, detail="Услуга не найдена")
+        if not bs.service_online(svc):
+            raise HTTPException(status_code=400, detail=f"На «{svc.title}» записывает администратор — позвоните или напишите нам")
+    try:
+        out = bs.visit_slots(db, owner, [i.dict() for i in body.items], body.date, source="online")
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        _err(e)
+    return {"slots": [{"time": x["time"], "start": x["start"], "end": x["end"], "end_time": x["end_time"]} for x in out]}
+
+
+class PublicVisitIn(BaseModel):
+    items: List[VisitItem] = Field(..., min_length=1, max_length=6)
+    start: str
+    name: str = Field(..., min_length=1, max_length=120)
+    phone: str = Field(..., min_length=5, max_length=40)
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@public_router.post("/{slug}/visit")
+def public_visit_create(slug: str, body: PublicVisitIn, request: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Записаться по ссылке сразу на несколько услуг: всё или ничего, у салона — один визит."""
+    _public_rate(_client_ip(request))
+    page, owner = _public_page(db, slug)
+    try:
+        rows = bs.create_visit(db, owner, [i.dict() for i in body.items], body.start,
+                               client_name=" ".join(body.name.split())[:120], client_phone=body.phone,
+                               note=body.note, source="online", channel="web")
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        _err(e)
+    names = _names(db, owner.id)
+    out = [bs.booking_to_dict(b, names) for b in rows]
+    _notify_owner_later(owner.id, rows[0].id)
+    cfg = bs.settings_of(page)
+    prepay = sum(float(b.get("prepay_amount") or 0) for b in out)
+    return {"ok": True, "visit": {
+        "label": out[0]["label"], "start": out[0]["start"], "end": out[-1]["end"],
+        "items": [{"service": b["service"], "resource": b["resource"], "start": b["start"], "price": b["price"]} for b in out],
+        "price": sum(float(b.get("price") or 0) for b in out) or None,
+        "prepay_amount": prepay or None, "address": cfg.get("address") or "", "prepay_info": cfg.get("prepay_info") or ""}}

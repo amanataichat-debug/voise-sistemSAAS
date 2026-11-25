@@ -52,7 +52,7 @@
 - Вход в кабинет клиента: админка кладёт токен клиента в `auth_token`, свой — в `localStorage.vf_admin_return`, кого смотрим — в `vf_impersonation`. `js/ui.js` на всех страницах рисует оранжевую полосу «Кабинет клиента: … · Вернуться в админку» (`VF.returnToAdmin`, `VF.resetUserCaches`), по истечении 2 ч возвращает сам; «Выйти» в сайдбаре под входом = вернуться в админку; смена аккаунта в другой вкладке перезагружает страницу (`storage`).
 
 ### Онлайн-запись и профиль бизнеса (ветка 1811-niche-admin-speed)
-- `booking.html` + `booking/booking.js|css` (префикс `bk-`) — календарь записей владельца на `StartApp` (`start/common.js`); `book.html` — публичная запись клиента по ссылке `/b/<slug>`, без скриптов кабинета.
+- `booking.html` + `booking/booking.js|css` (префикс `bk-`) — календарь записей владельца на `StartApp` (`start/common.js`); публичная запись клиента и страница салона — `salon.html` + `salon/salon.js|css` (Voksy Beauty, шаг 1.5; заменила `book.html`), без скриптов кабинета: сервер отдаёт её на `/beauty/<slug>`, `/p/<slug>` (витрина + запись) и `/b/<slug>` (только запись, `data-mode="book"`), подставляя `<head>` в `<!--SALON_HEAD-->`. Значки — свои inline-SVG (страница не грузит спрайт кабинета). Конструктор страницы — `booking/page.js` (`window.BookingPage`, экран «Страница салона» в журнале, `?view=page`).
 - `js/business-setup.js` — экран «Чем занимается ваш бизнес?» (`VoksyBusinessSetup.open({me, edit, onDone})`), открывает `sidebar.js`; «Настройки → Мой бизнес» — блок в `settings.html`.
 - `sidebar.js`: профиль бизнеса из `/api/users/me.business` → `localStorage.vf_business` (меню «Клиенты»/«Записи»/«Заказы», нижние вкладки телефона для Старта И Profi, событие `vf:business`).
 

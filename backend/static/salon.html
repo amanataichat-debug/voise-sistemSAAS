@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--SALON_HEAD-->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <link rel="stylesheet" href="/static/salon/salon.css">
+  <!-- Страница салона (Voksy Beauty, шаг 1.5): /beauty/<slug> и /p/<slug> — витрина с записью,
+       /b/<slug> — только запись (QR, виджет на сайте). Сервер подставляет <head> (превью ссылки, JSON-LD)
+       и data-mode. Данные — /api/public/booking/<slug>. Без входа и без скриптов кабинета. -->
+</head>
+<body class="sp" data-mode="page">
+<div id="app" class="sp-app" aria-live="polite">
+  <div class="sp-skel"><div class="sk sk-cover"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+</div>
+<script src="/static/salon/salon.js" defer></script>
+</body>
+</html>

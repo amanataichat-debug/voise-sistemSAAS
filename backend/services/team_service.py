@@ -134,6 +134,9 @@ STAFF_RULES = [
     _rule("PATCH DELETE", r"^/api/booking/resources/[^/]+/?$", "booking_setup"),
     _rule("PUT", r"^/api/booking/settings/?$", "booking_setup"),
     _rule("GET", r"^/api/booking/link-kit/?$", "booking_setup"),
+    _rule("GET PUT", r"^/api/booking/page/?$", "booking_setup"),                 # страница салона (1.5)
+    _rule("POST", r"^/api/booking/page/media/?$", "booking_setup"),
+    _rule("DELETE", r"^/api/booking/page/media/[^/]+/?$", "booking_setup"),
     # — заказы (настройки заказов — только владелец: api/orders.py → ensure_owner) —
     _rule("GET POST", r"^/api/orders/?$", "orders"),
     _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),

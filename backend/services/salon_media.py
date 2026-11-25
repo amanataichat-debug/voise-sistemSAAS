@@ -3,7 +3,8 @@
 
   • Загрузка: картинка проверяется Pillow (JPEG / PNG / WEBP / GIF; разворот по EXIF, без метаданных —
     в EXIF телефона бывают координаты), уменьшается по виду (аватар 720 px, портфолио 1600, сертификат
-    1800, салон 1920) и сохраняется JPEG ≈ 80–300 КБ. Прозрачность — на белом фоне.
+    1800, салон 1920, логотип 512) и сохраняется JPEG ≈ 80–300 КБ. Прозрачность — на белом фоне.
+    Фото салона (обложка, галерея — вид «salon») и логотип показывает страница салона /beauty/<slug>.
   • Хранение: R2 (salon/<user>/<id>.jpg), если он настроен; иначе байты прямо в salon_media.data —
     кабинет и тесты работают и без R2, а фото уже маленькие.
   • Отдача: GET /media/salon/<id> без входа — фото показывает страница салона и онлайн-запись.
@@ -26,9 +27,9 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("avatar", "portfolio", "certificate", "salon")
-MAX_SIDE = {"avatar": 720, "portfolio": 1600, "certificate": 1800, "salon": 1920}
-QUALITY = {"avatar": 84, "portfolio": 82, "certificate": 85, "salon": 82}
+KINDS = ("avatar", "portfolio", "certificate", "salon", "logo")
+MAX_SIDE = {"avatar": 720, "portfolio": 1600, "certificate": 1800, "salon": 1920, "logo": 512}
+QUALITY = {"avatar": 84, "portfolio": 82, "certificate": 85, "salon": 82, "logo": 90}
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_PIXELS = 60_000_000                  # защита от «картинки-бомбы»
 LIMITS = {"portfolio": 30, "certificate": 12, "salon": 20}   # на мастера (портфолио, сертификаты) / на салон

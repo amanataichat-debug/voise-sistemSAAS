@@ -541,3 +541,82 @@ body.bk-dragging, body.bk-dragging * { user-select: none; -webkit-user-select: n
   .bk-room-add .btn { grid-column: 1 / -1; }
   .bk-dt .input[type="time"] { flex-basis: 96px; }
 }
+
+/* ── страница салона: конструктор (шаг 1.5, booking/page.js) ── */
+.pg-cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+.pg-ed { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pg-card { border: 1px solid var(--vf-border); border-radius: 18px; background: var(--vf-surface); padding: 16px 18px 18px; }
+.pg-ch { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pg-ch h3 { margin: 0; font: 700 16px/1.3 var(--vf-font-display); }
+.pg-ch span { font-size: 12.5px; color: var(--vf-text-3); }
+.pg-cnt { font-weight: 500; font-size: 12px; }
+.pg-ready { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 18px; background: linear-gradient(120deg, var(--vf-accent-soft), color-mix(in srgb, var(--vf-accent) 3%, white)); }
+.pg-ring { --p: 0; width: 58px; height: 58px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(closest-side, var(--vf-surface) 76%, transparent 78% 100%), conic-gradient(var(--vf-accent) calc(var(--p) * 1%), var(--vf-surface-3) 0); }
+.pg-ring b { font-size: 14px; }
+.pg-rt { min-width: 0; }
+.pg-rt > b { display: block; font-size: 15px; margin-bottom: 6px; }
+.pg-todo { display: flex; flex-wrap: wrap; gap: 6px; }
+.pg-tg { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; border-radius: 999px; border: 1px dashed color-mix(in srgb, var(--vf-accent) 45%, transparent); background: var(--vf-surface); color: var(--vf-accent); font: 600 12.5px var(--vf-font); cursor: pointer; }
+.pg-tg .ic { width: 13px; height: 13px; }
+.pg-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: 16px; background: var(--vf-surface); }
+.pg-url { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.pg-url span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-url .ic { width: 16px; height: 16px; color: var(--vf-accent); flex: none; }
+.pg-sw { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--vf-text-2); margin-left: auto; cursor: pointer; }
+.pg-photos { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; align-items: stretch; }
+.pg-cover { position: relative; aspect-ratio: 16 / 7; border-radius: 16px; overflow: hidden; background: var(--vf-surface-2); border: 1px dashed var(--vf-border-strong); }
+.pg-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pg-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; color: var(--vf-text-3); font-size: 13px; padding: 10px; }
+.pg-ph .ic { width: 26px; height: 26px; color: var(--vf-text-4); }
+.pg-pa { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
+.pg-pa .btn { background: rgba(255,255,255,.94); }
+.pg-logo { display: flex; flex-direction: column; gap: 10px; }
+.pg-lg { width: 84px; height: 84px; border-radius: 24px; overflow: hidden; display: grid; place-items: center; background: linear-gradient(135deg, #f472b6, #d6336c); color: #fff; font: 800 30px var(--vf-font); box-shadow: 0 8px 20px -12px rgba(15,23,42,.5); }
+.pg-lg img { width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.pg-pa2 { display: flex; gap: 6px; margin-top: 8px; }
+.pg-gh { display: flex; flex-direction: column; gap: 2px; margin: 16px 0 8px; }
+.pg-gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.pg-gi { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--vf-surface-2); }
+.pg-gi img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pg-cap { position: absolute; left: 6px; right: 6px; bottom: 6px; font-size: 11px; color: #fff; background: rgba(15,23,42,.55); border-radius: 8px; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-ga { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity var(--vf-fast); }
+.pg-gi:hover .pg-ga, .pg-gi:focus-within .pg-ga { opacity: 1; }
+.pg-ga button { width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(255,255,255,.94); display: grid; place-items: center; cursor: pointer; color: var(--vf-text); }
+.pg-ga .ic { width: 14px; height: 14px; }
+.pg-add { aspect-ratio: 1; border-radius: 14px; border: 1.5px dashed var(--vf-border-strong); background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--vf-text-3); font: 600 12.5px var(--vf-font); cursor: pointer; }
+.pg-add:hover { border-color: var(--vf-accent); color: var(--vf-accent); background: var(--vf-accent-soft); }
+.pg-promo { padding: 12px; border-radius: 14px; background: var(--vf-surface-2); margin-bottom: 10px; }
+.pg-promo .field { margin-bottom: 8px; }
+.pg-sws { display: flex; flex-wrap: wrap; gap: 10px; }
+.pg-sw-c { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--c); cursor: pointer; box-shadow: 0 0 0 2px var(--vf-surface), 0 0 0 3px transparent; transition: box-shadow var(--vf-fast); }
+.pg-sw-c.on { box-shadow: 0 0 0 3px var(--vf-surface), 0 0 0 5px var(--c); }
+.pg-hours { display: flex; flex-wrap: wrap; gap: 6px; }
+.pg-hours span { display: inline-flex; gap: 6px; padding: 5px 10px; border-radius: 10px; background: var(--vf-surface-2); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pg-hours span.off { color: var(--vf-text-4); }
+.pg-hours b { font-weight: 700; }
+.pg-kit { display: flex; gap: 16px; align-items: flex-start; }
+.pg-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
+.pg-qr img { width: 132px; height: 132px; border-radius: 12px; border: 1px solid var(--vf-border); padding: 6px; background: #fff; }
+.pg-kt ul { margin: 6px 0 8px; padding-left: 18px; font-size: 13.5px; color: var(--vf-text-2); }
+.pg-slug { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pg-slug .input { flex: 1 1 160px; max-width: 260px; }
+.pg-prev { position: sticky; top: 16px; }
+.pg-phone { position: relative; width: 340px; height: 700px; margin: 0 auto; border-radius: 46px; padding: 12px; background: #0f172a; box-shadow: 0 30px 60px -30px rgba(15,23,42,.6), inset 0 0 0 2px #334155; }
+.pg-phone iframe { width: 100%; height: 100%; border: 0; border-radius: 36px; background: #fff; display: block; }
+.pg-notch { position: absolute; top: 18px; left: 50%; width: 92px; height: 22px; margin-left: -46px; border-radius: 14px; background: #0f172a; z-index: 2; }
+.pg-savebar { position: fixed; transition: transform .25s ease, opacity .2s, visibility .2s; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 900; transform: translate(-50%, 140%);
+  display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; border-radius: 16px; background: #0f172a; color: #fff; box-shadow: 0 18px 40px -18px rgba(15,23,42,.6); font-size: 14px; }
+.pg-savebar:not(.on) { visibility: hidden; opacity: 0; pointer-events: none; }
+.pg-savebar.on { transform: translate(-50%, 0); visibility: visible; opacity: 1; }
+@media (max-width: 1200px) { .pg-cols { grid-template-columns: minmax(0, 1fr); } .pg-prev { display: none; } }
+@media (max-width: 760px) {
+  .pg-photos { grid-template-columns: minmax(0, 1fr); }
+  .pg-logo { flex-direction: row; align-items: center; }
+  .pg-card { padding: 14px; }
+  .pg-sw { margin-left: 0; }
+  .pg-kit { flex-direction: column; align-items: center; }
+  .pg-ga { opacity: 1; }
+  .pg-savebar { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 32px); justify-content: space-between; }
+  .pg .ms-head [data-pg-save] { display: none; }        /* на телефоне сохраняет нижняя полоса */
+}

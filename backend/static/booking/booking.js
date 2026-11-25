@@ -116,12 +116,23 @@
   function canSetup() { return S.staffCan ? S.staffCan('booking_setup') : true; }
   function canServices() { return S.staffCan ? (S.staffCan('booking_setup') || S.staffCan('catalog')) : true; }
   function openMasters() {
-    if (st.view !== 'masters' && st.view !== 'services') st.prevView = st.view;
+    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
     st.view = 'masters'; render(); window.scrollTo(0, 0);
   }
   function openServices() {
-    if (st.view !== 'masters' && st.view !== 'services') st.prevView = st.view;
+    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
     st.view = 'services'; render(); window.scrollTo(0, 0);
+  }
+  // Страница салона /beauty/<slug> (шаг 1.5): конструктор — booking/page.js
+  function openPage() {
+    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
+    st.view = 'page'; render(); window.scrollTo(0, 0);
+  }
+  function pctx() {
+    return { root: root, canEdit: canSetup(),
+      back: function () { st.view = st.prevView || 'day'; render(); window.scrollTo(0, 0); },
+      openMasters: openMasters,
+      onChange: function () { S.bust(); } };
   }
   function sctx() {
     return { root: root, canEdit: canServices(),
@@ -139,6 +150,7 @@
   function render() {
     if (st.view === 'masters' && M()) { document.body.classList.add('bk-masters-on'); M().open(mctx()); return; }
     if (st.view === 'services' && window.BookingServices) { document.body.classList.add('bk-masters-on'); BookingServices.open(sctx()); return; }
+    if (st.view === 'page' && window.BookingPage) { document.body.classList.add('bk-masters-on'); BookingPage.open(pctx()); return; }
     document.body.classList.remove('bk-masters-on');
     var d = dayTitle(st.day);
     if (st.view === 'month' && !isPhone()) { var pk = parseKey(st.day); d = { main: MONTHS[pk.getUTCMonth()] + ' ' + pk.getUTCFullYear(), sub: '' }; }
@@ -950,6 +962,8 @@
         '<button class="btn btn-primary" type="button" id="bk-save-r" style="margin-top:10px">Сохранить правила</button></div>' +
         '<div data-pane="l" hidden>' +
         '<p class="muted">Клиент сам выбирает услугу, мастера и время — запись появится у вас в календаре, а вам придёт уведомление.</p>' +
+        '<div class="ms-tip" style="margin-bottom:12px">' + icon('store') + '<div><b>Страница салона</b><span>Обложка, фото, мастера с работами, акции и запись — оформите в «Страница салона».</span>' +
+        '<div style="margin-top:8px"><button class="btn btn-sm" type="button" data-open-page>' + icon('arrow-right') + '<span>Открыть конструктор</span></button></div></div></div>' +
         '<div class="bk-link"><span id="bk-url">' + esc(page.url || '') + '</span></div>' +
         '<div class="bk-actions"><button class="btn btn-sm" type="button" id="bk-copy">' + icon('copy') + 'Скопировать</button>' +
         '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(page.url || '#') + '">' + icon('external-link') + 'Открыть</a></div>' +
@@ -971,6 +985,8 @@
     S.$$('[data-tab]', d.el).forEach(function (b) {
       b.addEventListener('click', function () {
         if (b.getAttribute('data-tab') === 'm') { d.close(); openMasters(); return; }
+        var op = S.$('[data-open-page]', d.el);
+        if (op && !op._b) { op._b = true; op.addEventListener('click', function () { d.close(); openPage(); }); }
         S.$$('[data-tab]', d.el).forEach(function (x) { x.classList.toggle('on', x === b); });
         S.$$('[data-pane]', d.el).forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== b.getAttribute('data-tab'); });
         if (b.getAttribute('data-tab') === 'l') drawLinkKit(d);
@@ -1128,13 +1144,13 @@
     try { var v = localStorage.getItem('vf_booking_view'); if (v === 'week' || v === 'day' || v === 'month') st.view = v; } catch (e) { /* ignore */ }
     var q = new URLSearchParams(location.search);
     st.day = q.get('date') || keyOf(new Date());
-    if (q.get('view') === 'masters' || q.get('view') === 'services') { st.prevView = st.view; st.view = q.get('view'); }
+    if (q.get('view') === 'masters' || q.get('view') === 'services' || (q.get('view') === 'page' && canSetup())) { st.prevView = st.view; st.view = q.get('view'); }
     var acts = document.getElementById('bk-actions');
     // Мастера, график, правила и ссылка — у владельца и сотрудника с разделом «Мастера и график»
     var setup = canSetup();
     acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-services-btn" title="Услуги: прайс, время, кто делает">' + icon('sparkles') + '<span class="lbl">Услуги</span></button>' +
       '<button class="btn btn-sm" type="button" id="bk-masters-btn" title="Мастера: фото, график, услуги и цены">' + icon('users') + '<span class="lbl">Мастера</span></button>' +
-      (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
+      (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Страница салона: витрина и онлайн-запись для клиентов">' + icon('store') + '<span class="lbl">Страница салона</span></button>' +
       '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' : '') +
       '<button class="btn btn-primary btn-sm" type="button" id="bk-new">' + icon('plus') + '<span class="lbl">Записать</span></button>';
     document.getElementById('bk-new').addEventListener('click', function () { newBooking({}); });
@@ -1142,9 +1158,7 @@
     document.getElementById('bk-services-btn').addEventListener('click', openServices);
     if (setup) {
       document.getElementById('bk-set').addEventListener('click', settings);
-      document.getElementById('bk-link-btn').addEventListener('click', function () {
-        settings(); setTimeout(function () { var t = document.querySelector('[data-tab="l"]'); if (t) t.click(); }, 30);
-      });
+      document.getElementById('bk-link-btn').addEventListener('click', openPage);
     }
     var fab = document.createElement('button');
     fab.className = 'bk-fab'; fab.type = 'button'; fab.innerHTML = icon('plus') + 'Записать';
