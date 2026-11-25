@@ -25,14 +25,23 @@
     { id: 'tasks',     label: 'Задачи',    icon: 'far fa-calendar-check', modal: 'tasks-cal-modal-overlay',     open: 'openTasksCalendar',    countKey: 'scheduled_tasks' },
     { id: 'analytics', label: 'Аналитика', icon: 'fas fa-chart-column',   modal: 'analytics-view-overlay',      open: 'openAnalyticsView',    countKey: null },
   ];
+  // Салон (Voksy Beauty, шаг 1.6а): вместо «Воронки» и «Звонков» — журнал «Записи» (отдельная страница)
+  const SALON_TABS = ['chat', 'clients', 'booking', 'tasks', 'analytics'];
+  const BOOKING_TAB = { id: 'booking', label: 'Записи', icon: 'far fa-calendar', href: '/static/booking.html', countKey: null };
   const TAB_IDS = TABS.map(t => t.id);
   const TAB_BY_ID = Object.fromEntries(TABS.map(t => [t.id, t]));
   let currentTab = 'chat';
 
+  function visibleTabs(){
+    if(!window.AGENT_SALON) return TABS;
+    return SALON_TABS.map(id => id === 'booking' ? BOOKING_TAB : TAB_BY_ID[id]);
+  }
+
   function renderTabsBar(){
     const host = document.getElementById('agent-tabs');
     if(!host) return;
-    host.innerHTML = TABS.map(t => `
+    host.innerHTML = visibleTabs().map(t => t.href ? `
+      <a class="atab" data-tab="${t.id}" href="${t.href}"><i class="${t.icon}"></i><span>${t.label}</span></a>` : `
       <button class="atab" data-tab="${t.id}" type="button" onclick="switchTab('${t.id}')">
         <i class="${t.icon}"></i><span>${t.label}</span>
         ${t.countKey ? `<span class="acount is-zero" data-count="${t.id}">0</span>` : ''}
@@ -40,6 +49,7 @@
     `).join('');
     highlight(currentTab);
   }
+  window.renderAgentTabs = function(){ renderTabsBar(); if(window.refreshTabCounts) window.refreshTabCounts(); };
 
   function highlight(id){
     const host = document.getElementById('agent-tabs');

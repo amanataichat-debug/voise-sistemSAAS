@@ -420,6 +420,27 @@ check("копии фото не видны в библиотеке файлов 
 r = run("send_staff_portfolio", {"master": "Бегимай"})
 check("нет фото у мастера — расскажи словами", not r.get("ok") and "словами" in r["error"], r)
 
+# ── отчёт салона владельцу
+past = db.query(Booking).filter(Booking.contact_id == client.id).order_by(Booking.start_at).all()
+for b in past:
+    shift = timedelta(days=80)
+    b.start_at, b.end_at = b.start_at - shift, b.end_at - shift
+db.commit()
+rep = run("get_salon_report", {"period": "quarter"}, ctx(contact=None, surface="chat", direction=None))
+check("get_salon_report: записи, выручка, мастера, услуги",
+      rep.get("ok") and rep["bookings"]["came"] >= 3 and rep["bookings"]["revenue_text"].endswith("сом")
+      and any(m["name"] == "Айгуль" for m in rep["masters"]) and rep["top_services"], str(rep)[:400])
+check("get_salon_report: давно не приходила — Нурай (визиты, последняя услуга, мастер)",
+      any(x["name"] == "Нурай" and x["visits"] == 3 and x["last_master"] == "Айгуль" and x["days_since"] >= 45
+          for x in rep["lapsed_clients"]), rep.get("lapsed_clients"))
+r = run("get_salon_report", {}, ctx())
+check("отчёт салона клиенту в переписке не отдаётся", not r.get("ok"), r)
+chat_tools = asyncio.run(agent_tools.build_chat_tools(agent, db))
+ctn = {(t.get("function") or {}).get("name") for t in chat_tools}
+pc_tools = asyncio.run(agent_tools.build_postcall_tools(agent, db))
+ptn = {(t.get("function") or {}).get("name") for t in pc_tools}
+check("отчёт салона: в чате владельца есть, в разборе переписки нет", "get_salon_report" in ctn and "get_salon_report" not in ptn)
+
 # ── набор инструментов бота
 tools = asyncio.run(agent_tools.build_postcall_tools(agent, db))
 tn = {(t.get("function") or {}).get("name") for t in tools}

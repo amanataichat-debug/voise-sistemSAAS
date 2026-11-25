@@ -25,7 +25,10 @@ from backend.services import booking_service as bs
 
 logger = logging.getLogger(__name__)
 
-TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio"}
+TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio",
+              "get_salon_report"}
+OWNER_TOOL_NAMES = {"get_salon_report"}      # только чат владельца: клиенту в переписке не даётся
+LAPSED_DAYS = 45                             # «давно не приходил» по умолчанию
 MAX_PORTFOLIO_SEND = 4
 MAX_SERVICES_OUT = 40
 
@@ -102,6 +105,28 @@ TOOLS = [
                             "description": "Канал (пусто — где клиент писал последним)"},
             },
             "required": ["master"],
+        },
+    },
+]
+
+
+OWNER_TOOLS = [
+    {
+        "type": "function",
+        "name": "get_salon_report",
+        "description": (
+            "Отчёт салона для владельца: записи и визиты, неявки, выручка и средний чек, сравнение с прошлым "
+            "таким же периодом, загрузка и выручка мастеров, популярные услуги, прибыль (если внесены расходы) и "
+            "клиенты, которые давно не приходили (кому пора на повтор). Для «как неделя», «выручка за месяц», "
+            "«как работают мастера», «кто давно не приходил», «кто не пришёл»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "this_month", "quarter"],
+                           "description": "Период (по умолчанию week)"},
+                "lapsed_days": {"type": "integer", "description": "Сколько дней без визита считать «давно» (по умолчанию 45)"},
+            },
         },
     },
 ]
@@ -307,6 +332,70 @@ def get_salon_information(db: Session, user, host: Optional[str] = None) -> Dict
     return {k: val for k, val in out.items() if val not in (None, [], "")} | {"ok": True}
 
 
+# ───────────────────────────── отчёт владельцу ─────────────────────────────
+
+def lapsed_clients(db: Session, user, days: int = LAPSED_DAYS, limit: int = 15) -> List[Dict[str, Any]]:
+    """Клиенты, которые бывали, но не приходят дольше days дней и не записаны вперёд."""
+    from sqlalchemy import text
+    rows = db.execute(text("""
+        SELECT b.contact_id, max(b.start_at) AS last_at, count(*) AS visits,
+               (array_agg(b.resource_id ORDER BY b.start_at DESC))[1] AS last_master,
+               (array_agg(b.service_title ORDER BY b.start_at DESC))[1] AS last_service
+        FROM bookings b
+        WHERE b.user_id = :uid AND b.contact_id IS NOT NULL AND b.status IN ('arrived', 'completed')
+          AND NOT EXISTS (SELECT 1 FROM bookings f WHERE f.contact_id = b.contact_id AND f.user_id = :uid
+                          AND f.status IN ('booked', 'confirmed') AND f.start_at > now())
+        GROUP BY b.contact_id
+        HAVING max(b.start_at) < now() - make_interval(days => :d)
+        ORDER BY count(*) DESC, max(b.start_at) DESC
+        LIMIT :lim
+    """), {"uid": str(user.id), "d": int(days), "lim": int(limit)}).fetchall()
+    if not rows:
+        return []
+    from backend.models.agent_contact import AgentContact
+    names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
+    contacts = {str(c.id): c for c in db.query(AgentContact).filter(AgentContact.id.in_([r[0] for r in rows])).all()}
+    now = bs.now_utc()
+    out = []
+    for cid, last_at, visits, master, service in rows:
+        c = contacts.get(str(cid))
+        out.append({"agent_contact_id": str(cid), "name": c.name if c else None, "visits": int(visits),
+                    "days_since": (now - bs._aw(last_at)).days, "last_service": service,
+                    "last_master": names.get(str(master)) if master else None})
+    return out
+
+
+def get_salon_report(db: Session, user, period: Optional[str] = "week", lapsed_days: Optional[int] = None) -> Dict[str, Any]:
+    from backend.services import analytics_service
+    period = period if period in ("today", "yesterday", "week", "month", "this_month", "quarter") else "week"
+    rep = analytics_service.cached_report(db, user, period=period, sections=("bookings", "finance"))
+    b = rep.get("bookings") or {}
+    out: Dict[str, Any] = {"ok": True, "period": (rep.get("period") or {}).get("label") or period}
+    if b:
+        out["bookings"] = {
+            "total": b.get("total"), "prev_total": b.get("prev_total"), "came": b.get("arrived"),
+            "no_show": b.get("no_show"), "no_show_pct": b.get("no_show_pct"), "cancelled": b.get("cancelled"),
+            "upcoming": b.get("upcoming"), "revenue_text": bs.price_text(b.get("revenue") or 0),
+            "prev_revenue_text": bs.price_text(b.get("prev_revenue") or 0),
+            "avg_check_text": bs.price_text(b["avg_check"]) if b.get("avg_check") else None,
+            "load_pct": b.get("load_pct"), "repeat_clients": b.get("repeat_clients"),
+        }
+        out["masters"] = [{"name": m["name"], "bookings": m["count"], "load_pct": m["load_pct"],
+                           "revenue_text": bs.price_text(m["revenue"] or 0)} for m in b.get("masters") or []]
+        out["top_services"] = [{"title": x["title"], "count": x["count"], "revenue_text": bs.price_text(x["revenue"] or 0)}
+                               for x in (b.get("services") or [])[:5]]
+    fin = rep.get("finance") or {}
+    if fin and fin.get("expenses_count"):
+        out["profit_text"] = bs.price_text(fin.get("profit") or 0)
+        out["expenses_text"] = bs.price_text(fin.get("expenses") or 0)
+    days = max(14, min(int(lapsed_days or LAPSED_DAYS), 365))
+    out["lapsed_days"] = days
+    out["lapsed_clients"] = lapsed_clients(db, user, days)
+    if not b:
+        out["note"] = "Записей пока нет — журнал записи пуст"
+    return out
+
+
 # ───────────────────────────── фото работ мастера ─────────────────────────────
 
 async def _mirror(db: Session, user_id, agent_config_id, media_id, filename: str, title: Optional[str]):
@@ -415,11 +504,31 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             return _dump(get_salon_information(db, user))
         if tool_name == "send_staff_portfolio":
             return _dump(await send_staff_portfolio(db, user, args, context))
+        if tool_name == "get_salon_report":
+            if context.get("surface") == "postcall":
+                return _dump({"ok": False, "error": "Отчёт салона — только владельцу"})
+            return _dump(get_salon_report(db, user, args.get("period"), args.get("lapsed_days")))
     except Exception as e:
         db.rollback()
         logger.error(f"[SALON-AI] {tool_name} failed: {e}", exc_info=True)
         return _dump({"ok": False, "error": "Не удалось получить данные, попробуйте ещё раз"})
     return _dump({"ok": False, "error": "unknown_tool"})
+
+
+def augment_owner(tools: list, agent_config, db: Session) -> list:
+    """Отчёт салона — в чат владельца (и Telegram владельца), если включена запись."""
+    try:
+        from backend.models.user import User
+        from backend.services.agent_tools import to_chat_completions_tools
+        from backend.services.booking_tools import booking_enabled
+        user = db.query(User).filter(User.id == agent_config.user_id).first()
+        if not booking_enabled(db, user):
+            return tools
+        have = {(t.get("function") or {}).get("name") for t in tools}
+        return tools + [t for t in to_chat_completions_tools(OWNER_TOOLS) if t["function"]["name"] not in have]
+    except Exception as e:
+        logger.warning(f"[SALON-AI] owner tools skipped: {e}")
+        return tools
 
 
 PROMPT_BLOCK = (

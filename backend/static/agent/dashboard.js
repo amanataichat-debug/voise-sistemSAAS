@@ -138,11 +138,13 @@ async function loadStats(){
     const r = await apiFetch(API + '/stats');
     if(!r || r.status!==200) return;
     const s = await r.json();
-    document.getElementById('stat-calls').textContent = s.total_calls||0;
+    // Салон (salon-mode.js): первая карточка — «Записи сегодня», её заполняет loadSalonToday
+    if(window.AGENT_SALON){ if(typeof window.loadSalonToday === 'function') window.loadSalonToday(); }
+    else document.getElementById('stat-calls').textContent = s.total_calls||0;
     document.getElementById('stat-contacts').textContent = s.total_contacts||0;
     // Подпись-подсказка под цифрой — короткая, помещается в узкую stat-card
     const callsTrend = document.getElementById('stat-calls-trend');
-    if(callsTrend){
+    if(callsTrend && !window.AGENT_SALON){
       const success = s.success_calls || 0;
       const na = s.no_answer_calls || 0;
       callsTrend.innerHTML = `✓ <b>${success}</b> · не ответ. <b>${na}</b>`;

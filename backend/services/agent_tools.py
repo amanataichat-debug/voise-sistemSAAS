@@ -771,6 +771,8 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_whatsapp(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
     tools = _augment_with_booking(tools, agent_config, db)
+    from backend.services import salon_ai_tools
+    tools = salon_ai_tools.augment_owner(tools, agent_config, db)
     tools = _augment_with_orders(tools, agent_config, db)
     tools = _patch_move_stage_tool_for_agent(tools, agent_config)
     return _limit_tools_for_mode(tools, agent_config, db, "owner_chat")
