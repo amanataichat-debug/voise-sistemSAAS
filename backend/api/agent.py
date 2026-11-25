@@ -1119,9 +1119,13 @@ async def create_agent(
     # 8. Пробный период бота при ПЕРВОМ создании: 3 дня уровня Старт (режим reactive) +
     #    1500 кредитов. Если trial уже был — не выдаём повторно. Оплаченные Старт и Profi
     #    его не получают: у них свои кредиты в месяц. Автономного агента (Profi) на пробе нет.
+    #    Voksy Beauty (в т.ч. Beauty Pro уровня Profi) кредитов в тарифе не имеет — стартовые
+    #    1500 получает, как и пробный кабинет.
     trial_activated = False
     try:
-        if not (current_user.is_start_plan() or current_user.has_agent_access()):
+        paid_with_credits = (current_user.is_start_plan() or current_user.has_agent_access()) \
+            and not current_user.is_beauty_plan()
+        if not paid_with_credits:
             trial_activated = activate_agent_trial(db, current_user)
         if trial_activated:
             db.refresh(current_user)

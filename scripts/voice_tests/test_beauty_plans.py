@@ -100,6 +100,13 @@ codes = [d["code"] for d in pc.BEAUTY_DEFAULTS]
 check("по умолчанию: три тарифа салона с ценами владельца", codes == ["beauty_start", "beauty_ai", "beauty_pro"]
       and [d["price"] for d in pc.BEAUTY_DEFAULTS] == [1990, 3990, 5990]
       and [d["limits"]["staff"] for d in pc.BEAUTY_DEFAULTS] == [3, 10, 20])
+check("уровни: Beauty Start и AI — как Старт (reactive), Beauty Pro — как Profi (full)",
+      [d["limits"]["agent_mode"] for d in pc.BEAUTY_DEFAULTS] == ["reactive", "reactive", "full"]
+      and any("Автономный" in f for f in pc.BEAUTY_DEFAULTS[2]["features"])
+      and not any("Автономный" in f for d in pc.BEAUTY_DEFAULTS[:2] for f in d["features"]))
+check("по умолчанию: «что входит» не длиннее лимита редактора",
+      all(len(d["features"]) <= pc.MAX_FEATURES and all(len(f) <= pc.MAX_FEATURE_LEN for f in d["features"])
+          for d in pc.BEAUTY_DEFAULTS))
 check("по умолчанию: ИИ по кредитам (0 в тарифе), один тариф пробного периода, коды ≤ 20",
       all(d["limits"]["credits_month"] == 0 for d in pc.BEAUTY_DEFAULTS)
       and sum(1 for d in pc.BEAUTY_DEFAULTS if d["limits"]["trial"]) == 1
@@ -330,6 +337,7 @@ check("ensure_plan_prices не трогает Beauty", (app_module.ensure_plan_p
 buy(salon2, "beauty_pro", 6)
 apply_last(salon2)
 check("кредиты из тарифа: 1000 × 6 мес", int(fresh(salon2).credits_balance or 0) == 6000, fresh(salon2).credits_balance)
+check("Beauty Pro = уровень Profi: автономный агент", fresh(salon2).agent_mode() == "full" and fresh(salon2).has_agent_access())
 
 # индивидуальный тариф
 r = cl.post("/api/admin/plans/catalog", headers=H(admin), json={"name": "Салон Айпери", "price": 2500, "staff": 7,
@@ -448,8 +456,19 @@ check("журнал: у других ниш лимита тарифа нет", a
 
 # ── админ назначает Beauty вручную; меню и главная знают о салоне
 r = cl.post(f"/api/admin/users/{salon2.id}/subscription", headers=H(admin), json={"plan_code": "beauty_pro", "duration_days": 30, "mode": "reset"})
-check("админ назначил Beauty Pro вручную", r.status_code == 200 and fresh(salon2).subscription_plan_rel.code == "beauty_pro"
-      and fresh(salon2).agent_mode() == "reactive", r.text[:200])
+check("админ назначил Beauty Pro вручную (уровень Profi)", r.status_code == 200
+      and fresh(salon2).subscription_plan_rel.code == "beauty_pro" and fresh(salon2).agent_mode() == "full", r.text[:200])
+check("список тарифов админки: Beauty Pro даёт автономного агента", any(
+    p["code"] == "beauty_pro" and p.get("grants_agent_access") for p in cl.get("/api/admin/plans", headers=H(admin)).json()))
+
+# Beauty Pro кредитов в тарифе не имеет — стартовые 1500 при первом боте получает (Profi — нет, у него свои)
+pro_new = mk("pro@beauty.kg", "beauty_pro", business_niche="cosmetology")
+db.commit()
+r = cl.post("/api/agent/create", headers=H(pro_new), json={
+    "name": "Бот салона", "assistant_type": "eleven", "doc_who_am_i": "Салон", "doc_who_we_call": "клиенты",
+    "doc_how_we_talk": "вежливо", "doc_what_we_offer": "чистка лица", "doc_rules_and_goals": "записывать"})
+check("Beauty Pro: первый бот со стартовыми кредитами", r.status_code == 200 and r.json().get("trial_activated") is True
+      and int(fresh(pro_new).credits_balance or 0) >= 1500 and fresh(pro_new).agent_mode() == "full", r.text[:200])
 check("цена Beauty при ручном назначении не «чинится»", float(plan("beauty_pro").price) == 6490.0)
 lst = cl.get("/api/admin/plans", headers=H(admin)).json()
 check("список тарифов админки включает Beauty", {"beauty_start", "beauty_ai", "beauty_pro"} <= {p["code"] for p in lst})

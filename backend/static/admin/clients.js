@@ -157,7 +157,8 @@
       '<label class="ac-search">' + icon('search') + '<input id="ac-q" type="search" placeholder="Имя, компания, телефон, почта…" autocomplete="off"></label>' +
       '<select class="ac-select" id="ac-status"><option value="">Все статусы</option>' + Object.keys(STATUS).map(function (k) { return '<option value="' + k + '">' + STATUS[k].label + '</option>'; }).join('') + '</select>' +
       '<select class="ac-select" id="ac-niche"><option value="">Все ниши</option><option value="none">Ниша не выбрана</option></select>' +
-      '<select class="ac-select" id="ac-plan"><option value="">Все тарифы</option><option value="start">Старт</option><option value="profi">Profi</option><option value="ai_voice">AI Voice</option><option value="free">Пробный</option><option value="agent">Агент (старый)</option></select>' +
+      '<select class="ac-select" id="ac-plan"><option value="">Все тарифы</option><option value="start">Старт</option><option value="profi">Profi</option><option value="ai_voice">AI Voice</option><option value="free">Пробный</option><option value="agent">Агент (старый)</option>' +
+      '<option value="beauty_start">Beauty Start</option><option value="beauty_ai">Beauty AI</option><option value="beauty_pro">Beauty Pro</option></select>' +
       '<select class="ac-select" id="ac-sort">' + SORTS.map(function (s) { return '<option value="' + s[0] + '">' + s[1] + '</option>'; }).join('') + '</select>' +
       '<div class="ac-chips" id="ac-chips"></div>' +
       '</div>' +
