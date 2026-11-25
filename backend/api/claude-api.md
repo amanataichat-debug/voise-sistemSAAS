@@ -53,6 +53,7 @@
 - `subscription_logs.py` — `/api/subscription-logs` — лог событий подписки.
 - `subscription_status.py` — `/check-access`, `/force-check`. ⚠️ В `app.py` напрямую НЕ зарегистрирован — проверяйте подключение.
 - `payments.py` — `/api/payments` — планы (цены из БД, в сомах KGS), `/my-plans` (тарифы окна оплаты именно этого кабинета: салонам — Voksy Beauty из базы, остальным — AI Voice/Старт/Profi; `plan_catalog.catalog_for`), создание платежа Finik (302 → `payment_url`; что можно оплатить — `plan_catalog.purchasable`: салон не купит Старт, магазин — Beauty, индивидуальный тариф — только свой клиент), **`/finik-webhook`** (webhook платёжки Finik — подпись, идемпотентность, сверка суммы), success-страница (только UX), статус, `/config-check`.
+- `booking.py` (Voksy Beauty, шаг 1.2) — карточка мастера: `POST/DELETE /api/booking/resources/{id}/media` (avatar|portfolio|certificate), `PUT|POST /resources/{id}/login` (привязать / создать вход мастера — только владелец), `/api/booking/me*` — кабинет мастера (сотрудник с `booking_own` видит только свою колонку; владелец — `?resource_id=`), `media_router` → `GET /media/salon/{id}` без входа. Оплата мастера в ответах — только владельцу и бухгалтеру (`_resource_out`). `finance.py` — пускает сотрудника с разделом `finance`.
 - `partners.py` — `/api/partners` — реферальная программа, генерация ссылок, комиссии.
 
 ### Прочее

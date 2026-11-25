@@ -120,7 +120,7 @@ from .wallet_transaction import WalletTransaction, WalletTransactionType
 from .admin_audit import AdminAuditLog
 
 # Онлайн-запись: мастера, записи, страница записи (ветка 1811-niche-admin-speed)
-from .booking import BookingResource, Booking, BookingPage
+from .booking import BookingResource, Booking, BookingPage, SalonMedia
 
 # Сотрудники кабинета: вход по своей почте, права по разделам, место 150 сом/мес (ветка 1811-niche-admin-speed)
 from .team import TeamMember

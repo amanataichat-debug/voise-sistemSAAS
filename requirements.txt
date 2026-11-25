@@ -70,6 +70,8 @@ fpdf2>=2.8.0,<3.0.0
 # Оформленные PDF агента (КП, счета): reportlab Platypus — чистый Python,
 # без системных библиотек, на Render ставится из колеса (ветка 1310-kp-design)
 reportlab>=4.0,<6.0
+# Фото мастеров и салона (Voksy Beauty): проверка и уменьшение картинок; приходит и с reportlab
+Pillow>=10.0
 phonenumbers>=8.13.0,<9.0.0
 
 # Fish Audio — realtime TTS по WebSocket (протокол на MessagePack)

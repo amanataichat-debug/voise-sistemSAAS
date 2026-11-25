@@ -11,13 +11,21 @@
                     статус booked → confirmed → arrived / no_show / cancelled, откуда пришла.
   BookingPage     — настройки записи владельца: шаг сетки, буфер, за сколько можно записаться,
                     горизонт, напоминания, адрес; публичная ссылка /b/<slug>.
+  SalonMedia      — фото салона и мастеров (Voksy Beauty, шаг 1.2): аватар, портфолио, сертификаты,
+                    фото помещения. Байты — в R2 (storage_key), без R2 — прямо в базе (data), уже
+                    уменьшенные. Отдаются без входа /media/salon/<id> — их показывает страница салона.
+
+Карточка мастера (Voksy Beauty, шаг 1.2): фото, специализация (role), о себе, опыт (с какого года),
+портфолио и сертификаты (id из salon_media), свои цена и длительность услуг (service_prices),
+привязка ко входу сотрудника (team_member_id — мастер видит только свой журнал), показывать ли в
+онлайн-записи (online_booking). Колонки добавляет app.ensure_booking_tables().
 
 Таблицы создаёт app.ensure_booking_tables() в начале старта.
 """
 
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
@@ -44,6 +52,31 @@ class BookingResource(Base):
     position = Column(Integer, nullable=False, default=0)
     pay_percent = Column(Float, nullable=True)                  # % мастеру с выручки его записей «пришёл»
     pay_fixed = Column(Float, nullable=True)                    # оклад в месяц, сом
+    # — карточка мастера (Voksy Beauty) —
+    photo_id = Column(UUID(as_uuid=True), nullable=True)        # salon_media.id
+    bio = Column(Text, nullable=True)                           # «о себе» для страницы салона
+    experience_since = Column(Integer, nullable=True)           # работает с такого-то года → «опыт 7 лет»
+    portfolio = Column(JSONB, nullable=True)                    # [{"id": media_id, "caption": "..."}]
+    certificates = Column(JSONB, nullable=True)                 # [{"id": media_id, "title": "..."}]
+    service_prices = Column(JSONB, nullable=True)               # {service_id: {"price": 1500, "duration_min": 90}}
+    team_member_id = Column(UUID(as_uuid=True), nullable=True, index=True)   # вход мастера (team_members.id)
+    online_booking = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class SalonMedia(Base):
+    __tablename__ = "salon_media"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)                   # avatar | portfolio | certificate | salon
+    resource_id = Column(UUID(as_uuid=True), nullable=True, index=True)   # чей (мастер), для salon — пусто
+    mime = Column(String(40), nullable=False, default="image/jpeg")
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    storage_key = Column(String(300), nullable=True)            # R2
+    data = Column(LargeBinary, nullable=True)                   # без R2: байты прямо здесь
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

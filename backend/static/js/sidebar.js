@@ -140,6 +140,14 @@
   // Кэш привязан к токену: другой вход на этом телефоне не увидит чужое меню.
   var STAFF_KEY = 'vf_staff';
   function tokenTail() { var t = token() || ''; return t.slice(-24); }
+  // Вход сотрудника виден по самому токену (claim staff) — ещё до ответа /api/users/me
+  function tokenIsStaff() {
+    try {
+      var p = (token() || '').split('.')[1];
+      if (!p) return false;
+      return !!JSON.parse(atob(p.replace(/-/g, '+').replace(/_/g, '/'))).staff;
+    } catch (e) { return false; }
+  }
   function cachedStaff() {
     try {
       var c = JSON.parse(localStorage.getItem(STAFF_KEY) || 'null');
@@ -903,6 +911,7 @@
     var mode = cachedMode();
     if (mode !== 'reactive' && mode !== 'full' && !cachedStaff()) return;
     if (window.top !== window.self) return;           // инбокс во фрейме у Profi — без своей панели
+    if (document.body && document.body.hasAttribute('data-own-tabbar')) return;   // кабинет мастера: своя нижняя панель
     if (document.getElementById('vf-tabbar')) { markTabs(); return; }
     if (!document.getElementById('vf-tabbar-style')) {
       var st = document.createElement('style'); st.id = 'vf-tabbar-style'; st.textContent = TABBAR_STYLE;
@@ -1123,7 +1132,7 @@
     '@media (prefers-reduced-motion:reduce){.vf-voice-fab .vf-vf-wave i{animation:none}}'
   ].join('');
   // Инбокс (19.11.2026): кнопка есть и там — в списке диалогов; в открытом чате прячется (поле ввода)
-  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html'];
+  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html', '/static/master.html'];
   function renderVoiceFab() {
     var mode = cachedMode();
     var old = document.getElementById('vf-voice-fab');
@@ -1292,8 +1301,10 @@
     } catch (e) { /* ignore */ }
 
     if (!token()) return;
-    renderWalletCard(nav);
-    refreshWallet();
+    if (!cachedStaff() && !tokenIsStaff()) {   // кошелёк владельца сотруднику не нужен (и закрыт ему — 403)
+      renderWalletCard(nav);
+      refreshWallet();
+    }
     renderStaffBadge();
     apiFetch('/users/me').then(function (r) { return r.ok ? r.json() : null; }).then(function (user) {
       if (!user) return;
@@ -1340,6 +1351,7 @@
     openTopup: openTopupModal,
     openCredits: openCreditsModal,
     openMore: openMoreMenu,
+    openStaffPassword: openStaffPassword,
     MENU: MENU
   };
 

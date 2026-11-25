@@ -82,9 +82,14 @@ class FindBookingSlotsFunction(FunctionBase):
             res = _match_resource(db, user.id, arguments.get("master"))
             slots = bs.nearest_slots(db, user, service, res.id if res else None, arguments.get("date"), count=3)
             db.commit()
-            return {"ok": True, "slots": [{"start": s["start"], "say": s["label"], "master": s["resource"]} for s in slots],
+            note = None if slots else "Свободного времени в ближайшие 2 недели нет"
+            if res is not None and not bs.bookable_online(res):
+                note = f"К мастеру {res.name} записывает администратор — предложи другого мастера или передать заявку"
+            return {"ok": True, "slots": [dict({"start": s["start"], "say": s["label"], "master": s["resource"]},
+                                               **({"price": s["price"], "duration_min": s["duration_min"]}
+                                                  if "duration_min" in s else {})) for s in slots],
                     "service": bs.service_to_dict(service) if service else None,
-                    "note": None if slots else "Свободного времени в ближайшие 2 недели нет"}
+                    "note": note}
         except Exception as e:
             db.rollback()
             logger.error(f"[VOICE-BOOKING] slots failed: {e}", exc_info=True)

@@ -5,7 +5,8 @@
  * семь колонок. Телефон: лента дней и список записей дня, кнопка «Записать». Запись: клиент
  * (поиск по CRM или имя + телефон), услуга из каталога, мастер, свободное время. Карточка записи:
  * подтвердил / пришёл / не пришёл / отменить / перенести, ссылки «позвонить» и «написать».
- * Настройки: мастера и график, правила записи, ссылка для клиентов /b/<slug>.
+ * Настройки: правила записи, ссылка для клиентов /b/<slug>. Мастера (фото, график, услуги и цены,
+ * работы, вход в кабинет мастера) — экран «Мастера» (booking/masters.js, Voksy Beauty шаг 1.2).
  * API: /api/booking/* (services/booking_service.py — одна логика с ботом, звонком и ссылкой).
  */
 (function () {
@@ -16,7 +17,8 @@
   var WD = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
   var MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var STATUS = { booked: 'Записан', confirmed: 'Подтвердил', arrived: 'Пришёл', no_show: 'Не пришёл', cancelled: 'Отменена' };
-  var st = { day: null, view: 'day', win: null, data: null, filter: '' };
+  var st = { day: null, view: 'day', prevView: 'day', win: null, data: null, filter: '' };
+  var M = function () { return window.BookingMasters; };
   var root, esc, icon;
 
   // ── даты (по Бишкеку) ──
@@ -52,14 +54,34 @@
   function resources() { return (st.data && st.data.resources) || []; }
   function resById(id) { return resources().filter(function (r) { return r.id === id; })[0]; }
   function colorOf(b) { var r = resById(b.resource_id); return (r && r.color) || '#2a5ce8'; }
-  function dayBookings(k) {
+  function dayBookings(k, all) {
     return ((st.data && st.data.bookings) || []).filter(function (b) {
-      return keyOf(new Date(b.start)) === k && (!st.filter || b.resource_id === st.filter);
+      return keyOf(new Date(b.start)) === k && (all || !st.filter || b.resource_id === st.filter);
     });
   }
 
   // ── каркас ──
+  function mctx() {
+    return { data: function () { return st.data; }, root: root, canSetup: canSetup(), isOwner: !S.staff(),
+      back: function () { st.view = st.prevView || 'day'; render(); window.scrollTo(0, 0); },
+      refresh: function () { render(); }, reload: function () { reload(); } };
+  }
+  function canSetup() { return S.staffCan ? S.staffCan('booking_setup') : true; }
+  function openMasters() {
+    if (st.view !== 'masters') st.prevView = st.view;
+    st.view = 'masters'; render(); window.scrollTo(0, 0);
+  }
+  function editMaster(id) {
+    var r = resById(id);
+    if (!r || !M()) return;
+    if (!canSetup()) { st.filter = st.filter === id ? '' : id; render(); return; }
+    M().bind(mctx()); M().editor(r);
+  }
+  function ava(r, size) { return M() ? M().ava(r, size) : '<span class="dot" style="background:' + esc(r.color) + '"></span>'; }
+
   function render() {
+    if (st.view === 'masters' && M()) { document.body.classList.add('bk-masters-on'); M().open(mctx()); return; }
+    document.body.classList.remove('bk-masters-on');
     var d = dayTitle(st.day);
     var list = dayBookings(st.day);
     var active = list.filter(function (b) { return b.status !== 'cancelled'; });
@@ -81,6 +103,11 @@
       kpi('Записей', active.length) + kpi('Пришли', arrived.length, 'good') + kpi('Не пришли', noshow.length, noshow.length ? 'bad' : '') +
       kpi('Выручка', revenue ? revenue.toLocaleString('ru-RU') + ' сом' : '—') + '</div>' +
       '<div class="bk-days" id="bk-days">' + dayStrip() + '</div>' +
+      (resources().length > 1 ? '<div class="bk-mchips">' + '<button type="button" class="bk-mchip' + (!st.filter ? ' on' : '') + '" data-mf=""><span class="bk-ava all" style="--s:30px">' + icon('users') + '</span><span>Все</span></button>' +
+        resources().map(function (r) {
+          var n = dayBookings(st.day, true).filter(function (b) { return b.resource_id === r.id && b.status !== 'cancelled'; }).length;
+          return '<button type="button" class="bk-mchip' + (st.filter === r.id ? ' on' : '') + '" data-mf="' + esc(r.id) + '">' + ava(r, 30) + '<span>' + esc(String(r.name).split(' ')[0]) + '</span>' + (n ? '<i>' + n + '</i>' : '') + '</button>';
+        }).join('') + '</div>' : '') +
       '<div class="bk-agenda" id="bk-agenda">' + agenda(list) + '</div>' +
       '<div class="bk-desk">' + (st.view === 'week' ? weekView() : dayGrid(list)) + '</div>';
     root.innerHTML = html;
@@ -112,7 +139,8 @@
       var r = resById(b.resource_id);
       return '<div class="bk-item ' + esc(b.status) + '" data-bk="' + esc(b.id) + '" style="--c:' + esc(colorOf(b)) + '">' +
         '<div class="tm">' + esc(hm(b.start)) + '<small>' + b.duration_min + ' мин</small></div><div class="bar"></div>' +
-        '<div class="bd"><div class="cl">' + esc(b.client_name || 'Клиент') + '</div><div class="sv">' + esc([b.service, r && r.name].filter(Boolean).join(' · ') || '—') + '</div></div>' +
+        '<div class="bd"><div class="cl">' + esc(b.client_name || 'Клиент') + '</div><div class="sv">' + esc(b.service || '—') + '</div>' +
+        (r && resources().length > 1 ? '<div class="ms-who">' + ava(r, 20) + '<span>' + esc(r.name) + '</span></div>' : '') + '</div>' +
         '<span class="st ' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span></div>';
     }).join('');
   }
@@ -130,10 +158,13 @@
     var cols = '64px repeat(' + res.length + ', minmax(170px, 1fr))';
     var out = '<div class="bk-card"><div class="bk-scroll"><div class="bk-grid" style="grid-template-columns:' + cols + '">';
     out += '<div class="bk-hcell corner"></div>' + res.map(function (r) {
-      var mins = (r.schedule[wd] || []).reduce(function (s, iv) { return s + toMin(iv[1]) - toMin(iv[0]); }, 0);
-      var off = (r.days_off || []).indexOf(st.day) >= 0;
-      return '<div class="bk-hcell"><span class="dot" style="background:' + esc(r.color) + '"></span><div style="min-width:0"><div class="n">' + esc(r.name) + '</div>' +
-        '<div class="r">' + (off || !mins ? 'выходной' : (Math.round(mins / 6) / 10) + ' ч работы') + '</div></div></div>';
+      var iv = r.schedule[wd] || [];
+      var off = (r.days_off || []).indexOf(st.day) >= 0 || !iv.length;
+      var n = list.filter(function (b) { return b.resource_id === r.id && b.status !== 'cancelled'; }).length;
+      var hours = off ? 'выходной' : iv[0][0].replace(/^0/, '') + '–' + iv[iv.length - 1][1].replace(/^0/, '');
+      return '<button type="button" class="bk-hcell bk-mhead' + (off ? ' off' : '') + '" data-mh="' + esc(r.id) + '" style="--c:' + esc(r.color) + '" title="' + esc(canSetup() ? 'Карточка мастера' : 'Показать только этого мастера') + '">' +
+        ava(r, 38) + '<span class="mh-t"><span class="n">' + esc(r.name) + '</span>' +
+        '<span class="r">' + esc(hours) + (n ? ' · ' + n + ' зап.' : '') + (r.online_booking === false ? ' · ' + icon('lock') : '') + '</span></span></button>';
     }).join('');
     var times = '<div class="bk-times" style="height:' + h + 'px;position:relative">';
     for (var m = lo; m <= hi; m += 60) times += '<div class="bk-time' + (m === lo ? ' first' : '') + '" style="top:' + ((m - lo) * PX) + 'px">' + String(m / 60).padStart(2, '0') + ':00</div>';
@@ -181,6 +212,10 @@
   // ── события ──
   function onClick(e) {
     var t = e.target;
+    var mh = t.closest('[data-mh]');
+    if (mh) { editMaster(mh.getAttribute('data-mh')); return; }
+    var mf = t.closest('[data-mf]');
+    if (mf) { st.filter = mf.getAttribute('data-mf'); render(); return; }
     var nav = t.closest('[data-nav]');
     if (nav) {
       var n = +nav.getAttribute('data-nav');
@@ -242,7 +277,7 @@
     });
     var c = S.$('[data-cancel]', dr.body);
     if (c) c.addEventListener('click', function () {
-      S.confirm({ title: 'Отменить запись?', message: (b.client_name || 'Клиент') + ', ' + b.label, okText: 'Отменить запись', danger: true }).then(function (yes) {
+      S.confirm({ title: 'Отменить запись?', message: (b.client_name || 'Клиент') + ', ' + b.label, confirmText: 'Отменить запись', danger: true }).then(function (yes) {
         if (yes) S.api('/api/booking/bookings/' + b.id, { method: 'DELETE' }).then(function (res) {
           if (!res.ok) { S.toast(S.apiError(res), 'error'); return; } S.toast('Запись отменена'); dr.close(); reload();
         });
@@ -365,14 +400,13 @@
   }
 
   // ── настройки ──
-  var DAYS = [['mon', 'Пн'], ['tue', 'Вт'], ['wed', 'Ср'], ['thu', 'Чт'], ['fri', 'Пт'], ['sat', 'Сб'], ['sun', 'Вс']];
   function settings() {
     var page = (st.data && st.data.page) || {}, cfg = page.settings || {};
     var d = S.dialog({
       title: 'Настройки записи', size: 'xl',
-      body: '<div class="bk-seg" style="margin-bottom:14px"><button type="button" data-tab="m" class="on">Мастера и график</button><button type="button" data-tab="r">Правила</button><button type="button" data-tab="l">Ссылка для клиентов</button></div>' +
-        '<div data-pane="m"><div id="bk-masters"></div><button class="btn btn-sm" type="button" id="bk-add-m">' + icon('plus') + 'Добавить мастера</button></div>' +
-        '<div data-pane="r" hidden>' +
+      body: '<div class="bk-seg" style="margin-bottom:14px"><button type="button" data-tab="r" class="on">Правила</button><button type="button" data-tab="l">Ссылка для клиентов</button>' +
+        '<button type="button" data-tab="m">Мастера</button></div>' +
+        '<div data-pane="r">' +
         '<div class="st-grid2">' +
         sel('step_min', 'Шаг расписания', [[15, '15 минут'], [30, '30 минут'], [60, '1 час']], cfg.step_min) +
         sel('buffer_min', 'Перерыв после записи', [[0, 'Без перерыва'], [5, '5 минут'], [10, '10 минут'], [15, '15 минут'], [30, '30 минут']], cfg.buffer_min) +
@@ -382,6 +416,7 @@
         '<div class="field"><label class="label">Название на странице записи</label><input class="input" id="bk-title" value="' + esc(cfg.title || '') + '" placeholder="Например: Салон «Айдана»"></div>' +
         tgl('reminders', 'Напоминать клиенту', 'В WhatsApp или Telegram за сутки и за 2 часа до визита', cfg.reminders) +
         tgl('thanks', '«Спасибо» после визита', 'Через час после визита — короткое сообщение и приглашение снова', cfg.thanks) +
+        tgl('master_phones', 'Мастера видят телефоны клиентов', 'В своём кабинете. Выключено — мастер видит только имя: так клиентская база остаётся у салона', cfg.master_phones) +
         '<button class="btn btn-primary" type="button" id="bk-save-r" style="margin-top:10px">Сохранить правила</button></div>' +
         '<div data-pane="l" hidden>' +
         '<p class="muted">Клиент сам выбирает услугу, мастера и время — запись появится у вас в календаре, а вам придёт уведомление.</p>' +
@@ -397,26 +432,16 @@
     S.$('[data-c]', d.el).addEventListener('click', function () { d.close(); reload(); });
     S.$$('[data-tab]', d.el).forEach(function (b) {
       b.addEventListener('click', function () {
+        if (b.getAttribute('data-tab') === 'm') { d.close(); openMasters(); return; }
         S.$$('[data-tab]', d.el).forEach(function (x) { x.classList.toggle('on', x === b); });
         S.$$('[data-pane]', d.el).forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== b.getAttribute('data-tab'); });
         if (b.getAttribute('data-tab') === 'l') drawLinkKit(d);
       });
     });
-    drawMasters(d);
-    S.$('#bk-add-m', d.el).addEventListener('click', function () {
-      S.api('/api/booking/resources', { method: 'POST', body: { name: 'Мастер ' + (resources().length + 1) } }).then(function (r) {
-        if (!r.ok && r.status === 402 && window.VF && VF.toast) {   // мастеров больше, чем даёт тариф
-          VF.toast(S.apiError(r), { type: 'error', duration: 10000, actionLabel: 'Сменить тариф',
-            action: function () { location.href = '/static/dashboard.html#plans'; } });
-          return;
-        }
-        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-        st.data.resources.push(r.data.resource); drawMasters(d);
-      });
-    });
     S.$('#bk-save-r', d.el).addEventListener('click', function () {
       var body = { settings: { address: S.$('#bk-addr', d.el).value.trim(), title: S.$('#bk-title', d.el).value.trim(),
-        reminders: S.$('#t-reminders', d.el).checked, thanks: S.$('#t-thanks', d.el).checked } };
+        reminders: S.$('#t-reminders', d.el).checked, thanks: S.$('#t-thanks', d.el).checked,
+        master_phones: S.$('#t-master_phones', d.el).checked } };
       S.$$('[data-set]', d.el).forEach(function (s) { body.settings[s.getAttribute('data-set')] = +s.value; });
       S.api('/api/booking/settings', { method: 'PUT', body: body }).then(function (r) { S.toast(r.ok ? 'Правила сохранены' : S.apiError(r), r.ok ? '' : 'error'); if (r.ok) st.data.page = r.data.page; });
     });
@@ -468,60 +493,6 @@
   function tgl(key, title, sub, on) {
     return '<div class="st-switch-row"><div class="t"><b>' + esc(title) + '</b><div>' + esc(sub) + '</div></div><label class="switch"><input type="checkbox" id="t-' + key + '"' + (on ? ' checked' : '') + '><span class="track"></span></label></div>';
   }
-  function drawMasters(d) {
-    var box = S.$('#bk-masters', d.el);
-    var services = (st.data && st.data.services) || [];
-    box.innerHTML = resources().map(function (r) {
-      return '<div class="bk-master" data-m="' + esc(r.id) + '"><div class="bk-master-h"><div style="display:flex;gap:8px;align-items:center;flex:1">' +
-        '<input type="color" value="' + esc(r.color) + '" data-f="color" style="width:34px;height:34px;border:0;background:none;padding:0">' +
-        '<input class="input" data-f="name" value="' + esc(r.name) + '" style="max-width:220px">' +
-        '<input class="input" data-f="role" value="' + esc(r.role || '') + '" placeholder="Роль: мастер, врач, бокс" style="max-width:220px"></div>' +
-        '<button class="btn btn-ghost btn-sm" type="button" data-del style="color:var(--vf-danger)">' + icon('trash-2') + '</button></div>' +
-        '<div class="bk-sched" style="margin-top:10px">' + DAYS.map(function (dd) {
-          var iv = r.schedule[dd[0]] || [];
-          var a = iv[0] || ['09:00', '19:00'], br = iv[1] ? iv[0][1] + '-' + iv[1][0] : '';
-          var end = iv[1] ? iv[1][1] : a[1];
-          return '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-wd="' + dd[0] + '"' + (iv.length ? ' checked' : '') + '>' + dd[1] + '</label>' +
-            '<div class="row"><input type="time" data-from="' + dd[0] + '" value="' + esc(a[0]) + '"> – <input type="time" data-to="' + dd[0] + '" value="' + esc(end) + '">' +
-            '<span class="muted small">перерыв</span><input class="input" data-br="' + dd[0] + '" value="' + esc(br) + '" placeholder="13:00-14:00" style="width:120px;height:32px"></div>';
-        }).join('') + '</div>' +
-        (services.length ? '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--vf-accent)">Какие услуги делает (все, если ничего не отмечено)</summary><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' +
-          services.map(function (s) { var on = !r.service_ids || r.service_ids.indexOf(s.id) >= 0; return '<label class="small" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-svc="' + esc(s.id) + '"' + (r.service_ids && on ? ' checked' : '') + '>' + esc(s.title) + '</label>'; }).join('') + '</div></details>' : '') +
-        '<div class="field" style="margin-top:10px"><label class="label">Выходные дни (через запятую)</label><input class="input" data-f="days_off" value="' + esc((r.days_off || []).join(', ')) + '" placeholder="2026-12-31, 2027-01-01"></div>' +
-        '<button class="btn btn-primary btn-sm" type="button" data-save>Сохранить мастера</button></div>';
-    }).join('');
-    S.$$('.bk-master', box).forEach(function (el) {
-      var id = el.getAttribute('data-m');
-      S.$('[data-save]', el).addEventListener('click', function () {
-        var sched = {};
-        DAYS.forEach(function (dd) {
-          if (!S.$('[data-wd="' + dd[0] + '"]', el).checked) { sched[dd[0]] = []; return; }
-          var from = S.$('[data-from="' + dd[0] + '"]', el).value, to = S.$('[data-to="' + dd[0] + '"]', el).value;
-          var br = (S.$('[data-br="' + dd[0] + '"]', el).value || '').match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-          sched[dd[0]] = br ? [[from, br[1]], [br[2], to]] : [[from, to]];
-        });
-        var svc = S.$$('[data-svc]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-svc'); });
-        var body = { name: S.$('[data-f="name"]', el).value, role: S.$('[data-f="role"]', el).value, color: S.$('[data-f="color"]', el).value,
-          schedule: sched, days_off: S.$('[data-f="days_off"]', el).value.split(/[,\s]+/).filter(Boolean), service_ids: svc };
-        S.api('/api/booking/resources/' + id, { method: 'PATCH', body: body }).then(function (r) {
-          if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-          st.data.resources = st.data.resources.map(function (x) { return x.id === id ? r.data.resource : x; });
-          S.toast('Мастер сохранён');
-        });
-      });
-      S.$('[data-del]', el).addEventListener('click', function () {
-        S.confirm({ title: 'Удалить мастера?', message: 'Если у мастера есть будущие записи, он будет выключен, а записи останутся.', okText: 'Удалить', danger: true }).then(function (yes) {
-          if (!yes) return;
-          S.api('/api/booking/resources/' + id, { method: 'DELETE' }).then(function (r) {
-            if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-            st.data.resources = st.data.resources.filter(function (x) { return x.id !== id; });
-            drawMasters(d); S.toast(r.data.disabled ? 'Мастер выключен: у него есть будущие записи' : 'Мастер удалён');
-          });
-        });
-      });
-    });
-  }
-
   // ── старт ──
   function init() {
     root = document.getElementById('bk');
@@ -530,13 +501,16 @@
     try { var v = localStorage.getItem('vf_booking_view'); if (v === 'week' || v === 'day') st.view = v; } catch (e) { /* ignore */ }
     var q = new URLSearchParams(location.search);
     st.day = q.get('date') || keyOf(new Date());
+    if (q.get('view') === 'masters') { st.prevView = st.view; st.view = 'masters'; }
     var acts = document.getElementById('bk-actions');
     // Мастера, график, правила и ссылка — у владельца и сотрудника с разделом «Мастера и график»
-    var setup = S.staffCan ? S.staffCan('booking_setup') : true;
-    acts.innerHTML = (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
+    var setup = canSetup();
+    acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-masters-btn" title="Мастера: фото, график, услуги и цены">' + icon('users') + '<span class="lbl">Мастера</span></button>' +
+      (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
       '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' : '') +
       '<button class="btn btn-primary btn-sm" type="button" id="bk-new">' + icon('plus') + '<span class="lbl">Записать</span></button>';
     document.getElementById('bk-new').addEventListener('click', function () { newBooking({}); });
+    document.getElementById('bk-masters-btn').addEventListener('click', openMasters);
     if (setup) {
       document.getElementById('bk-set').addEventListener('click', settings);
       document.getElementById('bk-link-btn').addEventListener('click', function () {

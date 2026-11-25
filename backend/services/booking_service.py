@@ -9,7 +9,10 @@
   • свободное окно = рабочий интервал мастера в этот день (график по дням недели, выходные даты)
     минус занятые записи (booked/confirmed/arrived) с буфером, шаг сетки step_min, не раньше чем
     через lead_min от «сейчас» и не дальше horizon_days;
-  • длительность — у услуги (agent_knowledge_entries.duration_min), иначе DEFAULT_DURATION;
+  • длительность и цена — у услуги (agent_knowledge_entries.duration_min / price), а у мастера могут
+    быть свои (booking_resources.service_prices: топ-мастер дороже и дольше) — service_terms();
+  • мастер с online_booking = false в онлайн-записи, у бота и на звонке не предлагается — только
+    администратор записывает к нему из кабинета;
   • двойная запись невозможна: перед вставкой строка мастера блокируется (SELECT … FOR UPDATE),
     пересечение проверяется под блокировкой;
   • клиент записи — карточка CRM (по id, по телефону или новая), стадия «Новый» → «Записан».
@@ -45,6 +48,7 @@ DEFAULT_SETTINGS = {
     "thanks": True,        # «спасибо» после визита
     "address": "",
     "title": "",
+    "master_phones": False,   # мастера (свой журнал) видят телефоны клиентов
 }
 COLORS = ["#2a5ce8", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#0891b2", "#4d7c0f", "#b45309"]
 STATUS_TITLES = {"booked": "Записан", "confirmed": "Подтвердил", "arrived": "Пришёл", "no_show": "Не пришёл",
@@ -186,10 +190,84 @@ def ensure_resources(db: Session, user) -> List[BookingResource]:
     return [r]
 
 
+def experience_years(since) -> Optional[int]:
+    """«Работает с 2018 года» → 7 (лет опыта на сегодня по Бишкеку)."""
+    try:
+        y = int(since)
+    except (TypeError, ValueError):
+        return None
+    now_y = to_local(now_utc()).year
+    if y < 1950 or y > now_y:
+        return None
+    return now_y - y
+
+
+def initials(name: Optional[str]) -> str:
+    parts = [p for p in re.split(r"\s+", (name or "").strip()) if p]
+    if not parts:
+        return "?"
+    return (parts[0][0] + (parts[1][0] if len(parts) > 1 else "")).upper()
+
+
+def clean_service_prices(raw: Any) -> Dict[str, Dict[str, Any]]:
+    """{service_id: {"price": 1500, "duration_min": 90}} — только числа в разумных пределах."""
+    out: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for sid, v in list(raw.items())[:500]:
+        try:
+            key = str(uuid.UUID(str(sid)))
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(v, dict):
+            continue
+        item: Dict[str, Any] = {}
+        try:
+            if v.get("price") not in (None, ""):
+                p = float(v["price"])
+                if 0 <= p <= 10_000_000:
+                    item["price"] = round(p, 2)
+        except (TypeError, ValueError):
+            pass
+        try:
+            if v.get("duration_min") not in (None, ""):
+                d = int(float(v["duration_min"]))
+                if 5 <= d <= 1440:
+                    item["duration_min"] = d
+        except (TypeError, ValueError):
+            pass
+        if item:
+            out[key] = item
+    return out
+
+
+def service_terms(resource: Optional[BookingResource], service) -> Tuple[int, Optional[float]]:
+    """Длительность и цена услуги у этого мастера: своя у мастера, иначе из каталога."""
+    dur = duration_of(service) if service is not None else DEFAULT_DURATION
+    price = getattr(service, "price", None) if service is not None else None
+    if resource is not None and service is not None:
+        own = (resource.service_prices or {}).get(str(service.id)) or {}
+        if isinstance(own, dict):
+            if own.get("duration_min"):
+                dur = int(own["duration_min"])
+            if own.get("price") is not None:
+                price = float(own["price"])
+    return dur, price
+
+
 def resource_to_dict(r: BookingResource) -> Dict[str, Any]:
+    from backend.services.salon_media import media_items, url_of
     return {"id": str(r.id), "name": r.name, "role": r.role, "color": r.color or COLORS[0], "phone": r.phone,
+            "initials": initials(r.name),
             "schedule": clean_schedule(r.schedule or DEFAULT_SCHEDULE), "days_off": list(r.days_off or []),
-            "service_ids": r.service_ids, "is_active": bool(r.is_active), "position": r.position or 0}
+            "service_ids": r.service_ids, "is_active": bool(r.is_active), "position": r.position or 0,
+            "photo_id": str(r.photo_id) if r.photo_id else None, "photo_url": url_of(r.photo_id),
+            "bio": r.bio or "", "experience_since": r.experience_since,
+            "experience_years": experience_years(r.experience_since),
+            "portfolio": media_items(r.portfolio, "caption"), "certificates": media_items(r.certificates, "title"),
+            "service_prices": clean_service_prices(r.service_prices),
+            "team_member_id": str(r.team_member_id) if r.team_member_id else None,
+            "online_booking": r.online_booking is not False}
 
 
 # ───────────────────────────── услуги ─────────────────────────────
@@ -281,14 +359,21 @@ def _resource_does(r: BookingResource, service) -> bool:
     return str(service.id) in {str(x) for x in ids}
 
 
+def bookable_online(r: BookingResource) -> bool:
+    return r.online_booking is not False
+
+
 def free_slots(db: Session, user, service=None, resource_id=None, day=None, days: int = 1,
-               ignore_lead: bool = False, limit_per_day: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Свободное время по дням: [{date, weekday, slots: [{time, start, resource_ids}]}]."""
+               ignore_lead: bool = False, limit_per_day: Optional[int] = None,
+               online_only: bool = False) -> List[Dict[str, Any]]:
+    """Свободное время по дням: [{date, weekday, slots: [{time, start, resource_ids}]}].
+    online_only — для клиента по ссылке, бота и звонка: без мастеров «только через администратора»."""
     page = get_page(db, user, create=False)
     cfg = settings_of(page)
-    dur = timedelta(minutes=duration_of(service) if service else DEFAULT_DURATION)
     step = timedelta(minutes=cfg["step_min"])
     res = [r for r in ensure_resources(db, user) if _resource_does(r, service)]
+    if online_only:
+        res = [r for r in res if bookable_online(r)]
     if resource_id:
         res = [r for r in res if str(r.id) == str(resource_id)]
     if not res:
@@ -308,6 +393,7 @@ def free_slots(db: Session, user, service=None, resource_id=None, day=None, days
         slots: Dict[datetime, List[str]] = {}
         for r in res:
             taken = busy.get(str(r.id), [])
+            dur = timedelta(minutes=service_terms(r, service)[0])
             for a, b in _work_intervals(r, d):
                 t = a
                 while t + dur <= b:
@@ -323,14 +409,20 @@ def free_slots(db: Session, user, service=None, resource_id=None, day=None, days
 
 
 def nearest_slots(db: Session, user, service=None, resource_id=None, day=None, count: int = 3,
-                  max_days: int = 14) -> List[Dict[str, Any]]:
-    """2–3 ближайших свободных времени (для бота и голоса): [{start, label, resource_id, resource}]."""
-    names = {str(r.id): r.name for r in resources(db, user.id)}
+                  max_days: int = 14, online_only: bool = True) -> List[Dict[str, Any]]:
+    """2–3 ближайших свободных времени (для бота и голоса):
+    [{start, label, resource_id, resource, price, duration_min}] — цена и длительность у этого мастера."""
+    rows = {str(r.id): r for r in resources(db, user.id)}
     out = []
-    for d in free_slots(db, user, service, resource_id, day, days=max_days):
+    for d in free_slots(db, user, service, resource_id, day, days=max_days, online_only=online_only):
         for s in d["slots"]:
-            out.append({"start": s["start"], "label": fmt_local(parse_start(s["start"])),
-                        "resource_id": s["resource_ids"][0], "resource": names.get(s["resource_ids"][0])})
+            rid = s["resource_ids"][0]
+            item = {"start": s["start"], "label": fmt_local(parse_start(s["start"])),
+                    "resource_id": rid, "resource": rows[rid].name if rid in rows else None}
+            if service is not None:
+                dur, price = service_terms(rows.get(rid), service)
+                item["duration_min"], item["price"] = dur, price
+            out.append(item)
             if len(out) >= count:
                 return out
     return out
@@ -423,8 +515,6 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
     service = find_service(db, user.id, service_id, service_query)
     if (service_id or service_query) and service is None and strict:
         raise BookingError("Не нашёл такую услугу в каталоге — уточните название")
-    dur = int(duration_min or duration_of(service))
-    end = st + timedelta(minutes=dur)
     phone = normalize_phone_e164(client_phone) if client_phone else None
     if client_phone and not phone:
         raise BookingError("Проверьте номер телефона клиента")
@@ -434,18 +524,28 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
         candidates = [r for r in candidates if str(r.id) == str(resource_id)]
         if not candidates:
             raise BookingError("Этот мастер не делает такую услугу или выключен")
+    if strict:
+        online = [r for r in candidates if bookable_online(r)]
+        if candidates and not online:
+            raise BookingError("К этому мастеру записывает администратор — предложите другого мастера "
+                               "или передайте владельцу")
+        candidates = online
     chosen = None
     last_err = None
+    end = st
     for r in candidates:
         locked = _lock_resource(db, r.id)
+        r_dur = int(duration_min or service_terms(locked, service)[0])
+        r_end = st + timedelta(minutes=r_dur)
         try:
-            _check_free(db, user, locked, st, end, cfg, within_hours=strict)
-            chosen = locked
+            _check_free(db, user, locked, st, r_end, cfg, within_hours=strict)
+            chosen, end = locked, r_end
             break
         except BookingError as e:
             last_err = e
     if chosen is None:
         raise last_err or BookingError("Нет свободного мастера на это время")
+    master_price = service_terms(chosen, service)[1] if service is not None else None
 
     contact = resolve_contact(db, user.id, contact_id, client_name, phone)
     b = Booking(user_id=user.id, resource_id=chosen.id, service_entry_id=service.id if service else None,
@@ -453,7 +553,7 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
                 client_name=(client_name or (contact.name if contact else None) or "")[:200] or None,
                 client_phone=phone or (contact.phone if contact and not str(contact.phone or "").startswith(("web:", "tg:", "ig:", "wa:")) else None),
                 start_at=st, end_at=end, status="booked",
-                price=price if price is not None else (service.price if service else None),
+                price=price if price is not None else master_price,
                 source=source, channel=channel, note=(note or None) and str(note)[:2000])
     db.add(b)
     _mark_booked_stage(db, contact)
@@ -481,12 +581,13 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
     if start is not None or resource_id is not None or service_id is not None:
         new_start = parse_start(start) if start is not None else (b.start_at if b.start_at.tzinfo else b.start_at.replace(tzinfo=timezone.utc))
         service = find_service(db, user.id, service_id) if service_id else None
-        dur = duration_of(service) if service else int(((b.end_at - b.start_at).total_seconds()) // 60)
-        new_end = new_start + timedelta(minutes=dur)
         rid = resource_id or b.resource_id
         locked = _lock_resource(db, rid)
         if locked is None or locked.user_id != user.id:
             raise BookingError("Мастер не найден")
+        s_dur, s_price = service_terms(locked, service) if service else (None, None)
+        dur = s_dur if service else int(((b.end_at - b.start_at).total_seconds()) // 60)
+        new_end = new_start + timedelta(minutes=dur)
         strict = source in ("bot", "online", "call")
         if strict and new_start < now_utc():
             raise BookingError("Это время уже прошло — предложите другое")
@@ -494,8 +595,8 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
         b.start_at, b.end_at, b.resource_id = new_start, new_end, locked.id
         if service is not None:
             b.service_entry_id, b.service_title = service.id, service.title
-            if price is None and service.price is not None:
-                b.price = service.price
+            if price is None and s_price is not None:
+                b.price = s_price
         b.reminder_24h_at = b.reminder_2h_at = None     # новое время — напоминания заново
         if b.status in ("cancelled", "no_show"):
             b.status = "booked"

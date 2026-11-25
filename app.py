@@ -365,6 +365,7 @@ app.include_router(business_api.router, prefix="/api/business", tags=["Business"
 from backend.api import booking as booking_api  # онлайн-запись: календарь владельца и запись клиентов по ссылке
 app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
+app.include_router(booking_api.media_router, tags=["Booking"])   # /media/salon/{id} — фото салона и мастеров
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
 from backend.api import team as team_api  # сотрудники кабинета: вход по почте, права, место 150 сом/мес
@@ -2008,14 +2009,48 @@ def ensure_booking_tables():
     try:
         from sqlalchemy import inspect
         from backend.models.base import Base as ModelsBase
-        from backend.models.booking import BookingResource, Booking, BookingPage
+        from backend.models.booking import BookingResource, Booking, BookingPage, SalonMedia
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
         ModelsBase.metadata.create_all(
-            bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__], checkfirst=True)
+            bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
+                                 SalonMedia.__table__], checkfirst=True)
+        ensure_master_card_columns()
     except Exception as e:
         logger.error(f"❌ ensure_booking_tables: {e}")
+
+
+# Карточка мастера (Voksy Beauty, шаг 1.2): колонки booking_resources, которых нет у старых баз.
+MASTER_CARD_COLUMNS = (
+    ("pay_percent", "DOUBLE PRECISION"),
+    ("pay_fixed", "DOUBLE PRECISION"),
+    ("photo_id", "UUID"),
+    ("bio", "TEXT"),
+    ("experience_since", "INTEGER"),
+    ("portfolio", "JSONB"),
+    ("certificates", "JSONB"),
+    ("service_prices", "JSONB"),
+    ("team_member_id", "UUID"),
+    ("online_booking", "BOOLEAN NOT NULL DEFAULT TRUE"),
+)
+
+
+def ensure_master_card_columns():
+    """Колонки карточки мастера — до первого запроса к booking_resources (ORM выбирает все колонки
+    модели). Под advisory-блокировкой: четыре воркера стартуют одновременно."""
+    from sqlalchemy import inspect, text as _text
+    cols = {c["name"] for c in inspect(engine).get_columns("booking_resources")}
+    missing = [(n, t) for n, t in MASTER_CARD_COLUMNS if n not in cols]
+    if not missing:
+        return
+    with engine.begin() as conn:
+        conn.execute(_text("SELECT pg_advisory_xact_lock(25112027)"))
+        for name, ddl in missing:
+            conn.execute(_text(f"ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS {name} {ddl}"))
+        conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_booking_resources_team_member_id "
+                           "ON booking_resources (team_member_id)"))
+    logger.info(f"✅ booking_resources: добавлены колонки карточки мастера {[n for n, _ in missing]}")
 
 
 def ensure_live_voice_table():

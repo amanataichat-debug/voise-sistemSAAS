@@ -21,8 +21,10 @@ Voksy Beauty (ветка 2511-beauty): у салона на Beauty-тарифе 
 («лимит»). Условия — plan_catalog.staff_terms, проверка — pay_seat под блокировкой строки владельца.
 
 Разделы (PERMISSIONS): inbox — чаты, crm — клиенты/задачи/звонки агента, booking — записи,
-booking_setup — мастера, график и правила записи, catalog — каталог, analytics — аналитика.
-Деньги, тарифы, настройки бота, каналы, телефония, голосовой помощник — только владелец.
+booking_setup — мастера, график и правила записи, booking_own — свой журнал мастера (Voksy Beauty:
+только свои записи, клиенты и заработок, /static/master.html), catalog — каталог, analytics —
+аналитика, finance — финансы (выручка, расходы, зарплаты мастеров; бухгалтер и управляющий).
+Кошелёк, тарифы, настройки бота, каналы, телефония, голосовой помощник — только владелец.
 """
 
 from __future__ import annotations
@@ -62,24 +64,31 @@ PERMISSIONS: List[Dict[str, str]] = [
      "hint": "Календарь: записать, перенести, отменить, отметить визит"},
     {"key": "booking_setup", "title": "Мастера и график", "icon": "clock",
      "hint": "Мастера, график работы и правила записи"},
+    {"key": "booking_own", "title": "Свой журнал (мастер)", "icon": "user-round",
+     "hint": "Только свои записи, клиенты, заработок и статистика — кабинет мастера на телефоне"},
     {"key": "orders", "title": "Заказы", "icon": "shopping-cart",
      "hint": "Заказы клиентов: оформить, собрать, отправить, отметить выдачу"},
     {"key": "catalog", "title": "Каталог", "icon": "package",
      "hint": "Позиции каталога: цены, наличие, фото"},
     {"key": "analytics", "title": "Аналитика", "icon": "chart-column",
      "hint": "Отчёты по обращениям, клиентам и записям — без расходов"},
+    {"key": "finance", "title": "Финансы", "icon": "banknote",
+     "hint": "Выручка, расходы, зарплаты мастеров и прибыль — для бухгалтера и управляющего"},
 ]
 PERM_KEYS = tuple(p["key"] for p in PERMISSIONS)
 BOOKING_PERMS = ("booking", "booking_setup")
+BOOKING_MODULE_PERMS = ("booking", "booking_setup", "booking_own")   # видны, когда включена запись
 
 # Страница кабинета раздела: меню и нижние вкладки сотрудника, «домашняя» страница после входа
 SECTION_PAGES = [
     ("inbox", "/static/inbox.html", "inbox", "Чаты", "Чаттар"),
     ("booking", "/static/booking.html", "calendar", "Записи", "Жазуулар"),
+    ("booking_own", "/static/master.html", "user-round", "Мой день", "Менин күнүм"),
     ("orders", "/static/orders.html", "shopping-cart", "Заказы", "Заказдар"),
     ("crm", "/static/start-crm.html", "users", "Клиенты", "Кардарлар"),
     ("catalog", "/static/catalog.html", "package", "Каталог", "Каталог"),
     ("analytics", "/static/analytics.html", "chart-column", "Аналитика", "Аналитика"),
+    ("finance", "/static/finance.html", "banknote", "Финансы", "Каржы"),
 ]
 
 
@@ -130,8 +139,21 @@ STAFF_RULES = [
     _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),
     _rule("GET PATCH", r"^/api/orders/[^/]+/?$", "orders"),
     _rule("POST", r"^/api/orders/[^/]+/status/?$", "orders"),
+    # — кабинет мастера: только своё (какой мастер — по привязке входа, api/booking.py → _me_resource) —
+    _rule("GET", r"^/api/booking/me(/clients|/slots)?/?$", "booking_own"),
+    _rule("POST", r"^/api/booking/me/(bookings|media)/?$", "booking_own"),
+    _rule("PATCH", r"^/api/booking/me/(bookings/[^/]+|profile)/?$", "booking_own"),
+    _rule("DELETE", r"^/api/booking/me/media/[^/]+/?$", "booking_own"),
+    # — фото мастеров (портфолио, сертификаты) — у кого «Мастера и график» —
+    _rule("POST", r"^/api/booking/resources/[^/]+/media/?$", "booking_setup"),
+    _rule("DELETE", r"^/api/booking/resources/[^/]+/media/[^/]+/?$", "booking_setup"),
     # — аналитика (расходы сотруднику не отдаются — api/analytics.py) —
     _rule("GET", r"^/api/analytics/(report|export\.csv)/?$", "analytics"),
+    # — финансы: бухгалтер и управляющий —
+    _rule("GET", r"^/api/finance/(summary|expenses)/?$", "finance"),
+    _rule("POST", r"^/api/finance/expenses/?$", "finance"),
+    _rule("PATCH DELETE", r"^/api/finance/expenses/[^/]+/?$", "finance"),
+    _rule("PATCH", r"^/api/finance/payroll/[^/]+/?$", "finance"),
 ]
 
 
@@ -551,7 +573,14 @@ def available_permissions(owner) -> List[Dict[str, Any]]:
         item = dict(p)
         if p["key"] == "catalog" and catalog_title:
             item["title"] = catalog_title
-        item["available"] = booking_on if p["key"] in BOOKING_PERMS else (orders_on if p["key"] == "orders" else True)
+        if p["key"] in BOOKING_MODULE_PERMS:
+            item["available"] = booking_on
+        elif p["key"] == "orders":
+            item["available"] = orders_on
+        elif p["key"] == "finance":
+            item["available"] = booking_on or orders_on      # страница «Финансы» — у записи и заказов
+        else:
+            item["available"] = True
         out.append(item)
     return out
 
@@ -773,8 +802,16 @@ def activate(db: Session, owner, member_id):
 
 
 def delete_member(db: Session, owner, member_id) -> None:
+    from sqlalchemy import text as _text
     m = _get_member(db, owner.id, member_id)
     mid = m.id
+    try:   # мастер журнала, привязанный к этому входу, остаётся без входа
+        db.execute(_text("UPDATE booking_resources SET team_member_id = NULL WHERE user_id = :o AND team_member_id = :m"),
+                   {"o": str(owner.id), "m": str(mid)})
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[TEAM] unlink master of {mid}: {e}")
+        m = _get_member(db, owner.id, member_id)
     db.delete(m)
     db.commit()
     invalidate(mid)

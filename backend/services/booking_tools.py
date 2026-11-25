@@ -197,11 +197,14 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             db.commit()
             out = {"ok": True, "slots": slots,
                    "service": bs.service_to_dict(service) if service else None,
-                   "masters": [r.name for r in bs.resources(db, user.id)]}
+                   "masters": [r.name for r in bs.resources(db, user.id) if bs.bookable_online(r)]}
             if args.get("service") and service is None:
                 out["note"] = "Такую услугу в каталоге не нашёл — уточни у клиента название"
             if not slots:
                 out["note"] = "Свободного времени в ближайшие 2 недели нет — предложи записаться в лист ожидания или передай владельцу"
+            if res is not None and not bs.bookable_online(res):
+                out["note"] = (f"К мастеру {res.name} записывает администратор — предложи другого мастера "
+                               "или передай владельцу")
             return json.dumps(out, ensure_ascii=False)
         if tool_name == "create_booking":
             res = _match_resource(db, user.id, args.get("master"))

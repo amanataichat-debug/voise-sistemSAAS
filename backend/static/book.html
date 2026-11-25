@@ -31,6 +31,15 @@
     .opt span { color: var(--t3); font-size: 13px; }
     .opt .pr { font-weight: 700; white-space: nowrap; color: var(--t); }
     .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+    .mava { width: 52px; height: 52px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 18px;
+      background: color-mix(in srgb, var(--mc, #2a5ce8) 22%, #fff); color: color-mix(in srgb, var(--mc, #2a5ce8) 75%, #000); box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--mc, #2a5ce8); }
+    .mava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .mopt { align-items: flex-start; }
+    .mopt .mi { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+    .mopt .mi > div { min-width: 0; }
+    .mopt .bio { display: block; color: var(--t3); font-size: 12.5px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .mopt .pf { display: flex; gap: 4px; margin-top: 8px; }
+    .mopt .pf img { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; display: block; }
     .grp { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--t3); margin: 14px 2px 6px; }
     .days { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
     .days::-webkit-scrollbar { display: none; }
@@ -93,6 +102,29 @@
   }
   function setBar(html) { bar.hidden = !html; barin.innerHTML = html || ''; }
   function services() { return st.info.services || []; }
+  // Цена и длительность услуги у мастера (у топ-мастера бывают свои)
+  function terms(svc, m) {
+    var own = (m && svc && m.service_prices && m.service_prices[svc.id]) || {};
+    return { price: own.price != null ? own.price : (svc ? svc.price : null), dur: own.duration_min || (svc ? svc.duration_min : null) };
+  }
+  function priceText(svc) {
+    var ps = [];
+    (st.info.resources || []).forEach(function (m) {
+      if (!m.service_ids || m.service_ids.indexOf(svc.id) >= 0) { var t = terms(svc, m); if (t.price != null) ps.push(+t.price); }
+    });
+    if (!ps.length && svc.price != null) ps.push(+svc.price);   // мастеров с этой услугой нет — цена из каталога
+    if (!ps.length) return '';
+    var lo = Math.min.apply(null, ps), hi = Math.max.apply(null, ps);
+    return lo === hi ? money(lo) : 'от ' + money(lo);
+  }
+  function priceNow() {
+    if (!st.service) return '';
+    return st.master ? money(terms(st.service, st.master).price) : priceText(st.service);
+  }
+  function years(n) { var m10 = n % 10, m100 = n % 100; return n + ' ' + (m10 === 1 && m100 !== 11 ? 'год' : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'года' : 'лет'); }
+  function mava(r) {
+    return '<span class="mava" style="--mc:' + esc(r.color || '#2a5ce8') + '">' + (r.photo_url ? '<img src="' + esc(r.photo_url) + '" alt="" loading="lazy">' : esc(r.initials || '?')) + '</span>';
+  }
   function masters() {
     var sv = st.service;
     return (st.info.resources || []).filter(function (r) { return !sv || !r.service_ids || r.service_ids.indexOf(sv.id) >= 0; });
@@ -107,7 +139,7 @@
     Object.keys(groups).forEach(function (g) {
       if (g) html += '<div class="grp">' + esc(g) + '</div>';
       html += '<div class="list">' + groups[g].map(function (s) {
-        return '<button class="opt' + (st.service && st.service.id === s.id ? ' on' : '') + '" data-svc="' + esc(s.id) + '"><div><b>' + esc(s.title) + '</b><span>' + s.duration_min + ' мин</span></div><div class="pr">' + esc(money(s.price)) + '</div></button>';
+        return '<button class="opt' + (st.service && st.service.id === s.id ? ' on' : '') + '" data-svc="' + esc(s.id) + '"><div><b>' + esc(s.title) + '</b><span>' + s.duration_min + ' мин</span></div><div class="pr">' + esc(priceText(s)) + '</div></button>';
       }).join('') + '</div>';
     });
     app.innerHTML = html + '<div class="pw">Работает на <a href="/" target="_blank" rel="noopener">Voksy AI</a></div>';
@@ -119,7 +151,14 @@
     if (ms.length <= 1) { st.master = ms[0] || null; return step3(); }
     app.innerHTML = head() + '<h2>К кому записаться?</h2><div class="list">' +
       '<button class="opt' + (!st.master ? ' on' : '') + '" data-m=""><div><b>Любой свободный</b><span>Покажем всё свободное время</span></div></button>' +
-      ms.map(function (r) { return '<button class="opt' + (st.master && st.master.id === r.id ? ' on' : '') + '" data-m="' + esc(r.id) + '"><div style="display:flex;gap:10px;align-items:center"><i class="dot" style="background:' + esc(r.color || '#2a5ce8') + '"></i><div><b>' + esc(r.name) + '</b><span>' + esc(r.role || '') + '</span></div></div></button>'; }).join('') +
+      ms.map(function (r) {
+        var t = terms(st.service, r);
+        var sub = [r.role, r.experience_years ? 'опыт ' + years(r.experience_years) : ''].filter(Boolean).join(' · ');
+        return '<button class="opt mopt' + (st.master && st.master.id === r.id ? ' on' : '') + '" data-m="' + esc(r.id) + '"><div class="mi">' + mava(r) +
+          '<div><b>' + esc(r.name) + '</b><span>' + esc(sub) + '</span>' + (r.bio ? '<span class="bio">' + esc(r.bio) + '</span>' : '') +
+          ((r.portfolio || []).length ? '<span class="pf">' + r.portfolio.slice(0, 4).map(function (it) { return '<img src="' + esc(it.url) + '" alt="" loading="lazy">'; }).join('') + '</span>' : '') +
+          '</div></div>' + (st.service && t.price != null ? '<div class="pr">' + esc(money(t.price)) + '</div>' : '') + '</button>';
+      }).join('') +
       '</div>';
     setBar('<button class="btn gh" data-back="1">Назад</button><button class="btn" data-next2>Дальше</button>');
   }
@@ -156,7 +195,7 @@
       '<div><span>Услуга</span><b>' + esc(st.service ? st.service.title : 'Приём') + '</b></div>' +
       (st.master ? '<div><span>Мастер</span><b>' + esc(st.master.name) + '</b></div>' : '') +
       '<div><span>Когда</span><b>' + esc(when) + '</b></div>' +
-      (st.service && st.service.price != null ? '<div><span>Цена</span><b>' + esc(money(st.service.price)) + '</b></div>' : '') + '</div>' +
+      (priceNow() ? '<div><span>Цена</span><b>' + esc(priceNow()) + '</b></div>' : '') + '</div>' +
       '<label for="nm">Имя</label><input id="nm" autocomplete="name" value="' + esc(st.name) + '" placeholder="Как к вам обращаться">' +
       '<label for="ph">Телефон (WhatsApp)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(st.phone) + '">' +
       '<label for="nt">Комментарий (необязательно)</label><textarea id="nt" placeholder="Пожелания">' + esc(st.note) + '</textarea>' +

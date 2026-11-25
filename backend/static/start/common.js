@@ -294,8 +294,15 @@
     var phone = window.matchMedia && window.matchMedia('(max-width: 760px)').matches, pushed = false, closed = false;
     function onPop() { if (!closed) { pushed = false; close(); } }
     if (phone) { try { history.pushState({ vfDialog: 1 }, ''); pushed = true; window.addEventListener('popstate', onPop); } catch (e) { /* ignore */ } }
-    function close() {
-      if (closed) return; closed = true;
+    // o.beforeClose() === false — не закрывать (крестик, Esc, клик мимо, «Назад»): например, несохранённые правки.
+    // Закрытие из кода (возвращённый close) — всегда.
+    function close(force) {
+      if (closed) return;
+      if (force !== true && o.beforeClose && o.beforeClose() === false) {
+        if (phone && !pushed) { try { history.pushState({ vfDialog: 1 }, ''); pushed = true; } catch (e) { /* ignore */ } }
+        return;
+      }
+      closed = true;
       window.removeEventListener('popstate', onPop);
       if (pushed) { pushed = false; try { history.back(); } catch (e) { /* ignore */ } }
       back.classList.remove('open');
@@ -306,8 +313,8 @@
     function onKey(e) { if (e.key === 'Escape') close(); }
     document.addEventListener('keydown', onKey);
     back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
-    S.$('[data-x]', back).addEventListener('click', close);
-    return { el: back, close: close };
+    S.$('[data-x]', back).addEventListener('click', function () { close(); });
+    return { el: back, close: function () { close(true); } };
   };
 
   // S.drawer({title, subtitle, body}) → { el, body, close } — панель справа (карточка клиента)

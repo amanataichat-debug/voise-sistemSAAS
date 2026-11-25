@@ -1,6 +1,7 @@
 """
-Доходы, расходы, прибыль (ветка 1811-niche-admin-speed, 19.11.2026) — /api/finance. Только владелец
-(сотрудники сюда не допускаются: в STAFF_RULES правил нет, ensure_owner — вторая защита).
+Доходы, расходы, прибыль (ветка 1811-niche-admin-speed, 19.11.2026) — /api/finance. Владелец и
+сотрудник с разделом «Финансы» (бухгалтер, управляющий — Voksy Beauty, шаг 1.2): правила в
+team_service.STAFF_RULES, здесь — вторая проверка (_owner).
 
   GET    /api/finance/summary?period=&from=&to=  — выручка, расходы по категориям, зарплаты мастеров, прибыль, график
   GET    /api/finance/expenses                    — все расходы (ежемесячные и разовые)
@@ -17,7 +18,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from backend.core.dependencies import ensure_owner, get_current_user
+from backend.core.dependencies import ensure_owner, get_current_user, is_staff
 from backend.db.session import get_db
 from backend.models.user import User
 from backend.services import finance_service as fs
@@ -26,7 +27,11 @@ router = APIRouter(prefix="/api/finance", tags=["Finance"])
 
 
 def _owner(user: User) -> User:
-    ensure_owner(user)
+    """Владелец или сотрудник с разделом «Финансы»; остальным сотрудникам — 403."""
+    if is_staff(user):
+        perms = set((getattr(user, "_staff", None) or {}).get("permissions") or [])
+        if "finance" not in perms:
+            ensure_owner(user, "Финансы")
     return user
 
 

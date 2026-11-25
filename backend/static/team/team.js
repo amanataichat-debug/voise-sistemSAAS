@@ -11,11 +11,14 @@
 
   var root = null;
   var st = { data: null, busy: false };
-  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', orders: 'shopping-cart', catalog: 'package', analytics: 'chart-column' };
+  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', booking_own: 'user-round', orders: 'shopping-cart', catalog: 'package', analytics: 'chart-column', finance: 'banknote' };
+  // Готовые роли. Мастер — только свой журнал (кабинет мастера на телефоне), бухгалтер — финансы.
   var PRESETS = [
+    { id: 'manager', title: 'Управляющий', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics', 'finance'] },
     { id: 'admin', title: 'Администратор', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics'] },
+    { id: 'master', title: 'Мастер', perms: ['booking_own'] },
+    { id: 'accountant', title: 'Бухгалтер', perms: ['finance', 'analytics'] },
     { id: 'sales', title: 'Менеджер', perms: ['inbox', 'crm', 'orders', 'catalog'] },
-    { id: 'master', title: 'Мастер', perms: ['booking'] },
     { id: 'seller', title: 'Продавец', perms: ['inbox', 'orders', 'catalog'] },
     { id: 'courier', title: 'Курьер', perms: ['orders'] },
     { id: 'operator', title: 'Оператор чатов', perms: ['inbox'] }
@@ -212,9 +215,14 @@
     var perms = (d.permissions || []).filter(function (p) { return p.available || (m && (m.permissions || []).indexOf(p.key) >= 0); });
     var chosen = {};
     (m ? m.permissions : ['inbox', 'crm']).forEach(function (k) { chosen[k] = true; });
+    var seenSets = {};
     var presets = PRESETS.map(function (p) {
       var ok = p.perms.filter(function (k) { return perms.some(function (x) { return x.key === k; }); });
-      return ok.length ? Object.assign({}, p, { perms: ok }) : null;
+      var sig = ok.slice().sort().join();
+      // без нужных разделов роль не показываем; одинаковые наборы (Управляющий без «Финансов») — один раз
+      if (!ok.length || seenSets[sig] || (p.id === 'accountant' && ok.indexOf('finance') < 0)) return null;
+      seenSets[sig] = true;
+      return Object.assign({}, p, { perms: ok });
     }).filter(Boolean);
     var activeNow = (d.members || []).filter(function (x) { return x.is_active; }).length;
     var cost = !isNew || d.free ? ''
