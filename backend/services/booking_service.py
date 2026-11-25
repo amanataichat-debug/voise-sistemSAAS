@@ -63,6 +63,7 @@ DEFAULT_SETTINGS = {
     "title": "",
     "master_phones": False,   # мастера (свой журнал) видят телефоны клиентов
     "prepay_info": "",        # как внести предоплату (реквизиты: Mbank, Элсом, наличные) — клиенту и боту
+    "cancel_hours": 0,        # бот и клиент отменяют / переносят не позже чем за N часов (0 — в любое время)
 }
 COLORS = ["#2a5ce8", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#0891b2", "#4d7c0f", "#b45309"]
 STATUS_TITLES = {"booked": "Записан", "confirmed": "Подтвердил", "arrived": "Пришёл", "completed": "Завершён",
@@ -194,7 +195,23 @@ def settings_of(page: Optional[BookingPage]) -> Dict[str, Any]:
     out["buffer_min"] = max(0, min(int(out.get("buffer_min") or 0), 240))
     out["lead_min"] = max(0, min(int(out.get("lead_min") or 0), 7 * 24 * 60))
     out["horizon_days"] = max(1, min(int(out.get("horizon_days") or 30), 180))
+    try:
+        out["cancel_hours"] = max(0, min(int(out.get("cancel_hours") or 0), 7 * 24))
+    except (TypeError, ValueError):
+        out["cancel_hours"] = 0
     return out
+
+
+def change_too_late(b: Booking, cfg: Dict[str, Any]) -> Optional[str]:
+    """Правило салона «отменить или перенести — не позже чем за N часов» (для бота и клиента; кабинет — без него)."""
+    hours = int(cfg.get("cancel_hours") or 0)
+    if not hours:
+        return None
+    st = b.start_at if b.start_at.tzinfo else b.start_at.replace(tzinfo=timezone.utc)
+    if st - now_utc() < timedelta(hours=hours):
+        return (f"По правилам салона отменить или перенести запись можно не позже чем за {hours} ч до визита. "
+                "Передай просьбу администратору (notify_owner_handoff) — он решит сам.")
+    return None
 
 
 def clean_schedule(raw: Any) -> Dict[str, List[List[str]]]:

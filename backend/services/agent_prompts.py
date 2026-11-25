@@ -457,7 +457,8 @@ def build_business_block(agent_config, db=None) -> str:
                  + " Учитывай сферу в ответах клиентам и в отчётах владельцу.")
         if mods.get("booking"):
             from backend.services.booking_tools import PROMPT_BLOCK
-            block += PROMPT_BLOCK
+            from backend.services.salon_ai_tools import PROMPT_BLOCK as SALON_BLOCK
+            block += PROMPT_BLOCK + SALON_BLOCK
         if mods.get("orders"):
             from backend.services.order_tools import PROMPT_BLOCK as ORDERS_BLOCK
             block += ORDERS_BLOCK

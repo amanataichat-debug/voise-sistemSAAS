@@ -1517,6 +1517,8 @@ async def fn_list_agent_files(args: dict, agent_config_id: str, db: Session) -> 
     q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent_config_id)
     if source in ("library", "generated", "inbound"):
         q = q.filter(AgentFile.source == source)
+    else:
+        q = q.filter(AgentFile.source != "salon")      # копии фото мастеров — только для отправки
     if args.get("agent_contact_id"):
         q = q.filter(AgentFile.agent_contact_id == args["agent_contact_id"])
     limit = min(int(args.get("limit") or 30), 100)
@@ -5710,6 +5712,10 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
     from backend.services import booking_tools
     if tool_name in booking_tools.TOOL_NAMES:
         return await booking_tools.execute(tool_name, tool_args or {}, context, db)
+    # ИИ-администратор салона (Voksy Beauty 1.6а): прайс, мастера, история клиента, о салоне, фото работ
+    from backend.services import salon_ai_tools
+    if tool_name in salon_ai_tools.TOOL_NAMES:
+        return await salon_ai_tools.execute(tool_name, tool_args or {}, context, db)
     # Заказы — своя реализация, одна на бота, кабинет и голос (services/order_service.py)
     from backend.services import order_tools
     if tool_name in order_tools.TOOL_NAMES:

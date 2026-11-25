@@ -41,7 +41,9 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "service": {"type": "string", "description": "Услуга словами или id из каталога (например «маникюр с покрытием»)"},
-                "master": {"type": "string", "description": "Имя мастера, если клиент просит конкретного"},
+                "services": {"type": "array", "items": {"type": "string"},
+                             "description": "Несколько услуг в один визит подряд (маникюр + педикюр) — вместо service"},
+                "master": {"type": "string", "description": "Имя мастера, если клиент просит конкретного. Пусто — любой свободный"},
                 "date": {"type": "string", "description": "С какого дня искать: YYYY-MM-DD, «сегодня» или «завтра». Пусто — с сегодня"},
                 "count": {"type": "integer", "description": "Сколько вариантов вернуть (по умолчанию 3)"},
             },
@@ -51,47 +53,56 @@ TOOLS = [
         "type": "function",
         "name": "create_booking",
         "description": (
-            "Онлайн-запись: записать клиента. Только после того, как клиент согласился на конкретное время. "
-            "start — время из find_booking_slots. После записи подтверди одной фразой: день, время, услуга."
+            "Онлайн-запись: записать клиента на время из find_booking_slots. В переписке с клиентом — В ДВА ШАГА: "
+            "первый вызов (без confirmation_id) ничего не записывает, а проверяет время и возвращает summary и "
+            "confirmation_id — отправь клиенту этот итог и спроси, записывать ли. Когда клиент ответит согласием, "
+            "вызови create_booking с confirmation_id: запись выполнится (код сам проверит, что клиент сказал «да»). "
+            "В чате владельца запись выполняется сразу."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "start": {"type": "string", "description": "Начало, ISO по Бишкеку: 2026-11-20T15:00 (или поле start из find_booking_slots)"},
                 "service": {"type": "string", "description": "Услуга словами или id"},
+                "services": {"type": "array", "items": {"type": "string"},
+                             "description": "Несколько услуг в один визит подряд — вместо service"},
                 "master": {"type": "string", "description": "Имя мастера (необязательно)"},
                 "agent_contact_id": {"type": "string", "description": "Клиент (карточка CRM). В переписке — текущий клиент"},
                 "client_name": {"type": "string", "description": "Имя клиента, если карточки нет"},
                 "client_phone": {"type": "string", "description": "Телефон клиента, если карточки нет"},
                 "note": {"type": "string", "description": "Комментарий к записи (пожелания клиента)"},
+                "confirmation_id": {"type": "string", "description": "Из первого вызова — когда клиент согласился с итогом"},
             },
-            "required": ["start"],
         },
     },
     {
         "type": "function",
         "name": "reschedule_booking",
-        "description": "Онлайн-запись: перенести запись клиента на другое время (сначала найди свободное через find_booking_slots).",
+        "description": ("Онлайн-запись: перенести запись клиента на другое время (сначала найди свободное через "
+                        "find_booking_slots). В переписке — в два шага, как create_booking: итог клиенту → его «да» → "
+                        "вызов с confirmation_id."),
         "parameters": {
             "type": "object",
             "properties": {
                 "booking_id": {"type": "string", "description": "Id записи. Пусто — ближайшая запись клиента"},
                 "agent_contact_id": {"type": "string", "description": "Клиент, если id записи не знаешь"},
                 "new_start": {"type": "string", "description": "Новое время, ISO по Бишкеку: 2026-11-21T12:00"},
+                "confirmation_id": {"type": "string", "description": "Из первого вызова — когда клиент согласился"},
             },
-            "required": ["new_start"],
         },
     },
     {
         "type": "function",
         "name": "cancel_booking",
-        "description": "Онлайн-запись: отменить запись клиента (когда он сам просит отменить).",
+        "description": ("Онлайн-запись: отменить запись клиента (когда он сам просит отменить). В переписке — в два шага: "
+                        "итог клиенту → его «да» → вызов с confirmation_id."),
         "parameters": {
             "type": "object",
             "properties": {
                 "booking_id": {"type": "string", "description": "Id записи. Пусто — ближайшая запись клиента"},
                 "agent_contact_id": {"type": "string", "description": "Клиент, если id записи не знаешь"},
                 "reason": {"type": "string", "description": "Причина отмены словами клиента"},
+                "confirmation_id": {"type": "string", "description": "Из первого вызова — когда клиент согласился"},
             },
         },
     },
@@ -127,8 +138,10 @@ def augment(tools: list, agent_config, db: Session) -> list:
         user = db.query(User).filter(User.id == agent_config.user_id).first()
         if not booking_enabled(db, user):
             return tools
+        from backend.services import salon_ai_tools
         have = {(t.get("function") or {}).get("name") for t in tools}
-        return tools + [t for t in to_chat_completions_tools(TOOLS) if t["function"]["name"] not in have]
+        return tools + [t for t in to_chat_completions_tools(TOOLS + salon_ai_tools.TOOLS)
+                        if t["function"]["name"] not in have]
     except Exception as e:
         logger.warning(f"[BOOKING-TOOLS] augment skipped: {e}")
         return tools
@@ -137,9 +150,12 @@ def augment(tools: list, agent_config, db: Session) -> list:
 PROMPT_BLOCK = (
     "\n\n## Онлайн-запись\n"
     "Клиент хочет записаться или спрашивает про время: find_booking_slots → предложи 2–3 ближайших варианта "
-    "словами → после согласия клиента на конкретное время create_booking → подтверди одной фразой (день, время, "
-    "услуга). Не записывай без явного согласия на время и не выдумывай свободные окна. Перенос — найди новое время "
-    "и reschedule_booking; отмена по просьбе клиента — cancel_booking. Напоминание клиенту придёт само. "
+    "словами → клиент выбрал → create_booking. В переписке с клиентом запись, перенос и отмена идут в ДВА шага: "
+    "первый вызов возвращает summary и confirmation_id — отправь итог клиенту одним сообщением и спроси, всё ли "
+    "верно; после его согласия вызови тот же инструмент с confirmation_id — только тогда запись выполнится. "
+    "Не выдумывай свободные окна и цены — только из ответов инструментов. Несколько услуг за один визит — "
+    "services списком. Перенос — найди новое время и reschedule_booking; отмена по просьбе клиента — "
+    "cancel_booking. Напоминание клиенту придёт само. "
     "Цену называй как в поле price_text (диапазон «1 500–2 500 сом» — так и говори, точную назовёт мастер). "
     "Если в ответе create_booking есть prepay — скажи клиенту сумму предоплаты и как её внести (prepay.how); "
     "запись подтвердят после оплаты."
@@ -193,16 +209,18 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             return json.dumps({"ok": False, "error": "Онлайн-запись выключена у владельца"}, ensure_ascii=False)
         names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
         if tool_name == "find_booking_slots":
-            service = bs.find_service(db, user.id, None, args.get("service")) if args.get("service") else None
             res = _match_resource(db, user.id, args.get("master"))
             count = max(1, min(int(args.get("count") or 3), 8))
+            if len(_service_queries(args)) > 1:
+                return _visit_slots(db, user, args, res, count, names)
+            service = bs.find_service(db, user.id, None, args.get("service")) if args.get("service") else None
             slots = bs.nearest_slots(db, user, service, res.id if res else None, args.get("date"), count=count)
             db.commit()
             out = {"ok": True, "slots": slots,
                    "service": bs.service_to_dict(service) if service else None,
                    "masters": [r.name for r in bs.resources(db, user.id) if bs.bookable_online(r)]}
             if args.get("service") and service is None:
-                out["note"] = "Такую услугу в каталоге не нашёл — уточни у клиента название"
+                out["note"] = "Такую услугу в каталоге не нашёл — уточни у клиента название (get_services — весь прайс)"
             if not slots:
                 out["note"] = "Свободного времени в ближайшие 2 недели нет — предложи записаться в лист ожидания или передай владельцу"
             if res is not None and not bs.bookable_online(res):
@@ -210,38 +228,11 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
                                "или передай владельцу")
             return json.dumps(out, ensure_ascii=False)
         if tool_name == "create_booking":
-            res = _match_resource(db, user.id, args.get("master"))
-            b = bs.create_booking(db, user, start=args.get("start"), service_query=args.get("service"),
-                                  resource_id=res.id if res else None, contact_id=_contact_for(context, args),
-                                  client_name=args.get("client_name"), client_phone=args.get("client_phone"),
-                                  note=args.get("note"), source="bot",
-                                  channel=(context.get("call_direction") or "").replace("_inbound", "") or None)
-            db.commit()
-            try:
-                from backend.core.spawn import spawn
-                from backend.services.booking_notify import notify_owner_new_booking
-                spawn(notify_owner_new_booking(user.id, b.id, by="bot"))
-            except Exception:
-                pass
-            d = bs.booking_to_dict(b, names)
-            out = {"ok": True, "booking": d,
-                   "say": f"Записал: {d['label']}" + (f", {d['service']}" if d['service'] else "")
-                          + (f", мастер {d['resource']}" if d['resource'] else "")}
-            if d.get("prepay_amount"):
-                how = bs.settings_of(bs.get_page(db, user, create=False)).get("prepay_info") or ""
-                out["prepay"] = {"amount": d["prepay_amount"],
-                                 "how": how or "Реквизиты для оплаты пришлёт администратор"}
-            return json.dumps(out, ensure_ascii=False)
+            return _create(db, user, args, context, names)
         if tool_name == "reschedule_booking":
-            b = _contact_booking(db, user, args, context)
-            b = bs.update_booking(db, user, b.id, start=args.get("new_start"), source="bot")
-            db.commit()
-            return json.dumps({"ok": True, "booking": bs.booking_to_dict(b, names)}, ensure_ascii=False)
+            return _reschedule(db, user, args, context, names)
         if tool_name == "cancel_booking":
-            b = _contact_booking(db, user, args, context)
-            b = bs.cancel_booking(db, user, b.id, args.get("reason"))
-            db.commit()
-            return json.dumps({"ok": True, "booking": bs.booking_to_dict(b, names)}, ensure_ascii=False)
+            return _cancel(db, user, args, context, names)
         if tool_name == "list_bookings":
             if _contact_for(context, args) and (context.get("surface") == "postcall" or args.get("agent_contact_id")):
                 rows = bs.upcoming_for_contact(db, user.id, _contact_for(context, args), limit=5)
@@ -254,8 +245,273 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
     except bs.BookingError as e:
         db.rollback()
         return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+    except _Refusal as e:
+        db.rollback()
+        return json.dumps(dict({"ok": False, "error": e.message}, **e.extra), ensure_ascii=False)
     except Exception as e:
         db.rollback()
         logger.error(f"[BOOKING-TOOLS] {tool_name} failed: {e}", exc_info=True)
         return json.dumps({"ok": False, "error": "Не удалось выполнить запись, попробуйте ещё раз"}, ensure_ascii=False)
     return json.dumps({"ok": False, "error": "unknown_tool"}, ensure_ascii=False)
+
+
+# ───────────────────────────── запись в два шага (шаг 1.6а) ─────────────────────────────
+
+class _Refusal(Exception):
+    def __init__(self, message: str, **extra):
+        super().__init__(message)
+        self.message, self.extra = message, extra
+
+
+def _service_queries(args: Dict[str, Any]) -> List[str]:
+    raw = args.get("services")
+    items = [str(x).strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+    if not items and args.get("service"):
+        items = [str(args["service"]).strip()]
+    return items[:bs.MAX_VISIT_ITEMS]
+
+
+def _resolve_items(db: Session, user, args: Dict[str, Any], res) -> List[Dict[str, Any]]:
+    """Услуги словами → [{service_id, resource_id?}]. Мастер ставится там, где он делает эту услугу."""
+    out = []
+    for q in _service_queries(args):
+        svc = bs.find_service(db, user.id, None, q)
+        if svc is None:
+            raise bs.BookingError(f"Не нашёл услугу «{q}» в прайсе — уточни у клиента (get_services — весь прайс)")
+        it: Dict[str, Any] = {"service_id": str(svc.id)}
+        if res is not None and bs._resource_does(res, svc):
+            it["resource_id"] = str(res.id)
+        out.append(it)
+    return out
+
+
+def _visit_slots(db: Session, user, args, res, count: int, names: Dict[str, str]) -> str:
+    items = _resolve_items(db, user, args, res)
+    day = bs.parse_day(args.get("date")) if args.get("date") else bs.to_local(bs.now_utc()).date()
+    found: List[Dict[str, Any]] = []
+    for i in range(14):
+        for s in bs.visit_slots(db, user, items, day + timedelta(days=i), source="bot", limit=count):
+            found.append({"start": s["start"], "label": bs.fmt_local(bs.parse_start(s["start"])),
+                          "end_time": s["end_time"], "masters": [names.get(m) for m in s["masters"]]})
+            if len(found) >= count:
+                break
+        if len(found) >= count:
+            break
+    db.commit()
+    out = {"ok": True, "visit": True, "slots": found,
+           "services": [bs.service_to_dict(bs.find_service(db, user.id, it["service_id"])) for it in items]}
+    if not found:
+        out["note"] = "Весь визит целиком в ближайшие 2 недели не помещается — предложи услуги в разные дни"
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _channel(context: Dict[str, Any]) -> Optional[str]:
+    return (context.get("call_direction") or "").replace("_inbound", "").replace("_outbound", "") or None
+
+
+def _do_create(db: Session, user, p: Dict[str, Any]) -> List[Any]:
+    common = dict(client_name=p.get("client_name"), client_phone=p.get("client_phone"),
+                  contact_id=p.get("contact_id"), source="bot", channel=p.get("channel"), note=p.get("note"))
+    items = p.get("items") or []
+    if len(items) > 1:
+        return bs.create_visit(db, user, items, p["start"], **common)
+    it = items[0] if items else {}
+    return [bs.create_booking(db, user, start=p["start"], service_id=it.get("service_id"),
+                              resource_id=it.get("resource_id"), **common)]
+
+
+def _line(b, names: Dict[str, str], db: Session, user_id) -> str:
+    svc = bs.find_service(db, user_id, b.service_entry_id) if b.service_entry_id else None
+    # Диапазон «от–до» — только если цена записи = цена прайса (у мастера своя цена — она и есть)
+    same = svc is not None and b.price is not None and svc.price is not None and float(b.price) == float(svc.price)
+    price = bs.price_text(b.price, getattr(svc, "price_to", None) if same else None,
+                          getattr(svc, "currency", None) or "KGS")
+    parts = [b.service_title or "визит", (names.get(str(b.resource_id)) or "") and f"мастер {names.get(str(b.resource_id))}",
+             bs.fmt_local(b.start_at), price]
+    return ", ".join(x for x in parts if x)
+
+
+def _summary(db: Session, user, rows: List[Any], names: Dict[str, str]) -> Dict[str, Any]:
+    lines = [_line(b, names, db, user.id) for b in rows]
+    prepay = sum(float(b.prepay_amount or 0) for b in rows)
+    text_ = "; ".join(lines)
+    if prepay:
+        text_ += f". Предоплата {bs._num(prepay)} сом"
+    return {"text": text_, "prepay": prepay or None,
+            "bookings": [bs.booking_to_dict(b, names) for b in rows]}
+
+
+def _prepay_how(db: Session, user) -> str:
+    return (bs.settings_of(bs.get_page(db, user, create=False)).get("prepay_info")
+            or "Реквизиты для оплаты пришлёт администратор")
+
+
+def _notify_new(user, rows) -> None:
+    try:
+        from backend.core.spawn import spawn
+        from backend.services.booking_notify import notify_owner_new_booking
+        spawn(notify_owner_new_booking(user.id, rows[0].id, by="bot"))
+    except Exception:
+        pass
+
+
+def _done(db: Session, user, rows, names) -> str:
+    summ = _summary(db, user, rows, names)
+    out = {"ok": True, "booking": summ["bookings"][0], "bookings": summ["bookings"],
+           "say": "Записал: " + summ["text"]}
+    if summ["prepay"]:
+        out["prepay"] = {"amount": summ["prepay"], "how": _prepay_how(db, user)}
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _ask(row, summary_text: str, extra: Optional[Dict[str, Any]] = None) -> str:
+    out = {"ok": True, "needs_confirmation": True, "confirmation_id": str(row.id), "summary": summary_text,
+           "next": ("Ещё НЕ выполнено. Отправь клиенту этот итог одним сообщением своими словами и спроси, всё ли "
+                    "верно. Когда клиент ответит согласием — вызови этот же инструмент с confirmation_id.")}
+    out.update(extra or {})
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _create(db: Session, user, args, context, names) -> str:
+    from backend.services import booking_confirm as bc
+    contact_id = _contact_for(context, args)
+    two_step = bc.needs_client_confirmation(context)
+    if two_step and args.get("confirmation_id"):
+        row = bc.find_pending(db, user.id, contact_id, "create", args.get("confirmation_id"))
+        if row is None:
+            raise _Refusal("Этот итог не найден или устарел — заново вызови create_booking без confirmation_id")
+        refusal = bc.check_consent(db, row)
+        if refusal:
+            raise _Refusal(refusal, needs_confirmation=True)
+        rows = _do_create(db, user, row.payload)
+        bc.mark_used(row, rows[0].id)
+        db.commit()
+        _notify_new(user, rows)
+        return _done(db, user, rows, names)
+
+    if not args.get("start"):
+        raise bs.BookingError("Укажи start — время из find_booking_slots")
+    res = _match_resource(db, user.id, args.get("master"))
+    items = _resolve_items(db, user, args, res) if _service_queries(args) else []
+    if not items and res is not None:
+        items = [{"service_id": None, "resource_id": str(res.id)}]
+    payload = {"start": args.get("start"), "items": items, "contact_id": contact_id,
+               "client_name": args.get("client_name"), "client_phone": args.get("client_phone"),
+               "note": args.get("note"), "channel": _channel(context)}
+    if not two_step:
+        rows = _do_create(db, user, payload)
+        db.commit()
+        _notify_new(user, rows)
+        return _done(db, user, rows, names)
+
+    # Пробная запись: всё проверяется как по-настоящему (время, мастер, кабинет, цена) и откатывается
+    sp = db.begin_nested()
+    try:
+        rows = _do_create(db, user, payload)
+        summ = _summary(db, user, rows, names)
+        pinned = [{"service_id": str(b.service_entry_id) if b.service_entry_id else None,
+                   "resource_id": str(b.resource_id)} for b in rows]
+        start = rows[0].start_at.isoformat()
+    finally:
+        sp.rollback()
+    payload.update(items=pinned, start=start)
+    row = bc.create_pending(db, user.id, contact_id, "create", payload, summ["text"])
+    db.commit()
+    extra = {"prepay": {"amount": summ["prepay"], "how": _prepay_how(db, user)}} if summ["prepay"] else None
+    return _ask(row, summ["text"], extra)
+
+
+def _guard_late(db: Session, user, b, context) -> None:
+    if context.get("surface") != "postcall":
+        return
+    msg = bs.change_too_late(b, bs.settings_of(bs.get_page(db, user, create=False)))
+    if msg:
+        raise _Refusal(msg)
+
+
+def _reschedule(db: Session, user, args, context, names) -> str:
+    from backend.services import booking_confirm as bc
+    contact_id = _contact_for(context, args)
+    two_step = bc.needs_client_confirmation(context)
+    if two_step and args.get("confirmation_id"):
+        row = bc.find_pending(db, user.id, contact_id, "reschedule", args.get("confirmation_id"))
+        if row is None:
+            raise _Refusal("Этот итог не найден или устарел — заново вызови reschedule_booking без confirmation_id")
+        refusal = bc.check_consent(db, row)
+        if refusal:
+            raise _Refusal(refusal, needs_confirmation=True)
+        b = bs.get_booking(db, user.id, row.payload["booking_id"])
+        _guard_late(db, user, b, context)
+        b = bs.update_booking(db, user, b.id, start=row.payload["new_start"], source="bot")
+        bc.mark_used(row, b.id)
+        db.commit()
+        return json.dumps({"ok": True, "booking": bs.booking_to_dict(b, names),
+                           "say": "Перенёс: " + _line(b, names, db, user.id)}, ensure_ascii=False)
+    if not args.get("new_start"):
+        raise bs.BookingError("Укажи new_start — новое время из find_booking_slots")
+    b = _contact_booking(db, user, args, context)
+    _guard_late(db, user, b, context)
+    if not two_step:
+        b = bs.update_booking(db, user, b.id, start=args.get("new_start"), source="bot")
+        db.commit()
+        return json.dumps({"ok": True, "booking": bs.booking_to_dict(b, names)}, ensure_ascii=False)
+    was = _line(b, names, db, user.id)
+    bid = b.id
+    sp = db.begin_nested()
+    try:
+        moved = bs.update_booking(db, user, bid, start=args.get("new_start"), source="bot")
+        now_text = _line(moved, names, db, user.id)
+        new_start = moved.start_at.isoformat()
+    finally:
+        sp.rollback()
+    summary = f"перенос: {was} → {now_text}"
+    row = bc.create_pending(db, user.id, contact_id, "reschedule", {"booking_id": str(bid), "new_start": new_start},
+                            summary)
+    db.commit()
+    return _ask(row, summary)
+
+
+def _cancel(db: Session, user, args, context, names) -> str:
+    from backend.services import booking_confirm as bc
+    contact_id = _contact_for(context, args)
+    two_step = bc.needs_client_confirmation(context)
+
+    def run(b, reason):
+        if b.visit_id:
+            rows = bs.cancel_visit(db, user, b.visit_id, reason)
+        else:
+            rows = [bs.cancel_booking(db, user, b.id, reason)]
+        return rows
+
+    if two_step and args.get("confirmation_id"):
+        row = bc.find_pending(db, user.id, contact_id, "cancel", args.get("confirmation_id"))
+        if row is None:
+            raise _Refusal("Этот итог не найден или устарел — заново вызови cancel_booking без confirmation_id")
+        refusal = bc.check_consent(db, row)
+        if refusal:
+            raise _Refusal(refusal, needs_confirmation=True)
+        b = bs.get_booking(db, user.id, row.payload["booking_id"])
+        if b.status == "cancelled":
+            bc.mark_used(row, b.id)
+            db.commit()
+            return json.dumps({"ok": True, "booking": bs.booking_to_dict(b, names), "note": "Запись уже отменена"},
+                              ensure_ascii=False)
+        _guard_late(db, user, b, context)
+        rows = run(b, row.payload.get("reason"))
+        bc.mark_used(row, b.id)
+        db.commit()
+        return json.dumps({"ok": True, "booking": bs.booking_to_dict(rows[0], names),
+                           "cancelled": len(rows)}, ensure_ascii=False)
+    b = _contact_booking(db, user, args, context)
+    _guard_late(db, user, b, context)
+    if not two_step:
+        rows = run(b, args.get("reason"))
+        db.commit()
+        return json.dumps({"ok": True, "booking": bs.booking_to_dict(rows[0], names), "cancelled": len(rows)},
+                          ensure_ascii=False)
+    parts = bs.visit_bookings(db, user.id, b.visit_id) if b.visit_id else [b]
+    summary = "отмена: " + "; ".join(_line(x, names, db, user.id) for x in parts if x.status != "cancelled")
+    row = bc.create_pending(db, user.id, contact_id, "cancel", {"booking_id": str(b.id), "reason": args.get("reason")},
+                            summary)
+    db.commit()
+    return _ask(row, summary)

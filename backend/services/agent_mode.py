@@ -54,6 +54,7 @@ SEND_TOOLS = {
     "send_voice_message",
     "send_proposal",
     "send_product_card",
+    "send_staff_portfolio",
 }
 
 # Чат владельца с оркестратором на Старте читает и по команде владельца пишет клиентам в

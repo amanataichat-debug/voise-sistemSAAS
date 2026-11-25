@@ -289,7 +289,7 @@ REPLY_EXPECTED_DIRECTIONS = frozenset({"whatsapp_inbound", "telegram_inbound", "
 CLIENT_REPLY_TOOLS = frozenset({
     "telegram_send_message", "telegram_send_file", "whatsapp_send_message", "whatsapp_send_file",
     "instagram_send_message", "instagram_send_file", "send_voice_message", "send_proposal",
-    "send_product_card",
+    "send_product_card", "send_staff_portfolio",
 })
 REPLY_NUDGE = (
     "Клиент написал, а ответ ему не отправлен. Отправь ответ сейчас инструментом отправки того канала, "
@@ -1574,6 +1574,9 @@ class PostCallOrchestrator:
                 situation_text = chat_conscience.situation_block(
                     _thread_svc.get_thread(db, agent_contact.id, limit=20),
                     can_call=can_call, call_reason=call_reason)
+                # Запись ждёт «да» клиента (Voksy Beauty 1.6а): бот видит итог и id между сообщениями
+                from backend.services import booking_confirm
+                situation_text += booking_confirm.pending_block(db, agent_call.user_id, agent_contact.id)
             except Exception as e:
                 logger.warning(f"[POSTCALL] chat situation failed: {e}")
                 try:

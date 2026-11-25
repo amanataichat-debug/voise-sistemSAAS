@@ -2016,13 +2016,15 @@ def ensure_booking_tables():
     try:
         from sqlalchemy import inspect
         from backend.models.base import Base as ModelsBase
-        from backend.models.booking import BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom
+        from backend.models.booking import (BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom,
+                                            BookingConfirmation)
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
         ModelsBase.metadata.create_all(
             bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
-                                 SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__], checkfirst=True)
+                                 SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__,
+                                 BookingConfirmation.__table__], checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
     except Exception as e:

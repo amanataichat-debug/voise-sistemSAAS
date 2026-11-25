@@ -102,13 +102,14 @@ check("по умолчанию: три тарифа салона с ценами
       and [d["limits"]["staff"] for d in pc.BEAUTY_DEFAULTS] == [3, 10, 20])
 check("уровни: Beauty Start и AI — как Старт (reactive), Beauty Pro — как Profi (full)",
       [d["limits"]["agent_mode"] for d in pc.BEAUTY_DEFAULTS] == ["reactive", "reactive", "full"]
-      and any("Автономный" in f for f in pc.BEAUTY_DEFAULTS[2]["features"])
-      and not any("Автономный" in f for d in pc.BEAUTY_DEFAULTS[:2] for f in d["features"]))
+      and any("сам пишет" in f for f in pc.BEAUTY_DEFAULTS[2]["features"])
+      and not any("сам пишет" in f for d in pc.BEAUTY_DEFAULTS[:2] for f in d["features"]))
 check("по умолчанию: «что входит» не длиннее лимита редактора",
       all(len(d["features"]) <= pc.MAX_FEATURES and all(len(f) <= pc.MAX_FEATURE_LEN for f in d["features"])
           for d in pc.BEAUTY_DEFAULTS))
-check("по умолчанию: ИИ по кредитам (0 в тарифе), один тариф пробного периода, коды ≤ 20",
-      all(d["limits"]["credits_month"] == 0 for d in pc.BEAUTY_DEFAULTS)
+check("по умолчанию: Beauty Pro — 10 000 кредитов в месяц, Start/AI — 0, один тариф пробного периода, коды ≤ 20",
+      [d["limits"]["credits_month"] for d in pc.BEAUTY_DEFAULTS] == [0, 0, 10000]
+      and pc.PRO_CREDITS_FEATURE in pc.BEAUTY_DEFAULTS[2]["features"]
       and sum(1 for d in pc.BEAUTY_DEFAULTS if d["limits"]["trial"]) == 1
       and all(len(c) <= 20 and c.startswith(pc.BEAUTY_PREFIX) for c in codes)
       and all(len(d["name"]) <= 50 for d in pc.BEAUTY_DEFAULTS))
@@ -185,6 +186,25 @@ check("старт: колонки каталога добавлены в ста�
                                                              "for_user_id", "admin_updated_at"} <= cols)
 check("старт: Beauty-тарифы заведены ровно один раз", [(r[0], float(r[1]), r[3]) for r in seeded] ==
       [("beauty_start", 1990.0, 3), ("beauty_ai", 3990.0, 10), ("beauty_pro", 5990.0, 20)], seeded)
+# Прод 25.11.2026: Beauty Pro заведён с 0 кредитов → один раз становится 10 000; поставленные потом
+# суперадмином 0 повторный старт не трогает.
+with engine.begin() as conn:
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits - 'credits_default_v', '{credits_month}', '0'), "
+                      "features = features - 0 WHERE code='beauty_pro'"))
+    conn.execute(text("UPDATE subscription_plans SET features = (SELECT jsonb_agg(f) FROM jsonb_array_elements(features) f "
+                      "WHERE f::text NOT LIKE '%кредитов ИИ%') WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_row = conn.execute(text("SELECT (limits->>'credits_month')::int, features::text FROM subscription_plans WHERE code='beauty_pro'")).first()
+check("старт: Beauty Pro с 0 кредитов → 10 000 и строка «что входит»", pro_row[0] == 10000 and "10 000 кредитов ИИ" in pro_row[1]
+      and pro_row[1].count("кредитов ИИ") == 1, pro_row)
+with engine.begin() as conn:
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{credits_month}', '0') WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_c = conn.execute(text("SELECT (limits->>'credits_month')::int FROM subscription_plans WHERE code='beauty_pro'")).scalar()
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{credits_month}', '10000') WHERE code='beauty_pro'"))
+check("старт: 0, поставленный суперадмином после обновления, не перезаписывается", pro_c == 0, pro_c)
 check("старт: прежний тариф остался voksy, цена из конфига", start_row and start_row[1] == "voksy" and float(start_row[0]) == 7500.0, start_row)
 
 cl = TestClient(app_module.app, raise_server_exceptions=False)

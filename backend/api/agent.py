@@ -2903,6 +2903,8 @@ def list_agent_files(
     q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent.id)
     if source in ("library", "generated", "inbound"):
         q = q.filter(AgentFile.source == source)
+    else:
+        q = q.filter(AgentFile.source != "salon")      # копии фото мастеров (send_staff_portfolio)
     if contact_id:
         q = q.filter(AgentFile.agent_contact_id == contact_id)
     rows = q.order_by(AgentFile.created_at.desc()).limit(limit).all()

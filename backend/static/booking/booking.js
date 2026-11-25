@@ -951,6 +951,7 @@
         sel('buffer_min', 'Перерыв после записи', [[0, 'Без перерыва'], [5, '5 минут'], [10, '10 минут'], [15, '15 минут'], [30, '30 минут']], cfg.buffer_min) +
         sel('lead_min', 'Записываться не позже чем за', [[0, 'Сразу'], [30, '30 минут'], [60, '1 час'], [120, '2 часа'], [1440, 'Сутки']], cfg.lead_min) +
         sel('horizon_days', 'Насколько вперёд можно записаться', [[7, 'Неделя'], [14, '2 недели'], [30, 'Месяц'], [60, '2 месяца']], cfg.horizon_days) +
+        sel('cancel_hours', 'Бот отменяет и переносит не позже чем за', [[0, 'В любое время'], [2, '2 часа'], [3, '3 часа'], [6, '6 часов'], [12, '12 часов'], [24, 'Сутки']], cfg.cancel_hours || 0) +
         '</div><div class="field"><label class="label">Адрес (уходит клиенту в подтверждении и напоминании)</label><input class="input" id="bk-addr" value="' + esc(cfg.address || '') + '" placeholder="г. Бишкек, ул. Киевская 95, 2 этаж"></div>' +
         '<div class="field"><label class="label">Название на странице записи</label><input class="input" id="bk-title" value="' + esc(cfg.title || '') + '" placeholder="Например: Салон «Айдана»"></div>' +
         tgl('reminders', 'Напоминать клиенту', 'В WhatsApp или Telegram за сутки и за 2 часа до визита', cfg.reminders) +
