@@ -7,6 +7,8 @@
  * подтвердил / пришёл / не пришёл / отменить / перенести, ссылки «позвонить» и «написать».
  * Настройки: правила записи, ссылка для клиентов /b/<slug>. Мастера (фото, график, услуги и цены,
  * работы, вход в кабинет мастера) — экран «Мастера» (booking/masters.js, Voksy Beauty шаг 1.2).
+ * Прайс (категории, цена «от–до», подготовка и перерыв, кто делает, предоплата) — экран «Услуги»
+ * (booking/services.js, шаг 1.3). В сетке дня подготовка и перерыв видны полосками у записи.
  * API: /api/booking/* (services/booking_service.py — одна логика с ботом, звонком и ссылкой).
  */
 (function () {
@@ -67,9 +69,19 @@
       refresh: function () { render(); }, reload: function () { reload(); } };
   }
   function canSetup() { return S.staffCan ? S.staffCan('booking_setup') : true; }
+  function canServices() { return S.staffCan ? (S.staffCan('booking_setup') || S.staffCan('catalog')) : true; }
   function openMasters() {
-    if (st.view !== 'masters') st.prevView = st.view;
+    if (st.view !== 'masters' && st.view !== 'services') st.prevView = st.view;
     st.view = 'masters'; render(); window.scrollTo(0, 0);
+  }
+  function openServices() {
+    if (st.view !== 'masters' && st.view !== 'services') st.prevView = st.view;
+    st.view = 'services'; render(); window.scrollTo(0, 0);
+  }
+  function sctx() {
+    return { root: root, canEdit: canServices(),
+      back: function () { st.view = st.prevView || 'day'; render(); window.scrollTo(0, 0); },
+      onChange: function () { S.bust(); st.data && load(true); } };
   }
   function editMaster(id) {
     var r = resById(id);
@@ -81,6 +93,7 @@
 
   function render() {
     if (st.view === 'masters' && M()) { document.body.classList.add('bk-masters-on'); M().open(mctx()); return; }
+    if (st.view === 'services' && window.BookingServices) { document.body.classList.add('bk-masters-on'); BookingServices.open(sctx()); return; }
     document.body.classList.remove('bk-masters-on');
     var d = dayTitle(st.day);
     var list = dayBookings(st.day);
@@ -185,8 +198,12 @@
         var top = (minutesOf(b.start) - lo) * PX, height = Math.max(26, b.duration_min * PX - 3);
         var badge = b.status === 'arrived' ? '✓' : b.status === 'no_show' ? '✕' : b.status === 'confirmed' ? '👍' : '';
         var compact = height < 46;
-        return '<div class="bk-ev ' + esc(b.status) + (compact ? ' compact' : '') + '" data-bk="' + esc(b.id) + '" style="--c:' + esc(r.color) + ';top:' + top + 'px;height:' + height + 'px" title="' + esc(hm(b.start) + ' ' + (b.client_name || '') + (b.service ? ' · ' + b.service : '')) + '">' +
-          (badge && !compact ? '<span class="bdg">' + badge + '</span>' : '') +
+        var pads = b.status === 'cancelled' ? '' :
+          (b.prep_min ? '<div class="bk-pad" style="--c:' + esc(r.color) + ';top:' + (top - b.prep_min * PX) + 'px;height:' + (b.prep_min * PX) + 'px" title="Подготовка ' + b.prep_min + ' мин"></div>' : '') +
+          (b.after_min ? '<div class="bk-pad" style="--c:' + esc(r.color) + ';top:' + (top + b.duration_min * PX - 2) + 'px;height:' + (b.after_min * PX) + 'px" title="Перерыв после ' + b.after_min + ' мин"></div>' : '');
+        var pp = b.prepay_amount && b.status !== 'cancelled' ? '<span class="bk-pp' + (b.prepaid ? ' ok' : '') + '" title="' + (b.prepaid ? 'Предоплата получена' : 'Ждём предоплату ' + money(b.prepay_amount)) + '">' + icon('wallet') + '</span>' : '';
+        return pads + '<div class="bk-ev ' + esc(b.status) + (compact ? ' compact' : '') + '" data-bk="' + esc(b.id) + '" style="--c:' + esc(r.color) + ';top:' + top + 'px;height:' + height + 'px" title="' + esc(hm(b.start) + ' ' + (b.client_name || '') + (b.service ? ' · ' + b.service : '')) + '">' +
+          (badge && !compact ? '<span class="bdg">' + badge + '</span>' : '') + (!compact ? pp : '') +
           '<div class="tm">' + esc(hm(b.start)) + '</div><div class="cl">' + esc(b.client_name || 'Клиент') + '</div>' +
           (height > 52 ? '<div class="sv">' + esc(b.service || '') + '</div>' : '') + '</div>';
       }).join('');
@@ -243,12 +260,17 @@
     var r = resById(b.resource_id);
     var phone = b.client_phone && !/^(web|tg|ig|wa):/.test(b.client_phone) ? b.client_phone : '';
     var dr = S.drawer({ title: '<div style="font-weight:700">' + esc(b.client_name || 'Клиент') + '</div><div class="muted small">' + esc(b.label) + '</div>' });
+    dr.body.classList.add('bk-dr');
     dr.body.innerHTML =
       '<dl class="bk-dinfo">' +
       '<dt>Когда</dt><dd>' + esc(dayTitle(keyOf(new Date(b.start))).main) + ', ' + esc(hm(b.start)) + '–' + esc(hm(b.end)) + '</dd>' +
       '<dt>Услуга</dt><dd>' + esc(b.service || '—') + '</dd>' +
       '<dt>Мастер</dt><dd>' + esc((r && r.name) || '—') + '</dd>' +
       '<dt>Цена</dt><dd>' + esc(money(b.price)) + '</dd>' +
+      (b.prepay_amount ? '<dt>Предоплата</dt><dd><span class="bk-ppline' + (b.prepaid ? ' ok' : '') + '">' + icon(b.prepaid ? 'circle-check' : 'wallet') +
+        esc(money(b.prepay_amount)) + ' · ' + (b.prepaid ? 'получена' : 'ждём') + '</span> ' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-prepaid="' + (b.prepaid ? '0' : '1') + '">' + (b.prepaid ? 'Отменить отметку' : 'Отметить «получена»') + '</button></dd>' : '') +
+      (b.prep_min || b.after_min ? '<dt>Время мастера</dt><dd>' + (b.prep_min ? 'подготовка ' + b.prep_min + ' мин' : '') + (b.prep_min && b.after_min ? ', ' : '') + (b.after_min ? 'перерыв после ' + b.after_min + ' мин' : '') + '</dd>' : '') +
       '<dt>Статус</dt><dd><b>' + esc(STATUS[b.status] || b.status) + '</b></dd>' +
       '<dt>Откуда</dt><dd>' + esc({ owner: 'Вы записали', staff: 'Сотрудник', bot: 'Бот в переписке', call: 'Голосовой агент', online: 'Онлайн по ссылке' }[b.source] || '—') + '</dd>' +
       (phone ? '<dt>Телефон</dt><dd><a href="tel:' + esc(phone) + '">' + esc(S.fmtPhone ? S.fmtPhone(phone) : phone) + '</a></dd>' : '') +
@@ -284,6 +306,11 @@
       });
     });
     S.$('[data-move]', dr.body).addEventListener('click', function () { dr.close(); newBooking({ move: b }); });
+    var ppb = S.$('[data-prepaid]', dr.body);
+    if (ppb) ppb.addEventListener('click', function () {
+      var on = ppb.getAttribute('data-prepaid') === '1';
+      patch({ prepaid: on }, on ? 'Предоплата отмечена' : 'Отметка снята');
+    });
     S.$('#bk-note-save', dr.body).addEventListener('click', function () { patch({ note: S.$('#bk-note', dr.body).value }); });
   }
 
@@ -302,7 +329,7 @@
           '<div class="field"><label class="label">Телефон</label><input class="input" id="nb-phone" type="tel" inputmode="tel" placeholder="+996 700 123 456"></div></div>') +
         '<div class="st-grid2">' +
         (move ? '' : '<div class="field"><label class="label">Услуга</label><select class="select-native" id="nb-svc"><option value="">Без услуги (60 мин)</option>' +
-          services.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.title) + ' · ' + s.duration_min + ' мин' + (s.price != null ? ' · ' + Number(s.price).toLocaleString('ru-RU') + ' сом' : '') + '</option>'; }).join('') + '</select></div>') +
+          services.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc((s.subcategory || s.category ? (s.subcategory || s.category) + ' · ' : '') + s.title) + ' · ' + s.duration_min + ' мин' + (s.price_text ? ' · ' + s.price_text : '') + (s.online_booking === false ? ' · только админ' : '') + '</option>'; }).join('') + '</select></div>') +
         '<div class="field"><label class="label">Мастер</label><select class="select-native" id="nb-res"><option value="">Любой свободный</option>' +
         resources().map(function (r) { return '<option value="' + esc(r.id) + '"' + ((pre.resource_id || (move && move.resource_id)) === r.id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + '</select></div>' +
         '<div class="field"><label class="label">День</label><input class="input" id="nb-day" type="date" value="' + esc(day) + '"></div></div>' +
@@ -417,6 +444,9 @@
         tgl('reminders', 'Напоминать клиенту', 'В WhatsApp или Telegram за сутки и за 2 часа до визита', cfg.reminders) +
         tgl('thanks', '«Спасибо» после визита', 'Через час после визита — короткое сообщение и приглашение снова', cfg.thanks) +
         tgl('master_phones', 'Мастера видят телефоны клиентов', 'В своём кабинете. Выключено — мастер видит только имя: так клиентская база остаётся у салона', cfg.master_phones) +
+        '<div class="field" style="margin-top:10px"><label class="label" for="bk-ppinfo">Как внести предоплату <span class="muted">(для услуг с предоплатой)</span></label>' +
+        '<textarea class="textarea" id="bk-ppinfo" rows="2" maxlength="500" placeholder="Например: перевод на Mbank +996 700 123 456 (Айпери С.) — пришлите чек в WhatsApp">' + esc(cfg.prepay_info || '') + '</textarea>' +
+        '<div class="hint">Клиент увидит это после онлайн-записи, бот и голосовой агент скажут при записи.</div></div>' +
         '<button class="btn btn-primary" type="button" id="bk-save-r" style="margin-top:10px">Сохранить правила</button></div>' +
         '<div data-pane="l" hidden>' +
         '<p class="muted">Клиент сам выбирает услугу, мастера и время — запись появится у вас в календаре, а вам придёт уведомление.</p>' +
@@ -441,7 +471,7 @@
     S.$('#bk-save-r', d.el).addEventListener('click', function () {
       var body = { settings: { address: S.$('#bk-addr', d.el).value.trim(), title: S.$('#bk-title', d.el).value.trim(),
         reminders: S.$('#t-reminders', d.el).checked, thanks: S.$('#t-thanks', d.el).checked,
-        master_phones: S.$('#t-master_phones', d.el).checked } };
+        master_phones: S.$('#t-master_phones', d.el).checked, prepay_info: S.$('#bk-ppinfo', d.el).value.trim() } };
       S.$$('[data-set]', d.el).forEach(function (s) { body.settings[s.getAttribute('data-set')] = +s.value; });
       S.api('/api/booking/settings', { method: 'PUT', body: body }).then(function (r) { S.toast(r.ok ? 'Правила сохранены' : S.apiError(r), r.ok ? '' : 'error'); if (r.ok) st.data.page = r.data.page; });
     });
@@ -501,16 +531,18 @@
     try { var v = localStorage.getItem('vf_booking_view'); if (v === 'week' || v === 'day') st.view = v; } catch (e) { /* ignore */ }
     var q = new URLSearchParams(location.search);
     st.day = q.get('date') || keyOf(new Date());
-    if (q.get('view') === 'masters') { st.prevView = st.view; st.view = 'masters'; }
+    if (q.get('view') === 'masters' || q.get('view') === 'services') { st.prevView = st.view; st.view = q.get('view'); }
     var acts = document.getElementById('bk-actions');
     // Мастера, график, правила и ссылка — у владельца и сотрудника с разделом «Мастера и график»
     var setup = canSetup();
-    acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-masters-btn" title="Мастера: фото, график, услуги и цены">' + icon('users') + '<span class="lbl">Мастера</span></button>' +
+    acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-services-btn" title="Услуги: прайс, время, кто делает">' + icon('sparkles') + '<span class="lbl">Услуги</span></button>' +
+      '<button class="btn btn-sm" type="button" id="bk-masters-btn" title="Мастера: фото, график, услуги и цены">' + icon('users') + '<span class="lbl">Мастера</span></button>' +
       (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Ссылка для онлайн-записи">' + icon('link-2') + '<span class="lbl">Ссылка для клиентов</span></button>' +
       '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' : '') +
       '<button class="btn btn-primary btn-sm" type="button" id="bk-new">' + icon('plus') + '<span class="lbl">Записать</span></button>';
     document.getElementById('bk-new').addEventListener('click', function () { newBooking({}); });
     document.getElementById('bk-masters-btn').addEventListener('click', openMasters);
+    document.getElementById('bk-services-btn').addEventListener('click', openServices);
     if (setup) {
       document.getElementById('bk-set').addEventListener('click', settings);
       document.getElementById('bk-link-btn').addEventListener('click', function () {

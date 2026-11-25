@@ -15,6 +15,12 @@
   PUT    /resources/{id}/login        — привязать вход сотрудника к мастеру {team_member_id|null} (владелец)
   POST   /resources/{id}/login        — создать мастеру вход {email, password?} (владелец; место по тарифу)
 
+Услуги салона (шаг 1.3, services/beauty_services.py — над каталогом бота):
+  GET    /services                    — услуги с категориями, мастерами и их ценами
+  POST   /services, PATCH /services/{id}, DELETE /services/{id} — услуга (+ кто делает и за сколько)
+  POST   /services/categories/rename  — переименовать категорию или подкатегорию
+  POST   /services/categories/order   — порядок категорий
+
 Кабинет мастера (сотрудник с разделом «Свой журнал» — только свои записи; владелец — ?resource_id=):
   GET    /me?date=&days=              — мастер, записи, услуги, заработок, статистика, новое
   GET    /me/clients                  — клиенты мастера с историей визитов
@@ -116,13 +122,19 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=3
     return {
         "date": day.isoformat(), "days": days, "today": bs.to_local(bs.now_utc()).date().isoformat(),
         "resources": [_resource_out(current_user, r) for r in res],
-        "services": [bs.service_to_dict(e) for e in bs.services(db, current_user.id)],
+        "services": [bs.service_to_dict(e) for e in _sorted_services(db, current_user)],
         "bookings": [bs.booking_to_dict(b, names) for b in rows],
         "logins": _logins(db, current_user),
         "page": _page_dict(page),
         "stats": bs.stats(db, current_user.id, start, end),
         "plan_limit": _plan_limit(db, current_user),
     }
+
+
+def _sorted_services(db: Session, user) -> List[Any]:
+    """Активные услуги в порядке категорий владельца (как в прайсе «Услуги»)."""
+    from backend.services.beauty_services import sort_services
+    return sort_services(db, user, bs.services(db, user.id))
 
 
 def _plan_limit(db: Session, user) -> Optional[Dict[str, Any]]:
@@ -184,7 +196,8 @@ def booking_update(booking_id: str, data: Dict[str, Any] = Body(...), current_us
     try:
         b = bs.update_booking(db, current_user, booking_id, start=data.get("start"), resource_id=data.get("resource_id"),
                               service_id=data.get("service_id"), status=data.get("status"), note=data.get("note"),
-                              price=data.get("price"), cancel_reason=data.get("cancel_reason"))
+                              price=data.get("price"), cancel_reason=data.get("cancel_reason"),
+                              prepaid=data.get("prepaid") if isinstance(data.get("prepaid"), bool) else None)
         db.commit()
     except bs.BookingError as e:
         db.rollback()
@@ -564,6 +577,99 @@ def booking_link_kit(current_user: User = Depends(get_current_user), db: Session
             "button_code": (f'<a href="{info["url"]}" data-voksy-booking>Записаться онлайн</a>' if info.get("url") else None)}
 
 
+# ───────────────────────────── услуги салона ─────────────────────────────
+
+def _svc_fail(e: Exception):
+    raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/services")
+def services_list(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    out = bsv.overview(db, current_user)
+    db.commit()
+    return out
+
+
+@router.post("/services")
+def services_create(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    try:
+        e = bsv.save(db, current_user, None, data)
+        db.commit()
+    except (bsv.ServiceError, bs.BookingError) as ex:
+        db.rollback()
+        _svc_fail(ex)
+    bsv.after_change(db, current_user)
+    return {"ok": True, "service": bsv.service_dict(e, bs.resources(db, current_user.id, active_only=False))}
+
+
+@router.patch("/services/{service_id}")
+def services_update(service_id: str, data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    try:
+        e = bsv.save(db, current_user, service_id, data)
+        db.commit()
+    except (bsv.ServiceError, bs.BookingError) as ex:
+        db.rollback()
+        _svc_fail(ex)
+    bsv.after_change(db, current_user)
+    return {"ok": True, "service": bsv.service_dict(e, bs.resources(db, current_user.id, active_only=False))}
+
+
+@router.delete("/services/{service_id}")
+def services_delete(service_id: str, current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    try:
+        out = bsv.remove(db, current_user, service_id)
+        db.commit()
+    except bsv.ServiceError as ex:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(ex))
+    bsv.after_change(db, current_user, deleted_ids=[out["id"]] if out.get("deleted") else None)
+    return {"ok": True, **{k: v for k, v in out.items() if k != "id"}}
+
+
+class CategoryRenameIn(BaseModel):
+    old: str = Field(..., max_length=120)
+    new: str = Field("", max_length=60)
+    sub_old: Optional[str] = Field(None, max_length=60)
+
+
+@router.post("/services/categories/rename")
+def services_category_rename(body: CategoryRenameIn, current_user: User = Depends(get_current_user),
+                             db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    try:
+        n = bsv.rename_category(db, current_user, body.old, body.new, body.sub_old)
+        db.commit()
+    except bsv.ServiceError as ex:
+        db.rollback()
+        _svc_fail(ex)
+    bsv.after_change(db, current_user)
+    return {"ok": True, "renamed": n}
+
+
+class CategoryOrderIn(BaseModel):
+    names: List[str] = Field(default_factory=list, max_length=100)
+
+
+@router.post("/services/categories/order")
+def services_category_order(body: CategoryOrderIn, current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import beauty_services as bsv
+    try:
+        bsv.set_category_order(db, current_user, body.names)
+        db.commit()
+    except bsv.ServiceError as ex:
+        db.rollback()
+        _svc_fail(ex)
+    return {"ok": True}
+
+
 # ───────────────────────────── кабинет мастера ─────────────────────────────
 
 def _me_resource(db: Session, user: User, resource_id: Optional[str] = None) -> BookingResource:
@@ -763,8 +869,9 @@ def public_booking_info(slug: str, db: Session = Depends(get_db)) -> Dict[str, A
         "niche": niche_title(owner.business_niche, owner.business_niche_other),
         "address": cfg.get("address") or "",
         "horizon_days": cfg["horizon_days"],
-        "services": [bs.service_to_dict(e) for e in bs.services(db, owner.id)],
+        "services": [bs.service_to_dict(e) for e in _sorted_services(db, owner) if bs.service_online(e)],
         "resources": [public_master(r) for r in bs.resources(db, owner.id) if bs.bookable_online(r)],
+        "prepay_info": cfg.get("prepay_info") or "",
     }
 
 
@@ -821,4 +928,5 @@ async def public_booking_create(slug: str, body: PublicBookingIn, request: Reque
         logger.warning(f"[BOOKING] owner notify not scheduled: {e}")
     cfg = bs.settings_of(page)
     return {"ok": True, "booking": {"label": out["label"], "service": out["service"], "resource": out["resource"],
-                                    "address": cfg.get("address") or ""}}
+                                    "address": cfg.get("address") or "", "price": out["price"],
+                                    "prepay_amount": out["prepay_amount"], "prepay_info": cfg.get("prepay_info") or ""}}

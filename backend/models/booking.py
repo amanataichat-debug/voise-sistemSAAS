@@ -95,6 +95,12 @@ class Booking(Base):
     end_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(String(16), nullable=False, default="booked")
     price = Column(Float, nullable=True)
+    # Услуги салона (шаг 1.3): подготовка до и перерыв после — на момент записи (правка услуги
+    # старые записи не двигает); предоплата по правилу услуги и когда её отметили полученной
+    prep_min = Column(Integer, nullable=True)
+    after_min = Column(Integer, nullable=True)
+    prepay_amount = Column(Float, nullable=True)
+    prepaid_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(16), nullable=True)                  # owner | bot | online | call | staff
     channel = Column(String(16), nullable=True)                 # whatsapp | telegram | instagram | call | web
     note = Column(Text, nullable=True)

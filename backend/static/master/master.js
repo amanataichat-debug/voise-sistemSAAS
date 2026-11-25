@@ -281,7 +281,9 @@
         '<div class="t"><b>' + esc(hm(b.start)) + '</b><span>' + esc(hm(b.end)) + '</span></div>' +
         '<div class="c"><div class="n">' + esc(b.client_name || 'Клиент') + '</div>' +
         '<div class="s">' + esc(b.service || 'Без услуги') + ' · ' + durText(b.duration_min) + (b.price != null ? ' · ' + money(b.price) : '') + '</div>' +
-        (b.note ? '<div class="note">' + icon('sticky-note') + esc(b.note) + '</div>' : '') + '</div>' +
+        (b.note ? '<div class="note">' + icon('sticky-note') + esc(b.note) + '</div>' : '') +
+        (b.prepay_amount && b.status !== 'cancelled' ? '<div class="pp' + (b.prepaid ? ' ok' : '') + '">' + icon('wallet') +
+          (b.prepaid ? 'Предоплата ' + money(b.prepay_amount) + ' получена' : 'Ждём предоплату ' + money(b.prepay_amount)) + '</div>' : '') + '</div>' +
         '<span class="chip ' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span></article>';
     }).join('') + (nowLine >= 0 && !placed && nowLine < 24 * 60 ? '<div class="mc-now"><span>' + fmtMin(nowLine) + '</span></div>' : '');
   }

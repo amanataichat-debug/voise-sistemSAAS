@@ -76,6 +76,14 @@ def normalize(text: str) -> str:
     return " ".join((text or "").lower().split())
 
 
+def format_price_range(row) -> str:
+    """Цена позиции/услуги словами модели: «1 500 сом» или «1 500–2 500 сом» (у услуг салона бывает «до»)."""
+    price, to = getattr(row, "price", None), getattr(row, "price_to", None)
+    if price is not None and to is not None and to > price:
+        return f"{format_price(price, row.currency).rsplit(' ', 1)[0]}–{format_price(to, row.currency)}"
+    return format_price(price, getattr(row, "currency", None))
+
+
 def format_price(price, currency: Optional[str] = None) -> str:
     """
     Цена в виде, который модель произнесёт правильно: «84 990 сом».
@@ -993,7 +1001,16 @@ def entry_for_agent(row: AgentKnowledgeEntry) -> Dict[str, Any]:
         # id позиции — для send_product_card (карточка товара клиенту одним сообщением)
         out["product_id"] = str(row.id) if getattr(row, "id", None) else None
         if row.price is not None:
-            out["price"] = format_price(row.price, row.currency)
+            out["price"] = format_price_range(row)
+        # услуги салона (Voksy Beauty): длительность, предоплата, «записывает администратор»
+        if getattr(row, "duration_min", None):
+            out["duration_min"] = row.duration_min
+        prepay = getattr(row, "prepay", None)
+        if isinstance(prepay, dict) and prepay.get("value"):
+            out["prepay"] = (f"{prepay['value']:g}%" if prepay.get("type") == "percent"
+                             else format_price(prepay["value"], row.currency))
+        if getattr(row, "online_booking", None) is False:
+            out["booking"] = "записывает только администратор"
         attrs = row.attributes if isinstance(row.attributes, dict) else {}
         visible = {k: v for k, v in attrs.items() if not str(k).startswith("_") and v not in (None, "")}
         if visible:

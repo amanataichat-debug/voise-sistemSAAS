@@ -257,7 +257,8 @@ def product_card_text(row, max_desc: int = 350) -> str:
         if d:
             lines.append(f"Цена: {price} вместо {format_price(row.old_price, row.currency)}, скидка {d}%")
         else:
-            lines.append(f"Цена: {price}")
+            from backend.services.agent_knowledge_service import format_price_range
+            lines.append(f"Цена: {format_price_range(row)}")
     if not row.in_stock:
         lines.append("Сейчас нет в наличии")
     else:

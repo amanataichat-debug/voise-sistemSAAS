@@ -139,6 +139,10 @@ STAFF_RULES = [
     _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),
     _rule("GET PATCH", r"^/api/orders/[^/]+/?$", "orders"),
     _rule("POST", r"^/api/orders/[^/]+/status/?$", "orders"),
+    # — услуги салона (над каталогом): смотреть — журнал и каталог, менять — «Мастера и график» и каталог —
+    _rule("GET", r"^/api/booking/services/?$", "booking", "booking_setup", "catalog"),
+    _rule("POST", r"^/api/booking/services(/categories/(rename|order))?/?$", "booking_setup", "catalog"),
+    _rule("PATCH DELETE", r"^/api/booking/services/[^/]+/?$", "booking_setup", "catalog"),
     # — кабинет мастера: только своё (какой мастер — по привязке входа, api/booking.py → _me_resource) —
     _rule("GET", r"^/api/booking/me(/clients|/slots)?/?$", "booking_own"),
     _rule("POST", r"^/api/booking/me/(bookings|media)/?$", "booking_own"),

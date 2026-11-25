@@ -150,8 +150,14 @@ class BookAppointmentFunction(FunctionBase):
                 pass
             names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
             d = bs.booking_to_dict(b, names)
-            return {"ok": True, "say": f"Записал: {d['label']}" + (f", {d['service']}" if d["service"] else "")
-                    + (f", мастер {d['resource']}" if d["resource"] else ""), "booking_id": d["id"]}
+            out = {"ok": True, "say": f"Записал: {d['label']}" + (f", {d['service']}" if d["service"] else "")
+                   + (f", мастер {d['resource']}" if d["resource"] else ""), "booking_id": d["id"]}
+            if d.get("prepay_amount"):
+                how = bs.settings_of(bs.get_page(db, user, create=False)).get("prepay_info") or ""
+                out["prepay"] = {"amount": d["prepay_amount"],
+                                 "how": how or "реквизиты пришлёт администратор в мессенджер",
+                                 "say": "Скажи клиенту сумму предоплаты и как её внести — запись подтвердят после оплаты"}
+            return out
         except bs.BookingError as e:
             db.rollback()
             return {"ok": False, "error": str(e)}

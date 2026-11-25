@@ -101,6 +101,15 @@ class AgentKnowledgeEntry(Base):
     # Услуга (ниши с записью, ветка 1811-niche-admin-speed): длительность в минутах — по ней онлайн-запись
     # считает свободные окна. Колонку добавляет app.ensure_user_profile_columns().
     duration_min = Column(Integer, nullable=True)
+    # Услуги салона (Voksy Beauty, шаг 1.3): цена «от — до» (price — «от»), подготовка до прихода
+    # клиента и перерыв после (уборка, стерилизация) — мастер занят, клиент нет; можно ли записаться
+    # онлайн/через бота (NULL — можно); предоплата {"type": "fixed"|"percent", "value": 500}.
+    # Категория и подкатегория — в collection: «Волосы / Окрашивание».
+    price_to = Column(Float, nullable=True)
+    prep_min = Column(Integer, nullable=True)
+    after_min = Column(Integer, nullable=True)
+    online_booking = Column(Boolean, nullable=True)
+    prepay = Column(JSONB, nullable=True)
 
     # ── Документ (kind=document) ──
     file_id = Column(UUID(as_uuid=True), nullable=True)    # agent_files.id
@@ -152,6 +161,11 @@ class AgentKnowledgeEntry(Base):
                 "old_price": self.old_price,
                 "variants": self.variants or [],
                 "duration_min": self.duration_min,
+                "price_to": self.price_to,
+                "prep_min": self.prep_min or 0,
+                "after_min": self.after_min or 0,
+                "online_booking": self.online_booking is not False,
+                "prepay": self.prepay or None,
                 "created_at": self.created_at.isoformat() if self.created_at else None,
             })
         if self.kind == "document":

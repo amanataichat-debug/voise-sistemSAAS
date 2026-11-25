@@ -41,6 +41,10 @@
     .mopt .pf { display: flex; gap: 4px; margin-top: 8px; }
     .mopt .pf img { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; display: block; }
     .grp { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--t3); margin: 14px 2px 6px; }
+    .grp.cat { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--t); font-weight: 700; margin: 20px 2px 6px; }
+    .grp.cat + .grp { margin-top: 4px; }
+    .pp { margin: 12px 0 4px; padding: 12px 14px; border-radius: 14px; background: #fdf3e2; color: #7c4a03; font-size: 14px; line-height: 1.45; }
+    .pp b { color: #5b3502; }
     .days { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
     .days::-webkit-scrollbar { display: none; }
     .day { flex: 0 0 auto; width: 60px; padding: 9px 0; border-radius: 14px; border: 1px solid var(--b); background: #fff; text-align: center; cursor: pointer; font: inherit; color: inherit; }
@@ -107,6 +111,9 @@
     var own = (m && svc && m.service_prices && m.service_prices[svc.id]) || {};
     return { price: own.price != null ? own.price : (svc ? svc.price : null), dur: own.duration_min || (svc ? svc.duration_min : null) };
   }
+  function num(v) { return Number(v).toLocaleString('ru-RU'); }
+  // «до» у услуги — когда цена зависит от длины волос или сложности (Voksy Beauty, шаг 1.3)
+  function rangeText(lo, hi) { return hi != null && hi > lo ? num(lo) + '–' + num(hi) + ' сом' : money(lo); }
   function priceText(svc) {
     var ps = [];
     (st.info.resources || []).forEach(function (m) {
@@ -115,11 +122,24 @@
     if (!ps.length && svc.price != null) ps.push(+svc.price);   // мастеров с этой услугой нет — цена из каталога
     if (!ps.length) return '';
     var lo = Math.min.apply(null, ps), hi = Math.max.apply(null, ps);
+    if (svc.price_to != null && svc.price_to > hi) return (lo === hi ? '' : 'от ') + rangeText(lo, svc.price_to);
     return lo === hi ? money(lo) : 'от ' + money(lo);
   }
   function priceNow() {
     if (!st.service) return '';
-    return st.master ? money(terms(st.service, st.master).price) : priceText(st.service);
+    if (!st.master) return priceText(st.service);
+    var p = terms(st.service, st.master).price;
+    if (p == null) return '';
+    var own = st.master.service_prices && st.master.service_prices[st.service.id] && st.master.service_prices[st.service.id].price != null;
+    return own ? money(p) : rangeText(p, st.service.price_to);
+  }
+  // Предоплата по правилу услуги: сумма или процент от цены (от цены «от» — точную назовёт салон)
+  function prepayText() {
+    var r = st.service && st.service.prepay;
+    if (!r || !r.value) return '';
+    if (r.type === 'fixed') return money(r.value);
+    var p = st.master ? terms(st.service, st.master).price : st.service.price;
+    return p != null ? money(Math.round(p * r.value / 100)) + ' (' + r.value + '%)' : r.value + '% от цены';
   }
   function years(n) { var m10 = n % 10, m100 = n % 100; return n + ' ' + (m10 === 1 && m100 !== 11 ? 'год' : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'года' : 'лет'); }
   function mava(r) {
@@ -132,12 +152,15 @@
 
   function step1() {
     st.step = 1;
-    var list = services(), groups = {};
+    var list = services(), groups = {}, two = list.some(function (s) { return s.subcategory; }), lastCat = null;
     list.forEach(function (s) { (groups[s.collection || ''] = groups[s.collection || ''] || []).push(s); });
     var html = head() + '<h2>Выберите услугу</h2>';
     if (!list.length) html += '<div class="list"><button class="opt on" data-svc=""><div><b>Запись на приём</b><span>Уточним детали после записи</span></div></button></div>';
     Object.keys(groups).forEach(function (g) {
-      if (g) html += '<div class="grp">' + esc(g) + '</div>';
+      var first = groups[g][0] || {};
+      if (two && first.category && first.category !== lastCat) { html += '<div class="grp cat">' + esc(first.category) + '</div>'; lastCat = first.category; }
+      var label = two ? first.subcategory : g;
+      if (label) html += '<div class="grp">' + esc(label) + '</div>';
       html += '<div class="list">' + groups[g].map(function (s) {
         return '<button class="opt' + (st.service && st.service.id === s.id ? ' on' : '') + '" data-svc="' + esc(s.id) + '"><div><b>' + esc(s.title) + '</b><span>' + s.duration_min + ' мин</span></div><div class="pr">' + esc(priceText(s)) + '</div></button>';
       }).join('') + '</div>';
@@ -196,6 +219,8 @@
       (st.master ? '<div><span>Мастер</span><b>' + esc(st.master.name) + '</b></div>' : '') +
       '<div><span>Когда</span><b>' + esc(when) + '</b></div>' +
       (priceNow() ? '<div><span>Цена</span><b>' + esc(priceNow()) + '</b></div>' : '') + '</div>' +
+      (prepayText() ? '<div class="pp">Для записи на эту услугу салон просит предоплату <b>' + esc(prepayText()) + '</b>. ' +
+        (st.info.prepay_info ? 'Как оплатить: ' + esc(st.info.prepay_info) : 'Реквизиты пришлём после записи.') + '</div>' : '') +
       '<label for="nm">Имя</label><input id="nm" autocomplete="name" value="' + esc(st.name) + '" placeholder="Как к вам обращаться">' +
       '<label for="ph">Телефон (WhatsApp)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(st.phone) + '">' +
       '<label for="nt">Комментарий (необязательно)</label><textarea id="nt" placeholder="Пожелания">' + esc(st.note) + '</textarea>' +
@@ -218,6 +243,8 @@
         app.innerHTML = '<div class="done"><div class="ok">✓</div><h1>Вы записаны!</h1><p class="muted" style="font-size:16px;margin-top:10px">' +
           esc([bk.label, bk.service, bk.resource].filter(Boolean).join(' · ')) + '</p>' +
           (bk.address ? '<p class="muted">Адрес: ' + esc(bk.address) + '</p>' : '') +
+          (bk.prepay_amount ? '<div class="pp" style="text-align:left">Внесите предоплату <b>' + esc(money(bk.prepay_amount)) + '</b> — запись подтвердят после оплаты. ' +
+            (bk.prepay_info ? 'Как оплатить: ' + esc(bk.prepay_info) : 'Реквизиты пришлём в WhatsApp.') + '</div>' : '') +
           '<p class="muted">Мы напомним о записи в WhatsApp. Если планы изменятся — просто напишите нам.</p>' +
           (EMBED ? '<button class="btn" type="button" id="bk-close-w" style="flex:none;width:100%;margin-top:18px">Готово</button>' : '') + '</div>';
         setBar('');

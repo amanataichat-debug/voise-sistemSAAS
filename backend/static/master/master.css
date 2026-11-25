@@ -71,6 +71,9 @@
 .mc-bk .s { font-size: 13px; color: var(--vf-text-3); margin-top: 1px; }
 .mc-bk .note { display: flex; gap: 5px; align-items: flex-start; font-size: 12.5px; color: var(--vf-text-2); margin-top: 6px; background: var(--vf-surface-2); padding: 6px 8px; border-radius: 8px; }
 .mc-bk .note .ic { width: 13px; height: 13px; flex: none; margin-top: 2px; color: var(--vf-text-4); }
+.mc-bk .pp { display: inline-flex; gap: 5px; align-items: center; font-size: 12px; font-weight: 600; color: #b45309; margin-top: 6px; }
+.mc-bk .pp.ok { color: #0f7a3a; }
+.mc-bk .pp .ic { width: 13px; height: 13px; }
 .mc-bk.confirmed::before { background: #2a5ce8; }
 .mc-bk.arrived::before { background: var(--vf-success); }
 .mc-bk.arrived { background: color-mix(in srgb, var(--vf-success) 5%, var(--vf-surface)); }

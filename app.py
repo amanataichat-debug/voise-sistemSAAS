@@ -1988,6 +1988,11 @@ def ensure_user_profile_columns():
             kcols = {c['name'] for c in inspector.get_columns('agent_knowledge_entries')}
             if 'duration_min' not in kcols:
                 stmts.append("ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS duration_min INTEGER")
+            # услуги салона (Voksy Beauty, шаг 1.3): цена «до», подготовка, перерыв после, онлайн, предоплата
+            for name, ddl in (("price_to", "DOUBLE PRECISION"), ("prep_min", "INTEGER"), ("after_min", "INTEGER"),
+                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB")):
+                if name not in kcols:
+                    stmts.append(f"ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS {name} {ddl}")
         if stmts:
             with engine.begin() as conn:
                 conn.execute(text("SET LOCAL lock_timeout = '15s'"))
@@ -2036,21 +2041,35 @@ MASTER_CARD_COLUMNS = (
 )
 
 
+# Услуги салона (шаг 1.3): подготовка/перерыв и предоплата записи
+BOOKING_SERVICE_COLUMNS = (
+    ("prep_min", "INTEGER"),
+    ("after_min", "INTEGER"),
+    ("prepay_amount", "DOUBLE PRECISION"),
+    ("prepaid_at", "TIMESTAMP WITH TIME ZONE"),
+)
+
+
 def ensure_master_card_columns():
-    """Колонки карточки мастера — до первого запроса к booking_resources (ORM выбирает все колонки
-    модели). Под advisory-блокировкой: четыре воркера стартуют одновременно."""
+    """Колонки карточки мастера и записи — до первого запроса к booking_resources / bookings (ORM
+    выбирает все колонки модели). Под advisory-блокировкой: четыре воркера стартуют одновременно."""
     from sqlalchemy import inspect, text as _text
-    cols = {c["name"] for c in inspect(engine).get_columns("booking_resources")}
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns("booking_resources")}
     missing = [(n, t) for n, t in MASTER_CARD_COLUMNS if n not in cols]
-    if not missing:
+    bcols = {c["name"] for c in insp.get_columns("bookings")}
+    bmissing = [(n, t) for n, t in BOOKING_SERVICE_COLUMNS if n not in bcols]
+    if not missing and not bmissing:
         return
     with engine.begin() as conn:
         conn.execute(_text("SELECT pg_advisory_xact_lock(25112027)"))
         for name, ddl in missing:
             conn.execute(_text(f"ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS {name} {ddl}"))
+        for name, ddl in bmissing:
+            conn.execute(_text(f"ALTER TABLE bookings ADD COLUMN IF NOT EXISTS {name} {ddl}"))
         conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_booking_resources_team_member_id "
                            "ON booking_resources (team_member_id)"))
-    logger.info(f"✅ booking_resources: добавлены колонки карточки мастера {[n for n, _ in missing]}")
+    logger.info(f"✅ запись: добавлены колонки {[n for n, _ in missing] + ['bookings.' + n for n, _ in bmissing]}")
 
 
 def ensure_live_voice_table():

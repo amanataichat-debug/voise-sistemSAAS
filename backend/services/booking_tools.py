@@ -139,7 +139,10 @@ PROMPT_BLOCK = (
     "Клиент хочет записаться или спрашивает про время: find_booking_slots → предложи 2–3 ближайших варианта "
     "словами → после согласия клиента на конкретное время create_booking → подтверди одной фразой (день, время, "
     "услуга). Не записывай без явного согласия на время и не выдумывай свободные окна. Перенос — найди новое время "
-    "и reschedule_booking; отмена по просьбе клиента — cancel_booking. Напоминание клиенту придёт само."
+    "и reschedule_booking; отмена по просьбе клиента — cancel_booking. Напоминание клиенту придёт само. "
+    "Цену называй как в поле price_text (диапазон «1 500–2 500 сом» — так и говори, точную назовёт мастер). "
+    "Если в ответе create_booking есть prepay — скажи клиенту сумму предоплаты и как её внести (prepay.how); "
+    "запись подтвердят после оплаты."
 )
 
 
@@ -221,9 +224,14 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             except Exception:
                 pass
             d = bs.booking_to_dict(b, names)
-            return json.dumps({"ok": True, "booking": d,
-                               "say": f"Записал: {d['label']}" + (f", {d['service']}" if d['service'] else "")
-                                      + (f", мастер {d['resource']}" if d['resource'] else "")}, ensure_ascii=False)
+            out = {"ok": True, "booking": d,
+                   "say": f"Записал: {d['label']}" + (f", {d['service']}" if d['service'] else "")
+                          + (f", мастер {d['resource']}" if d['resource'] else "")}
+            if d.get("prepay_amount"):
+                how = bs.settings_of(bs.get_page(db, user, create=False)).get("prepay_info") or ""
+                out["prepay"] = {"amount": d["prepay_amount"],
+                                 "how": how or "Реквизиты для оплаты пришлёт администратор"}
+            return json.dumps(out, ensure_ascii=False)
         if tool_name == "reschedule_booking":
             b = _contact_booking(db, user, args, context)
             b = bs.update_booking(db, user, b.id, start=args.get("new_start"), source="bot")

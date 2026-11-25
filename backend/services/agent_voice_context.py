@@ -324,8 +324,12 @@ def build_price_block(db, agent_config_id, budget: int = PRICE_BUDGET) -> str:
                 break
             lines.append(head)
             bud.spend(head + "\n")
-        price = kb_fmt.format_price(row.price, row.currency)
+        price = kb_fmt.format_price_range(row)
         mark = "" if row.in_stock else " (нет в наличии)"
+        prepay = getattr(row, "prepay", None)
+        if isinstance(prepay, dict) and prepay.get("value"):
+            mark += (f" (предоплата {prepay['value']:g}%)" if prepay.get("type") == "percent"
+                     else f" (предоплата {kb_fmt.format_price(prepay['value'], row.currency)})")
         from backend.services.catalog_service import sizes_in_stock
         sizes = sizes_in_stock(row)
         if row.in_stock and sizes:
