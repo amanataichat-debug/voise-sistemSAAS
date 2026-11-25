@@ -383,6 +383,10 @@ async def sip_media(
     direction = start.get("direction") or "inbound"
     did = str(start.get("did") or "")
     caller = str(start.get("caller") or "")
+    # Откуда пришёл звонок: линия оператора O! или WhatsApp Business Calling (Meta по SIP/TLS,
+    # infra/sip-gateway/asterisk/pjsip_whatsapp.conf). Дальше путь один и тот же.
+    source = str(start.get("source") or "operator")
+    start_meta = start.get("metadata") if isinstance(start.get("metadata"), dict) else {}
 
     # 2. Строка звонка и номер
     number: Optional[SipPhoneNumber] = None
@@ -398,6 +402,13 @@ async def sip_media(
             call.assistant_type = number.assistant_type
             call.assistant_id = number.assistant_id
             call.user_id = number.user_id
+            db.commit()
+        if source == "whatsapp":
+            meta = dict(call.call_metadata or {})
+            meta["channel"] = "whatsapp"
+            if start_meta.get("wa_user_id"):
+                meta["wa_user_id"] = str(start_meta["wa_user_id"])[:128]
+            call.call_metadata = meta
             db.commit()
     else:
         call = db.get(SipCall, call_uuid)
@@ -548,7 +559,11 @@ async def sip_media(
     call_log.assistant_type = call.assistant_type
     call_log.assistant_id = str(assistant.id)
     phone = call.caller if direction == "inbound" else call.to_number
-    call_log.meta.update({"phone": phone, "direction": direction, "did": call.did, "gateway": gateway_id})
+    call_log.meta.update({"phone": phone, "direction": direction, "did": call.did, "gateway": gateway_id,
+                          "source": source})
+    if source == "whatsapp":
+        call_log.add("sip", "Звонок через WhatsApp (WhatsApp Business Calling)"
+                     + (f", id пользователя WhatsApp {start_meta.get('wa_user_id')}" if start_meta.get("wa_user_id") else ""))
     call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
                         f"наш номер {call.did or '—'}, шлюз {gateway_id}",
                  greeting="своё" if greeting else None)

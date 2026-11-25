@@ -72,7 +72,7 @@ import aiohttp
 import websockets
 from aiohttp import web
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # ----------------------------------------------------------------------------
 # Configuration (environment, see /etc/voksy-bridge/bridge.env)
@@ -107,6 +107,9 @@ TRUNK_HOSTS = [h.strip() for h in _env("TRUNK_HOSTS", "195.216.237.6:5070,195.21
 # Channels sold by the operator: 5 inbound + 5 outbound (see the "Форма реализации" card).
 MAX_OUTBOUND = int(_env("MAX_OUTBOUND", "5"))
 MAX_INBOUND = int(_env("MAX_INBOUND", "5"))
+# WhatsApp Business Calling (Meta, SIP over TLS) does not use operator channels:
+# its own limit, so WhatsApp calls never take an O! line and vice versa.
+MAX_INBOUND_WA = int(_env("MAX_INBOUND_WA", "5"))
 # Number format on the operator leg: 996705701707 -> 0705701707
 COUNTRY_CODE = _env("COUNTRY_CODE", "996")
 NATIONAL_PREFIX = _env("NATIONAL_PREFIX", "0")
@@ -189,6 +192,7 @@ class Call:
     direction: str  # "inbound" | "outbound"
     did: str = ""  # number dialled by the caller (inbound) / our caller id (outbound)
     caller: str = ""  # caller's number (inbound)
+    source: str = "operator"  # "operator" | "whatsapp" (Meta Business Calling) | "test"
     to: str = ""  # callee number (outbound)
     assistant_id: str = ""
     assistant_type: str = ""
@@ -223,6 +227,7 @@ class Call:
         return {
             "call_id": self.call_id,
             "direction": self.direction,
+            "source": self.source,
             "did": self.did,
             "caller": self.caller,
             "to": self.to,
@@ -421,8 +426,18 @@ class Bridge:
     def active_outbound(self) -> int:
         return sum(1 for c in self.calls.values() if c.direction == "outbound" and not c.ended)
 
-    def active_inbound(self) -> int:
-        return sum(1 for c in self.calls.values() if c.direction == "inbound" and not c.ended)
+    def active_inbound(self, source: Optional[str] = None) -> int:
+        """Live inbound calls. Operator lines and WhatsApp are counted apart:
+        source="whatsapp" -> only WhatsApp, anything else -> everything except WhatsApp."""
+        def counts(c: Call) -> bool:
+            if c.direction != "inbound" or c.ended:
+                return False
+            if source == "whatsapp":
+                return c.source == "whatsapp"
+            if source is None:
+                return True
+            return c.source != "whatsapp"
+        return sum(1 for c in self.calls.values() if counts(c))
 
     def new_call(self, direction: str, **kw: Any) -> Call:
         call_id = kw.pop("call_id", None) or str(uuid.uuid4())
@@ -825,17 +840,27 @@ class Bridge:
         # The operator sells a fixed number of inbound channels; refuse the extra
         # ones ourselves instead of running calls we are not paying for. Any reply
         # that is not a 36-char UUID makes the dialplan play congestion.
-        if self.active_inbound() >= MAX_INBOUND:
-            log.warning("inbound call rejected: all %d channels busy (did=%s)",
-                        MAX_INBOUND, request.query.get("did", ""))
+        source = "whatsapp" if request.query.get("src") == "whatsapp" else "operator"
+        limit = MAX_INBOUND_WA if source == "whatsapp" else MAX_INBOUND
+        if self.active_inbound(source) >= limit:
+            log.warning("inbound %s call rejected: all %d channels busy (did=%s)",
+                        source, limit, request.query.get("did", ""))
             return web.Response(text="channel_limit", status=503)
+        metadata: Dict[str, Any] = {}
+        if source == "whatsapp":
+            metadata["channel"] = "whatsapp"
+            wa_user = (request.query.get("wa_user") or "").strip()
+            if wa_user:
+                metadata["wa_user_id"] = wa_user  # BSUID: Meta may send it instead of the phone
         call = self.new_call(
             "inbound",
             did=request.query.get("did", ""),
             caller=request.query.get("cid", ""),
             channel=request.query.get("channel", ""),
+            source=source,
+            metadata=metadata,
         )
-        log.info("inbound call %s did=%s caller=%s", call.call_id, call.did, call.caller)
+        log.info("inbound %s call %s did=%s caller=%s", source, call.call_id, call.did, call.caller)
         self.emit("started", call)
         return web.Response(text=call.call_id)
 
@@ -856,8 +881,10 @@ class Bridge:
             "active_calls": sum(1 for c in self.calls.values() if not c.ended),
             "active_outbound": self.active_outbound(),
             "max_outbound": MAX_OUTBOUND,
-            "active_inbound": self.active_inbound(),
+            "active_inbound": self.active_inbound("operator"),
             "max_inbound": MAX_INBOUND,
+            "active_inbound_whatsapp": self.active_inbound("whatsapp"),
+            "max_inbound_whatsapp": MAX_INBOUND_WA,
             "recordings_pending": self.recordings.pending(),
         })
 

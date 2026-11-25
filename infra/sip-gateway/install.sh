@@ -16,6 +16,12 @@
 #   4. generates secrets: AMI password, softphone test password, GATEWAY_TOKEN
 #   5. creates /var/spool/voksy-rec (call recordings waiting for upload)
 #   6. enables systemd units and restarts Asterisk
+#   7. WhatsApp Business Calling (optional, only with WA_SIP_HOST): Let's Encrypt
+#      certificate for that host (certbot standalone, needs TCP 80 open for a
+#      minute), TLS transport 5061 + endpoint wa-meta (asterisk/pjsip_whatsapp.conf)
+#
+#   Enable WhatsApp once (the host is remembered in bridge.env):
+#     curl -fsSL .../install.sh | VOKSY_BRANCH=<branch> VOKSY_WA_SIP_HOST=sip.voksyai.online bash
 # =============================================================================
 set -euo pipefail
 
@@ -30,6 +36,7 @@ APP_DIR=/opt/voksy-bridge
 
 FILES=(
   asterisk/pjsip.conf
+  asterisk/pjsip_whatsapp.conf
   asterisk/extensions.conf
   asterisk/rtp.conf
   asterisk/manager.conf
@@ -124,15 +131,87 @@ else
   add_env NATIONAL_PREFIX 0
   add_env SUBSCRIBER_DIGITS 9
 fi
+# WhatsApp Business Calling: the host given once on the command line is kept in bridge.env.
+if [ -n "${VOKSY_WA_SIP_HOST:-}" ]; then
+  if grep -q '^WA_SIP_HOST=' "$ENV_FILE"; then
+    sed -i "s|^WA_SIP_HOST=.*|WA_SIP_HOST=$VOKSY_WA_SIP_HOST|" "$ENV_FILE"
+  else
+    printf 'WA_SIP_HOST=%s\n' "$VOKSY_WA_SIP_HOST" >> "$ENV_FILE"
+  fi
+  say "WhatsApp SIP host: $VOKSY_WA_SIP_HOST"
+fi
+grep -q '^MAX_INBOUND_WA=' "$ENV_FILE" || printf 'MAX_INBOUND_WA=5\n' >> "$ENV_FILE"
 # shellcheck disable=SC1090
 set -a; . "$ENV_FILE"; set +a
 [ -n "${AMI_SECRET:-}" ] && [ -n "${TEST_SIP_PASSWORD:-}" ] || die "$ENV_FILE is missing AMI_SECRET / TEST_SIP_PASSWORD"
 
+# ---------------------------------------------------------------- whatsapp tls
+# Meta sends WhatsApp calls as SIP over TLS (5061) and checks that the certificate
+# matches WA_SIP_HOST. The certificate is copied next to the Asterisk configs so the
+# asterisk user can read it; renewals copy it again and restart Asterisk once no
+# call is running (a TLS transport does not pick up a new certificate on reload).
+WA_ON=0
+WA_KEYS=/etc/asterisk/keys
+if [ -n "${WA_SIP_HOST:-}" ]; then
+  say "WhatsApp Business Calling: TLS certificate for $WA_SIP_HOST"
+  apt-get install -y -qq certbot >/dev/null
+  RESOLVED="$(getent ahostsv4 "$WA_SIP_HOST" | awk 'NR==1{print $1}')"
+  if [ "$RESOLVED" != "$PUBLIC_IP" ]; then
+    warn "$WA_SIP_HOST resolves to '${RESOLVED:-nothing}', not $PUBLIC_IP: add the DNS A record and run install.sh again"
+  fi
+  LE_DIR="/etc/letsencrypt/live/$WA_SIP_HOST"
+  if [ ! -f "$LE_DIR/fullchain.pem" ] && [ "$RESOLVED" = "$PUBLIC_IP" ]; then
+    certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email \
+      --preferred-challenges http -d "$WA_SIP_HOST" \
+      || warn "certbot failed: is TCP 80 open in the Hetzner firewall?"
+  fi
+  install -d -o asterisk -g asterisk -m 750 "$WA_KEYS"
+  cat > /usr/local/sbin/voksy-wa-cert <<'HOOK'
+#!/usr/bin/env bash
+# Copy the Let's Encrypt certificate of WA_SIP_HOST for Asterisk; with --restart,
+# restart Asterisk once no call is running (at most 6 h of waiting).
+set -eu
+. /etc/voksy-bridge/bridge.env
+LE="/etc/letsencrypt/live/$WA_SIP_HOST"
+[ -f "$LE/fullchain.pem" ] || exit 0
+install -o asterisk -g asterisk -m 640 "$LE/fullchain.pem" /etc/asterisk/keys/wa-fullchain.pem
+install -o asterisk -g asterisk -m 600 "$LE/privkey.pem" /etc/asterisk/keys/wa-privkey.pem
+if [ "${1:-}" = "--restart" ]; then
+  for _ in $(seq 1 360); do
+    n="$(asterisk -rx 'core show channels count' </dev/null 2>/dev/null | awk '/active call/{print $1}')"
+    [ "${n:-0}" = 0 ] && break
+    sleep 60
+  done
+  systemctl restart asterisk
+fi
+HOOK
+  chmod 755 /usr/local/sbin/voksy-wa-cert
+  install -d /etc/letsencrypt/renewal-hooks/deploy
+  cat > /etc/letsencrypt/renewal-hooks/deploy/voksy-asterisk.sh <<'HOOK'
+#!/usr/bin/env bash
+# Renewed certificate -> Asterisk, restart in the background when the line is idle.
+systemd-run --unit "voksy-wa-cert-$(date +%s)" /usr/local/sbin/voksy-wa-cert --restart >/dev/null 2>&1 || true
+HOOK
+  chmod 755 /etc/letsencrypt/renewal-hooks/deploy/voksy-asterisk.sh
+  /usr/local/sbin/voksy-wa-cert
+  if [ -f "$WA_KEYS/wa-fullchain.pem" ] && [ -f "$WA_KEYS/wa-privkey.pem" ]; then
+    WA_ON=1
+  else
+    warn "no certificate for $WA_SIP_HOST yet: WhatsApp calls stay OFF"
+  fi
+fi
+
 # ---------------------------------------------------------------- asterisk
 say "installing Asterisk configuration"
 [ -d /etc/asterisk.orig ] || cp -a /etc/asterisk /etc/asterisk.orig
-for f in pjsip extensions rtp manager modules; do
+if [ "$WA_ON" != 1 ]; then
+  # Without a certificate the TLS transport cannot start: leave the include empty.
+  printf '; WhatsApp Business Calling is off (no WA_SIP_HOST or no certificate). See install.sh.\n' \
+    > "$TMP/asterisk/pjsip_whatsapp.conf"
+fi
+for f in pjsip pjsip_whatsapp extensions rtp manager modules; do
   sed -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
+      -e "s|__WA_SIP_HOST__|${WA_SIP_HOST:-}|g" \
       -e "s|__AMI_SECRET__|$AMI_SECRET|g" \
       -e "s|__TEST_PASSWORD__|$TEST_SIP_PASSWORD|g" \
       "$TMP/asterisk/$f.conf" > "/etc/asterisk/$f.conf"
@@ -203,6 +282,27 @@ for mod in app_audiosocket app_mixmonitor res_pjsip func_curl; do
     [ "$mod" = app_mixmonitor ] && echo "       without app_mixmonitor calls are NOT recorded"
   fi
 done
+if [ "$WA_ON" = 1 ]; then
+  for mod in res_srtp codec_opus_open_source res_format_attr_opus res_pjsip_endpoint_identifier_ip; do
+    module_loaded "$mod" || ast "module load ${mod}.so" >/dev/null
+    if module_loaded "$mod"; then
+      echo "  [ok] Asterisk module $mod (WhatsApp)"
+    else
+      echo "  [!!] Asterisk module $mod is NOT loaded: WhatsApp calls will fail"; ok=0
+    fi
+  done
+  if case "$(ast "pjsip show endpoints")" in *wa-meta*) true ;; *) false ;; esac; then
+    echo "  [ok] WhatsApp endpoint wa-meta configured"
+  else
+    echo "  [!!] WhatsApp endpoint wa-meta missing"; ok=0
+  fi
+  if timeout 10 openssl s_client -connect "$WA_SIP_HOST:5061" -servername "$WA_SIP_HOST" \
+       -verify_hostname "$WA_SIP_HOST" -verify_return_error </dev/null >/dev/null 2>&1; then
+    echo "  [ok] TLS 5061 answers with a valid certificate for $WA_SIP_HOST"
+  else
+    echo "  [!!] TLS check failed: openssl s_client -connect $WA_SIP_HOST:5061 -verify_hostname $WA_SIP_HOST"; ok=0
+  fi
+fi
 if case "$(ast "pjsip show endpoints")" in *o-trunk*) true ;; *) false ;; esac; then
   echo "  [ok] trunk endpoint o-trunk configured"
 else
@@ -241,6 +341,8 @@ Voksy SIP gateway installed.
 
   GATEWAY_TOKEN (set it on Render as SIP_GATEWAY_TOKEN):
       $GATEWAY_TOKEN
+
+  WhatsApp calls (Meta SIP)         : $( [ "$WA_ON" = 1 ] && echo "ON  -> sip:$WA_SIP_HOST:5061 (TLS, SRTP SDES, Opus)" || echo "off (VOKSY_WA_SIP_HOST=<host> to enable)" )
 
   Recordings waiting for upload     : ls /var/spool/voksy-rec   (empty = all uploaded)
   Logs: journalctl -u voksy-bridge -f      Asterisk CLI: asterisk -rvvv

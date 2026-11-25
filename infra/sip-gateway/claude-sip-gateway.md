@@ -115,3 +115,19 @@ IP-авторизации на наш VPS (Hetzner, `178.105.79.237`, Ubuntu 24.
 ## Приветствие по времени и имени (27.10.2026)
 
 `SipGatewayService.resolve_greeting` после выбора фразы (задача → номер → агент → карточка) зовёт `personalize_greeting`: начальное «Здравствуйте / Добрый день / Доброе утро» заменяется на приветствие по времени Бишкека (5–11 утро, 11–17 день, 17–23 вечер, ночью «Здравствуйте»), «Саламатсызбы» остаётся, имя клиента (`first_name` из карточки агента по номеру или `contact_name` задачи) вставляется после приветствия, если его ещё нет во фразе. Фраза без приветствия в начале не меняется. Выключатель — `SIP_GREETING_PERSONALIZE=false`. В `[Контекст звонка]` добавлены день недели, время и время суток Бишкека.
+
+## WhatsApp Business Calling (ветка `2511-whatsapp-calls`, 25.11.2026)
+Входящие звонки WhatsApp (Meta Cloud API, режим SIP): Meta → `sip.voksyai.online:5061` TLS,
+SRTP SDES, Opus → Asterisk endpoint `wa-meta` (`asterisk/pjsip_whatsapp.conf`, `#tryinclude` из
+`pjsip.conf`, identify по `X-FB-External-Domain: wa.meta.vc`, без digest) → `[from-whatsapp]` →
+`voksy-inbound` (CURL с `src=whatsapp`, `wa_user` = заголовок `x-wa-meta-user-id`) → мост
+(`Call.source`, `metadata.wa_user_id`, отдельный лимит `MAX_INBOUND_WA`, `/health` →
+`active_inbound_whatsapp`) → `/ws/sip/{id}` (`start.source`; бэкенд пишет
+`sip_calls.call_metadata.channel=whatsapp` и строку в журнал звонка). Номер бизнеса заводится как
+обычный SIP-номер (`/api/sip/numbers`, например `15551488988`). Включение на VPS —
+`VOKSY_WA_SIP_HOST=…` у `install.sh` (certbot standalone, сертификат в `/etc/asterisk/keys/wa-*.pem`);
+без сертификата файл пустой и Asterisk работает как раньше. На стороне Meta:
+`POST /<PHONE_NUMBER_ID>/settings` `{"calling":{"status":"ENABLED","srtp_key_exchange_protocol":"SDES",
+"sip":{"status":"ENABLED","servers":[{"hostname":"sip.voksyai.online","port":5061}]}}}`; в режиме SIP
+Graph-вызовы звонков и вебхук `connect` не работают. Не проверено на живом звонке: Asterisk 20.6
+(пример Meta — 22.5.2), Record-Route/ACK, Contact с IP вместо имени хоста.

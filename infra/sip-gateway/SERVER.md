@@ -249,6 +249,40 @@ curl -X POST https://voksyai.online/api/sip/numbers \
 Исходящие соединения не ограничены. Порты 9091, 9092 и 5038 слушают только
 localhost и снаружи недоступны.
 
+## WhatsApp-звонки (WhatsApp Business Calling, Meta по SIP)
+
+Пользователь WhatsApp нажимает «позвонить» в чате с нашим бизнес-номером, а Meta
+шлёт SIP INVITE на `sip.voksyai.online:5061` (TLS). Asterisk узнаёт её по заголовку
+`X-FB-External-Domain: wa.meta.vc` (endpoint `wa-meta`, файл
+`asterisk/pjsip_whatsapp.conf`), звук Opus + SRTP (SDES) пережимает в 8 кГц и
+отдаёт в тот же `voksy-inbound` → мост → `/ws/sip/{id}`. Каналы оператора O!
+WhatsApp не занимает: свой лимит `MAX_INBOUND_WA` в `bridge.env` (по умолчанию 5).
+
+Включается один раз:
+```bash
+curl -fsSL https://raw.githubusercontent.com/amanataichat-debug/voise-sistemSAAS/<ветка>/infra/sip-gateway/install.sh | VOKSY_BRANCH=<ветка> VOKSY_WA_SIP_HOST=sip.voksyai.online bash
+```
+Перед этим: A-запись `sip.voksyai.online → 178.105.79.237` в Namecheap и в
+файрволе Hetzner TCP 80 (certbot выпускает и продлевает сертификат) и TCP 5061.
+Хост запоминается в `bridge.env` (`WA_SIP_HOST`), дальше обычное обновление.
+Сертификат продлевает `certbot.timer`; хук копирует его в `/etc/asterisk/keys/`
+и перезапускает Asterisk, когда нет звонков (`/usr/local/sbin/voksy-wa-cert`).
+
+Проверка: `openssl s_client -connect sip.voksyai.online:5061 -verify_hostname sip.voksyai.online`,
+`asterisk -rx "pjsip show endpoint wa-meta"`, `curl -s 127.0.0.1:9091/health`
+(`active_inbound_whatsapp`). В логе моста — `inbound whatsapp call …`.
+
+Файрвол для WhatsApp:
+
+| Порт | Протокол | Откуда | Зачем |
+|---|---|---|---|
+| 5061 | TCP | сети Meta (31.13.24.0/21, 31.13.64.0/18, 45.64.40.0/22, 57.141.0.0/21, 57.141.8.0/22, 57.141.12.0/23, 57.144.0.0/14, 66.220.144.0/20, 69.63.176.0/20, 69.171.224.0/19, 74.119.76.0/22, 102.132.96.0/20, 103.4.96.0/22, 129.134.0.0/16, 147.75.208.0/20, 157.240.0.0/16, 163.70.128.0/17, 163.77.128.0/17, 173.252.64.0/18, 179.60.192.0/22, 185.60.216.0/22, 185.89.216.0/22, 204.15.20.0/22) | SIP TLS от Meta |
+| 80 | TCP | любые | certbot (выпуск и продление сертификата) |
+| 10000–20000 | UDP | сети Meta + O! | звук (SRTP) |
+
+Список сетей Meta меняется — сверять со страницей Meta «Webhooks IP Addresses».
+Выключить на стороне Meta: `sip.status = DISABLED` в настройках номера (см. `claude-sip-gateway.md`).
+
 ## Типичные проблемы
 
 | Симптом | Причина | Что делать |

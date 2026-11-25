@@ -209,6 +209,7 @@ Assistant types that existed only as VoxEngine scenarios (`cascade`, `cartesia`,
         ├── install.sh       # One-command install/update on the VPS (fetches this folder from raw GitHub)
         ├── asterisk/        # pjsip.conf (operator trunk + test softphone), extensions.conf, rtp.conf, manager.conf, modules.conf
         └── bridge/          # bridge.py (AudioSocket <-> backend WebSocket, AMI originate), systemd unit
+    ├── (WhatsApp Business Calling: Meta → SIP TLS 5061 → endpoint wa-meta, asterisk/pjsip_whatsapp.conf, см. claude-sip-gateway.md)
     └── whatsapp-gateway/    # WhatsApp for call agents on a separate VPS (Evolution API in Docker). See claude-whatsapp-gateway.md, SERVER.md
         ├── install.sh       # One-command install/update on the VPS (fetches this folder from raw GitHub)
         ├── docker-compose.yml # evolution (v2.3.7) + postgres + redis + caddy (HTTPS)
