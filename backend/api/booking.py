@@ -21,6 +21,14 @@
   POST   /services/categories/rename  — переименовать категорию или подкатегорию
   POST   /services/categories/order   — порядок категорий
 
+Журнал v2 (шаг 1.4):
+  POST   /blocks, DELETE /blocks/{id}  — блок времени (перерыв, обучение, отпуск, больничный; мастер или все)
+  GET    /rooms, POST /rooms, PATCH /rooms/{id}, DELETE /rooms/{id} — кабинеты, кресла, аппараты
+  POST   /visit-slots                 — когда помещается визит из нескольких услуг {items, date}
+  POST   /visits, DELETE /visits/{id} — записать визит целиком / отменить весь визит
+  GET    /stream                      — поток обновлений журнала (text/event-stream, services/booking_stream.py)
+  PATCH  /bookings/{id}               — принимает и duration_min (растяжка записи в журнале)
+
 Кабинет мастера (сотрудник с разделом «Свой журнал» — только свои записи; владелец — ?resource_id=):
   GET    /me?date=&days=              — мастер, записи, услуги, заработок, статистика, новое
   GET    /me/clients                  — клиенты мастера с историей визитов
@@ -106,7 +114,7 @@ def _page_dict(page: BookingPage) -> Dict[str, Any]:
 # ───────────────────────────── кабинет ─────────────────────────────
 
 @router.get("/overview")
-def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=31),
+def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=42),
                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         day = bs.parse_day(date)
@@ -124,6 +132,8 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=3
         "resources": [_resource_out(current_user, r) for r in res],
         "services": [bs.service_to_dict(e) for e in _sorted_services(db, current_user)],
         "bookings": [bs.booking_to_dict(b, names) for b in rows],
+        "blocks": [bs.block_to_dict(k) for k in bs.list_blocks(db, current_user.id, start, end)],
+        "rooms": [bs.room_to_dict(r) for r in bs.rooms(db, current_user.id, active_only=False)],
         "logins": _logins(db, current_user),
         "page": _page_dict(page),
         "stats": bs.stats(db, current_user.id, start, end),
@@ -197,7 +207,8 @@ def booking_update(booking_id: str, data: Dict[str, Any] = Body(...), current_us
         b = bs.update_booking(db, current_user, booking_id, start=data.get("start"), resource_id=data.get("resource_id"),
                               service_id=data.get("service_id"), status=data.get("status"), note=data.get("note"),
                               price=data.get("price"), cancel_reason=data.get("cancel_reason"),
-                              prepaid=data.get("prepaid") if isinstance(data.get("prepaid"), bool) else None)
+                              prepaid=data.get("prepaid") if isinstance(data.get("prepaid"), bool) else None,
+                              duration_min=data.get("duration_min"))
         db.commit()
     except bs.BookingError as e:
         db.rollback()
@@ -317,6 +328,7 @@ def booking_resource_create(body: ResourceIn, current_user: User = Depends(get_c
     except bs.BookingError as e:
         _err(e)
     db.add(r)
+    bs.notify_changed(db, current_user.id)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r)}
 
@@ -349,6 +361,7 @@ def booking_resource_update(resource_id: str, body: ResourceIn, current_user: Us
         _apply_resource(r, body)
     except bs.BookingError as e:
         _err(e)
+    bs.notify_changed(db, current_user.id)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r)}
 
@@ -575,6 +588,202 @@ def booking_link_kit(current_user: User = Depends(get_current_user), db: Session
     return {"ok": True, "page": info, "qr": qr,
             "widget_code": widget_code(host, page.slug) if page.slug else None,
             "button_code": (f'<a href="{info["url"]}" data-voksy-booking>Записаться онлайн</a>' if info.get("url") else None)}
+
+
+# ───────────────────────────── журнал v2: блоки, кабинеты, визиты, поток ─────────────────────────────
+
+class BlockIn(BaseModel):
+    start: str
+    end: str
+    resource_id: Optional[str] = None
+    kind: str = Field("block", max_length=16)
+    note: Optional[str] = Field(None, max_length=300)
+
+
+@router.post("/blocks")
+def booking_block_create(body: BlockIn, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        k, clash = bs.create_block(db, current_user, start=body.start, end=body.end, resource_id=body.resource_id,
+                                   kind=body.kind, note=body.note)
+        db.commit()
+    except (bs.BookingError, ValueError) as e:
+        db.rollback()
+        _err(e)
+    return {"ok": True, "block": bs.block_to_dict(k), "clash": clash}
+
+
+@router.delete("/blocks/{block_id}")
+def booking_block_delete(block_id: str, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        bs.delete_block(db, current_user, block_id)
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True}
+
+
+class RoomIn(BaseModel):
+    name: Optional[str] = Field(None, max_length=120)
+    kind: Optional[str] = Field(None, max_length=16)
+    is_active: Optional[bool] = None
+    position: Optional[int] = None
+
+
+def _room_or_404(db: Session, user_id, rid: str):
+    from backend.models.booking import BookingRoom
+    try:
+        r = db.query(BookingRoom).filter(BookingRoom.id == uuid.UUID(rid), BookingRoom.user_id == user_id).first()
+    except ValueError:
+        r = None
+    if r is None:
+        raise HTTPException(status_code=404, detail="Кабинет не найден")
+    return r
+
+
+def _apply_room(r, body: RoomIn) -> None:
+    data = body.dict(exclude_unset=True)
+    if "name" in data:
+        name = " ".join(str(data["name"] or "").split())[:120]
+        if not name:
+            raise HTTPException(status_code=400, detail="Укажите название кабинета")
+        r.name = name
+    if "kind" in data and data["kind"]:
+        if data["kind"] not in bs.ROOM_KINDS:
+            raise HTTPException(status_code=400, detail="Неизвестный вид: кабинет, кресло или аппарат")
+        r.kind = data["kind"]
+    if "is_active" in data and data["is_active"] is not None:
+        r.is_active = bool(data["is_active"])
+    if "position" in data and data["position"] is not None:
+        r.position = int(data["position"])
+
+
+@router.get("/rooms")
+def booking_rooms(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    return {"rooms": [bs.room_to_dict(r) for r in bs.rooms(db, current_user.id, active_only=False)]}
+
+
+@router.post("/rooms")
+def booking_room_create(body: RoomIn, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.models.booking import BookingRoom
+    count = len(bs.rooms(db, current_user.id, active_only=False))
+    if count >= 50:
+        raise HTTPException(status_code=400, detail="Не больше 50 кабинетов")
+    r = BookingRoom(user_id=current_user.id, name="Кабинет", kind="room", position=count)
+    _apply_room(r, body)
+    db.add(r)
+    bs.notify_changed(db, current_user.id)
+    db.commit()
+    return {"ok": True, "room": bs.room_to_dict(r)}
+
+
+@router.patch("/rooms/{room_id}")
+def booking_room_update(room_id: str, body: RoomIn, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    r = _room_or_404(db, current_user.id, room_id)
+    _apply_room(r, body)
+    bs.notify_changed(db, current_user.id)
+    db.commit()
+    return {"ok": True, "room": bs.room_to_dict(r)}
+
+
+@router.delete("/rooms/{room_id}")
+def booking_room_delete(room_id: str, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Кабинет с будущими записями выключается (записи остаются), без записей — удаляется и пропадает из услуг."""
+    from backend.models.booking import Booking
+    from backend.models.agent_knowledge import AgentKnowledgeEntry
+    r = _room_or_404(db, current_user.id, room_id)
+    upcoming = (db.query(Booking.id).filter(Booking.room_id == r.id, Booking.status.in_(("booked", "confirmed")),
+                                            Booking.start_at >= bs.now_utc()).count())
+    if upcoming:
+        r.is_active = False
+        bs.notify_changed(db, current_user.id)
+        db.commit()
+        return {"ok": True, "disabled": True, "upcoming": upcoming}
+    rid = str(r.id)
+    for e in db.query(AgentKnowledgeEntry).filter(AgentKnowledgeEntry.user_id == current_user.id,
+                                                  AgentKnowledgeEntry.kind == "product",
+                                                  AgentKnowledgeEntry.room_ids.isnot(None)).all():
+        if rid in [str(x) for x in (e.room_ids or [])]:
+            e.room_ids = [x for x in e.room_ids if str(x) != rid] or None
+    db.delete(r)
+    bs.notify_changed(db, current_user.id)
+    db.commit()
+    return {"ok": True, "deleted": True}
+
+
+class VisitItem(BaseModel):
+    service_id: Optional[str] = None
+    resource_id: Optional[str] = None
+
+
+class VisitSlotsIn(BaseModel):
+    items: List[VisitItem] = Field(..., min_length=1, max_length=6)
+    date: Optional[str] = None
+
+
+@router.post("/visit-slots")
+def booking_visit_slots(body: VisitSlotsIn, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        out = bs.visit_slots(db, current_user, [i.dict() for i in body.items], body.date)
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        _err(e)
+    return {"slots": out}
+
+
+class VisitIn(BaseModel):
+    items: List[VisitItem] = Field(..., min_length=1, max_length=6)
+    start: str
+    contact_id: Optional[str] = None
+    client_name: Optional[str] = Field(None, max_length=200)
+    client_phone: Optional[str] = Field(None, max_length=40)
+    note: Optional[str] = Field(None, max_length=2000)
+
+
+@router.post("/visits")
+def booking_visit_create(body: VisitIn, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    if not (body.client_name or body.contact_id):
+        raise HTTPException(status_code=400, detail="Укажите клиента")
+    try:
+        rows = bs.create_visit(db, current_user, [i.dict() for i in body.items], body.start,
+                               client_name=body.client_name, client_phone=body.client_phone, contact_id=body.contact_id,
+                               note=body.note, source="staff" if is_staff(current_user) else "owner")
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        _err(e)
+    names = _names(db, current_user.id)
+    return {"ok": True, "bookings": [bs.booking_to_dict(b, names) for b in rows]}
+
+
+@router.delete("/visits/{visit_id}")
+def booking_visit_cancel(visit_id: str, reason: Optional[str] = None, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        rows = bs.cancel_visit(db, current_user, visit_id, reason)
+        db.commit()
+    except (bs.BookingError, ValueError) as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e) or "Визит не найден")
+    return {"ok": True, "cancelled": len(rows)}
+
+
+@router.get("/stream")
+async def booking_stream(request: Request, current_user: User = Depends(get_current_user)):
+    """Поток обновлений журнала: страница получает «changed» и перезапрашивает данные."""
+    from fastapi.responses import StreamingResponse
+    from backend.services import booking_stream as stream
+    return StreamingResponse(stream.events(current_user.id, request.is_disconnected), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+                                      "Connection": "keep-alive"})
 
 
 # ───────────────────────────── услуги салона ─────────────────────────────

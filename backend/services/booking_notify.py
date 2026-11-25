@@ -103,7 +103,7 @@ def due(db: Session, now) -> list:
         SELECT b.id, b.start_at, b.end_at, b.created_at, b.status, b.reminder_24h_at, b.reminder_2h_at, b.followup_at,
                p.settings
         FROM bookings b JOIN booking_pages p ON p.user_id = b.user_id
-        WHERE b.contact_id IS NOT NULL AND b.status IN ('booked', 'confirmed', 'arrived')
+        WHERE b.contact_id IS NOT NULL AND b.status IN ('booked', 'confirmed', 'arrived', 'completed')
           AND b.start_at < :max_start AND b.end_at > :min_end
     """), {"max_start": now + timedelta(hours=24, minutes=5), "min_end": now - timedelta(hours=26)}).mappings().all()
     for r in rows:

@@ -352,6 +352,52 @@
     return api;
   };
 
+  // ── Поток событий сервера (text/event-stream) ──────────────────────────
+  // S.live(path, onEvent) → { stop(), on() }. fetch с токеном (EventSource не умеет заголовки).
+  // onEvent(name) — имя события («changed», «ready»…); после переподключения — ещё и «resync»: пока
+  // потока не было, что-то могло измениться. Обрыв — повтор через 0,8 с, дальше 2…30 с;
+  // 401/403/404 — без повторов (раздел недоступен). Страница уходит — поток закрывается.
+  S.live = function (path, onEvent) {
+    var L = { on: false, ctrl: null, retry: 0, stopped: false, missed: false };
+    var api = { stop: stop, on: function () { return L.on; } };
+    if (!window.fetch || !window.ReadableStream || !window.TextDecoder || !window.AbortController) return api;
+    function emit(name) { try { onEvent(name); } catch (e) { console.error(e); } }
+    function open() {
+      if (L.stopped) return;
+      var ctrl = new AbortController(), t = S.token();
+      L.ctrl = ctrl;
+      fetch(apiUrl(path), { headers: t ? { Authorization: 'Bearer ' + t } : {}, signal: ctrl.signal, cache: 'no-store' }).then(function (r) {
+        if (r.status === 401 || r.status === 403 || r.status === 404) { L.stopped = true; throw new Error('no-stream'); }
+        if (!r.ok || !r.body) throw new Error('http ' + r.status);
+        var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+        L.on = true; L.retry = 0;
+        if (L.missed) { L.missed = false; emit('resync'); }
+        function pump() {
+          return reader.read().then(function (x) {
+            if (x.done) throw new Error('closed');
+            buf += dec.decode(x.value, { stream: true });
+            var parts = buf.split('\n\n');
+            buf = parts.pop();
+            parts.forEach(function (chunk) { var m = /^event: *(\S+)/m.exec(chunk); if (m) emit(m[1]); });
+            return pump();
+          });
+        }
+        return pump();
+      }).catch(function () {
+        L.on = false;
+        if (ctrl.signal.aborted || L.stopped) return;
+        L.missed = true;
+        var wait = L.retry ? Math.min(30000, 1000 * Math.pow(2, L.retry)) : 800;
+        L.retry++;
+        setTimeout(open, wait);
+      });
+    }
+    function stop() { L.stopped = true; L.on = false; if (L.ctrl) L.ctrl.abort(); }
+    window.addEventListener('pagehide', stop);
+    open();
+    return api;
+  };
+
   S.confirm = function (o) {
     if (window.VF && window.VF.confirm) return window.VF.confirm(o);
     return Promise.resolve(window.confirm(o.message || o.title));

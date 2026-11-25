@@ -261,7 +261,8 @@ soon = Booking(user_id=u.id, resource_id=uuid.UUID(m1), contact_id=client.id, cl
                start_at=now + timedelta(hours=1, minutes=30), end_at=now + timedelta(hours=2, minutes=30), status="booked")
 past = Booking(user_id=u.id, resource_id=uuid.UUID(m1), contact_id=client.id, client_name="Нурай",
                start_at=now - timedelta(hours=3), end_at=now - timedelta(hours=2), status="arrived")
-last_minute = Booking(user_id=u.id, resource_id=uuid.UUID(m1), contact_id=client.id, client_name="Нурай",
+# у другого мастера: запись «впритык» к «soon» у того же мастера база не пропустит (ограничение «нет пересечений»)
+last_minute = Booking(user_id=u.id, resource_id=uuid.UUID(m2), contact_id=client.id, client_name="Нурай",
                       start_at=now + timedelta(hours=1, minutes=40), end_at=now + timedelta(hours=2, minutes=40), status="booked")
 db.add_all([early, soon, past, last_minute])
 db.flush()

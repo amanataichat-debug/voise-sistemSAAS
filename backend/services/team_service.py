@@ -139,6 +139,13 @@ STAFF_RULES = [
     _rule("GET", r"^/api/orders/(products|summary|settings)/?$", "orders"),
     _rule("GET PATCH", r"^/api/orders/[^/]+/?$", "orders"),
     _rule("POST", r"^/api/orders/[^/]+/status/?$", "orders"),
+    # — журнал v2: поток обновлений, блоки времени, кабинеты, визиты из нескольких услуг —
+    _rule("GET", r"^/api/booking/stream/?$", "booking", "booking_setup", "booking_own"),
+    _rule("POST", r"^/api/booking/(blocks|visit-slots|visits)/?$", "booking", "booking_setup"),
+    _rule("DELETE", r"^/api/booking/(blocks|visits)/[^/]+/?$", "booking", "booking_setup"),
+    _rule("GET", r"^/api/booking/rooms/?$", "booking", "booking_setup"),
+    _rule("POST", r"^/api/booking/rooms/?$", "booking_setup"),
+    _rule("PATCH DELETE", r"^/api/booking/rooms/[^/]+/?$", "booking_setup"),
     # — услуги салона (над каталогом): смотреть — журнал и каталог, менять — «Мастера и график» и каталог —
     _rule("GET", r"^/api/booking/services/?$", "booking", "booking_setup", "catalog"),
     _rule("POST", r"^/api/booking/services(/categories/(rename|order))?/?$", "booking_setup", "catalog"),

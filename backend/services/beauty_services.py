@@ -108,6 +108,7 @@ def overview(db: Session, user) -> Dict[str, Any]:
         "masters": [{"id": str(r.id), "name": r.name, "role": r.role, "color": r.color or bs.COLORS[0],
                      "initials": bs.initials(r.name), "photo_url": bs.resource_to_dict(r)["photo_url"],
                      "is_active": bool(r.is_active)} for r in masters],
+        "rooms": [bs.room_to_dict(r) for r in bs.rooms(db, user.id)],
     }
 
 
@@ -146,7 +147,7 @@ def _remember(agent, collection: Optional[str]) -> None:
         agent.catalog_collections = cur[:100]
 
 
-def _apply(e, data: Dict[str, Any], agent) -> None:
+def _apply(e, data: Dict[str, Any], agent, db: Optional[Session] = None) -> None:
     if "title" in data:
         t = " ".join(str(data.get("title") or "").split())[:500]
         if not t:
@@ -185,6 +186,10 @@ def _apply(e, data: Dict[str, Any], agent) -> None:
         e.prepay = rule
     if "is_active" in data and data["is_active"] is not None:
         e.is_active = bool(data["is_active"])
+    if "room_ids" in data:
+        mine = {str(r.id) for r in bs.rooms(db, e.user_id, active_only=False)} if data.get("room_ids") and db is not None else set()
+        ids = [str(x) for x in (data.get("room_ids") or []) if str(x) in mine]
+        e.room_ids = ids or None
 
 
 def _apply_masters(db: Session, user, sid: str, rows: List[Dict[str, Any]], all_ids: List[str]) -> None:
@@ -237,7 +242,7 @@ def save(db: Session, user, entry_id: Optional[str], data: Dict[str, Any]):
                                 currency="KGS", in_stock=True, in_prompt=False, is_active=True, position=0)
         if "title" not in data:
             raise ServiceError("Укажите название услуги")
-    _apply(e, data, agent)
+    _apply(e, data, agent, db)
     if not entry_id:
         e.duration_min = e.duration_min or bs.DEFAULT_DURATION
         db.add(e)

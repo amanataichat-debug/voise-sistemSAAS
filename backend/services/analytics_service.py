@@ -814,7 +814,7 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
             i = idx.index(d, h)
             tot["total"] += cnt
             tot["booked_min"] += minutes
-            if status == "arrived":
+            if status in ("arrived", "completed"):
                 tot["arrived"] += cnt
                 tot["revenue"] += price
             elif status == "no_show":
@@ -824,13 +824,13 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
                 tot["expected"] += price
             if i is not None:
                 series["visits"][i] += cnt
-                if status == "arrived":
+                if status in ("arrived", "completed"):
                     series["arrived"][i] += cnt
                 elif status == "no_show":
                     series["no_show"][i] += cnt
         else:
             tot["prev_total"] += cnt
-            if status == "arrived":
+            if status in ("arrived", "completed"):
                 tot["prev_revenue"] += price
             i = pidx.index(d, h)
             if i is not None:
@@ -844,13 +844,13 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
         sources[src] = int(cnt or 0)
     services = [{"title": t or "Без услуги", "count": int(c or 0), "revenue": round(float(r or 0), 2)}
                 for t, c, r in db.execute(text(
-                    "SELECT service_title, count(*), COALESCE(sum(price) FILTER (WHERE status = 'arrived'), 0) "
+                    "SELECT service_title, count(*), COALESCE(sum(price) FILTER (WHERE status IN ('arrived', 'completed')), 0) "
                     "FROM bookings WHERE user_id = :uid AND start_at >= :s AND start_at < :u AND status <> 'cancelled' "
                     "GROUP BY 1 ORDER BY 2 DESC LIMIT 8"), {"uid": uid, "s": s, "u": u}).fetchall()]
     by_res: Dict[str, Dict[str, float]] = {}
     for rid, cnt, minutes, rev in db.execute(text(
         "SELECT resource_id, count(*), COALESCE(sum(extract(epoch FROM end_at - start_at)) / 60.0, 0), "
-        "COALESCE(sum(price) FILTER (WHERE status = 'arrived'), 0) FROM bookings "
+        "COALESCE(sum(price) FILTER (WHERE status IN ('arrived', 'completed')), 0) FROM bookings "
         "WHERE user_id = :uid AND start_at >= :s AND start_at < :u AND status <> 'cancelled' GROUP BY 1"
     ), {"uid": uid, "s": s, "u": u}).fetchall():
         by_res[str(rid)] = {"count": int(cnt or 0), "minutes": float(minutes or 0), "revenue": float(rev or 0)}
@@ -858,7 +858,7 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
         "SELECT count(DISTINCT b.contact_id) FROM bookings b WHERE b.user_id = :uid AND b.start_at >= :s "
         "AND b.start_at < :u AND b.status <> 'cancelled' AND b.contact_id IS NOT NULL AND EXISTS ("
         "SELECT 1 FROM bookings p WHERE p.contact_id = b.contact_id AND p.user_id = b.user_id "
-        "AND p.start_at < :s AND p.status = 'arrived')"
+        "AND p.start_at < :s AND p.status IN ('arrived', 'completed'))"
     ), {"uid": uid, "s": s, "u": u}).scalar() or 0)
     clients = int(db.execute(text(
         "SELECT count(DISTINCT COALESCE(CAST(contact_id AS text), client_phone, CAST(id AS text))) FROM bookings "

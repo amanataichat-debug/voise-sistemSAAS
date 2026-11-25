@@ -21,7 +21,8 @@
   var MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var MONS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   var DKEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-  var STATUS = { booked: 'Записан', confirmed: 'Подтвердил', arrived: 'Пришёл', no_show: 'Не пришёл', cancelled: 'Отменена' };
+  var STATUS = { booked: 'Записан', confirmed: 'Подтвердил', arrived: 'Пришёл', completed: 'Завершён', no_show: 'Не пришёл', cancelled: 'Отменена' };
+  function visited(s) { return s === 'arrived' || s === 'completed'; }
   var TABS = [['day', 'Расписание', 'calendar'], ['clients', 'Клиенты', 'users'], ['money', 'Доход', 'wallet'], ['me', 'Профиль', 'user-round']];
   var st = { tab: 'day', day: null, win: null, data: null, clients: null, q: '', rid: null, err: null };
   var root;
@@ -137,7 +138,7 @@
   function hero() {
     var m = master(), e = st.data.earnings || {}, t = today();
     var list = bookingsOf(t).filter(function (b) { return b.status !== 'cancelled'; });
-    var done = list.filter(function (b) { return b.status === 'arrived'; }).length;
+    var done = list.filter(function (b) { return visited(b.status); }).length;
     var next = list.filter(function (b) { return new Date(b.end) > new Date() && (b.status === 'booked' || b.status === 'confirmed'); })[0];
     var hour = +new Date().toLocaleString('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }) % 24;
     var hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
@@ -446,9 +447,11 @@
     var past = new Date(b.end) < new Date();
     var acts = '';
     if (b.status !== 'cancelled') {
-      if (b.status !== 'arrived') acts += '<button class="btn mc-act good" type="button" data-st="arrived">' + icon('circle-check') + '<span>Пришёл</span></button>';
-      if (b.status !== 'no_show') acts += '<button class="btn mc-act bad" type="button" data-st="no_show">' + icon('circle-x') + '<span>Не пришёл</span></button>';
+      if (b.status === 'arrived') acts += '<button class="btn mc-act good" type="button" data-st="completed">' + icon('check-check') + '<span>Завершить визит</span></button>';
+      if (!visited(b.status)) acts += '<button class="btn mc-act good" type="button" data-st="arrived">' + icon('circle-check') + '<span>Пришёл</span></button>';
+      if (b.status !== 'no_show' && b.status !== 'completed') acts += '<button class="btn mc-act bad" type="button" data-st="no_show">' + icon('circle-x') + '<span>Не пришёл</span></button>';
       if (b.status === 'booked' && !past) acts += '<button class="btn mc-act" type="button" data-st="confirmed">' + icon('check') + '<span>Подтвердил</span></button>';
+      if (b.status === 'completed') acts += '<button class="btn mc-act" type="button" data-st="arrived">' + icon('rotate-ccw') + '<span>Вернуть «пришёл»</span></button>';
       if (b.status === 'arrived' || b.status === 'no_show') acts += '<button class="btn mc-act" type="button" data-st="booked">' + icon('rotate-ccw') + '<span>Вернуть «записан»</span></button>';
     }
     var dlg = S.dialog({
@@ -622,7 +625,17 @@
     root.addEventListener('click', onClick);
     root.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches('[data-bk]')) openBooking(e.target.getAttribute('data-bk')); });
     load();
-    setInterval(function () { if (!document.hidden && !document.querySelector('.vf-backdrop')) load(); }, 60000);
+    // Изменения журнала (администратор перенёс, бот записал) приходят сразу — поток /api/booking/stream
+    var pending = false;
+    function refresh() { if (document.hidden || document.querySelector('.vf-backdrop')) { pending = true; return; } pending = false; load(); }
+    var live = S.live ? S.live('/api/booking/stream', function (ev) { if (ev === 'changed' || ev === 'resync') refresh(); }) : null;
+    var lastPoll = Date.now();
+    setInterval(function () {
+      if (pending && !document.hidden && !document.querySelector('.vf-backdrop')) { refresh(); return; }
+      if (Date.now() - lastPoll < (live && live.on() ? 300000 : 60000)) return;
+      lastPoll = Date.now();
+      if (!document.hidden && !document.querySelector('.vf-backdrop')) load();
+    }, 2000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden && st.data && !document.querySelector('.vf-backdrop')) load(); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

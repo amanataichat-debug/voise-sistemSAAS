@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from backend.models.booking import Booking, BookingResource
 from backend.services import booking_service as bs
 
-MASTER_STATUSES = ("booked", "confirmed", "arrived", "no_show")   # что мастер может поставить сам
+MASTER_STATUSES = ("booked", "confirmed", "arrived", "completed", "no_show")   # что мастер может поставить сам
 FEED_DAYS = 7
 STATS_DAYS = 30
 SOURCE_TITLES = {"owner": "администратор", "staff": "администратор", "bot": "бот в переписке",
@@ -68,7 +68,7 @@ def booking_view(b: Booking, show_phone: bool) -> Dict[str, Any]:
 
 def _sum_arrived(db: Session, rid, a: datetime, b: datetime) -> Tuple[int, float]:
     row = db.execute(text(
-        "SELECT count(*), COALESCE(sum(price), 0) FROM bookings WHERE resource_id = :r AND status = 'arrived' "
+        "SELECT count(*), COALESCE(sum(price), 0) FROM bookings WHERE resource_id = :r AND status IN ('arrived', 'completed') "
         "AND start_at >= :a AND start_at < :b"), {"r": str(rid), "a": a, "b": b}).first()
     return int(row[0] or 0), float(row[1] or 0)
 
@@ -107,10 +107,10 @@ def stats(db: Session, r: BookingResource, days: int = STATS_DAYS) -> Dict[str, 
     a = bs.day_bounds(today - timedelta(days=days - 1))[0]
     b = bs.day_bounds(today)[1]
     row = db.execute(text("""
-        SELECT count(*) FILTER (WHERE status = 'arrived') AS arrived,
+        SELECT count(*) FILTER (WHERE status IN ('arrived', 'completed')) AS arrived,
                count(*) FILTER (WHERE status = 'no_show') AS no_show,
                count(*) FILTER (WHERE status <> 'cancelled') AS total,
-               COALESCE(sum(price) FILTER (WHERE status = 'arrived'), 0) AS revenue
+               COALESCE(sum(price) FILTER (WHERE status IN ('arrived', 'completed')), 0) AS revenue
         FROM bookings WHERE resource_id = :r AND start_at >= :a AND start_at < :b
     """), {"r": str(r.id), "a": a, "b": b}).mappings().first() or {}
     arrived = int(row.get("arrived") or 0)
@@ -120,17 +120,17 @@ def stats(db: Session, r: BookingResource, days: int = STATS_DAYS) -> Dict[str, 
     ret = db.execute(text("""
         WITH cur AS (
             SELECT DISTINCT contact_id FROM bookings
-            WHERE resource_id = :r AND status = 'arrived' AND contact_id IS NOT NULL
+            WHERE resource_id = :r AND status IN ('arrived', 'completed') AND contact_id IS NOT NULL
               AND start_at >= :a AND start_at < :b)
         SELECT count(*) AS clients,
                count(*) FILTER (WHERE EXISTS (
                    SELECT 1 FROM bookings p WHERE p.resource_id = :r AND p.contact_id = cur.contact_id
-                     AND p.status = 'arrived' AND p.start_at < :a)) AS returning
+                     AND p.status IN ('arrived', 'completed') AND p.start_at < :a)) AS returning
         FROM cur
     """), {"r": str(r.id), "a": a, "b": b}).mappings().first() or {}
     top = db.execute(text("""
         SELECT COALESCE(service_title, 'Без услуги') AS title, count(*) AS n
-        FROM bookings WHERE resource_id = :r AND status = 'arrived' AND start_at >= :a AND start_at < :b
+        FROM bookings WHERE resource_id = :r AND status IN ('arrived', 'completed') AND start_at >= :a AND start_at < :b
         GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5
     """), {"r": str(r.id), "a": a, "b": b}).fetchall()
     clients = int(ret.get("clients") or 0)
@@ -202,7 +202,7 @@ def clients(db: Session, r: BookingResource, show_phone: bool, limit: int = 300)
         if show_phone and not g["phone"]:
             g["phone"] = _real_phone(b.client_phone)
         st = _aware(b.start_at)
-        if b.status == "arrived":
+        if bs.visited(b.status):
             g["visits"] += 1
             g["spent"] += float(b.price or 0)
             if g["last_visit"] is None:

@@ -20,6 +20,16 @@
 привязка ко входу сотрудника (team_member_id — мастер видит только свой журнал), показывать ли в
 онлайн-записи (online_booking). Колонки добавляет app.ensure_booking_tables().
 
+Журнал v2 (Voksy Beauty, шаг 1.4):
+  BookingBlock    — блок времени мастера (или всех мастеров): перерыв, обучение, отпуск, больничный,
+                    «не записывать». В свободное время не попадает, в журнале — серой плашкой.
+  BookingRoom     — кабинет / кресло / аппарат: услуга может требовать один из них (room_ids услуги),
+                    запись занимает и мастера, и кабинет (bookings.room_id).
+  Визит           — несколько услуг подряд одному клиенту (bookings.visit_id общий): записываются
+                    вместе, одной транзакцией, отменить можно весь визит.
+  Статус «completed» — визит завершён («arrived» — клиент в салоне). Выручка и визиты считаются по
+  VISITED_STATUSES. Защита от двойной записи в самой базе — ограничение EXCLUDE (app.ensure_booking_guard).
+
 Таблицы создаёт app.ensure_booking_tables() в начале старта.
 """
 
@@ -31,8 +41,11 @@ from sqlalchemy.sql import func
 
 from .base import Base
 
-BOOKING_STATUSES = ("booked", "confirmed", "arrived", "no_show", "cancelled")
-ACTIVE_STATUSES = ("booked", "confirmed", "arrived")   # занимают время в календаре
+BOOKING_STATUSES = ("booked", "confirmed", "arrived", "completed", "no_show", "cancelled")
+ACTIVE_STATUSES = ("booked", "confirmed", "arrived", "completed")   # занимают время в календаре
+VISITED_STATUSES = ("arrived", "completed")                         # клиент пришёл — визит и выручка
+VISITED_SQL = "('arrived', 'completed')"                            # то же для SQL: status IN {VISITED_SQL}
+BLOCK_KINDS = ("block", "break", "training", "vacation", "sick")
 
 
 class BookingResource(Base):
@@ -94,6 +107,8 @@ class Booking(Base):
     start_at = Column(DateTime(timezone=True), nullable=False)
     end_at = Column(DateTime(timezone=True), nullable=False)
     status = Column(String(16), nullable=False, default="booked")
+    room_id = Column(UUID(as_uuid=True), nullable=True)          # кабинет / кресло (booking_rooms.id)
+    visit_id = Column(UUID(as_uuid=True), nullable=True)         # несколько услуг подряд — один визит
     price = Column(Float, nullable=True)
     # Услуги салона (шаг 1.3): подготовка до и перерыв после — на момент записи (правка услуги
     # старые записи не двигает); предоплата по правилу услуги и когда её отметили полученной
@@ -115,7 +130,36 @@ class Booking(Base):
         Index("ix_bookings_user_start", "user_id", "start_at"),
         Index("ix_bookings_resource_start", "resource_id", "start_at"),
         Index("ix_bookings_contact", "contact_id"),
+        Index("ix_bookings_visit", "visit_id"),
+        Index("ix_bookings_room_start", "room_id", "start_at"),
     )
+
+
+class BookingBlock(Base):
+    __tablename__ = "booking_blocks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    resource_id = Column(UUID(as_uuid=True), ForeignKey("booking_resources.id", ondelete="CASCADE"), nullable=True)  # NULL — все мастера
+    kind = Column(String(16), nullable=False, default="block")   # block | break | training | vacation | sick
+    start_at = Column(DateTime(timezone=True), nullable=False)
+    end_at = Column(DateTime(timezone=True), nullable=False)
+    note = Column(String(300), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (Index("ix_booking_blocks_user_start", "user_id", "start_at"),)
+
+
+class BookingRoom(Base):
+    __tablename__ = "booking_rooms"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)                   # «Кабинет 1», «Кресло у окна», «Аппарат LPG»
+    kind = Column(String(16), nullable=False, default="room")    # room | chair | device
+    is_active = Column(Boolean, nullable=False, default=True)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class BookingPage(Base):

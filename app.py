@@ -1990,7 +1990,7 @@ def ensure_user_profile_columns():
                 stmts.append("ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS duration_min INTEGER")
             # услуги салона (Voksy Beauty, шаг 1.3): цена «до», подготовка, перерыв после, онлайн, предоплата
             for name, ddl in (("price_to", "DOUBLE PRECISION"), ("prep_min", "INTEGER"), ("after_min", "INTEGER"),
-                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB")):
+                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB"), ("room_ids", "JSONB")):
                 if name not in kcols:
                     stmts.append(f"ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS {name} {ddl}")
         if stmts:
@@ -2014,14 +2014,15 @@ def ensure_booking_tables():
     try:
         from sqlalchemy import inspect
         from backend.models.base import Base as ModelsBase
-        from backend.models.booking import BookingResource, Booking, BookingPage, SalonMedia
+        from backend.models.booking import BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
         ModelsBase.metadata.create_all(
             bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
-                                 SalonMedia.__table__], checkfirst=True)
+                                 SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__], checkfirst=True)
         ensure_master_card_columns()
+        ensure_booking_guard()
     except Exception as e:
         logger.error(f"❌ ensure_booking_tables: {e}")
 
@@ -2047,7 +2048,36 @@ BOOKING_SERVICE_COLUMNS = (
     ("after_min", "INTEGER"),
     ("prepay_amount", "DOUBLE PRECISION"),
     ("prepaid_at", "TIMESTAMP WITH TIME ZONE"),
+    ("room_id", "UUID"),          # шаг 1.4: кабинет / кресло
+    ("visit_id", "UUID"),         # шаг 1.4: несколько услуг подряд
 )
+
+
+def ensure_booking_guard():
+    """
+    Журнал v2 (шаг 1.4): защита от двойной записи в самой базе. Даже если бот, администратор и клиент
+    по ссылке нажмут в одну секунду, у мастера (и у кабинета) не окажется двух активных записей на одно
+    время: ограничение EXCLUDE USING gist по (мастер, tstzrange(начало, конец)) для активных статусов.
+    Первый рубеж — блокировка строки мастера в booking_service (она же учитывает перерывы); это —
+    последний. Нужен btree_gist (на PostgreSQL 13+ его может включить владелец базы). Если расширения
+    нет или в старых данных уже есть пересечения — пишем в лог и работаем без ограничения.
+    """
+    from sqlalchemy import text as _text
+    for name, col in (("bookings_no_overlap_master", "resource_id"), ("bookings_no_overlap_room", "room_id")):
+        try:
+            with engine.begin() as conn:
+                conn.execute(_text("SELECT pg_advisory_xact_lock(25112028)"))
+                exists = conn.execute(_text("SELECT 1 FROM pg_constraint WHERE conname = :n"), {"n": name}).first()
+                if exists:
+                    continue
+                conn.execute(_text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
+                conn.execute(_text(
+                    f"ALTER TABLE bookings ADD CONSTRAINT {name} EXCLUDE USING gist "
+                    f"({col} WITH =, tstzrange(start_at, end_at) WITH &&) "
+                    f"WHERE ({col} IS NOT NULL AND status IN ('booked', 'confirmed', 'arrived', 'completed'))"))
+            logger.info(f"✅ bookings: защита от двойной записи в базе ({name})")
+        except Exception as e:
+            logger.warning(f"⚠️ bookings: ограничение {name} не добавлено — защита только блокировкой: {e}")
 
 
 def ensure_master_card_columns():
@@ -2069,6 +2099,8 @@ def ensure_master_card_columns():
             conn.execute(_text(f"ALTER TABLE bookings ADD COLUMN IF NOT EXISTS {name} {ddl}"))
         conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_booking_resources_team_member_id "
                            "ON booking_resources (team_member_id)"))
+        conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_bookings_visit ON bookings (visit_id)"))
+        conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_bookings_room_start ON bookings (room_id, start_at)"))
     logger.info(f"✅ запись: добавлены колонки {[n for n, _ in missing] + ['bookings.' + n for n, _ in bmissing]}")
 
 

@@ -924,7 +924,7 @@ def fast_get_schedule(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------- онлайн-запись (ветка 1811-niche-admin-speed)
-_BOOKING_STATUS = {"booked": "записан", "confirmed": "подтвердил", "arrived": "пришёл", "no_show": "не пришёл",
+_BOOKING_STATUS = {"booked": "записан", "confirmed": "подтвердил", "arrived": "пришёл", "completed": "завершён", "no_show": "не пришёл",
                    "cancelled": "отменил"}
 
 
@@ -1000,7 +1000,7 @@ def fast_get_bookings(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
     revenue = 0.0
     for b in rows:
         counts[b.status] = counts.get(b.status, 0) + 1
-        if b.status == "arrived" and b.price:
+        if bs.visited(b.status) and b.price:
             revenue += float(b.price)
     items = [{"time": f"{bs.to_local(b.start_at):%H:%M}", "date": f"{bs.to_local(b.start_at):%d.%m}",
               "client": b.client_name or "клиент", "phone": b.client_phone or "", "service": b.service_title or "",
@@ -1018,10 +1018,10 @@ def fast_get_bookings(db, user, agent, args: Dict[str, Any]) -> Dict[str, Any]:
     title = f"Записи · {label} ({len(rows)})" + (f" · {master.name}" if master else "")
     return {
         "ok": True, "enabled": True, "period": label, "master": master.name if master else None,
-        "total": len(rows), "arrived": counts.get("arrived", 0), "no_show": counts.get("no_show", 0),
+        "total": len(rows), "arrived": counts.get("arrived", 0) + counts.get("completed", 0), "no_show": counts.get("no_show", 0),
         "waiting": counts.get("booked", 0) + counts.get("confirmed", 0), "revenue": round(revenue),
         "items": items, "free_slots": free,
-        "summary": (f"{label}: записей {len(rows)}" + (f", пришли {counts.get('arrived', 0)}" if counts.get("arrived") else "")
+        "summary": (f"{label}: записей {len(rows)}" + (f", пришли {counts.get('arrived', 0) + counts.get('completed', 0)}" if counts.get("arrived") or counts.get("completed") else "")
                     + (f", не пришли {counts.get('no_show', 0)}" if counts.get("no_show") else "")
                     + (f"; свободно: {', '.join(free[:3])}" if free else "")),
         "card": {"type": "list", "title": title,

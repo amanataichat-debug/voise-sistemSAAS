@@ -192,7 +192,7 @@ def _revenue(db: Session, uid: str, s, u) -> Dict[str, float]:
     out = {"bookings": 0.0, "orders": 0.0}
     try:
         out["bookings"] = float(db.execute(text(
-            "SELECT COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid AND status = 'arrived' "
+            "SELECT COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid AND status IN ('arrived', 'completed') "
             "AND start_at >= :s AND start_at < :u"), {"uid": uid, "s": s, "u": u}).scalar() or 0)
     except Exception:
         db.rollback()
@@ -217,7 +217,7 @@ def _payroll(db: Session, user, a: date, b: date, s, u) -> List[Dict[str, Any]]:
     by_res: Dict[str, Dict[str, float]] = {}
     for rid, cnt, rev in db.execute(text(
         "SELECT resource_id, count(*), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-        "AND status = 'arrived' AND start_at >= :s AND start_at < :u GROUP BY 1"
+        "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1"
     ), {"uid": str(user.id), "s": s, "u": u}).fetchall():
         by_res[str(rid)] = {"count": int(cnt or 0), "revenue": float(rev or 0)}
     out = []
@@ -317,7 +317,7 @@ def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str
     s, u = rng.aware()
     off = int(BISHKEK_OFFSET.total_seconds() // 3600)
     for q in ("SELECT date(start_at + interval '%d hour'), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-              "AND status = 'arrived' AND start_at >= :s AND start_at < :u GROUP BY 1",
+              "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1",
               "SELECT date(created_at + interval '%d hour'), COALESCE(sum(total), 0) FROM orders WHERE user_id = :uid "
               "AND status <> 'cancelled' AND created_at >= :s AND created_at < :u GROUP BY 1"):
         try:

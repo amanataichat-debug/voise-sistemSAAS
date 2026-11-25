@@ -18,6 +18,12 @@
     действует в обе стороны (между любыми двумя записями мастера);
   • предоплата — правило услуги (prepay: сумма или % от цены), сумма считается в запись, отметку
     «получена» ставит администратор (оплату салон принимает сам);
+  • журнал v2 (шаг 1.4): блоки времени (booking_blocks: перерыв, обучение, отпуск, больничный — у
+    одного мастера или у всех) в свободное время не попадают; услуга может требовать кабинет/кресло/
+    аппарат (room_ids) — запись занимает и мастера, и свободный кабинет; визит = несколько услуг подряд
+    одному клиенту (visit_id), планируется целиком (plan_visit) и пишется одной транзакцией;
+    последний рубеж от двойной записи — ограничение EXCLUDE в базе (IntegrityError → «время занято»);
+    любое изменение журнала шлёт pg_notify (уходит при commit) — открытые журналы обновляются сразу.
   • двойная запись невозможна: перед вставкой строка мастера блокируется (SELECT … FOR UPDATE),
     пересечение проверяется под блокировкой;
   • клиент записи — карточка CRM (по id, по телефону или новая), стадия «Новый» → «Записан».
@@ -32,10 +38,12 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import and_, text
+from sqlalchemy import and_, or_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models.booking import ACTIVE_STATUSES, BOOKING_STATUSES, Booking, BookingPage, BookingResource
+from backend.models.booking import (ACTIVE_STATUSES, BLOCK_KINDS, BOOKING_STATUSES, VISITED_STATUSES, Booking,
+                                    BookingBlock, BookingPage, BookingResource, BookingRoom)
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +65,36 @@ DEFAULT_SETTINGS = {
     "prepay_info": "",        # как внести предоплату (реквизиты: Mbank, Элсом, наличные) — клиенту и боту
 }
 COLORS = ["#2a5ce8", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#0891b2", "#4d7c0f", "#b45309"]
-STATUS_TITLES = {"booked": "Записан", "confirmed": "Подтвердил", "arrived": "Пришёл", "no_show": "Не пришёл",
-                 "cancelled": "Отменена"}
+STATUS_TITLES = {"booked": "Записан", "confirmed": "Подтвердил", "arrived": "Пришёл", "completed": "Завершён",
+                 "no_show": "Не пришёл", "cancelled": "Отменена"}
+BLOCK_TITLES = {"block": "Не записывать", "break": "Перерыв", "training": "Обучение", "vacation": "Отпуск",
+                "sick": "Больничный"}
+ROOM_KINDS = {"room": "Кабинет", "chair": "Кресло", "device": "Аппарат"}
+NOTIFY_CHANNEL = "voksy_booking"
+
+
+def visited(status: Optional[str]) -> bool:
+    """Клиент пришёл: «пришёл» (в салоне) или «завершён» — визит и выручка."""
+    return status in VISITED_STATUSES
+
+
+def notify_changed(db: Session, user_id) -> None:
+    """Журнал владельца изменился: NOTIFY уходит при commit этой транзакции (откат — не уходит).
+    Слушают воркеры (services/booking_stream.py) и обновляют открытые журналы."""
+    try:
+        db.execute(text("SELECT pg_notify(:c, :u)"), {"c": NOTIFY_CHANNEL, "u": str(user_id)})
+    except Exception as e:     # не PostgreSQL или соединение уже в ошибке — журнал обновится опросом
+        logger.debug(f"[BOOKING] notify skipped: {e}")
+
+
+def _flush(db: Session) -> None:
+    """flush с переводом нарушения ограничения «нет пересечений» в понятную причину."""
+    try:
+        db.flush()
+    except IntegrityError as e:
+        if "no_overlap" in str(e):
+            raise BookingError("Это время уже занято — его только что заняли, выберите другое")
+        raise
 
 
 class BookingError(ValueError):
@@ -378,6 +414,7 @@ def service_to_dict(e) -> Dict[str, Any]:
             "category": cat, "subcategory": sub, "prep_min": prep, "after_min": after,
             "online_booking": service_online(e), "prepay": clean_prepay(getattr(e, "prepay", None)),
             "prepay_text": prepay_text(getattr(e, "prepay", None)),
+            "room_ids": [str(x) for x in (getattr(e, "room_ids", None) or [])],
             "description": (e.body or "")[:300]}
 
 
@@ -427,12 +464,34 @@ def _work_intervals(r: BookingResource, day: date) -> List[Tuple[datetime, datet
     return out
 
 
+def _aw(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _blocks_busy(db: Session, user_id, ids: List, start: datetime, end: datetime) -> Dict[str, List[Tuple[datetime, datetime]]]:
+    """Блоки времени мастеров (и общие на всех) в окне — как занятые интервалы."""
+    out: Dict[str, List[Tuple[datetime, datetime]]] = {str(r): [] for r in ids}
+    if not ids:
+        return out
+    flt = BookingBlock.resource_id.in_(ids)
+    if user_id is not None:
+        flt = or_(flt, and_(BookingBlock.resource_id.is_(None), BookingBlock.user_id == user_id))
+    for rid, a, b in (db.query(BookingBlock.resource_id, BookingBlock.start_at, BookingBlock.end_at)
+                      .filter(flt, BookingBlock.start_at < end, BookingBlock.end_at > start).all()):
+        for key in ([str(rid)] if rid else list(out.keys())):
+            if key in out:
+                out[key].append((_aw(a), _aw(b)))
+    return out
+
+
 def _busy(db: Session, resource_ids: Iterable, start: datetime, end: datetime, buffer_min: int,
-          exclude_id=None) -> Dict[str, List[Tuple[datetime, datetime]]]:
+          exclude_id=None, user_id=None) -> Dict[str, List[Tuple[datetime, datetime]]]:
     ids = [r for r in resource_ids]
     out: Dict[str, List[Tuple[datetime, datetime]]] = {str(r): [] for r in ids}
     if not ids:
         return out
+    for rid, items in _blocks_busy(db, user_id, ids, start - timedelta(hours=4), end + timedelta(hours=4)).items():
+        out[rid].extend(items)
     pad = timedelta(hours=4)    # подготовка/перерыв соседних записей могут залезать в окно
     q = db.query(Booking.resource_id, Booking.start_at, Booking.end_at, Booking.prep_min, Booking.after_min).filter(
         Booking.resource_id.in_(ids), Booking.status.in_(ACTIVE_STATUSES),
@@ -446,6 +505,53 @@ def _busy(db: Session, resource_ids: Iterable, start: datetime, end: datetime, b
         # время мастера: подготовка до, сама услуга, перерыв после и общий перерыв
         out[str(rid)].append((a - timedelta(minutes=prep or 0), b + timedelta(minutes=after or 0) + buf))
     return out
+
+
+def rooms(db: Session, user_id, active_only: bool = True) -> List[BookingRoom]:
+    q = db.query(BookingRoom).filter(BookingRoom.user_id == user_id)
+    if active_only:
+        q = q.filter(BookingRoom.is_active.is_(True))
+    return q.order_by(BookingRoom.position, BookingRoom.created_at).all()
+
+
+def room_to_dict(r: BookingRoom) -> Dict[str, Any]:
+    return {"id": str(r.id), "name": r.name, "kind": r.kind or "room", "kind_title": ROOM_KINDS.get(r.kind or "room", "Кабинет"),
+            "is_active": bool(r.is_active), "position": r.position or 0}
+
+
+def service_rooms(db: Session, user_id, service) -> List[BookingRoom]:
+    """Кабинеты, один из которых нужен услуге (пусто — кабинет не нужен)."""
+    ids = {str(x) for x in (getattr(service, "room_ids", None) or [])} if service is not None else set()
+    if not ids:
+        return []
+    return [r for r in rooms(db, user_id) if str(r.id) in ids]
+
+
+def _room_busy(db: Session, room_ids: List, start: datetime, end: datetime,
+               exclude_id=None) -> Dict[str, List[Tuple[datetime, datetime]]]:
+    """Занятость кабинетов: запись с подготовкой и уборкой (общий перерыв мастера к кабинету не относится)."""
+    out: Dict[str, List[Tuple[datetime, datetime]]] = {str(r): [] for r in room_ids}
+    if not room_ids:
+        return out
+    pad = timedelta(hours=4)
+    q = db.query(Booking.room_id, Booking.start_at, Booking.end_at, Booking.prep_min, Booking.after_min).filter(
+        Booking.room_id.in_(room_ids), Booking.status.in_(ACTIVE_STATUSES),
+        Booking.start_at < end + pad, Booking.end_at > start - pad)
+    if exclude_id is not None:
+        q = q.filter(Booking.id != exclude_id)
+    for rid, a, b, prep, after in q.all():
+        out[str(rid)].append((_aw(a) - timedelta(minutes=prep or 0), _aw(b) + timedelta(minutes=after or 0)))
+    return out
+
+
+def _free_room(candidates: List[BookingRoom], busy: Dict[str, List[Tuple[datetime, datetime]]],
+               start: datetime, end: datetime, prep: int, after: int, prefer=None) -> Optional[BookingRoom]:
+    a, b = start - timedelta(minutes=prep), end + timedelta(minutes=after)
+    ordered = sorted(candidates, key=lambda r: (0 if prefer and str(r.id) == str(prefer) else 1, r.position or 0))
+    for r in ordered:
+        if not any(a < tb and b > ta for ta, tb in busy.get(str(r.id), [])):
+            return r
+    return None
 
 
 def _block(start: datetime, end: datetime, prep: int, after: int, buffer_min: int) -> Tuple[datetime, datetime]:
@@ -488,7 +594,11 @@ def free_slots(db: Session, user, service=None, resource_id=None, day=None, days
     horizon = to_local(now_utc()).date() + timedelta(days=cfg["horizon_days"])
     window_start = datetime.combine(start_day, time(0), BISHKEK).astimezone(timezone.utc)
     window_end = window_start + timedelta(days=days)
-    busy = _busy(db, [r.id for r in res], window_start, window_end, cfg["buffer_min"])
+    busy = _busy(db, [r.id for r in res], window_start, window_end, cfg["buffer_min"], user_id=user.id)
+    need_rooms = service_rooms(db, user.id, service)
+    if service is not None and getattr(service, "room_ids", None) and not need_rooms:
+        return []                      # нужные кабинеты выключены или удалены — записать некуда
+    rbusy = _room_busy(db, [r.id for r in need_rooms], window_start, window_end) if need_rooms else {}
     out = []
     for i in range(days):
         d = start_day + timedelta(days=i)
@@ -503,7 +613,8 @@ def free_slots(db: Session, user, service=None, resource_id=None, day=None, days
                 while t + dur <= b:                   # клиент уходит до конца смены; уборка может после
                     ba, bb = _block(t, t + dur, prep, after, cfg["buffer_min"])
                     if (t >= earliest and ba >= a       # подготовка — в рабочее время мастера
-                            and not any(ba < tb and bb > ta for ta, tb in taken)):
+                            and not any(ba < tb and bb > ta for ta, tb in taken)
+                            and (not need_rooms or _free_room(need_rooms, rbusy, t, t + dur, prep, after))):
                         slots.setdefault(t, []).append(str(r.id))
                     t += step
         items = [{"time": to_local(t).strftime("%H:%M"), "start": t.isoformat(), "resource_ids": ids}
@@ -590,17 +701,50 @@ def _mark_booked_stage(db: Session, contact) -> None:
 # ───────────────────────────── запись ─────────────────────────────
 
 def _check_free(db: Session, user, resource: BookingResource, start: datetime, end: datetime, cfg: Dict[str, Any],
-                exclude_id=None, within_hours: bool = True, prep: int = 0, after: int = 0) -> None:
+                exclude_id=None, within_hours: bool = True, prep: int = 0, after: int = 0,
+                extra: Optional[List[Tuple[datetime, datetime]]] = None) -> None:
     if within_hours:
         day = to_local(start).date()
         ok = any(a <= start - timedelta(minutes=prep) and end <= b for a, b in _work_intervals(resource, day))
         if not ok:
             raise BookingError(f"У «{resource.name}» это время нерабочее")
     taken = _busy(db, [resource.id], start - timedelta(days=1), end + timedelta(days=1), cfg["buffer_min"],
-                  exclude_id=exclude_id).get(str(resource.id), [])
+                  exclude_id=exclude_id, user_id=user.id).get(str(resource.id), [])
+    taken = taken + list(extra or [])
     ba, bb = _block(start, end, prep, after, cfg["buffer_min"])
     if any(ba < tb and bb > ta for ta, tb in taken):
+        if _blocked(db, user.id, resource.id, ba, bb):
+            raise BookingError(f"У «{resource.name}» в это время перерыв, отпуск или блок времени")
         raise BookingError("Это время уже занято")
+
+
+def _blocked(db: Session, user_id, resource_id, a: datetime, b: datetime) -> bool:
+    return db.query(BookingBlock.id).filter(
+        BookingBlock.start_at < b, BookingBlock.end_at > a,
+        or_(BookingBlock.resource_id == resource_id,
+            and_(BookingBlock.resource_id.is_(None), BookingBlock.user_id == user_id))).first() is not None
+
+
+def _pick_room(db: Session, user, service, start: datetime, end: datetime, prep: int, after: int,
+               exclude_id=None, prefer=None, lock: bool = True, extra: Optional[Dict[str, list]] = None):
+    """Свободный кабинет для услуги (None — кабинет услуге не нужен). Строки кабинетов блокируются,
+    как строка мастера: две записи в один кабинет в одну секунду не пройдут."""
+    need = service_rooms(db, user.id, service)
+    if service is not None and getattr(service, "room_ids", None) and not need:
+        raise BookingError("Для этой услуги не осталось включённых кабинетов — проверьте настройки услуги")
+    if not need:
+        return None
+    if lock:
+        ids = sorted(str(r.id) for r in need)
+        db.query(BookingRoom.id).filter(BookingRoom.id.in_([uuid.UUID(x) for x in ids])).order_by(BookingRoom.id).with_for_update().all()
+    busy = _room_busy(db, [r.id for r in need], start - timedelta(days=1), end + timedelta(days=1), exclude_id=exclude_id)
+    for rid, items in (extra or {}).items():
+        busy.setdefault(rid, []).extend(items)
+    room = _free_room(need, busy, start, end, prep, after, prefer=prefer)
+    if room is None:
+        names = ", ".join(r.name for r in need[:3])
+        raise BookingError(f"В это время заняты все кабинеты для услуги ({names}) — выберите другое время")
+    return room
 
 
 def _lock_resource(db: Session, resource_id) -> Optional[BookingResource]:
@@ -610,7 +754,8 @@ def _lock_resource(db: Session, resource_id) -> Optional[BookingResource]:
 def create_booking(db: Session, user, *, start, service_id=None, service_query: Optional[str] = None,
                    resource_id=None, client_name: Optional[str] = None, client_phone: Optional[str] = None,
                    contact_id=None, source: str = "owner", channel: Optional[str] = None, note: Optional[str] = None,
-                   price: Optional[float] = None, duration_min: Optional[int] = None) -> Booking:
+                   price: Optional[float] = None, duration_min: Optional[int] = None, room_id=None,
+                   visit_id=None) -> Booking:
     """Записать клиента. Для бота и ссылки — строго в рабочее и будущее время; владелец может вне графика."""
     from backend.utils.phone import normalize_phone_e164
     st = parse_start(start)
@@ -656,6 +801,7 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
     if chosen is None:
         raise last_err or BookingError("Нет свободного мастера на это время")
     master_price = service_terms(chosen, service)[1] if service is not None else None
+    room = _pick_room(db, user, service, st, end, prep, after, prefer=room_id)
 
     contact = resolve_contact(db, user.id, contact_id, client_name, phone)
     b = Booking(user_id=user.id, resource_id=chosen.id, service_entry_id=service.id if service else None,
@@ -663,12 +809,14 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
                 client_name=(client_name or (contact.name if contact else None) or "")[:200] or None,
                 client_phone=phone or (contact.phone if contact and not str(contact.phone or "").startswith(("web:", "tg:", "ig:", "wa:")) else None),
                 start_at=st, end_at=end, status="booked", prep_min=prep or None, after_min=after or None,
+                room_id=room.id if room is not None else None, visit_id=visit_id,
                 price=price if price is not None else master_price,
                 source=source, channel=channel, note=(note or None) and str(note)[:2000])
     b.prepay_amount = prepay_amount(service, b.price)
     db.add(b)
     _mark_booked_stage(db, contact)
-    db.flush()
+    _flush(db)
+    notify_changed(db, user.id)
     return b
 
 
@@ -685,13 +833,21 @@ def get_booking(db: Session, user_id, booking_id) -> Booking:
 
 def update_booking(db: Session, user, booking_id, *, start=None, resource_id=None, service_id=None,
                    status: Optional[str] = None, note: Optional[str] = None, price=None,
-                   cancel_reason: Optional[str] = None, source: str = "owner", prepaid: Optional[bool] = None) -> Booking:
-    """Перенос (время / мастер / услуга), статус, заметка, цена, «предоплата получена»."""
+                   cancel_reason: Optional[str] = None, source: str = "owner", prepaid: Optional[bool] = None,
+                   duration_min: Optional[int] = None) -> Booking:
+    """Перенос (время / мастер / услуга), растяжка (длительность), статус, заметка, цена, предоплата."""
     b = get_booking(db, user.id, booking_id)
     if prepaid is not None:
         b.prepaid_at = now_utc() if prepaid else None
     cfg = settings_of(get_page(db, user))
-    if start is not None or resource_id is not None or service_id is not None:
+    if duration_min is not None:
+        try:
+            duration_min = int(duration_min)
+        except (TypeError, ValueError):
+            raise BookingError("Неверная длительность")
+        if not (5 <= duration_min <= 1440):
+            raise BookingError("Длительность — от 5 минут до суток")
+    if start is not None or resource_id is not None or service_id is not None or duration_min is not None:
         new_start = parse_start(start) if start is not None else (b.start_at if b.start_at.tzinfo else b.start_at.replace(tzinfo=timezone.utc))
         service = find_service(db, user.id, service_id) if service_id else None
         rid = resource_id or b.resource_id
@@ -700,6 +856,8 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
             raise BookingError("Мастер не найден")
         s_dur, s_price = service_terms(locked, service) if service else (None, None)
         dur = s_dur if service else int(((b.end_at - b.start_at).total_seconds()) // 60)
+        if duration_min is not None:
+            dur = duration_min
         new_end = new_start + timedelta(minutes=dur)
         prep, after = service_pads(service) if service else (int(b.prep_min or 0), int(b.after_min or 0))
         strict = source in ("bot", "online", "call")
@@ -707,6 +865,9 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
             raise BookingError("Это время уже прошло — предложите другое")
         _check_free(db, user, locked, new_start, new_end, cfg, exclude_id=b.id, within_hours=strict,
                     prep=prep, after=after)
+        svc_now = service or (find_service(db, user.id, b.service_entry_id) if b.service_entry_id else None)
+        room = _pick_room(db, user, svc_now, new_start, new_end, prep, after, exclude_id=b.id, prefer=b.room_id)
+        b.room_id = room.id if room is not None else None
         b.start_at, b.end_at, b.resource_id = new_start, new_end, locked.id
         if service is not None:
             b.service_entry_id, b.service_title = service.id, service.title
@@ -731,7 +892,8 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
             b.price = float(price) if price != "" else None
         except (TypeError, ValueError):
             raise BookingError("Неверная цена")
-    db.flush()
+    _flush(db)
+    notify_changed(db, user.id)
     return b
 
 
@@ -771,6 +933,7 @@ def booking_to_dict(b: Booking, names: Optional[Dict[str, str]] = None) -> Dict[
         "duration_min": int((en - st).total_seconds() // 60),
         "prep_min": int(b.prep_min or 0), "after_min": int(b.after_min or 0),
         "prepay_amount": b.prepay_amount, "prepaid": b.prepaid_at is not None,
+        "room_id": str(b.room_id) if b.room_id else None, "visit_id": str(b.visit_id) if b.visit_id else None,
     }
 
 
@@ -783,12 +946,204 @@ def stats(db: Session, user_id, start: datetime, end: datetime) -> Dict[str, Any
     """Записи за период: по статусам, выручка (пришли), неявки, новые/повторные клиенты."""
     row = db.execute(text("""
         SELECT count(*) FILTER (WHERE status <> 'cancelled') AS total,
-               count(*) FILTER (WHERE status = 'arrived') AS arrived,
+               count(*) FILTER (WHERE status IN ('arrived', 'completed')) AS arrived,
                count(*) FILTER (WHERE status = 'no_show') AS no_show,
                count(*) FILTER (WHERE status = 'cancelled') AS cancelled,
-               coalesce(sum(price) FILTER (WHERE status = 'arrived'), 0) AS revenue,
+               coalesce(sum(price) FILTER (WHERE status IN ('arrived', 'completed')), 0) AS revenue,
                count(*) FILTER (WHERE source = 'bot' OR source = 'call') AS by_bot,
                count(*) FILTER (WHERE source = 'online') AS online
         FROM bookings WHERE user_id = :u AND start_at >= :a AND start_at < :b
     """), {"u": user_id, "a": start, "b": end}).mappings().first() or {}
     return {k: (float(v) if k == "revenue" else int(v or 0)) for k, v in dict(row).items()}
+
+
+# ───────────────────────────── блоки времени (шаг 1.4) ─────────────────────────────
+
+def block_to_dict(k: BookingBlock) -> Dict[str, Any]:
+    st, en = _aw(k.start_at), _aw(k.end_at)
+    return {"id": str(k.id), "resource_id": str(k.resource_id) if k.resource_id else None, "kind": k.kind,
+            "kind_title": BLOCK_TITLES.get(k.kind, "Блок"), "start": st.isoformat(), "end": en.isoformat(),
+            "note": k.note or "", "label": f"{fmt_local(st)}–{to_local(en).strftime('%H:%M')}"}
+
+
+def list_blocks(db: Session, user_id, start: datetime, end: datetime) -> List[BookingBlock]:
+    return (db.query(BookingBlock).filter(BookingBlock.user_id == user_id, BookingBlock.start_at < end,
+                                          BookingBlock.end_at > start).order_by(BookingBlock.start_at).all())
+
+
+def create_block(db: Session, user, *, start, end, resource_id=None, kind: str = "block",
+                 note: Optional[str] = None) -> Tuple[BookingBlock, int]:
+    """Блок времени: у мастера или у всех (resource_id=None). Возвращает (блок, сколько активных записей
+    уже стоит в этом времени — их не трогаем, администратор перенесёт сам)."""
+    if kind not in BLOCK_KINDS:
+        raise BookingError("Неизвестный вид блока")
+    a, b = parse_start(start), parse_start(end)
+    if b <= a:
+        raise BookingError("Конец блока должен быть позже начала")
+    if b - a > timedelta(days=62):
+        raise BookingError("Блок — не длиннее двух месяцев")
+    rid = None
+    if resource_id:
+        r = db.query(BookingResource).filter(BookingResource.user_id == user.id,
+                                             BookingResource.id == uuid.UUID(str(resource_id))).first()
+        if r is None:
+            raise BookingError("Мастер не найден")
+        rid = r.id
+    k = BookingBlock(user_id=user.id, resource_id=rid, kind=kind, start_at=a, end_at=b,
+                     note=(str(note or "").strip()[:300] or None))
+    db.add(k)
+    q = db.query(Booking.id).filter(Booking.user_id == user.id, Booking.status.in_(("booked", "confirmed")),
+                                    Booking.start_at < b, Booking.end_at > a)
+    if rid is not None:
+        q = q.filter(Booking.resource_id == rid)
+    clash = q.count()
+    db.flush()
+    notify_changed(db, user.id)
+    return k, clash
+
+
+def delete_block(db: Session, user, block_id) -> None:
+    try:
+        bid = uuid.UUID(str(block_id))
+    except ValueError:
+        raise BookingError("Блок не найден")
+    k = db.query(BookingBlock).filter(BookingBlock.id == bid, BookingBlock.user_id == user.id).first()
+    if k is None:
+        raise BookingError("Блок не найден")
+    db.delete(k)
+    db.flush()
+    notify_changed(db, user.id)
+
+
+# ───────────────────────────── визит: несколько услуг подряд (шаг 1.4) ─────────────────────────────
+
+MAX_VISIT_ITEMS = 6
+
+
+def plan_visit(db: Session, user, items: List[Dict[str, Any]], start, *, source: str = "owner",
+               lock: bool = False) -> List[Dict[str, Any]]:
+    """
+    Разложить визит по времени: услуги идут одна за другой (клиент переходит от мастера к мастеру сразу;
+    у того же мастера — после его перерыва и уборки). items: [{service_id | service, resource_id?}].
+    Возвращает [{resource, service, start, end, prep, after, room, price}] или BookingError.
+    Ничего не пишет; lock=True — блокирует строки выбранных мастеров (для записи).
+    """
+    if not items:
+        raise BookingError("Добавьте хотя бы одну услугу")
+    if len(items) > MAX_VISIT_ITEMS:
+        raise BookingError(f"В одном визите — не больше {MAX_VISIT_ITEMS} услуг")
+    cfg = settings_of(get_page(db, user))
+    strict = source in ("bot", "online", "call")
+    t = parse_start(start)
+    if strict and t < now_utc() + timedelta(minutes=min(cfg["lead_min"], 30)):
+        raise BookingError("Это время уже прошло или слишком близко — выберите другое")
+    masters = ensure_resources(db, user)
+    plan: List[Dict[str, Any]] = []
+    extra: Dict[str, List[Tuple[datetime, datetime]]] = {}
+    extra_rooms: Dict[str, List[Tuple[datetime, datetime]]] = {}
+    for it in items:
+        service = it.get("service") or (find_service(db, user.id, it.get("service_id")) if it.get("service_id") else None)
+        if it.get("service_id") and service is None:
+            raise BookingError("Услуга не найдена")
+        if strict and not service_online(service):
+            raise BookingError(f"На «{service.title}» записывает администратор")
+        prep, after = service_pads(service)
+        cands = [r for r in masters if _resource_does(r, service)]
+        if strict:
+            cands = [r for r in cands if bookable_online(r)]
+        if it.get("resource_id"):
+            cands = [r for r in cands if str(r.id) == str(it["resource_id"])]
+        title = service.title if service is not None else "услуга"
+        if not cands:
+            raise BookingError(f"«{title}» не делает выбранный мастер" if it.get("resource_id") else f"«{title}» никто не делает")
+        placed, last = None, None
+        for r in cands:
+            st = t
+            if plan and str(plan[-1]["resource"].id) == str(r.id):     # тот же мастер — после его уборки и перерыва
+                st = t + timedelta(minutes=plan[-1]["after"] + cfg["buffer_min"])
+            dur, price = service_terms(r, service)
+            en = st + timedelta(minutes=dur)
+            try:
+                if lock:
+                    _lock_resource(db, r.id)
+                _check_free(db, user, r, st, en, cfg, within_hours=strict, prep=prep, after=after,
+                            extra=extra.get(str(r.id)))
+                room = _pick_room(db, user, service, st, en, prep, after, lock=lock, extra=extra_rooms)
+                placed = {"resource": r, "service": service, "start": st, "end": en, "prep": prep, "after": after,
+                          "room": room, "price": price, "duration_min": dur}
+                break
+            except BookingError as e:
+                last = e
+        if placed is None:
+            raise last or BookingError("Нет свободного мастера на это время")
+        plan.append(placed)
+        extra.setdefault(str(placed["resource"].id), []).append(
+            _block(placed["start"], placed["end"], prep, after, cfg["buffer_min"]))
+        if placed["room"] is not None:
+            extra_rooms.setdefault(str(placed["room"].id), []).append(
+                (placed["start"] - timedelta(minutes=prep), placed["end"] + timedelta(minutes=after)))
+        t = placed["end"]
+    return plan
+
+
+def visit_slots(db: Session, user, items: List[Dict[str, Any]], day=None, *, source: str = "owner",
+                limit: int = 60) -> List[Dict[str, Any]]:
+    """Начала визита в этот день, при которых вся цепочка услуг помещается."""
+    if not items:
+        return []
+    first = items[0]
+    service = find_service(db, user.id, first.get("service_id")) if first.get("service_id") else None
+    days = free_slots(db, user, service, first.get("resource_id"), day, 1, ignore_lead=(source not in ("bot", "online", "call")),
+                      online_only=source in ("bot", "online", "call"))
+    out = []
+    for s in (days[0]["slots"] if days else [])[:limit * 2]:
+        try:
+            plan = plan_visit(db, user, items, s["start"], source=source)
+        except BookingError:
+            continue
+        out.append({"time": s["time"], "start": s["start"], "end": plan[-1]["end"].isoformat(),
+                    "end_time": to_local(plan[-1]["end"]).strftime("%H:%M"),
+                    "masters": [str(p["resource"].id) for p in plan]})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def create_visit(db: Session, user, items: List[Dict[str, Any]], start, *, client_name: Optional[str] = None,
+                 client_phone: Optional[str] = None, contact_id=None, source: str = "owner",
+                 channel: Optional[str] = None, note: Optional[str] = None) -> List[Booking]:
+    """Записать визит целиком: одна транзакция, общий visit_id; не поместилась одна услуга — не пишется ничего."""
+    plan = plan_visit(db, user, items, start, source=source)            # куда ставим
+    pinned = [dict(it, resource_id=str(p["resource"].id)) for it, p in zip(items, plan)]
+    for rid in sorted({str(p["resource"].id) for p in plan}):           # один порядок блокировок — без взаимных ожиданий
+        _lock_resource(db, uuid.UUID(rid))
+    plan = plan_visit(db, user, pinned, start, source=source, lock=True)  # под блокировкой — ещё раз
+    vid = uuid.uuid4() if len(plan) > 1 else None
+    out: List[Booking] = []
+    contact = None
+    for i, p in enumerate(plan):
+        b = create_booking(db, user, start=p["start"], service_id=str(p["service"].id) if p["service"] else None,
+                           resource_id=str(p["resource"].id), client_name=client_name, client_phone=client_phone,
+                           contact_id=contact_id or (str(contact) if contact else None), source=source, channel=channel,
+                           note=note if i == 0 else None, room_id=str(p["room"].id) if p["room"] else None, visit_id=vid)
+        contact = b.contact_id
+        out.append(b)
+    return out
+
+
+def visit_bookings(db: Session, user_id, visit_id) -> List[Booking]:
+    if not visit_id:
+        return []
+    return (db.query(Booking).filter(Booking.user_id == user_id, Booking.visit_id == uuid.UUID(str(visit_id)))
+            .order_by(Booking.start_at).all())
+
+
+def cancel_visit(db: Session, user, visit_id, reason: Optional[str] = None) -> List[Booking]:
+    rows = [b for b in visit_bookings(db, user.id, visit_id) if b.status not in ("cancelled",)]
+    if not rows:
+        raise BookingError("Визит не найден")
+    for b in rows:
+        b.status, b.cancel_reason = "cancelled", (reason or "")[:300] or None
+    db.flush()
+    notify_changed(db, user.id)
+    return rows

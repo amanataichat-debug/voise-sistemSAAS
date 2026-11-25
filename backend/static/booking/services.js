@@ -118,6 +118,10 @@
     }).join('');
   }
 
+  function roomNames(s) {
+    var all = (st.data && st.data.rooms) || [];
+    return (s.room_ids || []).map(function (id) { var r = all.filter(function (x) { return x.id === id; })[0]; return r ? r.name : ''; }).filter(Boolean);
+  }
   function row(s) {
     var ms = (s.masters || []).map(function (m) { return masterById(m.id); }).filter(Boolean);
     var own = (s.masters || []).some(function (m) { return m.price != null || m.duration_min; });
@@ -130,7 +134,8 @@
       '<span class="sv-badges">' + (!s.is_active ? '<em class="off">Выключена</em>' : '') +
       (s.online_booking ? '' : '<em>' + icon('lock') + 'Только через админа</em>') +
       (s.prepay_text ? '<em class="pp">' + icon('wallet') + esc(s.prepay_text) + '</em>' : '') +
-      (own ? '<em>' + icon('user-round') + 'Цены по мастерам</em>' : '') + '</span></span>' +
+      (own ? '<em>' + icon('user-round') + 'Цены по мастерам</em>' : '') +
+      roomNames(s).map(function (n) { return '<em>' + icon('door-open') + esc(n) + '</em>'; }).join('') + '</span></span>' +
       '<span class="sv-masters" title="' + esc(ms.map(function (m) { return m.name; }).join(', ') || 'Нет мастеров') + '">' +
       (ms.length ? ms.slice(0, 4).map(function (m) { return ava(m, 26); }).join('') + (ms.length > 4 ? '<span class="sv-more">+' + (ms.length - 4) + '</span>' : '')
         : '<span class="sv-nom">' + icon('circle-alert') + 'Нет мастера</span>') + '</span>' +
@@ -160,7 +165,7 @@
     var d = st.data;
     var isNew = !s0;
     var s = JSON.parse(JSON.stringify(s0 || { title: '', category: (d.categories[0] || {}).name || '', subcategory: '', description: '',
-      price: null, price_to: null, duration_min: 60, prep_min: 0, after_min: 0, online_booking: true, prepay: null, is_active: true,
+      price: null, price_to: null, duration_min: 60, prep_min: 0, after_min: 0, online_booking: true, prepay: null, is_active: true, room_ids: [],
       masters: (d.masters || []).filter(function (m) { return m.is_active; }).map(function (m) { return { id: m.id, price: null, duration_min: null }; }) }));
     var canEdit = ctx.canEdit;
     var dirty = false;
@@ -220,6 +225,16 @@
           '<input class="input" type="number" inputmode="numeric" min="5" step="5" data-md placeholder="' + esc(s.duration_min || 60) + '" value="' + (mine && mine.duration_min ? esc(mine.duration_min) : '') + '"' + (canEdit ? '' : ' disabled') + '></div>';
       }).join('') + '</div>';
     }
+    // Кабинет / кресло / аппарат: запись встанет, только когда свободен один из отмеченных (шаг 1.4)
+    function roomsHtml() {
+      var rooms = d.rooms || [];
+      if (!rooms.length) return '';
+      var sel = s.room_ids || [];
+      return '<h4 class="sv-h">Кабинет или кресло</h4><div class="sv-chips">' + rooms.map(function (r) {
+        return '<button type="button" data-room="' + esc(r.id) + '" class="' + (sel.indexOf(r.id) >= 0 ? 'on' : '') + '" aria-pressed="' + (sel.indexOf(r.id) >= 0) + '">' + esc(r.name) + '</button>';
+      }).join('') + '</div><div class="hint">' + (sel.length ? 'Запись встанет, только когда ' + (sel.length > 1 ? 'свободен хотя бы один из отмеченных' : 'он свободен') + ' — двух клиентов в один кабинет не запишут.' :
+        'Не отмечено — услуга не занимает общий кабинет. Отметьте, если, например, массаж делают только в кабинете массажа.') + '</div>';
+    }
     function render() {
       var pp = s.prepay || {};
       box.innerHTML =
@@ -240,6 +255,7 @@
         '<h4 class="sv-h">Кто делает и за сколько</h4>' +
         '<div class="sv-mhead"><span>Мастер</span><span>Цена</span><span>Мин</span></div>' + mastersHtml() +
         '<div class="hint">Пустые поля — цена и время услуги. Свои — например, у топ-мастера дороже.</div>' +
+        roomsHtml() +
         '<h4 class="sv-h">Запись</h4>' +
         '<div class="st-switch-row"><div class="t"><b>Онлайн-запись на услугу</b><div>Клиенты по ссылке, бот и голосовой агент записывают сами. Выключите — например, сложное окрашивание только после консультации.</div></div>' +
         '<label class="switch"><input type="checkbox" id="sv-online"' + (s.online_booking ? ' checked' : '') + '><span class="track"></span></label></div>' +
@@ -311,6 +327,14 @@
           var v = $('#sv-ppv'); if (v) v.focus();
         });
       });
+      S.$$('[data-room]', box).forEach(function (b) {
+        b.addEventListener('click', function () {
+          collect();
+          var id = b.getAttribute('data-room'), cur = (s.room_ids || []).slice(), i = cur.indexOf(id);
+          if (i >= 0) cur.splice(i, 1); else cur.push(id);
+          s.room_ids = cur; render(); mark();
+        });
+      });
       S.$$('[data-m] input[type=checkbox]', el).forEach(function (c) {
         c.addEventListener('change', function () { c.closest('[data-m]').classList.toggle('no', !c.checked); });
       });
@@ -328,7 +352,7 @@
       if (s.prepay && s.prepay.type === 'percent' && s.prepay.value > 100) { S.toast('Процент предоплаты — не больше 100', 'error'); return; }
       var body = { title: s.title, category: s.category || '', subcategory: s.subcategory || '', description: s.description || '',
         price: s.price, price_to: s.price_to, duration_min: s.duration_min, prep_min: s.prep_min || 0, after_min: s.after_min || 0,
-        online_booking: !!s.online_booking, prepay: s.prepay, masters: s.masters.map(function (m) { return Object.assign({ does: true }, m); }) };
+        online_booking: !!s.online_booking, prepay: s.prepay, room_ids: s.room_ids || [], masters: s.masters.map(function (m) { return Object.assign({ does: true }, m); }) };
       if (!isNew) body.is_active = !!s.is_active;
       var btn = $('[data-save]'); btn.disabled = true;
       S.api(isNew ? '/api/booking/services' : '/api/booking/services/' + s.id, { method: isNew ? 'POST' : 'PATCH', body: body }).then(function (r) {

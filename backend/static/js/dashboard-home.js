@@ -278,7 +278,7 @@
   }
 
   // Записи на сегодня (салоны, клиники, СТО): время, клиент, услуга, мастер, статус
-  var STATUS_CLS = { booked: 'wait', confirmed: 'ok', arrived: 'ok', no_show: 'miss', cancelled: 'miss' };
+  var STATUS_CLS = { booked: 'wait', confirmed: 'ok', arrived: 'ok', completed: 'ok', no_show: 'miss', cancelled: 'miss' };
   function renderToday() {
     $('dh-side-title').textContent = 'Записи на сегодня';
     var body = $('dh-side-body');

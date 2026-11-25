@@ -110,6 +110,7 @@ class AgentKnowledgeEntry(Base):
     after_min = Column(Integer, nullable=True)
     online_booking = Column(Boolean, nullable=True)
     prepay = Column(JSONB, nullable=True)
+    room_ids = Column(JSONB, nullable=True)                # шаг 1.4: нужен один из кабинетов/аппаратов (booking_rooms.id)
 
     # ── Документ (kind=document) ──
     file_id = Column(UUID(as_uuid=True), nullable=True)    # agent_files.id
@@ -166,6 +167,7 @@ class AgentKnowledgeEntry(Base):
                 "after_min": self.after_min or 0,
                 "online_booking": self.online_booking is not False,
                 "prepay": self.prepay or None,
+                "room_ids": self.room_ids or [],
                 "created_at": self.created_at.isoformat() if self.created_at else None,
             })
         if self.kind == "document":
