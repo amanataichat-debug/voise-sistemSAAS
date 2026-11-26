@@ -84,6 +84,8 @@ for (const u of urls) {
   for (const [l, href] of Object.entries(u.alt)) xml.push(`    <xhtml:link rel="alternate" hreflang="${l}" href="${SITE}${href}"/>`);
   xml.push(`    <xhtml:link rel="alternate" hreflang="x-default" href="${SITE}${u.alt.ky}"/>`, '  </url>');
 }
+// Страница «Скачать приложение» (Android .apk, iPhone «На экран Домой») — маршрут /app в app.py
+xml.push('  <url>', `    <loc>${SITE}/app</loc>`, `    <lastmod>${today}</lastmod>`, `    <priority>0.6</priority>`, '  </url>');
 for (const p of legal) xml.push('  <url>', `    <loc>${SITE}${p}</loc>`, `    <priority>0.3</priority>`, '  </url>');
 xml.push('</urlset>', '');
 fs.writeFileSync(path.join(outDir, 'sitemap.xml'), xml.join('\n'));
@@ -102,6 +104,8 @@ const llms = [
   '- Каналы: телефон (номера +996, исходящие на номера O!), WhatsApp, Telegram, Instagram Direct, виджет на сайт.',
   '- Тарифы в месяц: AI Voice — 1 990 сом (голосовой ассистент), Старт — 7 500 сом (чат-бот в мессенджерах, CRM, аналитика, входящие звонки), Profi — 12 500 сом (автономный ИИ-агент по продажам: сам звонит и пишет первым). Скидки: 6 месяцев −20%, год −30%.',
   '- Минута разговора: 5,47 сом (входящий), 6,47 сом (исходящий на O!). Пробный период: 3 дня с возможностями тарифа Старт.',
+  '- Voksy Beauty для салонов: Beauty Start 1 990, Beauty AI 3 990, Beauty Pro 5 990 сом в месяц; оплата за 3 месяца −10%, за 6 месяцев −20%, за год −30%.',
+  '- Мобильное приложение Voksy AI: Android — файл со страницы voksyai.online/app, iPhone — «На экран Домой».',
   '- Запуск без программистов примерно за 10 минут. Демо-номер ИИ-ассистента: +996 705 701 707. Поддержка: Telegram @Aibotconnect.',
   '',
   '## Услуги',
@@ -111,6 +115,7 @@ const llms = [
   `- [Главная (кыргызча)](${SITE}/)`,
   `- [Главная (русский)](${SITE}/ru/)`,
   `- [Тарифы](${SITE}/ru/#pricing)`,
+  `- [Мобильное приложение](${SITE}/app)`,
   `- [Политика конфиденциальности](${SITE}/static/privacy-policy.html)`,
   `- [Публичная оферта](${SITE}/static/public-offer.html)`,
   '',

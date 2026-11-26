@@ -1,0 +1,12 @@
+# Ключ подписи — только у владельца (НЕ в репозитории): без него нельзя выпустить обновление
+*.keystore
+*.jks
+*.pass
+# Результаты сборки: APK для сайта копируется в backend/static/download/voksy-ai.apk
+*.apk
+*.aab
+*.idsig
+.gradle/
+build/
+app/build/
+local.properties

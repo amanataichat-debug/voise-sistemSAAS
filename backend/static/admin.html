@@ -1891,7 +1891,7 @@
         dropdownLogout.addEventListener('click', function(e) {
           e.preventDefault();
           localStorage.removeItem('auth_token');
-          window.location.href = '/';
+          window.location.href = '/static/login.html?reason=logout';
         });
       }
       
@@ -3300,7 +3300,7 @@
       
       logoutButton.addEventListener('click', function() {
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
       
       // Окна тарифа, пароля и подробная аналитика — для вкладки «Клиенты» (static/admin/clients.js)

@@ -46,6 +46,12 @@
     var disc = (st.data && st.data.discounts && st.data.discounts[months]) || 0;
     return Math.round(base * months * (1 - disc / 100));
   }
+  function periodName(m) { m = Number(m); return m === 12 ? 'год' : m + ' мес'; }
+  // Сроки Beauty со скидкой (с 26.11.2026: 3 мес −10%, 6 мес −20%, год −30%) — из ответа сервера
+  function discountMonths() {
+    var disc = (st.data && st.data.discounts) || {};
+    return Object.keys(disc).map(Number).filter(function (m) { return disc[m] > 0; }).sort(function (a, b) { return a - b; });
+  }
 
   // ───────────────────────── список ─────────────────────────
   function load() {
@@ -97,7 +103,9 @@
       '<section class="ap-hero"><div class="ap-hero-ic">' + icon('crown') + '</div>' +
       '<div class="ap-hero-main"><h2>Тарифы Voksy Beauty</h2>' +
       '<p>Их видят только салоны: салон красоты, барбершоп, маникюр, массаж и СПА, косметология. Правка действует сразу; ' +
-      'у тех, кто уже оплатил, новая цена — со следующей оплаты. Скидки за период одинаковые для всех: 6 мес −' + (disc[6] || 0) + '%, год −' + (disc[12] || 0) + '%.</p></div>' +
+      'у тех, кто уже оплатил, новая цена — со следующей оплаты. Скидки за срок у всех тарифов Beauty: ' +
+      discountMonths().map(function (m) { return periodName(m) + ' −' + disc[m] + '%'; }).join(', ') +
+      '; экономию в сомах салон видит сразу на вкладках сроков.</p></div>' +
       '<button type="button" class="btn btn-primary" id="ap-new">' + icon('plus') + '<span>Новый тариф</span></button></section>' +
       '<div class="ap-grid">' + (common.length ? common.map(card).join('') : '<div class="ap-empty">Общих тарифов пока нет</div>') + '</div>';
     html += '<h3 class="ap-h">Индивидуальные тарифы <span>видит и оплачивает только один клиент</span></h3>' +
@@ -178,7 +186,8 @@
     function preview() {
       var price = Number(v('ap-price')) || 0;
       var staff = parseInt(v('ap-staff'), 10) || null;
-      el.querySelector('#ap-periods').textContent = price ? '6 мес: ' + som(periodPrice(price, 6)) + ' · год: ' + som(periodPrice(price, 12)) : '';
+      el.querySelector('#ap-periods').textContent = price
+        ? discountMonths().map(function (m) { return periodName(m) + ': ' + som(periodPrice(price, m)); }).join(' · ') : '';
       el.querySelector('#ap-prev').innerHTML =
         '<div class="ap-pv"><div class="ap-pv-top"><b>' + esc(v('ap-name') || 'Название') + '</b>' + (v('ap-badge').trim() ? '<span class="ap-badge">' + esc(v('ap-badge').trim()) + '</span>' : '') + '</div>' +
         '<div class="ap-pv-price">' + num(price) + '<small>сом/мес</small></div>' +

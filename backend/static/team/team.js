@@ -484,7 +484,7 @@
   function start() {
     root = document.getElementById('tm-root');
     if (!root) return;
-    if (!tok()) { location.href = '/'; return; }
+    if (!tok()) { location.href = '/static/login.html'; return; }
     load();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

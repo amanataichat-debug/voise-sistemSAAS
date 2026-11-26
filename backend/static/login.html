@@ -3,313 +3,546 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Вход — Voksy AI</title>
+  <title>Voksy AI</title>
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="theme-color" content="#2a5ce8" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Voksy AI" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png" />
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" />
+  <link rel="stylesheet" href="/static/css/fonts.css" />
   <link rel="stylesheet" href="/static/css/voksiai.css" />
   <script src="/static/js/i18n.js"></script>
   <style>
-    /* Вход без каркаса кабинета (03-layouts, D). Цвета и шрифты — токены voksiai.css */
+    /* Вход в приложение и кабинет (26.11.2026). Один экран на всё: вход, регистрация, код из письма,
+       новый пароль — без перехода на сайт. Сюда ведут кабинет и приложение (Android / «На экран Домой»),
+       когда нет входа или он истёк (VF.loginUrl в js/ui.js). Цвета и шрифты — токены voksiai.css. */
+    html, body { min-height: 100%; }
     body {
-      margin: 0;
-      font-family: var(--vf-font);
-      color: var(--vf-text);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      -webkit-font-smoothing: antialiased;
+      margin: 0; font-family: var(--vf-font); color: var(--vf-text); -webkit-font-smoothing: antialiased;
       background:
-        radial-gradient(1200px 600px at 10% -10%, rgba(74, 124, 243, 0.18), transparent 60%),
-        radial-gradient(900px 500px at 110% 110%, rgba(42, 92, 232, 0.14), transparent 55%),
+        radial-gradient(1100px 560px at 0% -10%, rgba(74, 124, 243, 0.16), transparent 60%),
+        radial-gradient(900px 520px at 110% 110%, rgba(42, 92, 232, 0.12), transparent 55%),
         #f8fafc;
+      display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh;
+      padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
     }
-
-    .login-card {
-      width: 100%;
-      max-width: 420px;
-      background: var(--vf-surface);
-      border: 1px solid var(--vf-border);
-      border-radius: var(--vf-r-lg);
-      box-shadow: var(--vf-shadow-3);
-      padding: 40px 32px;
+    .au-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 0; min-height: 52px; }
+    .au-back, .au-site {
+      display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px 0 8px; border: 0; border-radius: 10px;
+      background: transparent; color: var(--vf-text-2); font: 600 14.5px var(--vf-font); text-decoration: none; cursor: pointer;
     }
+    .au-back svg, .au-site svg { width: 20px; height: 20px; }
+    .au-back:hover, .au-site:hover { background: rgba(14, 23, 41, 0.05); }
+    .au-lang { display: inline-flex; border: 1px solid var(--vf-border); border-radius: 999px; background: #fff; padding: 2px; margin-left: auto; }
+    .au-lang button { border: 0; background: none; padding: 6px 12px; border-radius: 999px; font: 600 13px var(--vf-font); color: var(--vf-text-3); cursor: pointer; }
+    .au-lang button.on { background: var(--vf-accent); color: #fff; }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      margin-bottom: 28px;
-      text-decoration: none;
+    .au { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 16px 28px; }
+    .au-card {
+      width: 100%; max-width: 420px; background: var(--vf-surface); border: 1px solid var(--vf-border);
+      border-radius: 22px; box-shadow: var(--vf-shadow-3); padding: 30px 26px 26px;
     }
-    .brand .mark-img { width: 38px; height: 38px; display: block; }
-    .brand .wordmark {
-      font-family: var(--vf-font-display);
-      font-size: 22.4px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      background: linear-gradient(135deg, #2a5ce8, #4a7cf3);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .au-brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 22px; }
+    .au-brand img { width: 44px; height: 44px; border-radius: 12px; box-shadow: 0 0 0 1px var(--vf-border); background: #fff; }
+    .au-brand b {
+      font-family: var(--vf-font-display); font-size: 23px; font-weight: 800; letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #2a5ce8, #4a7cf3); -webkit-background-clip: text; background-clip: text; color: transparent;
     }
+    .au h1 { margin: 0 0 6px; text-align: center; font: 700 22px/1.25 var(--vf-font-display); letter-spacing: -0.02em; color: var(--vf-text); }
+    .au-sub { margin: 0 0 20px; text-align: center; color: var(--vf-text-3); font-size: 14.5px; line-height: 1.45; }
+    .au-sub b { color: var(--vf-text); word-break: break-all; }
 
-    .login-title { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; text-align: center; margin: 0 0 6px; }
-    .login-subtitle { text-align: center; color: var(--vf-text-3); font-size: 15px; margin: 0 0 28px; }
+    .au-alert { display: none; margin: 0 0 16px; padding: 11px 13px; border-radius: 12px; font-size: 14px; line-height: 1.45; }
+    .au-alert.show { display: block; }
+    .au-alert.error { background: var(--vf-danger-soft, #fef2f2); color: var(--vf-danger, #dc2626); border: 1px solid #fecaca; }
+    .au-alert.ok { background: var(--vf-success-soft, #ecfdf5); color: #047857; border: 1px solid #a7f3d0; }
+    .au-alert.info { background: var(--vf-accent-soft, #eef3ff); color: #1e40af; border: 1px solid #c7d6fb; }
 
-    .alert {
-      display: none;
-      border-radius: var(--vf-r-sm);
-      padding: 12px 16px;
-      font-size: 14.4px;
-      margin-bottom: 20px;
-      line-height: 1.45;
+    .au-f { margin-bottom: 14px; }
+    .au-f label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 13.5px; font-weight: 600; color: var(--vf-text-2); }
+    .au-f label span { font-weight: 500; color: var(--vf-text-4); font-size: 12.5px; }
+    .au-f label a { font-weight: 600; font-size: 13px; color: var(--vf-accent); text-decoration: none; }
+    .au-in {
+      width: 100%; height: 50px; padding: 0 14px; border: 1px solid var(--vf-border-strong, #cbd5e1); border-radius: 12px;
+      background: #fff; color: var(--vf-text); font: 500 16px var(--vf-font); outline: none; transition: border-color .15s, box-shadow .15s;
     }
-    .alert.show { display: block; }
-    .alert-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .alert-warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-    .alert-info { background: var(--vf-accent-soft); color: var(--vf-accent-hover); border: 1px solid rgba(42, 92, 232, 0.2); }
-    .alert a { color: inherit; font-weight: 600; }
-
-    .form-group { margin-bottom: 20px; }
-    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 13.5px; color: var(--vf-text-2); }
-
-    .form-control {
-      width: 100%;
-      padding: 14px 16px;
-      border: 1px solid var(--vf-border-strong);
-      border-radius: var(--vf-r-sm);
-      font: inherit;
-      font-size: 16px;
-      color: var(--vf-text);
-      background: var(--vf-surface);
-      box-shadow: var(--vf-shadow-1);
-      transition: border-color var(--vf-fast), box-shadow var(--vf-fast);
+    .au-in:focus { border-color: var(--vf-accent); box-shadow: 0 0 0 3px rgba(42, 92, 232, 0.15); }
+    .au-in.bad { border-color: #ef4444; }
+    .au-pw { position: relative; }
+    .au-pw .au-in { padding-right: 52px; }
+    .au-eye { position: absolute; right: 4px; top: 4px; width: 42px; height: 42px; border: 0; background: none; color: var(--vf-text-3); cursor: pointer; border-radius: 10px; }
+    .au-eye svg { width: 21px; height: 21px; }
+    .au-code { text-align: center; letter-spacing: 0.5em; font: 700 24px var(--vf-font); height: 58px; padding-left: 0.5em; }
+    .au-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .au-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 52px; margin-top: 6px; border: 0; border-radius: 13px;
+      background: linear-gradient(135deg, #2a5ce8, #4a7cf3); color: #fff; font: 700 16px var(--vf-font); cursor: pointer;
+      box-shadow: 0 10px 22px -12px rgba(42, 92, 232, 0.8); transition: filter .15s, transform .1s;
     }
-    .form-control::placeholder { color: var(--vf-text-4); }
-    .form-control:focus { outline: none; border-color: var(--vf-accent); box-shadow: 0 0 0 3px var(--vf-accent-ring); }
+    .au-btn:active { transform: translateY(1px); }
+    .au-btn[disabled] { opacity: 0.65; cursor: default; }
+    .au-link { display: block; width: 100%; margin-top: 12px; border: 0; background: none; color: var(--vf-accent); font: 600 14.5px var(--vf-font); cursor: pointer; padding: 8px; }
+    .au-link[disabled] { color: var(--vf-text-4); cursor: default; }
+    .au-foot { margin: 18px 0 0; text-align: center; color: var(--vf-text-3); font-size: 14.5px; }
+    .au-foot button { border: 0; background: none; padding: 4px; color: var(--vf-accent); font: 700 14.5px var(--vf-font); cursor: pointer; }
+    .au-legal { margin: 12px 0 0; text-align: center; color: var(--vf-text-4); font-size: 12px; line-height: 1.5; }
+    .au-legal a { color: var(--vf-text-3); }
+    .au-spin { width: 18px; height: 18px; border: 2.5px solid rgba(255, 255, 255, 0.45); border-top-color: #fff; border-radius: 50%; animation: au-spin .8s linear infinite; }
+    @keyframes au-spin { to { transform: rotate(360deg); } }
+    .au-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--vf-text-3); font-size: 14px; padding: 30px 0; }
+    .au-loading .au-spin { width: 28px; height: 28px; border-color: rgba(42, 92, 232, 0.2); border-top-color: var(--vf-accent); }
+    [hidden] { display: none !important; }
 
-    .password-wrap { position: relative; }
-    .password-wrap .form-control { padding-right: 88px; }
-    .password-toggle {
-      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; color: var(--vf-text-3); cursor: pointer;
-      font: inherit; font-size: 13.5px; padding: 4px 6px; border-radius: 6px;
-    }
-    .password-toggle:hover { color: var(--vf-accent); }
-
-    .btn-submit {
-      width: 100%;
-      padding: 15px 16px;
-      border: none;
-      border-radius: var(--vf-r-sm);
-      background: linear-gradient(135deg, #5a8cf0, #2a5ce8);
-      color: #fff;
-      font: inherit;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      box-shadow: 0 1px 2px rgba(42, 92, 232, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-      transition: filter var(--vf-fast), transform var(--vf-fast);
-    }
-    .btn-submit:hover { filter: brightness(1.05); }
-    .btn-submit:active { transform: translateY(1px); }
-    .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .login-footer { margin: 24px 0 0; text-align: center; color: var(--vf-text-3); font-size: 15px; }
-    .login-footer a { color: var(--vf-accent); text-decoration: none; font-weight: 600; }
-    .login-footer a:hover { text-decoration: underline; }
-
-    .login-lang { position: fixed; top: 16px; right: 16px; }
+    /* iPhone: подсказка «Поделиться → На экран „Домой“» (страница /app ведёт сюда с ?install=1) */
+    .au-ios { position: fixed; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 20; background: #0e1729; color: #fff;
+      border-radius: 18px; padding: 16px 16px 14px; box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.6); font-size: 14.5px; line-height: 1.5; }
+    .au-ios > b { display: block; font-size: 16px; margin-bottom: 4px; padding-right: 28px; }
+    .au-ios li b { display: inline; font-size: inherit; }
+    .au-ios ol { margin: 6px 0 10px; padding-left: 20px; }
+    .au-ios .x { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border: 0; background: none; color: rgba(255, 255, 255, 0.7); font-size: 22px; cursor: pointer; }
+    .au-ios::after { content: ""; position: absolute; left: 50%; bottom: -9px; margin-left: -9px; border: 9px solid transparent; border-bottom: 0; border-top-color: #0e1729; }
 
     @media (max-width: 480px) {
-      body { padding: 16px; }
-      .login-card { padding: 32px 20px; }
+      .au { justify-content: flex-start; padding-top: 4px; }
+      .au-card { border: 0; box-shadow: none; background: transparent; padding: 8px 4px 0; }
+      .au-brand { margin-bottom: 18px; }
+      .au-in { background: #fff; }
     }
   </style>
 </head>
 <body>
-  <div class="login-lang" id="login-lang"></div>
-
-  <main class="login-card">
-    <a class="brand" href="/" aria-label="Voksy AI">
-      <img class="mark-img" src="/static/brand/logo.svg" alt="" width="38" height="38">
-      <span class="wordmark">Voksy AI</span>
+  <div class="au-top">
+    <button type="button" class="au-back" id="au-back" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      <span data-i18n="login.back">Назад</span>
+    </button>
+    <a class="au-site" id="au-site" href="/" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      <span data-i18n="login.to_site">На сайт</span>
     </a>
+    <div class="au-lang" id="au-lang" role="group" aria-label="Язык"></div>
+  </div>
 
-    <h1 class="login-title" data-i18n="login.title">Вход в кабинет</h1>
-    <p class="login-subtitle" data-i18n="login.subtitle">Войдите, чтобы управлять голосовыми ассистентами</p>
+  <main class="au">
+    <div class="au-card">
+      <div class="au-brand"><img src="/static/brand/app-maskable-192.png" alt="" width="44" height="44"><b>Voksy AI</b></div>
 
-    <div id="alert" class="alert" role="alert"></div>
+      <div class="au-loading" id="v-wait"><span class="au-spin"></span><span data-i18n="login.opening">Открываем кабинет…</span></div>
 
-    <form id="login-form" novalidate>
-      <div class="form-group">
-        <label for="email" data-i18n="login.email">Email</label>
-        <input type="email" id="email" class="form-control" placeholder="your@email.com" data-i18n-ph="login.email_ph" autocomplete="email" required />
-      </div>
+      <!-- Вход -->
+      <section id="v-login" hidden>
+        <h1 data-i18n="login.title">Вход в кабинет</h1>
+        <p class="au-sub" data-i18n="login.app_subtitle">Войдите, чтобы продолжить работу</p>
+        <div class="au-alert" role="alert"></div>
+        <form id="f-login" novalidate>
+          <div class="au-f">
+            <label for="l-email" data-i18n="login.email">Email</label>
+            <input class="au-in" type="email" id="l-email" placeholder="you@company.com" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <div class="au-f">
+            <label for="l-pass"><span data-i18n="login.password" style="font-weight:600;color:inherit;font-size:13.5px">Пароль</span><a href="#" id="go-forgot" data-i18n="login.forgot">Забыли пароль?</a></label>
+            <div class="au-pw">
+              <input class="au-in" type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" required>
+              <button type="button" class="au-eye" data-eye="l-pass" aria-label="Показать пароль"></button>
+            </div>
+          </div>
+          <button type="submit" class="au-btn" id="b-login"><span data-i18n="login.submit">Войти</span></button>
+        </form>
+        <p class="au-foot"><span data-i18n="login.no_account">Нет аккаунта?</span> <button type="button" id="go-register" data-i18n="login.register">Зарегистрироваться</button></p>
+      </section>
 
-      <div class="form-group">
-        <label for="password" data-i18n="login.password">Пароль</label>
-        <div class="password-wrap">
-          <input type="password" id="password" class="form-control" placeholder="••••••••" data-i18n-ph="login.password_ph" autocomplete="current-password" required />
-          <button type="button" class="password-toggle" id="toggle-password" aria-label="Показать пароль" data-i18n="login.show">Показать</button>
-        </div>
-      </div>
+      <!-- Регистрация -->
+      <section id="v-register" hidden>
+        <h1 data-i18n="login.reg_title">Создайте аккаунт</h1>
+        <p class="au-sub" data-i18n="login.reg_subtitle">Первые 3 дня — бесплатно</p>
+        <div class="au-alert" role="alert"></div>
+        <form id="f-register" novalidate>
+          <div class="au-row">
+            <div class="au-f">
+              <label for="r-name" data-i18n="login.name">Имя</label>
+              <input class="au-in" type="text" id="r-name" autocomplete="given-name" data-i18n-ph="login.name_ph" placeholder="Как к вам обращаться" required>
+            </div>
+            <div class="au-f">
+              <label for="r-company"><span data-i18n="login.company" style="font-weight:600;color:inherit;font-size:13.5px">Компания</span></label>
+              <input class="au-in" type="text" id="r-company" autocomplete="organization" data-i18n-ph="login.optional" placeholder="необязательно">
+            </div>
+          </div>
+          <div class="au-f">
+            <label for="r-phone"><span data-i18n="login.phone" style="font-weight:600;color:inherit;font-size:13.5px">Телефон</span></label>
+            <input class="au-in" type="tel" id="r-phone" inputmode="tel" autocomplete="tel" placeholder="+996 700 123 456" value="+996 " required>
+          </div>
+          <div class="au-f">
+            <label for="r-email" data-i18n="login.email">Email</label>
+            <input class="au-in" type="email" id="r-email" placeholder="you@company.com" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <div class="au-f">
+            <label for="r-pass"><span data-i18n="login.password" style="font-weight:600;color:inherit;font-size:13.5px">Пароль</span><span data-i18n="login.pass_hint">минимум 8 символов, буквы и цифры</span></label>
+            <div class="au-pw">
+              <input class="au-in" type="password" id="r-pass" autocomplete="new-password" required>
+              <button type="button" class="au-eye" data-eye="r-pass" aria-label="Показать пароль"></button>
+            </div>
+          </div>
+          <button type="submit" class="au-btn" id="b-register"><span data-i18n="login.reg_submit">Создать аккаунт</span></button>
+        </form>
+        <p class="au-legal"><span data-i18n="login.legal">Нажимая кнопку, вы принимаете</span> <a href="/static/terms-of-service.html" target="_blank" rel="noopener" data-i18n="login.terms">соглашение</a> <span data-i18n="login.and">и</span> <a href="/static/privacy-policy.html" target="_blank" rel="noopener" data-i18n="login.privacy">политику конфиденциальности</a><span data-i18n="login.legal_after"></span></p>
+        <p class="au-foot"><span data-i18n="login.have_account">Уже есть аккаунт?</span> <button type="button" id="go-login" data-i18n="login.submit">Войти</button></p>
+      </section>
 
-      <button type="submit" class="btn-submit" id="submit-btn" data-i18n="login.submit">Войти</button>
-    </form>
+      <!-- Код из письма -->
+      <section id="v-code" hidden>
+        <h1 data-i18n="login.code_title">Подтвердите почту</h1>
+        <p class="au-sub" id="code-sub"></p>
+        <div class="au-alert" role="alert"></div>
+        <form id="f-code" novalidate>
+          <div class="au-f">
+            <label for="c-code" data-i18n="login.code_label">Код из письма</label>
+            <input class="au-in au-code" type="text" id="c-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" pattern="[0-9]*">
+          </div>
+          <button type="submit" class="au-btn" id="b-code"><span data-i18n="login.code_submit">Подтвердить</span></button>
+        </form>
+        <button type="button" class="au-link" id="b-resend"></button>
+      </section>
 
-    <p class="login-footer">
-      <span data-i18n="login.no_account">Нет аккаунта?</span> <a href="/?register=1" data-i18n="login.register">Зарегистрироваться</a>
-    </p>
+      <!-- Новый пароль -->
+      <section id="v-forgot" hidden>
+        <h1 data-i18n="login.reset_title">Восстановление пароля</h1>
+        <p class="au-sub" id="reset-sub" data-i18n="login.reset_intro">Укажите email аккаунта — пришлём код для смены пароля</p>
+        <div class="au-alert" role="alert"></div>
+        <form id="f-forgot" novalidate>
+          <div class="au-f">
+            <label for="p-email" data-i18n="login.email">Email</label>
+            <input class="au-in" type="email" id="p-email" placeholder="you@company.com" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" required>
+          </div>
+          <div id="reset-step2" hidden>
+            <div class="au-f">
+              <label for="p-code" data-i18n="login.code_label">Код из письма</label>
+              <input class="au-in au-code" type="text" id="p-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+            </div>
+            <div class="au-f">
+              <label for="p-pass"><span data-i18n="login.reset_new" style="font-weight:600;color:inherit;font-size:13.5px">Новый пароль</span><span data-i18n="login.pass_hint">минимум 8 символов, буквы и цифры</span></label>
+              <div class="au-pw">
+                <input class="au-in" type="password" id="p-pass" autocomplete="new-password">
+                <button type="button" class="au-eye" data-eye="p-pass" aria-label="Показать пароль"></button>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="au-btn" id="b-forgot"><span data-i18n="login.reset_send">Отправить код</span></button>
+        </form>
+        <button type="button" class="au-link" id="b-reset-resend" hidden></button>
+      </section>
+    </div>
   </main>
+
+  <div class="au-ios" id="au-ios" hidden>
+    <button type="button" class="x" aria-label="Закрыть">×</button>
+    <b data-i18n="login.ios_title">Установите Voksy AI на iPhone</b>
+    <ol>
+      <li data-i18n-html="login.ios_1">Нажмите <b>«Поделиться»</b> внизу экрана</li>
+      <li data-i18n-html="login.ios_2">Выберите <b>«На экран „Домой“»</b></li>
+      <li data-i18n-html="login.ios_3">Нажмите <b>«Добавить»</b> — значок появится рядом с другими приложениями</li>
+    </ol>
+  </div>
 
   <script>
     (function () {
-      var DASHBOARD_URL = '/static/dashboard.html';
+      'use strict';
+      var DASHBOARD = '/static/dashboard.html';
+      var params = new URLSearchParams(location.search);
+      function t(key, def, p) { return window.I18N ? window.I18N.t('login.' + key, p || null, def) : def; }
+      function $(id) { return document.getElementById(id); }
+      function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+      function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
 
-      // Если уже авторизованы — сразу в кабинет.
-      if (localStorage.getItem('auth_token')) {
-        window.location.replace(DASHBOARD_URL);
-        return;
+      // Приложение (Android / «На экран Домой») или обычный браузер: в приложении ссылки «На сайт» нет
+      var source = params.get('source');
+      if (source === 'app' || source === 'twa') { try { sessionStorage.setItem('vf_app', '1'); } catch (e) { /* ignore */ } }
+      function inApp() {
+        try {
+          return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches ||
+            navigator.standalone === true || document.referrer.indexOf('android-app://') === 0 || sessionStorage.getItem('vf_app') === '1';
+        } catch (e) { return false; }
+      }
+      var APP = inApp();
+      $('au-site').hidden = APP;
+
+      // Куда вернуться после входа: только страница кабинета этого же сайта
+      function nextUrl(fromServer) {
+        if (fromServer && /^\/static\/[\w\-./]+\.html/.test(fromServer)) return fromServer;
+        var n = params.get('next') || '';
+        if (/^\/static\/[\w\-./]+\.html([?#][^\s]*)?$/.test(n) && n.indexOf('/static/login.html') !== 0) return n;
+        return DASHBOARD;
+      }
+      function enter(data) {
+        var token = data && (data.token || (data.data && data.data.token));
+        if (!token) return false;
+        ls('auth_token', token);
+        try { ls('vf_staff', JSON.stringify({ t: String(token).slice(-24), staff: (data && data.staff) || null })); } catch (e) { /* ignore */ }
+        try { sessionStorage.removeItem('vf_shell_seen'); } catch (e) { /* ignore */ }
+        location.replace(nextUrl(data && data.redirect_to));
+        return true;
       }
 
-      function t(key, def, params) {
-        return window.I18N ? window.I18N.t('login.' + key, params, def) : def;
-      }
-
-      // Переключатель языка RU | KY
-      var langBox = document.getElementById('login-lang');
+      // Язык RU | KY
       if (window.I18N) {
-        var sw = document.createElement('div');
-        sw.className = 'vf-lang-switch';
         window.I18N.LANGS.forEach(function (l) {
           var b = document.createElement('button');
-          b.type = 'button';
-          b.textContent = l.toUpperCase();
-          if (l === window.I18N.lang) b.className = 'active';
+          b.type = 'button'; b.textContent = l.toUpperCase(); if (l === window.I18N.lang) b.className = 'on';
           b.addEventListener('click', function () { window.I18N.setLang(l); });
-          sw.appendChild(b);
+          $('au-lang').appendChild(b);
         });
-        langBox.appendChild(sw);
       }
 
-      var form = document.getElementById('login-form');
-      var emailInput = document.getElementById('email');
-      var passwordInput = document.getElementById('password');
-      var submitBtn = document.getElementById('submit-btn');
-      var alertBox = document.getElementById('alert');
-      var toggleBtn = document.getElementById('toggle-password');
-
-      // Показать причину выхода, если редирект пришёл с ?reason=...
-      var params = new URLSearchParams(window.location.search);
-      var reason = params.get('reason');
-      if (reason === 'expired' || reason === 'session_expired') {
-        showAlert('info', esc(t('session_expired', 'Сессия истекла из-за неактивности. Войдите снова, чтобы продолжить.')));
-      } else if (reason === 'logout') {
-        showAlert('info', esc(t('logged_out', 'Вы вышли из аккаунта.')));
-      }
-
-      // Предзаполним email, если был сохранён ранее.
-      var lastEmail = localStorage.getItem('last_login_email');
-      if (lastEmail) { emailInput.value = lastEmail; }
-
-      (lastEmail ? passwordInput : emailInput).focus();
-
-      toggleBtn.addEventListener('click', function () {
-        var isHidden = passwordInput.type === 'password';
-        passwordInput.type = isHidden ? 'text' : 'password';
-        toggleBtn.textContent = isHidden ? t('hide', 'Скрыть') : t('show', 'Показать');
+      // Глаз у пароля
+      var EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.4 5.3A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.1 6.1C3.6 7.8 2 12 2 12s3.5 7 10 7a9.9 9.9 0 0 0 4.3-1"/></svg>';
+      Array.prototype.forEach.call(document.querySelectorAll('[data-eye]'), function (b) {
+        b.innerHTML = EYE;
+        b.addEventListener('click', function () {
+          var inp = $(b.getAttribute('data-eye')); var show = inp.type === 'password';
+          inp.type = show ? 'text' : 'password'; b.innerHTML = show ? EYE_OFF : EYE;
+        });
       });
 
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        hideAlert();
+      // ── экраны: кнопка «Назад» телефона возвращает на прошлый экран, а не закрывает приложение
+      var VIEWS = ['login', 'register', 'code', 'forgot'];
+      var current = 'login';
+      function show(name, push) {
+        current = name;
+        $('v-wait').hidden = true;
+        VIEWS.forEach(function (v) { $('v-' + v).hidden = v !== name; });
+        $('au-back').hidden = name === 'login';
+        if (push) { try { history.pushState({ au: name }, ''); } catch (e) { /* ignore */ } }
+        var first = $('v-' + name).querySelector('input:not([type=hidden])');
+        if (first && window.innerWidth > 480) setTimeout(function () { first.focus(); }, 30);
+        window.scrollTo(0, 0);
+      }
+      window.addEventListener('popstate', function (e) {
+        var st = e.state && e.state.au;
+        show(st && VIEWS.indexOf(st) >= 0 ? st : 'login', false);
+      });
+      $('au-back').addEventListener('click', function () { if (history.state && history.state.au) history.back(); else show('login', false); });
+      $('go-register').addEventListener('click', function () { show('register', true); });
+      $('go-login').addEventListener('click', function () { if (history.state && history.state.au) history.back(); else show('login', false); });
+      $('go-forgot').addEventListener('click', function (e) { e.preventDefault(); $('p-email').value = $('l-email').value.trim(); show('forgot', true); });
 
-        var email = emailInput.value.trim();
-        var password = passwordInput.value;
-
-        if (!email || !password) {
-          showAlert('error', esc(t('fill_both', 'Введите email и пароль.')));
-          return;
-        }
-
-        setLoading(true);
-
-        fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email, password: password })
-        })
-          .then(function (response) {
-            return response.json()
-              .catch(function () { return {}; })
-              .then(function (data) { return { status: response.status, ok: response.ok, data: data }; });
-          })
-          .then(function (res) {
-            if (res.ok && res.data && res.data.token) {
-              localStorage.setItem('auth_token', res.data.token);
-              localStorage.setItem('last_login_email', email);
-              showAlert('info', esc(t('success', 'Успешный вход! Переходим в кабинет…')));
-              window.location.replace(DASHBOARD_URL);
-              return;
-            }
-
-            setLoading(false);
-            handleError(res);
-          })
-          .catch(function () {
-            setLoading(false);
-            showAlert('error', esc(t('network_error', 'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.')));
+      function alertIn(view, type, text) {
+        var a = $('v-' + view).querySelector('.au-alert');
+        if (!text) { a.className = 'au-alert'; a.textContent = ''; return; }
+        a.className = 'au-alert show ' + type; a.textContent = text;
+      }
+      function busy(btn, on, label) {
+        btn.disabled = on;
+        if (on) { btn.setAttribute('data-label', btn.innerHTML); btn.innerHTML = '<span class="au-spin"></span>' + (label ? '<span>' + esc(label) + '</span>' : ''); }
+        else if (btn.getAttribute('data-label')) btn.innerHTML = btn.getAttribute('data-label');
+      }
+      function post(path, body) {
+        return fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+          .then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (d) {
+              if (r.ok) return d;
+              var msg = d.detail || d.message || '';
+              if (Array.isArray(d.details) && d.details.length && d.details[0].msg) msg = String(d.details[0].msg).replace(/^Value error,\s*/, '');
+              if (msg && typeof msg === 'object') msg = msg.message || '';
+              var err = new Error(String(msg || ('HTTP ' + r.status))); err.status = r.status; throw err;
+            });
           });
+      }
+      function netError(e) { return !e || !e.status ? t('network_error', 'Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.') : null; }
+      function pwdText(m) {
+        if (/at least one digit/i.test(m)) return t('pwd_digit', 'Пароль должен содержать хотя бы одну цифру');
+        if (/at least one letter/i.test(m)) return t('pwd_letter', 'Пароль должен содержать хотя бы одну букву');
+        if (/at least 8 characters|8 characters/i.test(m)) return t('pwd_length', 'Пароль должен быть не короче 8 символов');
+        return null;
+      }
+
+      // ── вход
+      var lastEmail = ls('last_login_email');
+      if (lastEmail) $('l-email').value = lastEmail;
+      $('f-login').addEventListener('submit', function (e) {
+        e.preventDefault(); alertIn('login');
+        var email = $('l-email').value.trim(), pass = $('l-pass').value;
+        if (!email || !pass) { alertIn('login', 'error', t('fill_both', 'Введите email и пароль.')); return; }
+        var btn = $('b-login'); busy(btn, true, t('submitting', 'Входим…'));
+        post('/auth/login', { email: email, password: pass }).then(function (d) {
+          ls('last_login_email', email);
+          if (!enter(d)) { busy(btn, false); alertIn('login', 'error', t('generic_error', 'Не удалось войти. Попробуйте ещё раз.')); }
+        }).catch(function (err) {
+          busy(btn, false);
+          var m = err.message || '';
+          if (/not verified|не подтвержд/i.test(m)) { openCode(email, t('code_after_login', 'Почта ещё не подтверждена — мы отправили код на {email}', { email: email })); return; }
+          if (err.status === 401 || /invalid|password|пароль/i.test(m)) { alertIn('login', 'error', t('invalid', 'Неверный email или пароль.')); return; }
+          if (err.status === 429) { alertIn('login', 'error', t('too_many', 'Слишком много попыток. Подождите несколько минут.')); return; }
+          alertIn('login', 'error', netError(err) || m || t('generic_error', 'Не удалось войти. Попробуйте ещё раз.'));
+        });
       });
 
-      function handleError(res) {
-        var detail = (res.data && (res.data.detail || res.data.message)) || '';
-        var text = String(detail).toLowerCase();
-
-        if (res.status === 403 || text.indexOf('not verified') !== -1 || text.indexOf('не подтвержд') !== -1) {
-          var link = '<a href="/?verify=' + encodeURIComponent(emailInput.value.trim()) + '">' +
-            esc(t('not_verified_link', 'завершите регистрацию')) + '</a>';
-          showAlert('warning', esc(t('not_verified', 'Email не подтверждён. Проверьте почту и подтвердите адрес, либо {link}.'))
-            .replace('{link}', link));
-          return;
-        }
-
-        if (res.status === 401 || text.indexOf('invalid') !== -1 || text.indexOf('password') !== -1 || text.indexOf('пароль') !== -1) {
-          showAlert('error', esc(t('invalid', 'Неверный email или пароль.')));
-          return;
-        }
-
-        showAlert('error', esc(detail || t('generic_error', 'Не удалось войти. Попробуйте ещё раз.')));
-      }
-
-      function setLoading(loading) {
-        submitBtn.disabled = loading;
-        submitBtn.textContent = loading ? t('submitting', 'Входим…') : t('submit', 'Войти');
-      }
-
-      function esc(v) {
-        return String(v).replace(/[&<>"']/g, function (c) {
-          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      // ── регистрация (как на сайте: имя и телефон обязательны, реферальный код из партнёрской ссылки)
+      function phoneOk(v) { var raw = String(v || '').trim(), d = raw.replace(/\D/g, ''); return raw.charAt(0) === '+' ? d.length >= 9 && d.length <= 15 : d.length >= 9 && d.length <= 13; }
+      $('f-register').addEventListener('submit', function (e) {
+        e.preventDefault(); alertIn('register');
+        var name = $('r-name').value.trim(), phone = $('r-phone').value.trim(), email = $('r-email').value.trim(), pass = $('r-pass').value;
+        if (!name) { alertIn('register', 'error', t('name_required', 'Укажите ваше имя')); return; }
+        if (!phone || phone === '+996') { alertIn('register', 'error', t('phone_required', 'Укажите номер телефона')); return; }
+        if (!phoneOk(phone)) { alertIn('register', 'error', t('phone_invalid', 'Проверьте номер телефона: например, +996 700 123 456')); return; }
+        if (!email) { alertIn('register', 'error', t('email_required', 'Укажите email')); return; }
+        if (pass.length < 8) { alertIn('register', 'error', t('pwd_length', 'Пароль должен быть не короче 8 символов')); return; }
+        var ref = ls('referral_code'), utm = null;
+        try { utm = JSON.parse(ls('utm_data') || 'null'); } catch (x) { utm = null; }
+        var btn = $('b-register'); busy(btn, true, t('reg_submitting', 'Регистрируем…'));
+        post('/auth/register', {
+          email: email, password: pass, first_name: name, last_name: null, company_name: $('r-company').value.trim() || null,
+          phone: phone, referral_code: ref || null, utm_data: utm
+        }).then(function (d) {
+          busy(btn, false);
+          try { localStorage.setItem('vf_first_name', name); } catch (x) { /* ignore */ }
+          if (d && d.token && !d.verification_required) { ls('referral_code', null); ls('utm_data', null); enter(d); return; }
+          if (d && d.message && /exists but not verified/i.test(d.message)) { openCode(email, t('code_exists', 'Аккаунт уже есть, но почта не подтверждена. Новый код отправлен на {email}', { email: email })); return; }
+          if (d && d.verification_required && d.verification_sent) { ls('referral_code', null); ls('utm_data', null); openCode(email); return; }
+          alertIn('register', 'error', t('email_failed', 'Аккаунт создан, но письмо с кодом не отправилось. Попробуйте войти чуть позже.'));
+        }).catch(function (err) {
+          busy(btn, false);
+          var m = err.message || '';
+          if (/already registered/i.test(m)) { alertIn('register', 'error', t('already', 'Этот email уже зарегистрирован. Войдите в аккаунт.')); $('l-email').value = email; return; }
+          if (/Invalid phone/i.test(m)) { alertIn('register', 'error', t('phone_invalid', 'Проверьте номер телефона: например, +996 700 123 456')); return; }
+          if (/Phone is required/i.test(m)) { alertIn('register', 'error', t('phone_required', 'Укажите номер телефона')); return; }
+          if (/Name is required/i.test(m)) { alertIn('register', 'error', t('name_required', 'Укажите ваше имя')); return; }
+          if (err.status === 429) { alertIn('register', 'error', t('too_many', 'Слишком много попыток. Подождите несколько минут.')); return; }
+          alertIn('register', 'error', pwdText(m) || netError(err) || m || t('reg_error', 'Не удалось зарегистрироваться. Попробуйте ещё раз.'));
         });
+      });
+
+      // ── код из письма: 3 попытки, повторная отправка через 60 с
+      var codeEmail = '', attempts = 3, timer = null, left = 0;
+      function tick(btn, onDone) {
+        clearInterval(timer); left = 60;
+        function draw() {
+          if (left > 0) { btn.disabled = true; btn.textContent = t('resend_in', 'Отправить код повторно — через {n} с', { n: left }); }
+          else { btn.disabled = false; btn.textContent = t('resend', 'Отправить код повторно'); clearInterval(timer); if (onDone) onDone(); }
+        }
+        draw(); timer = setInterval(function () { left -= 1; draw(); }, 1000);
+      }
+      function openCode(email, message) {
+        codeEmail = email; attempts = 3;
+        $('code-sub').innerHTML = esc(t('code_sent', 'Мы отправили 6-значный код на {email}', { email: '\u0001' })).replace('\u0001', '<b>' + esc(email) + '</b>');
+        $('c-code').value = ''; $('c-code').disabled = false; $('b-code').disabled = false;
+        show('code', true);
+        if (message) alertIn('code', 'info', message); else alertIn('code');
+        tick($('b-resend'));
+        setTimeout(function () { $('c-code').focus(); }, 60);
+      }
+      $('c-code').addEventListener('input', function () {
+        this.value = this.value.replace(/\D/g, '').slice(0, 6);
+        if (this.value.length === 6) $('f-code').requestSubmit ? $('f-code').requestSubmit() : $('b-code').click();
+      });
+      $('f-code').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var code = $('c-code').value.trim();
+        if (!/^\d{6}$/.test(code)) { alertIn('code', 'error', t('code_format', 'Введите 6-значный код')); return; }
+        var btn = $('b-code'); busy(btn, true, t('code_checking', 'Проверяем…'));
+        post('/email-verification/verify', { email: codeEmail, code: code }).then(function (d) {
+          alertIn('code', 'ok', t('code_ok', 'Почта подтверждена! Открываем кабинет…'));
+          if (!enter(d)) { busy(btn, false); show('login', false); alertIn('login', 'ok', t('code_ok_login', 'Почта подтверждена. Войдите с вашим паролем.')); }
+        }).catch(function (err) {
+          busy(btn, false);
+          if (!err.status) { alertIn('code', 'error', netError(err)); return; }
+          attempts -= 1;
+          if (attempts <= 0) { $('c-code').disabled = true; btn.disabled = true; alertIn('code', 'error', t('code_exhausted', 'Попытки закончились. Запросите новый код.')); }
+          else alertIn('code', 'error', t('code_wrong', 'Неверный код. Осталось попыток: {n}', { n: attempts }));
+          $('c-code').select();
+        });
+      });
+      $('b-resend').addEventListener('click', function () {
+        var btn = this; btn.disabled = true;
+        post('/email-verification/resend', { email: codeEmail }).then(function () {
+          attempts = 3; $('c-code').disabled = false; $('b-code').disabled = false; $('c-code').value = '';
+          alertIn('code', 'ok', t('code_resent', 'Новый код отправлен на почту'));
+          tick(btn);
+        }).catch(function (err) {
+          btn.disabled = false;
+          alertIn('code', 'error', /wait|подожд/i.test(err.message || '') ? t('code_wait', 'Подождите немного перед повторной отправкой') : (netError(err) || t('code_resend_error', 'Не удалось отправить код. Попробуйте позже.')));
+        });
+      });
+
+      // ── новый пароль: email → код → пароль
+      var resetStage = 1;
+      function resetStep2() {
+        resetStage = 2; $('reset-step2').hidden = false; $('p-email').readOnly = true;
+        $('b-forgot').innerHTML = '<span>' + esc(t('reset_submit', 'Сменить пароль')) + '</span>';
+        $('b-reset-resend').hidden = false; tick($('b-reset-resend'));
+        setTimeout(function () { $('p-code').focus(); }, 60);
+      }
+      $('p-code').addEventListener('input', function () { this.value = this.value.replace(/\D/g, '').slice(0, 6); });
+      $('f-forgot').addEventListener('submit', function (e) {
+        e.preventDefault(); alertIn('forgot');
+        var email = $('p-email').value.trim(), btn = $('b-forgot');
+        if (resetStage === 1) {
+          if (!email) { alertIn('forgot', 'error', t('email_required', 'Укажите email')); return; }
+          busy(btn, true);
+          post('/auth/reset-password', { email: email }).then(function () {
+            busy(btn, false); alertIn('forgot', 'ok', t('reset_sent', 'Если аккаунт есть, код уже на почте')); resetStep2();
+          }).catch(function (err) {
+            busy(btn, false);
+            if (err.status === 429 || /wait|подожд|already/i.test(err.message || '')) { alertIn('forgot', 'info', t('reset_cooldown', 'Код уже отправлен — проверьте почту')); resetStep2(); return; }
+            alertIn('forgot', 'error', netError(err) || err.message || t('reset_send_error', 'Не удалось отправить код. Попробуйте позже.'));
+          });
+          return;
+        }
+        var code = $('p-code').value.trim(), pass = $('p-pass').value;
+        if (!/^\d{6}$/.test(code)) { alertIn('forgot', 'error', t('code_format', 'Введите 6-значный код')); return; }
+        if (pass.length < 8) { alertIn('forgot', 'error', t('pwd_length', 'Пароль должен быть не короче 8 символов')); return; }
+        busy(btn, true);
+        post('/auth/reset-password-confirm', { email: email, code: code, new_password: pass }).then(function () {
+          busy(btn, false);
+          $('l-email').value = email; $('l-pass').value = '';
+          resetStage = 1; $('reset-step2').hidden = true; $('p-email').readOnly = false; $('b-reset-resend').hidden = true;
+          $('b-forgot').innerHTML = '<span>' + esc(t('reset_send', 'Отправить код')) + '</span>';
+          if (history.state && history.state.au) history.back(); else show('login', false);
+          setTimeout(function () { alertIn('login', 'ok', t('reset_ok', 'Пароль изменён. Войдите с новым паролем.')); }, 50);
+        }).catch(function (err) {
+          busy(btn, false);
+          alertIn('forgot', 'error', pwdText(err.message || '') || netError(err) || err.message || t('reset_error', 'Не удалось сменить пароль'));
+        });
+      });
+      $('b-reset-resend').addEventListener('click', function () {
+        var btn = this; btn.disabled = true;
+        post('/auth/reset-password', { email: $('p-email').value.trim() }).then(function () {
+          alertIn('forgot', 'ok', t('code_resent', 'Новый код отправлен на почту')); tick(btn);
+        }).catch(function () { btn.disabled = false; alertIn('forgot', 'error', t('code_wait', 'Подождите немного перед повторной отправкой')); });
+      });
+
+      // iPhone: подсказка «На экран Домой» (переход со страницы /app)
+      var iosDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (params.get('install') === '1' && iosDevice && !APP) {
+        $('au-ios').hidden = false;
+        $('au-ios').querySelector('.x').addEventListener('click', function () { $('au-ios').hidden = true; });
       }
 
-      function showAlert(type, html) {
-        alertBox.className = 'alert show alert-' + type;
-        alertBox.innerHTML = html;
+      // ── старт: причина выхода; вход уже есть — проверяем его и открываем кабинет
+      var reason = params.get('reason');
+      var token = ls('auth_token');
+      function start() {
+        show('login', false);
+        try { history.replaceState({ au: 'login' }, ''); } catch (e) { /* ignore */ }
+        if (reason === 'expired' || reason === 'session_expired') alertIn('login', 'info', t('session_expired', 'Сессия истекла. Войдите снова, чтобы продолжить.'));
+        else if (reason === 'logout') alertIn('login', 'info', t('logged_out', 'Вы вышли из аккаунта.'));
+        if (params.get('register') === '1') show('register', true);
       }
-
-      function hideAlert() {
-        alertBox.className = 'alert';
-        alertBox.innerHTML = '';
+      if (token && reason !== 'logout' && reason !== 'expired' && reason !== 'session_expired') {
+        var done = false;
+        var guard = setTimeout(function () { if (!done) { done = true; location.replace(nextUrl()); } }, 7000);
+        fetch('/api/users/me', { headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
+          if (done) return; done = true; clearTimeout(guard);
+          if (r.status === 401 || r.status === 403) { ls('auth_token', null); ls('vf_staff', null); start(); }
+          else location.replace(nextUrl());
+        }).catch(function () { if (!done) { done = true; clearTimeout(guard); location.replace(nextUrl()); } });
+      } else {
+        if (token) { ls('auth_token', null); ls('vf_staff', null); }
+        start();
       }
     })();
   </script>
