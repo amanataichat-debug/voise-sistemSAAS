@@ -415,6 +415,11 @@
 
   function openTopupModal() {
     if (document.getElementById('vf-topup-modal')) return;
+    // Стили окна кладёт карточка кошелька в боковом меню; на странице без него (или пока её
+    // нет) окно на телефоне открывалось без вида шторки — кладём сами
+    if (!document.getElementById('vf-wallet-style')) {
+      var st = document.createElement('style'); st.id = 'vf-wallet-style'; st.textContent = WALLET_STYLE; document.head.appendChild(st);
+    }
     var presets = [100, 500, 1000, 3000];
     var overlay = document.createElement('div');
     overlay.className = 'vf-modal-overlay';
@@ -676,8 +681,10 @@
     '.vf-credit-pk[disabled]{opacity:.6}'
   ].join('');
   var moreData = null;   // {me, credits} — последний ответ, чтобы шторка открывалась сразу
-  function planTitle(code) {
-    return { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный' }[code] || (code || '');
+  // Название тарифа: короткое для прежних, у Voksy Beauty и индивидуальных — имя из базы
+  // (было «Тариф beauty_pro» — код вместо названия)
+  function planTitle(code, name) {
+    return { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный' }[code] || name || (code || '');
   }
   function closeMore() {
     var ov = document.getElementById('vf-more');
@@ -696,10 +703,11 @@
     if (staff) name = staff.name || name;
     var sub = (moreData && moreData.sub) || {};
     var code = (sub.subscription_plan && sub.subscription_plan.code) || '';
+    var planName = (sub.subscription_plan && sub.subscription_plan.name) || '';
     var days = sub.days_left != null ? sub.days_left : (cr.days_remaining != null ? cr.days_remaining : null);
     var trial = sub.is_trial || me.is_trial || code === 'free';
     var line = staff ? (staff.role_title || (ky ? 'Кызматкер' : 'Сотрудник'))
-      : ((trial ? (ky ? 'Сыноо мөөнөтү' : 'Пробный период') : (ky ? 'Тариф ' : 'Тариф ') + planTitle(code)) +
+      : ((trial ? (ky ? 'Сыноо мөөнөтү' : 'Пробный период') : (ky ? 'Тариф ' : 'Тариф ') + planTitle(code, planName)) +
         (days != null ? ' · ' + (ky ? 'калды ' + days + ' күн' : 'осталось ' + days + ' дн.') : ''));
     var tabHrefs = currentTabs().map(function (t) { return (t.href || '').split('#')[0]; });
     var items = [];
@@ -749,7 +757,7 @@
         '<button type="button" class="vf-more-m" data-more="credits"><span class="l">' + icon('coins') + (ky ? 'Бот кредити' : 'Кредиты бота') + '</span>' +
         '<span class="v">' + (cr.credits_balance != null ? Number(cr.credits_balance).toLocaleString('ru-RU') : '…') + '</span><span class="a">' + (ky ? 'Сатып алуу' : 'Купить') + '</span></button>' +
         '<button type="button" class="vf-more-m" data-more="plans"><span class="l">' + icon('crown') + (ky ? 'Тариф' : 'Тариф') + '</span>' +
-        '<span class="v">' + esc(trial ? (ky ? 'Сыноо' : 'Пробный') : planTitle(code) || '—') + '</span><span class="a">' + (ky ? 'Өзгөртүү' : 'Сменить') + '</span></button>' +
+        '<span class="v">' + esc(trial ? (ky ? 'Сыноо' : 'Пробный') : planTitle(code, planName) || '—') + '</span><span class="a">' + (ky ? 'Өзгөртүү' : 'Сменить') + '</span></button>' +
         '</div>';
     }
     if (showReports) {

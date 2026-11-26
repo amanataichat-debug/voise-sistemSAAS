@@ -18,6 +18,11 @@ Payment API endpoints for WellcomeAI application.
   поэтому смена цены = правка base_price здесь и деплой.
   Цены с 27.10.2026: AI Voice 1 990, Старт 7 500 (агент отвечает на обращения), Profi 12 500 (автономный агент, с 07.11.2026; было 15 000).
   Пакеты кредитов: UPDATE credit_packages SET price_rub = <сом> WHERE code = '<код>';
+
+СРОКИ ОПЛАТЫ:
+  AI Voice / Старт / Profi — 1 месяц, 6 месяцев (−20%), год (−30%): PERIOD_DISCOUNTS ниже.
+  Voksy Beauty (с 26.11.2026, решение владельца) — 1 месяц, 3 месяца (−10%, плашка «Выгодно»),
+  6 месяцев (−20%), год (−30%): plan_catalog.BEAUTY_PERIOD_DISCOUNTS. Срок, которого нет у тарифа, — 400.
 """
 
 import json
@@ -53,7 +58,8 @@ logger = get_logger(__name__)
 CURRENCY_CODE = "KGS"
 CURRENCY_LABEL = "сом"
 
-# Скидки на длительные периоды (одинаковые для всех тарифов)
+# Скидки на длительные периоды для AI Voice / Старт / Profi. У Voksy Beauty свои сроки
+# (с 3 месяцами) — plan_catalog.BEAUTY_PERIOD_DISCOUNTS.
 PERIOD_DISCOUNTS = {
     1: 0,    # 1 месяц — без скидки
     6: 20,   # 6 месяцев — 20% скидка
@@ -143,12 +149,15 @@ def get_effective_base_price(db: Optional[Session], plan_code: str) -> float:
     return float(SUBSCRIPTION_PLANS_CONFIG[plan_code]["base_price"])
 
 
-def calculate_period_price(base_price: float, months: int) -> Dict[str, Any]:
-    """Рассчитать цену за период с учетом скидки (суммы в сомах)."""
-    if months not in PERIOD_DISCOUNTS:
-        raise ValueError(f"Неподдерживаемый период: {months}. Допустимые: {list(PERIOD_DISCOUNTS.keys())}")
+def calculate_period_price(base_price: float, months: int,
+                           discounts: Optional[Dict[int, int]] = None) -> Dict[str, Any]:
+    """Рассчитать цену за период с учетом скидки (суммы в сомах). discounts — сроки и скидки тарифа
+    (по умолчанию PERIOD_DISCOUNTS; у Voksy Beauty — plan_catalog.BEAUTY_PERIOD_DISCOUNTS)."""
+    discounts = discounts if discounts is not None else PERIOD_DISCOUNTS
+    if months not in discounts:
+        raise ValueError(f"Неподдерживаемый период: {months}. Допустимые: {list(discounts.keys())}")
 
-    discount_percent = PERIOD_DISCOUNTS[months]
+    discount_percent = discounts[months]
 
     # Полная цена без скидки
     full_price = base_price * months
@@ -180,6 +189,7 @@ def _get_period_label(months: int) -> str:
     """Получить человекочитаемую метку периода"""
     labels = {
         1: "1 месяц",
+        3: "3 месяца",
         6: "6 месяцев",
         12: "1 год"
     }
@@ -273,11 +283,13 @@ class CreatePaymentRequest(BaseModel):
     """Модель запроса на создание платежа. plan_code — тариф из конфига (ai_voice, start, profi) или
     Beauty-тариф из базы (beauty_*); что именно можно оплатить — plan_catalog.purchasable."""
     plan_code: str = Field("ai_voice", min_length=2, max_length=20)
-    duration_months: Literal[1, 6, 12] = 1
+    # 3 месяца — только у Voksy Beauty; какие сроки есть у тарифа, проверяет create_payment
+    duration_months: Literal[1, 3, 6, 12] = 1
 
 
 def _beauty_price_info(plan, months: int) -> Dict[str, Any]:
-    """Цена Beauty-тарифа за период — тем же расчётом скидок, что у прежних тарифов."""
+    """Цена Beauty-тарифа за период: тот же расчёт, но сроки и скидки Beauty (1 · 3 · 6 мес · год)."""
+    from backend.services.plan_catalog import BEAUTY_PERIOD_DISCOUNTS
     base_price = float(plan.price or 0)
     return {
         "plan_code": plan.code,
@@ -285,8 +297,14 @@ def _beauty_price_info(plan, months: int) -> Dict[str, Any]:
         "max_assistants": int(plan.max_assistants or 0),
         "description": plan.description or "",
         "features": list(plan.features or []),
-        **calculate_period_price(base_price, months),
+        **calculate_period_price(base_price, months, BEAUTY_PERIOD_DISCOUNTS),
     }
+
+
+def _periods_text(discounts: Dict[int, int]) -> str:
+    """«1 месяц, 6 месяцев или 1 год» — для отказа, когда у тарифа нет такого срока."""
+    labels = [_get_period_label(m) for m in sorted(discounts)]
+    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " или " + labels[-1]
 
 
 # =============================================================================
@@ -369,11 +387,19 @@ async def create_payment(
 
         # Салонам — только Voksy Beauty, остальным — только прежние тарифы (решение 25.11.2026);
         # индивидуальный тариф — только своему клиенту.
-        from backend.services.plan_catalog import PlanError, purchasable
+        from backend.services.plan_catalog import BEAUTY_PERIOD_DISCOUNTS, PlanError, purchasable
         try:
             beauty_plan = purchasable(db, user, plan_code)
         except PlanError as pe:
             raise HTTPException(status_code=pe.status, detail=pe.message)
+
+        # Сроки у тарифов свои: 3 месяца есть только у Voksy Beauty
+        allowed_periods = BEAUTY_PERIOD_DISCOUNTS if beauty_plan is not None else PERIOD_DISCOUNTS
+        if duration_months not in allowed_periods:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Такого срока оплаты нет. Можно оплатить на {_periods_text(allowed_periods)}"
+            )
 
         if not FinikService.is_configured():
             logger.error("❌ Finik is not configured (FINIK_API_KEY / FINIK_PRIVATE_PEM / FINIK_ACCOUNT_ID)")
