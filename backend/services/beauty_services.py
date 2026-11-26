@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.models.booking import Booking, BookingResource
+from backend.services import activity
 from backend.services import booking_service as bs
 
 logger = logging.getLogger(__name__)
@@ -236,14 +237,69 @@ def _apply_masters(db: Session, user, sid: str, rows: List[Dict[str, Any]], all_
         r.service_prices = bs.clean_service_prices(prices) or None
 
 
+_LOG_FIELDS = {"title": "название", "category": "категория", "price": "цена от", "price_to": "цена до",
+               "duration_min": "длительность", "prep_min": "подготовка", "after_min": "перерыв после",
+               "online_booking": "онлайн-запись", "prepay": "предоплата", "is_active": "в прайсе",
+               "repeat_days": "повтор через", "masters": "мастера и их цены"}
+
+
+def _service_state(db: Session, user, e) -> Dict[str, Any]:
+    """Что из услуги видно в журнале действий (было → стало)."""
+    sid = str(e.id) if e.id else None
+    masters = {}
+    if sid:
+        for r in bs.resources(db, user.id, active_only=False):
+            if r.is_active and _does(r, sid):
+                own = (r.service_prices or {}).get(sid) or {}
+                masters[r.name] = own.get("price")
+    return {"title": e.title, "category": e.collection, "price": e.price, "price_to": getattr(e, "price_to", None),
+            "duration_min": e.duration_min, "prep_min": getattr(e, "prep_min", None),
+            "after_min": getattr(e, "after_min", None), "online_booking": getattr(e, "online_booking", None) is not False,
+            "prepay": bs.prepay_text(getattr(e, "prepay", None)) or None, "is_active": bool(e.is_active),
+            "repeat_days": getattr(e, "repeat_days", None), "masters": masters}
+
+
+def _fmt(key: str, v) -> str:
+    if v is None or v == "" or v == {}:
+        return "—"
+    if key in ("price", "price_to"):
+        return activity.money(v)
+    if key in ("duration_min", "prep_min", "after_min"):
+        return f"{v} мин"
+    if key == "repeat_days":
+        return f"{v} дн."
+    if isinstance(v, bool):
+        return "да" if v else "нет"
+    if key == "masters":
+        return ", ".join(f"{n}{' ' + activity.money(p) if p else ''}" for n, p in v.items()) or "никто"
+    return str(v)
+
+
+def _log_save(db: Session, user, e, before: Optional[Dict[str, Any]]) -> None:
+    after = _service_state(db, user, e)
+    if before is None:
+        activity.log(db, user.id, "service.create", "service",
+                     f"«{e.title}» · {bs.price_text(e.price, getattr(e, 'price_to', None)) or 'без цены'} · {e.duration_min or bs.DEFAULT_DURATION} мин",
+                     object_id=e.id, user=user)
+        return
+    ch = activity.diff(before, after, list(_LOG_FIELDS))
+    if not ch:
+        return
+    parts = [f"{_LOG_FIELDS[k]} {_fmt(k, a)} → {_fmt(k, b)}" for k, (a, b) in ch.items()]
+    activity.log(db, user.id, "service.update", "service", f"«{e.title}»: " + "; ".join(parts),
+                 object_id=e.id, changes=ch, user=user)
+
+
 def save(db: Session, user, entry_id: Optional[str], data: Dict[str, Any]):
     """Создать или изменить услугу (и кто её делает). Без commit."""
     from backend.models.agent_knowledge import AgentKnowledgeEntry
     agent = agent_for(db, user)
     if agent is None:
         raise ServiceError("Сначала создайте бота: услуги хранятся в его каталоге")
+    before = None
     if entry_id:
         e = get(db, user.id, entry_id)
+        before = _service_state(db, user, e)
     else:
         if db.query(AgentKnowledgeEntry.id).filter(AgentKnowledgeEntry.user_id == user.id,
                                                    AgentKnowledgeEntry.kind == "product").count() >= MAX_SERVICES:
@@ -262,6 +318,7 @@ def save(db: Session, user, entry_id: Optional[str], data: Dict[str, Any]):
         all_ids = [str(x.id) for x in _entries(db, user.id)]
         _apply_masters(db, user, str(e.id), data["masters"], all_ids)
         db.flush()
+    _log_save(db, user, e, before)
     return e
 
 
@@ -288,6 +345,8 @@ def remove(db: Session, user, entry_id) -> Dict[str, Any]:
     if upcoming:
         e.is_active = False
         db.flush()
+        activity.log(db, user.id, "service.disable", "service",
+                     f"«{e.title}» выключена: на неё ещё {upcoming} будущих зап.", object_id=e.id, user=user)
         return {"disabled": True, "upcoming": upcoming}
     sid = str(e.id)
     for r in bs.resources(db, user.id, active_only=False):
@@ -302,8 +361,10 @@ def remove(db: Session, user, entry_id) -> Dict[str, Any]:
             changed = True
         if changed:
             db.flush()
+    title = e.title
     db.delete(e)
     db.flush()
+    activity.log(db, user.id, "service.delete", "service", f"«{title}»", object_id=sid, user=user)
     return {"deleted": True, "id": sid}
 
 
@@ -340,6 +401,9 @@ def rename_category(db: Session, user, old: str, new: str, sub_old: Optional[str
             cur.append(name)
     agent.catalog_collections = cur[:100]
     db.flush()
+    activity.log(db, user.id, "category.rename", "category",
+                 (f"«{old}» → «{new}»" if sub_old is None else f"«{old} / {sub_old}» → «{old}{' / ' + new if new else ''}»")
+                 + f" · услуг: {n}", object_id=old[:64], user=user)
     return n
 
 
@@ -356,6 +420,8 @@ def set_category_order(db: Session, user, names: List[str]) -> None:
     pos = {n: i for i, n in enumerate(cur)}          # внутри категории — прежний порядок подкатегорий
     agent.catalog_collections = sorted(cur, key=lambda n: (order.get(bs.split_category(n)[0], 10_000), pos[n]))[:100]
     db.flush()
+    activity.log(db, user.id, "category.order", "category",
+                 " → ".join([x for x in order][:12]) or "порядок категорий", user=user)
 
 
 def after_change(db: Session, user, deleted_ids: Optional[List[str]] = None) -> None:

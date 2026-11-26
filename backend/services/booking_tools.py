@@ -199,6 +199,14 @@ def _contact_booking(db: Session, user, args, context):
 
 
 async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any], db: Session) -> str:
+    # Журнал действий: в разборе переписки — ИИ-администратор, в чате владельца — ИИ по его команде
+    from backend.services import activity
+    who = "ИИ-администратор" if context.get("surface") == "postcall" else "ИИ по команде владельца"
+    with activity.acting("ai", who):
+        return await _execute(tool_name, args, context, db)
+
+
+async def _execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any], db: Session) -> str:
     from backend.models.user import User
     user = context.get("user")
     if user is None:
@@ -483,9 +491,9 @@ def _cancel(db: Session, user, args, context, names) -> str:
 
     def run(b, reason):
         if b.visit_id:
-            rows = bs.cancel_visit(db, user, b.visit_id, reason)
+            rows = bs.cancel_visit(db, user, b.visit_id, reason, source="bot")
         else:
-            rows = [bs.cancel_booking(db, user, b.id, reason)]
+            rows = [bs.cancel_booking(db, user, b.id, reason, source="bot")]
         return rows
 
     if two_step and args.get("confirmation_id"):

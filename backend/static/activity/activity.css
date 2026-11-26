@@ -1,0 +1,64 @@
+/* Журнал действий (Voksy Beauty 1.7) — /static/activity.html. Префикс ac-. Телефон в первую очередь. */
+.ac { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 90px; }
+
+.ac-filters { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+  padding: 4px 0 8px; background: var(--vf-bg, #f6f7fb); }
+.ac-periods { display: inline-flex; padding: 3px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 12px; }
+.ac-chip { border: 0; background: transparent; height: 34px; padding: 0 14px; border-radius: 9px; font: 600 13.5px/1 var(--vf-font, Inter, sans-serif);
+  color: var(--vf-text-3); cursor: pointer; white-space: nowrap; }
+.ac-chip.on { background: var(--vf-text, #0e1729); color: #fff; }
+.ac-selects { display: flex; gap: 8px; flex: 1; min-width: 0; justify-content: flex-end; }
+.ac-sel { position: relative; display: flex; align-items: center; min-width: 0; flex: 0 1 220px; }
+.ac-sel .ic { position: absolute; left: 11px; width: 16px; height: 16px; color: var(--vf-text-3); pointer-events: none; }
+.ac-sel select { width: 100%; height: 40px; padding: 0 30px 0 34px; border-radius: 12px; border: 1px solid var(--vf-border);
+  background: var(--vf-surface); color: var(--vf-text); font: 500 14px/1 var(--vf-font, Inter, sans-serif); text-overflow: ellipsis; }
+
+.ac-day { margin: 10px 2px 0; font: 700 13px/1.2 var(--vf-font, Inter, sans-serif); color: var(--vf-text-3); text-transform: capitalize; }
+.ac-card { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 18px; overflow: hidden; }
+.ac-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-top: 1px solid var(--vf-border); cursor: pointer;
+  transition: background .12s; outline: none; }
+.ac-row:first-child { border-top: 0; }
+.ac-row:hover, .ac-row:focus-visible { background: var(--vf-surface-2, #f7f8fb); }
+.ac-row.open { background: #fafbff; }
+.ac-ava { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--vf-surface-2, #f1f3f8); color: var(--vf-text-2); }
+.ac-ava .ic { width: 17px; height: 17px; }
+.ac-ava.k-owner { background: #0e1729; color: #fff; }
+.ac-ava.k-staff { background: #e8eefe; color: #2a5ce8; }
+.ac-ava.k-ai, .ac-ava.k-call { background: #efeafe; color: #6d3fd8; }
+.ac-ava.k-client { background: #e8f8f0; color: #0b7a4b; }
+.ac-ava.k-admin { background: #fff4e5; color: #a25a00; }
+.ac-main { flex: 1; min-width: 0; }
+.ac-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; line-height: 1.3; }
+.ac-head b { font-weight: 700; color: var(--vf-text); }
+.ac-what { display: inline-flex; align-items: center; gap: 5px; color: var(--vf-text-3); font-size: 13px; }
+.ac-what .ic { width: 14px; height: 14px; }
+.ac-sum { margin-top: 3px; font-size: 14px; line-height: 1.45; color: var(--vf-text-2); overflow-wrap: anywhere; }
+.ac-time { flex: 0 0 auto; color: var(--vf-text-3); font: 600 12.5px/1.3 var(--vf-font, Inter, sans-serif); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.ac-more { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.ac-meta { font-size: 12.5px; color: var(--vf-text-3); }
+.ac-open { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font: 600 13.5px/1 var(--vf-font, Inter, sans-serif);
+  color: var(--vf-accent, #2a5ce8); text-decoration: none; padding: 6px 0; }
+.ac-open .ic { width: 15px; height: 15px; }
+.ac-ch { border-collapse: collapse; font-size: 13px; max-width: 100%; }
+.ac-ch th { text-align: left; font-weight: 600; color: var(--vf-text-3); padding: 3px 12px 3px 0; white-space: nowrap; }
+.ac-ch td { padding: 3px 6px 3px 0; vertical-align: middle; overflow-wrap: anywhere; }
+.ac-ch s { color: var(--vf-text-3); }
+.ac-ch .ic { width: 13px; height: 13px; color: var(--vf-text-3); }
+.ac-moreb { align-self: center; margin-top: 4px; }
+.ac-foot { text-align: center; font-size: 12.5px; color: var(--vf-text-3); margin: 6px 0 0; }
+.ac-empty { padding: 34px 22px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ac-empty > .ic { width: 34px; height: 34px; color: var(--vf-accent, #2a5ce8); }
+.ac-empty b { font: 700 16px/1.3 var(--vf-font, Inter, sans-serif); color: var(--vf-text); }
+.ac-empty p { margin: 0; max-width: 520px; font-size: 14px; line-height: 1.5; color: var(--vf-text-2); }
+
+@media (max-width: 760px) {
+  .ac-filters { flex-direction: column; align-items: stretch; }
+  .ac-periods { display: flex; }
+  .ac-chip { flex: 1; padding: 0 6px; }
+  .ac-selects { justify-content: stretch; }
+  .ac-sel { flex: 1 1 0; }
+  .ac-sel select { font-size: 16px; }    /* iPhone не увеличивает экран при выборе */
+  .ac-row { padding: 12px; gap: 10px; }
+  .ac-ch th { white-space: normal; }
+}

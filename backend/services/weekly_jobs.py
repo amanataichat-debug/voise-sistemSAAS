@@ -301,6 +301,13 @@ async def _tick() -> None:
         except Exception as e:
             db.rollback()
             logger.warning(f"[MANAGER] tick failed: {e}")
+        # Журнал действий кабинета: строки старше 180 дней (раз в час на воркер, порциями)
+        try:
+            from backend.services import activity
+            activity.cleanup(db)
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[ACTIVITY] cleanup failed: {e}")
         # Понедельник 10:00–10:15 Бишкек
         if now_local.weekday() == 0 and now_local.hour == 10 and now_local.minute < 15:
             if not _already_ran_today("monday_nurture", today_local):

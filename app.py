@@ -239,6 +239,10 @@ _STAFF_GUARD_SKIP = ("/api/auth/", "/api/email-verification/", "/api/public/")
 @app.middleware("http")
 async def staff_access_guard(request: Request, call_next):
     path = request.url.path
+    if path.startswith("/api/"):
+        # Журнал действий (services/activity.py) пишет IP того, кто сделал действие
+        from backend.services.activity import REQUEST_IP
+        REQUEST_IP.set(_client_ip(request))
     if not path.startswith("/api/") or path.startswith(_STAFF_GUARD_SKIP):
         return await call_next(request)
     auth = request.headers.get("authorization") or ""
@@ -379,6 +383,8 @@ app.include_router(finance_api.router)
 from backend.api import salon_manager as salon_manager_api  # ИИ-управляющий салона: отчёты, одобрение, сценарии; push
 app.include_router(salon_manager_api.router)
 app.include_router(salon_manager_api.push_router)
+from backend.api import beauty as beauty_api  # Voksy Beauty 1.7: журнал действий, главная салона
+app.include_router(beauty_api.router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -2026,6 +2032,7 @@ def ensure_booking_tables():
                                             BookingConfirmation)
         from backend.models.salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
         from backend.models.webchat import WebChatSession, AgentWebChatMessage
+        from backend.models.activity import ActivityLog
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2034,7 +2041,8 @@ def ensure_booking_tables():
                                  SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__,
                                  BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
                                  PushSubscription.__table__, WebPushKey.__table__,
-                                 WebChatSession.__table__, AgentWebChatMessage.__table__], checkfirst=True)
+                                 WebChatSession.__table__, AgentWebChatMessage.__table__,
+                                 ActivityLog.__table__], checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
     except Exception as e:

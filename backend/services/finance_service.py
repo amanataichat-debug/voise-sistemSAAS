@@ -117,9 +117,24 @@ def _clean(data: Dict[str, Any], partial: bool = False) -> Dict[str, Any]:
     return out
 
 
+def _expense_line(e: BusinessExpense) -> str:
+    from backend.services import activity
+    return (f"{e.title} · {activity.money(e.amount)}" + (" в месяц" if e.repeat == "month" else "")
+            + (f" · {e.spent_on.strftime('%d.%m.%Y')}" if e.spent_on and e.repeat != "month" else ""))
+
+
+def _expense_state(e: BusinessExpense) -> Dict[str, Any]:
+    return {"title": e.title, "category": EXPENSE_CATEGORIES.get(e.category, e.category), "amount": e.amount,
+            "repeat": "в месяц" if e.repeat == "month" else "разовый", "spent_on": e.spent_on.isoformat() if e.spent_on else None,
+            "ends_on": e.ends_on.isoformat() if e.ends_on else None, "is_active": bool(e.is_active)}
+
+
 def create_expense(db: Session, user, data: Dict[str, Any]) -> BusinessExpense:
+    from backend.services import activity
     e = BusinessExpense(user_id=user.id, **_clean(data))
     db.add(e)
+    db.flush()
+    activity.log(db, user.id, "expense.create", "expense", _expense_line(e), object_id=e.id, user=user)
     db.commit()
     db.refresh(e)
     _invalidate(user.id)
@@ -138,9 +153,20 @@ def get_expense(db: Session, user_id, expense_id) -> BusinessExpense:
 
 
 def update_expense(db: Session, user, expense_id, data: Dict[str, Any]) -> BusinessExpense:
+    from backend.services import activity
     e = get_expense(db, user.id, expense_id)
+    before = _expense_state(e)
     for k, v in _clean(data, partial=True).items():
         setattr(e, k, v)
+    ch = activity.diff(before, _expense_state(e))
+    if ch:
+        labels = {"title": "название", "category": "категория", "amount": "сумма", "repeat": "повтор",
+                  "spent_on": "дата", "ends_on": "до", "is_active": "учитывать"}
+        def f(k, v):
+            return activity.money(v) if k == "amount" else ("—" if v in (None, "") else str(v))
+        activity.log(db, user.id, "expense.update", "expense",
+                     f"{e.title}: " + "; ".join(f"{labels[k]}: {f(k, a)} → {f(k, b)}" for k, (a, b) in ch.items()),
+                     object_id=e.id, changes=ch, user=user)
     db.commit()
     db.refresh(e)
     _invalidate(user.id)
@@ -148,7 +174,9 @@ def update_expense(db: Session, user, expense_id, data: Dict[str, Any]) -> Busin
 
 
 def delete_expense(db: Session, user, expense_id) -> None:
+    from backend.services import activity
     e = get_expense(db, user.id, expense_id)
+    activity.log(db, user.id, "expense.delete", "expense", _expense_line(e), object_id=e.id, user=user)
     db.delete(e)
     db.commit()
     _invalidate(user.id)
@@ -163,6 +191,7 @@ def set_pay(db: Session, user, resource_id, percent=None, fixed=None) -> Dict[st
     r = db.query(BookingResource).filter(BookingResource.id == rid, BookingResource.user_id == user.id).first()
     if not r:
         raise LookupError("Мастер не найден")
+    before = (r.pay_percent or 0, r.pay_fixed or 0)
     if percent is not None:
         p = float(percent or 0)
         if p < 0 or p > 100:
@@ -173,6 +202,13 @@ def set_pay(db: Session, user, resource_id, percent=None, fixed=None) -> Dict[st
         if f < 0 or f > 1e8:
             raise ValueError("Неверный оклад")
         r.pay_fixed = f or None
+    after = (r.pay_percent or 0, r.pay_fixed or 0)
+    if before != after:
+        from backend.services import activity
+        def f2(t):
+            return " + ".join(x for x in [f"{t[0]:g}% с выручки" if t[0] else "", f"оклад {activity.money(t[1])}" if t[1] else ""] if x) or "не задана"
+        activity.log(db, user.id, "payroll.update", "payroll", f"{r.name}: {f2(before)} → {f2(after)}", object_id=r.id,
+                     changes={"pay_percent": [before[0], after[0]], "pay_fixed": [before[1], after[1]]}, user=user)
     db.commit()
     _invalidate(user.id)
     return {"id": str(r.id), "name": r.name, "pay_percent": r.pay_percent or 0, "pay_fixed": r.pay_fixed or 0}

@@ -22,7 +22,7 @@
 
   var LANGS = ['ru', 'ky'];
   var STORAGE_KEY = 'vs_lang';
-  var DICT_VERSION = '14';  // 14: sidebar.manager (ИИ-управляющий);  // 13: staff.booking_own, staff.finance (Voksy Beauty: мастер, бухгалтер);  // 12: «CRM» → «Клиенты», sidebar.finance;  // 11: сотрудники (sidebar.team, staff.*);   // white-label: Voksy Voice / Voksy Live / Voksy Live Go вместо названий провайдеров
+  var DICT_VERSION = '15';  // 15: sidebar.activity, staff.activity (журнал действий);  // 14: sidebar.manager (ИИ-управляющий);  // 13: staff.booking_own, staff.finance (Voksy Beauty: мастер, бухгалтер);  // 12: «CRM» → «Клиенты», sidebar.finance;  // 11: сотрудники (sidebar.team, staff.*);   // white-label: Voksy Voice / Voksy Live / Voksy Live Go вместо названий провайдеров
   // Подстановки по умолчанию для {currency} и {tz} в строках словаря
   var DEFAULTS = { currency: 'сом', tz: 'Бишкек' };
 

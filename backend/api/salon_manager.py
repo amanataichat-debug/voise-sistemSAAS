@@ -73,9 +73,30 @@ def manager_settings(data: Dict[str, Any] = Body(...), current_user: User = Depe
         for k in ("winback", "fill_gaps", "repeat_review"):
             if new[k]["on"] and k != "repeat_review":
                 raise HTTPException(status_code=402, detail="Клиентские сценарии ИИ-управляющего — на тарифе Beauty Pro")
+    _log_settings(db, current_user, sm.settings_of(agent), new)
     agent.manager_settings = new
     db.commit()
     return {"ok": True, "settings": sm.settings_of(agent)}
+
+
+def _log_settings(db: Session, user: User, old: Dict[str, Any], new: Dict[str, Any]) -> None:
+    """Журнал действий: что поменяли в ИИ-управляющем (автономность, сценарии, отчёты)."""
+    from backend.services import activity
+    parts = []
+    if old.get("autonomy") != new.get("autonomy"):
+        parts.append("решает: " + ("сам" if new.get("autonomy") == "auto" else "на одобрение владельца"))
+    titles = dict(sm.SCENARIOS, repeat_review="Повтор услуги и отзыв", morning_report="утренний отчёт",
+                  weekly_report="итоги недели")
+    for k in ("winback", "fill_gaps", "repeat_review", "morning_report", "weekly_report"):
+        a, b = (old.get(k) or {}), (new.get(k) or {})
+        if bool(a.get("on")) != bool(b.get("on")):
+            parts.append(f"{str(titles.get(k, k)).lower()}: {'включено' if b.get('on') else 'выключено'}")
+        elif a != b:
+            parts.append(f"{str(titles.get(k, k)).lower()}: настройки")
+    if old.get("max_per_day") != new.get("max_per_day"):
+        parts.append(f"в день не больше: {old.get('max_per_day')} → {new.get('max_per_day')}")
+    if parts:
+        activity.log(db, user.id, "manager.settings", "manager", "; ".join(parts), user=user)
 
 
 @router.get("/reports")
@@ -123,7 +144,7 @@ def manager_decide(data: Dict[str, Any] = Body(...), current_user: User = Depend
     ids = data.get("ids")
     if ids is not None and not isinstance(ids, list):
         raise HTTPException(status_code=400, detail="ids — список")
-    n = sm.decide(db, current_user.id, ids, bool(data.get("approve")))
+    n = sm.decide(db, current_user.id, ids, bool(data.get("approve")), user=current_user)
     return {"ok": True, "changed": n, "pending": sm._pending(db, current_user.id)}
 
 

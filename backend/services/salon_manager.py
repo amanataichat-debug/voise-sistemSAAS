@@ -307,12 +307,17 @@ def repeat_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set, 
     return out
 
 
-def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set) -> List[Dict[str, Any]]:
+def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set, *, day: Optional[date] = None,
+                         resource=None, min_free: int = FILL_GAPS_MIN_FREE,
+                         limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Давние клиенты мастеров, у которых в день day (по умолчанию завтра) свободно min_free+ часов.
+    resource — только этот мастер (кнопка «Предложить клиентам» на главной салона)."""
     from backend.models.agent_contact import AgentContact
-    limit = cfg["fill_gaps"]["per_day"]
-    day = now_local().date() + timedelta(days=1)
+    limit = limit or cfg["fill_gaps"]["per_day"]
+    day = day or (now_local().date() + timedelta(days=1))
+    per_master_max = limit if resource is not None else 2
     out: List[Dict[str, Any]] = []
-    for r in bs.resources(db, user.id):
+    for r in ([resource] if resource is not None else bs.resources(db, user.id)):
         if not bs.bookable_online(r):
             continue
         try:
@@ -321,7 +326,7 @@ def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: se
             continue
         starts = (free[0]["slots"] if free else [])
         hours = len({s["time"][:2] for s in starts})
-        if hours < FILL_GAPS_MIN_FREE:
+        if hours < min_free:
             continue
         rows = db.execute(text("""
             SELECT b.contact_id, max(b.start_at) AS last_at, count(*) AS visits,
@@ -347,14 +352,16 @@ def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: se
             slots = _slots(db, user, service, r, day, only_day=True)
             if not slots:
                 continue
+            when_word = "сегодня" if day == now_local().date() else "завтра" if day == now_local().date() + timedelta(days=1) \
+                else day.strftime("%d.%m")
             out.append({"contact": contact, "scenario": "fill_gaps", "kind": kind, "payload": {
-                "reason": f"у мастера {r.name} завтра свободно {hours} ч, клиент был у него {_times(int(visits))}",
+                "reason": f"у мастера {r.name} {when_word} свободно {hours} ч, клиент был у него {_times(int(visits))}",
                 "day": day.isoformat(), "service": service.title if service else None,
                 "service_id": str(service.id) if service else None, "master": r.name, "resource_id": str(r.id),
                 "slots": slots}})
             skip.add(str(cid))
             per_master += 1
-            if per_master >= 2 or len(out) >= limit:
+            if per_master >= per_master_max or len(out) >= limit:
                 break
         if len(out) >= limit:
             break
@@ -443,8 +450,8 @@ def list_actions(db: Session, user_id, statuses: Optional[List[str]] = None, day
     return [action_to_dict(r, contacts.get(r.contact_id)) for r in rows]
 
 
-def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool) -> int:
-    """Одобрить / отклонить предложения владельца (ids=None — все, что ждут)."""
+def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool, user=None) -> int:
+    """Одобрить / отклонить предложения владельца (ids=None — все, что ждут). user — для журнала действий."""
     params: Dict[str, Any] = {"uid": str(user_id), "st": "approved" if approve else "rejected"}
     sql = "UPDATE manager_actions SET status = :st, decided_at = now() WHERE user_id = :uid AND status = 'proposed'"
     if ids is not None:
@@ -458,9 +465,18 @@ def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool) -> int
             return 0
         sql += " AND id = ANY(CAST(:ids AS uuid[]))"
         params["ids"] = clean
-    n = db.execute(text(sql), params).rowcount
+    rows = db.execute(text(sql + " RETURNING id, contact_id, scenario"), params).fetchall()
+    if rows:
+        from backend.services import activity
+        from backend.models.agent_contact import AgentContact
+        cids = [r[1] for r in rows if r[1]]
+        names = {c.id: c.name for c in db.query(AgentContact).filter(AgentContact.id.in_(cids)).all()} if cids else {}
+        who = [f"{names.get(r[1]) or 'клиент'} ({SCENARIOS.get(r[2], r[2]).lower()})" for r in rows[:6]]
+        activity.log(db, user_id, "manager.approve" if approve else "manager.reject", "manager",
+                     f"{len(rows)} {_plural(len(rows), 'предложение', 'предложения', 'предложений')}: " + ", ".join(who)
+                     + (" …" if len(rows) > 6 else ""), meta={"ids": [str(r[0]) for r in rows]}, user=user)
     db.commit()
-    return int(n or 0)
+    return len(rows)
 
 
 # ───────────────────────────── исполнение ─────────────────────────────

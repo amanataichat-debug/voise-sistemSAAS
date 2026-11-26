@@ -129,6 +129,8 @@ from .team import TeamMember
 from .order import Order, OrderSettings
 from .salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
 from .webchat import WebChatSession, AgentWebChatMessage
+# Журнал действий кабинета: кто что сделал (Voksy Beauty, шаг 1.7)
+from .activity import ActivityLog
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

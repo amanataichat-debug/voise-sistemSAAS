@@ -570,7 +570,9 @@
       (b.contact_id ? '<a class="btn btn-ghost btn-sm" href="/static/inbox.html?contact=' + esc(b.contact_id) + '">' + icon('message-circle') + 'Написать</a>' : '') +
       '</div>' +
       '<div class="field" style="margin-top:14px"><label class="label">Комментарий</label><textarea class="textarea" id="bk-note" rows="2">' + esc(b.note || '') + '</textarea>' +
-      '<button class="btn btn-sm" type="button" id="bk-note-save" style="margin-top:6px">Сохранить комментарий</button></div>';
+      '<button class="btn btn-sm" type="button" id="bk-note-save" style="margin-top:6px">Сохранить комментарий</button></div>' +
+      (canHistory() ? '<div class="bk-hist" id="bk-hist"><button class="btn btn-ghost btn-sm" type="button" data-hist>' + icon('history') +
+        'История записи</button><div class="bk-hist-body" hidden></div></div>' : '');
     function patch(body, ok) {
       return S.api('/api/booking/bookings/' + b.id, { method: 'PATCH', body: body }).then(function (res) {
         if (!res.ok) { S.toast(S.apiError(res), 'error'); return; }
@@ -611,6 +613,31 @@
       patch({ prepaid: on }, on ? 'Предоплата отмечена' : 'Отметка снята');
     });
     S.$('#bk-note-save', dr.body).addEventListener('click', function () { patch({ note: S.$('#bk-note', dr.body).value }); });
+    var hb = S.$('[data-hist]', dr.body);
+    if (hb) hb.addEventListener('click', function () { loadHistory(b, S.$('.bk-hist-body', dr.body), hb); });
+  }
+
+  // История записи (журнал действий, шаг 1.7): кто создал, перенёс, поменял статус и цену — владельцу и управляющему
+  function canHistory() { return S.staffCan ? S.staffCan('activity') : true; }
+  var ACT_ICON = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
+  function loadHistory(b, box, btn) {
+    if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="skeleton" style="height:48px;border-radius:10px"></div>';
+    S.api('/api/beauty/activity?object_type=booking&object_id=' + encodeURIComponent(b.id) + '&limit=50').then(function (r) {
+      if (!r.ok) { box.innerHTML = '<div class="muted small">' + esc(S.apiError(r)) + '</div>'; return; }
+      var items = r.data.items || [];
+      if (!items.length) { box.innerHTML = '<div class="muted small">Изменений пока нет. Журнал ведётся с 26.11.2026 и хранится 180 дней.</div>'; return; }
+      box.innerHTML = items.map(function (x) {
+        var d = new Date(x.at);
+        return '<div class="bk-hrow"><span class="bk-hava k-' + esc(x.actor.kind) + '">' + icon(ACT_ICON[x.actor.kind] || 'user') + '</span>' +
+          '<div class="bk-hmain"><div><b>' + esc(x.actor.name) + '</b> · ' + esc(x.action_title) + '</div>' +
+          '<div class="bk-hsum">' + esc(x.summary) + '</div></div>' +
+          '<span class="bk-htime">' + d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'Asia/Bishkek' }) + '<br>' +
+          d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bishkek' }) + '</span></div>';
+      }).join('') + '<a class="dh-link small" href="/static/activity.html">Весь журнал действий →</a>';
+    });
   }
 
   function plural(n, one, few, many) {
@@ -1168,7 +1195,18 @@
     root.addEventListener('click', onClick);
     root.addEventListener('pointerdown', onPointerDown);
     root.addEventListener('change', function (e) { if (e.target.id === 'bk-filter') { st.filter = e.target.value; render(); } });
-    load();
+    // Ссылки с главной салона (шаг 1.7): ?open=<id> — карточка записи, ?new=1 — записать, ?block=1 — заблокировать время
+    var deep = { open: q.get('open') || (/^#[0-9a-f-]{36}$/.test(location.hash) ? location.hash.slice(1) : ''),
+                 nw: q.get('new') === '1', block: q.get('block') === '1' };
+    load().then(function () {
+      if (deep.open && bookingById(deep.open)) openBooking(deep.open);
+      else if (deep.nw && canEditBookings()) newBooking({ date: st.day });
+      else if (deep.block && canEditBookings()) blockDialog({ date: st.day, resource_id: '' });
+      if (deep.open || deep.nw || deep.block) {
+        q.delete('open'); q.delete('new'); q.delete('block');
+        try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
+      }
+    });
     startLive();
     // Запасной опрос: раз в минуту, если потока нет; с потоком — раз в 5 минут (на случай тихого обрыва прокси)
     var lastPoll = Date.now();

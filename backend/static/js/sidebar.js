@@ -62,6 +62,8 @@
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', modes: ['full', 'reactive'], money: true },
     // ИИ-управляющий (Voksy Beauty 1.6б): утренний отчёт, предложения на одобрение, сценарии — у ниш с онлайн-записью
     { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Журнал действий (Voksy Beauty 1.7): кто перенёс, отменил, поменял цену, что сделал бот — у ниш с онлайн-записью
+    { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', modes: ['full', 'reactive'], booking: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     // Сотрудники (ветка 1811-niche-admin-speed): свой вход, только выбранные разделы — на Старте и Profi
@@ -88,6 +90,7 @@
       aliases: ['/static/start-analytics.html'] },
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', money: true },
     { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', booking: true },
+    { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', booking: true },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },
@@ -729,7 +732,7 @@
       items.push({ href: '/static/agent-knowledge.html#catalog', lucide: 'package', def: (bz.catalog && bz.catalog.title) || 'Каталог' });
     }
     items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
-    var ORDER = ['dashboard', 'manager', 'finance', 'booking', 'orders', 'catalog', 'crm', 'inbox', 'team', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    var ORDER = ['dashboard', 'manager', 'finance', 'booking', 'orders', 'catalog', 'crm', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
     function rank(it) {
       var id = (it.id || '').replace('-nav-item', '');
       if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';
