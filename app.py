@@ -374,6 +374,9 @@ from backend.api import orders as orders_api  # заказы магазинов 
 app.include_router(orders_api.router)
 from backend.api import finance as finance_api  # доходы, расходы (аренда, зарплаты), прибыль — только владелец
 app.include_router(finance_api.router)
+from backend.api import salon_manager as salon_manager_api  # ИИ-управляющий салона: отчёты, одобрение, сценарии; push
+app.include_router(salon_manager_api.router)
+app.include_router(salon_manager_api.push_router)
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -1992,7 +1995,8 @@ def ensure_user_profile_columns():
                 stmts.append("ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS duration_min INTEGER")
             # услуги салона (Voksy Beauty, шаг 1.3): цена «до», подготовка, перерыв после, онлайн, предоплата
             for name, ddl in (("price_to", "DOUBLE PRECISION"), ("prep_min", "INTEGER"), ("after_min", "INTEGER"),
-                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB"), ("room_ids", "JSONB")):
+                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB"), ("room_ids", "JSONB"),
+                              ("repeat_days", "INTEGER")):     # шаг 1.6б: «повторять через N дней»
                 if name not in kcols:
                     stmts.append(f"ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS {name} {ddl}")
         if stmts:
@@ -2018,13 +2022,15 @@ def ensure_booking_tables():
         from backend.models.base import Base as ModelsBase
         from backend.models.booking import (BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom,
                                             BookingConfirmation)
+        from backend.models.salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
         ModelsBase.metadata.create_all(
             bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
                                  SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__,
-                                 BookingConfirmation.__table__], checkfirst=True)
+                                 BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
+                                 PushSubscription.__table__, WebPushKey.__table__], checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
     except Exception as e:
@@ -2054,6 +2060,10 @@ BOOKING_SERVICE_COLUMNS = (
     ("prepaid_at", "TIMESTAMP WITH TIME ZONE"),
     ("room_id", "UUID"),          # шаг 1.4: кабинет / кресло
     ("visit_id", "UUID"),         # шаг 1.4: несколько услуг подряд
+    ("review_asked_at", "TIMESTAMP WITH TIME ZONE"),   # шаг 1.6б: попросили оценку
+    ("review_score", "INTEGER"),                       # оценка клиента 1–5
+    ("review_text", "TEXT"),
+    ("review_at", "TIMESTAMP WITH TIME ZONE"),
 )
 
 
@@ -2433,6 +2443,8 @@ def ensure_branding_columns():
         "ADD COLUMN IF NOT EXISTS call_window_enabled BOOLEAN NOT NULL DEFAULT TRUE",
         # Голосовой режим владельца (ветка 0811-voice-jarvis): обращение и голос
         "ADD COLUMN IF NOT EXISTS owner_voice_prefs JSONB",
+        # ИИ-управляющий салона (Voksy Beauty 1.6б): сценарии, автономность, отчёты
+        "ADD COLUMN IF NOT EXISTS manager_settings JSONB",
     ]
     try:
         inspector = inspect(engine)

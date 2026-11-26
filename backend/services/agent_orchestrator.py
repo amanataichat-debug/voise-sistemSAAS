@@ -1309,7 +1309,18 @@ class PostCallOrchestrator:
             "   нужна услуга, — не спам."
         )
 
-        if is_followup and followup_kind == "reengage":
+        if is_followup and followup_kind == "salon":
+            direction_line = (
+                "СОБЫТИЕ: ИИ-УПРАВЛЯЮЩИЙ САЛОНА. Это не входящее сообщение и не звонок: инициатива твоя, "
+                "по сценарию, который включил владелец (вернуть клиента, предложить свободное окно или "
+                "напомнить о повторе услуги). Напиши клиенту ОДНО короткое живое сообщение в канал из "
+                "инструкции. Свободное время и цены — только из инструкции или find_booking_slots / get_services."
+            )
+            callback_rule = ""
+            transcript_label = "ЧТО СДЕЛАТЬ (инструкция владельца, НЕ готовый текст)"
+            status_label = "СТАТУС"
+            analyze_line = ""
+        elif is_followup and followup_kind == "reengage":
             direction_line = (
                 "СОБЫТИЕ: КЛИЕНТ ЗАМОЛЧАЛ В ПЕРЕПИСКЕ. Он сам написал (или ответил), ты ответил, "
                 "а он молчит. Это не звонок и не входящее сообщение: инициатива твоя, по цепочке "
@@ -1577,6 +1588,8 @@ class PostCallOrchestrator:
                 # Запись ждёт «да» клиента (Voksy Beauty 1.6а): бот видит итог и id между сообщениями
                 from backend.services import booking_confirm
                 situation_text += booking_confirm.pending_block(db, agent_call.user_id, agent_contact.id)
+                from backend.services import salon_manager
+                situation_text += salon_manager.review_hint(db, agent_call.user_id, agent_contact.id)
             except Exception as e:
                 logger.warning(f"[POSTCALL] chat situation failed: {e}")
                 try:

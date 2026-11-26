@@ -26,7 +26,7 @@ from backend.services import booking_service as bs
 logger = logging.getLogger(__name__)
 
 TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio",
-              "get_salon_report"}
+              "get_salon_report", "save_review"}
 OWNER_TOOL_NAMES = {"get_salon_report"}      # только чат владельца: клиенту в переписке не даётся
 LAPSED_DAYS = 45                             # «давно не приходил» по умолчанию
 MAX_PORTFOLIO_SEND = 4
@@ -105,6 +105,24 @@ TOOLS = [
                             "description": "Канал (пусто — где клиент писал последним)"},
             },
             "required": ["master"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "save_review",
+        "description": (
+            "Сохранить оценку визита: клиента после визита попросили оценить от 1 до 5, и он ответил (цифрой или "
+            "словами: «всё отлично» = 5, «нормально» = 4, «так себе» = 3, «плохо» = 2). Оценка 1–3 сразу уходит "
+            "владельцу. Потом ответь клиенту по полю next."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer", "description": "Оценка 1–5"},
+                "comment": {"type": "string", "description": "Что клиент написал о визите (если написал)"},
+                "agent_contact_id": {"type": "string", "description": "Клиент (в переписке — текущий)"},
+            },
+            "required": ["score"],
         },
     },
 ]
@@ -504,6 +522,12 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             return _dump(get_salon_information(db, user))
         if tool_name == "send_staff_portfolio":
             return _dump(await send_staff_portfolio(db, user, args, context))
+        if tool_name == "save_review":
+            from backend.services import salon_manager
+            cid = _contact_for(context, args)
+            if not cid:
+                return _dump({"ok": False, "error": "Не указан клиент"})
+            return _dump(salon_manager.save_review(db, user, cid, args.get("score"), args.get("comment")))
         if tool_name == "get_salon_report":
             if context.get("surface") == "postcall":
                 return _dump({"ok": False, "error": "Отчёт салона — только владельцу"})
@@ -535,5 +559,6 @@ PROMPT_BLOCK = (
     "\n\n## Салон: прайс, мастера, клиент\n"
     "Цены, услуги и мастеров бери только из get_services и get_staff, адрес и часы — из get_salon_information. "
     "Постоянному клиенту сначала загляни в get_customer_history и предложи «как в прошлый раз» или его мастера. "
-    "Хочет посмотреть работы — send_staff_portfolio. Не перечисляй весь прайс: две-три услуги под его вопрос."
+    "Хочет посмотреть работы — send_staff_portfolio. Не перечисляй весь прайс: две-три услуги под его вопрос. "
+    "Клиент ответил оценкой визита (1–5) на «спасибо» — сохрани её через save_review."
 )

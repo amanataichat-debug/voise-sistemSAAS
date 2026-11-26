@@ -110,6 +110,20 @@
       .catch(function () { /* журнал обновится при следующем заходе */ });
   };
 
+  // Справа сверху — вход в «ИИ-управляющий» (шаг 1.6б): отчёты, одобрение, сценарии
+  function setupManagerCard() {
+    var scroll = document.querySelector('#col-right .panel-scroll');
+    if (!scroll || document.getElementById('salon-manager-card')) return;
+    var a = document.createElement('a');
+    a.id = 'salon-manager-card';
+    a.className = 'card salon-mgr';
+    a.href = '/static/manager.html';
+    a.innerHTML = '<div class="card-head"><div class="card-head-title"><i class="fas fa-magic"></i> ИИ-управляющий</div>' +
+      '<i class="fas fa-chevron-right"></i></div><div class="salon-mgr-sub">Утренний отчёт, кого вернуть, свободные окна, ' +
+      'повтор услуги — и что ждёт вашего одобрения</div>';
+    scroll.insertBefore(a, scroll.firstChild);
+  }
+
   function apply(rerender) {
     if (window.AGENT_SALON) return;
     window.AGENT_SALON = true;
@@ -117,6 +131,7 @@
     if (document.body) document.body.classList.add('salon-mode');
     applyDocTitles();
     setupStatCard();
+    setupManagerCard();
     if (rerender) {
       if (typeof window.renderAgentTabs === 'function') window.renderAgentTabs();
       if (document.getElementById('chat-welcome') && typeof renderWelcome === 'function') renderWelcome();
@@ -134,6 +149,7 @@
       document.body.classList.add('salon-mode');
       applyDocTitles();
       setupStatCard();
+      setupManagerCard();
       window.loadSalonToday();
       setInterval(window.loadSalonToday, 120000);
       return;

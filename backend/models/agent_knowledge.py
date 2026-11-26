@@ -110,6 +110,8 @@ class AgentKnowledgeEntry(Base):
     after_min = Column(Integer, nullable=True)
     online_booking = Column(Boolean, nullable=True)
     prepay = Column(JSONB, nullable=True)
+    # Услуга салона: обычно повторяют через N дней (маникюр — 21) — сценарий «повтор услуги» (шаг 1.6б)
+    repeat_days = Column(Integer, nullable=True)
     room_ids = Column(JSONB, nullable=True)                # шаг 1.4: нужен один из кабинетов/аппаратов (booking_rooms.id)
 
     # ── Документ (kind=document) ──

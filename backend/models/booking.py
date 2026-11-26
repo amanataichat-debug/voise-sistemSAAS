@@ -123,6 +123,11 @@ class Booking(Base):
     reminder_24h_at = Column(DateTime(timezone=True), nullable=True)
     reminder_2h_at = Column(DateTime(timezone=True), nullable=True)
     followup_at = Column(DateTime(timezone=True), nullable=True)
+    # Отзыв после визита (шаг 1.6б): спросили оценку вместе со «спасибо», клиент ответил 1–5
+    review_asked_at = Column(DateTime(timezone=True), nullable=True)
+    review_score = Column(Integer, nullable=True)
+    review_text = Column(Text, nullable=True)
+    review_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

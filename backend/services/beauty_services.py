@@ -77,6 +77,7 @@ def service_dict(e, masters: List[BookingResource]) -> Dict[str, Any]:
     d = bs.service_to_dict(e)
     sid = str(e.id)
     d.update({"is_active": bool(e.is_active), "description": e.body or "", "position": e.position or 0,
+              "repeat_days": getattr(e, "repeat_days", None),
               "has_photo": bool(e.media_file_ids)})
     d["masters"] = []
     for r in masters:
@@ -176,6 +177,15 @@ def _apply(e, data: Dict[str, Any], agent, db: Optional[Session] = None) -> None
         e.prep_min = _int(data.get("prep_min"), *PADS, "Подготовка") or None
     if "after_min" in data:
         e.after_min = _int(data.get("after_min"), *PADS, "Перерыв после") or None
+    if "repeat_days" in data:      # шаг 1.6б: «повторять через N дней» — сценарий «Повтор услуги»
+        v = data.get("repeat_days")
+        try:
+            n = int(float(v)) if v not in (None, "") else 0
+        except (TypeError, ValueError):
+            raise ServiceError("Повторять через: нужно число дней")
+        if not 0 <= n <= 365:
+            raise ServiceError("Повторять через: от 0 до 365 дней")
+        e.repeat_days = n or None
     if "online_booking" in data and data["online_booking"] is not None:
         e.online_booking = None if data["online_booking"] else False
     if "prepay" in data:

@@ -288,6 +288,7 @@ body.vf .subscription-section { margin-top: 0; }
   /* Ниша с записью/заказами: деньги → записи на сегодня → плитки → услуги и мастера → главное → график → остальное */
   body.dh-has-money .content-container > * { order: 10; }
   body.dh-has-money .content-container > .dh-hero { order: 1; }
+  body.dh-has-money #dh-report { order: 2; }
   body.dh-has-money #dh-money { order: 2; }
   body.dh-has-money .content-container > .dh-grid:has(#dh-side-card) { display: contents; }
   body.dh-has-money #dh-side-card { order: 3; margin-bottom: 12px; }
@@ -299,3 +300,24 @@ body.vf .subscription-section { margin-top: 0; }
   /* Старый блок «Ваша подписка» повторяет приветствие — на телефоне не нужен */
   body.vf .subscription-section { display: none; }
 }
+
+/* Утренний отчёт ИИ-управляющего (Voksy Beauty 1.6б) */
+.dh-report { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.dh-rep-main { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 20px; color: #fff; text-decoration: none;
+  background: radial-gradient(120% 140% at 100% 0%, #3b6dff 0%, #2a5ce8 45%, #1d3fb8 100%); }
+.dh-rep-k { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; opacity: .9; }
+.dh-rep-k .ic { width: 15px; height: 15px; }
+.dh-rep-main b { font-size: 19px; line-height: 1.25; }
+.dh-rep-nums { display: flex; flex-wrap: wrap; gap: 8px; }
+.dh-rep-nums span { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; border-radius: 12px; background: rgba(255, 255, 255, .14); font-size: 12.5px; }
+.dh-rep-nums i { font-style: normal; font-weight: 700; font-size: 16px; }
+.dh-rep-nums span.warn { background: rgba(255, 196, 120, .25); }
+.dh-rep-go { display: inline-flex; align-items: center; gap: 4px; font-size: 13.5px; font-weight: 600; }
+.dh-rep-go .ic { width: 16px; height: 16px; }
+.dh-rep-ap { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-radius: 14px; background: #fff4e5; color: #8a4b00;
+  font-weight: 600; font-size: 14px; text-decoration: none; }
+.dh-rep-ap .ic { width: 18px; height: 18px; }
+.dh-rep-ap .ic:last-child { margin-left: auto; }
+/* ссылки кабинета красятся в акцент — у карточки отчёта свои цвета */
+.vf .dh-report a.dh-rep-main, .vf .dh-report a.dh-rep-main * { color: #fff !important; }
+.vf .dh-report a.dh-rep-ap, .vf .dh-report a.dh-rep-ap * { color: #8a4b00 !important; }

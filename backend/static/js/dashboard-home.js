@@ -569,9 +569,43 @@
     renderChart();
   }
 
+  // Утренний отчёт ИИ-управляющего (Voksy Beauty 1.6б): свежий отчёт и «ждут одобрения» — карточкой наверху
+  var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  function loadReport() {
+    var t = token(), box = $('dh-report'), biz = business();
+    if (!t || !box || !(biz.modules && biz.modules.booking)) return;
+    try { var sf = JSON.parse(localStorage.getItem('vf_staff') || 'null'); if (sf && sf.staff) return; } catch (e) { /* ignore */ }
+    fetch('/api/manager/overview', { headers: { Authorization: 'Bearer ' + t } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (ov) {
+        if (!ov) return;
+        var rep = ov.last_report, pending = ov.pending || 0;
+        var today = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);   // дата Бишкека
+        var fresh = rep && (rep.day === today || !rep.read);
+        if (!fresh && !pending) { box.hidden = true; return; }
+        var d = (rep && rep.data) || {}, td = d.today || {}, y = d.yesterday || {};
+        var p = rep ? rep.day.split('-') : null;
+        var html = '<a class="dh-rep-main" href="/static/manager.html#reports">' +
+          '<span class="dh-rep-k">' + ic(rep && rep.kind === 'weekly' ? 'chart-column' : 'sun') +
+          (rep ? (rep.kind === 'weekly' ? 'Итоги недели' : 'Утренний отчёт') + ' · ' + (+p[2]) + ' ' + MONTHS[+p[1] - 1] : 'ИИ-управляющий') + '</span>' +
+          '<b>' + esc(rep ? rep.title : 'Есть предложения на одобрение') + '</b>';
+        if (rep && rep.kind === 'morning') {
+          var n = td.count || 0, w = (n % 10 === 1 && n % 100 !== 11) ? 'запись' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'записи' : 'записей';
+          html += '<span class="dh-rep-nums"><span><i>' + n + '</i>' + w + ' сегодня</span>' +
+            '<span><i>' + (y.came || 0) + '</i>пришли вчера</span>' + (y.no_show ? '<span class="warn"><i>' + y.no_show + '</i>не пришли</span>' : '') + '</span>';
+        }
+        html += '<span class="dh-rep-go">Открыть отчёт' + ic('chevron-right') + '</span></a>';
+        if (pending) html += '<a class="dh-rep-ap" href="/static/manager.html#approve">' + ic('circle-check') + 'Ждут вашего одобрения: ' + pending + ic('chevron-right') + '</a>';
+        box.innerHTML = html;
+        box.hidden = false;
+      })
+      .catch(function () { /* карточка просто не появится */ });
+  }
+
   function load() {
     var t = token();
     if (!t) return;
+    loadReport();
     try {
       var cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
       if (cached) { data = cached; render(); }
@@ -646,9 +680,10 @@
       data.wallet = Object.assign({}, data.wallet, { balance: e.detail.balance });
       renderKpis();
     });
-    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } loadMoney(); });
+    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } loadMoney(); loadReport(); });
     // Первый вход на этом телефоне: ниша приходит с /users/me позже, чем рисуется страница
-    document.addEventListener('vf:user', function () { if (hasMoney() && !money.month) { loadMoney(); if (data) { loadToday(); renderSide(); } } });
+    document.addEventListener('vf:user', function () { if ($('dh-report') && $('dh-report').hidden) loadReport();
+      if (hasMoney() && !money.month) { loadMoney(); if (data) { loadToday(); renderSide(); } } });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

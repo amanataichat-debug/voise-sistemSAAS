@@ -294,6 +294,13 @@ async def _tick() -> None:
             await sales_funnel.run_nurture(db)
         except Exception as e:
             logger.warning(f"[FUNNEL] run_nurture failed: {e}")
+        # ИИ-управляющий салона (Voksy Beauty 1.6б): утренний/недельный отчёт, сценарии, исполнение одобренного
+        try:
+            from backend.services import salon_manager
+            await salon_manager.tick(db)
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[MANAGER] tick failed: {e}")
         # Понедельник 10:00–10:15 Бишкек
         if now_local.weekday() == 0 and now_local.hour == 10 and now_local.minute < 15:
             if not _already_ran_today("monday_nurture", today_local):
