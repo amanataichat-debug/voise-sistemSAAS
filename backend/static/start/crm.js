@@ -17,6 +17,20 @@
   };
   var loaded = {};
   var root;
+  // Салон и другие ниши с онлайн-записью (шаг 2.1): список с визитами и сегментами, блок «В салоне» в карточке
+  var SALON = !!(window.CrmSalon && window.CrmSalon.enabled());
+  // Профиля ниши ещё нет в кэше (CRM открыли первой страницей) — спросить профиль (ui.js не дублирует запрос)
+  function ensureBusiness() {
+    if (!window.CrmSalon) return Promise.resolve();
+    // меню (sidebar.js) могло положить профиль уже после загрузки этого файла — пересчитать
+    try { if (localStorage.getItem('vf_business')) { SALON = window.CrmSalon.enabled(); return Promise.resolve(); } } catch (e) { return Promise.resolve(); }
+    return S.api('/api/users/me').then(function (r) {
+      if (r.ok && r.data && r.data.business) {
+        try { localStorage.setItem('vf_business', JSON.stringify(r.data.business)); } catch (e) { /* ignore */ }
+        SALON = window.CrmSalon.enabled();
+      }
+    });
+  }
 
   document.addEventListener('DOMContentLoaded', function () {
     root = document.getElementById('page');
@@ -24,6 +38,8 @@
     // CRM клиентов агента — общая для Старта и Profi (ветка 1811-niche-admin-speed): у Profi раньше «CRM»
     // открывала старую базу контактов голосовых ассистентов, а клиенты агента жили в окнах страницы агента
     S.boot({ allowFull: true }).then(function (ok) {
+      return ok ? ensureBusiness().then(function () { return ok; }) : ok;
+    }).then(function (ok) {
       if (!ok) return;
       if (!S.agent) { root.innerHTML = S.noBotHtml(); S.ready(); return; }
       // Переход из инбокса: ?contact=<id> — открыть карточку, ?stage=<key> — фильтр по стадии
@@ -42,8 +58,9 @@
   function render() {
     var who = S.mode === 'full' ? 'Агент' : 'Бот';
     root.innerHTML =
-      '<div class="st-head st-crm-head"><div><h2>Клиенты и сделки</h2>' +
-      '<p>' + who + ' записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.' +
+      '<div class="st-head st-crm-head"><div><h2>' + (SALON ? 'Клиенты' : 'Клиенты и сделки') + '</h2>' +
+      '<p>' + (SALON ? 'Все, кто записывался, писал или звонил: визиты, сумма, любимый мастер, неявки — считаются из журнала записи.'
+        : who + ' записывает сюда каждого, кто пишет или звонит: имя, телефон, переписку и итог разговора.') +
       (S.mode === 'full' && !S.staff() ? ' <a href="/static/crm.html" class="st-oldcrm">Контакты голосовых ассистентов →</a>' : '') + '</p></div>' +
       // Импорт и удаление клиентов — только владелец (сотруднику сервер ответит 403)
       '<div class="st-toolbar">' + (S.staff() ? '' : '<button class="btn st-hide-phone" id="import-clients" type="button">' + icon('upload') + '<span>Импорт</span></button>') +
@@ -82,7 +99,10 @@
   function openPane(id) {
     if (loaded[id]) return;
     loaded[id] = true;
-    if (id === 'clients') initClients();
+    if (id === 'clients') {
+      if (SALON) window.CrmSalon.initList({ pane: document.getElementById('pane-clients'), openClient: openClient, isPhone: isPhone, waLink: waLink, telLink: telLink });
+      else initClients();
+    }
     if (id === 'pipeline') loadBoard();
     if (id === 'calls') initCalls();
     if (id === 'tasks') loadTasks();
@@ -314,7 +334,7 @@
 
   function reloadAll() {
     refreshCounts();
-    if (loaded.clients) loadClients(true);
+    if (loaded.clients) { if (SALON) window.CrmSalon.refresh(); else loadClients(true); }
     if (loaded.pipeline) loadBoard();
   }
 
@@ -365,13 +385,16 @@
       '<div><div class="label" style="margin-bottom:6px">Стадия</div><select class="select-native" id="cl-stage" style="min-width:190px">' + stageOpts + '</select></div>' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' + pauseHtml +
       '<a class="btn btn-sm" href="/static/inbox.html?contact=' + esc(c.id) + '">' + icon('inbox') + '<span>Написать в инбоксе</span></a></div></div></div>' +
+      (SALON ? '<div class="st-sec" id="sec-salon"></div>' : '') +
       memHtml +
       '<div class="st-sec"><h4>Данные клиента</h4>' +
       '<div class="st-grid2">' +
       field('Имя', '<input class="input" id="f-name" value="' + esc(c.name || '') + '">') +
+      // у салона компания, должность и сумма сделки не нужны — вместо них ДР, пол и откуда пришёл
+      (SALON ? window.CrmSalon.profileFields(c) :
       field('Компания', '<input class="input" id="f-company" value="' + esc(c.company || '') + '">') +
       field('Должность', '<input class="input" id="f-position" value="' + esc(c.position || '') + '">') +
-      field('Сумма сделки, сом', '<input class="input" id="f-deal" type="number" min="0" step="1" value="' + esc(c.deal_amount == null ? '' : c.deal_amount) + '">') +
+      field('Сумма сделки, сом', '<input class="input" id="f-deal" type="number" min="0" step="1" value="' + esc(c.deal_amount == null ? '' : c.deal_amount) + '">')) +
       field('Теги (через запятую)', '<input class="input" id="f-tags" value="' + esc((c.tags || []).join(', ')) + '">') +
       field('Следующий шаг', '<input class="input" id="f-next" value="' + esc(c.next_step_text || '') + '" placeholder="Например: выставить счёт">') +
       field('Когда', '<input class="input" id="f-next-at" type="datetime-local" value="' + esc(S.isoToLocalInput(c.next_step_at)) + '">') +
@@ -393,6 +416,7 @@
     var ps = S.$('#cl-pause', dr.body);
     if (ps) ps.addEventListener('change', function () { if (this.value) setPause(this.value); });
     drawThread(); drawClientCalls(); drawClientTasks();
+    if (SALON) window.CrmSalon.cardSection(S.$('#sec-salon', dr.body), c);
   }
   function field(label, input) { return '<div class="field"><label class="label">' + label + '</label>' + input + '</div>'; }
 
@@ -403,6 +427,7 @@
     });
     if (st.board) st.board.forEach(function (x) { if (x.id === d.id) Object.keys(d).forEach(function (k) { x[k] = d[k]; }); });
     if (loaded.clients && document.getElementById('c-list')) drawClients();
+    if (loaded.clients && SALON) window.CrmSalon.refresh();
     if (loaded.pipeline && st.board) drawBoard();
   }
 
@@ -434,12 +459,14 @@
     var b = cur.drawer.body, v = function (id) { var e = S.$('#' + id, b); return e ? e.value.trim() : null; };
     var deal = v('f-deal');
     var body = {
-      name: v('f-name'), company: v('f-company'), position: v('f-position'), notes: S.$('#f-notes', b).value,
+      name: v('f-name'), notes: S.$('#f-notes', b).value,
       tags: (v('f-tags') || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean),
       deal_amount: deal === '' ? null : Number(deal),
       next_step_text: v('f-next'), next_step_at: S.localInputToIso(v('f-next-at')) || ''
     };
-    if (deal === '') delete body.deal_amount;
+    if (deal === '' || deal === null) delete body.deal_amount;
+    if (S.$('#f-company', b)) { body.company = v('f-company'); body.position = v('f-position'); }
+    if (SALON) Object.assign(body, window.CrmSalon.readProfile(b));
     var lost = v('f-lost'); if (lost !== null) body.lost_reason = lost;
     var btn = S.$('#cl-save', b); btn.disabled = true;
     S.api('/contacts/' + cur.data.id, { method: 'PUT', body: body }).then(function (r) {

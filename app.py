@@ -1993,6 +1993,18 @@ def ensure_user_profile_columns():
             stmts.append("CREATE INDEX IF NOT EXISTS ix_users_business_niche ON users (business_niche)")
         if 'admin_status' not in cols:
             stmts.append("CREATE INDEX IF NOT EXISTS ix_users_admin_status ON users (admin_status)")
+        if inspector.has_table('agent_contacts'):
+            # карточка клиента (Voksy Beauty, шаг 2.1): ДР, пол, источник. ORM выбирает все колонки
+            # AgentContact в каждом запросе к клиентам — поэтому здесь, в самом начале старта
+            ccols = {c['name'] for c in inspector.get_columns('agent_contacts')}
+            for name, ddl in (("birthday", "DATE"), ("gender", "VARCHAR(1)"), ("source", "VARCHAR(24)")):
+                if name not in ccols:
+                    stmts.append(f"ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS {name} {ddl}")
+            if 'source' not in ccols:
+                stmts.append("CREATE INDEX IF NOT EXISTS ix_agent_contacts_user_source ON agent_contacts (user_id, source)")
+                # досчёт источника старых карточек (salon_clients.backfill_sources) идёт по этому частичному индексу
+                stmts.append("CREATE INDEX IF NOT EXISTS ix_agent_contacts_nosource ON agent_contacts (created_at) "
+                             "WHERE source IS NULL")
         if inspector.has_table('agent_configs'):
             acols = {c['name'] for c in inspector.get_columns('agent_configs')}
             if 'niche_key' not in acols:

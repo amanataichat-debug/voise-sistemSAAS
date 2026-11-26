@@ -688,8 +688,12 @@ def _first_agent(db: Session, user_id):
     return db.query(AgentConfig).filter(AgentConfig.user_id == user_id).order_by(AgentConfig.created_at).first()
 
 
+# источник новой карточки по тому, кто записал (services/salon_clients.SOURCES)
+_CONTACT_SOURCE = {"online": "booking", "call": "call", "owner": "manual", "staff": "manual"}
+
+
 def resolve_contact(db: Session, user_id, contact_id=None, name: Optional[str] = None, phone: Optional[str] = None,
-                    create: bool = True):
+                    create: bool = True, source: Optional[str] = None):
     """Карточка CRM для записи: по id, по телефону, иначе новая (если есть агент)."""
     from backend.models.agent_contact import AgentContact
     if contact_id:
@@ -714,7 +718,8 @@ def resolve_contact(db: Session, user_id, contact_id=None, name: Optional[str] =
     if not create or not (phone or name):
         return None
     c = AgentContact(user_id=user_id, agent_config_id=agent.id, name=(name or "Клиент")[:255],
-                     phone=phone or f"web:{uuid.uuid4().hex[:10]}", status="new")
+                     phone=phone or f"web:{uuid.uuid4().hex[:10]}", status="new",
+                     source=_CONTACT_SOURCE.get(source or ""))
     db.add(c)
     db.flush()
     return c
@@ -839,7 +844,7 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
     master_price = service_terms(chosen, service)[1] if service is not None else None
     room = _pick_room(db, user, service, st, end, prep, after, prefer=room_id)
 
-    contact = resolve_contact(db, user.id, contact_id, client_name, phone)
+    contact = resolve_contact(db, user.id, contact_id, client_name, phone, source=source)
     b = Booking(user_id=user.id, resource_id=chosen.id, service_entry_id=service.id if service else None,
                 service_title=(service.title if service else None), contact_id=contact.id if contact else None,
                 client_name=(client_name or (contact.name if contact else None) or "")[:200] or None,

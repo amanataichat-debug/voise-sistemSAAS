@@ -308,6 +308,13 @@ async def _tick() -> None:
         except Exception as e:
             db.rollback()
             logger.warning(f"[ACTIVITY] cleanup failed: {e}")
+        # Карточки клиентов без источника (старые, до шага 2.1) — по первому касанию, порциями
+        try:
+            from backend.services import salon_clients
+            salon_clients.backfill_sources(db)
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[SALON-CLIENTS] backfill failed: {e}")
         # Понедельник 10:00–10:15 Бишкек
         if now_local.weekday() == 0 and now_local.hour == 10 and now_local.minute < 15:
             if not _already_ran_today("monday_nurture", today_local):

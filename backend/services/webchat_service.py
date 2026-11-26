@@ -219,7 +219,7 @@ def ensure_contact(db: Session, session):
     if c is None:
         c = AgentContact(user_id=session.user_id, agent_config_id=session.agent_config_id,
                          name=(session.name or GUEST_NAME)[:255],
-                         phone=session.phone or f"web:{uuid.uuid4().hex[:12]}", status="new")
+                         phone=session.phone or f"web:{uuid.uuid4().hex[:12]}", status="new", source="webchat")
         c.memory = {"source": "webchat"}
         db.add(c)
         db.flush()

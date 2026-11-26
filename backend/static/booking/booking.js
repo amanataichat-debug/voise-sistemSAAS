@@ -794,10 +794,10 @@
       title: move ? 'Перенести запись' : 'Новая запись', size: 'lg',
       body:
         (move ? '<p class="muted" style="margin:0 0 10px">' + esc((move.client_name || 'Клиент') + ' · ' + (move.service || '') + ' · сейчас ' + move.label) + '</p>' :
-          '<div class="st-grid2"><div class="field"><label class="label">Клиент</label><input class="input" id="nb-name" placeholder="Имя или поиск по клиентам" autocomplete="off"><div id="nb-sugg"></div></div>' +
-          '<div class="field"><label class="label">Телефон</label><input class="input" id="nb-phone" type="tel" inputmode="tel" placeholder="+996 700 123 456"></div></div>') +
+          '<div class="st-grid2"><div class="field"><label class="label">Клиент</label><input class="input" id="nb-name" placeholder="Имя или поиск по клиентам" autocomplete="off" value="' + esc((pre.client && pre.client.name) || '') + '"><div id="nb-sugg"></div></div>' +
+          '<div class="field"><label class="label">Телефон</label><input class="input" id="nb-phone" type="tel" inputmode="tel" placeholder="+996 700 123 456" value="' + esc((pre.client && pre.client.phone) || '') + '"></div></div>') +
         '<div class="st-grid2">' +
-        (move ? '' : '<div class="field"><label class="label" id="nb-svc-l">Услуга</label><select class="select-native" id="nb-svc">' + svcOptions('', 'Без услуги (60 мин)') + '</select></div>') +
+        (move ? '' : '<div class="field"><label class="label" id="nb-svc-l">Услуга</label><select class="select-native" id="nb-svc">' + svcOptions(pre.service_id || '', 'Без услуги (60 мин)') + '</select></div>') +
         '<div class="field"><label class="label">Мастер</label><select class="select-native" id="nb-res">' + resOptions(pre.resource_id || (move && move.resource_id) || '') + '</select></div>' +
         '<div class="field"><label class="label">День</label><input class="input" id="nb-day" type="date" value="' + esc(day) + '"></div></div>' +
         (move || !services.length ? '' : '<div id="nb-more" class="bk-vitems"></div>' +
@@ -808,7 +808,8 @@
       foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" data-ok>' + (move ? 'Перенести' : 'Записать') + '</button>'
     });
     var $ = function (s) { return S.$(s, d.el); };
-    var contactId = null;
+    // Из карточки клиента (шаг 2.1): «Записать» → клиент уже выбран
+    var contactId = (pre.client && pre.client.id) || null;
     function visitItems() {
       return [{ service_id: ($('#nb-svc') && $('#nb-svc').value) || null, resource_id: $('#nb-res').value || null }].concat(more);
     }
@@ -1196,14 +1197,16 @@
     root.addEventListener('pointerdown', onPointerDown);
     root.addEventListener('change', function (e) { if (e.target.id === 'bk-filter') { st.filter = e.target.value; render(); } });
     // Ссылки с главной салона (шаг 1.7): ?open=<id> — карточка записи, ?new=1 — записать, ?block=1 — заблокировать время
+    // ?new=1&contact=<id>&name=&phone=&service=&master= — «Записать» из карточки клиента (шаг 2.1)
     var deep = { open: q.get('open') || (/^#[0-9a-f-]{36}$/.test(location.hash) ? location.hash.slice(1) : ''),
                  nw: q.get('new') === '1', block: q.get('block') === '1' };
+    var preClient = /^[0-9a-f-]{36}$/.test(q.get('contact') || '') ? { id: q.get('contact'), name: q.get('name') || '', phone: q.get('phone') || '' } : null;
     load().then(function () {
       if (deep.open && bookingById(deep.open)) openBooking(deep.open);
-      else if (deep.nw && canEditBookings()) newBooking({ date: st.day });
+      else if (deep.nw && canEditBookings()) newBooking({ date: st.day, client: preClient, service_id: q.get('service') || '', resource_id: q.get('master') || '' });
       else if (deep.block && canEditBookings()) blockDialog({ date: st.day, resource_id: '' });
       if (deep.open || deep.nw || deep.block) {
-        q.delete('open'); q.delete('new'); q.delete('block');
+        ['open', 'new', 'block', 'contact', 'name', 'phone', 'service', 'master'].forEach(function (k) { q.delete(k); });
         try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
       }
     });

@@ -91,6 +91,7 @@ class AgentCallFinalizer:
                 user_id=agent.user_id,
                 phone=f"+{phone}" if phone.isdigit() else phone,
                 status="new",
+                source="call",
             )
             db.add(contact)
             db.flush()

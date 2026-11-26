@@ -173,6 +173,9 @@ STAFF_RULES = [
     _rule("PATCH", r"^/api/finance/payroll/[^/]+/?$", "finance"),
     # — журнал действий (Voksy Beauty 1.7): управляющий; история записи в её карточке — тому же разделу —
     _rule("GET", r"^/api/beauty/activity/?$", "activity"),
+    # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
+    _rule("GET", r"^/api/beauty/clients/?$", "crm"),
+    _rule("GET", r"^/api/beauty/clients/[0-9a-fA-F-]{36}/?$", "crm", "inbox", "booking"),
 ]
 
 

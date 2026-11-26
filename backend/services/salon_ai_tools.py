@@ -278,7 +278,9 @@ def get_customer_history(db: Session, user, contact_id) -> Dict[str, Any]:
             .order_by(Booking.start_at.desc()).limit(200).all())
     names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
     if not rows:
-        return {"ok": True, "visits": 0, "note": "Клиент у нас ещё не был — это новый клиент"}
+        out0: Dict[str, Any] = {"ok": True, "visits": 0, "note": "Клиент у нас ещё не был — это новый клиент"}
+        _add_profile(db, user, contact_id, out0)
+        return out0
     visited = [b for b in rows if b.status in VISITED_STATUSES]
     now = bs.now_utc()
     upcoming = sorted([b for b in rows if b.status in ("booked", "confirmed") and bs._aw(b.start_at) >= now],
@@ -310,7 +312,29 @@ def get_customer_history(db: Session, user, contact_id) -> Dict[str, Any]:
                                "master": names.get(str(b.resource_id))}
     if out["no_shows"] >= 2:
         out["note"] = "Клиент не раз не приходил — вежливо напомни подтвердить запись накануне"
+    _add_profile(db, user, contact_id, out)
     return out
+
+
+def _add_profile(db: Session, user, contact_id, out: Dict[str, Any]) -> None:
+    """ДР и источник из карточки (шаг 2.1) — бот поздравит и не спросит ДР второй раз."""
+    from backend.models.agent_contact import AgentContact
+    from backend.services import salon_clients
+    try:
+        c = db.query(AgentContact).filter(AgentContact.id == contact_id, AgentContact.user_id == user.id).first()
+    except Exception:
+        db.rollback()
+        return
+    if c is None:
+        return
+    info = salon_clients.birthday_info(c.birthday, bs.to_local(bs.now_utc()).date())
+    if info:
+        out["birthday"] = info["text"]
+        out["birthday_in_days"] = info["in_days"]
+    else:
+        out["birthday"] = None
+    if c.source:
+        out["source"] = salon_clients.SOURCE_TITLES.get(c.source, c.source)
 
 
 # ───────────────────────────── о салоне ─────────────────────────────
@@ -561,5 +585,7 @@ PROMPT_BLOCK = (
     "Цены, услуги и мастеров бери только из get_services и get_staff, адрес и часы — из get_salon_information. "
     "Постоянному клиенту сначала загляни в get_customer_history и предложи «как в прошлый раз» или его мастера. "
     "Хочет посмотреть работы — send_staff_portfolio. Не перечисляй весь прайс: две-три услуги под его вопрос. "
-    "Клиент ответил оценкой визита (1–5) на «спасибо» — сохрани её через save_review."
+    "Клиент ответил оценкой визита (1–5) на «спасибо» — сохрани её через save_review. "
+    "Назвал свой день рождения — запиши его в карточку (update_contact_info, birthday). Если ДР ещё не известен, "
+    "после подтверждённой записи можно один раз спросить его, чтобы поздравить; не настаивай и не спрашивай снова."
 )
