@@ -133,6 +133,7 @@ from .webchat import WebChatSession, AgentWebChatMessage
 from .activity import ActivityLog
 from .automation import NotificationQueue, AutomationRule
 from .review import SalonReview
+from .waitlist import WaitlistEntry
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

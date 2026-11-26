@@ -50,7 +50,7 @@ ACTOR_TITLES = {
 
 # Вид действия для фильтра ленты: группа → типы объектов
 GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
-    "bookings": ("Записи", ("booking", "visit")),
+    "bookings": ("Записи", ("booking", "visit", "waitlist")),
     "schedule": ("График и мастера", ("block", "master", "room", "settings")),
     "services": ("Услуги и цены", ("service", "category")),
     "page": ("Страница салона", ("page",)),
@@ -85,6 +85,8 @@ ACTION_TITLES = {
     "admin.impersonate": "Вход поддержки в кабинет",
     "review.publish": "Отзыв на странице", "review.hide": "Отзыв скрыт", "review.reply": "Ответ на отзыв",
     "review.settings": "Отзывы на странице",
+    "waitlist.add": "В лист ожидания", "waitlist.update": "Лист ожидания изменён", "waitlist.offer": "Предложено из листа",
+    "waitlist.cancel": "Убран из листа ожидания",
 }
 
 

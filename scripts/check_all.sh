@@ -25,7 +25,7 @@ echo "$out" | grep -E "^\[FAIL\]|^       FAIL|ИТОГО"
 echo "$out" | grep -q "ИТОГО: прошло [0-9]*, провалов 0" || fail=1
 if [ -n "${CHECK_DATABASE_URL:-}" ]; then
   echo "== тесты на PostgreSQL"
-  for t in mechanics inbox owner_voice boot_jobs e2e_call_chain e2e_chat_chain auth_flow admin_clients signup_notify business_profile booking analytics team orders finance beauty_plans masters services journal_v2 salon_page salon_ai salon_manager webchat activity salon_clients automations reviews; do
+  for t in mechanics inbox owner_voice boot_jobs e2e_call_chain e2e_chat_chain auth_flow admin_clients signup_notify business_profile booking analytics team orders finance beauty_plans masters services journal_v2 salon_page salon_ai salon_manager webchat activity salon_clients automations reviews waitlist; do
     if ! MECH_TEST_DATABASE_URL=$CHECK_DATABASE_URL INBOX_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          OWNER_VOICE_TEST_DATABASE_URL=$CHECK_DATABASE_URL BOOT_TEST_DATABASE_URL=$CHECK_DATABASE_URL E2E_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          AUTH_TEST_DATABASE_URL=$CHECK_DATABASE_URL ADMIN_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
@@ -36,7 +36,7 @@ if [ -n "${CHECK_DATABASE_URL:-}" ]; then
          SALON_AI_TEST_DATABASE_URL=$CHECK_DATABASE_URL SALON_MANAGER_TEST_DATABASE_URL=$CHECK_DATABASE_URL WEBCHAT_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          ACTIVITY_TEST_DATABASE_URL=$CHECK_DATABASE_URL SALON_CLIENTS_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          AUTOMATIONS_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
-         REVIEWS_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
+         REVIEWS_TEST_DATABASE_URL=$CHECK_DATABASE_URL WAITLIST_TEST_DATABASE_URL=$CHECK_DATABASE_URL \
          python scripts/voice_tests/test_$t.py > "/tmp/check_$t.log" 2>&1; then
       grep -E "^FAIL|Error" "/tmp/check_$t.log" | head; echo "FAIL test_$t"; fail=1
     fi

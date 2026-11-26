@@ -152,7 +152,17 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=4
         "page": _page_dict(page, current_user.business_niche),
         "stats": bs.stats(db, current_user.id, start, end),
         "plan_limit": _plan_limit(db, current_user),
+        "waitlist": _waitlist_count(db, current_user.id),
     }
+
+
+def _waitlist_count(db: Session, user_id) -> int:
+    try:
+        from backend.services import waitlist_service
+        return waitlist_service.active_count(db, user_id)
+    except Exception:
+        db.rollback()
+        return 0
 
 
 def _sorted_services(db: Session, user) -> List[Any]:
@@ -858,6 +868,81 @@ class BlockIn(BaseModel):
     note: Optional[str] = Field(None, max_length=300)
 
 
+# ───────────────────────────── лист ожидания (шаг 2.4) ─────────────────────────────
+
+class WaitlistIn(BaseModel):
+    service_id: str
+    resource_id: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    time_from: Optional[str] = Field(None, max_length=5)
+    time_to: Optional[str] = Field(None, max_length=5)
+    contact_id: Optional[str] = None
+    client_name: Optional[str] = Field(None, max_length=200)
+    client_phone: Optional[str] = Field(None, max_length=40)
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+def _wl(fn, *args, **kw):
+    from backend.services import waitlist_service as wl
+    try:
+        return fn(*args, **kw)
+    except wl.WaitlistError as e:
+        raise HTTPException(status_code=404 if "не найдена" in str(e) else 400, detail=str(e))
+
+
+@router.get("/waitlist")
+def booking_waitlist(status: Optional[str] = Query("active"), current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    out = wl.listing(db, current_user.id, status=status)
+    db.rollback()
+    return out
+
+
+@router.post("/waitlist")
+def booking_waitlist_add(body: WaitlistIn, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    try:
+        e = wl.add(db, current_user, service_id=body.service_id, resource_id=body.resource_id, date_from=body.date_from,
+                   date_to=body.date_to, time_from=body.time_from, time_to=body.time_to, contact_id=body.contact_id,
+                   name=body.client_name, phone=body.client_phone, note=body.note,
+                   source="staff" if is_staff(current_user) else "owner")
+        db.commit()
+    except wl.WaitlistError as ex:
+        db.rollback()
+        _err(ex)
+    return {"ok": True, "entry": wl.entry_to_dict(e, _names(db, current_user.id))}
+
+
+@router.patch("/waitlist/{entry_id}")
+def booking_waitlist_update(entry_id: str, data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    e = _wl(wl.update, db, current_user, entry_id, data or {})
+    db.commit()
+    return {"ok": True, "entry": wl.entry_to_dict(e, _names(db, current_user.id))}
+
+
+@router.delete("/waitlist/{entry_id}")
+def booking_waitlist_cancel(entry_id: str, current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    _wl(wl.cancel, db, current_user, entry_id)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/waitlist/{entry_id}/offer")
+def booking_waitlist_offer(entry_id: str, current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    out = _wl(wl.offer_now, db, current_user, entry_id)
+    db.commit()
+    return out
+
+
 @router.post("/blocks")
 def booking_block_create(body: BlockIn, current_user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)) -> Dict[str, Any]:
@@ -1395,6 +1480,36 @@ def public_booking_reviews(slug: str, master: Optional[str] = None, offset: int 
     return reviews_service.public_list(db, owner.id, master_id=master, offset=offset, limit=limit)
 
 
+class PublicWaitlistIn(BaseModel):
+    service_id: str
+    resource_id: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    time_from: Optional[str] = Field(None, max_length=5)
+    time_to: Optional[str] = Field(None, max_length=5)
+    client_name: str = Field(..., min_length=1, max_length=200)
+    client_phone: str = Field(..., min_length=5, max_length=40)
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@public_router.post("/{slug}/waitlist")
+def public_waitlist_add(slug: str, body: PublicWaitlistIn, request: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Клиент со страницы салона встаёт в лист ожидания (шаг 2.4): освободится время — напишем в мессенджер."""
+    from backend.services import waitlist_service as wl
+    _public_rate(_client_ip(request))
+    page, owner = _public_page(db, slug)
+    try:
+        e = wl.add(db, owner, service_id=body.service_id, resource_id=body.resource_id, date_from=body.date_from,
+                   date_to=body.date_to, time_from=body.time_from, time_to=body.time_to, name=body.client_name.strip(),
+                   phone=body.client_phone, note=body.note, source="online")
+        db.commit()
+    except wl.WaitlistError as ex:
+        db.rollback()
+        _err(ex)
+    return {"ok": True, "period": wl._period_words(e), "service": e.service_title,
+            "position": wl.listing(db, owner.id, status="active")["counts"]["active"]}
+
+
 @public_router.get("/{slug}/slots")
 def public_booking_slots(slug: str, service_id: Optional[str] = None, resource_id: Optional[str] = None,
                          date: Optional[str] = None, days: int = Query(1, ge=1, le=14),
@@ -1511,3 +1626,41 @@ def public_visit_create(slug: str, body: PublicVisitIn, request: Request, db: Se
         "items": [{"service": b["service"], "resource": b["resource"], "start": b["start"], "price": b["price"]} for b in out],
         "price": sum(float(b.get("price") or 0) for b in out) or None,
         "prepay_amount": prepay or None, "address": cfg.get("address") or "", "prepay_info": cfg.get("prepay_info") or ""}}
+
+
+# ───────────────────────────── ответ на предложение из листа ожидания (/w/<токен>) ─────────────────────────────
+
+waitlist_public_router = APIRouter()
+
+
+@waitlist_public_router.get("/{token}")
+def public_waitlist_state(token: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from backend.services import waitlist_service as wl
+    try:
+        st = wl.link_state(db, token)
+    except wl.WaitlistError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    st.pop("_entry_id", None)
+    db.rollback()
+    return st
+
+
+@waitlist_public_router.post("/{token}")
+def public_waitlist_answer(token: str, request: Request, data: Dict[str, Any] = Body(...),
+                           db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """{action: accept | decline | stop} — записаться / не подходит / больше не нужно."""
+    from backend.services import waitlist_service as wl
+    _public_rate(_client_ip(request), limit=20)
+    action = (data or {}).get("action")
+    try:
+        eid = wl.link_state(db, token)["_entry_id"]
+        db.rollback()
+        if action == "accept":
+            return wl.accept(db, eid)
+        if action in ("decline", "stop"):
+            return wl.decline(db, eid, stop=action == "stop")
+    except wl.WaitlistError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    raise HTTPException(status_code=400, detail="Неизвестное действие")

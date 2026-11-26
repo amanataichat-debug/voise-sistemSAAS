@@ -116,16 +116,36 @@
   function canSetup() { return S.staffCan ? S.staffCan('booking_setup') : true; }
   function canServices() { return S.staffCan ? (S.staffCan('booking_setup') || S.staffCan('catalog')) : true; }
   function openMasters() {
-    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
+    if (!isScreen(st.view)) st.prevView = st.view;
     st.view = 'masters'; render(); window.scrollTo(0, 0);
   }
   function openServices() {
-    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
+    if (!isScreen(st.view)) st.prevView = st.view;
     st.view = 'services'; render(); window.scrollTo(0, 0);
+  }
+  function syncWaitBadge() {
+    var n = (st.data && st.data.waitlist) || 0, el = document.getElementById('bk-wait-n');
+    if (!el) return;
+    el.hidden = !n; el.textContent = n;
+  }
+  function isScreen(v) { return v === 'masters' || v === 'services' || v === 'page' || v === 'waitlist'; }
+  // Лист ожидания (шаг 2.4): экран — booking/waitlist.js
+  function openWaitlist() {
+    if (!isScreen(st.view)) st.prevView = st.view;
+    st.view = 'waitlist'; render(); window.scrollTo(0, 0);
+  }
+  function wctx() {
+    return { root: root, data: function () { return st.data; },
+      back: function () { st.view = st.prevView || 'day'; render(); window.scrollTo(0, 0); load(true); } };
+  }
+  function toWaitlist(pre) {
+    if (!window.BookingWaitlist) return;
+    pre.data = st.data;
+    BookingWaitlist.addDialog(pre, function () { load(true); });
   }
   // Страница салона /beauty/<slug> (шаг 1.5): конструктор — booking/page.js
   function openPage() {
-    if (st.view !== 'masters' && st.view !== 'services' && st.view !== 'page') st.prevView = st.view;
+    if (!isScreen(st.view)) st.prevView = st.view;
     st.view = 'page'; render(); window.scrollTo(0, 0);
   }
   function pctx() {
@@ -151,7 +171,9 @@
     if (st.view === 'masters' && M()) { document.body.classList.add('bk-masters-on'); M().open(mctx()); return; }
     if (st.view === 'services' && window.BookingServices) { document.body.classList.add('bk-masters-on'); BookingServices.open(sctx()); return; }
     if (st.view === 'page' && window.BookingPage) { document.body.classList.add('bk-masters-on'); BookingPage.open(pctx()); return; }
+    if (st.view === 'waitlist' && window.BookingWaitlist) { document.body.classList.add('bk-masters-on'); BookingWaitlist.open(wctx()); return; }
     document.body.classList.remove('bk-masters-on');
+    syncWaitBadge();
     var d = dayTitle(st.day);
     if (st.view === 'month' && !isPhone()) { var pk = parseKey(st.day); d = { main: MONTHS[pk.getUTCMonth()] + ' ' + pk.getUTCFullYear(), sub: '' }; }
     else if (st.view === 'week' && !isPhone()) {
@@ -863,6 +885,21 @@
         });
       });
     }
+    // Лист ожидания (шаг 2.4): времени нет — поставить клиента в очередь, освободится — предложим сами
+    function addWaitBtn() {
+      var none = $('#nb-none');
+      if (!none || move || !window.BookingWaitlist || S.$('#nb-wait', d.el)) return;
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-sm'; b.id = 'nb-wait'; b.style.marginLeft = '6px';
+      b.innerHTML = icon('hourglass') + '<span>В лист ожидания</span>';
+      none.parentNode.insertBefore(b, none.nextSibling);
+      b.addEventListener('click', function () {
+        var name = $('#nb-name') ? $('#nb-name').value.trim() : '', phone = $('#nb-phone') ? $('#nb-phone').value.trim() : '';
+        d.close();
+        toWaitlist({ client: (contactId || name) ? { id: contactId, name: name, phone: phone } : null,
+          service_id: ($('#nb-svc') && $('#nb-svc').value) || '', resource_id: $('#nb-res').value || '', date: $('#nb-day').value || day });
+      });
+    }
     function loadSlots() {
       if (more.length) { loadVisitSlots(); return; }
       var p = new URLSearchParams({ date: $('#nb-day').value || day, days: '1' });
@@ -877,6 +914,7 @@
         $('#nb-slots').innerHTML = slots.length ? slots.map(function (s) {
           return '<button type="button" class="bk-slot' + (chosen && chosen.start === s.start ? ' on' : '') + '" data-s="' + esc(s.start) + '">' + esc(s.time) + '</button>';
         }).join('') : '<span class="muted small" id="nb-none">Свободного времени нет — выберите другой день, мастера или укажите время вручную.</span>';
+        if (!slots.length && !move) addWaitBtn();
         if (!slots.length) {
           // Подсказка: ближайший день, где есть свободное время (до недели вперёд)
           var q2 = new URLSearchParams(p.toString()); q2.set('date', addDays($('#nb-day').value || day, 1)); q2.set('days', '7');
@@ -886,6 +924,7 @@
             var t = dayTitle(next.date);
             none.innerHTML = 'На этот день свободного времени нет. <button type="button" class="btn btn-sm" id="nb-next" style="margin-left:6px">Ближайшее: ' + esc(t.main.toLowerCase()) + ', ' + esc(next.slots[0].time) + '</button>';
             $('#nb-next').addEventListener('click', function () { $('#nb-day').value = next.date; pre.time = next.slots[0].time; loadSlots(); });
+            addWaitBtn();
           });
         }
         S.$$('.bk-slot', d.el).forEach(function (btn) {
@@ -1173,18 +1212,20 @@
     try { var v = localStorage.getItem('vf_booking_view'); if (v === 'week' || v === 'day' || v === 'month') st.view = v; } catch (e) { /* ignore */ }
     var q = new URLSearchParams(location.search);
     st.day = q.get('date') || keyOf(new Date());
-    if (q.get('view') === 'masters' || q.get('view') === 'services' || (q.get('view') === 'page' && canSetup())) { st.prevView = st.view; st.view = q.get('view'); }
+    if (q.get('view') === 'masters' || q.get('view') === 'services' || q.get('view') === 'waitlist' || (q.get('view') === 'page' && canSetup())) { st.prevView = st.view; st.view = q.get('view'); }
     var acts = document.getElementById('bk-actions');
     // Мастера, график, правила и ссылка — у владельца и сотрудника с разделом «Мастера и график»
     var setup = canSetup();
     acts.innerHTML = '<button class="btn btn-sm" type="button" id="bk-services-btn" title="Услуги: прайс, время, кто делает">' + icon('sparkles') + '<span class="lbl">Услуги</span></button>' +
       '<button class="btn btn-sm" type="button" id="bk-masters-btn" title="Мастера: фото, график, услуги и цены">' + icon('users') + '<span class="lbl">Мастера</span></button>' +
+      '<button class="btn btn-sm bk-wait-btn" type="button" id="bk-wait-btn" title="Лист ожидания: освободится время — предложим сами">' + icon('hourglass') + '<span class="lbl">Лист ожидания</span><span class="bk-wait-n" id="bk-wait-n" hidden></span></button>' +
       (setup ? '<button class="btn btn-sm" type="button" id="bk-link-btn" title="Страница салона: витрина и онлайн-запись для клиентов">' + icon('store') + '<span class="lbl">Страница салона</span></button>' +
       '<button class="btn btn-sm btn-icon" type="button" id="bk-set" title="Настройки записи" aria-label="Настройки">' + icon('settings') + '</button>' : '') +
       '<button class="btn btn-primary btn-sm" type="button" id="bk-new">' + icon('plus') + '<span class="lbl">Записать</span></button>';
     document.getElementById('bk-new').addEventListener('click', function () { newBooking({}); });
     document.getElementById('bk-masters-btn').addEventListener('click', openMasters);
     document.getElementById('bk-services-btn').addEventListener('click', openServices);
+    document.getElementById('bk-wait-btn').addEventListener('click', openWaitlist);
     if (setup) {
       document.getElementById('bk-set').addEventListener('click', settings);
       document.getElementById('bk-link-btn').addEventListener('click', openPage);

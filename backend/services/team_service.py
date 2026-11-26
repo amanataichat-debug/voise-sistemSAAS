@@ -152,6 +152,10 @@ STAFF_RULES = [
     _rule("GET", r"^/api/booking/rooms/?$", "booking", "booking_setup"),
     _rule("POST", r"^/api/booking/rooms/?$", "booking_setup"),
     _rule("PATCH DELETE", r"^/api/booking/rooms/[^/]+/?$", "booking_setup"),
+    # — лист ожидания (шаг 2.4): администратор ставит клиента в очередь, правит, убирает, предлагает окно —
+    _rule("GET POST", r"^/api/booking/waitlist/?$", "booking", "booking_setup"),
+    _rule("PATCH DELETE", r"^/api/booking/waitlist/[0-9a-fA-F-]{36}/?$", "booking", "booking_setup"),
+    _rule("POST", r"^/api/booking/waitlist/[0-9a-fA-F-]{36}/offer/?$", "booking", "booking_setup"),
     # — услуги салона (над каталогом): смотреть — журнал и каталог, менять — «Мастера и график» и каталог —
     _rule("GET", r"^/api/booking/services/?$", "booking", "booking_setup", "catalog"),
     _rule("POST", r"^/api/booking/services(/categories/(rename|order))?/?$", "booking_setup", "catalog"),

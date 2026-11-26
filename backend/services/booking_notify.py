@@ -57,6 +57,12 @@ async def run_once(now=None) -> int:
     db = SessionLocal()
     try:
         automations.plan(db, now)
+        from backend.services import waitlist_service
+        try:
+            waitlist_service.tick(db, now)        # лист ожидания (шаг 2.4): просрочки и новые предложения
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[BOOKING] waitlist tick failed: {e}")
         return await notify_queue.process(db, now)
     except Exception as e:
         db.rollback()
@@ -89,7 +95,8 @@ async def notify_owner_new_booking(owner_id, booking_id, by: str = "online") -> 
         if b is None or agent is None:
             return False
         res = db.query(BookingResource).filter(BookingResource.id == b.resource_id).first() if b.resource_id else None
-        head = {"online": "📅 Новая онлайн-запись", "bot": "📅 Бот записал клиента", "call": "📅 Запись со звонка"}.get(by, "📅 Новая запись")
+        head = {"online": "📅 Новая онлайн-запись", "bot": "📅 Бот записал клиента", "call": "📅 Запись со звонка",
+                "waitlist": "📅 Запись из листа ожидания"}.get(by, "📅 Новая запись")
         lines = [f"**{head}**", f"{b.client_name or 'Клиент'}" + (f" · {b.client_phone}" if b.client_phone else ""),
                  f"{bs.fmt_local(b.start_at)}" + (f" — {b.service_title}" if b.service_title else "")
                  + (f" · {res.name}" if res else "")]

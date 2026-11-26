@@ -355,3 +355,12 @@ body.embed .bk-h { padding-right: 56px; }
 .rv-empty { color: var(--t3); font-size: 14px; margin: 10px 0 0; }
 #reviews .btn.ghost { margin-top: 12px; width: 100%; background: var(--a-soft); color: var(--a); box-shadow: none; }
 @media (max-width: 420px) { .rv-sum { gap: 12px; padding: 14px 12px; } .rv-big { min-width: 86px; } .rv-big b { font-size: 34px; } }
+
+/* ── лист ожидания (шаг 2.4) ── */
+.wlcta { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 18px; padding: 12px 14px; border: 1px dashed var(--b);
+  border-radius: 16px; background: var(--s1); cursor: pointer; text-align: left; color: var(--t2); font-size: 13.5px; }
+.wlcta > .ic { flex: none; color: var(--a); }
+.wlcta span { flex: 1; min-width: 0; }
+.wlcta b { display: block; color: var(--t); font-size: 14.5px; }
+.wlcta.strong { border-style: solid; border-color: color-mix(in srgb, var(--a) 35%, var(--b)); background: var(--a-soft); }
+.wlc { flex-wrap: wrap; overflow: visible; margin: 0 0 4px; padding: 0; }

@@ -371,6 +371,7 @@ app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
 from backend.api import webchat as webchat_api
 app.include_router(webchat_api.public_router, prefix="/api/public/chat", tags=["Web chat"])
+app.include_router(booking_api.waitlist_public_router, prefix="/api/public/waitlist", tags=["Booking"])   # /w/<токен>
 app.include_router(booking_api.media_router, tags=["Booking"])   # /media/salon/{id} — фото салона и мастеров
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
@@ -2049,6 +2050,7 @@ def ensure_booking_tables():
         from backend.models.activity import ActivityLog
         from backend.models.automation import NotificationQueue, AutomationRule
         from backend.models.review import SalonReview
+        from backend.models.waitlist import WaitlistEntry
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2058,7 +2060,8 @@ def ensure_booking_tables():
                                  BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
                                  PushSubscription.__table__, WebPushKey.__table__,
                                  WebChatSession.__table__, AgentWebChatMessage.__table__,
-                                 ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__],
+                                 ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__,
+                                 WaitlistEntry.__table__],
             checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
@@ -3938,6 +3941,24 @@ def business_public_page(slug: str, request: Request):
 @app.get("/b/{slug}", include_in_schema=False)
 def booking_public_page(slug: str, request: Request):
     return _salon_page_response(slug, "book", request)
+
+
+# Лист ожидания (Voksy Beauty, шаг 2.4): /w/<токен> — ответ на «освободилось время» (Записаться / Не подходит).
+@app.get("/w/{token}", include_in_schema=False)
+def waitlist_offer_page(token: str):
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/wait.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex"})
 
 
 # «Оцените визит» (Voksy Beauty, шаг 2.3): ссылка /r/<токен> из сообщения после визита (вставка {оценить}).

@@ -276,6 +276,7 @@
   function ruleTitle(k) {
     if (k === 'review') return 'Просьба оценить визит';
     if (k === 'review_reply') return 'Ответ на отзыв';
+    if (k === 'waitlist_offer') return 'Лист ожидания: освободилось время';
     var r = st.data && ruleByKey(k);
     return r ? r.title : k;
   }

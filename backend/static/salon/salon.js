@@ -501,6 +501,7 @@
     if (step === 3) return step3();
     if (step === 4) return step4();
     if (step === 5) return step5();
+    if (step === 6) return step6();
   }
   function selSummary() {
     var list = selSvcs();
@@ -660,7 +661,7 @@
     if (!box) return;
     if (!slots.length) {
       box.innerHTML = '<div class="empty">' + ic('calendar') + 'На этот день мест нет.<br>Выберите другой день' +
-        (Object.keys(B.avail).some(function (k) { return B.avail[k] > 0; }) ? ' — дни с местами отмечены точкой.' : '.') + '</div>';
+        (Object.keys(B.avail).some(function (k) { return B.avail[k] > 0; }) ? ' — дни с местами отмечены точкой.' : '.') + '</div>' + wlCta(true);
       return;
     }
     var parts = [['Утро', 'sun', 0, 12 * 60], ['День', 'sunset', 12 * 60, 17 * 60], ['Вечер', 'moon', 17 * 60, 24 * 60]];
@@ -672,7 +673,56 @@
         return '<button class="slot' + (wide ? ' wide' : '') + (B.slot && B.slot.start === s.start ? ' on' : '') + '" type="button" data-slot="' + esc(s.start) + '" data-t="' + esc(s.time) + '" data-e="' + esc(s.end_time || '') + '">' +
           esc(s.time) + (wide && s.end_time ? '<small>до ' + esc(s.end_time) + '</small>' : '') + '</button>';
       }).join('') + '</div>';
-    }).join('');
+    }).join('') + wlCta(false);
+  }
+
+  // ── лист ожидания (шаг 2.4): нет подходящего времени — встать в очередь, освободится — напишем ──
+  var WL_RANGES = [['day', 'Только этот день'], ['3', '3 дня'], ['7', 'Неделя'], ['14', '2 недели']];
+  var WL_TOD = [['', '', 'Любое время'], ['', '12:00', 'Утро'], ['12:00', '17:00', 'День'], ['17:00', '', 'Вечер']];
+  function wlCta(strong) {
+    if (isVisit() || !B.sel[0] || !services().length) return '';
+    return '<button class="wlcta' + (strong ? ' strong' : '') + '" type="button" data-wl>' + ic('clock') + '<span><b>Нет подходящего времени?</b>' +
+      'Встаньте в лист ожидания — освободится, напишем в WhatsApp</span>' + ic('right') + '</button>';
+  }
+  function step6() {
+    var svc = svcById(B.sel[0]), m = B.pick[B.sel[0]] ? mById(B.pick[B.sel[0]]) : null;
+    if (B.wlDone) {
+      head('Лист ожидания');
+      body('<div class="done"><div class="ok">' + ic('check') + '</div><h3>Вы в листе ожидания</h3><div class="when">' + esc(B.wlDone.service) + ', ' + esc(B.wlDone.period) + '</div>' +
+        '<div class="hint" style="margin-top:12px">Освободится подходящее время — напишем в WhatsApp. Ответить нужно в течение 30 минут, иначе предложим следующему в очереди.</div></div>');
+      foot('', '<button class="btn" type="button" data-finish>Готово</button>');
+      return;
+    }
+    head('Лист ожидания');
+    B.wl = B.wl || { range: '7', tod: 0 };
+    body('<div class="sumc"><div><span>Услуга</span><b>' + esc(svc ? svc.title : '') + '</b></div><div><span>' + (SAL.staff_word === 'Мастера' ? 'Мастер' : 'Специалист') + '</span><b>' + esc(m ? m.name : 'любой') + '</b></div></div>' +
+      '<div class="hint" style="margin:12px 0 4px">Освободится время в подходящие дни — напишем тому, кто первым встал в очередь. Ответить нужно в течение 30 минут.</div>' +
+      '<div class="field"><label>Какие дни подходят</label><div class="chips wlc">' + WL_RANGES.map(function (r) {
+        return '<button class="chip' + (B.wl.range === r[0] ? ' on' : '') + '" type="button" data-wlr="' + r[0] + '">' + esc(r[0] === 'day' ? dayLong(B.day) : r[1]) + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="field"><label>Время</label><div class="chips wlc">' + WL_TOD.map(function (x, i) {
+        return '<button class="chip' + (B.wl.tod === i ? ' on' : '') + '" type="button" data-wlt="' + i + '">' + esc(x[2]) + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="field"><label for="f-nm">Ваше имя</label><input id="f-nm" autocomplete="name" value="' + esc(B.name) + '" placeholder="Как к вам обращаться"></div>' +
+      '<div class="field"><label for="f-ph">Телефон (WhatsApp)</label><input id="f-ph" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(B.phone) + '"></div>' +
+      (B.err ? '<div class="err">' + esc(B.err) + '</div>' : ''));
+    foot('<b>' + esc(svc ? svc.title : '') + '</b>' + esc(m ? m.name : 'любой мастер'), '<button class="btn" type="button" data-wlsend>' + (B.busy ? 'Отправляем…' : 'Встать в очередь') + '</button>');
+  }
+  function wlSend() {
+    if (B.busy) return;
+    B.name = (document.getElementById('f-nm').value || '').trim();
+    B.phone = (document.getElementById('f-ph').value || '').trim();
+    if (!B.name) { B.err = 'Укажите имя'; return step6(); }
+    if (digits(B.phone).length < 9) { B.err = 'Укажите телефон: например, +996 700 123 456'; return step6(); }
+    var today = keyOf(new Date()), from = B.wl.range === 'day' ? B.day : (B.day > today ? B.day : today);
+    var to = B.wl.range === 'day' ? B.day : addDays(from, +B.wl.range - 1), tod = WL_TOD[B.wl.tod];
+    B.err = ''; B.busy = true; step6();
+    post('/waitlist', { service_id: B.sel[0], resource_id: B.pick[B.sel[0]] || null, date_from: from, date_to: to,
+      time_from: tod[0] || null, time_to: tod[1] || null, client_name: B.name, client_phone: B.phone }).then(function (d) {
+      B.busy = false; B.wlDone = d;
+      store('vxs_me', { name: B.name, phone: B.phone });
+      step6();
+    }).catch(function (e) { B.busy = false; B.err = e.message; step6(); });
   }
 
   // шаг 4 — контакты и проверка
@@ -770,8 +820,15 @@
     if (t.closest('[data-close]')) return closeBooking();
     if (t.closest('[data-back]')) {
       if (B.step === 1) return MODE === 'page' ? closeBooking() : undefined;
+      if (B.step === 6) { B.err = ''; return go(3); }
       return go(B.step === 3 && !needMasterStep() ? 1 : B.step - 1);
     }
+    if (t.closest('[data-wl]')) { B.err = ''; B.wlDone = null; return go(6); }
+    var wr = t.closest('[data-wlr]');
+    if (wr) { B.wl.range = wr.getAttribute('data-wlr'); return step6(); }
+    var wt = t.closest('[data-wlt]');
+    if (wt) { B.wl.tod = +wt.getAttribute('data-wlt'); return step6(); }
+    if (t.closest('[data-wlsend]')) return wlSend();
     var sv = t.closest('[data-svc]');
     if (sv) return toggleSvc(sv.getAttribute('data-svc'));
     if (t.closest('[data-allm]')) { B.preMaster = null; return step1(); }

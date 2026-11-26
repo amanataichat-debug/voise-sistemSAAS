@@ -1645,6 +1645,8 @@ class PostCallOrchestrator:
                 situation_text += booking_confirm.pending_block(db, agent_call.user_id, agent_contact.id)
                 from backend.services import salon_manager
                 situation_text += salon_manager.review_hint(db, agent_call.user_id, agent_contact.id)
+                from backend.services import waitlist_service
+                situation_text += waitlist_service.offer_hint(db, agent_call.user_id, agent_contact.id)
             except Exception as e:
                 logger.warning(f"[POSTCALL] chat situation failed: {e}")
                 try:
