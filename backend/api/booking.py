@@ -594,6 +594,12 @@ def widget_code(host: str, slug: str) -> str:
             f'data-text="Записаться онлайн" async></script>')
 
 
+def chat_widget_code(host: str, slug: str) -> str:
+    """Код кнопки чата с администратором для сайта владельца (тот же booking-widget.js, режим чата)."""
+    return (f'<script src="{host}/static/booking-widget.js" data-slug="{slug}" data-chat="1" '
+            f'data-text="Написать администратору" async></script>')
+
+
 @router.get("/link-kit")
 def booking_link_kit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     """Всё, чем владелец делится с клиентами: ссылка, QR (печать на ресепшн, в Instagram), код виджета на сайт."""
@@ -632,7 +638,19 @@ def _page_payload(db: Session, user: User, page: BookingPage) -> Dict[str, Any]:
         "qr": _qr(info.get("page_url")), "qr_book": _qr(info.get("url")),
         "widget_code": widget_code(host, page.slug) if page.slug else None,
         "limits": {"gallery": sp.MAX_GALLERY, "promos": sp.MAX_PROMOS},
+        "chat": _chat_cabinet(db, page, user),
+        "chat_widget_code": chat_widget_code(host, page.slug) if page.slug else None,
     }
+
+
+def _chat_cabinet(db: Session, page: BookingPage, user: User) -> Dict[str, Any]:
+    from backend.services import webchat_service
+    try:
+        return webchat_service.cabinet_state(db, page, user)
+    except Exception as e:
+        logger.warning(f"[BOOKING] chat state failed: {e}")
+        db.rollback()
+        return {"enabled": False, "live": False, "reason": "", "title": "", "greeting": ""}
 
 
 @router.get("/page")
@@ -646,9 +664,11 @@ def booking_page_get(current_user: User = Depends(get_current_user), db: Session
 def booking_page_put(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
                      db: Session = Depends(get_db)) -> Dict[str, Any]:
     from backend.services import salon_page as sp
+    from backend.services import webchat_service
     page = bs.get_page(db, current_user)
     try:
         sp.save_profile(db, page, data or {})
+        webchat_service.save_settings(page, data or {})
         db.commit()
     except sp.PageError as e:
         db.rollback()

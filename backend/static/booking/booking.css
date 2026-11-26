@@ -620,3 +620,10 @@ body.bk-dragging, body.bk-dragging * { user-select: none; -webkit-user-select: n
   .pg-savebar { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 32px); justify-content: space-between; }
   .pg .ms-head [data-pg-save] { display: none; }        /* на телефоне сохраняет нижняя полоса */
 }
+
+/* Чат на сайте (Voksy Beauty 1.6в): состояние в «Странице салона» */
+.pg-chat-st { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+.pg-chat-st::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pg-chat-st.on { background: #e8f6ee; color: #15803d; }
+.pg-chat-st.warn { background: #fdf3e2; color: #8a5100; }
+.pg-chat-st.off { background: var(--vf-surface-2, #f3f4f6); color: var(--vf-text-3, #6b7280); }

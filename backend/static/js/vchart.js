@@ -51,7 +51,8 @@
   var METRICS = [
     { id: 'inbound', title: 'Обращения', sub: 'Сообщения клиентов и входящие звонки', need: 'bot', prev: 'inbound',
       parts: [['whatsapp_in', 'WhatsApp', 'var(--vc-wa)'], ['telegram_in', 'Telegram', 'var(--vc-tg)'],
-        ['instagram_in', 'Instagram', 'var(--vc-ig)'], ['calls_in', 'Звонки', 'var(--vc-call)']] },
+        ['instagram_in', 'Instagram', 'var(--vc-ig)'], ['webchat_in', 'Чат на сайте', 'var(--vc-web)'],
+        ['calls_in', 'Звонки', 'var(--vc-call)']] },
     { id: 'new_clients', title: 'Новые клиенты', sub: 'Сколько клиентов появилось в базе', need: 'bot', prev: 'new_clients',
       parts: [['new_clients', 'Новые клиенты', 'var(--vc-in)']] },
     { id: 'calls', title: 'Звонки', sub: 'Входящие и исходящие по телефонии', prev: 'calls',

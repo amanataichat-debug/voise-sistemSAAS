@@ -468,13 +468,13 @@
   // переписка по каналам
   function drawThread() {
     var c = cur.data, sec = S.$('#sec-thread', cur.drawer.body);
-    var chans = ['whatsapp', 'telegram', 'instagram'].filter(function (k) { return (c[k] || []).length; });
+    var chans = ['whatsapp', 'telegram', 'instagram', 'webchat'].filter(function (k) { return (c[k] || []).length; });
     if (!chans.length) {
       sec.innerHTML = '<h4>Переписка</h4><div class="muted small">Переписки с ботом пока нет.</div>';
       return;
     }
     if (!cur.thread || chans.indexOf(cur.thread) === -1) cur.thread = chans[0];
-    var names = { whatsapp: 'WhatsApp', telegram: 'Telegram', instagram: 'Instagram' };
+    var names = { whatsapp: 'WhatsApp', telegram: 'Telegram', instagram: 'Instagram', webchat: 'Сайт' };
     var msgs = (c[cur.thread] || []).slice().sort(function (a, b) { return new Date(a.ts) - new Date(b.ts); });
     sec.innerHTML = '<h4>Переписка</h4><div class="st-thread-tabs">' + chans.map(function (k) {
       return '<button class="btn btn-sm ' + (k === cur.thread ? 'btn-primary' : '') + '" type="button" data-ch="' + k + '">' + names[k] + ' · ' + (c[k] || []).length + '</button>';

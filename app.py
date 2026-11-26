@@ -365,6 +365,8 @@ app.include_router(business_api.router, prefix="/api/business", tags=["Business"
 from backend.api import booking as booking_api  # онлайн-запись: календарь владельца и запись клиентов по ссылке
 app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
+from backend.api import webchat as webchat_api
+app.include_router(webchat_api.public_router, prefix="/api/public/chat", tags=["Web chat"])
 app.include_router(booking_api.media_router, tags=["Booking"])   # /media/salon/{id} — фото салона и мастеров
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
@@ -2023,6 +2025,7 @@ def ensure_booking_tables():
         from backend.models.booking import (BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom,
                                             BookingConfirmation)
         from backend.models.salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
+        from backend.models.webchat import WebChatSession, AgentWebChatMessage
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2030,7 +2033,8 @@ def ensure_booking_tables():
             bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
                                  SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__,
                                  BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
-                                 PushSubscription.__table__, WebPushKey.__table__], checkfirst=True)
+                                 PushSubscription.__table__, WebPushKey.__table__,
+                                 WebChatSession.__table__, AgentWebChatMessage.__table__], checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
     except Exception as e:

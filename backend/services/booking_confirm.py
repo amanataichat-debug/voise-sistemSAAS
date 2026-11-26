@@ -145,6 +145,9 @@ SELECT direction, sent_by, body, created_at FROM (
     SELECT direction, sent_by, body, created_at FROM agent_telegram_messages WHERE agent_contact_id = :cid AND created_at > :t
     UNION ALL
     SELECT direction, sent_by, body, created_at FROM agent_instagram_messages WHERE agent_contact_id = :cid AND created_at > :t
+    UNION ALL
+    SELECT direction, sent_by, body, created_at FROM agent_webchat_messages
+     WHERE agent_contact_id = :cid AND created_at > :t AND coalesce(sent_by, '') <> 'auto'
 ) m ORDER BY created_at
 """
 

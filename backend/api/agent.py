@@ -4494,6 +4494,16 @@ def get_agent_contact_details(
     except Exception as e:
         logger.warning(f"[AGENT] failed to load whatsapp thread for contact {contact_id}: {e}")
     contact_data["whatsapp"] = whatsapp
+
+    # Чат на сайте (Voksy Beauty 1.6в)
+    webchat = []
+    try:
+        from backend.services.webchat_service import get_thread as web_get_thread
+        webchat = [m.to_dict() for m in web_get_thread(db, contact.id, limit=30)]
+    except Exception as e:
+        logger.warning(f"[AGENT] failed to load webchat thread for contact {contact_id}: {e}")
+        db.rollback()
+    contact_data["webchat"] = webchat
     return contact_data
 
 

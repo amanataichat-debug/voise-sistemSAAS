@@ -101,7 +101,7 @@ TOOLS = [
                 "master": {"type": "string", "description": "Имя мастера"},
                 "agent_contact_id": {"type": "string", "description": "Клиент (в переписке — текущий)"},
                 "count": {"type": "integer", "description": "Сколько фото (1–4, по умолчанию 4)"},
-                "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram"],
+                "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram", "webchat"],
                             "description": "Канал (пусто — где клиент писал последним)"},
             },
             "required": ["master"],
@@ -454,7 +454,7 @@ async def send_staff_portfolio(db: Session, user, args: Dict[str, Any], context:
     if r is None:
         return {"ok": False, "error": "Такого мастера нет — проверь имя через get_staff"}
     channel = (args.get("channel") or "").strip().lower() or at._detect_recent_channel(db, agent.id, contact.id)
-    if channel not in ("whatsapp", "telegram", "instagram"):
+    if channel not in ("whatsapp", "telegram", "instagram", "webchat"):
         return {"ok": False, "error": "Клиент ещё не писал ни в один мессенджер — некуда отправить фото"}
     try:
         count = max(1, min(int(args.get("count") or MAX_PORTFOLIO_SEND), MAX_PORTFOLIO_SEND))
@@ -468,8 +468,9 @@ async def send_staff_portfolio(db: Session, user, args: Dict[str, Any], context:
     head = r.name + (f" — {r.role}" if r.role else "") + (f", опыт {years} {_years_word(years)}" if years else "")
     if not photos:
         return {"ok": False, "error": f"У мастера {r.name} нет фото работ — расскажи о нём словами (get_staff)"}
+    from backend.services import webchat_service
     send_file = {"whatsapp": at.fn_whatsapp_send_file, "telegram": at.fn_telegram_send_file,
-                 "instagram": at.fn_instagram_send_file}[channel]
+                 "instagram": at.fn_instagram_send_file, "webchat": webchat_service.fn_webchat_send_file}[channel]
     sent = 0
     for i, (mid, cap) in enumerate(photos):
         f = await _mirror(db, user.id, agent.id, mid, f"{r.name}-{i + 1}.jpg", cap or r.name)

@@ -128,6 +128,7 @@ from .team import TeamMember
 # Заказы магазинов и доставки (ветка 1811-niche-admin-speed)
 from .order import Order, OrderSettings
 from .salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
+from .webchat import WebChatSession, AgentWebChatMessage
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

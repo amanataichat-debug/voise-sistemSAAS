@@ -55,6 +55,8 @@ SEND_TOOLS = {
     "send_proposal",
     "send_product_card",
     "send_staff_portfolio",
+    "webchat_send_message",
+    "webchat_send_file",
 }
 
 # Чат владельца с оркестратором на Старте читает и по команде владельца пишет клиентам в

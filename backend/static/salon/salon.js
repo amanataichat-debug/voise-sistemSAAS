@@ -384,6 +384,7 @@
     }
     if (!sheet) buildSheet();
     B.open = true;
+    document.documentElement.classList.add('bk-open');
     var cta = document.getElementById('cta'); if (cta) cta.classList.remove('on');
     if (MODE === 'page') {
       document.documentElement.style.overflow = 'hidden';
@@ -399,6 +400,7 @@
   function doCloseBooking() {
     if (!sheet || !B.open) return;
     B.open = false;
+    document.documentElement.classList.remove('bk-open');
     sheet.classList.remove('on');
     document.documentElement.style.overflow = '';
     setTimeout(function () { if (!B.open && sheet) sheet.style.display = 'none'; }, 280);
@@ -873,12 +875,23 @@
     D = d; SAL = d.salon || { name: d.title, hours: [], gallery: [], promos: [], amenities: [], show_prices: true, staff_word: 'Мастера', accent: '#d6336c', address: d.address || '' };
     document.documentElement.style.setProperty('--a', SAL.accent || '#d6336c');
     var tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.setAttribute('content', SAL.accent || '#d6336c');
+    var chatOn = !!(SAL.chat && SAL.chat.enabled && window.SalonChat);
     if (MODE === 'book') {
+      // /b/<slug>?chat=1 — только чат (виджет «Написать администратору» на сайте владельца)
+      if (QS.get('chat') === '1' && chatOn) {
+        document.title = 'Чат — ' + SAL.name;
+        window.SalonChat.init({ slug: slug, salon: SAL, mode: 'chat', embed: EMBED, onBook: function () {
+          var c = document.querySelector('.sc'); if (c) c.remove();
+          openBooking({});
+        } });
+        return;
+      }
       document.title = 'Запись — ' + SAL.name;
       openBooking({ service: QS.get('service') || undefined, master: QS.get('master') || undefined });
       return;
     }
     renderPage();
+    if (chatOn) window.SalonChat.init({ slug: slug, salon: SAL, mode: 'page', embed: EMBED, onBook: function () { B.preMaster = null; openBooking({}); } });
     if (QS.get('service') || QS.get('master') || location.hash === '#book') {
       openBooking({ service: QS.get('service') || undefined, master: QS.get('master') || undefined });
     }

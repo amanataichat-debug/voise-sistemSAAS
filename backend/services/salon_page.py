@@ -319,7 +319,13 @@ def public_view(db: Session, page, owner) -> Dict[str, Any]:
         "booking_enabled": bool(page.enabled),
         "page_path": page_path(page, owner.business_niche),
         "book_path": f"/b/{page.slug}",
+        "chat": _chat_state(db, page, owner),
     }
+
+
+def _chat_state(db: Session, page, owner) -> Dict[str, Any]:
+    from backend.services import webchat_service
+    return webchat_service.public_state(db, page, owner)
 
 
 # ───────────────────────────── кабинет: готовность ─────────────────────────────

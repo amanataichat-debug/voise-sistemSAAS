@@ -35,7 +35,7 @@ s = inbox.clean_settings({"languages": ["en", "zh", "en"], "default_pause": 120,
 check("настройки: языки без повторов", s["languages"] == ["en", "zh"], s["languages"])
 check("настройки: пауза 2 часа", s["default_pause"] == 120)
 check("настройки: Telegram выключен, остальные каналы как были",
-      s["channels"] == {"whatsapp": True, "instagram": True, "telegram": False}, s["channels"])
+      s["channels"] == {"whatsapp": True, "instagram": True, "telegram": False, "webchat": True}, s["channels"])
 for bad in ({"languages": ["xx"]}, {"default_pause": 17}, {"tone": "rude"}, {"my_language": "klingon"}, {"languages": []}):
     try:
         inbox.clean_settings(bad, base)
