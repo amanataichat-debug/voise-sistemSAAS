@@ -28,13 +28,25 @@ Voksy Beauty, шаг 1.7 — /api/beauty: журнал действий и гл�
                                                  contact_id, before, limit
   POST /api/beauty/automations/queue/{id}/retry  — отправить ещё раз (не доставлено / пропущено / отменено)
   POST /api/beauty/automations/queue/{id}/cancel — снять из очереди
+
+Шаг 2.3 — отзывы (services/reviews_service.py). Владелец и сотрудник с разделом «Мастера и график»:
+  GET  /api/beauty/reviews                 — шапка (рейтинг, счётчики, мастера, просят ли оценку, показываются ли) +
+                                             лента: ?status=pending|published|hidden, master, score (1–5, -1 = 1–3), offset
+  POST /api/beauty/reviews/{id}/publish    — показать на странице салона (в т.ч. оценку 1–3 после проверки)
+  POST /api/beauty/reviews/{id}/hide       — скрыть со страницы
+  POST /api/beauty/reviews/{id}/reply      — {text, send, publish?}: ответ салона (виден под отзывом); send — ещё и
+                                             клиенту в мессенджер через очередь; пусто — убрать ответ
+  PUT  /api/beauty/reviews/settings        — {show_on_page}
+Без входа — страница «Оцените визит» по ссылке из сообщения (/r/<токен>, вставка {оценить}):
+  GET  /api/public/review/{token}          — салон, визит, уже оставленный отзыв
+  POST /api/public/review/{token}          — {score, text, name, anonymous}: 4–5 — сразу на странице, 1–3 — владельцу
 """
 
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -44,9 +56,10 @@ from backend.models.booking import Booking
 from backend.models.user import User
 from backend.services import activity
 from backend.services import booking_service as bs
-from backend.services import automations, notify_queue, salon_clients, salon_home
+from backend.services import automations, notify_queue, reviews_service, salon_clients, salon_home
 
 router = APIRouter(prefix="/api/beauty", tags=["Voksy Beauty"])
+review_public_router = APIRouter(prefix="/api/public/review", tags=["Voksy Beauty"])
 
 
 @router.get("/activity")
@@ -252,3 +265,119 @@ def beauty_automation_cancel(item_id: str, current_user: User = Depends(get_curr
     if not notify_queue.cancel(db, current_user.id, item_id):
         raise HTTPException(status_code=400, detail="Сообщение уже отправлено или снято")
     return {"ok": True}
+
+
+# ───────────────────────────── отзывы (шаг 2.3) ─────────────────────────────
+
+def _reviews_access(user) -> None:
+    if is_staff(user):
+        perms = (getattr(user, "_staff", None) or {}).get("permissions") or []
+        if "booking_setup" not in perms:
+            raise HTTPException(status_code=403, detail={"error": "staff_forbidden",
+                                                         "message": "Отзывы вам не открыты"})
+
+
+@router.get("/reviews")
+def beauty_reviews(status: Optional[str] = Query(None), master: Optional[str] = Query(None),
+                   score: Optional[int] = Query(None, ge=-1, le=5), offset: int = Query(0, ge=0),
+                   limit: int = Query(30, ge=1, le=100), head: int = Query(1),
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _reviews_access(current_user)
+    out = reviews_service.owner_list(db, current_user.id, status=status, master_id=master, score=score or None,
+                                     offset=offset, limit=limit)
+    if head:
+        out["overview"] = reviews_service.overview(db, current_user)
+    db.rollback()
+    return out
+
+
+@router.put("/reviews/settings")
+def beauty_reviews_settings(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _reviews_access(current_user)
+    try:
+        show = reviews_service.set_show_on_page(db, current_user, bool((data or {}).get("show_on_page")))
+    except reviews_service.ReviewError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    from backend.services.booking_service import notify_changed
+    notify_changed(db, current_user.id)
+    db.commit()
+    return {"show_on_page": show}
+
+
+def _review_action(fn, *args):
+    try:
+        return fn(*args)
+    except reviews_service.ReviewError as e:
+        raise HTTPException(status_code=404 if "не найден" in str(e) else 400, detail=str(e))
+
+
+@router.post("/reviews/{review_id}/publish")
+def beauty_review_publish(review_id: str, current_user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _reviews_access(current_user)
+    out = _review_action(reviews_service.moderate, db, current_user, review_id, "publish")
+    db.commit()
+    return out
+
+
+@router.post("/reviews/{review_id}/hide")
+def beauty_review_hide(review_id: str, current_user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _reviews_access(current_user)
+    out = _review_action(reviews_service.moderate, db, current_user, review_id, "hide")
+    db.commit()
+    return out
+
+
+@router.post("/reviews/{review_id}/reply")
+def beauty_review_reply(review_id: str, data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _reviews_access(current_user)
+    d = data or {}
+    publish = d.get("publish")
+    out = _review_action(reviews_service.reply, db, current_user, review_id, d.get("text"), bool(d.get("send")),
+                         None if publish is None else bool(publish))
+    db.commit()
+    return out
+
+
+_REVIEW_HITS: Dict[str, list] = {}
+
+
+def _review_rate(ip: str, limit: int = 20, window: float = 3600.0) -> None:
+    import time as _t
+    now = _t.time()
+    q = [x for x in _REVIEW_HITS.get(ip, []) if now - x < window]
+    if len(q) >= limit:
+        raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже.")
+    q.append(now)
+    _REVIEW_HITS[ip] = q
+
+
+@review_public_router.get("/{token}")
+def public_review_state(token: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        st = reviews_service.link_state(db, token)
+    except reviews_service.ReviewError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    st.pop("_booking", None)
+    db.rollback()
+    return st
+
+
+@review_public_router.post("/{token}")
+def public_review_save(token: str, request: Request, data: Dict[str, Any] = Body(...),
+                       db: Session = Depends(get_db)) -> Dict[str, Any]:
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (
+        request.client.host if request.client else "?")
+    _review_rate(ip)
+    d = data or {}
+    try:
+        return reviews_service.save_from_link(db, token, d.get("score"), d.get("text"), d.get("name"),
+                                              bool(d.get("anonymous")))
+    except reviews_service.ReviewError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))

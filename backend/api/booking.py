@@ -1355,6 +1355,12 @@ def public_booking_info(slug: str, db: Session = Depends(get_db)) -> Dict[str, A
             d.update(price=None, price_to=None, price_text="")
         services.append(d)
     masters = [public_master(r) for r in bs.resources(db, owner.id) if bs.bookable_online(r)]
+    if (salon.get("reviews") or {}).get("enabled"):          # рейтинг мастеров по опубликованным отзывам (шаг 2.3)
+        from backend.services import reviews_service
+        mr = reviews_service.master_ratings(db, owner.id)
+        for m in masters:
+            if mr.get(m["id"]):
+                m["rating"] = mr[m["id"]]
     if not salon["show_prices"]:
         for m in masters:
             m["service_prices"] = {k: {"duration_min": (v or {}).get("duration_min")} for k, v in (m.get("service_prices") or {}).items()}
@@ -1375,6 +1381,18 @@ def public_master(r: BookingResource) -> Dict[str, Any]:
     d = bs.resource_to_dict(r)
     return {k: d[k] for k in ("id", "name", "role", "color", "initials", "service_ids", "photo_url", "bio",
                               "experience_years", "portfolio", "certificates", "service_prices")}
+
+
+@public_router.get("/{slug}/reviews")
+def public_booking_reviews(slug: str, master: Optional[str] = None, offset: int = 0, limit: int = 10,
+                           db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Отзывы на странице салона (шаг 2.3): опубликованные с текстом, «Показать ещё», отзывы мастера."""
+    from backend.services import reviews_service
+    from backend.services import salon_page as sp
+    page, owner = _public_page(db, slug)
+    if sp.profile_of(page).get("show_reviews", True) is False:
+        return {"items": [], "total": 0, "next_offset": None}
+    return reviews_service.public_list(db, owner.id, master_id=master, offset=offset, limit=limit)
 
 
 @public_router.get("/{slug}/slots")

@@ -227,3 +227,15 @@
   .mc-hero { border-radius: 20px; padding: 16px; }
   .mc-stat b { font-size: 20px; }
 }
+
+/* отзывы клиентов мастера (шаг 2.3) — только опубликованные */
+.mc-rv { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.mc-rv-top { display: flex; align-items: baseline; gap: 8px; }
+.mc-rv-top b { font: 700 24px/1 var(--vf-font-display); font-variant-numeric: tabular-nums; }
+.mc-rv-top small { color: var(--vf-text-3); font-size: 12.5px; }
+.mc-stars { display: inline-flex; gap: 1px; font-style: normal; letter-spacing: 0; }
+.mc-stars i { font-style: normal; color: var(--vf-border-strong, #cbd5e1); font-size: 14px; line-height: 1; }
+.mc-stars i.on { color: #e8a317; }
+.mc-rv-it { border-top: 1px solid var(--vf-border); padding-top: 9px; }
+.mc-rv-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--vf-text-3); }
+.mc-rv-it p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--vf-text); white-space: pre-line; }

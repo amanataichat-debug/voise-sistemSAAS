@@ -275,6 +275,7 @@
   // ── журнал отправок ─────────────────────────────────────────────────────
   function ruleTitle(k) {
     if (k === 'review') return 'Просьба оценить визит';
+    if (k === 'review_reply') return 'Ответ на отзыв';
     var r = st.data && ruleByKey(k);
     return r ? r.title : k;
   }

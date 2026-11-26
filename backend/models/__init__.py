@@ -132,6 +132,7 @@ from .webchat import WebChatSession, AgentWebChatMessage
 # Журнал действий кабинета: кто что сделал (Voksy Beauty, шаг 1.7)
 from .activity import ActivityLog
 from .automation import NotificationQueue, AutomationRule
+from .review import SalonReview
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

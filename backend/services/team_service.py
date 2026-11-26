@@ -181,6 +181,10 @@ STAFF_RULES = [
     _rule("PUT", r"^/api/beauty/automations/[a-z0-9_]+/?$", "booking_setup"),
     _rule("POST", r"^/api/beauty/automations/[a-z0-9_]+/preview/?$", "booking_setup"),
     _rule("POST", r"^/api/beauty/automations/queue/[0-9a-fA-F-]{36}/(retry|cancel)/?$", "booking_setup"),
+    # — отзывы салона (шаг 2.3): проверить 1–3, ответить, скрыть —
+    _rule("GET", r"^/api/beauty/reviews/?$", "booking_setup"),
+    _rule("PUT", r"^/api/beauty/reviews/settings/?$", "booking_setup"),
+    _rule("POST", r"^/api/beauty/reviews/[0-9a-fA-F-]{36}/(publish|hide|reply)/?$", "booking_setup"),
 ]
 
 

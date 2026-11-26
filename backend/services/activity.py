@@ -58,6 +58,7 @@ GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "money": ("Деньги", ("expense", "payroll")),
     "ai": ("ИИ-управляющий", ("manager",)),
     "automation": ("Автоматизации", ("automation",)),
+    "reviews": ("Отзывы", ("review",)),
     "admin": ("Входы поддержки", ("admin",)),
 }
 
@@ -82,6 +83,8 @@ ACTION_TITLES = {
     "manager.approve": "Одобрено ИИ-управляющему", "manager.reject": "Отклонено ИИ-управляющему",
     "manager.settings": "Настройки ИИ-управляющего", "manager.offer": "Предложить окна клиентам",
     "admin.impersonate": "Вход поддержки в кабинет",
+    "review.publish": "Отзыв на странице", "review.hide": "Отзыв скрыт", "review.reply": "Ответ на отзыв",
+    "review.settings": "Отзывы на странице",
 }
 
 

@@ -435,7 +435,9 @@ tm = bs.create_booking(db, user, start=at_day(TODAY + timedelta(days=1), "09:00"
                        client_name="Завтрашняя", duration_min=60)
 low = bs.create_booking(db, user, start=NOW - timedelta(days=2), service_id=str(svc.id), resource_id=m1, client_name="Недовольная",
                         duration_min=60)
-low.status, low.review_score, low.review_at, low.review_text = "completed", 2, NOW - timedelta(hours=5), "долго ждала"
+low.status = "completed"
+from backend.services import reviews_service as _rv   # шаг 2.3: оценка 1–3 → отзыв «ждёт проверки»
+_rv.record(db, low, 2, "долго ждала", "chat")
 tm.prepay_amount = 300
 db.add(ManagerAction(user_id=u.id, agent_config_id=agent.id, contact_id=cc.id, scenario="fill_gaps", kind="message",
                      status="proposed", payload={}, created_at=NOW))

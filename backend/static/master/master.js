@@ -351,10 +351,17 @@
       kpi('Визитов', s.visits || 0) + kpi('Средний чек', s.avg_check ? money(s.avg_check) : '—') +
       kpi('Вернулись', (s.returning_pct || 0) + '%', s.clients ? s.returning + ' из ' + s.clients : '') +
       kpi('Неявки', (s.no_show_pct || 0) + '%', s.no_show ? plural(s.no_show, 'раз', 'раза', 'раз') : '', s.no_show_pct > 15 ? 'bad' : '') + '</div>' +
+      (s.rating ? '<h3 class="mc-h3">Отзывы клиентов</h3><div class="mc-rv"><div class="mc-rv-top"><b>' + String(s.rating.avg).replace('.', ',') +
+        '</b><span class="mc-stars">' + stars(s.rating.avg) + '</span><small>' + plural(s.rating.count, 'оценка', 'оценки', 'оценок') + '</small></div>' +
+        (s.reviews || []).map(function (r) {
+          return '<div class="mc-rv-it"><div class="mc-rv-h"><span class="mc-stars">' + stars(r.score) + '</span><span>' + esc(r.author || 'Клиент') +
+            (r.date ? ' · ' + esc(shortDate(r.date)) : '') + '</span></div><p>' + esc(r.text) + '</p></div>';
+        }).join('') + '</div>' : '') +
       ((s.top_services || []).length ? '<h3 class="mc-h3">Чаще всего делаете</h3><div class="mc-top">' + s.top_services.map(function (t) {
         return '<div class="mc-trow"><span class="n">' + esc(t.title) + '</span><span class="bar"><i style="width:' + Math.round(t.count * 100 / maxTop) + '%"></i></span><b>' + t.count + '</b></div>';
       }).join('') + '</div>' : '');
   }
+  function stars(v) { var n = Math.round(+v || 0), o = ''; for (var i = 1; i <= 5; i++) o += '<i class="' + (i <= n ? 'on' : '') + '">★</i>'; return o; }
   function kpi(t, v, sub, cls) { return '<div class="mc-kpi ' + (cls || '') + '"><span>' + esc(t) + '</span><b>' + esc(v) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>'; }
 
   // ── профиль ──

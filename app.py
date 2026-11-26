@@ -385,6 +385,7 @@ app.include_router(salon_manager_api.router)
 app.include_router(salon_manager_api.push_router)
 from backend.api import beauty as beauty_api  # Voksy Beauty 1.7: журнал действий, главная салона
 app.include_router(beauty_api.router)
+app.include_router(beauty_api.review_public_router)   # /api/public/review/{token} — «Оцените визит» по ссылке
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -2047,6 +2048,7 @@ def ensure_booking_tables():
         from backend.models.webchat import WebChatSession, AgentWebChatMessage
         from backend.models.activity import ActivityLog
         from backend.models.automation import NotificationQueue, AutomationRule
+        from backend.models.review import SalonReview
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2060,8 +2062,26 @@ def ensure_booking_tables():
             checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
+        if "salon_reviews" not in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[SalonReview.__table__], checkfirst=True)
+            ensure_reviews_backfill()
     except Exception as e:
         logger.error(f"❌ ensure_booking_tables: {e}")
+
+
+def ensure_reviews_backfill():
+    """Отзывы (шаг 2.3): оценки, собранные до таблицы salon_reviews (bookings.review_score), переносятся
+    туда один раз — по тем же правилам публикации (4–5 — на странице, 1–3 — ждут проверки владельца)."""
+    from backend.services import reviews_service
+    try:
+        with engine.begin() as conn:
+            from sqlalchemy import text as _text
+            conn.execute(_text("SELECT pg_advisory_xact_lock(26112023)"))
+            n = reviews_service.backfill_from_bookings(conn)
+        if n:
+            logger.info(f"✅ salon_reviews: перенесено оценок из записей: {n}")
+    except Exception as e:
+        logger.warning(f"⚠️ salon_reviews backfill: {e}")
 
 
 # Карточка мастера (Voksy Beauty, шаг 1.2): колонки booking_resources, которых нет у старых баз.
@@ -3918,6 +3938,43 @@ def business_public_page(slug: str, request: Request):
 @app.get("/b/{slug}", include_in_schema=False)
 def booking_public_page(slug: str, request: Request):
     return _salon_page_response(slug, "book", request)
+
+
+# «Оцените визит» (Voksy Beauty, шаг 2.3): ссылка /r/<токен> из сообщения после визита (вставка {оценить}).
+# Страница static/review.html; заголовок с названием салона — для превью ссылки в WhatsApp/Telegram.
+@app.get("/r/{token}", include_in_schema=False)
+def review_public_page(token: str, request: Request):
+    import html as _html
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/review.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    name = ""
+    from backend.services import reviews_service
+    if reviews_service.booking_id_from_token(token) is not None:
+        from backend.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            name = reviews_service.link_state(db, token)["salon"]["name"]
+        except Exception:
+            name = ""
+        finally:
+            db.close()
+    e = lambda s: _html.escape(s or "", quote=True)   # noqa: E731
+    title = f"Оцените визит — {name}" if name else "Оцените визит"
+    head = (f"<title>{e(title)}</title>\n  <meta name=\"robots\" content=\"noindex\">\n"
+            f"  <meta property=\"og:title\" content=\"{e(title)}\">\n"
+            "  <meta property=\"og:description\" content=\"Пара секунд: поставьте звёзды и напишите, как всё прошло.\">")
+    text = text.replace("<!--REVIEW_HEAD-->", head, 1)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
 
 
 # Публичные страницы в /static, которые можно индексировать; остальные (кабинет) — noindex

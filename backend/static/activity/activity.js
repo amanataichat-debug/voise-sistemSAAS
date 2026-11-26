@@ -17,7 +17,7 @@
   var ACT_ICON = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
   var OBJ_ICON = { booking: 'calendar', visit: 'calendar', block: 'ban', service: 'sparkles', category: 'layers', master: 'users',
                    room: 'door-open', settings: 'sliders-horizontal', page: 'store', team: 'user-plus', expense: 'banknote',
-                   payroll: 'wallet', manager: 'bot', admin: 'shield-check', automation: 'send' };
+                   payroll: 'wallet', manager: 'bot', admin: 'shield-check', automation: 'send', review: 'star' };
   var WD = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
   var MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var st = { period: 'week', actor: '', group: '', items: [], next: null, people: [], groups: [], keep: 180, busy: false, open: {} };

@@ -201,16 +201,16 @@ def attention_block(db: Session, user, now: datetime, since: Optional[datetime],
     _safe("new_online", db, new_online, None)
 
     def low_reviews():
-        rows = (db.query(Booking).filter(Booking.user_id == user.id, Booking.review_score.isnot(None),
-                                         Booking.review_score <= LOW_REVIEW,
-                                         Booking.review_at > now - timedelta(days=14))
-                .order_by(Booking.review_at.desc()).limit(10).all())
-        if rows:
-            out.append(_item("low_reviews", len(rows), "Низкие оценки",
-                             "; ".join(f"{_first(x.client_name)} — {x.review_score}"
-                                       + (f": «{(x.review_text or '')[:40]}»" if x.review_text else "") for x in rows[:3]),
-                             f"/static/start-crm.html?contact={rows[0].contact_id}" if rows[0].contact_id else "/static/booking.html",
-                             "bad"))
+        # шаг 2.3: оценки 1–3 ждут решения владельца (на странице салона их не видно, пока он не решит)
+        from backend.models.review import SalonReview
+        q = db.query(SalonReview).filter(SalonReview.user_id == user.id, SalonReview.status == "pending")
+        n = q.count()
+        rows = q.order_by(SalonReview.created_at.desc()).limit(3).all()
+        if n:
+            out.append(_item("low_reviews", n, "Отзывы ждут проверки",
+                             "; ".join(f"{_first(x.author_name) or 'клиент'} — {x.score}"
+                                       + (f": «{(x.text or '')[:40]}»" if x.text else "") for x in rows),
+                             "/static/reviews.html?status=pending", "bad"))
     _safe("low_reviews", db, low_reviews, None)
 
     def unanswered():

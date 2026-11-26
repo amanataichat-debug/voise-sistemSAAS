@@ -1,0 +1,77 @@
+/* «Оцените визит» (Voksy Beauty, шаг 2.3). Светлая тема, фирменный цвет салона — в --a. */
+:root {
+  --a: #d6336c;
+  --a-soft: color-mix(in srgb, var(--a) 10%, #fff);
+  --t: #111827; --t2: #374151; --t3: #6b7280;
+  --b: #e8eaef; --s1: #fff; --s2: #f7f7f9;
+  --star: #e8a317; --star-off: #d7dbe2;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--s2); color: var(--t); -webkit-tap-highlight-color: transparent;
+  font: 15px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-size-adjust: 100%; }
+body { overflow-x: clip; }
+button, input, textarea { font: inherit; color: inherit; }
+img { display: block; max-width: 100%; }
+.rv-app { min-height: 100vh; padding: max(16px, env(safe-area-inset-top)) 16px 32px; display: flex; justify-content: center; }
+.rv-card { width: 100%; max-width: 480px; background: var(--s1); border: 1px solid var(--b); border-radius: 22px; padding: 20px 18px 22px;
+  box-shadow: 0 1px 2px rgba(17,24,39,.04), 0 12px 32px -16px rgba(17,24,39,.18); align-self: flex-start; }
+.sk { border-radius: 14px; background: linear-gradient(90deg, #f3f4f6, #e9ebef, #f3f4f6); background-size: 200% 100%; animation: sh 1.2s infinite linear; margin-bottom: 12px; }
+@keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.rv-head { display: flex; align-items: center; gap: 12px; }
+.rv-logo { width: 48px; height: 48px; border-radius: 14px; flex: none; overflow: hidden; display: grid; place-items: center;
+  background: var(--a); color: #fff; font-weight: 700; font-size: 20px; }
+.rv-logo img { width: 100%; height: 100%; object-fit: cover; }
+.rv-salon { font-size: 13px; color: var(--t3); font-weight: 600; }
+.rv-head h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.01em; }
+.rv-visit { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 12px; border-radius: 14px; background: var(--s2); }
+.rv-visit b { display: block; font-size: 14.5px; }
+.rv-visit span { display: block; font-size: 13px; color: var(--t3); }
+.rv-ava { width: 40px; height: 40px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--mc, var(--a)) 18%, #fff); color: var(--mc, var(--a)); font-weight: 700; font-size: 14px; }
+.rv-ava img { width: 100%; height: 100%; object-fit: cover; }
+
+.rv-stars { display: flex; justify-content: center; gap: 6px; margin: 22px 0 4px; }
+.rv-stars button { width: 52px; height: 52px; border: 0; background: none; padding: 4px; cursor: pointer; border-radius: 12px; touch-action: manipulation; }
+.rv-stars button:focus-visible { outline: 2px solid var(--a); outline-offset: 1px; }
+.rv-stars svg, .rv-mini svg { width: 100%; height: 100%; fill: var(--star-off); stroke: none; transition: transform .18s var(--ease), fill .18s; }
+.rv-stars button.on svg { fill: var(--star); }
+.rv-stars button:active svg { transform: scale(.88); }
+.rv-label { text-align: center; font-size: 14px; color: var(--t3); min-height: 21px; }
+.rv-label.set { color: var(--t); font-weight: 600; }
+
+.rv-rest { display: none; margin-top: 14px; }
+.rv-rest.on { display: block; animation: up .25s var(--ease); }
+@keyframes up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rv-f { display: block; margin-top: 12px; }
+.rv-f > span { display: block; font-size: 13px; font-weight: 600; color: var(--t2); margin-bottom: 6px; }
+.rv-f i { font-style: normal; font-weight: 400; color: var(--t3); }
+.rv-f textarea, .rv-f input { width: 100%; border: 1px solid var(--b); border-radius: 12px; padding: 11px 12px; font-size: 16px; background: #fff; outline: none; resize: vertical; }
+.rv-f textarea:focus, .rv-f input:focus { border-color: var(--a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--a) 18%, transparent); }
+.rv-f input:disabled { background: var(--s2); color: var(--t3); }
+.rv-check { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--t2); cursor: pointer; }
+.rv-check input { width: 18px; height: 18px; accent-color: var(--a); }
+.rv-note { font-size: 13px; color: var(--t3); margin: 12px 0 0; }
+.rv-note.bad { color: #b91c1c; }
+.rv-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 50px; margin-top: 14px; border: 0; border-radius: 14px;
+  background: var(--a); color: #fff; font-weight: 700; font-size: 16px; text-decoration: none; cursor: pointer; touch-action: manipulation; }
+.rv-btn:disabled { opacity: .6; }
+.rv-btn.ghost { background: var(--a-soft); color: var(--a); }
+.rv-link { display: block; margin: 12px auto 0; border: 0; background: none; color: var(--t3); text-decoration: underline; font-size: 14px; cursor: pointer; padding: 6px; }
+
+.rv-done { text-align: center; margin-top: 18px; }
+.rv-mini { display: inline-flex; gap: 3px; }
+.rv-mini i { width: 26px; height: 26px; display: block; }
+.rv-mini i.on svg { fill: var(--star); }
+.rv-done h2 { margin: 10px 0 4px; font-size: 20px; }
+.rv-done p { margin: 0; color: var(--t2); }
+.rv-done blockquote { text-align: left; margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid var(--a); background: var(--s2); border-radius: 0 12px 12px 0; white-space: pre-line; color: var(--t2); }
+.rv-reply { text-align: left; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--a-soft); }
+.rv-reply b { font-size: 13px; color: var(--a); }
+.rv-reply p { margin: 2px 0 0; white-space: pre-line; color: var(--t); }
+.rv-acts { margin-top: 6px; }
+.rv-err h1 { margin: 0 0 6px; font-size: 20px; }
+.rv-err p { margin: 0; color: var(--t2); }
+.rv-pw { margin-top: 18px; font-size: 12.5px; color: var(--t3); }
+.rv-pw a { color: inherit; }

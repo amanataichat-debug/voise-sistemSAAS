@@ -79,7 +79,8 @@
     "booking": "Записи",
     "clients": "Клиенты",
     "orders": "Заказы",
-    "automations": "Автоматизации"
+    "automations": "Автоматизации",
+    "reviews": "Отзывы"
   },
   "wallet": {
     "currency": "сом",

@@ -634,63 +634,9 @@ def review_text(b, resource_name: Optional[str]) -> str:
 
 
 def save_review(db: Session, user, contact_id, score, comment: Optional[str] = None) -> Dict[str, Any]:
-    from backend.models.booking import Booking
-    try:
-        score = int(score)
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "Оценка — число от 1 до 5"}
-    if not 1 <= score <= 5:
-        return {"ok": False, "error": "Оценка — число от 1 до 5"}
-    now = bs.now_utc()
-    q = db.query(Booking).filter(Booking.user_id == user.id, Booking.contact_id == contact_id,
-                                 Booking.status.in_(("arrived", "completed")),
-                                 Booking.start_at >= now - timedelta(days=14))
-    b = (q.filter(Booking.review_asked_at.isnot(None), Booking.review_score.is_(None))
-         .order_by(Booking.start_at.desc()).first()) or q.order_by(Booking.start_at.desc()).first()
-    if b is None:
-        return {"ok": False, "error": "Не нашёл недавний визит клиента — оценку некуда сохранить"}
-    b.review_score, b.review_text, b.review_at = score, (comment or "")[:1000] or None, now
-    db.commit()
-    names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
-    out = {"ok": True, "score": score, "service": b.service_title, "master": names.get(str(b.resource_id))}
-    if score <= REVIEW_LOW:
-        out["low"] = True
-        out["next"] = ("Оценка низкая: коротко извинись, спроси, что было не так, и скажи, что администратор "
-                       "свяжется. Не спорь и не оправдывайся. Владельцу уже сообщили.")
-        try:
-            from backend.core.spawn import spawn
-            spawn(_notify_low_review(user.id, b.id))
-        except Exception:
-            pass
-    else:
-        out["next"] = "Коротко и тепло поблагодари. Не проси ничего ещё."
-    return out
-
-
-async def _notify_low_review(owner_id, booking_id) -> None:
-    from backend.db.session import SessionLocal
-    from backend.models.booking import Booking
-    from backend.services import owner_notifications, push_service
-    db = SessionLocal()
-    try:
-        b = db.query(Booking).filter(Booking.id == booking_id).first()
-        agent = bs._first_agent(db, owner_id)
-        if b is None:
-            return
-        names = {str(r.id): r.name for r in bs.resources(db, owner_id, active_only=False)}
-        msg = (f"⚠️ Низкая оценка визита: {b.review_score} из 5 — {b.client_name or 'клиент'}"
-               + (f", «{b.service_title}»" if b.service_title else "")
-               + (f", мастер {names.get(str(b.resource_id))}" if b.resource_id else "")
-               + (f"\nКомментарий: {b.review_text}" if b.review_text else "")
-               + "\nСвяжитесь с клиентом, пока он не ушёл к другим.")
-        if agent is not None:
-            await owner_notifications._send(agent, db, msg)
-        push_service.send_to_user_sync(db, owner_id, f"Оценка {b.review_score} из 5", msg.split("\n")[0][2:],
-                                       "/static/inbox.html", tag="review")
-    except Exception as e:
-        logger.warning(f"[MANAGER] low review notify: {e}")
-    finally:
-        db.close()
+    """Оценка визита из переписки → отзыв (шаг 2.3: reviews_service — публикация 4–5, проверка 1–3, владельцу)."""
+    from backend.services import reviews_service
+    return reviews_service.save_from_chat(db, user, contact_id, score, comment)
 
 
 def review_hint(db: Session, user_id, contact_id) -> str:

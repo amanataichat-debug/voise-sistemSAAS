@@ -66,6 +66,8 @@
     { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', modes: ['full', 'reactive'], booking: true },
     // Автоматизации (Voksy Beauty 2.2): напоминания, подтверждение, «спасибо», ДР, повтор, «давно не были» — тексты и журнал отправок
     { href: '/static/automations.html', lucide: 'send', label: 'sidebar.automations', def: 'Автоматизации', id: 'automations-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Отзывы (Voksy Beauty 2.3): рейтинг салона и мастеров, проверка оценок 1–3, ответ салона
+    { href: '/static/reviews.html', lucide: 'star', label: 'sidebar.reviews', def: 'Отзывы', id: 'reviews-nav-item', modes: ['full', 'reactive'], booking: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     // Сотрудники (ветка 1811-niche-admin-speed): свой вход, только выбранные разделы — на Старте и Profi
@@ -94,6 +96,7 @@
     { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', booking: true },
     { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', booking: true },
     { href: '/static/automations.html', lucide: 'send', label: 'sidebar.automations', def: 'Автоматизации', id: 'automations-nav-item', booking: true },
+    { href: '/static/reviews.html', lucide: 'star', label: 'sidebar.reviews', def: 'Отзывы', id: 'reviews-nav-item', booking: true },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },

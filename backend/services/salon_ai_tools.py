@@ -225,7 +225,7 @@ def get_services(db: Session, user, query: Optional[str] = None, category: Optio
 
 # ───────────────────────────── мастера ─────────────────────────────
 
-def _staff_dict(r, services: Dict[str, Any], detailed: bool) -> Dict[str, Any]:
+def _staff_dict(r, services: Dict[str, Any], detailed: bool, ratings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from backend.services.salon_media import media_items
     does = [s for sid, s in services.items() if not r.service_ids or sid in {str(x) for x in r.service_ids}]
     own = r.service_prices or {}
@@ -246,9 +246,21 @@ def _staff_dict(r, services: Dict[str, Any], detailed: bool) -> Dict[str, Any]:
     certs = [c.get("title") for c in media_items(r.certificates, "title") if c.get("title")]
     if certs:
         d["certificates"] = certs[:6]
+    rt = (ratings or {}).get(str(r.id))
+    if rt:
+        d["rating"] = f"{rt['avg']} из 5 (оценок клиентов: {rt['count']})"
     if not d["online_booking"]:
         d["note"] = "К этому мастеру записывает только администратор"
     return d
+
+
+def _ratings(db: Session, user) -> Dict[str, Any]:
+    try:
+        from backend.services import reviews_service
+        return reviews_service.master_ratings(db, user.id)
+    except Exception:
+        db.rollback()
+        return {}
 
 
 def get_staff(db: Session, user, master: Optional[str] = None, service: Optional[str] = None) -> Dict[str, Any]:
@@ -258,13 +270,14 @@ def get_staff(db: Session, user, master: Optional[str] = None, service: Optional
         r = _match_master(rows, master)
         if r is None:
             return {"ok": False, "error": f"Мастера «{master}» нет — вот кто есть: " + ", ".join(x.name for x in rows)}
-        return {"ok": True, "master": _staff_dict(r, services, True)}
+        return {"ok": True, "master": _staff_dict(r, services, True, _ratings(db, user))}
     if service:
         svc = bs.find_service(db, user.id, None, service)
         if svc is None:
             return {"ok": False, "error": "Такой услуги в прайсе нет — уточни название (get_services)"}
         rows = [r for r in rows if bs._resource_does(r, svc)]
-    return {"ok": True, "masters": [_staff_dict(r, services, False) for r in rows],
+    rts = _ratings(db, user)
+    return {"ok": True, "masters": [_staff_dict(r, services, False, rts) for r in rows],
             "note": None if rows else "Мастеров пока нет в журнале"}
 
 
@@ -370,6 +383,8 @@ def get_salon_information(db: Session, user, host: Optional[str] = None) -> Dict
         "prepay_how": cfg.get("prepay_info") or None,
         "cancel_rule": (f"Отменить или перенести — не позже чем за {cfg['cancel_hours']} ч до визита"
                         if cfg.get("cancel_hours") else None),
+        "rating": (f"{v['reviews']['avg']} из 5 (оценок клиентов: {v['reviews']['count']})"
+                   if (v.get("reviews") or {}).get("enabled") else None),
     }
     return {k: val for k, val in out.items() if val not in (None, [], "")} | {"ok": True}
 

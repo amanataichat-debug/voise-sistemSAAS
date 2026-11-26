@@ -67,6 +67,7 @@
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
     sparkles: '<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.13a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.13 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z"/>'
   };
+  P.star = '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>';
   var AMEN_IC = { wifi: 'wifi', parking: 'car', card: 'card', qr: 'qr', coffee: 'coffee', kids: 'smile', sterile: 'shield',
     aircon: 'wind', women: 'heart', men: 'scissors', access: 'access', gift: 'gift' };
   function ic(n) { return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">' + (P[n] || '') + '</svg>'; }
@@ -92,13 +93,13 @@
   function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
   function get(path) {
     return fetch(API + path, { cache: 'no-store' }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var e = new Error(d.detail || 'Не получилось загрузить'); e.status = r.status; throw e; } return d; });
+      return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var e = new Error((typeof d.message === 'string' && d.message) || (typeof d.detail === 'string' && d.detail) || 'Не получилось загрузить'); e.status = r.status; throw e; } return d; });
     });
   }
   function post(path, body) {
     return fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) { var e = new Error(r.status === 429 ? 'Слишком много записей с этого устройства — попробуйте позже или позвоните нам.' : (typeof d.detail === 'string' ? d.detail : 'Не получилось записаться')); e.status = r.status; throw e; }
+        if (!r.ok) { var e = new Error(r.status === 429 ? 'Слишком много записей с этого устройства — попробуйте позже или позвоните нам.' : ((typeof d.message === 'string' && d.message) || (typeof d.detail === 'string' && d.detail) || 'Не получилось записаться')); e.status = r.status; throw e; }
         return d;
       });
     });
@@ -182,6 +183,53 @@
     });
     return out;
   }
+  // ── отзывы (шаг 2.3): рейтинг по опубликованным, лента с «Показать ещё», отзывы мастера ──
+  function RV() { return (SAL && SAL.reviews) || { enabled: false }; }
+  function rateText(v) { return String(v).replace('.', ','); }
+  function starRow(v, cls) {
+    var n = Math.round(+v || 0), o = '';
+    for (var i = 1; i <= 5; i++) o += '<svg class="st' + (i <= n ? ' on' : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + P.star + '</svg>';
+    return '<span class="stars ' + (cls || '') + '" role="img" aria-label="' + rateText(v) + ' из 5">' + o + '</span>';
+  }
+  function ratingWord(n) { return n + ' ' + plural(n, 'оценка', 'оценки', 'оценок'); }
+  function rvDate(k) { if (!k) return ''; var d = parseKey(k); return d.getUTCDate() + ' ' + MON[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); }
+  function rvItem(r, noMaster) {
+    var ini = String(r.author || 'К').trim().charAt(0).toUpperCase();
+    return '<article class="rvi"><div class="rvi-h"><span class="rvi-a">' + esc(ini) + '</span><div class="rvi-w"><b>' + esc(r.author || 'Клиент салона') + '</b>' +
+      '<span>' + esc([rvDate(r.date), noMaster ? '' : (r.master ? 'мастер ' + r.master : ''), r.service].filter(Boolean).join(' · ')) + '</span></div>' +
+      starRow(r.score, 'sm') + '</div><p>' + esc(r.text) + '</p>' +
+      (r.reply ? '<div class="rvi-r"><b>Ответ салона</b><p>' + esc(r.reply) + '</p></div>' : '') + '</article>';
+  }
+  function reviewsHtml() {
+    var rv = RV();
+    if (!rv.enabled) return '';
+    var max = Math.max(1, rv.dist['5'], rv.dist['4'], rv.dist['3'], rv.dist['2'], rv.dist['1']);
+    return '<section class="sec" id="reviews"><h2>Отзывы <small>' + rv.count + '</small></h2>' +
+      '<div class="rv-sum"><div class="rv-big"><b>' + rateText(rv.avg) + '</b>' + starRow(rv.avg) + '<span>' + ratingWord(rv.count) + '</span></div>' +
+      '<div class="rv-dist">' + [5, 4, 3, 2, 1].map(function (n) {
+        var c = rv.dist[String(n)] || 0;
+        return '<div class="rv-bar"><span>' + n + '</span><i><em style="width:' + Math.round(c * 100 / max) + '%"></em></i><small>' + c + '</small></div>';
+      }).join('') + '</div></div>' +
+      '<div class="rv-list" id="rv-list">' + (rv.items || []).map(function (r) { return rvItem(r); }).join('') + '</div>' +
+      (!(rv.items || []).length ? '<p class="rv-empty">Клиенты пока ставили оценки без комментариев.</p>' : '') +
+      (rv.next_offset != null ? '<button class="btn ghost wide" type="button" data-rvmore="' + rv.next_offset + '">Показать ещё отзывы</button>' : '') +
+      '</section>';
+  }
+  function moreReviews(btn) {
+    var off = +btn.getAttribute('data-rvmore');
+    btn.disabled = true; btn.textContent = 'Загружаем…';
+    get('/reviews?offset=' + off + '&limit=10').then(function (d) {
+      var list = document.getElementById('rv-list');
+      if (list) list.insertAdjacentHTML('beforeend', (d.items || []).map(function (r) { return rvItem(r); }).join(''));
+      if (d.next_offset != null) { btn.disabled = false; btn.textContent = 'Показать ещё отзывы'; btn.setAttribute('data-rvmore', d.next_offset); }
+      else btn.remove();
+    }).catch(function (e) { btn.disabled = false; btn.textContent = 'Показать ещё отзывы'; toast(e.message); });
+  }
+  function scrollToSec(id) {
+    var el = document.getElementById(id);
+    if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 58, behavior: 'smooth' });
+  }
+
   function renderPage() {
     var st = openState();
     var gal = gallery();
@@ -196,6 +244,7 @@
     if (SAL.map_url) qa.push('<a href="' + esc(SAL.map_url) + '" target="_blank" rel="noopener">' + ic('route') + 'Маршрут</a>');
     var navs = [['svc', 'Услуги']];
     if (ms.length) navs.push(['team', SAL.staff_word]);
+    if (RV().enabled) navs.push(['reviews', 'Отзывы']);
     if (gal.length) navs.push(['works', 'Работы']);
     if (promos.length) navs.push(['promo', 'Акции']);
     navs.push(['about', 'О нас']);
@@ -207,7 +256,8 @@
       '<div class="idt"><div class="logo">' + (SAL.logo_url ? '<img src="' + esc(SAL.logo_url) + '" alt="' + esc(SAL.name) + '">' : esc(ini)) + '</div>' +
       (st ? '<span class="open' + (st.on ? ' on' : '') + '"><i></i>' + esc(st.text) + '</span>' : '') + '</div>' +
       '<h1 class="name">' + esc(SAL.name) + '</h1>' +
-      (SAL.niche ? '<div class="sub">' + esc(SAL.niche) + '</div>' : '') +
+      (SAL.niche || RV().enabled ? '<div class="sub">' + (RV().enabled ? '<button class="rate" type="button" data-rvgo>' + ic('star') + '<b>' + rateText(RV().avg) + '</b><span>' +
+        esc(ratingWord(RV().count)) + '</span></button>' + (SAL.niche ? '<i class="dot">·</i>' : '') : '') + esc(SAL.niche || '') + '</div>' : '') +
       (SAL.tagline ? '<div class="tag">' + esc(SAL.tagline) + '</div>' : '') +
       (SAL.address ? '<div class="addr">' + ic('pin') + '<span>' + esc(SAL.address) + '</span></div>' : '') +
       '<div class="acts"><button class="btn wide" type="button" data-book>' + ic('calendar') + 'Записаться онлайн</button></div>' +
@@ -223,13 +273,15 @@
         return '<button class="mcard" type="button" data-master="' + esc(m.id) + '"><div class="mp" style="--mc:' + esc(m.color || '') + '">' +
           (m.photo_url ? '<img src="' + esc(m.photo_url) + '" alt="' + esc(m.name) + '" loading="lazy">' : '<span class="ini">' + esc(m.initials || '?') + '</span>') +
           (m.experience_years ? '<span class="xp">опыт ' + esc(years(m.experience_years)) + '</span>' : '') + '</div>' +
-          '<b>' + esc(m.name) + '</b><span>' + esc(m.role || '') + '</span></button>';
+          '<b>' + esc(m.name) + '</b><span>' + esc(m.role || '') + '</span>' +
+          (m.rating ? '<span class="mrate">' + ic('star') + rateText(m.rating.avg) + ' <small>(' + m.rating.count + ')</small></span>' : '') + '</button>';
       }).join('') + '</div></section>' : '') +
       (gal.length ? '<section class="sec" id="works"><h2>Работы <small>' + gal.length + ' фото</small></h2><div class="gal">' +
         gal.slice(0, 9).map(function (g, i) {
           return '<button type="button" data-lb="' + i + '" aria-label="Открыть фото"><img src="' + esc(g.url) + '" alt="' + esc(g.cap) + '" loading="lazy">' +
             (i === 8 && gal.length > 9 ? '<span class="cnt">+' + (gal.length - 9) + '</span>' : '') + '</button>';
         }).join('') + '</div></section>' : '') +
+      reviewsHtml() +
       '<section class="sec" id="about"><h2>О нас</h2>' + aboutHtml() + '</section>' +
       '<div class="foot">Онлайн-запись работает на <a href="https://voksyai.online" target="_blank" rel="noopener">Voksy AI</a></div>' +
       '</div>' +
@@ -818,12 +870,22 @@
     document.getElementById('ms-t').textContent = SAL.staff_word === 'Мастера' ? 'Мастер' : 'Специалист';
     var svcs = services().filter(function (s) { return does(m, s); });
     document.getElementById('ms-b').innerHTML =
-      '<div class="mhero">' + ava(m) + '<div><b>' + esc(m.name) + '</b><span>' + esc([m.role, m.experience_years ? 'опыт ' + years(m.experience_years) : ''].filter(Boolean).join(' · ')) + '</span></div></div>' +
+      '<div class="mhero">' + ava(m) + '<div><b>' + esc(m.name) + '</b><span>' + esc([m.role, m.experience_years ? 'опыт ' + years(m.experience_years) : ''].filter(Boolean).join(' · ')) + '</span>' +
+        (m.rating ? '<span class="mrate">' + starRow(m.rating.avg, 'sm') + ' <b>' + rateText(m.rating.avg) + '</b> · ' + esc(ratingWord(m.rating.count)) + '</span>' : '') + '</div></div>' +
       (m.bio ? '<div class="bio">' + esc(m.bio) + '</div>' : '') +
       ((m.portfolio || []).length ? '<h4>Работы</h4><div class="pfg">' + m.portfolio.map(function (it, i) { return '<button type="button" data-pf="' + i + '"><img src="' + esc(it.url) + '" alt="' + esc(it.caption || '') + '" loading="lazy"></button>'; }).join('') + '</div>' : '') +
       (svcs.length ? '<h4>Услуги</h4>' + svcs.map(function (s) { return '<div class="ml"><div>' + esc(s.title) + '</div><span>' + esc([durText(terms(s, m).dur), priceWith(s, m)].filter(Boolean).join(' · ')) + '</span></div>'; }).join('') : '') +
-      ((m.certificates || []).length ? '<h4>Сертификаты</h4><div class="pfg">' + m.certificates.map(function (it, i) { return '<button type="button" data-cf="' + i + '"><img src="' + esc(it.url) + '" alt="' + esc(it.title || '') + '" loading="lazy"></button>'; }).join('') + '</div>' : '');
+      ((m.certificates || []).length ? '<h4>Сертификаты</h4><div class="pfg">' + m.certificates.map(function (it, i) { return '<button type="button" data-cf="' + i + '"><img src="' + esc(it.url) + '" alt="' + esc(it.title || '') + '" loading="lazy"></button>'; }).join('') + '</div>' : '') +
+      (m.rating ? '<h4>Отзывы</h4><div class="rv-list" id="ms-rv"><div class="sk" style="height:80px"></div></div>' : '');
     document.getElementById('ms-f').innerHTML = '<button class="btn" type="button" data-msbook style="flex:1">' + ic('calendar') + 'Записаться к ' + esc(String(m.name).split(' ')[0]) + '</button>';
+    if (m.rating) {
+      get('/reviews?master=' + encodeURIComponent(m.id) + '&limit=5').then(function (d) {
+        var box = document.getElementById('ms-rv');
+        if (!box || msEl.getAttribute('data-id') !== m.id) return;
+        box.innerHTML = (d.items || []).length ? d.items.map(function (r) { return rvItem(r, true); }).join('')
+          : '<p class="rv-empty">Оценки без комментариев — ' + esc(ratingWord(m.rating.count)) + ', в среднем ' + rateText(m.rating.avg) + '.</p>';
+      }).catch(function () { var box = document.getElementById('ms-rv'); if (box) box.innerHTML = ''; });
+    }
     msEl.style.display = 'flex';
     document.documentElement.style.overflow = 'hidden';
     pushLayer('ms');
@@ -850,6 +912,9 @@
     var t = e.target;
     if (t.closest('[data-book]')) { B.preMaster = null; return openBooking({}); }
     if (t.closest('[data-share]')) return share();
+    if (t.closest('[data-rvgo]')) return scrollToSec('reviews');
+    var rm = t.closest('[data-rvmore]');
+    if (rm) return moreReviews(rm);
     var mc = t.closest('[data-master]');
     if (mc) return masterSheet(mc.getAttribute('data-master'));
     var lb = t.closest('[data-lb]');
@@ -892,6 +957,7 @@
     }
     renderPage();
     if (chatOn) window.SalonChat.init({ slug: slug, salon: SAL, mode: 'page', embed: EMBED, onBook: function () { B.preMaster = null; openBooking({}); } });
+    if (location.hash === '#reviews') setTimeout(function () { scrollToSec('reviews'); }, 60);
     if (QS.get('service') || QS.get('master') || location.hash === '#book') {
       openBooking({ service: QS.get('service') || undefined, master: QS.get('master') || undefined });
     }

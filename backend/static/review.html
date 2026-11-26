@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--REVIEW_HEAD-->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <link rel="stylesheet" href="/static/review/review.css">
+  <!-- «Оцените визит» (Voksy Beauty, шаг 2.3): /r/<токен> — ссылка из сообщения после визита (вставка {оценить}).
+       Без входа. Данные — /api/public/review/<токен>. Оценки 4–5 сразу на странице салона, 1–3 — владельцу. -->
+</head>
+<body class="rv">
+<main id="app" class="rv-app" aria-live="polite">
+  <div class="rv-card"><div class="sk" style="height:56px"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:56px"></div></div>
+</main>
+<script src="/static/review/review.js" defer></script>
+</body>
+</html>

@@ -3,7 +3,8 @@
 
 Владелец включает правила и правит тексты (RU и KY) на экране «Автоматизации»; планировщик (plan) раз в минуту
 ставит сообщения в очередь (services/notify_queue.py), очередь отправляет. Тексты — шаблоны без ИИ (кредиты не
-тратятся): {имя}, {когда}, {дата}, {время}, {услуга}, {мастер}, {адрес}, {салон}, {ссылка}, {подарок}, {прошло}.
+тратятся): {имя}, {когда}, {дата}, {время}, {услуга}, {мастер}, {адрес}, {салон}, {ссылка}, {подарок}, {прошло},
+{оценить} (шаг 2.3: ссылка на страницу «Оцените визит» этой записи).
 Кусок в [квадратных скобках] выпадает целиком, если хоть одного значения внутри нет («[ Адрес: {адрес}.]»).
 Язык — по последнему сообщению клиента (кыргызский → KY, иначе RU) или как задал владелец.
 
@@ -40,6 +41,7 @@ PLACEHOLDERS = [
     ("имя", "Имя клиента"), ("когда", "Когда: «завтра в 15:00»"), ("дата", "Дата: 28.11"), ("время", "Время: 15:00"),
     ("услуга", "Услуга"), ("мастер", "Мастер"), ("адрес", "Адрес салона"), ("салон", "Название салона"),
     ("ссылка", "Ссылка на запись"), ("подарок", "Подарок (поздравление с ДР)"), ("прошло", "Сколько прошло с визита"),
+    ("оценить", "Ссылка «Оцените визит»"),
 ]
 
 RULES: List[Dict[str, Any]] = [
@@ -76,9 +78,10 @@ RULES: List[Dict[str, Any]] = [
     {"key": "review", "group": "booking", "kind": "service", "title": "Просьба оценить визит", "default_on": False,
      "hidden": True, "desc": "Вместо «спасибо», если включена оценка визита.", "params": {}, "options": {},
      "ru": "Спасибо, что пришли к нам[, {имя}]! Оцените, пожалуйста, визит[ у мастера {мастер}] от 1 до 5, просто "
-           "ответьте цифрой. Нам очень важно ваше мнение.",
+           "ответьте цифрой.[ Или оставьте отзыв здесь: {оценить}] Ваш отзыв поможет другим клиентам.",
      "ky": "Келгениңиз үчүн рахмат[, {имя}]![ {мастер} чебердин] кызматын 1ден 5ке чейин баалап коюңузчу, жөн гана "
-           "цифра менен жооп бериңиз. Сиздин пикириңиз биз үчүн маанилүү."},
+           "цифра менен жооп бериңиз.[ Же бул жерден пикир калтырыңыз: {оценить}] Сиздин пикириңиз башка кардарларга "
+           "жардам берет."},
     {"key": "no_show", "group": "booking", "kind": "service", "title": "Клиент не пришёл", "default_on": False,
      "desc": "Через пару часов после пропущенной записи — без упрёков предложить другое время.",
      "params": {"hours": 2}, "options": {"hours": [1, 2, 4, 24]},
@@ -386,9 +389,13 @@ def values_for_booking(db: Session, user, b, now: datetime, lang: str, salon: Di
         titles = [t for (t,) in parts if t]
         if len(titles) > 1:
             services = ", ".join(titles[:-1]) + (" жана " if lang == "ky" else " и ") + titles[-1]
-    return {**salon, "имя": _first_name(b.client_name), "когда": when_words(b.start_at, now, lang),
-            "дата": f"{st.day:02d}.{st.month:02d}", "время": st.strftime("%H:%M"), "услуга": services,
-            "мастер": masters.get(str(b.resource_id), "") if b.resource_id else ""}
+    out = {**salon, "имя": _first_name(b.client_name), "когда": when_words(b.start_at, now, lang),
+           "дата": f"{st.day:02d}.{st.month:02d}", "время": st.strftime("%H:%M"), "услуга": services,
+           "мастер": masters.get(str(b.resource_id), "") if b.resource_id else "", "оценить": ""}
+    if b.status in ("arrived", "completed"):
+        from backend.services import reviews_service
+        out["оценить"] = reviews_service.review_link(b.id)
+    return out
 
 
 def preview(db: Session, user, key: str, template: Optional[str], lang: str = "ru") -> str:
@@ -404,7 +411,8 @@ def preview(db: Session, user, key: str, template: Optional[str], lang: str = "r
     vals = {**_salon_values(db, user), "имя": "Айжан", "когда": when_words(sample_start, now, lang),
             "дата": f"{sample_start.day:02d}.{sample_start.month:02d}", "время": "15:00",
             "услуга": "Маникюр" if lang == "ru" else "Маникюр", "мастер": "Айгуль", "прошло": ago_words(35, lang),
-            "подарок": (st.get("params") or {}).get("gift") or ""}
+            "подарок": (st.get("params") or {}).get("gift") or "",
+            "оценить": "https://voksyai.online/r/…"}
     if not vals["ссылка"]:
         vals["ссылка"] = "https://voksyai.online/b/salon"
     return clean_client_text(render(tpl, vals))
@@ -427,7 +435,10 @@ def due_bookings(db: Session, now: datetime) -> List[Tuple[Any, str]]:
     Состояние правил — по владельцу записи (с учётом старых галочек «напоминания» и «спасибо»)."""
     rows = db.execute(text("""
         SELECT b.id, b.user_id, b.start_at, b.end_at, b.created_at, b.status, b.source, b.visit_id,
-               b.reminder_24h_at, b.reminder_2h_at, b.followup_at, a.manager_settings
+               b.reminder_24h_at, b.reminder_2h_at, b.followup_at, a.manager_settings,
+               CASE WHEN b.visit_id IS NULL THEN NULL ELSE
+                    (SELECT max(x.end_at) FROM bookings x WHERE x.visit_id = b.visit_id AND x.status <> 'cancelled')
+               END AS visit_end
         FROM bookings b JOIN booking_pages p ON p.user_id = b.user_id
         LEFT JOIN agent_contacts c ON c.id = b.contact_id
         LEFT JOIN agent_configs a ON a.id = c.agent_config_id
@@ -458,7 +469,8 @@ def due_bookings(db: Session, now: datetime) -> List[Tuple[Any, str]]:
         review = bool(stt["thanks"]["params"].get("ask_review")) or bool(
             ((r["manager_settings"] or {}).get("repeat_review") or {}).get("on"))
         th = int(stt["thanks"]["params"].get("hours") or 1)
-        if (stt["thanks"]["enabled"] or review) and r["followup_at"] is None and status != "no_show" \
+        last_of_visit = r["visit_end"] is None or en >= r["visit_end"]   # визит — после его последней услуги
+        if (stt["thanks"]["enabled"] or review) and r["followup_at"] is None and status != "no_show" and last_of_visit \
                 and timedelta(hours=th) <= now - en <= timedelta(hours=th + 24):
             if not review or status in ("arrived", "completed"):
                 out.append((r["id"], "review" if review else "thanks"))
@@ -515,7 +527,8 @@ def plan_bookings(db: Session, now: Optional[datetime] = None) -> int:
         tpl = stt["template_ky"] if lang == "ky" else stt["template_ru"]
         vals = values_for_booking(db, user, b, now, lang, salons[uid], masters[uid])
         msg = render(tpl, vals)
-        key_id = str(b.visit_id) if b.visit_id and rule in ("confirm", "no_show") else str(b.id)
+        # визит из нескольких услуг — одно сообщение (подтверждение, «спасибо»/оценка, «не пришёл»)
+        key_id = str(b.visit_id) if b.visit_id and rule in ("confirm", "no_show", "thanks", "review") else str(b.id)
         expires = {"confirm": b.start_at, "reminder_24h": b.start_at - timedelta(hours=1),
                    "reminder_2h": b.start_at, "thanks": b.end_at + timedelta(days=2),
                    "review": b.end_at + timedelta(days=2), "no_show": b.start_at + timedelta(days=2)}[rule]
