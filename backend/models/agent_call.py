@@ -118,6 +118,8 @@ class AgentCall(Base):
                 return "instagram"
             if post.get("call_direction") == "whatsapp_inbound":
                 return "whatsapp"
+            if post.get("call_direction") == "webchat_inbound":
+                return "webchat"
             if post.get("call_direction") == "followup_outbound":
                 return post.get("channel") or "whatsapp"
         if self.transcript:
@@ -130,6 +132,8 @@ class AgentCall(Base):
                 return "instagram"
             if t.startswith("Клиент написал в WhatsApp"):
                 return "whatsapp"
+            if t.startswith("Клиент написал в чате на сайте"):
+                return "webchat"
         return "call"
 
     def to_dict(self):
@@ -168,7 +172,7 @@ class AgentCall(Base):
 # и недельный отчёт считали каждое сообщение звонком, а разбор переписки без задачи — «успешным звонком»).
 MESSAGE_EVENT_DIRECTIONS = (
     "sms_inbound", "telegram_inbound", "telegram_outbound",
-    "instagram_inbound", "whatsapp_inbound", "followup_outbound",
+    "instagram_inbound", "whatsapp_inbound", "followup_outbound", "webchat_inbound",
 )
 
 

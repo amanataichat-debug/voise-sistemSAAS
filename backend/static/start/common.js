@@ -266,6 +266,7 @@
     whatsapp: { label: 'WhatsApp', icon: 'message-circle', color: '#25D366' },
     telegram: { label: 'Telegram', icon: 'send', color: '#229ED9' },
     instagram: { label: 'Instagram', icon: 'instagram', color: '#E1306C' },
+    webchat: { label: 'Чат на сайте', icon: 'globe', color: '#b58a00' },
     call: { label: 'Звонок', icon: 'phone', color: '#2a5ce8' },
     sms: { label: 'SMS', icon: 'message-square', color: '#16A34A' }
   };

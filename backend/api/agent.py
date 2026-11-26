@@ -374,6 +374,10 @@ class AgentContactUpdateRequest(BaseModel):
     next_step_text: Optional[str] = None
     next_step_at: Optional[str] = None  # ISO; парсится ниже
     lost_reason: Optional[str] = None
+    # карточка клиента (Voksy Beauty, шаг 2.1): необязательные; "" / null очищает
+    birthday: Optional[str] = Field(None, max_length=20)     # 1990-03-12 | 12.03.1990 | 12.03 | --03-12
+    gender: Optional[str] = Field(None, max_length=1)        # f | m
+    source: Optional[str] = Field(None, max_length=24)       # ключ из salon_clients.SOURCES
 
 
 class PublicAccessToggleRequest(BaseModel):
@@ -2903,6 +2907,8 @@ def list_agent_files(
     q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent.id)
     if source in ("library", "generated", "inbound"):
         q = q.filter(AgentFile.source == source)
+    else:
+        q = q.filter(AgentFile.source != "salon")      # копии фото мастеров (send_staff_portfolio)
     if contact_id:
         q = q.filter(AgentFile.agent_contact_id == contact_id)
     rows = q.order_by(AgentFile.created_at.desc()).limit(limit).all()
@@ -4492,6 +4498,16 @@ def get_agent_contact_details(
     except Exception as e:
         logger.warning(f"[AGENT] failed to load whatsapp thread for contact {contact_id}: {e}")
     contact_data["whatsapp"] = whatsapp
+
+    # Чат на сайте (Voksy Beauty 1.6в)
+    webchat = []
+    try:
+        from backend.services.webchat_service import get_thread as web_get_thread
+        webchat = [m.to_dict() for m in web_get_thread(db, contact.id, limit=30)]
+    except Exception as e:
+        logger.warning(f"[AGENT] failed to load webchat thread for contact {contact_id}: {e}")
+        db.rollback()
+    contact_data["webchat"] = webchat
     return contact_data
 
 
@@ -4567,6 +4583,7 @@ async def create_agent_contact(
         notes=body.notes,
         status="new",
         memory={},
+        source="manual",
     )
     db.add(contact)
     db.flush()
@@ -4622,6 +4639,13 @@ async def update_agent_contact(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
+    profile = {k: update_data.pop(k) for k in ("birthday", "gender", "source") if k in update_data}
+    if profile:
+        from backend.services import salon_clients
+        try:
+            salon_clients.update_profile(contact, profile)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     # Нормализация CRM v2 полей:
     #   tags: List[str] → "a,b,c" (нижний регистр, пробелы, уникальные, max 10)
     #   next_step_at: ISO-строка → datetime (naive UTC); пустая → None
@@ -5097,6 +5121,7 @@ async def _run_contacts_import(
                 notes=notes,
                 status="new",
                 memory={},
+                source="import",
             )
             db.add(contact)
             db.flush()

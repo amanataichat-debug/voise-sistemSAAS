@@ -69,7 +69,7 @@ UPDATE_CONTACT_INFO_TOOL = {
     "type": "function",
     "name": "update_contact_info",
     "description": (
-        "Записать в карточку имя, компанию или должность клиента — как только он их назвал "
+        "Записать в карточку имя, компанию, должность или день рождения клиента — как только он их назвал "
         "(в переписке или на звонке). notes дописывается к заметкам, старые не стираются."
     ),
     "parameters": {
@@ -79,6 +79,7 @@ UPDATE_CONTACT_INFO_TOOL = {
             "name": {"type": "string"},
             "company": {"type": "string"},
             "position": {"type": "string"},
+            "birthday": {"type": "string", "description": "День рождения: ДД.ММ.ГГГГ, или ДД.ММ, если год не назван"},
             "notes": {"type": "string", "description": "Свободный текст с информацией о клиенте"},
         },
         "required": ["agent_contact_id"],
@@ -390,7 +391,7 @@ BLOCK_SPAM_TOOL = {
             },
             "channel": {
                 "type": "string",
-                "enum": ["whatsapp", "telegram", "instagram"],
+                "enum": ["whatsapp", "telegram", "instagram", "webchat"],
                 "description": "Канал переписки. Не указывай — определим по последнему сообщению",
             },
         },
@@ -538,7 +539,7 @@ SEND_PRODUCT_CARD_TOOL = {
         "properties": {
             "agent_contact_id": {"type": "string", "description": "UUID контакта агента"},
             "product_id": {"type": "string", "description": "product_id из ответа find_products"},
-            "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram"],
+            "channel": {"type": "string", "enum": ["whatsapp", "telegram", "instagram", "webchat"],
                         "description": "Канал. Не указан — тот, где клиент писал последним"},
             "more_photos": {"type": "boolean", "description": "Отправить ещё до 3 фото товара следом"},
         },
@@ -769,11 +770,25 @@ async def build_chat_tools(agent_config, db: Session) -> list:
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
+    tools = _augment_with_webchat(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
     tools = _augment_with_booking(tools, agent_config, db)
+    from backend.services import salon_ai_tools
+    tools = salon_ai_tools.augment_owner(tools, agent_config, db)
     tools = _augment_with_orders(tools, agent_config, db)
     tools = _patch_move_stage_tool_for_agent(tools, agent_config)
     return _limit_tools_for_mode(tools, agent_config, db, "owner_chat")
+
+
+async def _webchat_sender(args: dict, user_id, agent_config, db: Session, skip_rate_limit: bool = False) -> dict:
+    from backend.services import webchat_service
+    return await webchat_service.fn_webchat_send_message(args, user_id, agent_config, db)
+
+
+def _augment_with_webchat(tools: list, agent_config, db: Session) -> list:
+    """Чат на сайте (Voksy Beauty 1.6в): ответ в окно чата, если он у агента есть."""
+    from backend.services import webchat_service
+    return webchat_service.augment(tools, agent_config, db)
 
 
 def _augment_with_booking(tools: list, agent_config, db: Session) -> list:
@@ -805,6 +820,7 @@ async def build_postcall_tools(agent_config, db: Session) -> list:
     tools = _augment_with_telegram_account(tools, agent_config, db)
     tools = _augment_with_instagram(tools, agent_config, db)
     tools = _augment_with_whatsapp(tools, agent_config, db)
+    tools = _augment_with_webchat(tools, agent_config, db)
     tools = _augment_with_voice(tools, agent_config, db)
     tools = _augment_with_booking(tools, agent_config, db)
     tools = _augment_with_orders(tools, agent_config, db)
@@ -1036,6 +1052,7 @@ _CHAT_SEND_CHANNELS = {
     "whatsapp_send_message": "whatsapp",
     "telegram_send_message": "telegram",
     "instagram_send_message": "instagram",
+    "webchat_send_message": "webchat",
 }
 
 
@@ -1069,7 +1086,7 @@ def _chat_conscience_refusal(tool_name: str, tool_args: dict, context: dict, db:
 
 
 _MESSAGE_EVENT_DIRECTIONS = {"whatsapp_inbound", "telegram_inbound", "instagram_inbound",
-                             "followup_outbound", "telegram_outbound"}
+                             "followup_outbound", "telegram_outbound", "webchat_inbound"}
 
 
 def agent_can_call_contact(db: Session, user, contact) -> tuple:
@@ -1517,6 +1534,8 @@ async def fn_list_agent_files(args: dict, agent_config_id: str, db: Session) -> 
     q = db.query(AgentFile).filter(AgentFile.agent_config_id == agent_config_id)
     if source in ("library", "generated", "inbound"):
         q = q.filter(AgentFile.source == source)
+    else:
+        q = q.filter(AgentFile.source != "salon")      # копии фото мастеров — только для отправки
     if args.get("agent_contact_id"):
         q = q.filter(AgentFile.agent_contact_id == args["agent_contact_id"])
     limit = min(int(args.get("limit") or 30), 100)
@@ -2347,6 +2366,7 @@ def _detect_recent_channel(db: Session, agent_config_id: str, agent_contact_id) 
     from backend.models.agent_telegram_account import AgentTelegramMessage
     from backend.models.agent_whatsapp import AgentWhatsAppMessage
     from backend.models.agent_instagram import AgentInstagramMessage
+    from backend.models.webchat import AgentWebChatMessage
 
     best_channel = None
     best_ts = None
@@ -2354,6 +2374,7 @@ def _detect_recent_channel(db: Session, agent_config_id: str, agent_contact_id) 
         ("telegram", AgentTelegramMessage),
         ("whatsapp", AgentWhatsAppMessage),
         ("instagram", AgentInstagramMessage),
+        ("webchat", AgentWebChatMessage),
     ):
         row = db.query(model.created_at).filter(
             model.agent_contact_id == agent_contact_id,
@@ -2375,6 +2396,9 @@ async def _send_proposal_file(channel: str, args: dict, user_id: str, agent_conf
         return await fn_whatsapp_send_file(args, user_id, agent_config, db)
     if channel == "instagram":
         return await fn_instagram_send_file(args, user_id, agent_config, db)
+    if channel == "webchat":
+        from backend.services import webchat_service
+        return await webchat_service.fn_webchat_send_file(args, user_id, agent_config, db)
     return {"ok": False, "error": f"Неподдерживаемый канал: {channel}"}
 
 
@@ -2654,8 +2678,9 @@ async def fn_send_product_card(args: dict, user_id: str, agent_config_id: str, d
         return {"ok": False, "error": "Товар выключен владельцем — не предлагай его"}
 
     channel = (args.get("channel") or "").strip().lower() or _detect_recent_channel(db, agent_config_id, contact.id)
-    if channel not in ("whatsapp", "telegram", "instagram"):
+    if channel not in ("whatsapp", "telegram", "instagram", "webchat"):
         return {"ok": False, "error": "Клиент ещё не писал ни в один мессенджер — некуда отправить карточку"}
+    from backend.services import webchat_service
 
     caption = catalog_service.product_card_text(row)
     media_ids = [str(x) for x in (row.media_file_ids or [])]
@@ -2663,9 +2688,9 @@ async def fn_send_product_card(args: dict, user_id: str, agent_config_id: str, d
     # Сначала фото: подпись под фото читается лучше, чем под видео
     files.sort(key=lambda f: 0 if (f.kind or "") == "image" else 1)
     send_file = {"whatsapp": fn_whatsapp_send_file, "telegram": fn_telegram_send_file,
-                 "instagram": fn_instagram_send_file}[channel]
+                 "instagram": fn_instagram_send_file, "webchat": webchat_service.fn_webchat_send_file}[channel]
     send_text = {"whatsapp": fn_whatsapp_send_message, "telegram": fn_telegram_send_message,
-                 "instagram": fn_instagram_send_message}[channel]
+                 "instagram": fn_instagram_send_message, "webchat": webchat_service.fn_webchat_send_message}[channel]
     base = {"agent_contact_id": str(contact.id)}
 
     if files:
@@ -3663,7 +3688,7 @@ MEMORY_MAX_FACTS = 20
 MEMORY_MAX_HISTORY = 8
 _MESSAGE_CHANNELS = {"whatsapp_inbound": "whatsapp", "telegram_inbound": "telegram",
                      "instagram_inbound": "instagram", "telegram_outbound": "telegram",
-                     "followup_outbound": "переписка", "sms_inbound": "sms"}
+                     "followup_outbound": "переписка", "sms_inbound": "sms", "webchat_inbound": "чат на сайте"}
 
 
 def _fact_key(text: str) -> str:
@@ -3760,6 +3785,13 @@ async def fn_update_contact_info(args: dict, user_id: str, agent_config_id: str,
         if isinstance(value, str) and value.strip():
             setattr(contact, field, value.strip()[:255])
             updated_fields.append(field)
+    bday = args.get("birthday")
+    if isinstance(bday, str) and bday.strip():
+        from backend.services import salon_clients
+        try:
+            updated_fields += salon_clients.update_profile(contact, {"birthday": bday})
+        except ValueError as e:
+            return {"ok": False, "error": f"birthday: {e}"}
     # Заметки только дописываются (раньше перезаписывались — стирались записи владельца).
     note = (args.get("notes") or "").strip() if isinstance(args.get("notes"), str) else ""
     if note and note not in (contact.notes or ""):
@@ -5324,6 +5356,7 @@ async def fn_block_spam_contact(args: dict, user_id: str, agent_config, db: Sess
             "whatsapp": fn_whatsapp_send_message,
             "telegram": fn_telegram_send_message,
             "instagram": fn_instagram_send_message,
+            "webchat": _webchat_sender,
         }.get(channel)
         if sender is not None:
             try:
@@ -5710,6 +5743,10 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
     from backend.services import booking_tools
     if tool_name in booking_tools.TOOL_NAMES:
         return await booking_tools.execute(tool_name, tool_args or {}, context, db)
+    # ИИ-администратор салона (Voksy Beauty 1.6а): прайс, мастера, история клиента, о салоне, фото работ
+    from backend.services import salon_ai_tools
+    if tool_name in salon_ai_tools.TOOL_NAMES:
+        return await salon_ai_tools.execute(tool_name, tool_args or {}, context, db)
     # Заказы — своя реализация, одна на бота, кабинет и голос (services/order_service.py)
     from backend.services import order_tools
     if tool_name in order_tools.TOOL_NAMES:
@@ -5851,6 +5888,18 @@ async def execute_tool(tool_name: str, tool_args: dict, context: dict, db: Sessi
             )
         elif tool_name == "instagram_get_thread":
             result = await fn_instagram_get_thread(tool_args, user_id, agent_config_id, db)
+        elif tool_name in ("webchat_send_message", "webchat_send_file"):
+            from backend.services import webchat_service
+            agent_config = context.get("agent_config")
+            if agent_config is None and agent_config_id:
+                agent_config = db.query(AgentConfig).filter(AgentConfig.id == agent_config_id).first()
+            if tool_name == "webchat_send_message":
+                result = await chat_split.send_in_parts(
+                    lambda a, i, skip: webchat_service.fn_webchat_send_message(a, user_id, agent_config, db),
+                    tool_args, pause_between=True,
+                )
+            else:
+                result = await webchat_service.fn_webchat_send_file(tool_args, user_id, agent_config, db)
         elif tool_name in ("whatsapp_send_message", "whatsapp_send_file"):
             agent_config = context.get("agent_config")
             if agent_config is None and agent_config_id:

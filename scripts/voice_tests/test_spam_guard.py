@@ -177,7 +177,7 @@ check("сбой отправки не мешает блокировке",
 
 # --- правила в промптах ---
 src = open(at.__file__.replace("agent_tools.py", "agent_orchestrator.py"), encoding="utf-8").read()
-check("правило спама во всех трёх мессенджерах", src.count("+ spam_rule") == 3)
+check("правило спама в трёх мессенджерах и чате на сайте", src.count("+ spam_rule") == 4)
 check("правило спама в разборе звонка (входящий и исходящий)", src.count("+ call_spam_rule") == 2)
 check("в правиле названы и вопросы про ядро, и троллинг объёмами",
       "какой API" in src and "500 тысяч" in src and "block_spam_contact" in src)

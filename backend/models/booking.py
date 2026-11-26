@@ -123,6 +123,11 @@ class Booking(Base):
     reminder_24h_at = Column(DateTime(timezone=True), nullable=True)
     reminder_2h_at = Column(DateTime(timezone=True), nullable=True)
     followup_at = Column(DateTime(timezone=True), nullable=True)
+    # Отзыв после визита (шаг 1.6б): спросили оценку вместе со «спасибо», клиент ответил 1–5
+    review_asked_at = Column(DateTime(timezone=True), nullable=True)
+    review_score = Column(Integer, nullable=True)
+    review_text = Column(Text, nullable=True)
+    review_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -174,3 +179,23 @@ class BookingPage(Base):
     # соцсети, карта, удобства, акции, цвет — services/salon_page.py
     profile = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BookingConfirmation(Base):
+    """Запись / перенос / отмена ботом ждёт «да» клиента (Voksy Beauty, шаг 1.6а; services/booking_confirm.py).
+
+    Бот сначала получает итог («маникюр, Айгуль, завтра 18:00, 1 200 сом») и id; выполнить действие можно,
+    только когда клиент ответил согласием в переписке ПОСЛЕ того, как итог ему отправили (проверка в коде)."""
+    __tablename__ = "booking_confirmations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_contact_id = Column(UUID(as_uuid=True), ForeignKey("agent_contacts.id", ondelete="CASCADE"), nullable=True)
+    action = Column(String(16), nullable=False)          # create | reschedule | cancel
+    payload = Column(JSONB, nullable=False)              # аргументы действия, проверенные пробной записью
+    summary = Column(Text, nullable=False)               # итог словами — его бот показывает клиенту
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    booking_id = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (Index("ix_booking_confirmations_contact", "agent_contact_id", "created_at"),)

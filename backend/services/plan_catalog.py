@@ -19,8 +19,9 @@
                    входы в пределах лимита бесплатны (плата за место 150 сом — только у других ниш);
   agent_mode     — "reactive" (бот отвечает и записывает, уровень Старта: Beauty Start, Beauty AI) |
                    "full" (автономный агент, уровень Profi: Beauty Pro);
-  credits_month  — кредиты бота, начисляемые за каждый оплаченный месяц (по решению владельца 0:
-                   ИИ-переписка оплачивается кредитами отдельно, голос — кошельком);
+  credits_month  — кредиты бота, начисляемые за каждый оплаченный месяц: Beauty Pro — 10 000 (решение
+                   владельца 26.11.2026: автономный агент без кредитов вставал), Beauty Start/AI — 0
+                   (ИИ-переписка по кредитам отдельно), голос — всегда кошельком;
   trial          — эти лимиты действуют у салона на пробном периоде.
 
 Сроки оплаты Beauty (решение владельца 26.11.2026): 1 месяц, 3 месяца −10% (плашка «Выгодно»),
@@ -69,6 +70,12 @@ _COMMON_FEATURES = [
     "ИИ-переписка — по кредитам бота",
 ]
 
+PRO_CREDITS_MONTH = 10_000
+PRO_CREDITS_FEATURE = "10 000 кредитов ИИ каждый месяц"
+# Разовое обновление уже заведённого Beauty Pro (26.11.2026): строка была создана с credits_month=0,
+# а база главнее кода. Метка в limits — чтобы не перезаписать, если суперадмин потом поставит 0 сам.
+PRO_CREDITS_MARK = "credits_default_v"
+
 # Уровни доступа (решение владельца 25.11.2026): Beauty Start и Beauty AI — уровень тарифа Старт
 # (бот отвечает и записывает, сам первым не звонит), Beauty Pro — уровень Profi (автономный агент).
 BEAUTY_DEFAULTS: List[Dict[str, Any]] = [
@@ -82,9 +89,10 @@ BEAUTY_DEFAULTS: List[Dict[str, Any]] = [
      "features": ["До 10 сотрудников со своим входом"] + _COMMON_FEATURES},
     {"code": "beauty_pro", "name": "Beauty Pro", "price": 5990, "max_assistants": 10, "sort_order": 30,
      "badge": None, "description": "Для большого салона: ИИ-агент работает сам, как на Profi",
-     "limits": {"staff": 20, "agent_mode": "full", "credits_month": 0, "trial": False},
+     "limits": {"staff": 20, "agent_mode": "full", "credits_month": PRO_CREDITS_MONTH, "trial": False},
      "features": ["До 20 сотрудников со своим входом",
-                  "Автономный ИИ-агент: сам пишет клиентам и звонит (номера O!)"] + _COMMON_FEATURES},
+                  "ИИ-управляющий салона: сам пишет и звонит клиентам (звонки — номера O!)",
+                  PRO_CREDITS_FEATURE] + _COMMON_FEATURES},
 ]
 
 
@@ -212,6 +220,29 @@ def ensure_schema(engine) -> None:
                    "badge": d["badge"], "sort_order": d["sort_order"]})
             if res.rowcount:
                 logger.info(f"💅 Beauty plan seeded: {d['code']} ({d['price']} KGS)")
+        _upgrade_pro_credits(conn)
+
+
+def _upgrade_pro_credits(conn) -> None:
+    """Beauty Pro, заведённый с 0 кредитов, получает PRO_CREDITS_MONTH — один раз (метка в limits)."""
+    import json
+    from sqlalchemy import text
+    row = conn.execute(text("SELECT id, limits, features FROM subscription_plans WHERE code = 'beauty_pro'")).first()
+    if row is None:
+        return
+    limits = dict(row[1]) if isinstance(row[1], dict) else {}
+    if limits.get(PRO_CREDITS_MARK):
+        return
+    if not int(limits.get("credits_month") or 0):
+        limits["credits_month"] = PRO_CREDITS_MONTH
+    limits[PRO_CREDITS_MARK] = 2
+    features = list(row[2]) if isinstance(row[2], list) else []
+    if not any("кредит" in str(f) and "месяц" in str(f) for f in features):
+        features.insert(min(2, len(features)), PRO_CREDITS_FEATURE)
+    conn.execute(text("UPDATE subscription_plans SET limits = CAST(:l AS JSONB), features = CAST(:f AS JSONB) "
+                      "WHERE id = :id"),
+                 {"l": json.dumps(limits), "f": json.dumps(features, ensure_ascii=False), "id": row[0]})
+    logger.info(f"💅 Beauty Pro: {limits['credits_month']} кредитов в месяц")
 
 
 # ───────────────────────────── цены и вид тарифа ─────────────────────────────

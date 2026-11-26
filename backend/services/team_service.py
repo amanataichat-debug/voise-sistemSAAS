@@ -74,10 +74,12 @@ PERMISSIONS: List[Dict[str, str]] = [
      "hint": "Отчёты по обращениям, клиентам и записям — без расходов"},
     {"key": "finance", "title": "Финансы", "icon": "banknote",
      "hint": "Выручка, расходы, зарплаты мастеров и прибыль — для бухгалтера и управляющего"},
+    {"key": "activity", "title": "Журнал действий", "icon": "history",
+     "hint": "Кто что сделал: записи, переносы, отмены, цены, мастера, сотрудники — для управляющего"},
 ]
 PERM_KEYS = tuple(p["key"] for p in PERMISSIONS)
 BOOKING_PERMS = ("booking", "booking_setup")
-BOOKING_MODULE_PERMS = ("booking", "booking_setup", "booking_own")   # видны, когда включена запись
+BOOKING_MODULE_PERMS = ("booking", "booking_setup", "booking_own", "activity")   # видны, когда включена запись
 
 # Страница кабинета раздела: меню и нижние вкладки сотрудника, «домашняя» страница после входа
 SECTION_PAGES = [
@@ -89,6 +91,7 @@ SECTION_PAGES = [
     ("catalog", "/static/catalog.html", "package", "Каталог", "Каталог"),
     ("analytics", "/static/analytics.html", "chart-column", "Аналитика", "Аналитика"),
     ("finance", "/static/finance.html", "banknote", "Финансы", "Каржы"),
+    ("activity", "/static/activity.html", "history", "Журнал действий", "Аракеттер журналы"),
 ]
 
 
@@ -168,6 +171,11 @@ STAFF_RULES = [
     _rule("POST", r"^/api/finance/expenses/?$", "finance"),
     _rule("PATCH DELETE", r"^/api/finance/expenses/[^/]+/?$", "finance"),
     _rule("PATCH", r"^/api/finance/payroll/[^/]+/?$", "finance"),
+    # — журнал действий (Voksy Beauty 1.7): управляющий; история записи в её карточке — тому же разделу —
+    _rule("GET", r"^/api/beauty/activity/?$", "activity"),
+    # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
+    _rule("GET", r"^/api/beauty/clients/?$", "crm"),
+    _rule("GET", r"^/api/beauty/clients/[0-9a-fA-F-]{36}/?$", "crm", "inbox", "booking"),
 ]
 
 
@@ -695,6 +703,17 @@ def _get_member(db: Session, owner_id, member_id, lock: bool = False):
     return m
 
 
+def _perm_titles(perms) -> str:
+    t = {p["key"]: p["title"] for p in PERMISSIONS}
+    return ", ".join(t.get(k, k) for k in (perms or [])) or "—"
+
+
+def _log(db: Session, owner, action: str, summary: str, member_id=None, changes=None) -> None:
+    """Журнал действий кабинета (services/activity.py): сотрудники и права."""
+    from backend.services import activity
+    activity.log(db, owner.id, action, "team", summary, object_id=member_id, changes=changes, user=owner)
+
+
 def create_member(db: Session, owner, *, name: str, email: str, password: Optional[str] = None,
                   phone: Optional[str] = None, role_title: Optional[str] = None,
                   permissions=None) -> Tuple[Any, str]:
@@ -733,6 +752,9 @@ def create_member(db: Session, owner, *, name: str, email: str, password: Option
         db.rollback()
         raise _seat_error(result, owner, terms)
     db.refresh(m)
+    _log(db, owner, "team.create", f"{m.name} ({m.email})" + (f" · {m.role_title}" if m.role_title else "")
+         + f" · разделы: {_perm_titles(perms)}", m.id)
+    db.commit()
     logger.info(f"[TEAM] owner {owner.id} added member {m.id} ({key}), perms={perms}")
     return m, pw
 
@@ -740,6 +762,8 @@ def create_member(db: Session, owner, *, name: str, email: str, password: Option
 def update_member(db: Session, owner, member_id, *, name=None, phone=None, role_title=None,
                   permissions=None, email=None):
     m = _get_member(db, owner.id, member_id)
+    before = {"name": m.name, "phone": m.phone, "role": m.role_title, "email": m.email,
+              "permissions": _perm_titles(m.permissions)}
     if name is not None:
         m.name = _clean_name(name)
     if phone is not None:
@@ -754,6 +778,14 @@ def update_member(db: Session, owner, member_id, *, name=None, phone=None, role_
         if not perms:
             raise TeamError("no_permissions", "Отметьте хотя бы один раздел")
         m.permissions = perms
+    from backend.services import activity
+    after = {"name": m.name, "phone": m.phone, "role": m.role_title, "email": m.email,
+             "permissions": _perm_titles(m.permissions)}
+    ch = activity.diff(before, after)
+    if ch:
+        labels = {"name": "имя", "phone": "телефон", "role": "должность", "email": "почта", "permissions": "разделы"}
+        _log(db, owner, "team.update", f"{m.name}: " + "; ".join(f"{labels[k]}: {a or '—'} → {b or '—'}" for k, (a, b) in ch.items()),
+             m.id, ch)
     db.commit()
     db.refresh(m)
     invalidate(m.id)
@@ -767,6 +799,7 @@ def set_password(db: Session, owner, member_id, password: Optional[str] = None) 
     pw = _check_password(password) if password else generate_password()
     m.password_hash = hash_password(pw)
     m.token_version = int(m.token_version or 1) + 1
+    _log(db, owner, "team.password", f"{m.name}: новый пароль, старые входы закрыты", m.id)
     db.commit()
     db.refresh(m)
     invalidate(m.id)
@@ -778,6 +811,9 @@ def deactivate(db: Session, owner, member_id, reason: str = "owner"):
     m.is_active = False
     m.status_reason = reason
     m.token_version = int(m.token_version or 1) + 1
+    _log(db, owner, "team.deactivate", f"{m.name}" + ({"owner": "", "unpaid": " · не хватило денег на место",
+                                                         "plan": " · тариф закончился", "limit": " · лимит тарифа"}
+                                                        .get(reason, "")), m.id)
     db.commit()
     db.refresh(m)
     invalidate(m.id)
@@ -809,6 +845,7 @@ def activate(db: Session, owner, member_id):
         m = _get_member(db, owner.id, member_id, lock=True)
     m.is_active = True
     m.status_reason = None
+    _log(db, owner, "team.activate", m.name, m.id)
     db.commit()
     db.refresh(m)
     invalidate(m.id)
@@ -826,6 +863,7 @@ def delete_member(db: Session, owner, member_id) -> None:
         db.rollback()
         logger.warning(f"[TEAM] unlink master of {mid}: {e}")
         m = _get_member(db, owner.id, member_id)
+    _log(db, owner, "team.delete", f"{m.name} ({m.email})", mid)
     db.delete(m)
     db.commit()
     invalidate(mid)
@@ -917,6 +955,10 @@ def renew_due_seats(now: Optional[datetime] = None) -> Dict[str, Any]:
                 if owner is None or (not owner_plan_ok(owner) and not free):
                     m.is_active, m.status_reason = False, "plan"
                     m.token_version = int(m.token_version or 1) + 1
+                    if owner is not None:
+                        from backend.services import activity
+                        activity.log(db, owner.id, "team.deactivate", "team", f"{m.name} · тариф закончился",
+                                     object_id=mid, actor=activity._actor("system"))
                     db.commit()
                     invalidate(mid)
                     out["disabled"] += 1
@@ -937,6 +979,10 @@ def renew_due_seats(now: Optional[datetime] = None) -> Dict[str, Any]:
                 reason = {"over_limit": "limit", "plan_ended": "plan"}.get(result, "unpaid")
                 m.is_active, m.status_reason = False, reason
                 m.token_version = int(m.token_version or 1) + 1
+                from backend.services import activity
+                activity.log(db, owner.id, "team.deactivate", "team",
+                             f"{name} · " + {"limit": "лимит тарифа", "plan": "тариф закончился"}.get(reason, "не хватило денег на место"),
+                             object_id=mid, actor=activity._actor("system"))
                 db.commit()
                 invalidate(mid)
                 out["disabled"] += 1

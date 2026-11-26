@@ -8,6 +8,10 @@
  *                                переключает график ниже, клик по столбцу открывает полный отчёт «Аналитики»
  *                                на этом дне / неделе; «Главное» — выводы словами.
  * Ниша с онлайн-записью: справа «Записи на сегодня» (/api/booking/overview) вместо воронки.
+ * Салон (Voksy Beauty 1.7, ниши с записью, владелец): блок «Главная салона» из /api/beauty/home — быстрые кнопки
+ * (записать, заблокировать время, расход), «Сейчас в салоне», «Требует внимания», «Свободные окна» сегодня/завтра
+ * с «Предложить клиентам» (ИИ-управляющий, на одобрение), «Загрузка мастеров» сегодня/неделя; справа от графика —
+ * «Последние действия» из журнала действий. «Новые без вас» — с прошлого захода (localStorage vf_home_seen).
  * Ответы кэшируются в sessionStorage: повторный заход рисуется сразу, свежие данные — следом.
  * Модалки оплаты и блок подписки остаются в коде dashboard.html. Графики — общий /static/js/vchart.js.
  */
@@ -248,6 +252,7 @@
   function renderSide() {
     var crm = data.crm || {};
     var body = $('dh-side-body');
+    if (hasBooking() && salonOn() && home) { renderRecentActions(); return; }
     if (hasBooking()) { renderToday(); return; }
     if (isStart() && crm.has_bot) {
       $('dh-side-title').textContent = 'Воронка клиентов';
@@ -319,6 +324,200 @@
         if (data) renderSide();
       })
       .catch(function () { todayLoading = false; today = { bookings: [] }; if (data) renderSide(); });
+  }
+
+  // ------------------------------------------------------------------ главная салона (Voksy Beauty 1.7)
+  var home = null, homeDay = 0, homeLoadKey = 'today', homeBusy = false;
+  var KIND_IC = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
+  var ATT_IC = { not_marked: 'circle-help', unconfirmed: 'clock', prepay: 'wallet', approve: 'circle-check', new_online: 'sparkles',
+                 low_reviews: 'star', unanswered: 'message-circle' };
+  function isStaffLs() { try { var sf = JSON.parse(localStorage.getItem('vf_staff') || 'null'); return !!(sf && sf.staff); } catch (e) { return false; } }
+  function salonOn() { return hasBooking() && !isStaffLs(); }
+  function hmBk(iso) { return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bishkek' }); }
+  function minText(m) {
+    m = Math.round(m || 0);
+    if (m >= 600) return Math.round(m / 60) + ' ч';
+    var h = Math.floor(m / 60), r = m % 60;
+    return h ? h + ' ч' + (r ? ' ' + r + ' мин' : '') : r + ' мин';
+  }
+  function bookingHref(b, day) { return '/static/booking.html?open=' + encodeURIComponent(b.id) + '&date=' + (day || new Date(b.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Bishkek' })); }
+  function homeSince() {
+    // «Новые без вас» — с прошлого захода; в пределах одной вкладки точка отсчёта не сдвигается
+    var s = null;
+    try {
+      s = sessionStorage.getItem('vf_home_since');
+      if (!s) {
+        s = localStorage.getItem('vf_home_seen') || '';
+        sessionStorage.setItem('vf_home_since', s || 'none');
+        localStorage.setItem('vf_home_seen', new Date().toISOString());
+      }
+    } catch (e) { /* приватный режим */ }
+    return s && s !== 'none' ? s : null;
+  }
+  function loadHome() {
+    var t = token();
+    if (!t || !salonOn() || homeBusy) return;
+    homeBusy = true;
+    try { var c = JSON.parse(sessionStorage.getItem('vf_dash_home') || 'null'); if (c && !home) { home = c; renderSalon(); } } catch (e) { /* ignore */ }
+    var since = homeSince();
+    fetch('/api/beauty/home' + (since ? '?since=' + encodeURIComponent(since) : ''), { headers: { Authorization: 'Bearer ' + t } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        homeBusy = false;
+        if (!d) return;
+        try { sessionStorage.setItem('vf_dash_home', JSON.stringify(d)); } catch (e) { /* ignore */ }
+        home = d; renderSalon();
+        if (data) renderSide();
+      })
+      .catch(function () { homeBusy = false; });
+  }
+  function renderSalon() {
+    var box = $('dh-salon');
+    if (!box) return;
+    if (!salonOn()) { box.hidden = true; document.body.classList.remove('dh-salon-on'); return; }
+    box.hidden = false;
+    document.body.classList.add('dh-salon-on');
+    var quick = '<div class="dh-quick">' +
+      '<a class="dh-qbtn main" href="/static/booking.html?new=1">' + ic('plus') + 'Записать</a>' +
+      '<a class="dh-qbtn" href="/static/booking.html?block=1">' + ic('ban') + '<span class="lg">Заблокировать время</span><span class="sm">Блок времени</span></a>' +
+      '<a class="dh-qbtn" href="/static/finance.html?new=1">' + ic('banknote') + 'Расход</a></div>';
+    if (!home) {
+      box.innerHTML = quick + '<div class="dh-grid dh-salon-grid"><div class="dh-card dh-span-2"><span class="dh-skel"></span><span class="dh-skel" style="width:60%"></span></div>' +
+        '<div class="dh-card"><span class="dh-skel"></span></div></div>';
+      return;
+    }
+    box.innerHTML = quick + '<div class="dh-grid dh-salon-grid">' +
+      '<div class="dh-card dh-span-2" id="dh-now">' + nowHtml() + '</div>' +
+      '<div class="dh-card" id="dh-attn">' + attnHtml() + '</div>' +
+      '<div class="dh-card dh-span-2" id="dh-gaps">' + gapsHtml() + '</div>' +
+      '<div class="dh-card" id="dh-load">' + loadHtml() + '</div></div>';
+  }
+  function nowHtml() {
+    var n = home.now;
+    if (!n) return '<div class="dh-card-head"><h3 class="dh-card-title">Сейчас в салоне</h3></div><div class="dh-empty">Не удалось загрузить записи — обновите страницу.</div>';
+    var c = n.counts || {};
+    var tiles = '<div class="dh-ntiles">' +
+      '<div class="dh-ntile"><span>Пришли</span><b>' + num(c.came) + '</b></div>' +
+      '<div class="dh-ntile"><span>Впереди</span><b>' + num(c.upcoming) + '</b></div>' +
+      '<div class="dh-ntile' + (c.no_show ? ' warn' : '') + '"><span>Не пришли</span><b>' + num(c.no_show) + '</b></div>' +
+      '<a class="dh-ntile money" href="/static/analytics.html?period=today"><span>Выручка</span><b>' + som(n.revenue) + '</b>' + (n.expected ? '<i>ещё ожидается ' + som(n.expected) + '</i>' : '') + '</a></div>';
+    function row(b, badge, cls) {
+      return '<a class="dh-nrow ' + (cls || '') + '" href="' + bookingHref(b, n.date) + '">' +
+        '<span class="dh-ntime"><b>' + esc(b.time) + '</b><i>' + esc(b.until) + '</i></span>' +
+        '<span class="dh-nmain"><b>' + esc(b.client) + '</b><span><i class="dh-mdot" style="background:' + esc(b.color || C_IN) + '"></i>' +
+        esc([b.service, b.master].filter(Boolean).join(' · ')) + '</span></span>' +
+        (b.prepay ? '<span class="dh-badge wait" title="Ждём предоплату ' + esc(som(b.prepay)) + '">' + ic('wallet') + '</span>' : '') +
+        '<span class="dh-badge ' + badge[1] + '">' + esc(badge[0]) + '</span></a>';
+    }
+    var list = '';
+    if ((n.in_salon || []).length) list += '<div class="dh-nsec">' + ic('door-open') + 'В салоне сейчас</div>' + n.in_salon.map(function (b) { return row(b, ['в салоне', 'ok'], 'here'); }).join('');
+    if ((n.running || []).length) list += '<div class="dh-nsec">' + ic('circle-help') + 'Время идёт — отметьте, пришёл ли клиент</div>' + n.running.map(function (b) { return row(b, ['отметьте', 'miss']); }).join('');
+    if ((n.next || []).length) list += '<div class="dh-nsec">' + ic('clock') + 'Дальше сегодня</div>' + n.next.map(function (b) { return row(b, [b.status_title, b.status === 'confirmed' ? 'ok' : 'wait']); }).join('') +
+      (n.more ? '<div class="dh-empty" style="padding-top:4px">и ещё ' + n.more + ' ' + plural(n.more, 'запись', 'записи', 'записей') + '</div>' : '');
+    if (!list) list = '<div class="dh-empty">' + (c.total ? 'На сегодня всё: новых записей впереди нет.' : 'Сегодня записей нет. Отправьте клиентам ссылку для записи — они выберут время сами.') + '</div>';
+    var d = new Date(n.date + 'T12:00:00+06:00');
+    return '<div class="dh-card-head"><div><h3 class="dh-card-title">Сейчас в салоне</h3><div class="dh-card-sub">' +
+      esc(d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Bishkek' })) + ' · ' + num(c.total) + ' ' + plural(c.total, 'запись', 'записи', 'записей') + '</div></div>' +
+      '<a class="dh-link" href="/static/booking.html">Журнал записи →</a></div>' + tiles + '<div class="dh-nlist">' + list + '</div>';
+  }
+  function attnHtml() {
+    var items = home.attention || [];
+    var head = '<div class="dh-card-head"><h3 class="dh-card-title">Требует внимания' + (items.length ? ' <span class="dh-cnt">' + items.length + '</span>' : '') + '</h3></div>';
+    if (!items.length) return head + '<div class="dh-allok">' + ic('circle-check') + '<div><b>Всё в порядке</b><span>Срочного ничего нет: записи отмечены, подтверждения и предоплаты на месте.</span></div></div>';
+    return head + '<div class="dh-attn">' + items.map(function (a) {
+      return '<a class="dh-arow lv-' + esc(a.level) + '" href="' + esc(a.href) + '"><span class="dh-aic">' + ic(ATT_IC[a.key] || 'circle-alert') + '</span>' +
+        '<span class="dh-amain"><b>' + esc(a.title) + '<i>' + num(a.count) + '</i></b><span>' + esc(a.hint || '') + '</span></span>' + ic('chevron-right') + '</a>';
+    }).join('') + '</div>';
+  }
+  function gapsHtml() {
+    var g = home.gaps;
+    var head = '<div class="dh-card-head"><div><h3 class="dh-card-title">Свободные окна</h3><div class="dh-card-sub">Время мастеров без записей и перерывов</div></div>';
+    if (!g || !(g.days || []).length) return head + '</div><div class="dh-empty">Добавьте мастеров и их график — покажем свободное время.</div>';
+    var day = g.days[homeDay] || g.days[0];
+    head += '<div class="dh-seg" role="group" aria-label="День">' + g.days.map(function (d, i) {
+      return '<button type="button" data-gday="' + i + '" class="' + (i === homeDay ? 'active' : '') + '">' + esc(d.title) + (d.free_min ? ' · ' + minText(d.free_min) : '') + '</button>';
+    }).join('') + '</div></div>';
+    var rows = (day.masters || []);
+    if (!rows.length) return head + '<div class="dh-empty">Мастеров пока нет — добавьте их в журнале записи.</div>';
+    var body = '<div class="dh-glist">' + rows.map(function (m) {
+      var ava = m.photo ? '<img class="dh-gava" src="' + esc(m.photo) + '" alt="">' : '<span class="dh-gava" style="background:' + esc(m.color || C_IN) + '">' + esc(String(m.name || '?').charAt(0).toUpperCase()) + '</span>';
+      var right;
+      if (!m.works) right = '<span class="dh-gfree off">выходной</span>';
+      else if (!m.ranges.length) right = '<span class="dh-gfree full">' + ic('check') + 'всё занято</span>';
+      else {
+        var chips = m.ranges.slice(0, 4).map(function (r) {
+          return '<a class="dh-gchip" href="/static/booking.html?date=' + esc(day.date) + '" title="Свободно ' + esc(minText(r.min)) + '">' + esc(r.from) + '–' + esc(r.to) + '</a>';
+        }).join('') + (m.ranges.length > 4 ? '<span class="dh-gchip more">+' + (m.ranges.length - 4) + '</span>' : '');
+        right = '<div class="dh-gchips">' + chips + '</div>';
+      }
+      var offer = g.can_offer && m.works && m.online && m.free_min >= 60
+        ? '<button type="button" class="dh-goffer" data-offer="' + esc(m.id) + '" data-day="' + esc(day.date) + '">' + ic('sparkles') + 'Предложить клиентам</button>' : '';
+      return '<div class="dh-grow"><div class="dh-gwho">' + ava + '<div><b>' + esc(m.name) + '</b><span>' + (m.works ? (m.free_min ? 'свободно ' + minText(m.free_min) : 'свободного времени нет') : 'не работает') +
+        (m.works && !m.online ? ' · запись только через администратора' : '') + '</span></div></div>' + right + offer + '</div>';
+    }).join('') + '</div>';
+    var foot = g.can_offer ? '<div class="dh-gfoot">' + ic('info') + 'ИИ-управляющий подберёт давних клиентов мастера и предложит им эти окна — после вашего одобрения.</div>' : '';
+    return head + body + foot;
+  }
+  function loadHtml() {
+    var l = home.load;
+    var head = '<div class="dh-card-head"><h3 class="dh-card-title">Загрузка мастеров</h3>' +
+      '<div class="dh-seg" role="group" aria-label="Период"><button type="button" data-lkey="today" class="' + (homeLoadKey === 'today' ? 'active' : '') + '">Сегодня</button>' +
+      '<button type="button" data-lkey="week" class="' + (homeLoadKey === 'week' ? 'active' : '') + '">Неделя</button></div></div>';
+    if (!l || !(l.masters || []).length) return head + '<div class="dh-empty">Добавьте мастеров и их график — посчитаем загрузку.</div>';
+    var tot = l[homeLoadKey] || {};
+    var pct = tot.pct;
+    var big = '<div class="dh-lbig"><b>' + (pct == null ? '—' : pct + '%') + '</b><span>' + (pct == null ? 'никто не работает' :
+      minText(tot.booked_min) + ' записей из ' + minText(tot.work_min) + ' рабочего времени') + (homeLoadKey === 'week' ? ', пн–вс' : '') + '</span></div>';
+    var rows = l.masters.slice().sort(function (a, b) { return ((b[homeLoadKey] || {}).pct || -1) - ((a[homeLoadKey] || {}).pct || -1); });
+    return head + big + '<div class="dh-lrows">' + rows.map(function (m) {
+      var x = m[homeLoadKey] || {};
+      var w = x.pct == null ? 0 : x.pct;
+      return '<div class="dh-lrow" title="' + esc(m.name + ': ' + (x.pct == null ? 'не работает' : x.pct + '% · ' + minText(x.booked_min) + ' из ' + minText(x.work_min))) + '">' +
+        '<div class="dh-lt"><span><i class="dh-mdot" style="background:' + esc(m.color || C_IN) + '"></i>' + esc(m.name) + '</span><b>' + (x.pct == null ? 'выходной' : x.pct + '%') + '</b></div>' +
+        '<div class="dh-meter"><span style="width:' + (w ? Math.max(3, w) : 0) + '%"></span></div></div>';
+    }).join('') + '</div>';
+  }
+  function renderRecentActions() {
+    $('dh-side-title').textContent = 'Последние действия';
+    var body = $('dh-side-body');
+    var rows = home.recent || [];
+    if (!rows.length) {
+      body.innerHTML = '<div class="dh-empty">Здесь будет видно, кто записал клиента, перенёс или отменил запись, поменял цену или график, что сделал бот.</div>' +
+        '<a class="dh-link" href="/static/activity.html">Журнал действий →</a>';
+      return;
+    }
+    body.innerHTML = '<div class="dh-recent">' + rows.map(function (x) {
+      return '<div class="dh-ract"><span class="dh-rava k-' + esc(x.actor.kind) + '">' + ic(KIND_IC[x.actor.kind] || 'user') + '</span>' +
+        '<div class="dh-rmain"><div><b>' + esc(x.actor.name) + '</b> · ' + esc(x.action_title) + '</div><span>' + esc(x.summary) + '</span></div>' +
+        '<span class="dh-rtime">' + esc(hmBk(x.at)) + '</span></div>';
+    }).join('') + '</div><div class="dh-today-foot"><a class="dh-link" href="/static/activity.html">Весь журнал действий →</a></div>';
+  }
+  function bindSalon() {
+    var box = $('dh-salon');
+    if (!box) return;
+    box.addEventListener('click', function (e) {
+      var gd = e.target.closest('[data-gday]');
+      if (gd) { homeDay = +gd.getAttribute('data-gday'); $('dh-gaps').innerHTML = gapsHtml(); return; }
+      var lk = e.target.closest('[data-lkey]');
+      if (lk) { homeLoadKey = lk.getAttribute('data-lkey'); $('dh-load').innerHTML = loadHtml(); return; }
+      var of = e.target.closest('[data-offer]');
+      if (of) {
+        of.disabled = true; of.innerHTML = ic('loader-circle') + 'Подбираем…';
+        fetch('/api/beauty/home/offer-gaps', { method: 'POST', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resource_id: of.getAttribute('data-offer'), date: of.getAttribute('data-day') }) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            var T = window.VF && window.VF.toast;
+            if (!res.ok) { of.disabled = false; of.innerHTML = ic('sparkles') + 'Предложить клиентам'; if (T) T((res.j && (res.j.detail || res.j.message)) || 'Не получилось', { type: 'error' }); return; }
+            var n = res.j.proposed || 0;
+            of.innerHTML = ic('check') + (n ? 'На одобрении: ' + n : 'Подходящих клиентов нет');
+            if (T) T(n ? 'ИИ-управляющий предложит окна ' + n + ' ' + plural(n, 'клиенту', 'клиентам', 'клиентам') + ' — одобрите в разделе «ИИ-управляющий»'
+              : 'Давних клиентов этого мастера сейчас нет — окна можно разослать вручную', n ? { action: function () { location.href = '/static/manager.html#approve'; }, actionLabel: 'Открыть' } : {});
+            homeBusy = false; loadHome();
+          })
+          .catch(function () { of.disabled = false; of.innerHTML = ic('sparkles') + 'Предложить клиентам'; });
+      }
+    });
   }
 
   // ------------------------------------------------------------------ деньги: сегодня и этот месяц
@@ -569,9 +768,45 @@
     renderChart();
   }
 
+  // Утренний отчёт ИИ-управляющего (Voksy Beauty 1.6б): свежий отчёт и «ждут одобрения» — карточкой наверху
+  var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  function loadReport() {
+    var t = token(), box = $('dh-report'), biz = business();
+    if (!t || !box || !(biz.modules && biz.modules.booking)) return;
+    try { var sf = JSON.parse(localStorage.getItem('vf_staff') || 'null'); if (sf && sf.staff) return; } catch (e) { /* ignore */ }
+    fetch('/api/manager/overview', { headers: { Authorization: 'Bearer ' + t } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (ov) {
+        if (!ov) return;
+        var rep = ov.last_report, pending = salonOn() ? 0 : (ov.pending || 0);   // у салона — в «Требует внимания»
+        var today = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);   // дата Бишкека
+        var fresh = rep && (rep.day === today || !rep.read);
+        if (!fresh && !pending) { box.hidden = true; return; }
+        var d = (rep && rep.data) || {}, td = d.today || {}, y = d.yesterday || {};
+        var p = rep ? rep.day.split('-') : null;
+        var html = '<a class="dh-rep-main" href="/static/manager.html#reports">' +
+          '<span class="dh-rep-k">' + ic(rep && rep.kind === 'weekly' ? 'chart-column' : 'sun') +
+          (rep ? (rep.kind === 'weekly' ? 'Итоги недели' : 'Утренний отчёт') + ' · ' + (+p[2]) + ' ' + MONTHS[+p[1] - 1] : 'ИИ-управляющий') + '</span>' +
+          '<b>' + esc(rep ? rep.title : 'Есть предложения на одобрение') + '</b>';
+        if (rep && rep.kind === 'morning') {
+          var n = td.count || 0, w = (n % 10 === 1 && n % 100 !== 11) ? 'запись' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'записи' : 'записей';
+          html += '<span class="dh-rep-nums"><span><i>' + n + '</i>' + w + ' сегодня</span>' +
+            '<span><i>' + (y.came || 0) + '</i>пришли вчера</span>' + (y.no_show ? '<span class="warn"><i>' + y.no_show + '</i>не пришли</span>' : '') + '</span>';
+        }
+        html += '<span class="dh-rep-go">Открыть отчёт' + ic('chevron-right') + '</span></a>';
+        if (pending) html += '<a class="dh-rep-ap" href="/static/manager.html#approve">' + ic('circle-check') + 'Ждут вашего одобрения: ' + pending + ic('chevron-right') + '</a>';
+        box.innerHTML = html;
+        box.hidden = false;
+      })
+      .catch(function () { /* карточка просто не появится */ });
+  }
+
   function load() {
     var t = token();
     if (!t) return;
+    loadReport();
+    renderSalon();
+    loadHome();
     try {
       var cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
       if (cached) { data = cached; render(); }
@@ -614,6 +849,7 @@
   }
 
   function init() {
+    bindSalon();
     $('dh-topup').addEventListener('click', openTopup);
     $('dh-upgrade').addEventListener('click', function () {
       var b = document.getElementById('upgrade-subscription-btn');
@@ -646,9 +882,11 @@
       data.wallet = Object.assign({}, data.wallet, { balance: e.detail.balance });
       renderKpis();
     });
-    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } loadMoney(); });
+    document.addEventListener('vf:business', function () { if (data) { loadToday(); renderSide(); } loadMoney(); loadReport(); renderSalon(); loadHome(); });
     // Первый вход на этом телефоне: ниша приходит с /users/me позже, чем рисуется страница
-    document.addEventListener('vf:user', function () { if (hasMoney() && !money.month) { loadMoney(); if (data) { loadToday(); renderSide(); } } });
+    document.addEventListener('vf:user', function () { if ($('dh-report') && $('dh-report').hidden) loadReport();
+      if (hasMoney() && !money.month) { loadMoney(); if (data) { loadToday(); renderSide(); } }
+      if (salonOn() && !home) { renderSalon(); loadHome(); } });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

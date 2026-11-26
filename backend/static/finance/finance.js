@@ -274,7 +274,15 @@
     root = document.getElementById('fn');
     esc = S.esc; icon = S.icon;
     if (S.staff && S.staff()) { location.replace('/static/inbox.html'); return; }
-    readUrl(); bind(); load();
+    readUrl(); bind();
+    var q = new URLSearchParams(location.search);
+    var wantNew = q.get('new') === '1';     // «Расход» с главной салона (шаг 1.7)
+    if (wantNew) {
+      q.delete('new');
+      try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
+    }
+    load();
+    if (wantNew) S.api('/api/finance/expenses').then(function (r) { if (r.ok && !expCache) expCache = r.data; expenseDialog(null); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

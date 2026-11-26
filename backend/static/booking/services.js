@@ -13,6 +13,7 @@
   var S = window.StartApp;
   var esc = S.esc, icon = S.icon;
   var DUR = [15, 30, 45, 60, 90, 120, 150, 180];
+  var REPEAT = [0, 14, 21, 28, 30, 45, 60, 90];
   var PADS = [0, 5, 10, 15, 20, 30];
   var ctx = null;       // {root, back, canEdit, mode, onChange}
   var st = { data: null, q: '', loading: false };
@@ -204,7 +205,7 @@
     }
     function chips(name, values, cur, unit) {
       return '<div class="sv-chips" data-chips="' + name + '">' + values.map(function (v) {
-        return '<button type="button" class="' + (+cur === v ? 'on' : '') + '" data-v="' + v + '">' + (v ? (name === 'duration_min' ? durText(v) : v + ' ' + unit) : 'нет') + '</button>';
+        return '<button type="button" class="' + (+(cur || 0) === v ? 'on' : '') + '" data-v="' + v + '">' + (v ? (name === 'duration_min' ? durText(v) : v + ' ' + unit) : 'нет') + '</button>';
       }).join('') + '</div>';
     }
     function bar() {
@@ -252,6 +253,8 @@
         '<div class="st-grid2"><div class="field"><label class="label">Подготовка до прихода</label>' + chips('prep_min', PADS, s.prep_min, 'мин') + '</div>' +
         '<div class="field"><label class="label">Перерыв после (уборка)</label>' + chips('after_min', PADS, s.after_min, 'мин') + '</div></div>' +
         '<div id="sv-bar">' + bar() + '</div>' +
+        '<div class="field"><label class="label">Напомнить клиенту о повторе через</label>' + chips('repeat_days', REPEAT, s.repeat_days, 'дн.') +
+        '<div class="hint">ИИ-управляющий сам напишет клиенту, когда подойдёт срок, и предложит время у его мастера (сценарий «Повтор услуги» в разделе «ИИ-управляющий»).</div></div>' +
         '<h4 class="sv-h">Кто делает и за сколько</h4>' +
         '<div class="sv-mhead"><span>Мастер</span><span>Цена</span><span>Мин</span></div>' + mastersHtml() +
         '<div class="hint">Пустые поля — цена и время услуги. Свои — например, у топ-мастера дороже.</div>' +
@@ -352,6 +355,7 @@
       if (s.prepay && s.prepay.type === 'percent' && s.prepay.value > 100) { S.toast('Процент предоплаты — не больше 100', 'error'); return; }
       var body = { title: s.title, category: s.category || '', subcategory: s.subcategory || '', description: s.description || '',
         price: s.price, price_to: s.price_to, duration_min: s.duration_min, prep_min: s.prep_min || 0, after_min: s.after_min || 0,
+        repeat_days: s.repeat_days || 0,
         online_booking: !!s.online_booking, prepay: s.prepay, room_ids: s.room_ids || [], masters: s.masters.map(function (m) { return Object.assign({ does: true }, m); }) };
       if (!isNew) body.is_active = !!s.is_active;
       var btn = $('[data-save]'); btn.disabled = true;

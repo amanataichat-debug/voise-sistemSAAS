@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.booking import (ACTIVE_STATUSES, BLOCK_KINDS, BOOKING_STATUSES, VISITED_STATUSES, Booking,
                                     BookingBlock, BookingPage, BookingResource, BookingRoom)
+from backend.services import activity
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ DEFAULT_SETTINGS = {
     "title": "",
     "master_phones": False,   # мастера (свой журнал) видят телефоны клиентов
     "prepay_info": "",        # как внести предоплату (реквизиты: Mbank, Элсом, наличные) — клиенту и боту
+    "cancel_hours": 0,        # бот и клиент отменяют / переносят не позже чем за N часов (0 — в любое время)
 }
 COLORS = ["#2a5ce8", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#0891b2", "#4d7c0f", "#b45309"]
 STATUS_TITLES = {"booked": "Записан", "confirmed": "Подтвердил", "arrived": "Пришёл", "completed": "Завершён",
@@ -194,7 +196,23 @@ def settings_of(page: Optional[BookingPage]) -> Dict[str, Any]:
     out["buffer_min"] = max(0, min(int(out.get("buffer_min") or 0), 240))
     out["lead_min"] = max(0, min(int(out.get("lead_min") or 0), 7 * 24 * 60))
     out["horizon_days"] = max(1, min(int(out.get("horizon_days") or 30), 180))
+    try:
+        out["cancel_hours"] = max(0, min(int(out.get("cancel_hours") or 0), 7 * 24))
+    except (TypeError, ValueError):
+        out["cancel_hours"] = 0
     return out
+
+
+def change_too_late(b: Booking, cfg: Dict[str, Any]) -> Optional[str]:
+    """Правило салона «отменить или перенести — не позже чем за N часов» (для бота и клиента; кабинет — без него)."""
+    hours = int(cfg.get("cancel_hours") or 0)
+    if not hours:
+        return None
+    st = b.start_at if b.start_at.tzinfo else b.start_at.replace(tzinfo=timezone.utc)
+    if st - now_utc() < timedelta(hours=hours):
+        return (f"По правилам салона отменить или перенести запись можно не позже чем за {hours} ч до визита. "
+                "Передай просьбу администратору (notify_owner_handoff) — он решит сам.")
+    return None
 
 
 def clean_schedule(raw: Any) -> Dict[str, List[List[str]]]:
@@ -211,6 +229,24 @@ def clean_schedule(raw: Any) -> Dict[str, List[List[str]]]:
         items.sort()
         out[d] = items
     return out
+
+
+def schedule_text(schedule: Any) -> str:
+    """«пн–пт 09:00–19:00, сб 10:00–16:00, вс выходной» — график словами (журнал действий, отчёты)."""
+    sch = clean_schedule(schedule) if schedule else {}
+    groups: List[Tuple[List[int], str]] = []
+    for i, d in enumerate(DAYS):
+        iv = sch.get(d) or []
+        txt = ", ".join(f"{a}–{b}" for a, b in iv) if iv else "выходной"
+        if groups and groups[-1][1] == txt and groups[-1][0][-1] == i - 1:
+            groups[-1][0].append(i)
+        else:
+            groups.append(([i], txt))
+    out = []
+    for idx, txt in groups:
+        name = DAY_TITLES[idx[0]] if len(idx) == 1 else f"{DAY_TITLES[idx[0]]}–{DAY_TITLES[idx[-1]]}"
+        out.append(f"{name} {txt}")
+    return ", ".join(out)
 
 
 def resources(db: Session, user_id, active_only: bool = True) -> List[BookingResource]:
@@ -652,8 +688,12 @@ def _first_agent(db: Session, user_id):
     return db.query(AgentConfig).filter(AgentConfig.user_id == user_id).order_by(AgentConfig.created_at).first()
 
 
+# источник новой карточки по тому, кто записал (services/salon_clients.SOURCES)
+_CONTACT_SOURCE = {"online": "booking", "call": "call", "owner": "manual", "staff": "manual"}
+
+
 def resolve_contact(db: Session, user_id, contact_id=None, name: Optional[str] = None, phone: Optional[str] = None,
-                    create: bool = True):
+                    create: bool = True, source: Optional[str] = None):
     """Карточка CRM для записи: по id, по телефону, иначе новая (если есть агент)."""
     from backend.models.agent_contact import AgentContact
     if contact_id:
@@ -678,7 +718,8 @@ def resolve_contact(db: Session, user_id, contact_id=None, name: Optional[str] =
     if not create or not (phone or name):
         return None
     c = AgentContact(user_id=user_id, agent_config_id=agent.id, name=(name or "Клиент")[:255],
-                     phone=phone or f"web:{uuid.uuid4().hex[:10]}", status="new")
+                     phone=phone or f"web:{uuid.uuid4().hex[:10]}", status="new",
+                     source=_CONTACT_SOURCE.get(source or ""))
     db.add(c)
     db.flush()
     return c
@@ -803,7 +844,7 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
     master_price = service_terms(chosen, service)[1] if service is not None else None
     room = _pick_room(db, user, service, st, end, prep, after, prefer=room_id)
 
-    contact = resolve_contact(db, user.id, contact_id, client_name, phone)
+    contact = resolve_contact(db, user.id, contact_id, client_name, phone, source=source)
     b = Booking(user_id=user.id, resource_id=chosen.id, service_entry_id=service.id if service else None,
                 service_title=(service.title if service else None), contact_id=contact.id if contact else None,
                 client_name=(client_name or (contact.name if contact else None) or "")[:200] or None,
@@ -817,7 +858,84 @@ def create_booking(db: Session, user, *, start, service_id=None, service_query: 
     _mark_booked_stage(db, contact)
     _flush(db)
     notify_changed(db, user.id)
+    if visit_id is None:      # визит пишется одной строкой в create_visit
+        activity.log(db, user.id, "booking.create", "booking",
+                     f"{_booking_label(b, chosen.name)}, {activity.when(st)}" + (f" · {activity.money(b.price)}" if b.price else ""),
+                     object_id=b.id, user=user, source=source, client_name=b.client_name,
+                     meta={"source": source, "channel": channel, "date": to_local(st).date().isoformat()})
     return b
+
+
+def _booking_label(b: Booking, master: Optional[str] = None) -> str:
+    """«Нурай · маникюр · Айгуль» — кто, что и у кого (для журнала действий)."""
+    parts = [b.client_name or "Клиент"]
+    if b.service_title:
+        parts.append(b.service_title)
+    if master:
+        parts.append(master)
+    return " · ".join(parts)
+
+
+def _master_name(db: Session, resource_id) -> Optional[str]:
+    if not resource_id:
+        return None
+    return db.query(BookingResource.name).filter(BookingResource.id == resource_id).scalar()
+
+
+def _booking_snapshot(b: Booking) -> Dict[str, Any]:
+    st, en = _aw(b.start_at), _aw(b.end_at)
+    return {"start": st, "resource_id": b.resource_id, "duration_min": int((en - st).total_seconds() // 60),
+            "status": b.status, "note": b.note, "price": b.price, "prepaid": b.prepaid_at is not None,
+            "service": b.service_title}
+
+
+def _log_update(db: Session, user, b: Booking, before: Dict[str, Any], source: str) -> None:
+    """Одна строка журнала на одно изменение записи: главное действие + остальное через «;»."""
+    after = _booking_snapshot(b)
+    ch = activity.diff(before, after)
+    if not ch:
+        return
+    master_now = _master_name(db, b.resource_id)
+    label = _booking_label(b, master_now)
+    parts: List[str] = []
+    action = None
+    if "status" in ch and b.status == "cancelled":
+        action = "booking.cancel"
+        parts.append(f"{label}, {activity.when(after['start'])}" + (f" · причина: {b.cancel_reason}" if b.cancel_reason else ""))
+    if "start" in ch or "resource_id" in ch:
+        action = action or "booking.move"
+        line = f"{label}: {activity.when(before['start'])} → {activity.when(after['start'])}" if "start" in ch \
+            else f"{label}, {activity.when(after['start'])}"
+        if "resource_id" in ch:
+            line += f" · мастер {_master_name(db, before['resource_id']) or '—'} → {master_now or '—'}"
+        parts.append(line)
+    if "duration_min" in ch and "service" not in ch:
+        action = action or "booking.resize"
+        parts.append((f"{label}, {activity.when(after['start'])}: " if not parts else "")
+                     + f"длительность {before['duration_min']} → {after['duration_min']} мин")
+    if "status" in ch and b.status != "cancelled":
+        action = action or "booking.status"
+        parts.append((f"{label}, {activity.when(after['start'])}: " if not parts else "")
+                     + f"{STATUS_TITLES.get(before['status'], before['status'])} → {STATUS_TITLES.get(b.status, b.status)}")
+    if "service" in ch:
+        action = action or "booking.service"
+        parts.append((f"{label}: " if not parts else "") + f"услуга {before['service'] or '—'} → {after['service'] or '—'}")
+    if "price" in ch:
+        action = action or "booking.price"
+        parts.append((f"{label}: " if not parts else "") + f"цена {activity.money(before['price'])} → {activity.money(after['price'])}")
+    if "prepaid" in ch:
+        action = action or "booking.prepaid"
+        parts.append((f"{label}: " if not parts else "")
+                     + (f"предоплата получена{' ' + activity.money(b.prepay_amount) if b.prepay_amount else ''}"
+                        if after["prepaid"] else "отметка «предоплата получена» снята"))
+    if "note" in ch:
+        action = action or "booking.note"
+        parts.append((f"{label}: " if not parts else "") + ("заметка: " + (b.note or "убрана"))[:300])
+    meta = {"date": to_local(after["start"]).date().isoformat()}
+    if b.visit_id:
+        meta["visit_id"] = str(b.visit_id)
+    activity.log(db, user.id, action or "booking.status", "booking", "; ".join(parts), object_id=b.id,
+                 changes=ch, user=user, source=source, client_name=b.client_name, meta=meta)
 
 
 def get_booking(db: Session, user_id, booking_id) -> Booking:
@@ -837,7 +955,8 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
                    duration_min: Optional[int] = None) -> Booking:
     """Перенос (время / мастер / услуга), растяжка (длительность), статус, заметка, цена, предоплата."""
     b = get_booking(db, user.id, booking_id)
-    if prepaid is not None:
+    before = _booking_snapshot(b)
+    if prepaid is not None and prepaid != (b.prepaid_at is not None):
         b.prepaid_at = now_utc() if prepaid else None
     cfg = settings_of(get_page(db, user))
     if duration_min is not None:
@@ -894,11 +1013,12 @@ def update_booking(db: Session, user, booking_id, *, start=None, resource_id=Non
             raise BookingError("Неверная цена")
     _flush(db)
     notify_changed(db, user.id)
+    _log_update(db, user, b, before, source)
     return b
 
 
-def cancel_booking(db: Session, user, booking_id, reason: Optional[str] = None) -> Booking:
-    return update_booking(db, user, booking_id, status="cancelled", cancel_reason=reason)
+def cancel_booking(db: Session, user, booking_id, reason: Optional[str] = None, source: str = "owner") -> Booking:
+    return update_booking(db, user, booking_id, status="cancelled", cancel_reason=reason, source=source)
 
 
 def list_bookings(db: Session, user_id, start: datetime, end: datetime, resource_id=None, contact_id=None,
@@ -999,7 +1119,17 @@ def create_block(db: Session, user, *, start, end, resource_id=None, kind: str =
     clash = q.count()
     db.flush()
     notify_changed(db, user.id)
+    activity.log(db, user.id, "block.create", "block", _block_label(db, k) + (f" · в этом времени уже {clash} зап." if clash else ""),
+                 object_id=k.id, user=user, meta={"date": to_local(a).date().isoformat()})
     return k, clash
+
+
+def _block_label(db: Session, k: BookingBlock) -> str:
+    who = _master_name(db, k.resource_id) if k.resource_id else "весь салон"
+    a, b = _aw(k.start_at), _aw(k.end_at)
+    span = (f"{activity.when(a)}–{activity.hm(b)}" if to_local(a).date() == to_local(b - timedelta(seconds=1)).date()
+            else f"{activity.when(a)} – {activity.when(b)}")
+    return f"{BLOCK_TITLES.get(k.kind, k.kind)} · {who}: {span}" + (f" · {k.note}" if k.note else "")
 
 
 def delete_block(db: Session, user, block_id) -> None:
@@ -1010,9 +1140,11 @@ def delete_block(db: Session, user, block_id) -> None:
     k = db.query(BookingBlock).filter(BookingBlock.id == bid, BookingBlock.user_id == user.id).first()
     if k is None:
         raise BookingError("Блок не найден")
+    label, day = _block_label(db, k), to_local(_aw(k.start_at)).date().isoformat()
     db.delete(k)
     db.flush()
     notify_changed(db, user.id)
+    activity.log(db, user.id, "block.delete", "block", label, object_id=bid, user=user, meta={"date": day})
 
 
 # ───────────────────────────── визит: несколько услуг подряд (шаг 1.4) ─────────────────────────────
@@ -1128,6 +1260,15 @@ def create_visit(db: Session, user, items: List[Dict[str, Any]], start, *, clien
                            note=note if i == 0 else None, room_id=str(p["room"].id) if p["room"] else None, visit_id=vid)
         contact = b.contact_id
         out.append(b)
+    if vid is not None:
+        names = {str(r.id): r.name for r in resources(db, user.id, active_only=False)}
+        first = out[0]
+        activity.log(db, user.id, "visit.create", "visit",
+                     f"{first.client_name or 'Клиент'} · " + ", ".join(
+                         f"{x.service_title or 'услуга'} ({names.get(str(x.resource_id), '—')})" for x in out)
+                     + f", {activity.when(first.start_at)}", object_id=vid, user=user, source=source,
+                     client_name=first.client_name, meta={"booking_ids": [str(x.id) for x in out], "source": source,
+                                                          "date": to_local(first.start_at).date().isoformat()})
     return out
 
 
@@ -1138,7 +1279,7 @@ def visit_bookings(db: Session, user_id, visit_id) -> List[Booking]:
             .order_by(Booking.start_at).all())
 
 
-def cancel_visit(db: Session, user, visit_id, reason: Optional[str] = None) -> List[Booking]:
+def cancel_visit(db: Session, user, visit_id, reason: Optional[str] = None, source: str = "owner") -> List[Booking]:
     rows = [b for b in visit_bookings(db, user.id, visit_id) if b.status not in ("cancelled",)]
     if not rows:
         raise BookingError("Визит не найден")
@@ -1146,4 +1287,9 @@ def cancel_visit(db: Session, user, visit_id, reason: Optional[str] = None) -> L
         b.status, b.cancel_reason = "cancelled", (reason or "")[:300] or None
     db.flush()
     notify_changed(db, user.id)
+    activity.log(db, user.id, "visit.cancel", "visit",
+                 f"{rows[0].client_name or 'Клиент'} · " + ", ".join(x.service_title or "услуга" for x in rows)
+                 + f", {activity.when(rows[0].start_at)}" + (f" · причина: {reason}" if reason else ""),
+                 object_id=visit_id, user=user, source=source, client_name=rows[0].client_name,
+                 meta={"booking_ids": [str(x.id) for x in rows], "date": to_local(rows[0].start_at).date().isoformat()})
     return rows

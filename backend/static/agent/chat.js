@@ -37,7 +37,29 @@ const CHAT_SUGGESTIONS = [
   { icon:'fa-receipt',          label:'Сводка по агенту',      prompt:'Дай краткую сводку: контакты, задачи, звонки' },
 ];
 
+// Салон (Voksy Beauty, шаг 1.6а): подсказки управляющего салона — их понимает оркестратор
+// (get_salon_report, list_bookings, find_booking_slots, get_services, get_staff).
+const SALON_SUGGESTIONS = [
+  { icon:'fa-calendar-day',     label:'Кто записан сегодня',   prompt:'Кто записан на сегодня? Покажи по мастерам' },
+  { icon:'fa-calendar-plus',    label:'Свободные окна завтра', prompt:'Какие свободные окна есть завтра?' },
+  { icon:'fa-user-clock',       label:'Кто давно не приходил', prompt:'Кто из клиентов давно не приходил и кому пора на повтор?' },
+  { icon:'fa-chart-line',       label:'Выручка за неделю',     prompt:'Какая выручка за неделю, сколько визитов и средний чек? Сравни с прошлой неделей' },
+  { icon:'fa-users',            label:'Как работают мастера',  prompt:'Сравни мастеров за месяц: записи, загрузка, выручка' },
+  { icon:'fa-ban',              label:'Неявки',                prompt:'Сколько клиентов не пришло за неделю и кто именно?' },
+  { icon:'fa-calendar-week',    label:'Записи на неделю',      prompt:'Покажи записи на эту неделю' },
+  { icon:'fa-star',             label:'Популярные услуги',     prompt:'Какие услуги чаще всего заказывали за месяц и сколько они принесли?' },
+  { icon:'fa-calendar-check',   label:'Отчёт за месяц',        prompt:'Сделай отчёт салона за этот месяц: записи, выручка, мастера, услуги' },
+  { icon:'fa-mug-hot',          label:'Итоги дня',             prompt:'Подведи итоги дня: кто пришёл, кто не пришёл, сколько заработали' },
+  { icon:'fa-list',             label:'Наш прайс',             prompt:'Покажи наш прайс по категориям' },
+  { icon:'fa-lightbulb',        label:'Что ты умеешь',         prompt:'Что ты умеешь как управляющий салона?' },
+];
+
 function pickSuggestions(n){
+  if(window.AGENT_SALON){
+    const arr = SALON_SUGGESTIONS.slice();
+    for(let i=arr.length-1; i>0; i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    return arr.slice(0, n);
+  }
   const arr = CHAT_SUGGESTIONS.filter(s => !(s.profi && isReactiveMode()));
   for(let i=arr.length-1; i>0; i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
   return arr.slice(0, n);
@@ -60,7 +82,9 @@ function renderWelcome(){
   wrap.innerHTML =
     `<img class="chat-welcome-img" src="/static/brand/logo.svg" alt="Voksy AI">
      <div class="chat-welcome-title">Привет!<br>Я ваш агент Voksy AI</div>
-     <div class="chat-welcome-sub">Помогаю управлять обзвоном: контакты, задачи, звонки и аналитика.<br>Выберите подсказку или напишите запрос сами.</div>
+     <div class="chat-welcome-sub">${window.AGENT_SALON
+        ? 'Я ИИ-управляющий вашего салона: записи, клиенты, мастера и отчёты.'
+        : 'Помогаю управлять обзвоном: контакты, задачи, звонки и аналитика.'}<br>Выберите подсказку или напишите запрос сами.</div>
      <div class="chat-tiles">${tiles}</div>`;
   msgs.appendChild(wrap);
 }

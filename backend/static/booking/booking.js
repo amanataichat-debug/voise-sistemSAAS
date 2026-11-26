@@ -570,7 +570,9 @@
       (b.contact_id ? '<a class="btn btn-ghost btn-sm" href="/static/inbox.html?contact=' + esc(b.contact_id) + '">' + icon('message-circle') + 'Написать</a>' : '') +
       '</div>' +
       '<div class="field" style="margin-top:14px"><label class="label">Комментарий</label><textarea class="textarea" id="bk-note" rows="2">' + esc(b.note || '') + '</textarea>' +
-      '<button class="btn btn-sm" type="button" id="bk-note-save" style="margin-top:6px">Сохранить комментарий</button></div>';
+      '<button class="btn btn-sm" type="button" id="bk-note-save" style="margin-top:6px">Сохранить комментарий</button></div>' +
+      (canHistory() ? '<div class="bk-hist" id="bk-hist"><button class="btn btn-ghost btn-sm" type="button" data-hist>' + icon('history') +
+        'История записи</button><div class="bk-hist-body" hidden></div></div>' : '');
     function patch(body, ok) {
       return S.api('/api/booking/bookings/' + b.id, { method: 'PATCH', body: body }).then(function (res) {
         if (!res.ok) { S.toast(S.apiError(res), 'error'); return; }
@@ -611,6 +613,31 @@
       patch({ prepaid: on }, on ? 'Предоплата отмечена' : 'Отметка снята');
     });
     S.$('#bk-note-save', dr.body).addEventListener('click', function () { patch({ note: S.$('#bk-note', dr.body).value }); });
+    var hb = S.$('[data-hist]', dr.body);
+    if (hb) hb.addEventListener('click', function () { loadHistory(b, S.$('.bk-hist-body', dr.body), hb); });
+  }
+
+  // История записи (журнал действий, шаг 1.7): кто создал, перенёс, поменял статус и цену — владельцу и управляющему
+  function canHistory() { return S.staffCan ? S.staffCan('activity') : true; }
+  var ACT_ICON = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
+  function loadHistory(b, box, btn) {
+    if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="skeleton" style="height:48px;border-radius:10px"></div>';
+    S.api('/api/beauty/activity?object_type=booking&object_id=' + encodeURIComponent(b.id) + '&limit=50').then(function (r) {
+      if (!r.ok) { box.innerHTML = '<div class="muted small">' + esc(S.apiError(r)) + '</div>'; return; }
+      var items = r.data.items || [];
+      if (!items.length) { box.innerHTML = '<div class="muted small">Изменений пока нет. Журнал ведётся с 26.11.2026 и хранится 180 дней.</div>'; return; }
+      box.innerHTML = items.map(function (x) {
+        var d = new Date(x.at);
+        return '<div class="bk-hrow"><span class="bk-hava k-' + esc(x.actor.kind) + '">' + icon(ACT_ICON[x.actor.kind] || 'user') + '</span>' +
+          '<div class="bk-hmain"><div><b>' + esc(x.actor.name) + '</b> · ' + esc(x.action_title) + '</div>' +
+          '<div class="bk-hsum">' + esc(x.summary) + '</div></div>' +
+          '<span class="bk-htime">' + d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'Asia/Bishkek' }) + '<br>' +
+          d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bishkek' }) + '</span></div>';
+      }).join('') + '<a class="dh-link small" href="/static/activity.html">Весь журнал действий →</a>';
+    });
   }
 
   function plural(n, one, few, many) {
@@ -767,10 +794,10 @@
       title: move ? 'Перенести запись' : 'Новая запись', size: 'lg',
       body:
         (move ? '<p class="muted" style="margin:0 0 10px">' + esc((move.client_name || 'Клиент') + ' · ' + (move.service || '') + ' · сейчас ' + move.label) + '</p>' :
-          '<div class="st-grid2"><div class="field"><label class="label">Клиент</label><input class="input" id="nb-name" placeholder="Имя или поиск по клиентам" autocomplete="off"><div id="nb-sugg"></div></div>' +
-          '<div class="field"><label class="label">Телефон</label><input class="input" id="nb-phone" type="tel" inputmode="tel" placeholder="+996 700 123 456"></div></div>') +
+          '<div class="st-grid2"><div class="field"><label class="label">Клиент</label><input class="input" id="nb-name" placeholder="Имя или поиск по клиентам" autocomplete="off" value="' + esc((pre.client && pre.client.name) || '') + '"><div id="nb-sugg"></div></div>' +
+          '<div class="field"><label class="label">Телефон</label><input class="input" id="nb-phone" type="tel" inputmode="tel" placeholder="+996 700 123 456" value="' + esc((pre.client && pre.client.phone) || '') + '"></div></div>') +
         '<div class="st-grid2">' +
-        (move ? '' : '<div class="field"><label class="label" id="nb-svc-l">Услуга</label><select class="select-native" id="nb-svc">' + svcOptions('', 'Без услуги (60 мин)') + '</select></div>') +
+        (move ? '' : '<div class="field"><label class="label" id="nb-svc-l">Услуга</label><select class="select-native" id="nb-svc">' + svcOptions(pre.service_id || '', 'Без услуги (60 мин)') + '</select></div>') +
         '<div class="field"><label class="label">Мастер</label><select class="select-native" id="nb-res">' + resOptions(pre.resource_id || (move && move.resource_id) || '') + '</select></div>' +
         '<div class="field"><label class="label">День</label><input class="input" id="nb-day" type="date" value="' + esc(day) + '"></div></div>' +
         (move || !services.length ? '' : '<div id="nb-more" class="bk-vitems"></div>' +
@@ -781,7 +808,8 @@
       foot: '<button class="btn" type="button" data-c>Отмена</button><button class="btn btn-primary" type="button" data-ok>' + (move ? 'Перенести' : 'Записать') + '</button>'
     });
     var $ = function (s) { return S.$(s, d.el); };
-    var contactId = null;
+    // Из карточки клиента (шаг 2.1): «Записать» → клиент уже выбран
+    var contactId = (pre.client && pre.client.id) || null;
     function visitItems() {
       return [{ service_id: ($('#nb-svc') && $('#nb-svc').value) || null, resource_id: $('#nb-res').value || null }].concat(more);
     }
@@ -951,6 +979,7 @@
         sel('buffer_min', 'Перерыв после записи', [[0, 'Без перерыва'], [5, '5 минут'], [10, '10 минут'], [15, '15 минут'], [30, '30 минут']], cfg.buffer_min) +
         sel('lead_min', 'Записываться не позже чем за', [[0, 'Сразу'], [30, '30 минут'], [60, '1 час'], [120, '2 часа'], [1440, 'Сутки']], cfg.lead_min) +
         sel('horizon_days', 'Насколько вперёд можно записаться', [[7, 'Неделя'], [14, '2 недели'], [30, 'Месяц'], [60, '2 месяца']], cfg.horizon_days) +
+        sel('cancel_hours', 'Бот отменяет и переносит не позже чем за', [[0, 'В любое время'], [2, '2 часа'], [3, '3 часа'], [6, '6 часов'], [12, '12 часов'], [24, 'Сутки']], cfg.cancel_hours || 0) +
         '</div><div class="field"><label class="label">Адрес (уходит клиенту в подтверждении и напоминании)</label><input class="input" id="bk-addr" value="' + esc(cfg.address || '') + '" placeholder="г. Бишкек, ул. Киевская 95, 2 этаж"></div>' +
         '<div class="field"><label class="label">Название на странице записи</label><input class="input" id="bk-title" value="' + esc(cfg.title || '') + '" placeholder="Например: Салон «Айдана»"></div>' +
         tgl('reminders', 'Напоминать клиенту', 'В WhatsApp или Telegram за сутки и за 2 часа до визита', cfg.reminders) +
@@ -1167,7 +1196,20 @@
     root.addEventListener('click', onClick);
     root.addEventListener('pointerdown', onPointerDown);
     root.addEventListener('change', function (e) { if (e.target.id === 'bk-filter') { st.filter = e.target.value; render(); } });
-    load();
+    // Ссылки с главной салона (шаг 1.7): ?open=<id> — карточка записи, ?new=1 — записать, ?block=1 — заблокировать время
+    // ?new=1&contact=<id>&name=&phone=&service=&master= — «Записать» из карточки клиента (шаг 2.1)
+    var deep = { open: q.get('open') || (/^#[0-9a-f-]{36}$/.test(location.hash) ? location.hash.slice(1) : ''),
+                 nw: q.get('new') === '1', block: q.get('block') === '1' };
+    var preClient = /^[0-9a-f-]{36}$/.test(q.get('contact') || '') ? { id: q.get('contact'), name: q.get('name') || '', phone: q.get('phone') || '' } : null;
+    load().then(function () {
+      if (deep.open && bookingById(deep.open)) openBooking(deep.open);
+      else if (deep.nw && canEditBookings()) newBooking({ date: st.day, client: preClient, service_id: q.get('service') || '', resource_id: q.get('master') || '' });
+      else if (deep.block && canEditBookings()) blockDialog({ date: st.day, resource_id: '' });
+      if (deep.open || deep.nw || deep.block) {
+        ['open', 'new', 'block', 'contact', 'name', 'phone', 'service', 'master'].forEach(function (k) { q.delete(k); });
+        try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
+      }
+    });
     startLive();
     // Запасной опрос: раз в минуту, если потока нет; с потоком — раз в 5 минут (на случай тихого обрыва прокси)
     var lastPoll = Date.now();

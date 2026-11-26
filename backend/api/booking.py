@@ -73,6 +73,7 @@ from backend.core.dependencies import ensure_owner, get_current_user, is_staff
 from backend.db.session import get_db
 from backend.models.booking import BookingPage, BookingResource
 from backend.models.user import User
+from backend.services import activity
 from backend.services import booking_service as bs
 from backend.services import master_cabinet as mc
 from backend.services import salon_media as sm
@@ -319,6 +320,52 @@ def _apply_resource(r: BookingResource, body: ResourceIn) -> None:
         r.certificates = _reorder_media(r.certificates, data["certificates"], "title")
 
 
+_RES_LOG = {"name": "имя", "role": "специализация", "phone": "телефон", "schedule": "график", "days_off": "выходные даты",
+            "services": "услуги", "service_prices": "свои цены", "is_active": "работает", "online_booking": "онлайн-запись",
+            "bio": "о себе", "experience_since": "работает с", "photos": "фото и работы"}
+
+
+def _res_state(db: Session, user_id, r: BookingResource) -> Dict[str, Any]:
+    """Что из карточки мастера видно в журнале действий (было → стало)."""
+    titles = {str(e.id): e.title for e in bs.services(db, user_id)}
+    ids = [str(x) for x in r.service_ids] if r.service_ids is not None else None
+    return {"name": r.name, "role": r.role, "phone": r.phone, "schedule": bs.schedule_text(r.schedule),
+            "days_off": ", ".join(r.days_off or []) or None,
+            "services": "все" if ids is None else (", ".join(titles.get(x, "?") for x in ids[:8]) + (" …" if len(ids) > 8 else "") or "никакие"),
+            "service_prices": {titles.get(k, "?"): v.get("price") for k, v in (r.service_prices or {}).items()} or None,
+            "is_active": bool(r.is_active), "online_booking": r.online_booking is not False,
+            "bio": (r.bio or "")[:80] or None, "experience_since": r.experience_since,
+            "photos": len(_media_ids(r))}
+
+
+def _res_fmt(k: str, v) -> str:
+    if v is None or v == "" or v == {}:
+        return "—"
+    if isinstance(v, bool):
+        return "да" if v else "нет"
+    if k == "service_prices":
+        return ", ".join(f"{t} {activity.money(p)}" for t, p in v.items())
+    return str(v)
+
+
+def _log_resource(db: Session, user: User, r: BookingResource, before: Optional[Dict[str, Any]], action: str = "") -> None:
+    if before is None:
+        activity.log(db, user.id, "master.create", "master", f"{r.name}" + (f" · {r.role}" if r.role else "")
+                     + f" · график: {bs.schedule_text(r.schedule)}", object_id=r.id, user=user)
+        return
+    after = _res_state(db, user.id, r)
+    ch = activity.diff(before, after, list(_RES_LOG))
+    if not ch:
+        return
+    if set(ch) == {"photos"}:
+        parts = [f"фото и работы: {before['photos']} → {after['photos']}"]
+    else:
+        ch.pop("photos", None)
+        parts = [f"{_RES_LOG[k]}: {_res_fmt(k, a)} → {_res_fmt(k, b)}" for k, (a, b) in ch.items()]
+    activity.log(db, user.id, action or "master.update", "master", f"{r.name}: " + "; ".join(parts),
+                 object_id=r.id, changes=ch, user=user)
+
+
 @router.get("/resources")
 def booking_resources(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     bs.ensure_resources(db, current_user)
@@ -341,7 +388,9 @@ def booking_resource_create(body: ResourceIn, current_user: User = Depends(get_c
     except bs.BookingError as e:
         _err(e)
     db.add(r)
+    db.flush()
     bs.notify_changed(db, current_user.id)
+    _log_resource(db, current_user, r, None)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r)}
 
@@ -370,11 +419,13 @@ def booking_resource_update(resource_id: str, body: ResourceIn, current_user: Us
     r = _resource_or_404(db, current_user.id, resource_id)
     if body.is_active is True and not r.is_active:
         _check_master_limit(db, current_user)   # снова включить мастера — в пределах тарифа
+    before = _res_state(db, current_user.id, r)
     try:
         _apply_resource(r, body)
     except bs.BookingError as e:
         _err(e)
     bs.notify_changed(db, current_user.id)
+    _log_resource(db, current_user, r, before)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r)}
 
@@ -388,9 +439,13 @@ def booking_resource_delete(resource_id: str, current_user: User = Depends(get_c
                                 include_cancelled=False)
     if upcoming:
         r.is_active = False
+        activity.log(db, current_user.id, "master.update", "master",
+                     f"{r.name}: выключен (впереди {len(upcoming)} зап. — остаются в журнале)", object_id=r.id,
+                     changes={"is_active": [True, False]}, user=current_user)
         db.commit()
         return {"ok": True, "disabled": True, "upcoming": len(upcoming)}
     sm.delete_many(db, current_user.id, _media_ids(r))
+    activity.log(db, current_user.id, "master.delete", "master", r.name, object_id=r.id, user=current_user)
     db.delete(r)
     db.commit()
     return {"ok": True, "deleted": True}
@@ -516,6 +571,9 @@ def booking_resource_login_link(resource_id: str, body: LoginLinkIn, current_use
         except ts.TeamError as e:
             raise HTTPException(status_code=e.status, detail={"error": e.code, "message": e.message, **e.extra})
     _link(db, current_user.id, r, member.id if member else None)
+    activity.log(db, current_user.id, "master.login", "master",
+                 f"{r.name}: " + (f"вход привязан к сотруднику {member.name} ({member.email})" if member else "вход отвязан"),
+                 object_id=r.id, user=current_user)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r), "logins": _logins(db, current_user)}
 
@@ -542,6 +600,8 @@ def booking_resource_login_create(resource_id: str, body: LoginCreateIn, current
         raise HTTPException(status_code=e.status, detail={"error": e.code, "message": e.message, **e.extra})
     r = _resource_or_404(db, current_user.id, str(rid))
     _link(db, current_user.id, r, member.id)
+    activity.log(db, current_user.id, "master.login", "master", f"{r.name}: создан вход ({member.email})",
+                 object_id=r.id, user=current_user)
     db.commit()
     return {"ok": True, "resource": _resource_out(current_user, r), "logins": _logins(db, current_user),
             "member": ts.member_dict(member), "password": password}
@@ -557,6 +617,7 @@ class SettingsIn(BaseModel):
 def booking_settings(body: SettingsIn, current_user: User = Depends(get_current_user),
                      db: Session = Depends(get_db)) -> Dict[str, Any]:
     page = bs.get_page(db, current_user)
+    before = dict(bs.settings_of(page), enabled=bool(page.enabled), slug=page.slug)
     if body.settings is not None:
         merged = dict(page.settings or {})
         for k, v in body.settings.items():
@@ -573,8 +634,26 @@ def booking_settings(body: SettingsIn, current_user: User = Depends(get_current_
         if taken is not None:
             raise HTTPException(status_code=400, detail="Такой адрес уже занят — придумайте другой")
         page.slug = slug
+    _log_settings(db, current_user, before, dict(bs.settings_of(page), enabled=bool(page.enabled), slug=page.slug))
     db.commit()
     return {"ok": True, "page": _page_dict(page, current_user.business_niche)}
+
+
+_SETTINGS_LOG = {"step_min": "шаг сетки, мин", "buffer_min": "перерыв между записями, мин",
+                 "lead_min": "не раньше чем за, мин", "horizon_days": "запись вперёд, дней", "reminders": "напоминания",
+                 "thanks": "«спасибо» после визита", "address": "адрес", "title": "название",
+                 "master_phones": "мастера видят телефоны", "prepay_info": "как внести предоплату",
+                 "cancel_hours": "отмена ботом не позже чем за, ч", "enabled": "онлайн-запись", "slug": "адрес ссылки"}
+
+
+def _log_settings(db: Session, user: User, before: Dict[str, Any], after: Dict[str, Any]) -> None:
+    ch = activity.diff(before, after, list(_SETTINGS_LOG))
+    if not ch:
+        return
+    def f(v):
+        return "да" if v is True else "нет" if v is False else ("—" if v in (None, "") else str(v)[:80])
+    activity.log(db, user.id, "settings.update", "settings",
+                 "; ".join(f"{_SETTINGS_LOG[k]}: {f(a)} → {f(b)}" for k, (a, b) in ch.items()), changes=ch, user=user)
 
 
 def _qr(url: Optional[str]) -> Optional[str]:
@@ -592,6 +671,12 @@ def widget_code(host: str, slug: str) -> str:
     """Код кнопки «Записаться онлайн» для сайта владельца (static/booking-widget.js)."""
     return (f'<script src="{host}/static/booking-widget.js" data-slug="{slug}" '
             f'data-text="Записаться онлайн" async></script>')
+
+
+def chat_widget_code(host: str, slug: str) -> str:
+    """Код кнопки чата с администратором для сайта владельца (тот же booking-widget.js, режим чата)."""
+    return (f'<script src="{host}/static/booking-widget.js" data-slug="{slug}" data-chat="1" '
+            f'data-text="Написать администратору" async></script>')
 
 
 @router.get("/link-kit")
@@ -632,7 +717,19 @@ def _page_payload(db: Session, user: User, page: BookingPage) -> Dict[str, Any]:
         "qr": _qr(info.get("page_url")), "qr_book": _qr(info.get("url")),
         "widget_code": widget_code(host, page.slug) if page.slug else None,
         "limits": {"gallery": sp.MAX_GALLERY, "promos": sp.MAX_PROMOS},
+        "chat": _chat_cabinet(db, page, user),
+        "chat_widget_code": chat_widget_code(host, page.slug) if page.slug else None,
     }
+
+
+def _chat_cabinet(db: Session, page: BookingPage, user: User) -> Dict[str, Any]:
+    from backend.services import webchat_service
+    try:
+        return webchat_service.cabinet_state(db, page, user)
+    except Exception as e:
+        logger.warning(f"[BOOKING] chat state failed: {e}")
+        db.rollback()
+        return {"enabled": False, "live": False, "reason": "", "title": "", "greeting": ""}
 
 
 @router.get("/page")
@@ -646,14 +743,51 @@ def booking_page_get(current_user: User = Depends(get_current_user), db: Session
 def booking_page_put(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
                      db: Session = Depends(get_db)) -> Dict[str, Any]:
     from backend.services import salon_page as sp
+    from backend.services import webchat_service
     page = bs.get_page(db, current_user)
+    before_prof, before_cfg = dict(page.profile or {}), dict(page.settings or {})
     try:
         sp.save_profile(db, page, data or {})
+        webchat_service.save_settings(page, data or {})
+        _log_page(db, current_user, page, before_prof, before_cfg)
         db.commit()
     except sp.PageError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     return _page_payload(db, current_user, page)
+
+
+_PAGE_LOG = {"title": "название", "address": "адрес", "tagline": "слоган", "about": "о салоне", "phone": "телефон",
+             "whatsapp": "WhatsApp", "instagram": "Instagram", "telegram": "Telegram", "website": "сайт",
+             "map_url": "карта", "hours_note": "примечание к часам", "amenities": "удобства", "promos": "акции",
+             "accent": "цвет", "show_prices": "показывать цены", "gallery": "порядок и подписи фото"}
+_CHAT_LOG = {"chat_enabled": "чат", "chat_title": "подпись чата", "chat_greeting": "первое сообщение"}
+
+
+def _log_page(db: Session, user: User, page, before_prof: Dict[str, Any], before_cfg: Dict[str, Any]) -> None:
+    """Страница салона и чат: какие поля изменились (тексты длинные — без «было → стало» целиком)."""
+    prof, cfg = dict(page.profile or {}), dict(page.settings or {})
+    b = dict(before_prof, title=before_cfg.get("title"), address=before_cfg.get("address"))
+    a = dict(prof, title=cfg.get("title"), address=cfg.get("address"))
+    ch = activity.diff(b, a, list(_PAGE_LOG))
+    if ch:
+        names = []
+        for k, (x, y) in ch.items():
+            if k in ("tagline", "about", "promos", "amenities", "gallery") or isinstance(y, (list, dict)):
+                names.append(_PAGE_LOG[k])
+            elif isinstance(y, bool):
+                names.append(f"{_PAGE_LOG[k]}: {'да' if y else 'нет'}")
+            else:
+                names.append(f"{_PAGE_LOG[k]}: {(str(x) if x else '—')[:60]} → {(str(y) if y else '—')[:60]}")
+        activity.log(db, user.id, "page.update", "page", "изменено: " + "; ".join(names),
+                     changes={k: v for k, v in ch.items() if k not in ("about", "promos", "gallery")}, user=user)
+    cc = activity.diff(before_prof, prof, list(_CHAT_LOG))
+    if cc:
+        parts = []
+        for k, (x, y) in cc.items():
+            parts.append(f"{_CHAT_LOG[k]}: {'включён' if y else 'выключен'}" if k == "chat_enabled"
+                         else f"{_CHAT_LOG[k]} изменено")
+        activity.log(db, user.id, "chat.update", "page", "; ".join(parts), changes=cc, user=user)
 
 
 @router.post("/page/media")
@@ -682,6 +816,8 @@ def booking_page_media(kind: str = Query(...), file: UploadFile = File(...), cap
         prof["gallery"] = list(prof.get("gallery") or []) + [{"id": str(row.id), "caption": " ".join(str(caption or "").split())[:120]}]
     page.profile = prof
     bs.notify_changed(db, current_user.id)
+    activity.log(db, current_user.id, "page.media", "page",
+                 {"logo": "новый логотип", "cover": "новая обложка"}.get(kind, "фото в галерею"), user=current_user)
     db.commit()
     return _page_payload(db, current_user, page)
 
@@ -707,6 +843,7 @@ def booking_page_media_delete(media_id: str, current_user: User = Depends(get_cu
     sm.delete(db, current_user.id, mid)
     page.profile = prof
     bs.notify_changed(db, current_user.id)
+    activity.log(db, current_user.id, "page.media", "page", "фото убрано со страницы", user=current_user)
     db.commit()
     return _page_payload(db, current_user, page)
 
@@ -796,7 +933,10 @@ def booking_room_create(body: RoomIn, current_user: User = Depends(get_current_u
     r = BookingRoom(user_id=current_user.id, name="Кабинет", kind="room", position=count)
     _apply_room(r, body)
     db.add(r)
+    db.flush()
     bs.notify_changed(db, current_user.id)
+    activity.log(db, current_user.id, "room.create", "room", f"{bs.ROOM_KINDS.get(r.kind, 'Кабинет')} «{r.name}»",
+                 object_id=r.id, user=current_user)
     db.commit()
     return {"ok": True, "room": bs.room_to_dict(r)}
 
@@ -805,8 +945,14 @@ def booking_room_create(body: RoomIn, current_user: User = Depends(get_current_u
 def booking_room_update(room_id: str, body: RoomIn, current_user: User = Depends(get_current_user),
                         db: Session = Depends(get_db)) -> Dict[str, Any]:
     r = _room_or_404(db, current_user.id, room_id)
+    before = {"name": r.name, "kind": r.kind, "is_active": bool(r.is_active)}
     _apply_room(r, body)
     bs.notify_changed(db, current_user.id)
+    ch = activity.diff(before, {"name": r.name, "kind": r.kind, "is_active": bool(r.is_active)})
+    if ch:
+        activity.log(db, current_user.id, "room.update", "room", f"«{r.name}»: " + "; ".join(
+            {"name": "название", "kind": "вид", "is_active": "работает"}[k] + f": {a} → {b}" for k, (a, b) in ch.items()),
+            object_id=r.id, changes=ch, user=current_user)
     db.commit()
     return {"ok": True, "room": bs.room_to_dict(r)}
 
@@ -823,9 +969,12 @@ def booking_room_delete(room_id: str, current_user: User = Depends(get_current_u
     if upcoming:
         r.is_active = False
         bs.notify_changed(db, current_user.id)
+        activity.log(db, current_user.id, "room.update", "room", f"«{r.name}» выключен (впереди {upcoming} зап.)",
+                     object_id=r.id, changes={"is_active": [True, False]}, user=current_user)
         db.commit()
         return {"ok": True, "disabled": True, "upcoming": upcoming}
     rid = str(r.id)
+    activity.log(db, current_user.id, "room.delete", "room", f"«{r.name}»", object_id=r.id, user=current_user)
     for e in db.query(AgentKnowledgeEntry).filter(AgentKnowledgeEntry.user_id == current_user.id,
                                                   AgentKnowledgeEntry.kind == "product",
                                                   AgentKnowledgeEntry.room_ids.isnot(None)).all():

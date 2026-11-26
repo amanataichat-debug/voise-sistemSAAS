@@ -101,8 +101,10 @@ def due(db: Session, now) -> list:
     out = []
     rows = db.execute(text("""
         SELECT b.id, b.start_at, b.end_at, b.created_at, b.status, b.reminder_24h_at, b.reminder_2h_at, b.followup_at,
-               p.settings
+               p.settings, a.manager_settings
         FROM bookings b JOIN booking_pages p ON p.user_id = b.user_id
+        LEFT JOIN agent_contacts c ON c.id = b.contact_id
+        LEFT JOIN agent_configs a ON a.id = c.agent_config_id
         WHERE b.contact_id IS NOT NULL AND b.status IN ('booked', 'confirmed', 'arrived', 'completed')
           AND b.start_at < :max_start AND b.end_at > :min_end
     """), {"max_start": now + timedelta(hours=24, minutes=5), "min_end": now - timedelta(hours=26)}).mappings().all()
@@ -116,8 +118,12 @@ def due(db: Session, now) -> list:
             elif r["reminder_2h_at"] is None and st - now <= timedelta(hours=2) and st - now > timedelta(minutes=20) \
                     and st - cr >= timedelta(hours=3):
                 out.append((r["id"], "2h"))
-        if cfg["thanks"] and r["followup_at"] is None and timedelta(hours=1) <= now - en <= timedelta(hours=24):
-            out.append((r["id"], "thanks"))
+        # «Спасибо» после визита; со сценарием «Повтор услуги и отзыв» (шаг 1.6б) — с просьбой оценить 1–5,
+        # и только за визит, на котором клиент был (не за неявку).
+        review = bool(((r["manager_settings"] or {}).get("repeat_review") or {}).get("on"))
+        if (cfg["thanks"] or review) and r["followup_at"] is None and timedelta(hours=1) <= now - en <= timedelta(hours=24):
+            if not review or r["status"] in ("arrived", "completed"):
+                out.append((r["id"], "review" if review else "thanks"))
     return out
 
 
@@ -131,7 +137,8 @@ async def run_once(now=None) -> int:
     sent = 0
     try:
         for booking_id, kind in due(db, now):
-            column = {"24h": "reminder_24h_at", "2h": "reminder_2h_at", "thanks": "followup_at"}[kind]
+            column = {"24h": "reminder_24h_at", "2h": "reminder_2h_at", "thanks": "followup_at",
+                      "review": "followup_at"}[kind]
             if not _claim(db, booking_id, column):
                 continue
             b = db.query(Booking).filter(Booking.id == booking_id).first()
@@ -141,9 +148,16 @@ async def run_once(now=None) -> int:
                 continue
             res = db.query(BookingResource).filter(BookingResource.id == b.resource_id).first() if b.resource_id else None
             cfg = bs.settings_of(bs.get_page(db, user, create=False))
-            msg = reminder_text(b, kind, res.name if res else None, cfg.get("address") or "", now)
+            if kind == "review":
+                from backend.services.salon_manager import review_text
+                msg = review_text(b, res.name if res else None)
+            else:
+                msg = reminder_text(b, kind, res.name if res else None, cfg.get("address") or "", now)
             if await send_to_client(db, user, contact, msg):
                 sent += 1
+                if kind == "review":
+                    b.review_asked_at = bs.now_utc()
+                    db.commit()
     except Exception as e:
         db.rollback()
         logger.error(f"[BOOKING] reminders tick failed: {e}", exc_info=True)

@@ -1577,3 +1577,8 @@ body[data-agent-mode="reactive"] .chat-voice { display: none; }
 
 .vchat-chat-mark { align-self: center; margin: 10px auto 4px; padding: 3px 10px; border-radius: 999px; background: var(--vf-accent-soft); color: var(--vf-accent); font-size: 12px; font-weight: 600; text-align: center; width: fit-content; }
 .vchat-chat-fn { margin: 2px 0 2px 44px; font-size: 12.5px; color: var(--vf-success); }
+
+/* Салон (salon-mode.js, Voksy Beauty 1.6б): вход в «ИИ-управляющий» сверху правой шторки */
+.salon-mgr { display: block; text-decoration: none; color: inherit; background: linear-gradient(135deg, #f5f8ff, #eef2ff); border-color: #d6e0fb; }
+.salon-mgr .card-head { display: flex; justify-content: space-between; align-items: center; }
+.salon-mgr-sub { font-size: 12.5px; line-height: 1.45; color: var(--vf-text-2, #475467); margin-top: 6px; }
