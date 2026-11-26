@@ -930,12 +930,44 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
 @media (max-width: 1100px) {
   .sp-related { grid-template-columns: 1fr 1fr; }
 }
+/* Тарифы Voksy Beauty со сроками (26.11.2026): цена за срок и экономия сразу, «Выгодно» на 3 месяцах */
+.sp-price-lead { margin: -4px 0 30px; color: var(--vf-text-2); font-size: 15.5px; line-height: 1.6; max-width: 760px; }
+.sp-prices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.sp-price { position: relative; display: flex; flex-direction: column; gap: 4px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 18px; padding: 22px 20px 20px; }
+.sp-price.hit { border-color: var(--vf-accent); box-shadow: 0 18px 40px -26px rgba(42, 92, 232, .55); }
+.sp-price-hit { position: absolute; top: -11px; left: 20px; padding: 3px 10px; border-radius: 999px; background: var(--vf-accent); color: #fff; font-size: 12px; font-weight: 700; }
+.sp .sp-price h3 { margin: 0; font-size: 19px; color: var(--vf-text); }
+.sp-price-staff { font-size: 13.5px; color: var(--vf-text-3); }
+.sp-price-main { margin: 10px 0 2px; font-size: 14px; color: var(--vf-text-3); }
+.sp-price-main b { font-size: 30px; font-weight: 800; color: var(--vf-text); letter-spacing: -.02em; }
+.sp-price-extra { font-size: 13px; font-weight: 600; color: var(--vf-accent); }
+.sp-periods { list-style: none; padding: 0; margin: 12px 0 16px; display: grid; gap: 6px; }
+.sp-periods li { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: baseline; padding: 9px 12px; border-radius: 12px; background: var(--vf-surface-2); border: 1px solid transparent; }
+.sp-periods li.best { background: #fff7ed; border-color: #fdba74; }
+.sp-per-name { font-size: 14px; font-weight: 600; color: var(--vf-text); display: inline-flex; align-items: center; gap: 6px; }
+.sp-per-name em { font-style: normal; font-size: 11px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #f97316, #ea580c); padding: 1px 7px; border-radius: 999px; }
+.sp-per-sum { font-size: 14.5px; font-weight: 700; color: var(--vf-text); white-space: nowrap; }
+.sp-per-save { grid-column: 1 / -1; font-size: 12.5px; font-weight: 600; color: #0b7a3b; }
+.sp-periods li:first-child .sp-per-save { color: var(--vf-text-4); font-weight: 500; }
+.sp-price .btn { margin-top: auto; justify-content: center; }
+.sp-price-note { margin: 18px 0 0; font-size: 13.5px; color: var(--vf-text-3); line-height: 1.55; }
+.sp-app { display: grid; grid-template-columns: auto 1fr auto; gap: 20px; align-items: center; }
+.sp-app img { width: 72px; height: 72px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px var(--vf-border), 0 12px 24px -16px rgba(42, 92, 232, .6); }
+.sp .sp-app h2 { margin: 0 0 6px; }
+.sp-app p { margin: 0; color: var(--vf-text-2); font-size: 15px; line-height: 1.6; }
+@media (max-width: 1100px) {
+  .sp-prices { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 760px) {
   .sp-grid, .sp-two, .sp-related { grid-template-columns: 1fr; }
   .sp-two { gap: 28px; }
   .sp-nav-actions .btn-ghost, .sp-lang { display: none; }
   .sp-hero { padding: 36px 0 28px; }
   .sp-sec { padding: 40px 0; }
+  .sp-prices { grid-template-columns: 1fr; gap: 20px; }
+  .sp-app { grid-template-columns: auto 1fr; gap: 14px; }
+  .sp-app img { width: 56px; height: 56px; border-radius: 14px; align-self: start; }
+  .sp-app .btn { grid-column: 1 / -1; justify-content: center; }
 }
 
 /* ---------- Под ваш бизнес (ниша → модули) ---------- */
@@ -951,6 +983,8 @@ html[lang="ky"] .vf .lp .lp-auth-title, html[lang="ky"] .vf .lp .lp-auth-brand-t
 .bz-2, .bz-5 { --c: var(--vf-success); --cs: var(--vf-success-soft); }
 .bz-3, .bz-6 { --c: var(--lp-violet); --cs: var(--lp-violet-soft); }
 .bz-4 { --c: var(--vf-warning); --cs: var(--vf-warning-soft); }
+.bz-link { display: inline-block; margin-top: 12px; font-weight: 700; font-size: 14.5px; color: var(--vf-accent); }
+.bz-link:hover { text-decoration: underline; }
 .bz-cta { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
 .bz-cta-note { font-size: 14px; color: var(--vf-text-3); }
 @media (max-width: 760px) {

@@ -1236,7 +1236,7 @@ function setupEventHandlers() {
     dropdownLogout.addEventListener('click', function(e) {
       e.preventDefault();
       localStorage.removeItem('auth_token');
-      window.location.href = '/';
+      window.location.href = '/static/login.html?reason=logout';
     });
   }
   

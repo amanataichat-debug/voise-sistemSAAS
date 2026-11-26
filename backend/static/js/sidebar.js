@@ -506,14 +506,14 @@
 
   // ---------------------------------------------------------------------
   // Выход. Единый для всех страниц: снимаем токен, чистим кэш признака
-  // админа и уводим на лендинг текущего домена.
+  // админа и уводим на экран входа (/static/login.html): в приложении сайт не открывается.
   // ---------------------------------------------------------------------
   function logout() {
     // Админ в кабинете клиента: «Выйти» = вернуться в свою админку, а не выйти совсем
     if (window.VF && window.VF.impersonation && window.VF.impersonation()) { window.VF.returnToAdmin(); return; }
     try { localStorage.removeItem('auth_token'); localStorage.removeItem(STAFF_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem('vf_is_admin'); sessionStorage.removeItem('vf_wallet'); } catch (e) { /* ignore */ }
-    window.location.href = '/';
+    window.location.href = '/static/login.html?reason=logout';
   }
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('#logout-button, #dropdown-logout, [data-logout]') : null;
@@ -1032,10 +1032,17 @@
     installEvt = null;
     ['vf-install-btn', 'vf-install-bar'].forEach(function (id) { var el = document.getElementById(id); if (el) el.remove(); });
   });
+  // Открыто как приложение: Android-приложение (TWA, ?source=twa, referrer android-app://),
+  // установленное с сайта (display-mode standalone) или с экрана «Домой» iPhone. Метка живёт до закрытия вкладки.
+  try { if (/[?&]source=(app|twa)\b/.test(location.search) || document.referrer.indexOf('android-app://') === 0) sessionStorage.setItem('vf_app', '1'); } catch (e) { /* ignore */ }
   function standalone() {
-    try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; }
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true ||
+        sessionStorage.getItem('vf_app') === '1';
+    } catch (e) { return false; }
   }
   function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function isAndroid() { return /android/i.test(navigator.userAgent); }
   function inAppBrowser() { return /Telegram|Instagram|FBAN|FBAV|WhatsApp/i.test(navigator.userAgent); }
   function registerSW() {
     if (!('serviceWorker' in navigator) || location.protocol !== 'https:' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') return;
@@ -1078,6 +1085,8 @@
     t.addEventListener('click', function (e) { if (e.target === t || e.target.classList.contains('ok')) t.remove(); });
   }
   function installApp() {
+    // Android — настоящее приложение (файл .apk со страницы /app, решение владельца 26.11.2026)
+    if (isAndroid() && !isIOS()) { location.href = '/app'; return; }
     if (installEvt) {
       var ev = installEvt; installEvt = null;
       ev.prompt();
@@ -1103,8 +1112,10 @@
     installStyle();
     var bar = document.createElement('div');
     bar.id = 'vf-install-bar'; bar.className = 'vf-install-bar';
-    bar.innerHTML = '<img src="/static/apple-touch-icon.png" alt=""><div class="t"><b>Установите приложение</b>Инбокс и каталог одним нажатием</div>' +
-      '<button type="button" class="go">Установить</button><button type="button" class="x" aria-label="Закрыть">×</button>';
+    var andr = isAndroid() && !isIOS();
+    bar.innerHTML = '<img src="/static/brand/app-maskable-192.png" alt=""><div class="t"><b>' + (andr ? 'Приложение Voksy AI для Android' : 'Установите приложение') +
+      '</b>' + (andr ? 'Чаты, записи и уведомления — без браузера' : 'Инбокс и каталог одним нажатием') + '</div>' +
+      '<button type="button" class="go">' + (andr ? 'Скачать' : 'Установить') + '</button><button type="button" class="x" aria-label="Закрыть">×</button>';
     host.insertBefore(bar, host.firstChild);
     bar.querySelector('.go').addEventListener('click', installApp);
     bar.querySelector('.x').addEventListener('click', function () {

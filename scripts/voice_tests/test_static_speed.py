@@ -93,7 +93,7 @@ finally:
             pass
 
 sw = open(os.path.join(STATIC, "sw.js"), encoding="utf-8").read()
-check("SW: новая версия кэша (v4 — 26.11.2026, push ИИ-управляющего; v3 — телефон, финансы)", "voksy-app-v4" in sw)
+check("SW: новая версия кэша (v5 — 26.11.2026, новый экран входа в приложении; v4 — push ИИ-управляющего)", "voksy-app-v5" in sw)
 check("SW: метка ?v=h… — из кэша", "v=h[0-9a-f]{10}" in sw and "immutable(url)" in sw)
 check("SW: страницы — сначала из кэша, обновление в фоне", "isPage(req, url)" in sw and "e.waitUntil(net" in sw)
 check("SW: /api не трогает", "url.pathname.indexOf('/static/') !== 0) return" in sw)

@@ -51,7 +51,7 @@ function BusinessSection({ onOpenModal }) {
           </ul>
         </div>
         <Stagger as="ul" className="ab-grid bz-grid" stagger={0.08}>
-          {items.map(([title, text, tag], i) => (
+          {items.map(([title, text, tag, href, linkText], i) => (
             <Item as="li" key={title} className={`ab bz bz-${i + 1}`} y={22} onMouseMove={onMove}>
               <div className="ab-top">
                 <span className="ab-ic">
@@ -61,6 +61,7 @@ function BusinessSection({ onOpenModal }) {
               </div>
               <h3>{title}</h3>
               <p>{text}</p>
+              {href && <a className="bz-link" href={href}>{linkText} →</a>}
             </Item>
           ))}
         </Stagger>

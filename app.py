@@ -3962,6 +3962,56 @@ async def llms_txt():
                         headers={"Cache-Control": "public, max-age=3600"})
 
 
+# ============================================================================
+# Мобильное приложение (26.11.2026). Android — настоящее приложение (Trusted Web Activity: тот же
+# кабинет внутри, без адресной строки), проект mobile/android/, пакет online.voksyai.app; скачивается
+# с сайта файлом .apk со страницы /app. iPhone — «Поделиться → На экран Домой» (Apple не даёт ставить
+# приложения с сайта). Без /.well-known/assetlinks.json Android покажет приложение с адресной строкой.
+# ============================================================================
+ANDROID_PACKAGE = "online.voksyai.app"
+# SHA-256 сертификата, которым подписан APK на сайте (ключ — у владельца, не в репозитории). После
+# публикации в Google Play добавьте отпечаток ключа Google (Play Console → Целостность приложения)
+# в env ANDROID_APP_SHA256 (через запятую) — без этого версия из Google Play откроется с адресной строкой.
+ANDROID_APP_SHA256 = ("16:77:F7:24:BC:99:E0:80:66:D5:9A:4B:38:E4:E9:6B:2D:17:81:89:B4:18:EF:CF:12:FC:00:53:E5:27:31:3D",)
+ANDROID_APK_PATH = "backend/static/download/voksy-ai.apk"
+
+
+def android_fingerprints() -> list:
+    out = []
+    extra = [f for f in os.getenv("ANDROID_APP_SHA256", "").replace(";", ",").split(",")]
+    for fp in list(ANDROID_APP_SHA256) + extra:
+        fp = fp.strip().upper()
+        if re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", fp) and fp not in out:
+            out.append(fp)
+    return out
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def android_assetlinks():
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": ANDROID_PACKAGE,
+                   "sha256_cert_fingerprints": android_fingerprints()},
+    }], headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+async def app_download_page():
+    """Страница «Скачать приложение»: Android — файл .apk, iPhone — на экран «Домой», компьютер — QR."""
+    return FileResponse("backend/static/app-download.html", media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/download/voksy-ai.apk", include_in_schema=False)
+async def app_download_apk():
+    if not os.path.isfile(ANDROID_APK_PATH):
+        from starlette.exceptions import HTTPException as _HTTPExc
+        raise _HTTPExc(status_code=404)
+    return FileResponse(ANDROID_APK_PATH, media_type="application/vnd.android.package-archive",
+                        filename="Voksy-AI.apk", headers={"Cache-Control": "no-cache"})
+
+
 # IndexNow (Яндекс и Bing; поиск ChatGPT опирается на индекс Bing): ключ в env INDEXNOW_KEY,
 # файл-подтверждение /<ключ>.txt; отправка адресов — scripts/indexnow_ping.py после деплоя.
 @app.get("/{key}.txt", include_in_schema=False)

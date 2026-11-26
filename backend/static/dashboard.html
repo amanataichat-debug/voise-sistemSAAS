@@ -2819,7 +2819,7 @@
             
             if (response.status === 401) {
               localStorage.removeItem('auth_token');
-              window.location.href = '/';
+              window.location.href = '/static/login.html?reason=expired';
               throw new Error('Требуется авторизация');
             }
             
@@ -3012,7 +3012,7 @@
       // Проверка авторизации
       function checkAuth() {
         if (!api.isAuthenticated()) {
-          window.location.href = '/';
+          window.location.href = '/static/login.html';
           return false;
         }
         return true;
@@ -3295,13 +3295,13 @@
       logoutButton.addEventListener('click', function(e) {
         e.preventDefault();
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
 
       dropdownLogout.addEventListener('click', function(e) {
         e.preventDefault();
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
 
       notificationClose.addEventListener('click', ui.hideNotification);
@@ -3448,7 +3448,7 @@
       // Кнопка выхода в модалке истекшей подписки
       expiredLogoutBtn.addEventListener('click', function() {
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
       
       // Закрытие по клавише Escape

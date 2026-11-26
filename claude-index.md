@@ -35,6 +35,9 @@
 ### Фронтенд приложения (server-served)
 - [`backend/static/claude-static.md`](backend/static/claude-static.md) — vanilla HTML/JS-страницы кабинета, голосовые виджеты, собранный лендинг.
 
+### Мобильное приложение
+- [`mobile/android/README.md`](mobile/android/README.md) — Android-приложение Voksy AI (Trusted Web Activity, пакет `online.voksyai.app`): сборка APK/AAB, ключ подписи, Google Play, `assetlinks.json`; скачивание с сайта — `/app`.
+
 ## Дизайн-система
 - [`design-system/README.md`](design-system/README.md) — пакет дизайн-системы Voksy AI: основы, компоненты, каркасы, спеки страниц кабинета и лендинга, i18n. Перенесённые в кабинет файлы описаны в `backend/static/claude-static.md`.
 

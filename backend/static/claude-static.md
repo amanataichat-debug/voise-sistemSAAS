@@ -99,6 +99,7 @@
 - `css/`, `images/` — стили и изображения; `icons/` и `i18n/` — дизайн-система (см. выше).
 - `brand/` — знак Voksy AI: `logo.svg` (исходник, из него нарезаны все фавиконы) и `logo-512.png`.
 - Иконки/манифесты PWA (`favicon*`, `apple-touch-icon.png`, `android-chrome-*`, `site.webmanifest`, `manifest.json`), аудио-сэмпл `zvuki-razgovorov...mp3`.
+- `login.html` — экран входа кабинета и приложения (26.11.2026): вход, регистрация, код из письма, новый пароль, RU/KY; сюда ведут выход и истёкший вход (не на лендинг `/`). `app-download.html` — страница `/app` «Скачать приложение» (Android .apk из `download/voksy-ai.apk`, iPhone — «На экран Домой», QR); `brand/app-maskable-*.png` — иконка приложения. Подробности — `mobile/android/README.md`.
 
 ## Ключевые сущности / точки входа
 - **Монтирование статики** — в `app.py`: `/static` → `backend/static` (с `html=True`), `/js` → каталог JS. Отдельный маршрут `/static/voice_llm_interface.html`.
