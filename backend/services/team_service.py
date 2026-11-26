@@ -176,6 +176,11 @@ STAFF_RULES = [
     # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
     _rule("GET", r"^/api/beauty/clients/?$", "crm"),
     _rule("GET", r"^/api/beauty/clients/[0-9a-fA-F-]{36}/?$", "crm", "inbox", "booking"),
+    # автоматизации и журнал отправок (шаг 2.2) — «Мастера и график» (управляющий, администратор)
+    _rule("GET", r"^/api/beauty/automations(/queue)?/?$", "booking_setup"),
+    _rule("PUT", r"^/api/beauty/automations/[a-z0-9_]+/?$", "booking_setup"),
+    _rule("POST", r"^/api/beauty/automations/[a-z0-9_]+/preview/?$", "booking_setup"),
+    _rule("POST", r"^/api/beauty/automations/queue/[0-9a-fA-F-]{36}/(retry|cancel)/?$", "booking_setup"),
 ]
 
 

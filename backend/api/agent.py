@@ -378,6 +378,7 @@ class AgentContactUpdateRequest(BaseModel):
     birthday: Optional[str] = Field(None, max_length=20)     # 1990-03-12 | 12.03.1990 | 12.03 | --03-12
     gender: Optional[str] = Field(None, max_length=1)        # f | m
     source: Optional[str] = Field(None, max_length=24)       # ключ из salon_clients.SOURCES
+    marketing_opt_out: Optional[bool] = None                 # шаг 2.2: клиент не хочет поздравлений и приглашений
 
 
 class PublicAccessToggleRequest(BaseModel):
@@ -4639,7 +4640,7 @@ async def update_agent_contact(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
-    profile = {k: update_data.pop(k) for k in ("birthday", "gender", "source") if k in update_data}
+    profile = {k: update_data.pop(k) for k in ("birthday", "gender", "source", "marketing_opt_out") if k in update_data}
     if profile:
         from backend.services import salon_clients
         try:

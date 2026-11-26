@@ -80,6 +80,9 @@ UPDATE_CONTACT_INFO_TOOL = {
             "company": {"type": "string"},
             "position": {"type": "string"},
             "birthday": {"type": "string", "description": "День рождения: ДД.ММ.ГГГГ, или ДД.ММ, если год не назван"},
+            "marketing_opt_out": {"type": "boolean",
+                                  "description": "true — клиент попросил не присылать поздравления, акции и приглашения "
+                                                 "(напоминания о записи всё равно придут); false — снова согласен"},
             "notes": {"type": "string", "description": "Свободный текст с информацией о клиенте"},
         },
         "required": ["agent_contact_id"],
@@ -3785,6 +3788,9 @@ async def fn_update_contact_info(args: dict, user_id: str, agent_config_id: str,
         if isinstance(value, str) and value.strip():
             setattr(contact, field, value.strip()[:255])
             updated_fields.append(field)
+    if isinstance(args.get("marketing_opt_out"), bool):
+        from backend.services import salon_clients
+        updated_fields += salon_clients.update_profile(contact, {"marketing_opt_out": args["marketing_opt_out"]})
     bday = args.get("birthday")
     if isinstance(bday, str) and bday.strip():
         from backend.services import salon_clients

@@ -1997,7 +1997,8 @@ def ensure_user_profile_columns():
             # карточка клиента (Voksy Beauty, шаг 2.1): ДР, пол, источник. ORM выбирает все колонки
             # AgentContact в каждом запросе к клиентам — поэтому здесь, в самом начале старта
             ccols = {c['name'] for c in inspector.get_columns('agent_contacts')}
-            for name, ddl in (("birthday", "DATE"), ("gender", "VARCHAR(1)"), ("source", "VARCHAR(24)")):
+            for name, ddl in (("birthday", "DATE"), ("gender", "VARCHAR(1)"), ("source", "VARCHAR(24)"),
+                              ("marketing_opt_out_at", "TIMESTAMP")):     # шаг 2.2: клиент отказался от рассылок
                 if name not in ccols:
                     stmts.append(f"ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS {name} {ddl}")
             if 'source' not in ccols:
@@ -2045,6 +2046,7 @@ def ensure_booking_tables():
         from backend.models.salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
         from backend.models.webchat import WebChatSession, AgentWebChatMessage
         from backend.models.activity import ActivityLog
+        from backend.models.automation import NotificationQueue, AutomationRule
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2054,7 +2056,8 @@ def ensure_booking_tables():
                                  BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
                                  PushSubscription.__table__, WebPushKey.__table__,
                                  WebChatSession.__table__, AgentWebChatMessage.__table__,
-                                 ActivityLog.__table__], checkfirst=True)
+                                 ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__],
+            checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
     except Exception as e:

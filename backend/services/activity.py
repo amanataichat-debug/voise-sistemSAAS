@@ -57,6 +57,7 @@ GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "team": ("Сотрудники", ("team",)),
     "money": ("Деньги", ("expense", "payroll")),
     "ai": ("ИИ-управляющий", ("manager",)),
+    "automation": ("Автоматизации", ("automation",)),
     "admin": ("Входы поддержки", ("admin",)),
 }
 

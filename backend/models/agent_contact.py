@@ -101,6 +101,8 @@ class AgentContact(Base):
     birthday = Column(Date, nullable=True)
     gender = Column(String(1), nullable=True)
     source = Column(String(24), nullable=True)
+    # Шаг 2.2: клиент отказался от поздравлений, акций и приглашений (напоминания о записи всё равно идут)
+    marketing_opt_out_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -157,6 +159,7 @@ class AgentContact(Base):
             "birthday": birthday_iso(self.birthday),
             "gender": self.gender,
             "source": self.source,
+            "marketing_opt_out": self.marketing_opt_out_at is not None,
             "created_at": iso_utc(self.created_at),
             "updated_at": iso_utc(self.updated_at),
         }

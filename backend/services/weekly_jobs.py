@@ -305,6 +305,8 @@ async def _tick() -> None:
         try:
             from backend.services import activity
             activity.cleanup(db)
+            from backend.services import notify_queue
+            notify_queue.cleanup(db)
         except Exception as e:
             db.rollback()
             logger.warning(f"[ACTIVITY] cleanup failed: {e}")

@@ -307,10 +307,12 @@ sent_msgs = []
 
 async def fake_send(db_, user_, contact_, message):
     sent_msgs.append(message)
-    return True
+    return True, "whatsapp", None
 
 
-booking_notify.send_to_client = fake_send
+from backend.services import notify_queue as nq  # noqa: E402  (шаг 2.2: отправка — через очередь)
+nq.SENDER = fake_send
+nq.SERVICE_WINDOW = (0, 24)
 asyncio.run(booking_notify.run_once(NOW))
 db.expire_all()
 check("просьба оценить ушла, отмечено review_asked_at", any("от 1 до 5" in m for m in sent_msgs)

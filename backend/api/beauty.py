@@ -17,6 +17,17 @@ Voksy Beauty, шаг 1.7 — /api/beauty: журнал действий и гл�
                                      Владелец и сотрудник с разделом «Клиенты»
   GET  /api/beauty/clients/export.csv — те же фильтры, CSV для Excel; только владелец
   GET  /api/beauty/clients/{id}     — салонная часть карточки: цифры, любимые, ДР, источник, сегменты, история визитов
+
+Шаг 2.2 — автоматизации и очередь отправок (services/automations.py, notify_queue.py). Владелец и сотрудник с
+разделом «Мастера и график» (booking_setup):
+  GET  /api/beauty/automations                 — правила, тексты RU/KY, параметры, статистика за 30 дней, лимиты
+  PUT  /api/beauty/automations/limits          — {max_per_day, gap_days, lang}
+  PUT  /api/beauty/automations/{key}           — {enabled, params, template_ru, template_ky} (пустой текст — по умолчанию)
+  POST /api/beauty/automations/{key}/preview   — {template, lang} → как увидит клиент (пример)
+  GET  /api/beauty/automations/queue           — журнал отправок: ?status=pending|sent|failed|skipped|problems, rule,
+                                                 contact_id, before, limit
+  POST /api/beauty/automations/queue/{id}/retry  — отправить ещё раз (не доставлено / пропущено / отменено)
+  POST /api/beauty/automations/queue/{id}/cancel — снять из очереди
 """
 
 import uuid
@@ -33,7 +44,7 @@ from backend.models.booking import Booking
 from backend.models.user import User
 from backend.services import activity
 from backend.services import booking_service as bs
-from backend.services import salon_clients, salon_home
+from backend.services import automations, notify_queue, salon_clients, salon_home
 
 router = APIRouter(prefix="/api/beauty", tags=["Voksy Beauty"])
 
@@ -143,3 +154,101 @@ def beauty_client_card(contact_id: str, current_user: User = Depends(get_current
     if card is None:
         raise HTTPException(status_code=404, detail="Клиент не найден")
     return card
+
+
+# ───────────────────────────── автоматизации (шаг 2.2) ─────────────────────────────
+
+def _automation_access(user) -> None:
+    if is_staff(user):
+        perms = (getattr(user, "_staff", None) or {}).get("permissions") or []
+        if "booking_setup" not in perms:
+            raise HTTPException(status_code=403, detail={"error": "staff_forbidden",
+                                                         "message": "Автоматизации вам не открыты"})
+
+
+@router.get("/automations")
+def beauty_automations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    out = automations.overview(db, current_user)
+    db.rollback()
+    return out
+
+
+@router.put("/automations/limits")
+def beauty_automation_limits(data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                             db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    try:
+        out = automations.save_limits(db, current_user, data or {})
+    except automations.AutomationError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return {"limits": out}
+
+
+@router.put("/automations/{key}")
+def beauty_automation_save(key: str, data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    try:
+        automations.save_rule(db, current_user, key, data or {})
+    except automations.AutomationError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    rule = next((r for r in automations.overview(db, current_user)["rules"] if r["key"] == key), None)
+    db.rollback()
+    return {"rule": rule}
+
+
+@router.post("/automations/{key}/preview")
+def beauty_automation_preview(key: str, data: Dict[str, Any] = Body(...), current_user: User = Depends(get_current_user),
+                              db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    try:
+        txt = automations.preview(db, current_user, key, (data or {}).get("template"),
+                                  "ky" if (data or {}).get("lang") == "ky" else "ru")
+    except automations.AutomationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        db.rollback()
+    return {"text": txt}
+
+
+@router.get("/automations/queue")
+def beauty_automation_queue(status: Optional[str] = Query(None), rule: Optional[str] = Query(None),
+                            contact_id: Optional[str] = Query(None), before: Optional[str] = Query(None),
+                            limit: int = Query(50, ge=1, le=200), current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    out = notify_queue.listing(db, current_user.id, status=status, rule=rule, contact_id=contact_id, before=before,
+                               limit=limit)
+    db.rollback()
+    return out
+
+
+@router.post("/automations/queue/{item_id}/retry")
+def beauty_automation_retry(item_id: str, current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    try:
+        uuid.UUID(item_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if not notify_queue.retry(db, current_user.id, item_id):
+        raise HTTPException(status_code=400, detail="Это сообщение нельзя отправить ещё раз")
+    return {"ok": True}
+
+
+@router.post("/automations/queue/{item_id}/cancel")
+def beauty_automation_cancel(item_id: str, current_user: User = Depends(get_current_user),
+                             db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _automation_access(current_user)
+    try:
+        uuid.UUID(item_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if not notify_queue.cancel(db, current_user.id, item_id):
+        raise HTTPException(status_code=400, detail="Сообщение уже отправлено или снято")
+    return {"ok": True}

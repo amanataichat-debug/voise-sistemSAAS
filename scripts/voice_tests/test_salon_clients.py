@@ -392,6 +392,11 @@ check("мастер: ни списка, ни карточки", cl.get("/api/bea
 
 # — скорость: 2000 клиентов и 6000 записей —
 import time as _t  # noqa: E402
+# отдельные мастера для замера: иначе синтетические записи могут пересечься с записями теста (зависит от часа запуска)
+p1 = BookingResource(user_id=u.id, name="Замер 1", schedule=full, is_active=True)
+p2 = BookingResource(user_id=u.id, name="Замер 2", schedule=full, is_active=True)
+db.add_all([p1, p2])
+db.commit()
 rows_c = []
 for i in range(2000):
     rows_c.append({"id": str(uuid.uuid4()), "uid": str(u.id), "aid": str(agent.id), "n": f"Клиент {i}", "p": f"+99655{i:07d}"})
@@ -401,7 +406,7 @@ bk_rows = []
 for i, c in enumerate(rows_c):
     for k in range(3):
         st = NOW - timedelta(days=5, minutes=(i * 3 + k) * 97)     # у мастера записи не пересекаются
-        bk_rows.append({"id": str(uuid.uuid4()), "uid": str(u.id), "r": str((m1 if k % 2 else m2).id), "c": c["id"], "s": st,
+        bk_rows.append({"id": str(uuid.uuid4()), "uid": str(u.id), "r": str((p1 if k % 2 else p2).id), "c": c["id"], "s": st,
                         "e": st + timedelta(minutes=1), "st": "completed" if (i + k) % 7 else "no_show", "pr": 800 + (i % 9) * 100})
 db.execute(text("INSERT INTO bookings (id, user_id, resource_id, contact_id, service_title, start_at, end_at, status, price, created_at) "
                 "VALUES (CAST(:id AS uuid), CAST(:uid AS uuid), CAST(:r AS uuid), CAST(:c AS uuid), 'Маникюр', :s, :e, :st, :pr, now())"),

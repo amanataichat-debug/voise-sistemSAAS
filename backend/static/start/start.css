@@ -626,3 +626,5 @@
   .cs-visit .t { grid-area: t; } .cs-visit .d { grid-area: d; } .cs-visit .p { grid-area: p; text-align: right; } .cs-visit .st-badge { grid-area: s; justify-self: end; }
   .cs-hist { max-height: none; }
 }
+.cs-optout { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 4px 0 8px; cursor: pointer; }
+.cs-optout input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--vf-accent); }

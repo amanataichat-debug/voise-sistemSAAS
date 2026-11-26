@@ -279,7 +279,10 @@
     if (c.source && !(sources || []).some(function (s) { return s.key === c.source; })) src += '<option value="' + esc(c.source) + '" selected>' + esc(c.source) + '</option>';
     return field('День рождения', '<input class="input" id="f-bday" value="' + esc(bdv) + '" placeholder="12.03.1990 или 12.03" inputmode="numeric">') +
       field('Пол', '<select class="select-native" id="f-gender">' + GENDERS.map(function (g) { return '<option value="' + g[0] + '"' + ((c.gender || '') === g[0] ? ' selected' : '') + '>' + g[1] + '</option>'; }).join('') + '</select>') +
-      field('Откуда пришёл', '<select class="select-native" id="f-source">' + src + '</select>');
+      field('Откуда пришёл', '<select class="select-native" id="f-source">' + src + '</select>') +
+      // шаг 2.2: отказ от поздравлений и приглашений (напоминания о записи всё равно уходят)
+      '<label class="cs-optout"><input type="checkbox" id="f-optout"' + (c.marketing_opt_out ? ' checked' : '') + '>' +
+      '<span>Не присылать поздравления и акции<br><span class="muted small">Напоминания о записи всё равно придут</span></span></label>';
   }
   function field(label, input) { return '<div class="field"><label class="label">' + label + '</label>' + input + '</div>'; }
 
@@ -289,6 +292,8 @@
     if (body.querySelector('#f-bday')) out.birthday = g('f-bday') || '';
     if (body.querySelector('#f-gender')) out.gender = g('f-gender') || '';
     if (body.querySelector('#f-source')) out.source = g('f-source') || '';
+    var oo = body.querySelector('#f-optout');
+    if (oo) out.marketing_opt_out = !!oo.checked;
     return out;
   }
 

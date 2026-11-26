@@ -487,6 +487,11 @@ def update_profile(contact: AgentContact, data: Dict[str, Any]) -> List[str]:
         if g != contact.gender:
             contact.gender = g
             changed.append("gender")
+    if "marketing_opt_out" in data:
+        want = bool(data.get("marketing_opt_out"))
+        if want != (contact.marketing_opt_out_at is not None):
+            contact.marketing_opt_out_at = datetime.utcnow() if want else None
+            changed.append("marketing_opt_out")
     if "source" in data:
         s = (data.get("source") or "").strip() or None
         if s is not None and s not in SOURCE_TITLES:
