@@ -160,5 +160,19 @@ check("латинское имя в приветствии — кириллиц�
       spoken_name("Nurlan") == "Нурлан" and spoken_name("Aibek") == "Айбек" and spoken_name("Meerim") == "Мээрим"
       and spoken_name("Айгуль") == "Айгуль", [spoken_name(x) for x in ("Nurlan", "Aibek", "Meerim")])
 
+# ── 10. Коротко, слушает, ведёт к цели (27.11.2026, звонок f9b4a269) ─────────────────────────────────────
+check("краткость первым пунктом: одна-две фразы, не больше двух вариантов; характер — «не душный»",
+      rules.index("Коротко — это вежливо") < rules.index("# Шесть твёрдых правил") and "не больше двух на выбор" in rules
+      and "Не душный" in head)
+check("Interruption policy — рецепт OpenAI «Immediate stop», без «договори мысль»",
+      "stop speaking right away, even in the middle of a sentence" in rules
+      and "Don't resume an answer they've replaced." in rules and "договори мысль" not in layer)
+check("у звонка есть результат: раздел «ЦЕЛЬ ЗВОНКА» (цель владельца или ниши)",
+      "«ЦЕЛЬ ЗВОНКА»" in rules and avc.GOAL_HEADING == "ЦЕЛЬ ЗВОНКА")
+check("кыргызский — коротко, правило по-кыргызски", "Кыска сүйлө: бир сүйлөмдө бир ой" in head)
+check("просьба замолчать — не прощание (Decisions stop_talking) и стоп кодом (barge_in.py)",
+      {"value": "stop_talking"} in q0["choices"] and h.HARD_BARGE_IN and h._STOP_TALK_RE.search("азыр токто")
+      and os.path.exists(os.path.join(ROOT, "backend/websockets/barge_in.py")))
+
 print("\nПРОВАЛОВ:", failures)
 sys.exit(1 if failures else 0)

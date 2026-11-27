@@ -315,6 +315,8 @@ class AgentUpdateRequest(BaseModel):
     doc_rules_and_goals: Optional[str] = None
     additional_instructions: Optional[str] = None
     voice_additional_instructions: Optional[str] = None
+    # Цель звонка: к какому результату голосовой агент ведёт клиента (пусто — цель ниши)
+    voice_goal: Optional[str] = Field(None, max_length=600)
     inbound_first_phrase: Optional[str] = Field(None, max_length=500)
     working_hours_start: Optional[int] = Field(None, ge=0, le=23)
     working_hours_end: Optional[int] = Field(None, ge=1, le=24)
@@ -890,6 +892,19 @@ async def _rebind_agent_phone_numbers(db: Session, agent: AgentConfig,
     return len(numbers) + sip_rebound
 
 
+def _voice_goal_default(agent: AgentConfig) -> str:
+    """Цель звонка по нише владельца — подсказка в поле «Цель звонка», пока владелец не написал свою."""
+    try:
+        from sqlalchemy.orm import object_session
+        from backend.services.agent_voice_context import default_call_goal
+        goal, ask = default_call_goal(object_session(agent), agent)
+        if not goal:
+            return ""
+        return goal[:1].upper() + goal[1:] + (". Узнать: " + "; ".join(ask) if ask else "")
+    except Exception:
+        return ""
+
+
 def _agent_to_dict(agent: AgentConfig) -> dict:
     """Serialize AgentConfig to dict for API response."""
     voice = agent.get_voice_assistant() if agent.assistant_type else agent.gemini_assistant
@@ -937,6 +952,8 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "doc_rules_and_goals": agent.doc_rules_and_goals,
         "additional_instructions": agent.additional_instructions,
         "voice_additional_instructions": agent.voice_additional_instructions,
+        "voice_goal": getattr(agent, "voice_goal", None),
+        "voice_goal_default": _voice_goal_default(agent),
         "inbound_first_phrase": agent.inbound_first_phrase,
         "working_hours_start": agent.working_hours_start,
         "working_hours_end": agent.working_hours_end,
@@ -1264,7 +1281,7 @@ async def update_agent(
             docs_changed = True
 
     for field in ['name', 'additional_instructions', 'voice_additional_instructions',
-                  'inbound_first_phrase',
+                  'inbound_first_phrase', 'voice_goal',
                   'working_hours_start', 'working_hours_end', 'call_window_enabled',
                   'is_active', 'default_caller_id',
                   'webhook_url',

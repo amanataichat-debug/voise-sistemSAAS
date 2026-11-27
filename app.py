@@ -2501,6 +2501,9 @@ def ensure_branding_columns():
         "ADD COLUMN IF NOT EXISTS owner_voice_prefs JSONB",
         # ИИ-управляющий салона (Voksy Beauty 1.6б): сценарии, автономность, отчёты
         "ADD COLUMN IF NOT EXISTS manager_settings JSONB",
+        # Цель звонка (27.11.2026, звонок f9b4a269): к какому результату голосовой агент ведёт клиента;
+        # пусто — цель ниши владельца (agent_voice_context.call_goal_block)
+        "ADD COLUMN IF NOT EXISTS voice_goal TEXT",
     ]
     try:
         inspector = inspect(engine)

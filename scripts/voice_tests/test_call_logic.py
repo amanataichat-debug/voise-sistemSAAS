@@ -389,8 +389,12 @@ def greeting_personal():
           "живые связки" in head and "лёгкий" in head and "вдох" in head and "в меру" in head and "вздох" not in head + hint)
     check("подсказка голосу: диалог, а не монолог; каждый разговор свой, без заготовок",
           "Диалог, а не монолог" in hint and "три-четыре фразы" not in hint and "не под заготовку" in head)
-    check("подсказка голосу: перебили — замолчи и выслушай (шаблон OpenAI), поддакивание — договорить",
-          "сразу замолчи" in hint and "Stop speaking when the user interrupts" in hint and "договори мысль" in hint)
+    # 27.11.2026 (звонок f9b4a269): «его «да» — договори мысль» убрано — модель договаривала мысль поверх «азыр токто».
+    # Теперь рецепт OpenAI «Immediate stop» для gpt-live-1.1: стоп посреди фразы, не возвращаться к брошенному ответу.
+    check("подсказка голосу: перебили — замолчи сразу, даже посреди фразы (рецепт OpenAI), поддакивание — только фразу",
+          "сразу замолчи" in hint and "stop speaking right away, even in the middle of a sentence" in hint
+          and "Don't resume an answer they've replaced." in hint and "договори мысль" not in hint
+          and "можно закончить фразу, но не продолжать мысль" in hint)
     check("подсказка голосу: обращение по имени к месту", "по имени к месту, не в каждой фразе" in hint)
     check("подсказка голосу: произношение CRM и латиницы", "«си-ар-эм»" in head and "«ватсап»" in head)
     # 14.11.2026: эталон владельца — демо конкурента (docs/competitor_demo_alo.md)
@@ -491,7 +495,8 @@ def session_config():
     hint = lc.VOICE_DELEGATION_HINT
     for needle, label in [("ПОСЛЕ звонка", "правило про отправку КП после звонка"),
                           ("спрашивай то, что он уже сказал", "не переспрашивать"),
-                          ("Итог договорённости — один раз", "итог договорённости один раз")]:
+                          # 27.11.2026: итог — одной фразой, когда собрано всё для цели звонка (и сразу конец)
+                          ("одной фразой подтверди итог", "итог договорённости одной фразой")]:
         check(f"подсказка голосу: {label}", needle in hint)
     cfg_i = cfg = lc.OpenAILiveClient("k", a, "cid", telephony=True).build_session_config()["instructions"]
     check("конфиг: голова (характер, язык) — в начале, правила — после промпта карточки",

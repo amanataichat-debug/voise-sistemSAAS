@@ -280,8 +280,8 @@ hint = lc.VOICE_DELEGATION_HINT
 # в общих правилах (их получают агенты всех клиентов): test_platform_neutral.py.
 # 14.11.2026 (1411-voice-lean): слой платформы GPT-Live переписан коротко по шаблону OpenAI — LIVE_VOICE_HEAD в начале,
 # LIVE_VOICE_RULES (= VOICE_DELEGATION_HINT) в конце; Gemini по-прежнему на своих подсказках и общих кусках ниже.
-check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 23.11.2026 — согласие без переспроса, меньше делегирования, 2211-live-kyrgyz)",
-      hashlib.sha256(hint.encode()).hexdigest() == "bfbd990795a2cd7d71b8ebb913b0695ce55591fa41a9b86cd650dc9c0bc431e9", len(hint))
+check("GPT-Live: VOICE_DELEGATION_HINT побайтно прежний (обновлён 27.11.2026 — коротко и с целью, стоп посреди фразы, звонок f9b4a269)",
+      hashlib.sha256(hint.encode()).hexdigest() == "56e54082a045c78f9c0fdb1096b38e6f39a96734540d467f046672ff0bada052", len(hint))
 check("GPT-Live: телефонная подсказка прежняя",
       hashlib.sha256(lc.VOICE_TELEPHONY_HINT.encode()).hexdigest() == "987187f3747507d2578f880ee5d35194c36f279702faad801a982df246ed08fa")
 check("GPT-Live: хвост инструкций — LIVE_VOICE_RULES, общие куски Gemini в него не входят",

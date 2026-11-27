@@ -101,6 +101,19 @@ def extract_first_phrase(doc_text: str) -> str:
     return " ".join(doc_text[a + 3:b].split())
 
 
+def extract_goal(doc_text: str) -> str:
+    """Цель звонка Анри — блок ``` под «## ЦЕЛЬ ЗВОНКА» (27.11.2026) → agent_configs.voice_goal."""
+    i = doc_text.find("## ЦЕЛЬ ЗВОНКА")
+    if i < 0:
+        return ""
+    a = doc_text.find("```", i)
+    b = doc_text.find("```", a + 3)
+    next_section = doc_text.find("\n## ", i + 3)
+    if a < 0 or b < 0 or (0 <= next_section < a):
+        return ""
+    return " ".join(doc_text[a + 3:b].split())
+
+
 def _norm(title: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", (title or "").lower().replace("ё", "е")).split())
 
@@ -244,6 +257,7 @@ def apply_prompts(db, agent) -> str:
         voice_doc = f.read()
     voice = extract_block1(voice_doc)
     first_phrase = extract_first_phrase(voice_doc)
+    goal = extract_goal(voice_doc)
     with open(ORCH_DOC, encoding="utf-8") as f:
         orch = f.read().strip()
 
@@ -253,6 +267,7 @@ def apply_prompts(db, agent) -> str:
         "additional_instructions": agent.additional_instructions,
         "voice_additional_instructions": agent.voice_additional_instructions,
         "inbound_first_phrase": getattr(agent, "inbound_first_phrase", None),
+        "voice_goal": getattr(agent, "voice_goal", None),
         "number_first_phrases": {},
     }
     numbers = []
@@ -266,6 +281,8 @@ def apply_prompts(db, agent) -> str:
 
     agent.voice_additional_instructions = voice
     agent.additional_instructions = orch
+    if goal and hasattr(agent, "voice_goal"):
+        agent.voice_goal = goal
     if first_phrase:
         # Фраза номера главнее фразы агента (SipGatewayService.resolve_greeting) — очищаем её у номеров агента
         agent.inbound_first_phrase = first_phrase
@@ -281,6 +298,8 @@ def apply_prompts(db, agent) -> str:
           + ("; карточка голоса пересобрана" if card is not None else ""))
     if first_phrase:
         print(f"✓ Первая фраза входящего: «{first_phrase}» (у номеров агента своя фраза очищена: {len(numbers)})")
+    if goal:
+        print(f"✓ Цель звонка: «{goal}»")
     print(f"  Прежние тексты сохранены: {path}")
     return path
 
