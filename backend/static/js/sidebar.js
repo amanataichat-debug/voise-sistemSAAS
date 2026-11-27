@@ -62,6 +62,8 @@
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', modes: ['full', 'reactive'], money: true },
     // Касса (Voksy Beauty 3.1): смены администраторов, оплата визитов, возвраты — у ниш с онлайн-записью
     { href: '/static/cash.html', lucide: 'wallet', label: 'sidebar.cash', def: 'Касса', id: 'cash-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Зарплата мастеров (Voksy Beauty 3.3): ведомость за период, выходы, авансы, штрафы, премии, выплаты
+    { href: '/static/payroll.html', lucide: 'hand-coins', label: 'sidebar.payroll', def: 'Зарплата', id: 'payroll-nav-item', modes: ['full', 'reactive'], booking: true },
     // ИИ-управляющий (Voksy Beauty 1.6б): утренний отчёт, предложения на одобрение, сценарии — у ниш с онлайн-записью
     { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', modes: ['full', 'reactive'], booking: true },
     // Журнал действий (Voksy Beauty 1.7): кто перенёс, отменил, поменял цену, что сделал бот — у ниш с онлайн-записью
@@ -96,6 +98,7 @@
       aliases: ['/static/start-analytics.html'] },
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', money: true },
     { href: '/static/cash.html', lucide: 'wallet', label: 'sidebar.cash', def: 'Касса', id: 'cash-nav-item', booking: true },
+    { href: '/static/payroll.html', lucide: 'hand-coins', label: 'sidebar.payroll', def: 'Зарплата', id: 'payroll-nav-item', booking: true },
     { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', booking: true },
     { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', booking: true },
     { href: '/static/automations.html', lucide: 'send', label: 'sidebar.automations', def: 'Автоматизации', id: 'automations-nav-item', booking: true },
@@ -176,7 +179,7 @@
   function staffMenu(staff) {
     var out = [{ section: 'sidebar.section_work', def: 'Работа' }];
     (staff.menu || []).forEach(function (m) {
-      var lucide = { inbox: 'inbox', booking: 'calendar', orders: 'shopping-cart', crm: 'contact-round', catalog: 'package', analytics: 'chart-column', cash: 'wallet' }[m.id] || m.icon;
+      var lucide = { inbox: 'inbox', booking: 'calendar', orders: 'shopping-cart', crm: 'contact-round', catalog: 'package', analytics: 'chart-column', cash: 'wallet', payroll: 'hand-coins' }[m.id] || m.icon;
       var item = { href: m.href, lucide: lucide, label: 'staff.' + m.id, def: m.label, id: m.id + '-nav-item' };
       if (m.id === 'crm') item.aliases = ['/static/crm.html', '/static/crm-contact.html'];
       if (m.id === 'analytics') item.aliases = ['/static/start-analytics.html'];
@@ -759,7 +762,7 @@
     }
     items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
     // Салон: «Отзывы» и «Автоматизации» — рядом с клиентами, а не после «Настроек» (шаги 2.2–2.3 Beauty)
-    var ORDER = ['dashboard', 'manager', 'finance', 'cash', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    var ORDER = ['dashboard', 'manager', 'finance', 'cash', 'payroll', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
     function rank(it) {
       var id = (it.id || '').replace('-nav-item', '');
       if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';

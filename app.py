@@ -385,6 +385,8 @@ from backend.api import finance as finance_api  # доходы, расходы (
 app.include_router(finance_api.router)
 from backend.api import cashbox as cashbox_api  # касса салона: смены администраторов, оплата визита, возвраты (шаг 3.1)
 app.include_router(cashbox_api.router, prefix="/api/cash", tags=["Cash"])
+from backend.api import payroll as payroll_api  # зарплата мастеров v2: ведомость, выходы, авансы/штрафы/премии, выплаты (шаг 3.3)
+app.include_router(payroll_api.router, prefix="/api/payroll", tags=["Payroll"])
 from backend.api import salon_manager as salon_manager_api  # ИИ-управляющий салона: отчёты, одобрение, сценарии; push
 app.include_router(salon_manager_api.router)
 app.include_router(salon_manager_api.push_router)
@@ -2056,6 +2058,7 @@ def ensure_booking_tables():
         from backend.models.review import SalonReview
         from backend.models.waitlist import WaitlistEntry
         from backend.models.cashbox import CashShift, CashReceipt, CashPayment
+        from backend.models.payroll import MasterShift, PayrollAdjustment, PayrollPayout
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2067,7 +2070,8 @@ def ensure_booking_tables():
                                  WebChatSession.__table__, AgentWebChatMessage.__table__,
                                  ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__,
                                  WaitlistEntry.__table__, CashShift.__table__, CashReceipt.__table__,
-                                 CashPayment.__table__],
+                                 CashPayment.__table__, MasterShift.__table__, PayrollAdjustment.__table__,
+                                 PayrollPayout.__table__],
             checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
@@ -2105,6 +2109,8 @@ MASTER_CARD_COLUMNS = (
     ("service_prices", "JSONB"),
     ("team_member_id", "UUID"),
     ("online_booking", "BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("pay_categories", "JSONB"),          # шаг 3.3: свой % по категориям услуг
+    ("pay_shift", "DOUBLE PRECISION"),    # шаг 3.3: ставка за выход
 )
 
 

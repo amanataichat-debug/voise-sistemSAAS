@@ -101,6 +101,7 @@ def _resource_out(user, r: BookingResource) -> Dict[str, Any]:
     d = bs.resource_to_dict(r)
     if _sees_money(user):   # оплата мастера — владельцу и бухгалтеру
         d["pay_percent"], d["pay_fixed"] = r.pay_percent or 0, r.pay_fixed or 0
+        d["pay_shift"], d["pay_categories"] = r.pay_shift or 0, r.pay_categories or {}   # шаг 3.3
     return d
 
 

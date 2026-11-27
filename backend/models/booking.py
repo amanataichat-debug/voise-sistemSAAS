@@ -65,6 +65,8 @@ class BookingResource(Base):
     position = Column(Integer, nullable=False, default=0)
     pay_percent = Column(Float, nullable=True)                  # % мастеру с выручки его записей «пришёл»
     pay_fixed = Column(Float, nullable=True)                    # оклад в месяц, сом
+    pay_categories = Column(JSONB, nullable=True)               # шаг 3.3: {"Волосы / Окрашивание": 40} — свой % по категориям
+    pay_shift = Column(Float, nullable=True)                    # шаг 3.3: ставка за выход (отмечает администратор), сом
     # — карточка мастера (Voksy Beauty) —
     photo_id = Column(UUID(as_uuid=True), nullable=True)        # salon_media.id
     bio = Column(Text, nullable=True)                           # «о себе» для страницы салона

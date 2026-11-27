@@ -17,7 +17,7 @@
   var ACT_ICON = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
   var OBJ_ICON = { booking: 'calendar', visit: 'calendar', block: 'ban', service: 'sparkles', category: 'layers', master: 'users',
                    room: 'door-open', settings: 'sliders-horizontal', page: 'store', team: 'user-plus', expense: 'banknote',
-                   payroll: 'wallet', manager: 'bot', admin: 'shield-check', automation: 'send', review: 'star', waitlist: 'hourglass' };
+                   payroll: 'hand-coins', manager: 'bot', admin: 'shield-check', automation: 'send', review: 'star', waitlist: 'hourglass' };
   var WD = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
   var MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var st = { period: 'week', actor: '', group: '', items: [], next: null, people: [], groups: [], keep: 180, busy: false, open: {} };
@@ -127,7 +127,8 @@
       : x.object_type === 'block' ? '/static/booking.html?date=' + day
       : x.object_type === 'master' || x.object_type === 'service' ? '/static/booking.html'
         : x.object_type === 'team' ? '/static/team.html'
-          : x.object_type === 'expense' || x.object_type === 'payroll' ? '/static/finance.html'
+          : x.object_type === 'payroll' ? '/static/payroll.html' + (x.object_id ? '?master=' + encodeURIComponent(x.object_id) : '')
+            : x.object_type === 'expense' ? '/static/finance.html'
             : x.object_type === 'manager' ? '/static/manager.html#journal'
               : x.object_type === 'page' ? '/static/booking.html?view=page' : '';
     var full = new Date(x.at);

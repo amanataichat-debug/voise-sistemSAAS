@@ -92,6 +92,7 @@ SECTION_PAGES = [
     ("analytics", "/static/analytics.html", "chart-column", "Аналитика", "Аналитика"),
     ("cash", "/static/cash.html", "wallet", "Касса", "Касса"),
     ("finance", "/static/finance.html", "banknote", "Финансы", "Каржы"),
+    ("payroll", "/static/payroll.html", "hand-coins", "Зарплата", "Айлык"),
     ("activity", "/static/activity.html", "history", "Журнал действий", "Аракеттер журналы"),
 ]
 
@@ -187,6 +188,13 @@ STAFF_RULES = [
     # шаг 3.2: долги — видят администратор и бухгалтер, напоминает администратор; списать и отчёт дня — только владелец
     _rule("GET", r"^/api/cash/debts/?$", "booking", "finance"),
     _rule("POST", r"^/api/cash/debts/[0-9a-fA-F-]{36}/remind/?$", "booking"),
+    # шаг 3.3: ведомость, авансы/штрафы/премии, выплаты, схема — бухгалтер (finance); выход мастера — ещё и администратор
+    _rule("GET", r"^/api/payroll/(sheet|masters/[0-9a-fA-F-]{36})/?$", "finance"),
+    _rule("PUT", r"^/api/payroll/masters/[0-9a-fA-F-]{36}/scheme/?$", "finance"),
+    _rule("POST", r"^/api/payroll/(adjustments|payouts)/?$", "finance"),
+    _rule("DELETE", r"^/api/payroll/adjustments/[0-9a-fA-F-]{36}/?$", "finance"),
+    _rule("GET", r"^/api/payroll/attendance/?$", "booking", "finance"),
+    _rule("PUT", r"^/api/payroll/attendance/?$", "booking", "finance"),
     # — журнал действий (Voksy Beauty 1.7): управляющий; история записи в её карточке — тому же разделу —
     _rule("GET", r"^/api/beauty/activity/?$", "activity"),
     # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
@@ -232,6 +240,8 @@ def sections(perms: Iterable[str], catalog_title: Optional[str] = None) -> List[
             ok = bool(have & set(BOOKING_PERMS))
         elif key == "cash":            # касса (шаг 3.1): администратор принимает оплату, бухгалтер смотрит смены
             ok = bool(have & {"booking", "finance"})
+        elif key == "payroll":         # зарплата (шаг 3.3): ведомость и выплаты — бухгалтер
+            ok = "finance" in have
         else:
             ok = key in have
         if not ok:

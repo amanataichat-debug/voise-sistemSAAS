@@ -136,6 +136,7 @@ from .review import SalonReview
 from .waitlist import WaitlistEntry
 # Касса салона: смены администраторов, чеки, строки оплат (Voksy Beauty, шаг 3.1)
 from .cashbox import CashShift, CashReceipt, CashPayment
+from .payroll import MasterShift, PayrollAdjustment, PayrollPayout
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

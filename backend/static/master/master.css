@@ -239,3 +239,16 @@
 .mc-rv-it { border-top: 1px solid var(--vf-border); padding-top: 9px; }
 .mc-rv-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--vf-text-3); }
 .mc-rv-it p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--vf-text); white-space: pre-line; }
+
+/* шаг 3.3: зарплата за месяц */
+.mc-pay { border: 1px solid var(--vf-border); border-radius: 16px; padding: 4px 14px; background: var(--vf-surface); }
+.mc-pay > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--vf-border); font-size: 13.5px; }
+.mc-pay > div:last-child { border-bottom: 0; }
+.mc-pay > div span { min-width: 0; color: var(--vf-text-2); overflow-wrap: anywhere; }
+.mc-pay > div b { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mc-pay > div.sub span, .mc-pay > div.sub b { color: var(--vf-text-3); font-weight: 500; font-size: 12.5px; }
+.mc-pay > div.bad b { color: #b42020; }
+.mc-pay > div.good b { color: #0f7a3a; }
+.mc-pay > div.tot { border-top: 1px solid var(--vf-border); border-bottom: 0; }
+.mc-pay > div.tot span { color: var(--vf-text); font-weight: 700; }
+.mc-pay > div.tot b { font: 700 19px/1.2 var(--vf-font-display); }

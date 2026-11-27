@@ -81,7 +81,8 @@
     "orders": "Заказы",
     "automations": "Автоматизации",
     "reviews": "Отзывы",
-    "cash": "Касса"
+    "cash": "Касса",
+    "payroll": "Зарплата"
   },
   "wallet": {
     "currency": "сом",
@@ -2127,6 +2128,7 @@
     "booking_own": "Мой день",
     "finance": "Финансы",
     "activity": "Журнал действий",
-    "cash": "Касса"
+    "cash": "Касса",
+    "payroll": "Зарплата"
   }
 }

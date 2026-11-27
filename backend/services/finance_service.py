@@ -242,33 +242,22 @@ def _revenue(db: Session, uid: str, s, u) -> Dict[str, float]:
 
 
 def _payroll(db: Session, user, a: date, b: date, s, u) -> List[Dict[str, Any]]:
+    """Зарплаты мастеров за период — ведомость шага 3.3 (services/payroll.py): % с оплаченных услуг (свой по
+    категориям), выходы × ставка, доля оклада, премии − штрафы. Авансы и выплаты — не расход, а часть зарплаты."""
     try:
-        from backend.services import booking_service as bs
-        resources = bs.resources(db, user.id, active_only=False)
+        from backend.services import payroll
+        lines = payroll.sheet(db, user, a, b, check=False)["masters"]
     except Exception:
         db.rollback()
         return []
-    if not resources:
-        return []
-    by_res: Dict[str, Dict[str, float]] = {}
-    for rid, cnt, rev in db.execute(text(
-        "SELECT resource_id, count(*), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-        "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1"
-    ), {"uid": str(user.id), "s": s, "u": u}).fetchall():
-        by_res[str(rid)] = {"count": int(cnt or 0), "revenue": float(rev or 0)}
     out = []
-    for r in resources:
-        st = by_res.get(str(r.id), {"count": 0, "revenue": 0.0})
-        if not r.is_active and not st["count"]:
-            continue
-        pct = float(getattr(r, "pay_percent", None) or 0)
-        fixed = float(getattr(r, "pay_fixed", None) or 0)
-        start = (r.created_at.date() if getattr(r, "created_at", None) else a)
-        fixed_part = month_share(fixed, a, b, min(start, a), None) if fixed else 0.0
-        salary = st["revenue"] * pct / 100.0 + fixed_part
-        out.append({"id": str(r.id), "name": r.name, "role": r.role, "color": r.color, "visits": st["count"],
-                    "revenue": _r(st["revenue"]), "pay_percent": pct, "pay_fixed": fixed,
-                    "salary": _r(salary), "configured": bool(pct or fixed)})
+    for m in lines:
+        sc = m["scheme"]
+        out.append({"id": m["id"], "name": m["name"], "role": m["role"], "color": m["color"], "visits": m["visits"],
+                    "revenue": m["base"], "pay_percent": sc["percent"], "pay_fixed": sc["fixed"], "pay_shift": sc["shift"],
+                    "pay_categories": sc["categories"], "shifts": m["shifts"]["count"], "scheme_text": m["scheme_text"],
+                    "percent_amount": m["percent_amount"], "fixed_amount": m["fixed_amount"],
+                    "salary": m["accrued"], "configured": m["configured"]})
     out.sort(key=lambda m: -m["revenue"])
     return out
 
@@ -384,14 +373,14 @@ def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str
     for e in expenses:
         for i, (x, y) in enumerate(buckets):
             exp[i] += _expense_in(e, x, y)
-    # Зарплата мастеров — пропорционально выручке шага (процент) + доля оклада
+    # Зарплата мастеров — всё, кроме оклада, пропорционально выручке шага; оклад — по дням
     payroll = _payroll(db, user, rng.a, rng.b, s, u)
-    pct_total = sum(m["revenue"] * m["pay_percent"] / 100.0 for m in payroll)
-    booking_rev_total = sum(m["revenue"] for m in payroll) or 0.0
+    var_total = sum(m["salary"] - m["fixed_amount"] for m in payroll)
     fixed_total = sum(m["pay_fixed"] for m in payroll)
+    rev_sum = sum(rev)
     for i, (x, y) in enumerate(buckets):
-        if booking_rev_total and pct_total:
-            exp[i] += pct_total * (rev[i] / max(sum(rev), 1e-9)) if sum(rev) else 0.0
+        if var_total and rev_sum:
+            exp[i] += var_total * (rev[i] / rev_sum)
         if fixed_total:
             exp[i] += month_share(fixed_total, x, y, rng.a, None)
     months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]

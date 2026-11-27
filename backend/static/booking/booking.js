@@ -214,6 +214,7 @@
       '<div class="bk-kpis">' +
       kpi('Записей', active.length) + kpi('Пришли', arrived.length, 'good') + kpi('Не пришли', noshow.length, noshow.length ? 'bad' : '') +
       kpi('Выручка', revenue ? revenue.toLocaleString('ru-RU') + ' сом' : '—') + '</div>' +
+      '<div class="bk-att" id="bk-att"' + (attHtml(st.day) ? '' : ' hidden') + '>' + attHtml(st.day) + '</div>' +
       '<div class="bk-days" id="bk-days">' + dayStrip() + '</div>' +
       (resources().length > 1 ? '<div class="bk-mchips">' + '<button type="button" class="bk-mchip' + (!st.filter ? ' on' : '') + '" data-mf=""><span class="bk-ava all" style="--s:30px">' + icon('users') + '</span><span>Все</span></button>' +
         resources().map(function (r) {
@@ -232,6 +233,7 @@
     var strip = root.querySelector('.bk-days'), cur = root.querySelector('.bk-dpill.on');
     if (keepStrip != null && strip) strip.scrollLeft = keepStrip;
     else if (cur && strip) strip.scrollLeft = Math.max(0, cur.offsetLeft - (strip.clientWidth - cur.offsetWidth) / 2);
+    syncAtt();
     var sc = root.querySelector('.bk-scroll');
     if (sc && keep) { sc.scrollTop = keep.t; sc.scrollLeft = keep.l; }
     else if (sc && st.view === 'day') {
@@ -239,6 +241,45 @@
       var target = now || first;
       if (target) sc.scrollTop = Math.max(0, target.offsetTop - 120);
     }
+  }
+  // «Кто сегодня работает» (шаг 3.3): выход мастера для ставки за выход — отмечает администратор одним нажатием.
+  // Полоса видна, когда у кого-то из мастеров есть ставка за выход; мастер с записями без отметки — подсвечен.
+  function attShown(k) { return (st.view === 'day' || isPhone()) && k <= keyOf(new Date()); }
+  function attHtml(k) {
+    var a = st.att && st.att[k];
+    if (!a || !a.any_rate || !a.can_mark || !a.masters.length || !attShown(k)) return '';
+    var t = keyOf(new Date()), d = parseKey(k);
+    var title = k === t ? 'Кто сегодня работает' : 'Кто работал ' + d.getUTCDate() + ' ' + MON[d.getUTCMonth()];
+    return '<span class="bk-att-t">' + icon('hand-coins') + esc(title) + '</span><div class="bk-att-l">' + a.masters.map(function (m) {
+      return '<button type="button" class="bk-att-c' + (m.worked ? ' on' : m.suggested ? ' hint' : '') + '" data-att="' + esc(m.id) + '" aria-pressed="' + m.worked + '" title="' +
+        esc(m.worked ? 'Выход отмечен' + (m.by ? ' · ' + m.by : '') + ' — нажмите, чтобы снять' : m.suggested ? 'Есть записи — отметьте, если мастер вышел' : 'Отметить выход') + '">' +
+        icon(m.worked ? 'check' : 'plus') + '<span>' + esc(String(m.name).split(' ')[0]) + '</span>' + (m.rate ? '<small>' + esc(Number(m.rate).toLocaleString('ru-RU')) + ' с</small>' : '') + '</button>';
+    }).join('') + '</div>';
+  }
+  function syncAtt() {
+    var box = root.querySelector('#bk-att'), k = st.day;
+    if (!box) return;
+    var h = st.attOff ? '' : attHtml(k);
+    box.innerHTML = h; box.hidden = !h;
+    if (st.attOff || !attShown(k) || (st.att && st.att[k]) || st.attLoading === k) return;
+    st.attLoading = k;
+    S.api('/api/payroll/attendance?date=' + k).then(function (r) {
+      st.attLoading = null;
+      if (!r.ok) { if (r.status === 403 || r.status === 404) st.attOff = true; return; }
+      (st.att = st.att || {})[k] = r.data;
+      if (st.day === k) syncAtt();
+    });
+  }
+  function toggleAtt(id) {
+    var k = st.day, a = st.att && st.att[k], m = a && a.masters.filter(function (x) { return x.id === id; })[0];
+    if (!m || m.busy) return;
+    var worked = !m.worked;
+    m.worked = worked; m.busy = true; syncAtt();
+    S.api('/api/payroll/attendance', { method: 'PUT', body: { resource_id: id, date: k, worked: worked } }).then(function (r) {
+      m.busy = false;
+      if (!r.ok) { m.worked = !worked; syncAtt(); S.toast(S.apiError(r), 'error'); return; }
+      S.toast(m.name + (worked ? ': выход отмечен' : ': выход снят'));
+    });
   }
   function canEditBookings() { return S.staffCan ? (S.staffCan('booking') || S.staffCan('booking_setup')) : true; }
   function kpi(t, v, cls) { return '<div class="bk-kpi ' + (cls || '') + '"><div class="t">' + esc(t) + '</div><div class="v">' + esc(v) + '</div></div>'; }
@@ -540,6 +581,8 @@
     var t = e.target;
     var mh = t.closest('[data-mh]');
     if (mh) { editMaster(mh.getAttribute('data-mh')); return; }
+    var at = t.closest('[data-att]');
+    if (at) { toggleAtt(at.getAttribute('data-att')); return; }
     var mf = t.closest('[data-mf]');
     if (mf) { st.filter = mf.getAttribute('data-mf'); render(); return; }
     var nav = t.closest('[data-nav]');

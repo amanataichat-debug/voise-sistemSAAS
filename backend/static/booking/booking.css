@@ -680,3 +680,24 @@ body.bk-dragging, body.bk-dragging * { user-select: none; -webkit-user-select: n
   .wl-grid { grid-template-columns: 1fr 1fr; }
   .bk-wait-btn .bk-wait-n { position: absolute; top: -6px; right: -6px; }
 }
+
+/* шаг 3.3: «Кто сегодня работает» — выход мастера для ставки за выход */
+.bk-att { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--vf-border); background: var(--vf-surface); }
+.bk-att[hidden] { display: none; }
+.bk-att-t { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--vf-text-2); white-space: nowrap; }
+.bk-att-t .ic { width: 15px; height: 15px; color: var(--vf-accent); }
+.bk-att-l { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.bk-att-c { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--vf-border); background: var(--vf-surface);
+  color: var(--vf-text-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.bk-att-c .ic { width: 14px; height: 14px; }
+.bk-att-c small { font-weight: 500; color: var(--vf-text-3); font-size: 11.5px; }
+.bk-att-c.hint { border-style: dashed; border-color: #d9a441; background: var(--vf-warning-soft); color: #8a4b00; }
+.bk-att-c.on { border-color: #34a36b; background: var(--vf-success-soft); color: #0f7a3a; }
+.bk-att-c.on small { color: #0f7a3a; }
+@media (max-width: 760px) {
+  .bk-att { order: 2; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .bk-att-l { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
+  .bk-att-c { flex: none; }
+  .bk-att-l::-webkit-scrollbar { display: none; }
+  .bk-att-t { font-size: 12.5px; }
+}
