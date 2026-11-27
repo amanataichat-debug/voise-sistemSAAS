@@ -117,6 +117,8 @@ TOOLS = [
                 "date": {"type": "string", "description": "День: YYYY-MM-DD, «сегодня», «завтра». Пусто — сегодня"},
                 "days": {"type": "integer", "description": "Сколько дней показать (по умолчанию 1)"},
                 "agent_contact_id": {"type": "string", "description": "Только записи этого клиента (ближайшие)"},
+                "unconfirmed_only": {"type": "boolean",
+                                     "description": "Только записи, которые клиент ещё не подтвердил (для звонков-подтверждений)"},
             },
         },
     },
@@ -202,8 +204,26 @@ PROMPT_BLOCK = (
     "Если в ответе create_booking есть prepay — скажи клиенту сумму предоплаты и как её внести (prepay.how); "
     "запись подтвердят после оплаты. "
     "Нет подходящего времени — предложи лист ожидания (add_to_waitlist): освободится — клиенту придёт сообщение. "
-    "Клиент ответил на «освободилось время» из листа ожидания — answer_waitlist_offer."
+    "Клиент ответил на «освободилось время» из листа ожидания — answer_waitlist_offer. "
+    "Подтверждать визиты звонком — только если так сказано в инструкции владельца или он попросил в чате: "
+    "list_bookings(unconfirmed_only=true) на нужный день → клиентам с can_call — create_agent_task (в notes — какую "
+    "запись подтвердить), остальным — сообщение. На звонке голосовой агент сам подтвердит, перенесёт или отменит "
+    "запись (client_bookings, change_booking)."
 )
+
+
+def _listed(b, names: Dict[str, str]) -> Dict[str, Any]:
+    """Запись для list_bookings + можно ли ей позвонить (номер O!) — чтобы агент сам решал, кому звонить
+    подтвердить визит, а кому написать (шаг 2.6: как у Profi — решает агент по инструкции владельца)."""
+    d = bs.booking_to_dict(b, names)
+    try:
+        from backend.models.sip_gateway import is_o_number, normalize_sip_number
+        digits = normalize_sip_number(b.client_phone or "")
+        d["can_call"] = bool(len(digits) == 12 and digits.startswith("996") and is_o_number(digits))
+    except Exception:
+        d["can_call"] = False
+    d["confirmed"] = b.status == "confirmed"
+    return d
 
 
 def _match_resource(db: Session, user_id, master: Optional[str]):
@@ -295,7 +315,9 @@ async def _execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any]
                 start, _ = bs.day_bounds(day)
                 rows = bs.list_bookings(db, user.id, start, start + timedelta(days=max(1, min(int(args.get("days") or 1), 14))),
                                         include_cancelled=False)
-            return json.dumps({"ok": True, "bookings": [bs.booking_to_dict(b, names) for b in rows]}, ensure_ascii=False)
+            if args.get("unconfirmed_only"):
+                rows = [b for b in rows if b.status == "booked" and bs._aw(b.start_at) > bs.now_utc()]
+            return json.dumps({"ok": True, "bookings": [_listed(b, names) for b in rows]}, ensure_ascii=False)
     except bs.BookingError as e:
         db.rollback()
         return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)

@@ -596,6 +596,7 @@ async def sip_media(
 
     # 6. Запуск браузерного хендлера через адаптер
     socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)
+    socket.transcript = transcript   # голосовые функции записи: перенос/отмена — только после ответа клиента на итог
     socket.start()
     started_at = datetime.utcnow()
     handler = SIP_HANDLERS[call.assistant_type]
