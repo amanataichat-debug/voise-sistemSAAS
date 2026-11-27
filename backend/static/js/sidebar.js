@@ -130,8 +130,10 @@
       if (item.money && biz && biz.niche && !mods.booking && !mods.orders) return;
       // ИИ-управляющий — где есть журнал записи (отчёт по записям, сценарии «вернуть / окна / повтор»)
       if (item.booking && !(biz && mods.booking)) return;
-      // Салону (Voksy Beauty) тариф Profi не продаётся — пункт с замком «Profi» не показываем
-      if (item.profi && biz && biz.beauty && !profi) return;
+      // Салону (Voksy Beauty) Profi не продаётся: агент обзвона у салона — на Beauty Pro. Раньше пункт у Beauty
+      // Start / AI / пробного прятался совсем, и владелец не находил, где настраивается агент (27.11.2026) —
+      // теперь он виден с замком «Beauty Pro» и ведёт к выбору тарифа с выделенным Beauty Pro
+      if (item.profi && biz && biz.beauty && !profi) item = Object.assign({}, item, { beautyLock: true });
       if (item.id === 'crm-nav-item' && profi) {
         // Profi: «CRM» — клиенты агента (общая страница со Стартом), а не старая база контактов ассистентов
         item = Object.assign({}, item, { href: '/static/start-crm.html', aliases: ['/static/crm.html', '/static/crm-contact.html'] });
@@ -236,7 +238,7 @@
   var LOCK_STYLE = [
     '.sidebar-nav-item.vf-profi-locked{position:relative;color:var(--vf-text-3,#63738b)}',
     '.sidebar-nav-item.vf-profi-locked>.ic:first-child{opacity:.7}',
-    '.vf-profi-pill{margin-left:auto;display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 6px;border-radius:999px;',
+    '.vf-profi-pill{margin-left:auto;display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 6px;border-radius:999px;white-space:nowrap;flex:0 0 auto;',
     'font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#8a5a00;background:linear-gradient(135deg,#fff4d6,#ffe7a8);border:1px solid #f3d58a}',
     '.vf-profi-pill .ic{width:11px;height:11px}',
     '.sidebar-nav-item.vf-profi-locked:hover .vf-profi-pill{border-color:#e0b84f}'
@@ -245,6 +247,10 @@
   function profiLocked(item) {
     return !!item.profi && cachedMode() !== 'full';
   }
+  // Салон: замок «Beauty Pro» и выбор тарифа сразу на нём (у остальных — «Profi»)
+  var BEAUTY_PRO_URL = '/static/dashboard.html#plans:beauty_pro';
+  function lockUrl(item) { return item.beautyLock ? BEAUTY_PRO_URL : PLANS_URL; }
+  function lockPill(item) { return item.beautyLock ? 'Beauty Pro' : 'Profi'; }
 
   function renderItem(item) {
     if (item.section) {
@@ -269,18 +275,21 @@
         st.textContent = LOCK_STYLE;
         document.head.appendChild(st);
       }
-      a.href = PLANS_URL;
+      a.href = lockUrl(item);
       a.className = 'sidebar-nav-item vf-profi-locked';
       a.setAttribute('data-no-prefetch', '1');
-      a.title = T('sidebar.profi_only', 'Автономный агент: сам звонит и пишет клиентам. Доступен после оплаты тарифа Profi');
+      a.title = item.beautyLock
+        ? T('sidebar.beauty_pro_only', 'Агент сам пишет и звонит клиентам салона: подтверждает записи, возвращает тех, кто давно не был, заполняет пустые окна. Настраивается на тарифе Beauty Pro')
+        : T('sidebar.profi_only', 'Автономный агент: сам звонит и пишет клиентам. Доступен после оплаты тарифа Profi');
       a.innerHTML = icon(item.lucide) + '<span>' + T(item.label, item.def) + '</span>' +
-        '<span class="vf-profi-pill">' + icon('lock') + 'Profi</span>';
+        '<span class="vf-profi-pill">' + icon('lock') + esc(lockPill(item)) + '</span>';
       a.addEventListener('click', function (e) {
         // Уже на дашборде: смена хэша не перезагружает страницу — дашборд слушает hashchange
         if (currentPath() === '/static/dashboard.html') {
           e.preventDefault();
-          if (location.hash === '#plans') history.replaceState(null, '', location.pathname);
-          location.hash = 'plans';
+          var h = lockUrl(item).split('#')[1];
+          if (location.hash === '#' + h) history.replaceState(null, '', location.pathname);
+          location.hash = h;
         }
       });
       return a;
@@ -785,10 +794,10 @@
     }
     html += '<div class="vf-more-grid">' + items.map(function (it) {
       var locked = profiLocked(it);
-      var href = locked ? PLANS_URL : it.href;
+      var href = locked ? lockUrl(it) : it.href;
       var on = isActive(it) ? ' on' : '';
       return '<a class="vf-more-it' + on + '" href="' + esc(href) + '">' + icon(it.lucide || it.icon || 'circle') +
-        '<span>' + esc(it.label ? T(it.label, it.def) : it.def) + '</span>' + (locked ? '<span class="lk">Profi</span>' : '') + '</a>';
+        '<span>' + esc(it.label ? T(it.label, it.def) : it.def) + '</span>' + (locked ? '<span class="lk">' + esc(lockPill(it)) + '</span>' : '') + '</a>';
     }).join('') + '</div>';
     html += '<div class="vf-more-foot"><div class="vf-more-lang">' +
       '<button type="button" data-lang="ru" class="' + (ky ? '' : 'on') + '">RU</button>' +

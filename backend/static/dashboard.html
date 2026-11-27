@@ -3357,10 +3357,12 @@
       // Ссылка /static/dashboard.html#plans (например, «Profi» на странице агента
       // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi; у салона — тариф Beauty
       // по умолчанию (текущий или рекомендованный).
+      // #plans:beauty_pro — выбор тарифа сразу на нём (замок «Beauty Pro» у агента обзвона в меню салона)
       function openPlansFromHash() {
-        if (location.hash !== '#plans') return;
+        var m = /^#plans(?::([a-z0-9_]+))?$/.exec(location.hash || '');
+        if (!m) return;
         setTimeout(function () {
-          showPaymentModal(PLAN_PRODUCT === 'beauty' ? null : 'profi');
+          showPaymentModal(m[1] || (PLAN_PRODUCT === 'beauty' ? null : 'profi'));
         }, 300);
       }
       openPlansFromHash();

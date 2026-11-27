@@ -630,3 +630,12 @@
 }
 .cs-optout { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 4px 0 8px; cursor: pointer; }
 .cs-optout input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--vf-accent); }
+
+/* Салон на Beauty Start / AI: где агент обзвона (Voksy Beauty, 27.11.2026) */
+.st-pro-note { display: flex; align-items: center; gap: 12px; margin: 14px 0 4px; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid #f3d58a; background: linear-gradient(135deg, #fffaf0, #fff4d6); font-size: 13.5px; line-height: 1.45; color: var(--vf-text-2, #334155); }
+.st-pro-note > .ic { width: 22px; height: 22px; flex: 0 0 auto; color: #8a5a00; }
+.st-pro-note > div { flex: 1; min-width: 0; }
+.st-pro-note b { color: var(--vf-text, #0e1729); }
+.st-pro-note .btn { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 760px) { .st-pro-note { flex-wrap: wrap; } .st-pro-note .btn { width: 100%; justify-content: center; } }

@@ -59,12 +59,19 @@ async function renderStep0(c){
   drawStep0(c);
 }
 
+// Салон (Voksy Beauty Pro = Profi под салон): тот же мастер и те же поля, тексты — про салон.
+// obSalon() — в onboarding.js (кэш профиля бизнеса или window.AGENT_SALON).
+function wizSalon(){ return typeof obSalon === 'function' && obSalon(); }
+
 function drawStep0(c){
   const has = !!(wizardTele && wizardTele.has_numbers);
   const phoneBanner = has
     ? `<div class="tele-banner ok"><i class="fas fa-circle-check"></i> <span>В вашей телефонии есть номер — после создания выберите его в настройках агента («Звонки»).</span></div>`
     : `<div class="tele-banner info"><i class="fas fa-circle-info"></i> <span>Номера пока нет — агента можно создать и без него: чат, Telegram и Instagram работают сразу. Номер подключается позже в настройках агента.</span></div>`;
-  c.innerHTML = `<h2>Создание агента</h2><p class="hint">Агент — это «мозг»-оркестратор, который ведёт вашу базу и планирует звонки, и голосовой ассистент, который разговаривает с клиентами.</p>
+  const intro = wizSalon()
+    ? 'Агент — ИИ-администратор салона: оркестратор ведёт клиентов, записи и задачи (сам пишет и звонит по вашей инструкции), голосовой агент разговаривает с клиентами по телефону. Услуги, цены, мастера и свободное время он берёт из журнала записи сам.'
+    : 'Агент — это «мозг»-оркестратор, который ведёт вашу базу и планирует звонки, и голосовой ассистент, который разговаривает с клиентами.';
+  c.innerHTML = `<h2>Создание агента</h2><p class="hint">${intro}</p>
     <div class="type-card selected" style="cursor:default">
       <div class="type-radio"></div>
       <div class="type-info">
@@ -84,23 +91,33 @@ const WIZ_DOCS = [ null,
   { key:'doc_what_we_offer', title:'Что предлагаем', hint:'Продукты, цены, акции.', ph:'Тариф «Старт» — 2 990 сом/мес...' },
   { key:'doc_rules_and_goals', title:'Правила и цели', hint:'KPI, лимиты, что считать успехом.', ph:'Цель: назначить встречу. Макс 3 попытки...' },
 ];
+// Салон: «Что предлагаем» можно оставить пустым — прайс агент читает из «Услуг» (salon_ai_tools.get_services)
+const WIZ_DOCS_SALON = [ null,
+  { key:'doc_who_am_i', title:'Кто мы', hint:'Салон: название, адрес, чем вы отличаетесь. Услуги, мастеров и цены агент видит в журнале записи сам.', ph:'Мы — салон красоты «Айдана» в Бишкеке, 7 мкр. Маникюр, педикюр, окрашивание. Работаем с 9:00 до 21:00 без выходных.' },
+  { key:'doc_who_we_call', title:'Наши клиенты', hint:'Кто к вам ходит и чего ждёт.', ph:'Женщины 20–45 лет из района. Многие ходят раз в 3–4 недели к своему мастеру, ценят аккуратность и запись без ожидания.' },
+  { key:'doc_how_we_talk', title:'Как говорим', hint:'Тон общения и имя агента — так он представляется клиентам.', ph:'Тепло и коротко, на «вы». Зовут Айгерим, администратор салона.', extra:true },
+  { key:'doc_what_we_offer', title:'Что предлагаем', hint:'Акции и что советовать. Прайс повторять не нужно — агент берёт его из «Услуг». Можно оставить пустым.', ph:'При записи на маникюр и педикюр вместе — скидка 10%. Новым клиентам советуем маникюр с покрытием.', optional:true },
+  { key:'doc_rules_and_goals', title:'Правила записи и цели', hint:'Чего агент добивается, когда сам звонит или пишет первым, и чего не обещает.', ph:'Цель — записать клиента к мастеру. За день напоминаем о записи. Предоплата 30% на окрашивание. Скидки сверх акций не обещать, жалобы передавать администратору.' },
+];
+function wizDocs(){ return wizSalon() ? WIZ_DOCS_SALON : WIZ_DOCS; }
+
 function renderDocStep(c){
-  const s = WIZ_DOCS[wizardStep];
+  const s = wizDocs()[wizardStep];
   c.innerHTML = `<h2>Шаг ${wizardStep}: ${s.title}</h2><p class="hint">${s.hint}</p>
     ${s.extra?`<div class="form-group"><label class="form-label">Имя агента *</label><input type="text" class="form-input" id="w-name" value="${esc(wizardData.name||'')}" placeholder="Алина"></div>`:''}
     <div class="form-group"><textarea class="form-textarea" id="w-ta" rows="6" placeholder="${esc(s.ph)}">${esc(wizardData[s.key]||'')}</textarea></div>
     <div class="wizard-actions"><button class="btn btn-secondary" onclick="wizardBack()"><i class="fas fa-arrow-left"></i> Назад</button><button class="btn btn-primary" onclick="wizardNextDoc()">Далее <i class="fas fa-arrow-right"></i></button></div>`;
 }
 function saveDocStep(){
-  const s = WIZ_DOCS[wizardStep];
+  const s = wizDocs()[wizardStep];
   const ta = document.getElementById('w-ta'); if(ta) wizardData[s.key]=ta.value;
   const nm = document.getElementById('w-name'); if(nm) wizardData.name=nm.value;
   persistWizard();
 }
 function wizardNextDoc(){
   saveDocStep();
-  const s = WIZ_DOCS[wizardStep];
-  if(!(wizardData[s.key]||'').trim()){ showToast('Заполните поле','error'); return; }
+  const s = wizDocs()[wizardStep];
+  if(!s.optional && !(wizardData[s.key]||'').trim()){ showToast('Заполните поле','error'); return; }
   if(wizardStep===3 && !(wizardData.name||'').trim()){ showToast('Укажите имя агента','error'); return; }
   wizardStep++; renderWizard();
 }
@@ -111,8 +128,15 @@ function wizardBack(){
 }
 
 function renderInstructionsStep(c){
-  c.innerHTML = `<h2>Инструкции для оркестратора</h2><p class="hint">Опционально. Правила планирования звонков и работы с контактами для текстового мозга-оркестратора. В живом телефонном разговоре НЕ используются — для этого поле инструкций голосового агента на следующем шаге.</p>
-    <div class="form-group"><textarea class="form-textarea" id="w-instr" rows="6" placeholder="Например: «перед обзвоном новых контактов проверяй дубли», «не планируй звонки в выходные».">${esc(wizardData.additional_instructions||'')}</textarea></div>
+  const salon = wizSalon();
+  const hint = salon
+    ? 'Опционально. Как агент ведёт клиентов салона в переписке и кому сам пишет или звонит. В живом телефонном разговоре НЕ используются — для этого поле инструкций голосового агента на следующем шаге.'
+    : 'Опционально. Правила планирования звонков и работы с контактами для текстового мозга-оркестратора. В живом телефонном разговоре НЕ используются — для этого поле инструкций голосового агента на следующем шаге.';
+  const ph = salon
+    ? 'Например: «за день до записи напоминай клиенту в WhatsApp», «кто не был больше двух месяцев — пригласи к его мастеру», «не звони после 20:00».'
+    : 'Например: «перед обзвоном новых контактов проверяй дубли», «не планируй звонки в выходные».';
+  c.innerHTML = `<h2>Инструкции для оркестратора</h2><p class="hint">${hint}</p>
+    <div class="form-group"><textarea class="form-textarea" id="w-instr" rows="6" placeholder="${esc(ph)}">${esc(wizardData.additional_instructions||'')}</textarea></div>
     <div class="wizard-actions"><button class="btn btn-secondary" onclick="wizardBack()"><i class="fas fa-arrow-left"></i> Назад</button><button class="btn btn-primary" onclick="wizardNextInstr()">Далее <i class="fas fa-arrow-right"></i></button></div>`;
 }
 function wizardNextInstr(){ const ta=document.getElementById('w-instr'); wizardData.additional_instructions=ta?ta.value:''; persistWizard(); wizardStep=7; renderWizard(); }
@@ -176,7 +200,10 @@ async function renderCreation(c){
       // ✅ Онбординг: сообщаем про тестовый период или необходимость тарифа
       const note = document.createElement('div');
       note.style.cssText = 'margin-top:12px;font-size:13.5px;color:var(--hint)';
-      if(created.trial_activated){
+      if(wizSalon()){
+        // Салон на Beauty Pro: агент уже входит в тариф — никакого «теста» и «Profi»
+        if(created.trial_activated) note.innerHTML = '🎉 На старт начислено <b>1 500 кредитов ИИ</b>. Дальше подключите мессенджеры и номер — блок «Настройки агента» на странице агента.';
+      } else if(created.trial_activated){
         note.innerHTML = '🎉 Вам доступен бесплатный <b>тестовый период на 3 дня</b> и <b>1 500 кредитов</b> для теста оркестратора. После теста агент доступен на тарифе <b>Profi</b> (включает кредиты).';
       } else if(created.agent_trial_used){
         note.innerHTML = 'Тестовый период уже использован. Агент доступен на тарифе <b>Profi</b>. <button class="sub-action" onclick="location.href=\'/static/dashboard.html\'">Перейти к тарифам</button>';
