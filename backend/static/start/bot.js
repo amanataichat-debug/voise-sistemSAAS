@@ -345,6 +345,11 @@
       '<div class="hint">Пишите так, как объясняли бы новому сотруднику: как вежливо общаться, в какой момент отправлять файлы и фото, что узнавать у клиента, когда звать вас. Чем конкретнее, тем лучше ответы.</div></div>' +
       '<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="i-save-chat" type="button">Сохранить</button><button class="btn" id="i-gen-chat" type="button">' + icon('wand-2') + '<span>Сгенерировать по описанию</span></button><button class="btn" id="i-fix-chat" type="button"><span>Добавить правку</span></button><button class="btn" id="i-tpl-chat" type="button"><span>Вставить шаблон</span></button></div>' +
 
+      '<div class="st-sub-h" style="margin-top:26px">Цель звонка</div>' +
+      '<div class="field"><textarea class="textarea" id="i-goal" rows="2" maxlength="600" placeholder="' + esc(A.voice_goal_default ? ('По нише: ' + A.voice_goal_default) : 'Например: принять заказ — что и сколько, доставка или самовывоз, адрес, время, оплата') + '">' + esc(A.voice_goal || '') + '</textarea>' +
+      '<div class="hint">К какому результату бот ведёт каждый звонок: заказ, запись, встреча, заявка. Бот отвечает коротко и каждым ответом двигает разговор к этой цели, а всё собрав — подтверждает итог одной фразой. Пусто — цель по вашей нише' + (A.voice_goal_default ? '' : ' (выберите нишу в «Настройки → Мой бизнес»)') + '.</div></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn btn-primary" id="i-save-goal" type="button">Сохранить цель</button></div>' +
+
       '<div class="st-sub-h" style="margin-top:26px">Инструкция для звонков</div>' +
       '<div class="field"><textarea class="textarea" id="i-vadd" rows="6" placeholder="Стиль общения по телефону, манера, что говорить и чего не говорить">' + esc(A.voice_additional_instructions || '') + '</textarea>' +
       '<div class="hint">Как бот звучит и ведёт себя в телефонном разговоре: темп, тон, что уточнять, как заканчивать звонок. Знания из базы бот берёт сам.</div></div>' +
@@ -403,6 +408,9 @@
     S.$('#i-save-chat').addEventListener('click', function () {
       if (!filled(S.$('#i-add').value)) return;
       saveBody({ additional_instructions: S.$('#i-add').value }, this, 'Инструкция для переписки сохранена');
+    });
+    S.$('#i-save-goal').addEventListener('click', function () {
+      saveBody({ voice_goal: S.$('#i-goal').value.trim() }, this, 'Цель звонка сохранена');
     });
     S.$('#i-save-voice').addEventListener('click', function () {
       if (!filled(S.$('#i-vadd').value)) return;

@@ -2431,6 +2431,9 @@ def ensure_branding_columns():
         "ADD COLUMN IF NOT EXISTS call_window_enabled BOOLEAN NOT NULL DEFAULT TRUE",
         # Голосовой режим владельца (ветка 0811-voice-jarvis): обращение и голос
         "ADD COLUMN IF NOT EXISTS owner_voice_prefs JSONB",
+        # Цель звонка (27.11.2026, звонок f9b4a269): к какому результату голосовой агент ведёт клиента;
+        # пусто — цель ниши владельца (agent_voice_context.call_goal_block)
+        "ADD COLUMN IF NOT EXISTS voice_goal TEXT",
     ]
     try:
         inspector = inspect(engine)

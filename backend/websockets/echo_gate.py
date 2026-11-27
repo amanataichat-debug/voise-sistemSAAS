@@ -59,6 +59,23 @@ class LineEchoGate:
         self.gated_seconds = 0.0          # сколько звука заменено тишиной
         self.passed_seconds = 0.0         # сколько речи клиента прошло поверх агента
 
+    def threshold(self) -> float:
+        """Порог «это речь клиента, а не эхо» поверх агента (его же использует остановка агента, barge_in.py)."""
+        return max(MIN_RMS, self.speech_rms * SPEECH_SHARE, (self.floor or 0.0) * FLOOR_FACTOR)
+
+    def observe(self, pcm: bytes) -> None:
+        """Ворота выключены, но остановке агента (barge_in.py) нужен уровень речи клиента и шум линии."""
+        if audioop is None or not pcm:
+            return
+        try:
+            rms = audioop.rms(pcm, 2)
+        except Exception:
+            return
+        is_speech = rms >= max(SPEECH_RMS, (self.floor or 0.0) * SPEECH_FLOOR_FACTOR)
+        self.floor = update_floor(self.floor, rms, is_speech)
+        if is_speech:
+            self.speech_rms = rms if self.speech_rms == 0.0 else self.speech_rms * 0.9 + rms * 0.1
+
     def process(self, pcm: bytes, agent_active: bool, dur: float, now: Optional[float] = None) -> bytes:
         """pcm — PCM16 mono. agent_active — агент говорит или договорил меньше ECHO_TAIL_SEC назад."""
         if not self.enabled or not pcm:
@@ -75,7 +92,7 @@ class LineEchoGate:
             if is_speech:
                 self.speech_rms = rms if self.speech_rms == 0.0 else self.speech_rms * 0.9 + rms * 0.1
             return pcm
-        threshold = max(MIN_RMS, self.speech_rms * SPEECH_SHARE, (floor or 0.0) * FLOOR_FACTOR)
+        threshold = self.threshold()
         if rms >= threshold:
             self.open_until = now + HOLD_SEC
         if now < self.open_until:

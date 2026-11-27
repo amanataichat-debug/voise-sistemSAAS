@@ -445,6 +445,11 @@ function openInstructionsModal(section){
   document.getElementById('i-additional_instructions').value = agentData.additional_instructions || '';
   document.getElementById('i-webhook_url').value = agentData.webhook_url || '';
   document.getElementById('i-voice_additional_instructions').value = agentData.voice_additional_instructions || '';
+  const goalEl = document.getElementById('i-voice_goal');
+  if(goalEl){
+    goalEl.value = agentData.voice_goal || '';
+    if(agentData.voice_goal_default) goalEl.placeholder = 'По нише: ' + agentData.voice_goal_default;
+  }
   document.getElementById('i-inbound_first_phrase').value = agentData.inbound_first_phrase || '';
   fillCallWindow();
   const vType = agentData.assistant_type || 'eleven';
@@ -551,6 +556,7 @@ async function saveInstructions(){
     additional_instructions: document.getElementById('i-additional_instructions').value,
     webhook_url: document.getElementById('i-webhook_url').value.trim() || null,
     voice_additional_instructions: document.getElementById('i-voice_additional_instructions').value,
+    ...(document.getElementById('i-voice_goal') ? {voice_goal: document.getElementById('i-voice_goal').value.trim()} : {}),
     inbound_first_phrase: document.getElementById('i-inbound_first_phrase').value.trim() || null,
     orchestrator_model: document.getElementById('i-orchestrator_model').value,
     ...readVoiceBody(agentData.assistant_type || 'eleven', I_VOICE_IDS),

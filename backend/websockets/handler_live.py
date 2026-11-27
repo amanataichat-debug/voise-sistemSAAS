@@ -53,6 +53,7 @@ from websockets.exceptions import ConnectionClosed
 from backend.core.config import settings
 from backend.core.spawn import spawn
 from backend.core.logging import get_logger
+from backend.websockets.barge_in import BargeInDetector
 from backend.websockets.echo_gate import ECHO_TAIL_SEC, LineEchoGate, update_floor
 from backend.functions import normalize_function_name
 from backend.models.assistant import AssistantConfig
@@ -186,6 +187,33 @@ INTENT_LOG = {
     "call_back_later": "Клиент занят, просит поговорить позже",
     "wants_human": "Клиент просит живого человека / менеджера",
 }
+
+# ── Перебивание и краткость держит код (27.11.2026, звонок f9b4a269) ──────────────────────────────────────
+# Клиент говорил поверх агента ~45 с из 265 («азыр токто» — «стой», «үш порцияга» — «на три порции»), агент
+# продолжал своё; четыре ответа длиннее 15 с; Decisions принял «азыр токтотосу» за прощание. OpenAI (live-prompting):
+# модель может говорить и после перебивания, приложению — «mute or drop the output, discard locally queued audio,
+# and send the corrective instruction»; инструкция по ходу разговора «can interrupt speech in progress».
+HARD_BARGE_IN = bool(getattr(settings, "LIVE_PHONE_BARGE_IN", True))
+BARGE_AUDIBLE_SEC = 0.6          # голос агента уходил в линию не дольше столько назад — значит, клиент его слышит
+BARGE_RELEASE_CALLER_QUIET = 0.3  # звук агента снова пускаем: клиент молчит столько…
+BARGE_RELEASE_MODEL_QUIET = 0.3   # …и модель после перебивания хоть раз замолчала на столько (старый ответ брошен)
+BARGE_DROP_MAX_SEC = 8.0          # дольше не глушим: модель так и не уступила — пускаем со следующей паузы
+BARGE_INSTRUCTIONS_MAX = 3        # первые перебивания — instructions.append (прерывает речь), дальше thinking
+BARGE_HINT = ("The caller started talking over you, so your audio was cut off. Do not continue or repeat the answer "
+              "you were giving; assume they did not hear the rest of it. Listen until they finish, then answer only "
+              "what they said, in one or two short sentences." + _HINT_LANG)
+BREVITY_HINT = ("The caller wants shorter answers. From now on keep each reply to one or two short sentences with one "
+                "idea: no lists, no explanations they did not ask for, no recap. If they ask for details, give them in "
+                "short pieces and let them react." + _HINT_LANG)
+BREVITY_REPLY_SEC = 14.0          # ответ длиннее — агент до конца звонка отвечает коротко
+# Просьба замолчать / подождать / дать сказать (не прощание!). Ловим прямо на фрагменте речи клиента — быстрее
+# Decisions. «Хватит» и «бир мүнөт» не берём: «хватит одной порции», «бир мүнөттө» — не про разговор.
+_STOP_TALK_RE = re.compile(
+    r"\bстоп\b|\bподожд(?:и|ите)\b|\bпогоди(?:те)?\b|\bдай(?:те)?\s+(?:мне\s+)?сказать\b|\bможно\s+я\s+скажу\b|"
+    r"\bвы\s+меня\s+не\s+слушаете\b|\bне\s+перебивайте\b|\bмного\s+говорите\b|"
+    r"\bтокто(?:ңуз\w*|гула|п\s+тур\w*|т\w*|чу)?\b|\bкүтө\s+тур\w*|\bкүтүп\s+тур\w*|\bмени\s+угу\w*|"
+    r"\bкөп\s+сүйлөй\w*|\bсүйлөбөй\s+тур\w*",
+    re.IGNORECASE)
 # Ошибки Live, которые не надо показывать клиенту (ответы на наши служебные события)
 _QUIET_ERROR_PREFIXES = ("instr_", "think_", "comm_", "mute_")
 # Потолок всплеска для пейсинга входящего аудио (секунды). OpenAI допускает всплески
@@ -561,6 +589,19 @@ class LiveVoiceSession:
         self.lang_mismatch = 0                 # ответы агента не на закреплённом языке
         self.lang_switch_lag: Optional[int] = None  # сколько ответов агента прошло, пока он перешёл на язык
         self._since_lock = 0
+        # Перебивание держит код (barge_in.py, только телефон): клиент заговорил поверх агента — звук агента в
+        # линию не идёт, пока модель не уступит; модель получает инструкцию слушать
+        self.barge = BargeInDetector(enabled=HARD_BARGE_IN)
+        self._barge_pending = ""            # причина: перебивание найдено в синхронной части, действие — async
+        self._barge_drop = False
+        self._barge_drop_at = 0.0
+        self._barge_voice_at = 0.0          # последний голос модели во время глушения
+        self._barge_model_paused = False    # модель хоть раз замолчала после перебивания
+        self._dropped_text = ""             # что модель говорила, а клиент уже не услышал
+        self.barge_total = 0
+        self.barge_by = {"voice": 0, "words": 0, "decisions": 0}
+        self._stop_scan_from = 0            # с какого места реплики клиента искать новую просьбу замолчать
+        self._brevity_locked = ""           # почему агент переведён на короткие ответы (пусто — не переведён)
 
     # ------------------------------------------------------------------ helpers
     async def emit(self, data: Dict[str, Any]) -> None:
@@ -612,6 +653,8 @@ class LiveVoiceSession:
         if self._first_audio_at is None:
             self._first_audio_at = time.time()
             _log(f"first audio from model {self._first_audio_at - self.started_at:.2f}s after session start")
+        if self._barge_drop and not self._barge_release(delta_b64):
+            return  # клиент перебил: этот звук модели в линию не идёт
         if not self._is_voiced(delta_b64):
             await self.emit({"type": "response.audio.delta", "delta": delta_b64})
             return
@@ -619,6 +662,7 @@ class LiveVoiceSession:
         self.voiced_bytes += len(delta_b64) * 3 // 4
         if not self.assistant_speaking:
             self.assistant_speaking = True
+            self.barge.rearm()  # новый ответ — снова можно перебить
             now = time.time()
             if self.call_log:
                 if self._user_spoke_at is not None:
@@ -648,17 +692,122 @@ class LiveVoiceSession:
         return int((now - last) * 1000)
 
     def _gate_input(self, audio_b64: str, dur: float) -> str:
-        """Телефон: пока агент говорит (и ECHO_TAIL_SEC после), тихий звук линии → тишина (echo_gate.py)."""
-        if not self.echo_gate.enabled or not self._is_phone():
+        """
+        Телефон: (1) клиент заговорил поверх звучащего агента дольше поддакивания → _barge_pending (barge_in.py);
+        (2) пока агент говорит (и ECHO_TAIL_SEC после), тихий звук линии приглушается (echo_gate.py).
+        """
+        if not self._is_phone() or not (self.echo_gate.enabled or self.barge.enabled):
             return audio_b64
         try:
             pcm = base64.b64decode(audio_b64)
         except Exception:
             return audio_b64
         now = time.time()
+        if self.barge.enabled and audioop is not None and not self._barge_drop and not self._hangup_sent:
+            try:
+                rms = audioop.rms(pcm, 2)
+            except Exception:
+                rms = 0
+            audible = bool(self._last_audio_at) and now - self._last_audio_at < BARGE_AUDIBLE_SEC
+            if self.barge.feed(rms, dur, audible, self.echo_gate.threshold(), self.echo_gate.speech_rms):
+                self._barge_pending = "voice"
         agent_active = bool(self.assistant_speaking or (self._last_audio_at and now - self._last_audio_at < ECHO_TAIL_SEC))
+        if not self.echo_gate.enabled:
+            if not agent_active:
+                self.echo_gate.observe(pcm)  # уровень речи клиента нужен остановке агента и без ворот
+            return audio_b64
         out = self.echo_gate.process(pcm, agent_active, dur, now)
         return audio_b64 if out is pcm else base64.b64encode(out).decode()
+
+    # ------------------------------------------------------------------ перебивание (barge_in.py)
+    def _agent_audible(self, now: float) -> bool:
+        return bool(self.assistant_speaking or (self._last_audio_at and now - self._last_audio_at < BARGE_AUDIBLE_SEC))
+
+    async def _hard_barge_in(self, source: str, now: Optional[float] = None) -> None:
+        """
+        Клиент перебил: звук агента в линию больше не идёт, мост сбрасывает очередь, модель получает инструкцию
+        замолчать и ответить на слова клиента. Звук вернётся, когда модель уступит (_barge_release).
+        """
+        now = now or time.time()
+        if self._barge_drop or self._hangup_sent or not self._is_phone():
+            return
+        self._barge_drop = True
+        self._barge_drop_at = now
+        self._barge_voice_at = now
+        self._barge_model_paused = False
+        self._dropped_text = ""
+        self.barge_total += 1
+        self.barge_by[source] = self.barge_by.get(source, 0) + 1
+        if source == "voice":
+            self.barge.expect_words(now)  # слов клиента не будет — значит, это было эхо или шум
+        heard = " ".join(self._log_buf.get("assistant", "").split())
+        why = {"voice": "заговорил поверх агента", "words": "попросил замолчать или подождать",
+               "decisions": "попросил замолчать (Decisions)"}.get(source, source)
+        _log(f"barge-in #{self.barge_total} ({source}): agent audio cut after «{heard[-80:]}»")
+        if self.call_log:
+            self.call_log.interruptions += 1
+            self.call_log.add("session", f"Клиент {why} — звук агента остановлен кодом, модели велено слушать")
+        # Ответ, который клиент перебил, закончился сейчас: длительность, строка журнала, конец речи для виджета
+        if self.assistant_speaking:
+            self.assistant_speaking = False
+            if self._reply_started_at:
+                self.reply_durations.append(max(0.0, now - self._reply_started_at))
+            self._flush_log("assistant")
+            await self.emit({"type": "assistant.speech.ended", "timestamp": now})
+        # Очередь моста сброшена — эха почти не будет: эхо-ворота перестают глушить клиента через ~0,25 с
+        self._last_audio_at = min(self._last_audio_at, now - ECHO_TAIL_SEC + 0.25)
+        await self.emit({"type": "conversation.interrupted", "reason": "caller_barge_in"})
+        try:
+            if self.barge_total <= BARGE_INSTRUCTIONS_MAX:
+                await self.client.append_instructions(BARGE_HINT)
+            else:
+                await self.client.append_thinking(BARGE_HINT)
+        except Exception as exc:
+            _log(f"barge-in hint failed: {exc}", "WARNING")
+        if self.barge_total >= 2:
+            await self._lock_brevity("клиент перебивал агента")
+
+    def _barge_release(self, delta_b64: str) -> bool:
+        """
+        Во время глушения: True — звук модели снова можно пускать в линию (этот кусок уже пойдёт).
+        Пускаем, когда модель после перебивания хоть раз замолчала (старый ответ брошен) и клиент молчит; или
+        когда глушим дольше BARGE_DROP_MAX_SEC и модель сделала паузу.
+        """
+        now = time.time()
+        voiced = self._is_voiced(delta_b64)
+        if now - self._barge_voice_at >= BARGE_RELEASE_MODEL_QUIET:
+            self._barge_model_paused = True
+        caller_quiet = now - max(self._last_user_audio_at, self._barge_drop_at) >= BARGE_RELEASE_CALLER_QUIET
+        timed_out = now - self._barge_drop_at >= BARGE_DROP_MAX_SEC
+        if self._barge_model_paused and (caller_quiet or timed_out):
+            self._barge_drop = False
+            dropped = " ".join(self._dropped_text.split())
+            self._dropped_text = ""
+            if dropped and self.call_log:
+                self.call_log.add("session", f"Не прозвучало (клиент перебил): «{dropped[:160]}»")
+            return True
+        if voiced:
+            self._barge_voice_at = now
+        return False
+
+    async def _lock_brevity(self, why: str) -> None:
+        """Постоянная инструкция «отвечай коротко» до конца звонка (один раз)."""
+        if self._brevity_locked or self.stop_event.is_set():
+            return
+        self._brevity_locked = why
+        _log(f"brevity lock: {why}")
+        if self.call_log:
+            self.call_log.add("session", f"Агент переведён на короткие ответы до конца звонка: {why}")
+        try:
+            await self.client.append_instructions(BREVITY_HINT)
+        except Exception as exc:
+            _log(f"brevity lock failed: {exc}", "WARNING")
+
+    async def _on_stop_request(self, source: str, now: float) -> None:
+        """Клиент просит замолчать / подождать / дать сказать (словами или по Decisions) — это не прощание."""
+        if self._agent_audible(now) or self._barge_drop:
+            await self._hard_barge_in(source, now)
+            await self._lock_brevity("клиент попросил замолчать")
 
     def _track_input_level(self, audio_b64: str) -> None:
         """Вход клиента, пока ассистент молчит: громкий кусок над шумом линии = клиент ещё говорит."""
@@ -757,9 +906,18 @@ class LiveVoiceSession:
                 if self.assistant_speaking and time.time() - self._last_audio_at > OUTPUT_IDLE_SEC:
                     self.assistant_speaking = False
                     if self._reply_started_at:
-                        self.reply_durations.append(max(0.0, self._last_audio_at - self._reply_started_at))
+                        took = max(0.0, self._last_audio_at - self._reply_started_at)
+                        self.reply_durations.append(took)
+                        if took >= BREVITY_REPLY_SEC and self._is_phone():
+                            self._track(self._lock_brevity(f"ответ длился {int(took)} с — это монолог"))
                     self._flush_log("assistant")
                     await self.emit({"type": "assistant.speech.ended", "timestamp": time.time()})
+                if self.barge.check_false(time.time()) and self.call_log:
+                    self.call_log.add("session", "Остановка агента сработала без слов клиента — похоже, это было эхо "
+                                      "или шум линии")
+                    if self.barge.disabled_reason:
+                        self.call_log.add("session", "Остановку агента по голосу клиента код выключил до конца "
+                                          f"звонка: {self.barge.disabled_reason}", level="warning")
                 if self._should_auto_hangup(time.time()):
                     await self._auto_hangup()
         except asyncio.CancelledError:
@@ -793,6 +951,8 @@ class LiveVoiceSession:
 
     def _flush_log(self, role: str) -> None:
         text = " ".join(self._log_buf.get(role, "").split())
+        if role == "user":
+            self._stop_scan_from = 0
         if role == "user" and text:
             self._last_user_text = text
             self._user_turns = (self._user_turns + [text])[-8:]
@@ -852,6 +1012,20 @@ class LiveVoiceSession:
                           f"{int(max(long_replies))} с) — монолог, клиент перестаёт слушать")
         if self.echo_gate.summary():
             info.append(self.echo_gate.summary())
+        # 27.11.2026 (звонок f9b4a269): перебивания GPT-Live раньше не считались вовсе («перебиваний: 0»)
+        if self.barge_total:
+            how = ", ".join(f"{n} — {w}" for w, n in (
+                ("голосом поверх агента", self.barge_by.get("voice", 0)),
+                ("словами «стоп / подождите / токто»", self.barge_by.get("words", 0)),
+                ("по Decisions", self.barge_by.get("decisions", 0))) if n)
+            info.append(f"клиент перебивал агента {self.barge_total} раз ({how}) — звук агента останавливал код")
+            if self.barge_total >= 3:
+                issues.append(f"клиент перебивал агента {self.barge_total} раз — агент говорил слишком долго или не "
+                              f"слушал; проверьте, не длинная ли инструкция и знает ли агент ответы наизусть")
+        if self.barge.false_count:
+            info.append(f"остановок без слов клиента (эхо/шум): {self.barge.false_count}")
+        if self._brevity_locked:
+            info.append(f"короткие ответы включены по ходу звонка: {self._brevity_locked}")
 
         if elapsed > 20 and self.voiced_bytes:
             talk = self.voiced_bytes / (self.client.io_rate * 2)
@@ -965,11 +1139,25 @@ class LiveVoiceSession:
         if etype in ("session.input_transcript.delta", "session.output_transcript.delta"):
             role = "user" if etype.startswith("session.input") else "assistant"
             delta = event.get("delta") or event.get("text") or ""
+            if role == "assistant" and self._barge_drop:
+                # Клиент перебил, звук этих слов в линию не идёт: в диалог и стенограмму их не пишем
+                self._dropped_text += delta
+                return
             self.transcript.add(role, delta, event.get("start_ms"), event.get("end_ms"))
             self._log_transcript(role, delta)
             if role == "user" and delta.strip():
-                self._user_spoke_at = time.time()
-                self._last_user_voice_at = time.time()
+                now = time.time()
+                self._user_spoke_at = now
+                self._last_user_voice_at = now
+                if re.search(r"[^\W\d_]", delta):
+                    self.barge.words_heard()
+                # «Стоп», «подождите», «азыр токто» поверх агента — сразу замолчать (не ждём Decisions).
+                # Смотрим только новый кусок реплики: одно «токто» не должно глушить и следующий ответ.
+                m = _STOP_TALK_RE.search(self._log_buf.get("user") or "", self._stop_scan_from)
+                if m:
+                    self._stop_scan_from = m.end()
+                    if self._agent_audible(now) or self._barge_drop:
+                        await self._on_stop_request("words", now)
             await self.emit({"type": "transcript.delta", "role": role, "delta": delta,
                              "start_ms": event.get("start_ms"), "end_ms": event.get("end_ms")})
             return
@@ -1048,6 +1236,20 @@ class LiveVoiceSession:
         intent = answers.get("caller_intent") or "none"
         mood = answers.get("caller_mood") or "neutral"
         now = time.time()
+        # Звонок f9b4a269: «Азыр токтотосу» («остановись сейчас») Decisions принял за прощание — хендлер начал ждать
+        # тишины, чтобы положить трубку. Просьба замолчать — не прощание.
+        recent_user = (self._log_buf.get("user") or "") + " " + self._last_user_text
+        if intent == "goodbye" and _STOP_TALK_RE.search(recent_user):
+            intent = "stop_talking"
+        if intent == "stop_talking":
+            if self.call_log and "stop_talking" not in self._intents_done:
+                self.call_log.add("session", "Клиент просит замолчать / дать сказать (Decisions) — это не прощание")
+            self._intents_done.add("stop_talking")
+            await self._on_stop_request("decisions", now)
+            # «Много говоришь», «не слушаешь» — и когда агент уже замолчал: до конца звонка отвечать коротко
+            await self._lock_brevity("клиент просит говорить меньше и слушать")
+            await self._on_cue(answers.get("caller_cue") or "none", now)
+            return
 
         if intent == "answering_machine":
             if (self._is_phone() and self.direction == "outbound" and now - self.started_at < AMD_WINDOW_SEC
@@ -1285,6 +1487,9 @@ class LiveVoiceSession:
                     if await self.client.send_audio_b64(audio):
                         self._audio_allowance -= dur
                         self.audio_chunks_in += 1
+                    if self._barge_pending:
+                        source, self._barge_pending = self._barge_pending, ""
+                        await self._hard_barge_in(source, now)
                 continue
             if mtype == "ping":
                 await self.emit({"type": "pong"})
