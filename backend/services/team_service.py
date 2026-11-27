@@ -61,7 +61,7 @@ PERMISSIONS: List[Dict[str, str]] = [
     {"key": "crm", "title": "Клиенты", "icon": "users",
      "hint": "Карточки клиентов, этапы, задачи, звонки и их записи"},
     {"key": "booking", "title": "Онлайн-запись", "icon": "calendar",
-     "hint": "Календарь: записать, перенести, отменить, отметить визит"},
+     "hint": "Календарь: записать, перенести, отменить, отметить визит, принять оплату (касса, своя смена)"},
     {"key": "booking_setup", "title": "Мастера и график", "icon": "clock",
      "hint": "Мастера, график работы и правила записи"},
     {"key": "booking_own", "title": "Свой журнал (мастер)", "icon": "user-round",
@@ -90,6 +90,7 @@ SECTION_PAGES = [
     ("crm", "/static/start-crm.html", "users", "Клиенты", "Кардарлар"),
     ("catalog", "/static/catalog.html", "package", "Каталог", "Каталог"),
     ("analytics", "/static/analytics.html", "chart-column", "Аналитика", "Аналитика"),
+    ("cash", "/static/cash.html", "wallet", "Касса", "Касса"),
     ("finance", "/static/finance.html", "banknote", "Финансы", "Каржы"),
     ("activity", "/static/activity.html", "history", "Журнал действий", "Аракеттер журналы"),
 ]
@@ -175,6 +176,14 @@ STAFF_RULES = [
     _rule("POST", r"^/api/finance/expenses/?$", "finance"),
     _rule("PATCH DELETE", r"^/api/finance/expenses/[^/]+/?$", "finance"),
     _rule("PATCH", r"^/api/finance/payroll/[^/]+/?$", "finance"),
+    # — касса (шаг 3.1): оплату и свою смену ведёт администратор («Онлайн-запись»); все смены — бухгалтер
+    #   («Финансы»; закрыть чужую смену и увидеть все — проверяет services/cashbox.can_manage)
+    _rule("GET", r"^/api/cash/(state|shifts|receipts)/?$", "booking", "finance"),
+    _rule("GET", r"^/api/cash/shifts/[0-9a-fA-F-]{36}/?$", "booking", "finance"),
+    _rule("POST", r"^/api/cash/shifts/[0-9a-fA-F-]{36}/close/?$", "booking", "finance"),
+    _rule("GET", r"^/api/cash/booking/[0-9a-fA-F-]{36}/?$", "booking"),
+    _rule("POST", r"^/api/cash/(pay|moves|shifts/open)/?$", "booking"),
+    _rule("POST", r"^/api/cash/receipts/[0-9a-fA-F-]{36}/refund/?$", "booking"),
     # — журнал действий (Voksy Beauty 1.7): управляющий; история записи в её карточке — тому же разделу —
     _rule("GET", r"^/api/beauty/activity/?$", "activity"),
     # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
@@ -216,7 +225,12 @@ def sections(perms: Iterable[str], catalog_title: Optional[str] = None) -> List[
     have = set(perms or ())
     out = []
     for key, href, icon, label, ky in SECTION_PAGES:
-        ok = bool(have & set(BOOKING_PERMS)) if key == "booking" else key in have
+        if key == "booking":
+            ok = bool(have & set(BOOKING_PERMS))
+        elif key == "cash":            # касса (шаг 3.1): администратор принимает оплату, бухгалтер смотрит смены
+            ok = bool(have & {"booking", "finance"})
+        else:
+            ok = key in have
         if not ok:
             continue
         if key == "catalog" and catalog_title:

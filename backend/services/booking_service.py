@@ -1074,7 +1074,14 @@ def stats(db: Session, user_id, start: datetime, end: datetime) -> Dict[str, Any
                count(*) FILTER (WHERE source = 'online') AS online
         FROM bookings WHERE user_id = :u AND start_at >= :a AND start_at < :b
     """), {"u": user_id, "a": start, "b": end}).mappings().first() or {}
-    return {k: (float(v) if k == "revenue" else int(v or 0)) for k, v in dict(row).items()}
+    out = {k: (float(v) if k == "revenue" else int(v or 0)) for k, v in dict(row).items()}
+    try:   # касса (шаг 3.1): выручка по оплатам, до начала кассы — по визитам
+        from backend.services import cashbox
+        if cashbox.cash_start(db, user_id) is not None:
+            out["revenue"] = cashbox.booking_revenue(db, user_id, start, end)
+    except Exception as e:
+        logger.debug(f"[BOOKING] stats revenue by payments: {e}")
+    return out
 
 
 # ───────────────────────────── блоки времени (шаг 1.4) ─────────────────────────────

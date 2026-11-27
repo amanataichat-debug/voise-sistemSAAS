@@ -84,6 +84,12 @@
     if (rp.bookings && rp.orders) {
       html += '<div class="fn-split"><div><span>Записи</span><b>' + money(rp.bookings) + '</b></div><div><span>Заказы</span><b>' + money(rp.orders) + '</b></div></div>';
     }
+    // Касса (шаг 3.1): с первой смены выручка записей — по оплатам, визит без оплаты в неё не входит
+    if (d.revenue_basis === 'payments' && d.revenue_since) {
+      var since = new Date(d.revenue_since + 'T12:00:00+06:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      html += '<div class="fn-basis">' + icon('wallet') + '<span>Выручка записей — по оплатам в <a href="/static/cash.html">кассе</a> с ' + esc(since) +
+        ' (раньше — по визитам «пришёл»). Визит без оплаты в выручку не входит.</span></div>';
+    }
 
     if (d.series && d.series.labels && d.series.labels.length > 1) {
       html += '<section class="fn-card"><div class="fn-card-h"><h3>По ' + ({ day: 'дням', week: 'неделям', month: 'месяцам' }[d.series.step] || 'дням') + '</h3>' +

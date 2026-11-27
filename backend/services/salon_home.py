@@ -113,12 +113,19 @@ def now_block(db: Session, user, now: datetime, names, colors) -> Dict[str, Any]
     running = [x for x in live if x.status in ("booked", "confirmed") and _aw(x.start_at) <= now < _aw(x.end_at)]
     upcoming = [x for x in live if x.status in ("booked", "confirmed") and _aw(x.start_at) > now]
     visited = [x for x in live if x.status in VISITED_STATUSES]
+    revenue = round(sum(float(x.price or 0) for x in visited), 2)
+    try:   # касса (шаг 3.1): салон принимает оплату — выручка дня по оплатам
+        from backend.services import cashbox
+        if cashbox.cash_start(db, user.id) is not None:
+            revenue = cashbox.booking_revenue(db, user.id, a, b)
+    except Exception:
+        db.rollback()
     return {
         "date": today.isoformat(),
         "counts": {"total": len(live), "came": len(visited), "in_salon": len(in_salon), "upcoming": len(upcoming),
                    "no_show": sum(1 for x in live if x.status == "no_show"),
                    "cancelled": sum(1 for x in rows if x.status == "cancelled")},
-        "revenue": round(sum(float(x.price or 0) for x in visited), 2),
+        "revenue": revenue,
         # как в аналитике: записи дня, где визит ещё не отмечен (впереди, идут сейчас, прошли без отметки)
         "expected": round(sum(float(x.price or 0) for x in live if x.status in ("booked", "confirmed")), 2),
         "in_salon": [_booking_row(x, names, colors) for x in in_salon],
@@ -176,6 +183,22 @@ def attention_block(db: Session, user, now: datetime, since: Optional[datetime],
     _safe("prepay", db, prepay, None)
 
     if owner_view:
+        def cash():
+            # касса (шаг 3.1): расхождение при закрытии смены, смена открыта слишком долго
+            from backend.services import cashbox
+            items = cashbox.attention(db, user.id)
+            diffs = [x for x in items if x["kind"] == "cash_diff"]
+            longs = [x for x in items if x["kind"] == "shift_long"]
+            if diffs:
+                out.append(_item("cash_diff", len(diffs), "Касса: расхождение при закрытии смены",
+                                 "; ".join(f"{x['cashier'] or 'кассир'}: {'+' if x['diff'] > 0 else '−'}{activity.money(abs(x['diff']))}"
+                                           for x in diffs[:3]), "/static/cash.html#shifts", "bad"))
+            if longs:
+                out.append(_item("shift_long", len(longs), "Смена не закрыта",
+                                 ", ".join(f"{x['cashier'] or 'кассир'} — с {activity.when(datetime.fromisoformat(x['opened_at']))}"
+                                           for x in longs[:3]), "/static/cash.html#shifts", "warn"))
+        _safe("cash", db, cash, None)
+
         def pending():
             n = int(db.execute(text("SELECT count(*) FROM manager_actions WHERE user_id = :u AND status = 'proposed'"),
                                {"u": str(user.id)}).scalar() or 0)

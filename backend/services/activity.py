@@ -55,7 +55,7 @@ GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "services": ("Услуги и цены", ("service", "category")),
     "page": ("Страница салона", ("page",)),
     "team": ("Сотрудники", ("team",)),
-    "money": ("Деньги", ("expense", "payroll")),
+    "money": ("Деньги", ("expense", "payroll", "payment", "shift", "cash")),
     "ai": ("ИИ-управляющий", ("manager",)),
     "automation": ("Автоматизации", ("automation",)),
     "reviews": ("Отзывы", ("review",)),
@@ -80,6 +80,9 @@ ACTION_TITLES = {
     "team.deactivate": "Сотрудник выключен", "team.activate": "Сотрудник включён", "team.delete": "Сотрудник удалён",
     "expense.create": "Новый расход", "expense.update": "Расход изменён", "expense.delete": "Расход удалён",
     "payroll.update": "Оплата мастера",
+    "payment.create": "Оплата визита", "payment.refund": "Возврат клиенту",
+    "shift.open": "Смена открыта", "shift.close": "Смена закрыта",
+    "cash.in": "Внесение в кассу", "cash.out": "Изъятие из кассы",
     "manager.approve": "Одобрено ИИ-управляющему", "manager.reject": "Отклонено ИИ-управляющему",
     "manager.settings": "Настройки ИИ-управляющего", "manager.offer": "Предложить окна клиентам",
     "admin.impersonate": "Вход поддержки в кабинет",
@@ -317,12 +320,17 @@ def query(db: Session, owner_id, *, period: Optional[str] = "week", actor: Optio
     if object_id:
         # история одной записи: сама запись + её визит (создание/отмена визита целиком)
         if visit_id:
-            where.append("((object_type = 'booking' AND object_id = :oid) OR (object_type = 'visit' AND object_id = :vid))")
+            where.append("((object_type = 'booking' AND object_id = :oid) OR (object_type = 'visit' AND object_id = :vid) "
+                         "OR (object_type = 'payment' AND (meta->>'booking_id' = :oid OR meta->>'visit_id' = :vid)))")
             p.update(oid=str(object_id), vid=str(visit_id))
+        elif object_type == "booking":
+            # история записи: сама запись + оплаты и возвраты по ней (касса, шаг 3.1)
+            where.append("((object_type = 'booking' AND object_id = :oid) OR (object_type = 'payment' AND meta->>'booking_id' = :oid))")
+            p["oid"] = str(object_id)
         else:
             where.append("object_id = :oid")
             p["oid"] = str(object_id)
-        if object_type and not visit_id:
+        if object_type and not visit_id and object_type != "booking":
             where.append("object_type = :ot")
             p["ot"] = object_type
     elif types is not None:

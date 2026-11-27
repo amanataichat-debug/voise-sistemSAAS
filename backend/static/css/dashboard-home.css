@@ -473,7 +473,7 @@ body.vf .subscription-section { margin-top: 0; }
 @media (max-width: 760px) {
   .dh-salon { gap: 10px; margin-bottom: 0; }
   .dh-salon .dh-grid { gap: 10px; margin-bottom: 12px; }
-  .dh-quick { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 6px; }
+  .dh-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .dh-qbtn { justify-content: center; gap: 5px; padding: 0 6px; font-size: 13px; height: 42px; white-space: nowrap; min-width: 0; }
   .dh-qbtn .ic { width: 15px; height: 15px; flex: none; }
   .dh-qbtn .lg { display: none; } .dh-qbtn .sm { display: inline; }

@@ -141,11 +141,12 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=4
     end = start + timedelta(days=days)
     names = _names(db, current_user.id)
     rows = bs.list_bookings(db, current_user.id, start, end)
+    paid = _paid_map(db, rows)
     return {
         "date": day.isoformat(), "days": days, "today": bs.to_local(bs.now_utc()).date().isoformat(),
         "resources": [_resource_out(current_user, r) for r in res],
         "services": [bs.service_to_dict(e) for e in _sorted_services(db, current_user)],
-        "bookings": [bs.booking_to_dict(b, names) for b in rows],
+        "bookings": [dict(bs.booking_to_dict(b, names), paid=paid.get(str(b.id), 0.0)) for b in rows],
         "blocks": [bs.block_to_dict(k) for k in bs.list_blocks(db, current_user.id, start, end)],
         "rooms": [bs.room_to_dict(r) for r in bs.rooms(db, current_user.id, active_only=False)],
         "logins": _logins(db, current_user),
@@ -153,7 +154,28 @@ def booking_overview(date: Optional[str] = None, days: int = Query(1, ge=1, le=4
         "stats": bs.stats(db, current_user.id, start, end),
         "plan_limit": _plan_limit(db, current_user),
         "waitlist": _waitlist_count(db, current_user.id),
+        "cash_on": _cash_on(db, current_user.id),
     }
+
+
+def _paid_map(db: Session, rows) -> Dict[str, float]:
+    """Оплачено по каждой записи (касса, шаг 3.1) — журнал рисует «оплачено / не оплачено»."""
+    try:
+        from backend.services import cashbox
+        return cashbox.paid_by_booking(db, [b.id for b in rows])
+    except Exception:
+        db.rollback()
+        return {}
+
+
+def _cash_on(db: Session, user_id) -> bool:
+    """Салон уже принимает оплату через кассу — журнал показывает «оплачено / не оплачено» у визитов."""
+    try:
+        from backend.services import cashbox
+        return cashbox.cash_start(db, user_id) is not None
+    except Exception:
+        db.rollback()
+        return False
 
 
 def _waitlist_count(db: Session, user_id) -> int:

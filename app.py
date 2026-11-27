@@ -383,6 +383,8 @@ from backend.api import orders as orders_api  # заказы магазинов 
 app.include_router(orders_api.router)
 from backend.api import finance as finance_api  # доходы, расходы (аренда, зарплаты), прибыль — только владелец
 app.include_router(finance_api.router)
+from backend.api import cashbox as cashbox_api  # касса салона: смены администраторов, оплата визита, возвраты (шаг 3.1)
+app.include_router(cashbox_api.router, prefix="/api/cash", tags=["Cash"])
 from backend.api import salon_manager as salon_manager_api  # ИИ-управляющий салона: отчёты, одобрение, сценарии; push
 app.include_router(salon_manager_api.router)
 app.include_router(salon_manager_api.push_router)
@@ -2053,6 +2055,7 @@ def ensure_booking_tables():
         from backend.models.automation import NotificationQueue, AutomationRule
         from backend.models.review import SalonReview
         from backend.models.waitlist import WaitlistEntry
+        from backend.models.cashbox import CashShift, CashReceipt, CashPayment
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
@@ -2063,7 +2066,8 @@ def ensure_booking_tables():
                                  PushSubscription.__table__, WebPushKey.__table__,
                                  WebChatSession.__table__, AgentWebChatMessage.__table__,
                                  ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__,
-                                 WaitlistEntry.__table__],
+                                 WaitlistEntry.__table__, CashShift.__table__, CashReceipt.__table__,
+                                 CashPayment.__table__],
             checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()

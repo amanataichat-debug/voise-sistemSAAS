@@ -380,6 +380,7 @@
     var quick = '<div class="dh-quick">' +
       '<a class="dh-qbtn main" href="/static/booking.html?new=1">' + ic('plus') + 'Записать</a>' +
       '<a class="dh-qbtn" href="/static/booking.html?block=1">' + ic('ban') + '<span class="lg">Заблокировать время</span><span class="sm">Блок времени</span></a>' +
+      '<a class="dh-qbtn" href="/static/cash.html">' + ic('wallet') + 'Касса</a>' +
       '<a class="dh-qbtn" href="/static/finance.html?new=1">' + ic('banknote') + 'Расход</a></div>';
     if (!home) {
       box.innerHTML = quick + '<div class="dh-grid dh-salon-grid"><div class="dh-card dh-span-2"><span class="dh-skel"></span><span class="dh-skel" style="width:60%"></span></div>' +

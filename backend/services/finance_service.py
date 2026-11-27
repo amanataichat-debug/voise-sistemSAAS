@@ -3,7 +3,8 @@
 
 Одна логика на страницу «Финансы», раздел аналитики и виджет главной:
 
-  выручка   = записи со статусом «пришёл» (цена услуги в записи) + заказы (кроме отменённых);
+  выручка   = оплаты визитов в кассе минус возвраты (шаг 3.1; до первой смены/чека салона — цена записей
+              «пришёл / завершён», services/cashbox.booking_revenue) + заказы (кроме отменённых);
   расходы   = разовые расходы за период + доля ежемесячных (по дням) + зарплаты мастеров
               (% с выручки его записей + доля оклада);
   прибыль   = выручка − расходы.
@@ -226,10 +227,9 @@ def _invalidate(user_id) -> None:
 
 def _revenue(db: Session, uid: str, s, u) -> Dict[str, float]:
     out = {"bookings": 0.0, "orders": 0.0}
-    try:
-        out["bookings"] = float(db.execute(text(
-            "SELECT COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid AND status IN ('arrived', 'completed') "
-            "AND start_at >= :s AND start_at < :u"), {"uid": uid, "s": s, "u": u}).scalar() or 0)
+    try:   # касса (шаг 3.1): по оплатам; до начала кассы — цена визитов «пришёл»
+        from backend.services import cashbox
+        out["bookings"] = cashbox.booking_revenue(db, uid, s, u)
     except Exception:
         db.rollback()
     try:
@@ -324,7 +324,18 @@ def summary(db: Session, user, period: Optional[str] = "30d", date_from: Optiona
         "expenses_count": len(expenses),
         "series": series,
         "categories_all": [{"key": k, "title": t, "icon": CATEGORY_ICONS.get(k, "circle")} for k, t in EXPENSE_CATEGORIES.items()],
+        **_basis(db, user.id),
     }
+
+
+def _basis(db: Session, user_id) -> Dict[str, Any]:
+    try:
+        from backend.services import cashbox
+        b = cashbox.revenue_basis(db, user_id)
+        return {"revenue_basis": b["basis"], "revenue_since": b["since"]}
+    except Exception:
+        db.rollback()
+        return {"revenue_basis": "visits", "revenue_since": None}
 
 
 def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str, Any]:
@@ -352,10 +363,16 @@ def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str
         return None
     s, u = rng.aware()
     off = int(BISHKEK_OFFSET.total_seconds() // 3600)
-    for q in ("SELECT date(start_at + interval '%d hour'), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-              "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1",
-              "SELECT date(created_at + interval '%d hour'), COALESCE(sum(total), 0) FROM orders WHERE user_id = :uid "
-              "AND status <> 'cancelled' AND created_at >= :s AND created_at < :u GROUP BY 1"):
+    try:
+        from backend.services import cashbox
+        for day, v in cashbox.booking_revenue_by_day(db, user.id, s, u, off).items():
+            i = bi(day)
+            if i is not None:
+                rev[i] += float(v or 0)
+    except Exception:
+        db.rollback()
+    for q in ("SELECT date(created_at + interval '%d hour'), COALESCE(sum(total), 0) FROM orders WHERE user_id = :uid "
+              "AND status <> 'cancelled' AND created_at >= :s AND created_at < :u GROUP BY 1",):
         try:
             for day, v in db.execute(text(q % off), {"uid": str(user.id), "s": s, "u": u}).fetchall():
                 i = bi(day)

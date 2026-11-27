@@ -29,6 +29,18 @@
   var SNAP = 5;   // шаг перетаскивания и растяжки, минуты
   function visited(s) { return s === 'arrived' || s === 'completed'; }
   function movable(b) { return b.status === 'booked' || b.status === 'confirmed' || b.status === 'arrived'; }
+  // Касса (шаг 3.1): салон принимает оплату через кассу — у визита «оплачено / частично / не оплачено»
+  function payState(b) {
+    if (!st.data || !st.data.cash_on || !visited(b.status) || !(b.price > 0)) return '';
+    var paid = b.paid || 0;
+    return paid + 0.004 >= b.price ? 'ok' : paid > 0 ? 'part' : 'no';
+  }
+  function payMark(b) {
+    var s2 = payState(b);
+    if (!s2) return '';
+    var t = s2 === 'ok' ? 'Оплачено' : s2 === 'part' ? 'Оплачено ' + money(b.paid) + ' из ' + money(b.price) : 'Не оплачено';
+    return '<span class="bk-pp ' + s2 + '" title="' + esc(t) + '">' + icon(s2 === 'ok' ? 'check' : 'banknote') + '</span>';
+  }
   var st = { day: null, view: 'day', prevView: 'day', win: null, data: null, filter: '' };
   var M = function () { return window.BookingMasters; };
   var root, esc, icon;
@@ -259,7 +271,8 @@
       '<div class="bd"><div class="cl">' + esc(b.client_name || 'Клиент') + (b.visit_id ? ' ' + icon('link') : '') + '</div>' +
       '<div class="sv">' + esc((b.service || '—') + (room ? ' · ' + room : '')) + '</div>' +
       (r && resources().length > 1 ? '<div class="ms-who">' + ava(r, 20) + '<span>' + esc(r.name) + '</span></div>' : '') + '</div>' +
-      '<span class="st ' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span></div>';
+      '<span class="st ' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) +
+      (payState(b) && payState(b) !== 'ok' ? '<i class="bk-paychip ' + payState(b) + '">' + (payState(b) === 'part' ? 'частично' : 'не оплачено') + '</i>' : '') + '</span></div>';
   }
   function agendaBlock(k) {
     var who = k.resource_id ? ((resById(k.resource_id) || {}).name || '') : 'все мастера';
@@ -323,7 +336,7 @@
           (b.after_min ? '<div class="bk-pad" data-pad="' + esc(b.id) + '" style="--c:' + esc(r.color) + ';top:' + (top + b.duration_min * PX - 2) + 'px;height:' + (b.after_min * PX) + 'px" title="Перерыв после ' + b.after_min + ' мин"></div>' : '');
         var canDrag = movable(b) && canEditBookings();
         var extra = b.visit_id ? icon('link') : '';
-        var pp = b.prepay_amount && b.status !== 'cancelled' ? '<span class="bk-pp' + (b.prepaid ? ' ok' : '') + '" title="' + (b.prepaid ? 'Предоплата получена' : 'Ждём предоплату ' + money(b.prepay_amount)) + '">' + icon('wallet') + '</span>' : '';
+        var pp = payMark(b) || (b.prepay_amount && b.status !== 'cancelled' ? '<span class="bk-pp' + (b.prepaid ? ' ok' : '') + '" title="' + (b.prepaid ? 'Предоплата получена' : 'Ждём предоплату ' + money(b.prepay_amount)) + '">' + icon('wallet') + '</span>' : '');
         var room = b.room_id ? roomName(b.room_id) : '';
         return pads + '<div class="bk-ev ' + esc(b.status) + (compact ? ' compact' : '') + (b.visit_id ? ' visit' : '') + '" data-bk="' + esc(b.id) + '"' + (canDrag ? ' data-drag="1"' : '') +
           ' style="--c:' + esc(r.color) + ';top:' + top + 'px;height:' + height + 'px" title="' + esc(hm(b.start) + '–' + hm(b.end) + ' ' + (b.client_name || '') + (b.service ? ' · ' + b.service : '') + (room ? ' · ' + room : '') + (b.visit_id ? ' · визит из нескольких услуг' : '')) + '">' +
@@ -571,13 +584,14 @@
       '<dt>Цена</dt><dd>' + esc(money(b.price)) + '</dd>' +
       (b.prepay_amount ? '<dt>Предоплата</dt><dd><span class="bk-ppline' + (b.prepaid ? ' ok' : '') + '">' + icon(b.prepaid ? 'circle-check' : 'wallet') +
         esc(money(b.prepay_amount)) + ' · ' + (b.prepaid ? 'получена' : 'ждём') + '</span> ' +
-        '<button class="btn btn-ghost btn-sm" type="button" data-prepaid="' + (b.prepaid ? '0' : '1') + '">' + (b.prepaid ? 'Отменить отметку' : 'Отметить «получена»') + '</button></dd>' : '') +
+        (st.data && st.data.cash_on && canPay() ? '' :
+          '<button class="btn btn-ghost btn-sm" type="button" data-prepaid="' + (b.prepaid ? '0' : '1') + '">' + (b.prepaid ? 'Отменить отметку' : 'Отметить «получена»') + '</button>') + '</dd>' : '') +
       (b.prep_min || b.after_min ? '<dt>Время мастера</dt><dd>' + (b.prep_min ? 'подготовка ' + b.prep_min + ' мин' : '') + (b.prep_min && b.after_min ? ', ' : '') + (b.after_min ? 'перерыв после ' + b.after_min + ' мин' : '') + '</dd>' : '') +
       '<dt>Статус</dt><dd><b>' + esc(STATUS[b.status] || b.status) + '</b></dd>' +
       '<dt>Откуда</dt><dd>' + esc({ owner: 'Вы записали', staff: 'Сотрудник', bot: 'Бот в переписке', call: 'Голосовой агент', online: 'Онлайн по ссылке' }[b.source] || '—') + '</dd>' +
       (phone ? '<dt>Телефон</dt><dd><a href="tel:' + esc(phone) + '">' + esc(S.fmtPhone ? S.fmtPhone(phone) : phone) + '</a></dd>' : '') +
       (b.note ? '<dt>Комментарий</dt><dd>' + esc(b.note) + '</dd>' : '') +
-      '</dl>' + visitBlock(b) +
+      '</dl>' + visitBlock(b) + (canPay() ? '<div id="bk-pay"></div>' : '') +
       '<div class="bk-actions">' +
       (b.status === 'arrived' ? '<button class="btn btn-primary btn-sm" data-st="completed">' + icon('check-check') + 'Завершить визит</button>' : '') +
       (b.status === 'booked' ? '<button class="btn btn-sm" data-st="confirmed">' + icon('check') + 'Подтвердил</button>' : '') +
@@ -597,14 +611,21 @@
         'История записи</button><div class="bk-hist-body" hidden></div></div>' : '');
     function patch(body, ok) {
       return S.api('/api/booking/bookings/' + b.id, { method: 'PATCH', body: body }).then(function (res) {
-        if (!res.ok) { S.toast(S.apiError(res), 'error'); return; }
+        if (!res.ok) { S.toast(S.apiError(res), 'error'); return false; }
         S.toast(ok || 'Сохранено'); dr.close(); reload();
+        return true;
       });
     }
+    var payBox = S.$('#bk-pay', dr.body);
+    var payApi = payBox && window.BookingPay ? window.BookingPay.block(b.id, payBox, { onChange: function () { reload(); } }) : null;
     S.$$('[data-st]', dr.body).forEach(function (btn) {
       btn.addEventListener('click', function () {
         var s2 = btn.getAttribute('data-st');
-        patch({ status: s2 }, s2 === 'completed' ? 'Визит завершён' : s2 === 'booked' ? 'Запись возвращена' : STATUS[s2]);
+        var left = payApi && payApi.money && payApi.money.priced ? payApi.money.left : 0;
+        patch({ status: s2 }, s2 === 'completed' ? 'Визит завершён' : s2 === 'booked' ? 'Запись возвращена' : STATUS[s2]).then(function (okd) {
+          // «Завершить визит» с неоплаченным остатком — сразу окно оплаты (касса, шаг 3.1)
+          if (okd && s2 === 'completed' && left > 0 && window.BookingPay) window.BookingPay.open(b.id, { onDone: function () { reload(); } });
+        });
       });
     });
     S.$$('[data-vb]', dr.body).forEach(function (row) {
@@ -641,6 +662,7 @@
 
   // История записи (журнал действий, шаг 1.7): кто создал, перенёс, поменял статус и цену — владельцу и управляющему
   function canHistory() { return S.staffCan ? S.staffCan('activity') : true; }
+  function canPay() { return !!window.BookingPay && (S.staffCan ? S.staffCan('booking') : true); }
   var ACT_ICON = { owner: 'user', staff: 'user-round', admin: 'shield-check', ai: 'sparkles', call: 'phone', client: 'user-check', system: 'settings' };
   function loadHistory(b, box, btn) {
     if (!box) return;
