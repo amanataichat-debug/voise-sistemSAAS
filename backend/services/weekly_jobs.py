@@ -301,6 +301,13 @@ async def _tick() -> None:
         except Exception as e:
             db.rollback()
             logger.warning(f"[MANAGER] tick failed: {e}")
+        # Касса салона (Voksy Beauty 3.2): отчёт дня владельцу в выбранное время — один раз на всех воркерах
+        try:
+            from backend.services import cash_debts
+            await cash_debts.tick(db)
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[CASH] day report tick failed: {e}")
         # Журнал действий кабинета: строки старше 180 дней (раз в час на воркер, порциями)
         try:
             from backend.services import activity

@@ -397,11 +397,14 @@
     var n = home.now;
     if (!n) return '<div class="dh-card-head"><h3 class="dh-card-title">Сейчас в салоне</h3></div><div class="dh-empty">Не удалось загрузить записи — обновите страницу.</div>';
     var c = n.counts || {};
-    var tiles = '<div class="dh-ntiles">' +
+    var debt = n.debts && n.debts.count ? n.debts : null;   // шаг 3.2: плитка «Долги клиентов» (когда салон работает через кассу)
+    var tiles = '<div class="dh-ntiles' + (debt ? ' five' : '') + '">' +
       '<div class="dh-ntile"><span>Пришли</span><b>' + num(c.came) + '</b></div>' +
       '<div class="dh-ntile"><span>Впереди</span><b>' + num(c.upcoming) + '</b></div>' +
       '<div class="dh-ntile' + (c.no_show ? ' warn' : '') + '"><span>Не пришли</span><b>' + num(c.no_show) + '</b></div>' +
-      '<a class="dh-ntile money" href="/static/analytics.html?period=today"><span>Выручка</span><b>' + som(n.revenue) + '</b>' + (n.expected ? '<i>ещё ожидается ' + som(n.expected) + '</i>' : '') + '</a></div>';
+      '<a class="dh-ntile money" href="/static/analytics.html?period=today"><span>Выручка</span><b>' + som(n.revenue) + '</b>' + (n.expected ? '<i>ещё ожидается ' + som(n.expected) + '</i>' : '') + '</a>' +
+      (debt ? '<a class="dh-ntile debt" href="/static/cash.html#debts"><span>Долги клиентов</span><b>' + som(debt.total) + '</b><i>' +
+        debt.count + ' ' + plural(debt.count, 'визит', 'визита', 'визитов') + ' без оплаты</i></a>' : '') + '</div>';
     function row(b, badge, cls) {
       return '<a class="dh-nrow ' + (cls || '') + '" href="' + bookingHref(b, n.date) + '">' +
         '<span class="dh-ntime"><b>' + esc(b.time) + '</b><i>' + esc(b.until) + '</i></span>' +

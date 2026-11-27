@@ -6,7 +6,9 @@
  * итог дня по салону. «Чеки»: оплаты, возвраты, внесения и изъятия за день, «Вернуть» по чеку, переход к записи.
  * «Смены»: история смен с расхождениями (владелец и бухгалтер — все, кассир — свои), смена целиком в панели.
  * Оплату визита принимают из карточки записи в журнале (booking/pay.js — общий код окон оплаты и возврата).
- * API: /api/cash/* (services/cashbox.py).
+ * «Долги» (шаг 3.2): визиты, оплаченные не полностью, — «Принять оплату», «Напомнить» (одно сообщение в день, текст
+ * видно до отправки), «Списать» (только владелец, с причиной). «Итог дня» — те же цифры, что в отчёте дня владельцу;
+ * время отчёта выбирает владелец. API: /api/cash/* (services/cashbox.py, services/cash_debts.py).
  */
 (function () {
   'use strict';
@@ -14,7 +16,8 @@
   var P = function () { return window.BookingPay; };
   var TZ = 'Asia/Bishkek';
   var root, esc, icon;
-  var st = { tab: 'shift', state: null, day: null, receipts: null, rnext: null, shifts: null, snext: null };
+  var st = { tab: 'shift', state: null, day: null, receipts: null, rnext: null, shifts: null, snext: null, debts: null, report: null };
+  var OFF_REASONS = ['Клиент не вернётся', 'Подарок / комплимент', 'Ошибка в цене', 'Оплатил переводом владельцу'];
   var M_IC = { cash: 'banknote', card: 'credit-card', qr: 'qr-code', transfer: 'smartphone' };
   var MT = { cash: 'Наличные', card: 'Карта', qr: 'QR', transfer: 'Перевод' };
   var OUT_REASONS = ['Купили расходники', 'Забрал владелец', 'Выдали зарплату', 'Хозяйственные нужды'];
@@ -45,6 +48,7 @@
   function tabs() {
     var s = st.state, out = [];
     if (s.can_take) out.push(['shift', 'Моя смена']);
+    if (s.debts) out.push(['debts', 'Долги']);
     out.push(['receipts', 'Чеки']);
     out.push(['shifts', s.can_manage ? 'Смены' : 'Мои смены']);
     return out;
@@ -71,6 +75,13 @@
       st.receipts = more ? (st.receipts || []).concat(r.data.items) : r.data.items;
       st.rnext = r.data.next;
       st.dayNums = r.data.day || null;
+      st.report = r.data.report || null;
+    });
+  }
+  function loadDebts() {
+    return S.api('/api/cash/debts').then(function (r) {
+      if (!r.ok) { S.toast(S.apiError(r), 'error'); st.debts = { items: [], count: 0, total: 0, enabled: true }; return; }
+      st.debts = r.data;
     });
   }
   function loadShifts(more) {
@@ -86,7 +97,9 @@
     return loadState().then(function (ok) {
       if (!ok) return;
       if (!st.state.can_take && st.tab === 'shift') st.tab = 'receipts';
-      var p = st.tab === 'shifts' ? loadShifts() : (st.tab === 'shift' && !st.state.shift) ? Promise.resolve(st.receipts = []) : loadReceipts();
+      if (st.tab === 'debts' && !st.state.debts) st.tab = 'receipts';
+      var p = st.tab === 'shifts' ? loadShifts() : st.tab === 'debts' ? loadDebts()
+        : (st.tab === 'shift' && !st.state.shift) ? Promise.resolve(st.receipts = []) : loadReceipts();
       return p.then(draw);
     });
   }
@@ -96,9 +109,11 @@
     var s = st.state;
     var html = '<div class="st-colbar cs-tabs">' + tabs().map(function (t) {
       return '<button type="button" class="st-colchip' + (st.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' + esc(t[1]) +
-        (t[0] === 'shifts' && s.open_shifts && s.open_shifts.length ? ' <span class="cs-n">' + s.open_shifts.length + '</span>' : '') + '</button>';
+        (t[0] === 'shifts' && s.open_shifts && s.open_shifts.length ? ' <span class="cs-n">' + s.open_shifts.length + '</span>' : '') +
+        (t[0] === 'debts' && s.debts && s.debts.count ? ' <span class="cs-n warn">' + s.debts.count + '</span>' : '') + '</button>';
     }).join('') + '</div>';
     if (st.tab === 'shift') html += shiftTab();
+    else if (st.tab === 'debts') html += debtsTab();
     else if (st.tab === 'receipts') html += receiptsTab();
     else html += shiftsTab();
     root.innerHTML = html;
@@ -152,7 +167,8 @@
           '<button class="btn btn-sm" type="button" data-close="' + esc(o.id) + '">Закрыть</button></div>';
       }).join('') + '</section>';
     }
-    if (s.can_manage && s.today) {
+    if (s.can_manage && s.day) out += dayCard(s.day, true);
+    else if (s.can_manage && s.today) {
       out += '<section class="cs-card"><div class="cs-card-h"><h3>Сегодня по салону</h3><button class="py-link" type="button" data-tab="receipts">Все чеки дня →</button></div>' +
         '<div class="cs-daytotal"><span>Выручка</span><b>' + esc(money(s.today.revenue)) + '</b><small>' + s.today.receipts + ' ' + plural(s.today.receipts, 'чек', 'чека', 'чеков') +
         (s.today.refunds ? ' · возвраты −' + esc(money(s.today.refunds)) : '') + '</small></div>' + methodTiles(s.today.by_method) + '</section>';
@@ -181,9 +197,10 @@
       '<b>' + esc(dayLabel(st.day)) + '</b>' +
       '<button class="btn btn-ghost btn-icon btn-sm" type="button" data-day="1" aria-label="Следующий день"' + (st.day >= keyOf(new Date()) ? ' disabled' : '') + '>' + icon('chevron-right') + '</button>' +
       '<input type="date" class="input cs-date" id="cs-date" value="' + esc(st.day) + '" max="' + esc(keyOf(new Date())) + '"></div>' +
+      (st.report ? dayCard(st.report, false) :
       '<section class="cs-card"><div class="cs-daytotal"><span>' + (st.state.can_manage ? 'Выручка за день' : 'Мои чеки за день') + '</span><b>' + esc(money(d.revenue)) + '</b>' +
       '<small>' + (d.receipts || 0) + ' ' + plural(d.receipts || 0, 'оплата', 'оплаты', 'оплат') + (d.refunds ? ' · возвраты −' + esc(money(d.refunds)) : '') + '</small></div>' +
-      methodTiles(d.by_method) + '</section>' +
+      methodTiles(d.by_method) + '</section>') +
       '<section class="cs-card">' + receiptList(items, true) +
       (st.rnext ? '<button class="btn btn-ghost cs-more" type="button" data-rmore>Показать ещё</button>' : '') + '</section>';
   }
@@ -198,6 +215,132 @@
         '<div class="b"><span>Выручка</span><b>' + esc(money(n.revenue)) + '</b></div>' +
         '<div class="c">' + (sh.status === 'open' ? '<span class="py-chip ok">Открыта</span>' : diffChip(sh.diff)) + '</div></button>';
     }).join('') + (st.snext ? '<button class="btn btn-ghost cs-more" type="button" data-smore>Показать ещё</button>' : '') + '</section>' + basisNote();
+  }
+
+  // ── «Итог дня» (шаг 3.2): те же цифры, что уходят владельцу отчётом дня ──
+  function shiftState(x) {
+    if (x.status === 'open') return '<span class="py-chip warn">смена открыта</span>';
+    if (x.diff == null || Math.abs(x.diff) < 1) return '<span class="py-chip ok">сходится</span>';
+    return x.diff < 0 ? '<span class="py-chip bad">не хватает ' + esc(money(-x.diff)) + '</span>' : '<span class="py-chip warn">лишние ' + esc(money(x.diff)) + '</span>';
+  }
+  function dayCard(r, withSettings) {
+    var nd = r.new_debts || {}, ns = r.no_shows || {}, html = '<section class="cs-card cs-day">' +
+      '<div class="cs-card-h"><h3>' + icon('chart-column') + 'Итог дня · ' + esc(r.day_words || dayLabel(r.date)) + '</h3>' +
+      (withSettings ? '<button class="py-link" type="button" data-tab="receipts">Все чеки дня →</button>' : '') + '</div>' +
+      '<div class="cs-daytotal"><span>Выручка</span><b>' + esc(money(r.revenue)) + '</b><small>' + (r.receipts || 0) + ' ' +
+      plural(r.receipts || 0, 'оплата', 'оплаты', 'оплат') + (r.visits ? ' · визитов ' + r.visits : '') + '</small></div>' + methodTiles(r.by_method) +
+      '<div class="cs-drows">';
+    if (r.refunds) html += '<div class="cs-drow"><span>' + icon('rotate-ccw') + 'Возвраты</span><b class="neg">−' + esc(money(r.refunds)) + '</b></div>';
+    (r.shifts || []).forEach(function (x) {
+      html += '<div class="cs-drow"><span>' + icon('wallet') + 'Смена · ' + esc(x.cashier) + ' · ' + esc(hm(x.opened_at)) + (x.closed_at ? '–' + esc(hm(x.closed_at)) : '') + '</span>' + shiftState(x) + '</div>';
+    });
+    html += '<button type="button" class="cs-drow link" data-tab="debts"><span>' + icon('receipt-text') + 'Новые долги</span><b' + (nd.count ? ' class="neg"' : '') + '>' +
+      (nd.count ? nd.count + ' · ' + esc(money(nd.total)) : 'нет') + '</b></button>';
+    html += '<div class="cs-drow"><span>' + icon('user-x') + 'Не пришли</span><b' + (ns.count ? ' class="warn"' : '') + '>' +
+      (ns.count ? ns.count + ' · ' + esc((ns.items || []).slice(0, 3).map(function (x) { return x.client + ' ' + x.time; }).join(', ')) : 'нет') + '</b></div></div>';
+    if (withSettings && st.state.day_report) html += reportSettings();
+    return html + '</section>';
+  }
+  function reportSettings() {
+    var c = st.state.day_report, hours = st.state.report_hours || [17, 18, 19, 20, 21, 22, 23];
+    return '<div class="cs-rep">' +
+      '<label class="cs-switch"><input type="checkbox" id="cs-rep-on"' + (c.on ? ' checked' : '') + '><span></span></label>' +
+      '<div class="cs-rep-t"><b>Присылать итог дня</b><span>' + (st.state.day_report_telegram ? 'В Telegram-бот и уведомлением на телефон' :
+        'Уведомлением на телефон · подключите Telegram-бот агента, чтобы получать и туда') + '</span></div>' +
+      '<select class="select-native cs-rep-h" id="cs-rep-h"' + (c.on ? '' : ' disabled') + ' aria-label="Время отчёта">' + hours.map(function (h) {
+        return '<option value="' + h + '"' + (h === c.hour ? ' selected' : '') + '>в ' + h + ':00</option>';
+      }).join('') + '</select></div>';
+  }
+  function saveReport(body) {
+    S.api('/api/cash/day-report', { method: 'PUT', body: body }).then(function (r) {
+      if (!r.ok) { S.toast(S.apiError(r), 'error'); refresh(); return; }
+      st.state.day_report = r.data.day_report;
+      S.toast(r.data.day_report.on ? 'Итог дня придёт в ' + r.data.day_report.hour + ':00' : 'Итог дня выключен');
+      draw();
+    });
+  }
+
+  // ── «Долги» (шаг 3.2) ──
+  function agoDays(k) {
+    var n = Math.round((new Date(keyOf(new Date()) + 'T12:00:00+06:00') - new Date(k + 'T12:00:00+06:00')) / 864e5);
+    return n <= 0 ? 'сегодня' : n === 1 ? 'вчера' : n + ' ' + plural(n, 'день', 'дня', 'дней') + ' назад';
+  }
+  function debtsTab() {
+    var d = st.debts;
+    if (!d) return '<div class="skeleton" style="height:240px;border-radius:16px"></div>';
+    if (!d.enabled) return '<div class="cs-empty">' + icon('receipt-text') + 'Долги появятся с первой смены: визит «пришёл», оплаченный не полностью, станет долгом клиента.</div>';
+    if (!d.items.length) return '<section class="cs-card"><div class="cs-empty">' + icon('circle-check') + '<b>Долгов нет</b>Все визиты оплачены.</div></section>';
+    var html = '<section class="cs-card cs-dsum2"><div><span>Должны салону</span><b>' + esc(money(d.total)) + '</b>' +
+      '<small>' + d.clients + ' ' + plural(d.clients, 'клиент', 'клиента', 'клиентов') + ' · ' + d.count + ' ' + plural(d.count, 'визит', 'визита', 'визитов') + '</small></div>' +
+      '<p>Напомнить — одно сообщение клиенту в его мессенджер, не чаще раза в день.' + (d.can_write_off ? ' Списать долг может только владелец.' : '') + '</p></section>';
+    html += '<section class="cs-card cs-debts">' + d.items.map(function (x) {
+      var acts = '';
+      if (d.can_take) acts += '<button class="btn btn-primary btn-sm" type="button" data-dpay="' + esc(x.booking_id) + '">' + icon('banknote') + 'Принять</button>';
+      if (d.can_take) acts += '<button class="btn btn-sm" type="button" data-dremind="' + esc(x.booking_id) + '"' + (x.reminded_today ? ' disabled title="Сегодня уже напоминали"' : '') + '>' +
+        icon('send') + (x.reminded_today ? 'Напомнили' : 'Напомнить') + '</button>';
+      if (d.can_write_off) acts += '<button class="btn btn-ghost btn-sm" type="button" data-doff="' + esc(x.booking_id) + '">Списать</button>';
+      return '<div class="cs-debt">' +
+        '<div class="cs-debt-m"><b>' + esc(x.client_name) + '</b>' +
+        (x.phone ? '<a class="cs-debt-ph" href="tel:' + esc(x.phone) + '">' + esc(x.phone) + '</a>' : '') +
+        '<span>' + esc(x.services.join(' + ')) + (x.masters.length ? ' · ' + esc(x.masters.join(', ')) : '') + '</span>' +
+        '<span class="muted">' + esc(x.day_words) + ' · ' + esc(agoDays(x.date)) + (x.paid ? ' · оплачено ' + esc(money(x.paid)) + ' из ' + esc(money(x.due)) : '') +
+        (x.reminded_at ? ' · напомнили ' + esc(x.reminded_today ? 'сегодня' : new Date(x.reminded_at).toLocaleDateString('ru-RU', { timeZone: TZ, day: 'numeric', month: 'short' })) : '') + '</span></div>' +
+        '<div class="cs-debt-r"><b>' + esc(money(x.left)) + '</b><div class="cs-debt-acts">' + acts + '</div></div></div>';
+    }).join('') + '</section>';
+    return html;
+  }
+  function findDebt(id) { return ((st.debts && st.debts.items) || []).filter(function (x) { return x.booking_id === id; })[0]; }
+  function remindDialog(id) {
+    var x = findDebt(id);
+    S.api('/api/cash/debts/' + id + '/remind', { method: 'POST', body: { send: false } }).then(function (r) {
+      if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+      var p = r.data, busy = false;
+      var dlg = S.dialog({
+        title: 'Напомнить о долге' + (x ? ' · ' + x.client_name : ''),
+        body: '<div class="py-dlg"><div class="cs-msg-h">' + icon('send') + 'Уйдёт в ' + esc(p.channel === 'webchat' ? 'чат на сайте' : p.channel_title) + (p.lang === 'ky' ? ' · по-кыргызски' : '') + '</div>' +
+          '<div class="cs-msg">' + esc(p.text) + '</div>' +
+          (p.later ? '<div class="py-hint">Сейчас поздно — сообщение уйдёт утром, после 8:00.</div>' : '') +
+          '<div class="py-hint">Одно напоминание в день по визиту. Клиент ответит в чат — увидите в «Чатах».</div></div>',
+        foot: '<button class="btn" type="button" data-cancel>Отмена</button><button class="btn btn-primary" type="button" data-ok>' + icon('send') + 'Отправить</button>'
+      });
+      S.$('[data-cancel]', dlg.el).addEventListener('click', function () { dlg.close(); });
+      S.$('[data-ok]', dlg.el).addEventListener('click', function () {
+        if (busy) return; busy = true;
+        S.api('/api/cash/debts/' + id + '/remind', { method: 'POST', body: { send: true } }).then(function (r2) {
+          busy = false;
+          if (!r2.ok) { S.toast(S.apiError(r2), 'error'); return; }
+          S.toast(r2.data.later ? 'Напоминание уйдёт утром' : 'Напоминание отправляется');
+          dlg.close(); refresh();
+        });
+      });
+    });
+  }
+  function writeOffDialog(id) {
+    var x = findDebt(id), busy = false;
+    if (!x) return;
+    var dlg = S.dialog({
+      title: 'Списать долг · ' + x.client_name,
+      body: '<div class="py-dlg"><div class="py-parts"><div><span>' + esc(x.services.join(' + ')) + ' · ' + esc(x.day_words) + '</span><b>' + esc(money(x.left)) + '</b></div></div>' +
+        '<p class="py-hint">Визит перестанет быть долгом. Выручкой эта сумма не считается — так и будет видно в «Финансах». Запись останется в журнале действий.</p>' +
+        '<label class="label" for="wo-r">Почему списываем</label>' +
+        '<div class="py-quick">' + OFF_REASONS.map(function (t) { return '<button type="button" class="chip" data-wr="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
+        '<input class="input" id="wo-r" maxlength="300" style="margin-top:8px" placeholder="Своими словами"></div>',
+      foot: '<button class="btn" type="button" data-cancel>Отмена</button><button class="btn btn-primary" type="button" data-ok>Списать ' + esc(money(x.left)) + '</button>'
+    });
+    var el = dlg.el;
+    S.$$('[data-wr]', el).forEach(function (c) { c.addEventListener('click', function () { S.$('#wo-r', el).value = c.getAttribute('data-wr'); S.$$('[data-wr]', el).forEach(function (y) { y.classList.toggle('on', y === c); }); }); });
+    S.$('[data-cancel]', el).addEventListener('click', function () { dlg.close(); });
+    S.$('[data-ok]', el).addEventListener('click', function () {
+      var why = (S.$('#wo-r', el).value || '').trim();
+      if (why.length < 3) { S.toast('Напишите причину', 'error'); S.$('#wo-r', el).focus(); return; }
+      if (busy) return; busy = true;
+      S.api('/api/cash/debts/' + id + '/write-off', { method: 'POST', body: { reason: why } }).then(function (r) {
+        busy = false;
+        if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
+        S.toast('Долг списан: ' + money(r.data.amount));
+        dlg.close(); refresh();
+      });
+    });
   }
 
   function plural(n, one, few, many) {
@@ -347,6 +490,12 @@
     }
     if (t.closest('[data-rmore]')) { loadReceipts(true).then(draw); return; }
     if (t.closest('[data-smore]')) { loadShifts(true).then(draw); return; }
+    var dp = t.closest('[data-dpay]');
+    if (dp) { P().open(dp.getAttribute('data-dpay'), { onDone: function () { refresh(); } }); return; }
+    var dr = t.closest('[data-dremind]');
+    if (dr && !dr.disabled) { remindDialog(dr.getAttribute('data-dremind')); return; }
+    var dof = t.closest('[data-doff]');
+    if (dof) { writeOffDialog(dof.getAttribute('data-doff')); return; }
     var sr = t.closest('[data-shift]');
     if (sr) { shiftDrawer(sr.getAttribute('data-shift')); return; }
     var rf = t.closest('[data-refund]');
@@ -359,10 +508,12 @@
     if (S.initMobileMenu) S.initMobileMenu();
     st.day = keyOf(new Date());
     var h = (location.hash || '').slice(1);
-    if (['shift', 'receipts', 'shifts'].indexOf(h) >= 0) st.tab = h;
+    if (['shift', 'debts', 'receipts', 'shifts'].indexOf(h) >= 0) st.tab = h;
     root.addEventListener('click', onClick);
     root.addEventListener('change', function (e) {
       if (e.target.id === 'cs-date' && e.target.value) { st.day = e.target.value; loadReceipts().then(draw); }
+      if (e.target.id === 'cs-rep-on') saveReport({ on: e.target.checked });
+      if (e.target.id === 'cs-rep-h') saveReport({ hour: +e.target.value });
     });
     refresh();
     document.addEventListener('visibilitychange', function () { if (!document.hidden && !document.querySelector('.vf-backdrop')) refresh(); });

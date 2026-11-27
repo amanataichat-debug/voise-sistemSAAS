@@ -2120,6 +2120,7 @@ BOOKING_SERVICE_COLUMNS = (
     ("review_score", "INTEGER"),                       # оценка клиента 1–5
     ("review_text", "TEXT"),
     ("review_at", "TIMESTAMP WITH TIME ZONE"),
+    ("debt_off", "JSONB"),                             # шаг 3.2: долг списан владельцем
 )
 
 
@@ -2160,11 +2161,12 @@ def ensure_master_card_columns():
     bcols = {c["name"] for c in insp.get_columns("bookings")}
     bmissing = [(n, t) for n, t in BOOKING_SERVICE_COLUMNS if n not in bcols]
     pcols = {c["name"] for c in insp.get_columns("booking_pages")}
-    if not missing and not bmissing and "profile" in pcols:
+    if not missing and not bmissing and {"profile", "cash_settings"} <= pcols:
         return
     with engine.begin() as conn:
         conn.execute(_text("SELECT pg_advisory_xact_lock(25112027)"))
         conn.execute(_text("ALTER TABLE booking_pages ADD COLUMN IF NOT EXISTS profile JSONB"))   # страница салона (1.5)
+        conn.execute(_text("ALTER TABLE booking_pages ADD COLUMN IF NOT EXISTS cash_settings JSONB"))   # отчёт дня (3.2)
         for name, ddl in missing:
             conn.execute(_text(f"ALTER TABLE booking_resources ADD COLUMN IF NOT EXISTS {name} {ddl}"))
         for name, ddl in bmissing:

@@ -465,7 +465,18 @@ def client_card(db: Session, user, contact_id) -> Optional[Dict[str, Any]]:
         "history": history[:30], "upcoming": upcoming[:10],
         "sources": [{"key": k, "title": t, "auto": a} for k, t, a in SOURCES],
         "my_url": _my_url(cid),     # шаг 2.5: ссылка «Мои записи» — владелец может отправить клиенту сам
+        "debt": _debt(db, user, cid),   # шаг 3.2: «Долг N сом» и «Принять оплату»
     }
+
+
+def _debt(db: Session, user, contact_id) -> Optional[Dict[str, Any]]:
+    try:
+        from backend.services import cash_debts
+        return cash_debts.contact_debt(db, user, contact_id)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[SALON-CLIENTS] debt of {contact_id}: {e}")
+        return None
 
 
 def _my_url(contact_id) -> Optional[str]:

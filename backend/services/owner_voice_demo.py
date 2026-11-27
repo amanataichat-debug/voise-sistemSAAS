@@ -563,9 +563,15 @@ def demo_functions() -> List[Dict[str, Any]]:
 
 
 DEMO_FUNCTION_NAMES = [f["name"] for f in ov.GEMINI_FUNCTIONS]
+def get_cash(args: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """У «Окон Комфорт» нет кассы салона — честно, как у настоящего кабинета без смен."""
+    return {"ok": True, "enabled": False,
+            "message": "Касса ещё не открывалась: оплаты не принимались, долгов нет."}
+
+
 _FAST = {"get_stats": get_stats, "get_report": get_report, "get_balance": get_balance,
          "client_info": client_info, "list_dialogs": list_dialogs, "get_schedule": get_schedule,
-         "get_bookings": get_bookings, "get_orders": get_orders}
+         "get_bookings": get_bookings, "get_orders": get_orders, "get_cash": get_cash}
 
 
 def run_demo_function(name: str, args: Dict[str, Any]) -> Dict[str, Any]:

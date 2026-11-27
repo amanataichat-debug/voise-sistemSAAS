@@ -416,6 +416,7 @@ def state(db: Session, token: str) -> Dict[str, Any]:
             seen.add(key)
             parts = sorted([x for x in past if x.visit_id == b.visit_id], key=lambda x: x.start_at) if b.visit_id else [b]
             item = _visit_out(db, cl, parts, masters, cfg, upcoming=False)
+            item["due"] = _visit_due(db, cl, parts)       # шаг 3.2: «к оплате N сом» (оплаты онлайн нет)
             item["review"] = _review_out(db, parts[0])
             item["can_repeat"] = bool(cl.page.enabled) and parts[0].status != "no_show" and any(
                 p.service_entry_id for p in parts)
@@ -424,7 +425,17 @@ def state(db: Session, token: str) -> Dict[str, Any]:
                 break
     return {"salon": _salon_out(db, cl),
             "client": {"name": _first_name(cl.name), "full_name": cl.name or ""},
-            "upcoming": upcoming, "history": history, "waitlist": _waitlist_out(db, cl)}
+            "upcoming": upcoming, "history": history, "waitlist": _waitlist_out(db, cl),
+            "due_total": round(sum(float(h.get("due") or 0) for h in history), 2)}
+
+
+def _visit_due(db: Session, cl: Client, parts) -> float:
+    try:
+        from backend.services import cash_debts
+        return cash_debts.visit_left(db, cl.owner.id, parts)
+    except Exception:
+        db.rollback()
+        return 0.0
 
 
 def _waitlist_q(db: Session, cl: Client):

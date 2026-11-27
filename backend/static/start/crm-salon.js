@@ -222,6 +222,11 @@
     if (!box._myCopy) {                 // «Скопировать ссылку» «Мои записи» (шаг 2.5)
       box._myCopy = true;
       box.addEventListener('click', function (e) {
+        var dp = e.target.closest('[data-debt-pay]');          // шаг 3.2: долг клиента — «Принять оплату»
+        if (dp && window.BookingPay) {
+          window.BookingPay.open(dp.getAttribute('data-debt-pay'), { onDone: function () { cardSection(box, contact); } });
+          return;
+        }
         var b = e.target.closest('[data-copy-my]');
         if (!b) return;
         var url = b.getAttribute('data-copy-my');
@@ -260,6 +265,7 @@
       '<a class="btn btn-primary btn-sm" href="' + esc(bookHref) + '">' + icon('calendar-plus') + '<span>Записать</span></a></div></div>' +
       (c.my_url ? '<div class="cs-my"><span class="muted small">Клиент сам переносит и отменяет по ссылке «Мои записи» — она уходит в подтверждении записи.</span>' +
         '<button type="button" class="btn btn-sm" data-copy-my="' + esc(c.my_url) + '">' + icon('copy') + '<span>Скопировать ссылку</span></button></div>' : '') +
+      debtHtml(c.debt) +
       (seg ? '<div class="cs-segs-card">' + seg + '</div>' : '') +
       '<div class="cs-tiles">' + tiles.map(function (t) {
         return '<div class="cs-tile"><div class="lbl">' + esc(t[0]) + '</div><div class="val">' + esc(String(t[1])) + '</div><div class="sub">' + esc(t[2] || '') + '</div></div>';
@@ -268,6 +274,17 @@
       (c.upcoming && c.upcoming.length ? '<div class="cs-sub">Будущие записи</div>' + c.upcoming.map(visitRow).join('') : '') +
       (c.history && c.history.length ? '<div class="cs-sub">История · ' + c.history.length + '</div><div class="cs-hist">' + c.history.map(visitRow).join('') + '</div>'
         : '<p class="muted small" style="margin:10px 0 0">Записей ещё не было.</p>');
+  }
+
+  // Долг клиента (шаг 3.2): визиты, оплаченные не полностью; «Принять» — то же окно оплаты, что в журнале и кассе
+  function debtHtml(d) {
+    if (!d || !d.items || !d.items.length) return '';
+    var pay = d.can_take && window.BookingPay;
+    return '<div class="cs-debtbox"><div class="cs-debtbox-h"><span>' + icon('receipt-text') + 'Долг клиента</span><b>' + esc(money(d.total)) + '</b></div>' +
+      d.items.map(function (x) {
+        return '<div class="cs-debtrow"><span>' + esc(x.services.join(' + ')) + ' · ' + esc(x.day_words) + '</span><b>' + esc(money(x.left)) + '</b>' +
+          (pay ? '<button type="button" class="btn btn-primary btn-sm" data-debt-pay="' + esc(x.booking_id) + '">' + icon('banknote') + '<span>Принять оплату</span></button>' : '') + '</div>';
+      }).join('') + '</div>';
   }
 
   function localDay(iso) {

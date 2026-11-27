@@ -26,8 +26,8 @@ from backend.services import booking_service as bs
 logger = logging.getLogger(__name__)
 
 TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio",
-              "get_salon_report", "save_review"}
-OWNER_TOOL_NAMES = {"get_salon_report"}      # только чат владельца: клиенту в переписке не даётся
+              "get_salon_report", "save_review", "get_cash_report"}
+OWNER_TOOL_NAMES = {"get_salon_report", "get_cash_report"}   # только чат владельца: клиенту в переписке не даётся
 LAPSED_DAYS = 45                             # «давно не приходил» по умолчанию
 MAX_PORTFOLIO_SEND = 4
 MAX_SERVICES_OUT = 40
@@ -144,6 +144,21 @@ OWNER_TOOLS = [
                 "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "this_month", "quarter"],
                            "description": "Период (по умолчанию week)"},
                 "lapsed_days": {"type": "integer", "description": "Сколько дней без визита считать «давно» (по умолчанию 45)"},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "get_cash_report",
+        "description": (
+            "Касса и долги салона для владельца: выручка за день по способам оплаты (наличные, карта, QR, перевод), "
+            "возвраты, смены администраторов и расхождения, кто не пришёл; кто из клиентов должен и сколько (визиты, "
+            "оплаченные не полностью). Для «кто должен», «сколько сегодня в кассе», «какие долги», «итог дня»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "day": {"type": "string", "description": "today, yesterday или дата ГГГГ-ММ-ДД (по умолчанию today)"},
             },
         },
     },
@@ -572,6 +587,11 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             if context.get("surface") == "postcall":
                 return _dump({"ok": False, "error": "Отчёт салона — только владельцу"})
             return _dump(get_salon_report(db, user, args.get("period"), args.get("lapsed_days")))
+        if tool_name == "get_cash_report":
+            if context.get("surface") == "postcall":
+                return _dump({"ok": False, "error": "Касса и долги — только владельцу"})
+            from backend.services import cash_debts
+            return _dump(cash_debts.owner_summary(db, user, args.get("day")))
     except Exception as e:
         db.rollback()
         logger.error(f"[SALON-AI] {tool_name} failed: {e}", exc_info=True)

@@ -128,6 +128,9 @@ class Booking(Base):
     review_score = Column(Integer, nullable=True)
     review_text = Column(Text, nullable=True)
     review_at = Column(DateTime(timezone=True), nullable=True)
+    # Долг списан владельцем (шаг 3.2, services/cash_debts.py): {at, reason, by, amount} у всех услуг визита —
+    # визит больше не долг клиента и выручкой не считается
+    debt_off = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -178,6 +181,9 @@ class BookingPage(Base):
     # Страница салона /beauty/<slug> (шаг 1.5): слоган, о салоне, логотип, обложка, галерея, контакты,
     # соцсети, карта, удобства, акции, цвет — services/salon_page.py
     profile = Column(JSONB, nullable=True)
+    # Касса (шаг 3.2): {"day_report": {"on", "hour"}, "day_report_sent": "YYYY-MM-DD"} — отчёт дня владельцу
+    # (services/cash_debts.py). Отдельно от settings: «Правила записи» пересобирают settings из известных ключей
+    cash_settings = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

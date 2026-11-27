@@ -639,3 +639,15 @@
 .st-pro-note b { color: var(--vf-text, #0e1729); }
 .st-pro-note .btn { flex: 0 0 auto; white-space: nowrap; }
 @media (max-width: 760px) { .st-pro-note { flex-wrap: wrap; } .st-pro-note .btn { width: 100%; justify-content: center; } }
+
+/* Долг клиента в карточке салона (Voksy Beauty 3.2) */
+.cs-debtbox { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: #fff4ec; border: 1px solid #fbd5b5; }
+.cs-debtbox-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.cs-debtbox-h span { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #9a3412; }
+.cs-debtbox-h span .ic { width: 15px; height: 15px; }
+.cs-debtbox-h b { font-size: 17px; color: #b42020; font-variant-numeric: tabular-nums; }
+.cs-debtrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #fbd5b5; font-size: 13px; }
+.cs-debtrow > span { flex: 1; min-width: 0; color: var(--vf-text-2); }
+.cs-debtrow > b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cs-debtrow .btn { flex: none; }
+@media (max-width: 760px) { .cs-debtrow { flex-wrap: wrap; } .cs-debtrow .btn { width: 100%; justify-content: center; } }

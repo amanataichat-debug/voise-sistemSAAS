@@ -11,6 +11,10 @@
   POST /pay                           — принять оплату {booking_id, lines: [{method, amount}], idem_key, prepay?, comment?}
   POST /receipts/{id}/refund          — вернуть {amount, reason, method?, idem_key}
   POST /moves                         — внести / изъять наличные {kind: cash_in|cash_out, amount, comment, idem_key}
+  GET  /debts                         — долги клиентов (шаг 3.2): кто, за что, сколько, с какого дня, напоминали ли
+  POST /debts/{booking_id}/remind     — напомнить о долге {send: false — текст для окна, true — в очередь отправок}
+  POST /debts/{booking_id}/write-off  — списать долг {reason} — только владелец
+  PUT  /day-report                    — отчёт дня {on, hour} — только владелец
 
 Права сотрудника — team_service.STAFF_RULES (+ services/cashbox.can_take / can_manage). Обработчики def
 (FastAPI выполняет их в потоках — синхронная база не держит цикл звонков).
@@ -25,7 +29,7 @@ from sqlalchemy.orm import Session
 from backend.core.dependencies import get_current_user
 from backend.db.session import get_db
 from backend.models.user import User
-from backend.services import cashbox
+from backend.services import cash_debts, cashbox
 
 router = APIRouter()
 
@@ -37,7 +41,7 @@ def _fail(db: Session, e: Exception):
     if isinstance(e, cashbox.Forbidden):
         raise HTTPException(status_code=403, detail=str(e))
     code = getattr(e, "code", "error")
-    raise HTTPException(status_code=409 if code in ("shift_required", "paid", "closed", "refunded") else 400,
+    raise HTTPException(status_code=409 if code in ("shift_required", "paid", "closed", "refunded", "reminded", "no_debt") else 400,
                         detail={"message": str(e), "code": code})
 
 
@@ -78,9 +82,95 @@ class MoveBody(BaseModel):
     idem_key: str = Field(..., min_length=8, max_length=80)
 
 
+class RemindBody(BaseModel):
+    send: bool = False
+
+
+class WriteOffBody(BaseModel):
+    reason: str = Field("", max_length=300)
+
+
+class DayReportBody(BaseModel):
+    on: Optional[bool] = None
+    hour: Optional[int] = None
+
+
+def _day(db: Session, user: User, day: Optional[str]) -> Optional[Dict[str, Any]]:
+    """«Итог дня» — владельцу и бухгалтеру (как и итоги дня по салону)."""
+    if not cashbox.can_manage(user):
+        return None
+    try:
+        return cash_debts.day_report(db, user.id, day)
+    except cashbox.CashError:
+        return None
+
+
 @router.get("/state")
 def cash_state(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
-    return cashbox.state(db, current_user)
+    out = cashbox.state(db, current_user)
+    # шаг 3.2: долги (вкладка и число на ней), итог дня, настройки отчёта дня (владельцу)
+    if cashbox.can_take(current_user) or cashbox.can_manage(current_user):
+        out["debts"] = cash_debts.totals(db, current_user.id)
+    out["day"] = _day(db, current_user, None)
+    if cash_debts.can_write_off(current_user):
+        out["day_report"] = cash_debts.day_report_settings(db, current_user.id)
+        agent = cashbox_first_agent(db, current_user.id)
+        out["day_report_telegram"] = bool(agent is not None and getattr(agent, "telegram_enabled", False))
+        out["report_hours"] = cash_debts.REPORT_HOURS
+    out["can_write_off"] = cash_debts.can_write_off(current_user)
+    return out
+
+
+def cashbox_first_agent(db: Session, user_id):
+    from backend.services import booking_service as bs
+    return bs._first_agent(db, user_id)
+
+
+@router.get("/debts")
+def debts(contact_id: Optional[str] = None, current_user: User = Depends(get_current_user),
+          db: Session = Depends(get_db)) -> Dict[str, Any]:
+    if not (cashbox.can_take(current_user) or cashbox.can_manage(current_user)):
+        raise HTTPException(status_code=403, detail="Долги видят владелец, администратор и бухгалтер")
+    out = cash_debts.debts(db, current_user, contact_id=contact_id)
+    db.rollback()
+    return out
+
+
+@router.post("/debts/{booking_id}/remind")
+def debt_remind(booking_id: str, body: RemindBody, current_user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        out = cash_debts.remind(db, current_user, booking_id, send=body.send)
+        if body.send:
+            db.commit()
+        else:
+            db.rollback()
+    except cashbox.CashError as e:
+        _fail(db, e)
+    return {"ok": True, **out}
+
+
+@router.post("/debts/{booking_id}/write-off")
+def debt_write_off(booking_id: str, body: WriteOffBody, current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        out = cash_debts.write_off(db, current_user, booking_id, body.reason)
+        db.commit()
+    except cashbox.CashError as e:
+        _fail(db, e)
+    return out
+
+
+@router.put("/day-report")
+def day_report_settings(body: DayReportBody, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        data = {k: v for k, v in body.dict().items() if v is not None}
+        out = cash_debts.save_day_report_settings(db, current_user, data)
+        db.commit()
+    except cashbox.CashError as e:
+        _fail(db, e)
+    return {"ok": True, "day_report": out}
 
 
 @router.post("/shifts/open")
@@ -130,6 +220,7 @@ def receipts(date: Optional[str] = None, shift_id: Optional[str] = None, before:
         out = cashbox.list_receipts(db, current_user, shift_id=shift_id, day=date, before=before, limit=limit)
         if not shift_id and cashbox.can_manage(current_user):
             out["day"] = cashbox.day_numbers(db, current_user.id, date)
+            out["report"] = _day(db, current_user, date)       # шаг 3.2: «Итог дня» за выбранный день
         return out
     except cashbox.CashError as e:
         _fail(db, e)

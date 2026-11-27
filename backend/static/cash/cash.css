@@ -86,3 +86,58 @@
 }
 .st-drawer-body.cs-dr { padding: 16px 20px 24px; }
 .cs-dr > .btn-primary { width: 100%; justify-content: center; height: 44px; margin-top: 12px; }
+
+/* шаг 3.2: долги, итог дня, отчёт дня */
+.cs-n.warn { background: #d97706; }
+.cs-card h3 .ic { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: var(--vf-accent); }
+.cs-drows { margin-top: 12px; border-top: 1px solid var(--vf-border); }
+.cs-drow { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 9px 0; border: 0; border-bottom: 1px solid var(--vf-border);
+  background: none; font: inherit; color: inherit; text-align: left; }
+.cs-drow:last-child { border-bottom: 0; }
+.cs-drow > span { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; color: var(--vf-text-2); }
+.cs-drow > span .ic { flex: none; width: 15px; height: 15px; color: var(--vf-text-3); }
+.cs-drow > b { font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; min-width: 0; }
+.cs-drow > b.neg { color: #b42020; }
+.cs-drow > b.warn { color: #9a4f00; font-weight: 600; }
+.cs-drow.link { cursor: pointer; }
+.cs-drow.link:hover > span { color: var(--vf-accent); }
+.cs-rep { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--vf-surface-2); }
+.cs-rep-t { flex: 1; min-width: 0; }
+.cs-rep-t b { display: block; font-size: 14px; }
+.cs-rep-t span { display: block; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.4; }
+.cs-rep-h { width: auto; flex: none; height: 38px; }
+.cs-switch { position: relative; flex: none; width: 42px; height: 24px; }
+.cs-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+.cs-switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--vf-border-strong, #cbd5e1); transition: background .15s; }
+.cs-switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.cs-switch input:checked + span { background: var(--vf-accent); }
+.cs-switch input:checked + span::after { transform: translateX(18px); }
+.cs-dsum2 { display: flex; align-items: center; gap: 16px; }
+.cs-dsum2 > div span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-dsum2 > div b { display: block; font-size: 28px; color: #b42020; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.cs-dsum2 > div small { font-size: 12.5px; color: var(--vf-text-3); }
+.cs-dsum2 p { margin: 0 0 0 auto; max-width: 360px; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.45; }
+.cs-debts { padding: 4px 16px; }
+.cs-debt { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--vf-border); }
+.cs-debt:last-child { border-bottom: 0; }
+.cs-debt-m { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cs-debt-m b { font-size: 14.5px; }
+.cs-debt-m span { font-size: 12.5px; color: var(--vf-text-2); overflow-wrap: anywhere; }
+.cs-debt-m span.muted { color: var(--vf-text-3); }
+.cs-debt-ph { font-size: 12.5px; color: var(--vf-accent); text-decoration: none; width: fit-content; }
+.cs-debt-r { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.cs-debt-r > b { font-size: 16px; color: #b42020; font-variant-numeric: tabular-nums; }
+.cs-debt-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cs-msg-h { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); margin-bottom: 8px; }
+.cs-msg-h .ic { width: 14px; height: 14px; }
+.cs-msg { padding: 12px 14px; border-radius: 14px 14px 14px 4px; background: #e8f7ee; color: #12321f; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+@media (max-width: 760px) {
+  .cs-dsum2 { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .cs-dsum2 p { margin: 0; }
+  .cs-debts { padding: 2px 14px; }
+  .cs-debt { flex-direction: column; align-items: stretch; gap: 8px; }
+  .cs-debt-r { flex-direction: row; align-items: center; justify-content: space-between; }
+  .cs-debt-acts .btn { height: 38px; }
+  .cs-rep { flex-wrap: wrap; }
+  .cs-rep-h { width: 100%; }
+}

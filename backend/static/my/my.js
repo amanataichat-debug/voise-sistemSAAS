@@ -123,6 +123,7 @@
     return '<div class="my-sec">Мои визиты</div><section class="my-card my-hist">' + list.map(function (v) {
       var d = ymd(v.date), m = v.items[0] && v.items[0].master, acts = [];
       if (v.status === 'no_show') acts.push('<span class="my-pill my-miss" style="cursor:default">Не пришли</span>');
+      if (v.due) acts.push('<span class="my-pill my-due" style="cursor:default">К оплате ' + esc(money(v.due)) + '</span>');   // шаг 3.2
       if (v.review && v.review.score) acts.push((v.review.url ? '<a class="my-pill" href="' + esc(v.review.url) + '">' : '<span class="my-pill" style="cursor:default">') +
         '<span class="my-stars">' + '★★★★★'.slice(0, v.review.score) + '</span>' + (v.review.url ? ' изменить</a>' : '</span>'));
       else if (v.review && v.review.url) acts.push('<a class="my-pill a" href="' + esc(v.review.url) + '">' + ic('star') + 'Оценить визит</a>');
@@ -139,9 +140,16 @@
       (s.book_url && S.data.upcoming.length ? '<a href="' + esc(s.book_url) + '">Записаться ещё</a>' : '') + '</div>' +
       '<div class="my-pw">Ссылка личная — не пересылайте её другим. Работает на <a href="https://voksyai.online" target="_blank" rel="noopener">Voksy AI</a></div>';
   }
+  // Долг за прошлые визиты (шаг 3.2): оплатить онлайн нельзя — в салоне или как указал салон
+  function dueCard(d) {
+    if (!d.due_total) return '';
+    var s = d.salon || {};
+    return '<section class="my-card my-duebox"><b>К оплате в салоне: ' + esc(money(d.due_total)) + '</b>' +
+      '<span>За прошлые визиты — список ниже. Оплатить можно при следующем визите' + (s.prepay_info ? ' или так: ' + esc(s.prepay_info) : '') + '.</span></section>';
+  }
   function draw() {
     var d = S.data;
-    app.innerHTML = head() + hello() + (d.upcoming.length ? d.upcoming.map(upcomingCard).join('') : emptyCard()) +
+    app.innerHTML = head() + hello() + dueCard(d) + (d.upcoming.length ? d.upcoming.map(upcomingCard).join('') : emptyCard()) +
       waitlistCard(d.waitlist) + historyCard(d.history) + foot();
   }
   function fail(e) {

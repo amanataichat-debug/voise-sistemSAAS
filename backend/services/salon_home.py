@@ -114,10 +114,13 @@ def now_block(db: Session, user, now: datetime, names, colors) -> Dict[str, Any]
     upcoming = [x for x in live if x.status in ("booked", "confirmed") and _aw(x.start_at) > now]
     visited = [x for x in live if x.status in VISITED_STATUSES]
     revenue = round(sum(float(x.price or 0) for x in visited), 2)
-    try:   # касса (шаг 3.1): салон принимает оплату — выручка дня по оплатам
+    debts = None
+    try:   # касса (шаг 3.1): салон принимает оплату — выручка дня по оплатам; шаг 3.2 — долги клиентов
         from backend.services import cashbox
         if cashbox.cash_start(db, user.id) is not None:
             revenue = cashbox.booking_revenue(db, user.id, a, b)
+            from backend.services import cash_debts
+            debts = cash_debts.totals(db, user.id)
     except Exception:
         db.rollback()
     return {
@@ -126,6 +129,7 @@ def now_block(db: Session, user, now: datetime, names, colors) -> Dict[str, Any]
                    "no_show": sum(1 for x in live if x.status == "no_show"),
                    "cancelled": sum(1 for x in rows if x.status == "cancelled")},
         "revenue": revenue,
+        "debts": debts,          # {count, total} — плитка «Долги клиентов» (только когда салон работает через кассу)
         # как в аналитике: записи дня, где визит ещё не отмечен (впереди, идут сейчас, прошли без отметки)
         "expected": round(sum(float(x.price or 0) for x in live if x.status in ("booked", "confirmed")), 2),
         "in_salon": [_booking_row(x, names, colors) for x in in_salon],

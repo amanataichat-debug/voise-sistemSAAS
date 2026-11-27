@@ -184,6 +184,9 @@ STAFF_RULES = [
     _rule("GET", r"^/api/cash/booking/[0-9a-fA-F-]{36}/?$", "booking"),
     _rule("POST", r"^/api/cash/(pay|moves|shifts/open)/?$", "booking"),
     _rule("POST", r"^/api/cash/receipts/[0-9a-fA-F-]{36}/refund/?$", "booking"),
+    # шаг 3.2: долги — видят администратор и бухгалтер, напоминает администратор; списать и отчёт дня — только владелец
+    _rule("GET", r"^/api/cash/debts/?$", "booking", "finance"),
+    _rule("POST", r"^/api/cash/debts/[0-9a-fA-F-]{36}/remind/?$", "booking"),
     # — журнал действий (Voksy Beauty 1.7): управляющий; история записи в её карточке — тому же разделу —
     _rule("GET", r"^/api/beauty/activity/?$", "activity"),
     # клиенты салона (шаг 2.1): список и карточка — раздел «Клиенты»; выгрузка — только владелец (правила нет)
