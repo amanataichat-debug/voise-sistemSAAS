@@ -120,13 +120,22 @@ from .wallet_transaction import WalletTransaction, WalletTransactionType
 from .admin_audit import AdminAuditLog
 
 # Онлайн-запись: мастера, записи, страница записи (ветка 1811-niche-admin-speed)
-from .booking import BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom
+from .booking import BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom, BookingConfirmation
 
 # Сотрудники кабинета: вход по своей почте, права по разделам, место 150 сом/мес (ветка 1811-niche-admin-speed)
 from .team import TeamMember
 
 # Заказы магазинов и доставки (ветка 1811-niche-admin-speed)
 from .order import Order, OrderSettings
+from .salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
+from .webchat import WebChatSession, AgentWebChatMessage
+# Журнал действий кабинета: кто что сделал (Voksy Beauty, шаг 1.7)
+from .activity import ActivityLog
+from .automation import NotificationQueue, AutomationRule
+from .review import SalonReview
+from .waitlist import WaitlistEntry
+# Касса салона: смены администраторов, чеки, строки оплат (Voksy Beauty, шаг 3.1)
+from .cashbox import CashShift, CashReceipt, CashPayment
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

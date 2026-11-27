@@ -10,6 +10,8 @@ Beauty-тарифом (reactive / full / истёк).
 - /api/payments/my-plans: салону — Beauty (рекомендованный по умолчанию), остальным — AI Voice/Старт/Profi;
 - оплата: салон не может купить Старт, магазин — Beauty; цена за 1/6/12 мес из базы; после оплаты —
   тариф, срок, режим reactive, кредиты только если суперадмин включил их в тариф (идемпотентно);
+- сроки Beauty (26.11.2026): 1 · 3 · 6 мес · год со скидками 0/10/20/30%, плашка «Выгодно» на 3 месяцах,
+  экономия в сомах в ответе окна оплаты; 3 месяца = 90 дней; у Старта 3 месяцев нет (400), срок 2 — 422;
 - индивидуальный тариф видит и оплачивает только свой клиент; скрытый — только продление; выключенный
   не продаётся; бесплатный нельзя «оплатить»;
 - редактор суперадмина: доступ только админу, правка цены/лимита/текста видна салону сразу, прежние
@@ -102,22 +104,51 @@ check("по умолчанию: три тарифа салона с ценами
       and [d["limits"]["staff"] for d in pc.BEAUTY_DEFAULTS] == [3, 10, 20])
 check("уровни: Beauty Start и AI — как Старт (reactive), Beauty Pro — как Profi (full)",
       [d["limits"]["agent_mode"] for d in pc.BEAUTY_DEFAULTS] == ["reactive", "reactive", "full"]
-      and any("Автономный" in f for f in pc.BEAUTY_DEFAULTS[2]["features"])
-      and not any("Автономный" in f for d in pc.BEAUTY_DEFAULTS[:2] for f in d["features"]))
+      and any("сам пишет" in f for f in pc.BEAUTY_DEFAULTS[2]["features"])
+      and not any("сам пишет" in f for d in pc.BEAUTY_DEFAULTS[:2] for f in d["features"]))
 check("по умолчанию: «что входит» не длиннее лимита редактора",
       all(len(d["features"]) <= pc.MAX_FEATURES and all(len(f) <= pc.MAX_FEATURE_LEN for f in d["features"])
           for d in pc.BEAUTY_DEFAULTS))
-check("по умолчанию: ИИ по кредитам (0 в тарифе), один тариф пробного периода, коды ≤ 20",
-      all(d["limits"]["credits_month"] == 0 for d in pc.BEAUTY_DEFAULTS)
+check("по умолчанию: Beauty Pro — 10 000 кредитов в месяц, Start/AI — 0, один тариф пробного периода, коды ≤ 20",
+      [d["limits"]["credits_month"] for d in pc.BEAUTY_DEFAULTS] == [0, 0, 10000]
+      and pc.PRO_CREDITS_FEATURE in pc.BEAUTY_DEFAULTS[2]["features"]
       and sum(1 for d in pc.BEAUTY_DEFAULTS if d["limits"]["trial"]) == 1
       and all(len(c) <= 20 and c.startswith(pc.BEAUTY_PREFIX) for c in codes)
       and all(len(d["name"]) <= 50 for d in pc.BEAUTY_DEFAULTS))
 
-from backend.api.payments import calculate_period_price  # noqa: E402
+from backend.api.payments import (PERIOD_DISCOUNTS, _periods_text, calculate_period_price,  # noqa: E402
+                                  get_all_plans_with_prices)
+from backend.services.payment_service import get_subscription_days_by_duration  # noqa: E402
 view = pc.beauty_view(SubscriptionPlan(code="beauty_ai", name="Beauty AI", price=3990, max_assistants=5, product="beauty",
                                        limits={"staff": 10}, features=["Журнал", " "], badge="Хит", sort_order=20))
-check("вид тарифа: цена за период тем же расчётом скидок", view["periods"][6]["price"] == calculate_period_price(3990, 6)["final_price"]
-      and view["periods"][12]["price"] == calculate_period_price(3990, 12)["final_price"] and view["periods"][1]["price"] == 3990)
+BD = pc.BEAUTY_PERIOD_DISCOUNTS
+check("вид тарифа: цена за период тем же расчётом скидок",
+      view["periods"][6]["price"] == calculate_period_price(3990, 6, BD)["final_price"]
+      and view["periods"][12]["price"] == calculate_period_price(3990, 12, BD)["final_price"] and view["periods"][1]["price"] == 3990)
+
+# сроки Beauty (решение владельца 26.11.2026)
+per = view["periods"]
+check("сроки Beauty: 1 · 3 · 6 мес · год, скидки 0/10/20/30%", list(per) == [1, 3, 6, 12]
+      and BD == {1: 0, 3: 10, 6: 20, 12: 30} and pc.BEAUTY_PERIOD_BADGES == {3: "Выгодно"})
+check("3 месяца: −10%, 90 дней, экономия в сомах и плашка «Выгодно»", per[3]["price"] == 10773 and per[3]["savings"] == 1197
+      and per[3]["savings_formatted"] == "1 197 сом" and per[3]["full_price"] == 11970 and per[3]["days"] == 90
+      and per[3]["badge"] == "Выгодно" and per[3]["label"] == "3 месяца" and per[3]["discount_percent"] == 10, per[3])
+check("6 мес и год: экономия сразу в ответе окна оплаты", per[6]["price"] == 19152 and per[6]["savings_formatted"] == "4 788 сом"
+      and per[12]["price"] == 33516 and per[12]["savings"] == 14364 and per[12]["label"] == "1 год"
+      and per[1]["savings_formatted"] is None and per[1]["badge"] is None and per[6]["badge"] is None)
+odd = pc.beauty_view(SubscriptionPlan(code="beauty_o", name="O", price=2495, max_assistants=1, product="beauty", limits={}))["periods"][3]
+check("нецелая сумма из админки: цена + экономия = полная цена (окно не пересчитывает)",
+      odd["price"] + odd["savings"] == odd["full_price"] == 7485, odd)
+check("3 месяца = 90 дней подписки", get_subscription_days_by_duration(3) == 90 and get_subscription_days_by_duration(6) == 180)
+try:
+    calculate_period_price(7500, 3)
+    no3 = False
+except ValueError:
+    no3 = True
+check("прежние тарифы — по-прежнему 1 · 6 мес · год", no3 and 3 not in PERIOD_DISCOUNTS
+      and sorted(get_all_plans_with_prices(None)["plans"]["start"]["periods"]) == [1, 6, 12])
+check("отказ называет сроки словами", _periods_text(PERIOD_DISCOUNTS) == "1 месяц, 6 месяцев или 1 год"
+      and _periods_text(BD) == "1 месяц, 3 месяца, 6 месяцев или 1 год")
 check("вид тарифа: лимит словами, пустые строки убраны", view["staff_label"] == "До 10 сотрудников" and view["features"] == ["Журнал"]
       and view["product"] == "beauty" and view["individual"] is False)
 check("текст лимита", "Beauty Start" in pc.limit_message({"plan_name": "Beauty Start", "limit": 3}) and "до 3" in
@@ -185,6 +216,25 @@ check("старт: колонки каталога добавлены в ста�
                                                              "for_user_id", "admin_updated_at"} <= cols)
 check("старт: Beauty-тарифы заведены ровно один раз", [(r[0], float(r[1]), r[3]) for r in seeded] ==
       [("beauty_start", 1990.0, 3), ("beauty_ai", 3990.0, 10), ("beauty_pro", 5990.0, 20)], seeded)
+# Прод 25.11.2026: Beauty Pro заведён с 0 кредитов → один раз становится 10 000; поставленные потом
+# суперадмином 0 повторный старт не трогает.
+with engine.begin() as conn:
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits - 'credits_default_v', '{credits_month}', '0'), "
+                      "features = features - 0 WHERE code='beauty_pro'"))
+    conn.execute(text("UPDATE subscription_plans SET features = (SELECT jsonb_agg(f) FROM jsonb_array_elements(features) f "
+                      "WHERE f::text NOT LIKE '%кредитов ИИ%') WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_row = conn.execute(text("SELECT (limits->>'credits_month')::int, features::text FROM subscription_plans WHERE code='beauty_pro'")).first()
+check("старт: Beauty Pro с 0 кредитов → 10 000 и строка «что входит»", pro_row[0] == 10000 and "10 000 кредитов ИИ" in pro_row[1]
+      and pro_row[1].count("кредитов ИИ") == 1, pro_row)
+with engine.begin() as conn:
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{credits_month}', '0') WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_c = conn.execute(text("SELECT (limits->>'credits_month')::int FROM subscription_plans WHERE code='beauty_pro'")).scalar()
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{credits_month}', '10000') WHERE code='beauty_pro'"))
+check("старт: 0, поставленный суперадмином после обновления, не перезаписывается", pro_c == 0, pro_c)
 check("старт: прежний тариф остался voksy, цена из конфига", start_row and start_row[1] == "voksy" and float(start_row[0]) == 7500.0, start_row)
 
 cl = TestClient(app_module.app, raise_server_exceptions=False)
@@ -250,10 +300,15 @@ check("салону — тарифы Voksy Beauty", r.status_code == 200 and j.g
       and j.get("order") == ["beauty_start", "beauty_ai", "beauty_pro"], r.text[:200])
 check("по умолчанию выделен «Хит» Beauty AI, лимит словами", j.get("default_plan") == "beauty_ai"
       and (j.get("plans") or {}).get("beauty_start", {}).get("staff_label") == "До 3 сотрудников")
+per_j = (j.get("plans") or {}).get("beauty_ai", {}).get("periods") or {}
+check("окно оплаты салона: 4 срока, цена, экономия и плашка — с сервера", sorted(per_j, key=int) == ["1", "3", "6", "12"]
+      and per_j["3"]["price"] == 10773 and per_j["3"]["badge"] == "Выгодно" and per_j["12"]["savings"] == 14364
+      and j.get("discounts") == {"1": 0, "3": 10, "6": 20, "12": 30}, (list(per_j), j.get("discounts")))
 r = cl.get("/api/payments/my-plans", headers=H(shop))
 j = r.json() if r.status_code == 200 else {}
 check("остальным — прежние тарифы", r.status_code == 200 and j.get("product") == "voksy"
       and set(j.get("plans") or {}) == {"ai_voice", "start", "profi"}, r.text[:160])
+check("остальным — без 3 месяцев", sorted((j.get("plans") or {}).get("start", {}).get("periods") or {}, key=int) == ["1", "6", "12"])
 check("без входа — 401/403", cl.get("/api/payments/my-plans").status_code in (401, 403))
 
 # ── оплата (Finik подменён)
@@ -285,6 +340,10 @@ check("салон покупает Beauty AI на 6 мес: сумма из ба
       and j.get("plan_info", {}).get("name") == "Beauty AI", r.text[:200])
 r = buy(shop, "start")
 check("магазин покупает Старт как раньше", r.status_code == 200 and r.json().get("amount") == 7500, r.text[:160])
+r = buy(shop, "start", 3)
+check("Старт на 3 месяца — понятный отказ со сроками", r.status_code == 400 and "Такого срока" in err(r)
+      and "6 месяцев" in err(r) and "3 месяца" not in err(r), r.text[:200])
+check("срок 2 месяца — 422", buy(salon, "beauty_ai", 2).status_code == 422)
 
 
 def apply_last(u):
@@ -307,6 +366,19 @@ check("после оплаты: кредиты не начислены (ИИ —
 check("повторный webhook не продлевает второй раз", asyncio.run(FinikPaymentService.apply_successful_payment(db, tx))
       and 29 <= (fresh(salon).subscription_end_date - now).days <= 30)
 
+# 3 месяца — только у Beauty: −10% и 90 дней
+salon3 = mk("salon3@beauty.kg", None, business_niche="cosmetology", first_name="Жылдыз")
+db.commit()
+r = buy(salon3, "beauty_start", 3)
+j = r.json() if r.status_code == 200 else {}
+check("салон покупает Beauty Start на 3 месяца: −10%, 90 дней", r.status_code == 200 and j.get("amount") == 5373
+      and (j.get("period_info") or {}).get("days") == 90 and j["period_info"]["discount_percent"] == 10
+      and j["period_info"]["label"] == "3 месяца" and j["period_info"]["savings"] == 597, r.text[:200])
+ok_, tx3 = apply_last(salon3)
+s3 = fresh(salon3)
+check("после оплаты 3 месяцев: тариф на 90 дней", ok_ and s3.subscription_plan_rel.code == "beauty_start"
+      and 89 <= (s3.subscription_end_date - now).days <= 90, s3.subscription_end_date)
+
 # ── редактор суперадмина
 check("редактор: не админу — 403", cl.get("/api/admin/plans/catalog", headers=H(salon)).status_code == 403
       and cl.patch("/api/admin/plans/catalog/beauty_ai", headers=H(salon), json={"price": 1}).status_code == 403)
@@ -317,6 +389,9 @@ check("редактор: Beauty с правкой + прежние без пра
       and set(rows) == {"beauty_start", "beauty_ai", "beauty_pro"} and rows["beauty_ai"]["subscribers"] == 1
       and {p["code"] for p in j.get("voksy") or []} == {"ai_voice", "start", "profi"}
       and not any(p["editable"] for p in j.get("voksy") or []), r.text[:200])
+check("редактор: скидки за срок — Beauty (с 3 мес) и прежние отдельно",
+      j.get("discounts") == {"1": 0, "3": 10, "6": 20, "12": 30} and j.get("voksy_discounts") == {"1": 0, "6": 20, "12": 30},
+      (j.get("discounts"), j.get("voksy_discounts")))
 r = cl.patch("/api/admin/plans/catalog/beauty_pro", headers=H(admin),
              json={"price": 6490, "credits_month": 1000, "features": ["До 20 сотрудников", "Журнал записи"], "badge": "Новинка"})
 check("редактор: правка цены/кредитов/текста", r.status_code == 200

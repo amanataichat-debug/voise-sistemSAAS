@@ -24,6 +24,7 @@ function Footer() {
             <a href="#agent">{t('footer.product_agent')}</a>
             <a href="#crm">{t('footer.product_crm')}</a>
             <a href="#pricing">{t('footer.product_pricing')}</a>
+            <a href="/app">{t('footer.product_app')}</a>
             <a href="/static/api-docs.html">{t('footer.product_api')}</a>
             <a href="/static/prompts-wiki.html">{t('footer.product_knowledge')}</a>
           </div>

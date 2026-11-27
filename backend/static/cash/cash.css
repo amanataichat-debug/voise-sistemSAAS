@@ -1,0 +1,88 @@
+/* Касса (Voksy Beauty, шаг 3.1): /static/cash.html. Префикс cs-. Окна оплаты и строки чеков — booking/pay.css. */
+.cs { max-width: 920px; }
+.cs-tabs { margin-bottom: 14px; }
+.cs-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--vf-success); color: #fff; font-size: 11px; font-weight: 700; }
+.cs-card { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+.cs-card h3 { font-size: 15px; margin: 0 0 10px; }
+.cs-card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.cs-card-h h3 { margin: 0; }
+.cs-card-h .py-link { margin: 0; }
+
+/* смена не открыта */
+.cs-open { text-align: left; max-width: 520px; }
+.cs-open-ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--vf-warning-soft); color: #9a4f00; margin-bottom: 10px; }
+.cs-open-ic .ic { width: 22px; height: 22px; }
+.cs-open h2 { font-size: 19px; margin: 0 0 6px; }
+.cs-open p { color: var(--vf-text-2); font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
+.cs-big { width: 100%; height: 48px; margin-top: 14px; font-size: 15px; justify-content: center; }
+
+/* открытая смена */
+.cs-shift-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
+.cs-cashbig { padding: 14px; border-radius: 14px; background: var(--vf-surface-2); border: 1px solid var(--vf-border); margin-bottom: 12px; }
+.cs-cashbig span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-cashbig b { display: block; font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+.cs-cashbig small { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cs-tile { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--vf-border); min-width: 0; }
+.cs-tile span { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-tile span .ic { width: 14px; height: 14px; }
+.cs-tile b { display: block; font-size: 16px; margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-tile.zero b { color: var(--vf-text-4, #9aa6b8); font-weight: 600; }
+.cs-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.cs-line > div { min-width: 0; }
+.cs-line span { display: block; font-size: 12px; color: var(--vf-text-3); }
+.cs-line b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.cs-line b.neg { color: #b42020; }
+.cs-acts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 8px; margin-top: 14px; }
+.cs-acts .btn { justify-content: center; height: 44px; }
+
+.cs-orow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vf-border); }
+.cs-orow:last-child { border-bottom: 0; }
+.cs-orow > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-daytotal { margin-bottom: 12px; }
+.cs-daytotal span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-daytotal b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.cs-daytotal small { color: var(--vf-text-3); font-size: 12.5px; }
+.cs-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.45; padding: 4px 4px 16px; }
+.cs-note .ic { flex: none; width: 15px; height: 15px; margin-top: 1px; }
+.cs-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--vf-text-3); font-size: 13.5px; padding: 22px 10px; line-height: 1.45; }
+.cs-empty .ic { width: 26px; height: 26px; opacity: .6; }
+.cs-more { width: 100%; margin-top: 8px; justify-content: center; }
+
+/* чеки дня */
+.cs-daynav { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.cs-daynav b { min-width: 150px; text-align: center; font-size: 15px; }
+.cs-date { width: auto; height: 34px; margin-left: auto; font-size: 13px; }
+
+/* история смен */
+.cs-slist { padding: 6px 16px; }
+.cs-srow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 12px 0;
+  border: 0; border-bottom: 1px solid var(--vf-border); background: none; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.cs-srow:last-of-type { border-bottom: 0; }
+.cs-srow .a b { display: block; font-size: 14px; }
+.cs-srow .a span, .cs-srow .b span { display: block; font-size: 12px; color: var(--vf-text-3); }
+.cs-srow .b b { font-variant-numeric: tabular-nums; }
+.cs-srow:hover .a b { color: var(--vf-accent); }
+
+/* панель смены, закрытие */
+.cs-dsum { margin-bottom: 10px; }
+.cs-dnote { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; padding: 10px; border-radius: 10px; background: var(--vf-surface-2); font-size: 13px; }
+.cs-dnote .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; color: var(--vf-text-3); }
+.cs-dh { font-size: 14px; margin: 16px 0 4px; }
+.cs-diff { min-height: 26px; margin-top: 8px; }
+.cs-diff .py-chip { font-size: 13px; padding: 5px 11px; }
+.cs-closesum { margin-top: 14px; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.5; }
+
+@media (max-width: 760px) {
+  .cs-card { padding: 14px; border-radius: 14px; }
+  .cs-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cs-cashbig b { font-size: 28px; }
+  .cs-acts { grid-template-columns: 1fr 1fr; }
+  .cs-acts .btn-primary { grid-column: 1 / -1; order: -1; height: 48px; }
+  .cs-daynav b { min-width: 0; flex: 1; }
+  .cs-date { display: none; }
+  .cs-srow { grid-template-columns: minmax(0, 1fr) auto; }
+  .cs-srow .c { grid-column: 1 / -1; }
+}
+.st-drawer-body.cs-dr { padding: 16px 20px 24px; }
+.cs-dr > .btn-primary { width: 100%; justify-content: center; height: 44px; margin-top: 12px; }

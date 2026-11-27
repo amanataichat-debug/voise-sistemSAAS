@@ -176,14 +176,30 @@ out = json.loads(asyncio.run(booking_tools.execute("find_booking_slots", {"servi
 check("бот: find_booking_slots по словам «маникюр» → 3 варианта и услуга", out.get("ok") and len(out["slots"]) == 3
       and out["service"]["title"] == "Маникюр с покрытием", str(out)[:200])
 first = out["slots"][0]["start"]
-out = json.loads(asyncio.run(booking_tools.execute("create_booking", {"start": first, "service": "маникюр с покрытием",
-                                                                        "agent_contact_id": str(uuid.uuid4())}, ctx, db)))
+from backend.models.agent_whatsapp import AgentWhatsAppMessage  # noqa: E402
+_tick = [0]
+
+
+def bot(tool, args):
+    """Инструмент записи бота в переписке (шаг 1.6а — в два шага): итог → клиент «да» → выполнение."""
+    res = json.loads(asyncio.run(booking_tools.execute(tool, args, ctx, db)))
+    if not res.get("needs_confirmation"):
+        return res
+    for direction, body in (("outbound", res["summary"]), ("inbound", "да")):
+        _tick[0] += 1
+        db.add(AgentWhatsAppMessage(agent_config_id=agent.id, agent_contact_id=client.id, direction=direction, body=body,
+                                    created_at=datetime.utcnow() + timedelta(seconds=_tick[0])))
+    db.commit()
+    return json.loads(asyncio.run(booking_tools.execute(tool, {"confirmation_id": res["confirmation_id"]}, ctx, db)))
+
+
+out = bot("create_booking", {"start": first, "service": "маникюр с покрытием", "agent_contact_id": str(uuid.uuid4())})
 check("бот: create_booking записал клиента ЭТОГО обращения (чужой id проигнорирован)", out.get("ok") and out["booking"]["contact_id"] == str(client.id), str(out)[:200])
 db.expire_all()
 check("клиент перешёл на стадию «Записан»", db.get(AgentContact, client.id).status == "active")
 bot_booking = out["booking"]
 check("источник — бот, канал — WhatsApp", bot_booking["source"] == "bot" and bot_booking["channel"] == "whatsapp", bot_booking)
-out = json.loads(asyncio.run(booking_tools.execute("reschedule_booking", {"new_start": at(WED, "16:00")}, ctx, db)))
+out = bot("reschedule_booking", {"new_start": at(WED, "16:00")})
 check("бот: перенос ближайшей записи клиента", out.get("ok") and out["booking"]["label"].endswith("16:00"), str(out)[:150])
 out = json.loads(asyncio.run(booking_tools.execute("create_booking", {"start": at(WED, "21:30"), "service": "стрижка"}, ctx, db)))
 check("бот: вне графика — отказ", out.get("ok") is False and "нерабочее" in out.get("error", ""), out)
@@ -192,7 +208,7 @@ out = json.loads(asyncio.run(booking_tools.execute("create_booking", {"start": y
 check("бот: в прошлое — отказ", out.get("ok") is False and "прошло" in out.get("error", ""), out)
 out = json.loads(asyncio.run(booking_tools.execute("list_bookings", {}, ctx, db)))
 check("бот: записи клиента", out.get("ok") and len(out["bookings"]) == 1, str(out)[:150])
-out = json.loads(asyncio.run(booking_tools.execute("cancel_booking", {"reason": "заболела"}, ctx, db)))
+out = bot("cancel_booking", {"reason": "заболела"})
 check("бот: отмена", out.get("ok") and out["booking"]["status"] == "cancelled", str(out)[:150])
 
 # ── инструменты агента и промпт ──
@@ -281,9 +297,13 @@ sent = []
 
 async def fake_send(db_, user_, contact_, message):
     sent.append(message)
-    return True
+    return True, "whatsapp", None
 
-bn.send_to_client = fake_send
+# с шага 2.2 Voksy Beauty напоминания идут через очередь отправок (notify_queue): отправку подменяем там,
+# часы отправки — круглые сутки, чтобы тест не зависел от времени запуска
+from backend.services import notify_queue as nq  # noqa: E402
+nq.SENDER = fake_send
+nq.SERVICE_WINDOW = (0, 24)
 n1 = asyncio.run(bn.run_once(now))
 n2 = asyncio.run(bn.run_once(now))
 check("напоминания уходят один раз", n1 == 3 and n2 == 0, (n1, n2))

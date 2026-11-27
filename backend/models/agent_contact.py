@@ -5,12 +5,22 @@ AgentContact — контакт в базе автономного агента 
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, Index, Numeric
+from sqlalchemy import Column, String, Integer, DateTime, Date, Text, ForeignKey, Index, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from .base import Base
 from backend.core.timezone_utils import iso_utc
+
+
+BIRTHDAY_NO_YEAR = 1904   # «год не знаем»: високосный, чтобы 29 февраля было допустимой датой
+
+
+def birthday_iso(d):
+    """ДР наружу: «1990-03-12» или «--03-12» (ISO без года), если год неизвестен."""
+    if d is None:
+        return None
+    return f"--{d.month:02d}-{d.day:02d}" if d.year == BIRTHDAY_NO_YEAR else d.isoformat()
 
 
 class AgentContact(Base):
@@ -82,6 +92,18 @@ class AgentContact(Base):
     next_step_at = Column(DateTime, nullable=True)
     lost_reason = Column(Text, nullable=True)
 
+    # ── Карточка клиента (Voksy Beauty, шаг 2.1): всё необязательно, кроме имени и телефона ──
+    # birthday — дата; год неизвестен → BIRTHDAY_NO_YEAR (1904: високосный, 29.02 допустим).
+    # gender — f | m; source — откуда пришёл (services/salon_clients.SOURCES): ставится при
+    # создании карточки входом (whatsapp, telegram, instagram, webchat, call, booking, import,
+    # manual), старые карточки досчитывает фоновый проход по первому касанию; владелец может
+    # поменять (рекомендация, 2ГИС, реклама…). Колонки — app.ensure_user_profile_columns().
+    birthday = Column(Date, nullable=True)
+    gender = Column(String(1), nullable=True)
+    source = Column(String(24), nullable=True)
+    # Шаг 2.2: клиент отказался от поздравлений, акций и приглашений (напоминания о записи всё равно идут)
+    marketing_opt_out_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -134,6 +156,10 @@ class AgentContact(Base):
             "next_step_text": self.next_step_text,
             "next_step_at": iso_utc(self.next_step_at),
             "lost_reason": self.lost_reason,
+            "birthday": birthday_iso(self.birthday),
+            "gender": self.gender,
+            "source": self.source,
+            "marketing_opt_out": self.marketing_opt_out_at is not None,
             "created_at": iso_utc(self.created_at),
             "updated_at": iso_utc(self.updated_at),
         }

@@ -24,6 +24,7 @@
     whatsapp: { title: 'WhatsApp', c: 'var(--vc-wa)', ic: 'message-circle' },
     telegram: { title: 'Telegram', c: 'var(--vc-tg)', ic: 'send' },
     instagram: { title: 'Instagram', c: 'var(--vc-ig)', ic: 'instagram' },
+    webchat: { title: 'Чат на сайте', c: 'var(--vc-web)', ic: 'messages-square' },
     call: { title: 'Звонки', c: 'var(--vc-call)', ic: 'phone' },
     booking: { title: 'Онлайн-запись', c: 'var(--vc-book)', ic: 'calendar' },
     manual: { title: 'Добавлены вручную', c: 'var(--vc-muted)', ic: 'user', dark: true }
@@ -415,7 +416,7 @@
     });
     var ad = rep.ads && rep.ads.clients ? '<div class="an-ad">' + icon('instagram') + '<span>Из рекламы в Instagram и Facebook (Click-to-WhatsApp) пришло <b>' +
       fmtNum(rep.ads.clients) + '</b> ' + plural(rep.ads.clients, 'клиент', 'клиента', 'клиентов') + '.</span></div>' : '';
-    var heatChips = [['all', 'Все'], ['whatsapp', 'WhatsApp'], ['telegram', 'Telegram'], ['instagram', 'Instagram'], ['call', 'Звонки']]
+    var heatChips = [['all', 'Все'], ['whatsapp', 'WhatsApp'], ['telegram', 'Telegram'], ['instagram', 'Instagram'], ['webchat', 'Сайт'], ['call', 'Звонки']]
       .map(function (x) { return '<button type="button" data-heat="' + x[0] + '" class="' + (st.heat === x[0] ? 'active' : '') + '">' + x[1] + '</button>'; }).join('');
     var inner = '<div class="an-channels">' + cards + '</div>' + ad +
       '<div class="an-grid-2">' +

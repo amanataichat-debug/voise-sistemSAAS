@@ -143,7 +143,21 @@ def stats(db: Session, r: BookingResource, days: int = STATS_DAYS) -> Dict[str, 
         "clients": clients, "returning": returning,
         "returning_pct": round(returning * 100.0 / clients) if clients else 0,
         "top_services": [{"title": t, "count": int(n)} for t, n in top],
+        **_master_reviews(db, r),
     }
+
+
+def _master_reviews(db: Session, r: BookingResource) -> Dict[str, Any]:
+    """Рейтинг мастера и последние отзывы — только опубликованные (решает владелец, шаг 2.3)."""
+    try:
+        from backend.services import reviews_service
+        rt = reviews_service.master_ratings(db, r.user_id).get(str(r.id))
+        if not rt:
+            return {"rating": None, "reviews": []}
+        return {"rating": rt, "reviews": reviews_service.public_list(db, r.user_id, master_id=r.id, limit=3)["items"]}
+    except Exception:
+        db.rollback()
+        return {"rating": None, "reviews": []}
 
 
 # ───────────────────────────── лента «новое» ─────────────────────────────

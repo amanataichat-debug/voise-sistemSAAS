@@ -34,8 +34,8 @@ from backend.core.timezone_utils import iso_utc
 
 logger = get_logger(__name__)
 
-CHANNELS = ("whatsapp", "telegram", "instagram")
-CHANNEL_LABELS = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram"}
+CHANNELS = ("whatsapp", "telegram", "instagram", "webchat")
+CHANNEL_LABELS = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram", "webchat": "Сайт"}
 
 # Языки помощника (перевод исходящих и входящих). Владелец выбирает в настройках,
 # какие показывать в меню «Язык».
@@ -54,7 +54,7 @@ PAUSE_OPTIONS = ("channel", 30, 60, 120, 240, 480, 1440, -1)
 TONES = ("neutral", "friendly", "formal")
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
-    "channels": {"whatsapp": True, "instagram": True, "telegram": True},
+    "channels": {"whatsapp": True, "instagram": True, "telegram": True, "webchat": True},
     "my_language": "ru",
     "languages": ["ru", "ky", "en", "zh", "tr"],
     "auto_translate_incoming": False,
@@ -208,7 +208,32 @@ def channel_status(db: Session, agent) -> Dict[str, Dict[str, Any]]:
         "reply_delay_seconds": int(getattr(ig, "reply_delay_seconds", None) or 15) if ig is not None else 15,
         "status": ig.status if ig is not None else None,
     }
+
+    # Чат на сайте (Voksy Beauty 1.6в): «подключён», если на странице салона он включён и отвечает
+    web_live = False
+    try:
+        from backend.models.booking import BookingPage
+        from backend.services import webchat_service
+        page = db.query(BookingPage).filter(BookingPage.user_id == agent.user_id).first()
+        web_live = bool(page is not None and webchat_service.chat_live_for_agent(db, agent))
+    except Exception:
+        db.rollback()
+    out["webchat"] = {
+        "connected": web_live,
+        "exists": web_live,
+        "account": None,
+        "auto_reply_enabled": None,
+        "reply_scope": "all",
+        "owner_pause_minutes": 30,
+        "reply_delay_seconds": int(webchat_service_delay()),
+        "status": "connected" if web_live else None,
+    }
     return out
+
+
+def webchat_service_delay() -> float:
+    from backend.services import webchat_service
+    return webchat_service.DEBOUNCE_SECONDS
 
 
 def pause_row_for(db: Session, agent_config_id, channel: str):
@@ -248,6 +273,12 @@ _UNION_PARTS = {
         "SELECT i.agent_contact_id AS cid, 'instagram' AS ch, i.direction AS direction, "
         "i.sent_by AS sent_by, i.body AS body, i.created_at AS created_at "
         "FROM agent_instagram_messages i JOIN agent_contacts c0 ON c0.id = i.agent_contact_id "
+        "WHERE c0.user_id = :uid"
+    ),
+    "webchat": (
+        "SELECT x.agent_contact_id AS cid, 'webchat' AS ch, x.direction AS direction, "
+        "x.sent_by AS sent_by, x.body AS body, x.created_at AS created_at "
+        "FROM agent_webchat_messages x JOIN agent_contacts c0 ON c0.id = x.agent_contact_id "
         "WHERE c0.user_id = :uid"
     ),
 }
@@ -445,6 +476,7 @@ def latest_activity(db: Session, user) -> Optional[datetime]:
         "SELECT max(w.created_at) AS x FROM agent_whatsapp_messages w JOIN agent_contacts c ON c.id = w.agent_contact_id WHERE c.user_id = :uid "
         "UNION ALL SELECT max(t.created_at) FROM agent_telegram_messages t JOIN agent_contacts c ON c.id = t.agent_contact_id WHERE c.user_id = :uid "
         "UNION ALL SELECT max(i.created_at) FROM agent_instagram_messages i JOIN agent_contacts c ON c.id = i.agent_contact_id WHERE c.user_id = :uid "
+        "UNION ALL SELECT max(x.created_at) FROM agent_webchat_messages x JOIN agent_contacts c ON c.id = x.agent_contact_id WHERE c.user_id = :uid "
         "UNION ALL SELECT max(m.created_at) FROM agent_whatsapp_messages m JOIN agent_whatsapp_accounts a ON a.id = m.account_id "
         "  WHERE a.user_id = :uid AND m.agent_contact_id IS NULL"
         ") s"
@@ -563,6 +595,7 @@ def link_unlinked(db: Session, user, chat_id, contact_id=None, name: Optional[st
             phone=("+" + chat.phone) if chat.phone else f"wa:{chat.remote_jid.split('@')[0]}",
             name=(name or "").strip() or chat.push_name,
             status="new",
+            source="whatsapp",
             memory={},
         )
         db.add(contact)
@@ -584,12 +617,12 @@ def link_unlinked(db: Session, user, chat_id, contact_id=None, name: Optional[st
 def _who(direction: Optional[str], sent_by: Optional[str]) -> str:
     if (direction or "inbound") != "outbound":
         return "client"
-    return "owner" if sent_by == "owner" else "bot"
+    return "owner" if sent_by == "owner" else "bot"   # 'auto' (служебный ответ чата на сайте) — тоже «бот»
 
 
 def real_phone(phone: Optional[str]) -> Optional[str]:
     """Номер карточки без служебных tg:/ig:/wa: (у клиента из мессенджера номера может не быть)."""
-    if not phone or phone.startswith(("tg:", "ig:", "wa:")):
+    if not phone or phone.startswith(("tg:", "ig:", "wa:", "web:")):
         return None
     return phone
 
@@ -681,12 +714,13 @@ def timeline(db: Session, contact, *, before: Optional[datetime] = None, limit: 
     from backend.models.agent_instagram import AgentInstagramMessage
     from backend.models.agent_telegram_account import AgentTelegramMessage
     from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    from backend.models.webchat import AgentWebChatMessage
     from backend.services.agent_call_finalizer import call_outcome, sip_calls_for
 
     settings = settings or {}
     enabled = settings.get("channels") or {}
     models = [("whatsapp", AgentWhatsAppMessage), ("telegram", AgentTelegramMessage),
-              ("instagram", AgentInstagramMessage)]
+              ("instagram", AgentInstagramMessage), ("webchat", AgentWebChatMessage)]
     fetched: List[Tuple[str, Any]] = []
     for ch, model in models:
         if enabled and not enabled.get(ch, True):
@@ -777,6 +811,14 @@ def contact_card(db: Session, user, contact) -> Dict[str, Any]:
     ig = db.query(AgentInstagramConversation).filter(AgentInstagramConversation.agent_contact_id == contact.id).first()
     if ig is not None:
         handles["instagram"] = {"username": ig.ig_username}
+    try:
+        from backend.services import webchat_service
+        ws = webchat_service.session_for_contact(db, contact.agent_config_id, contact.id) if contact.agent_config_id else None
+        if ws is not None:
+            handles["webchat"] = {"name": ws.name, "phone": ws.phone, "page": ws.page_slug,
+                                  "origin": ws.origin, "last_seen": iso_utc(ws.last_seen_at)}
+    except Exception:
+        db.rollback()
     data["handles"] = handles
 
     # Документы, которые бот собрал для клиента (КП, счета)
@@ -798,7 +840,7 @@ def contact_card(db: Session, user, contact) -> Dict[str, Any]:
 # Почему бот молчит с клиентом. Раньше все эти причины были молчаливыми: сообщение
 # лежало в инбоксе, бот не отвечал, а владелец гадал — кредиты, тариф, выключатель
 # или сбой. Порядок = порядок проверок в handle_inbound_* и PostCall.
-_INBOUND_DIRECTIONS = ("telegram_inbound", "whatsapp_inbound", "instagram_inbound", "sms_inbound")
+_INBOUND_DIRECTIONS = ("telegram_inbound", "whatsapp_inbound", "instagram_inbound", "sms_inbound", "webchat_inbound")
 _BOT_PAGE = "/static/start-bot.html"
 
 
@@ -954,6 +996,16 @@ def send_channels(db: Session, contact, agent) -> Dict[str, Dict[str, Any]]:
             if last_in is None or datetime.utcnow() - last_in[0] > IG_REPLY_WINDOW:
                 out["instagram"]["note"] = ("Клиент писал больше суток назад — Instagram может не "
                                             "пропустить ответ. Надёжнее написать в WhatsApp.")
+
+    from backend.services import webchat_service
+    ws = webchat_service.session_for_contact(db, agent.id, contact.id)
+    if ws is None:
+        out["webchat"] = {"can_send": False, "reason": "Клиент не писал в чат на сайте"}
+    else:
+        out["webchat"] = {"can_send": True}
+        if datetime.utcnow() - (ws.last_seen_at or datetime.utcnow()) > timedelta(minutes=15):
+            out["webchat"]["note"] = ("Клиент сейчас не на сайте — увидит ответ, когда снова откроет чат. "
+                                      "Если есть номер, надёжнее написать в WhatsApp.")
     return out
 
 
@@ -963,8 +1015,9 @@ def default_channel(db: Session, contact, available: Dict[str, Dict[str, Any]]) 
     from backend.models.agent_telegram_account import AgentTelegramMessage
     from backend.models.agent_whatsapp import AgentWhatsAppMessage
     best = None
+    from backend.models.webchat import AgentWebChatMessage
     for ch, model in (("whatsapp", AgentWhatsAppMessage), ("telegram", AgentTelegramMessage),
-                      ("instagram", AgentInstagramMessage)):
+                      ("instagram", AgentInstagramMessage), ("webchat", AgentWebChatMessage)):
         if not (available.get(ch) or {}).get("can_send"):
             continue
         row = (
@@ -1111,6 +1164,10 @@ async def send_message(
                 args, user.id, agent, db, file_row=file_row, file_bytes=data, typing_seconds=0, **common)
         else:
             result = await agent_tools.fn_telegram_send_message(args, user.id, agent, db, typing_seconds=0, **common)
+    elif channel == "webchat":
+        from backend.services import webchat_service
+        result = await webchat_service.fn_webchat_send_message(args, user.id, agent, db, file_row=file_row,
+                                                               sent_by="owner")
     else:
         result = await agent_tools.fn_instagram_send_message(args, user.id, agent, db, file_row=file_row, **common)
 
@@ -1198,8 +1255,9 @@ def _message_model(channel: str):
     from backend.models.agent_instagram import AgentInstagramMessage
     from backend.models.agent_telegram_account import AgentTelegramMessage
     from backend.models.agent_whatsapp import AgentWhatsAppMessage
+    from backend.models.webchat import AgentWebChatMessage
     return {"whatsapp": AgentWhatsAppMessage, "telegram": AgentTelegramMessage,
-            "instagram": AgentInstagramMessage}[channel]
+            "instagram": AgentInstagramMessage, "webchat": AgentWebChatMessage}[channel]
 
 
 def _save_translation(db: Session, channel: str, message_id, kind: str, text: str, language: Optional[str]):

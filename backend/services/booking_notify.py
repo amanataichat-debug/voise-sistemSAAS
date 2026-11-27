@@ -1,26 +1,19 @@
 """
-Онлайн-запись: оповещения (ветка 1811-niche-admin-speed).
+Онлайн-запись: оповещения (ветка 1811-niche-admin-speed; с шага 2.2 Voksy Beauty — через очередь отправок).
 
 Владельцу (Telegram-бот его агента, как остальные оповещения) — новая запись по ссылке или от бота.
-Клиенту — в тот мессенджер, где он писал последним (WhatsApp / Telegram / Instagram, через те же
-функции отправки, что у бота):
-  • за сутки — если записался заранее (больше чем за 26 ч);
-  • за 2 часа — если записался больше чем за 3 ч;
-  • «спасибо, ждём снова» — через час после визита (настройка thanks).
-Включается настройкой reminders / thanks страницы записи. Каждое сообщение — один раз: метка
-reminder_24h_at / reminder_2h_at / followup_at ставится атомарным UPDATE (несколько воркеров).
-Клиенту, которого бот заблокировал как спам (пауза навсегда), ничего не шлём. Нет мессенджера —
-пропускаем молча (SMS нет).
+Клиенту — автоматические сообщения по правилам владельца (services/automations.py): подтверждение записи,
+напоминание накануне и в день визита, «спасибо» после визита (или просьба оценить 1–5), «не пришёл»,
+поздравление с ДР, «пора повторить», «давно не были». Цикл раз в минуту: automations.plan() ставит сообщения
+в очередь (notification_queue, один раз — idem_key + метки reminder_24h_at / reminder_2h_at / followup_at),
+notify_queue.process() отправляет — в мессенджер, где клиент писал последним, с запасным каналом и повторами.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
-from typing import Optional
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.services import booking_service as bs
@@ -29,41 +22,10 @@ logger = logging.getLogger(__name__)
 TICK_SECONDS = 60
 
 
-def _first_name(b) -> str:
-    n = (b.client_name or "").strip().split()
-    return n[0] if n else ""
-
-
-def _when_words(b, now) -> str:
-    st = bs.to_local(b.start_at)
-    today = bs.to_local(now).date()
-    hm = st.strftime("%H:%M")
-    if st.date() == today:
-        return f"сегодня в {hm}"
-    if st.date() == today + timedelta(days=1):
-        return f"завтра в {hm}"
-    return f"{st.day:02d}.{st.month:02d} в {hm}"
-
-
-def reminder_text(b, kind: str, resource_name: Optional[str], address: str, now) -> str:
-    name = _first_name(b)
-    hello = f"Здравствуйте{', ' + name if name else ''}!"
-    what = f" на «{b.service_title}»" if b.service_title else ""
-    who = f" к мастеру {resource_name}" if resource_name else ""
-    addr = f" Адрес: {address}." if address else ""
-    if kind == "24h":
-        return (f"{hello} Напоминаем: {_when_words(b, now)} вы записаны{what}{who}.{addr} "
-                "Если планы изменились — напишите, перенесём на удобное время.")
-    if kind == "2h":
-        return f"{hello} Ждём вас {_when_words(b, now)}{what}.{addr}"
-    return (f"{name + ', с' if name else 'С'}пасибо, что пришли к нам! Будем рады видеть вас снова. "
-            "Если что-то понравилось или нет — напишите, нам важно.")
-
-
 async def send_to_client(db: Session, user, contact, message: str) -> bool:
-    """Текст клиенту в его последний мессенджер (как бот, без паузы бота)."""
+    """Текст клиенту в его последний мессенджер (как бот, без паузы бота). Заказы и другие разовые сообщения."""
     from backend.models.agent_config import AgentConfig
-    from backend.services import agent_tools, inbox_service, agent_pause
+    from backend.services import agent_pause, inbox_service, notify_queue
     if contact is None or not message:
         return False
     if agent_pause.is_paused(contact) and contact.ai_paused_until and contact.ai_paused_until.year >= 9999:
@@ -71,85 +33,43 @@ async def send_to_client(db: Session, user, contact, message: str) -> bool:
     agent = db.query(AgentConfig).filter(AgentConfig.id == contact.agent_config_id).first()
     if agent is None:
         return False
-    avail = inbox_service.send_channels(db, contact, agent)
-    ch = inbox_service.default_channel(db, contact, avail)
+    ch = inbox_service.default_channel(db, contact, inbox_service.send_channels(db, contact, agent))
     if not ch:
         return False
-    args = {"agent_contact_id": str(contact.id), "text": message}
-    try:
-        if ch == "whatsapp":
-            res = await agent_tools.fn_whatsapp_send_message(args, user.id, agent, db, skip_rate_limit=True, typing_ms=0)
-        elif ch == "telegram":
-            res = await agent_tools.fn_telegram_send_message(args, user.id, agent, db, skip_rate_limit=True, typing_seconds=0)
-        else:
-            res = await agent_tools.fn_instagram_send_message(args, user.id, agent, db, skip_rate_limit=True)
-    except Exception as e:
-        logger.warning(f"[BOOKING] reminder send failed ({ch}): {e}")
-        return False
-    return bool(res and res.get("ok"))
+    return await notify_queue.send_via(db, user, contact, message, ch, agent=agent)
 
 
-def _claim(db: Session, booking_id, column: str) -> bool:
-    row = db.execute(text(f"UPDATE bookings SET {column} = now() WHERE id = :id AND {column} IS NULL RETURNING id"),
-                     {"id": booking_id}).first()
-    db.commit()
-    return row is not None
+_OLD_KINDS = {"reminder_24h": "24h", "reminder_2h": "2h", "thanks": "thanks", "review": "review"}
 
 
 def due(db: Session, now) -> list:
-    """[(booking_id, kind)] — кому пора напомнить или сказать спасибо."""
-    out = []
-    rows = db.execute(text("""
-        SELECT b.id, b.start_at, b.end_at, b.created_at, b.status, b.reminder_24h_at, b.reminder_2h_at, b.followup_at,
-               p.settings
-        FROM bookings b JOIN booking_pages p ON p.user_id = b.user_id
-        WHERE b.contact_id IS NOT NULL AND b.status IN ('booked', 'confirmed', 'arrived', 'completed')
-          AND b.start_at < :max_start AND b.end_at > :min_end
-    """), {"max_start": now + timedelta(hours=24, minutes=5), "min_end": now - timedelta(hours=26)}).mappings().all()
-    for r in rows:
-        cfg = bs.settings_of(type("P", (), {"settings": r["settings"] or {}})())
-        st, en, cr = r["start_at"], r["end_at"], r["created_at"]
-        if cfg["reminders"] and r["status"] in ("booked", "confirmed"):
-            if r["reminder_24h_at"] is None and st - now <= timedelta(hours=24) and st - now > timedelta(hours=3) \
-                    and st - cr >= timedelta(hours=26):
-                out.append((r["id"], "24h"))
-            elif r["reminder_2h_at"] is None and st - now <= timedelta(hours=2) and st - now > timedelta(minutes=20) \
-                    and st - cr >= timedelta(hours=3):
-                out.append((r["id"], "2h"))
-        if cfg["thanks"] and r["followup_at"] is None and timedelta(hours=1) <= now - en <= timedelta(hours=24):
-            out.append((r["id"], "thanks"))
-    return out
+    """[(booking_id, kind)] — кому пора напомнить или сказать спасибо (kind: 24h | 2h | thanks | review).
+    Подтверждение записи и «не пришёл» — в automations.due_bookings."""
+    from backend.services import automations
+    return [(bid, _OLD_KINDS[rule]) for bid, rule in automations.due_bookings(db, now) if rule in _OLD_KINDS]
 
 
 async def run_once(now=None) -> int:
+    """Поставить в очередь, что пора, и отправить очередь. Возвращает, сколько сообщений ушло."""
     from backend.db.session import SessionLocal
-    from backend.models.agent_contact import AgentContact
-    from backend.models.booking import Booking, BookingResource
-    from backend.models.user import User
+    from backend.services import automations, notify_queue
     now = now or bs.now_utc()
     db = SessionLocal()
-    sent = 0
     try:
-        for booking_id, kind in due(db, now):
-            column = {"24h": "reminder_24h_at", "2h": "reminder_2h_at", "thanks": "followup_at"}[kind]
-            if not _claim(db, booking_id, column):
-                continue
-            b = db.query(Booking).filter(Booking.id == booking_id).first()
-            user = db.query(User).filter(User.id == b.user_id).first() if b else None
-            contact = db.query(AgentContact).filter(AgentContact.id == b.contact_id).first() if b else None
-            if not (b and user and contact) or not user.has_agent_chat_access():
-                continue
-            res = db.query(BookingResource).filter(BookingResource.id == b.resource_id).first() if b.resource_id else None
-            cfg = bs.settings_of(bs.get_page(db, user, create=False))
-            msg = reminder_text(b, kind, res.name if res else None, cfg.get("address") or "", now)
-            if await send_to_client(db, user, contact, msg):
-                sent += 1
+        automations.plan(db, now)
+        from backend.services import waitlist_service
+        try:
+            waitlist_service.tick(db, now)        # лист ожидания (шаг 2.4): просрочки и новые предложения
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"[BOOKING] waitlist tick failed: {e}")
+        return await notify_queue.process(db, now)
     except Exception as e:
         db.rollback()
         logger.error(f"[BOOKING] reminders tick failed: {e}", exc_info=True)
+        return 0
     finally:
         db.close()
-    return sent
 
 
 async def start_booking_reminders_loop() -> None:
@@ -175,7 +95,8 @@ async def notify_owner_new_booking(owner_id, booking_id, by: str = "online") -> 
         if b is None or agent is None:
             return False
         res = db.query(BookingResource).filter(BookingResource.id == b.resource_id).first() if b.resource_id else None
-        head = {"online": "📅 Новая онлайн-запись", "bot": "📅 Бот записал клиента", "call": "📅 Запись со звонка"}.get(by, "📅 Новая запись")
+        head = {"online": "📅 Новая онлайн-запись", "bot": "📅 Бот записал клиента", "call": "📅 Запись со звонка",
+                "waitlist": "📅 Запись из листа ожидания"}.get(by, "📅 Новая запись")
         lines = [f"**{head}**", f"{b.client_name or 'Клиент'}" + (f" · {b.client_phone}" if b.client_phone else ""),
                  f"{bs.fmt_local(b.start_at)}" + (f" — {b.service_title}" if b.service_title else "")
                  + (f" · {res.name}" if res else "")]

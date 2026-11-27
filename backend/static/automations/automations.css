@@ -1,0 +1,91 @@
+/* Автоматизации (Voksy Beauty 2.2) — /static/automations.html. Префикс au-. Телефон в первую очередь. */
+.au { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 90px; }
+.au-head h2 { margin: 0 0 4px; font-size: 20px; }
+.au-head p { margin: 0; font-size: 13.5px; max-width: 640px; }
+
+.au-tabs { display: inline-flex; align-self: flex-start; padding: 3px; background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 12px; }
+.au-tab { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; height: 36px; padding: 0 14px;
+  border-radius: 9px; font: 600 13.5px/1 var(--vf-font, Inter, sans-serif); color: var(--vf-text-3); cursor: pointer; white-space: nowrap; }
+.au-tab .ic { width: 16px; height: 16px; }
+.au-tab.on { background: var(--vf-text, #0e1729); color: #fff; }
+
+.au-group h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 6px 2px 8px; font-size: 15px; }
+.au-group h3 .small { font-weight: 500; }
+.au-list { padding: 0; overflow: hidden; }
+.au-rule { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-top: 1px solid var(--vf-border); }
+.au-rule:first-child { border-top: 0; }
+.au-rule:not(.on) .au-title { color: var(--vf-text-3); }
+.au-main { flex: 1; min-width: 0; }
+.au-title { font-weight: 700; font-size: 14.5px; color: var(--vf-text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.au-title .st-badge { height: 20px; font-size: 11px; font-weight: 600; }
+.au-desc { font-size: 13px; color: var(--vf-text-3); margin-top: 3px; line-height: 1.4; }
+.au-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.au-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px;
+  background: var(--vf-surface-2, #f1f3f8); color: var(--vf-text-2); white-space: nowrap; }
+.au-chip .ic { width: 13px; height: 13px; }
+.au-chip.ok { background: var(--vf-success-soft); color: var(--vf-success); }
+.au-chip.err { background: var(--vf-danger-soft); color: var(--vf-danger); }
+.au-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex: none; }
+
+.au-limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; }
+.au-lim { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); min-width: 0; }
+.au-lim .select-native { width: 100%; }
+.au-note { margin: 8px 2px 0; }
+
+/* окно правила */
+.au-warn { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--vf-accent-soft);
+  color: var(--vf-accent); font-size: 13px; margin-bottom: 12px; }
+.au-warn .ic { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.au-params { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-bottom: 8px; }
+.au-params .field { margin-bottom: 8px; min-width: 0; }
+.au-params .au-wide { grid-column: 1 / -1; }
+.au-check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--vf-border); border-radius: 12px;
+  font-size: 13.5px; margin-bottom: 8px; cursor: pointer; }
+.au-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--vf-accent); }
+.au-ed { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.au-langs { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.au-lang { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--vf-border); background: var(--vf-surface);
+  font: 600 12.5px/1 var(--vf-font, Inter, sans-serif); color: var(--vf-text-2); cursor: pointer; }
+.au-lang.on { background: var(--vf-accent-soft); border-color: var(--vf-accent); color: var(--vf-accent); }
+.au-which { margin-left: 4px; }
+.au-text { width: 100%; min-height: 140px; font-size: 14px; line-height: 1.45; resize: vertical; }
+.au-ph { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 6px; }
+.au-phb { height: 26px; padding: 0 8px; border-radius: 7px; border: 1px dashed var(--vf-border-strong, #c9cfdc); background: var(--vf-surface);
+  font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--vf-text-2); cursor: pointer; }
+.au-phb:hover { border-color: var(--vf-accent); color: var(--vf-accent); }
+.au-reset { border: 0; background: none; padding: 0; color: var(--vf-accent); font: inherit; font-weight: 600; cursor: pointer; }
+.au-ed-prev { background: #e9e2d9; border-radius: 14px; padding: 12px; min-height: 160px; }
+.au-prev-h { margin-bottom: 8px; color: #6b6257 !important; }
+.au-bubble { position: relative; background: #dcf8c6; color: #111b21; border-radius: 10px 10px 10px 2px; padding: 9px 11px;
+  font-size: 14px; line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(0, 0, 0, .08); }
+.au-bubble.bad { background: #fde7e9; color: var(--vf-danger); }
+
+/* журнал отправок */
+.au-qf { margin-bottom: 2px; }
+.au-qlist { padding: 0; overflow: hidden; }
+.au-q { padding: 12px 16px; border-top: 1px solid var(--vf-border); }
+.au-q:first-child { border-top: 0; }
+.au-q-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.au-q-when { font-size: 12.5px; color: var(--vf-text-3); white-space: nowrap; }
+.au-q-who { font-size: 13.5px; margin-top: 4px; }
+.au-q-who a { font-weight: 600; color: var(--vf-text); text-decoration: none; }
+.au-q-who a:hover { color: var(--vf-accent); }
+.au-q-text { font-size: 13px; color: var(--vf-text-2); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.au-q-err { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; font-size: 12.5px; color: var(--vf-danger); }
+.au-q-err .ic { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.au-q-act { margin-top: 8px; }
+
+@media (max-width: 760px) {
+  .au-head h2 { font-size: 18px; }
+  .au-head p { font-size: 13px; }
+  .au-tabs { align-self: stretch; }
+  .au-tab { flex: 1; justify-content: center; }
+  .au-rule { padding: 12px 14px; gap: 10px; }
+  .au-side { gap: 8px; }
+  .au-side .btn span { display: none; }
+  .au-limits { grid-template-columns: 1fr; }
+  .au-params { grid-template-columns: 1fr; }
+  .au-ed { grid-template-columns: 1fr; }
+  .au-ed-prev { min-height: 0; }
+}

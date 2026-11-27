@@ -643,6 +643,7 @@ def _contact_for_row(db, connector, row, create: bool):
             phone=f"ig:{row.igsid}",
             name=(("@" + row.ig_username) if row.ig_username else "Instagram"),
             status="new",
+            source="instagram",
         )
         db.add(contact)
         db.flush()

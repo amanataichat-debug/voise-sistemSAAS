@@ -239,6 +239,10 @@ _STAFF_GUARD_SKIP = ("/api/auth/", "/api/email-verification/", "/api/public/")
 @app.middleware("http")
 async def staff_access_guard(request: Request, call_next):
     path = request.url.path
+    if path.startswith("/api/"):
+        # Журнал действий (services/activity.py) пишет IP того, кто сделал действие
+        from backend.services.activity import REQUEST_IP
+        REQUEST_IP.set(_client_ip(request))
     if not path.startswith("/api/") or path.startswith(_STAFF_GUARD_SKIP):
         return await call_next(request)
     auth = request.headers.get("authorization") or ""
@@ -365,6 +369,11 @@ app.include_router(business_api.router, prefix="/api/business", tags=["Business"
 from backend.api import booking as booking_api  # онлайн-запись: календарь владельца и запись клиентов по ссылке
 app.include_router(booking_api.router, prefix="/api/booking", tags=["Booking"])
 app.include_router(booking_api.public_router, prefix="/api/public/booking", tags=["Booking"])
+from backend.api import webchat as webchat_api
+app.include_router(webchat_api.public_router, prefix="/api/public/chat", tags=["Web chat"])
+app.include_router(booking_api.waitlist_public_router, prefix="/api/public/waitlist", tags=["Booking"])   # /w/<токен>
+from backend.api import client_cabinet as client_cabinet_api  # «Мои записи» клиента салона по ссылке /m/<токен> (шаг 2.5)
+app.include_router(client_cabinet_api.router, prefix="/api/public/client", tags=["Booking"])
 app.include_router(booking_api.media_router, tags=["Booking"])   # /media/salon/{id} — фото салона и мастеров
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
@@ -374,6 +383,14 @@ from backend.api import orders as orders_api  # заказы магазинов 
 app.include_router(orders_api.router)
 from backend.api import finance as finance_api  # доходы, расходы (аренда, зарплаты), прибыль — только владелец
 app.include_router(finance_api.router)
+from backend.api import cashbox as cashbox_api  # касса салона: смены администраторов, оплата визита, возвраты (шаг 3.1)
+app.include_router(cashbox_api.router, prefix="/api/cash", tags=["Cash"])
+from backend.api import salon_manager as salon_manager_api  # ИИ-управляющий салона: отчёты, одобрение, сценарии; push
+app.include_router(salon_manager_api.router)
+app.include_router(salon_manager_api.push_router)
+from backend.api import beauty as beauty_api  # Voksy Beauty 1.7: журнал действий, главная салона
+app.include_router(beauty_api.router)
+app.include_router(beauty_api.review_public_router)   # /api/public/review/{token} — «Оцените визит» по ссылке
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(voximplant.router, prefix="/api/voximplant", tags=["Voximplant"])
@@ -1982,6 +1999,19 @@ def ensure_user_profile_columns():
             stmts.append("CREATE INDEX IF NOT EXISTS ix_users_business_niche ON users (business_niche)")
         if 'admin_status' not in cols:
             stmts.append("CREATE INDEX IF NOT EXISTS ix_users_admin_status ON users (admin_status)")
+        if inspector.has_table('agent_contacts'):
+            # карточка клиента (Voksy Beauty, шаг 2.1): ДР, пол, источник. ORM выбирает все колонки
+            # AgentContact в каждом запросе к клиентам — поэтому здесь, в самом начале старта
+            ccols = {c['name'] for c in inspector.get_columns('agent_contacts')}
+            for name, ddl in (("birthday", "DATE"), ("gender", "VARCHAR(1)"), ("source", "VARCHAR(24)"),
+                              ("marketing_opt_out_at", "TIMESTAMP")):     # шаг 2.2: клиент отказался от рассылок
+                if name not in ccols:
+                    stmts.append(f"ALTER TABLE agent_contacts ADD COLUMN IF NOT EXISTS {name} {ddl}")
+            if 'source' not in ccols:
+                stmts.append("CREATE INDEX IF NOT EXISTS ix_agent_contacts_user_source ON agent_contacts (user_id, source)")
+                # досчёт источника старых карточек (salon_clients.backfill_sources) идёт по этому частичному индексу
+                stmts.append("CREATE INDEX IF NOT EXISTS ix_agent_contacts_nosource ON agent_contacts (created_at) "
+                             "WHERE source IS NULL")
         if inspector.has_table('agent_configs'):
             acols = {c['name'] for c in inspector.get_columns('agent_configs')}
             if 'niche_key' not in acols:
@@ -1992,7 +2022,8 @@ def ensure_user_profile_columns():
                 stmts.append("ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS duration_min INTEGER")
             # услуги салона (Voksy Beauty, шаг 1.3): цена «до», подготовка, перерыв после, онлайн, предоплата
             for name, ddl in (("price_to", "DOUBLE PRECISION"), ("prep_min", "INTEGER"), ("after_min", "INTEGER"),
-                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB"), ("room_ids", "JSONB")):
+                              ("online_booking", "BOOLEAN"), ("prepay", "JSONB"), ("room_ids", "JSONB"),
+                              ("repeat_days", "INTEGER")):     # шаг 1.6б: «повторять через N дней»
                 if name not in kcols:
                     stmts.append(f"ALTER TABLE agent_knowledge_entries ADD COLUMN IF NOT EXISTS {name} {ddl}")
         if stmts:
@@ -2016,17 +2047,50 @@ def ensure_booking_tables():
     try:
         from sqlalchemy import inspect
         from backend.models.base import Base as ModelsBase
-        from backend.models.booking import BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom
+        from backend.models.booking import (BookingResource, Booking, BookingPage, SalonMedia, BookingBlock, BookingRoom,
+                                            BookingConfirmation)
+        from backend.models.salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
+        from backend.models.webchat import WebChatSession, AgentWebChatMessage
+        from backend.models.activity import ActivityLog
+        from backend.models.automation import NotificationQueue, AutomationRule
+        from backend.models.review import SalonReview
+        from backend.models.waitlist import WaitlistEntry
+        from backend.models.cashbox import CashShift, CashReceipt, CashPayment
         existing = set(inspect(engine).get_table_names())
         if not {"users", "agent_contacts", "agent_knowledge_entries"} <= existing:
             return  # пустая база: таблицы создаст общий create_all
         ModelsBase.metadata.create_all(
             bind=engine, tables=[BookingResource.__table__, Booking.__table__, BookingPage.__table__,
-                                 SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__], checkfirst=True)
+                                 SalonMedia.__table__, BookingBlock.__table__, BookingRoom.__table__,
+                                 BookingConfirmation.__table__, ManagerAction.__table__, OwnerReport.__table__,
+                                 PushSubscription.__table__, WebPushKey.__table__,
+                                 WebChatSession.__table__, AgentWebChatMessage.__table__,
+                                 ActivityLog.__table__, NotificationQueue.__table__, AutomationRule.__table__,
+                                 WaitlistEntry.__table__, CashShift.__table__, CashReceipt.__table__,
+                                 CashPayment.__table__],
+            checkfirst=True)
         ensure_master_card_columns()
         ensure_booking_guard()
+        if "salon_reviews" not in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[SalonReview.__table__], checkfirst=True)
+            ensure_reviews_backfill()
     except Exception as e:
         logger.error(f"❌ ensure_booking_tables: {e}")
+
+
+def ensure_reviews_backfill():
+    """Отзывы (шаг 2.3): оценки, собранные до таблицы salon_reviews (bookings.review_score), переносятся
+    туда один раз — по тем же правилам публикации (4–5 — на странице, 1–3 — ждут проверки владельца)."""
+    from backend.services import reviews_service
+    try:
+        with engine.begin() as conn:
+            from sqlalchemy import text as _text
+            conn.execute(_text("SELECT pg_advisory_xact_lock(26112023)"))
+            n = reviews_service.backfill_from_bookings(conn)
+        if n:
+            logger.info(f"✅ salon_reviews: перенесено оценок из записей: {n}")
+    except Exception as e:
+        logger.warning(f"⚠️ salon_reviews backfill: {e}")
 
 
 # Карточка мастера (Voksy Beauty, шаг 1.2): колонки booking_resources, которых нет у старых баз.
@@ -2052,6 +2116,10 @@ BOOKING_SERVICE_COLUMNS = (
     ("prepaid_at", "TIMESTAMP WITH TIME ZONE"),
     ("room_id", "UUID"),          # шаг 1.4: кабинет / кресло
     ("visit_id", "UUID"),         # шаг 1.4: несколько услуг подряд
+    ("review_asked_at", "TIMESTAMP WITH TIME ZONE"),   # шаг 1.6б: попросили оценку
+    ("review_score", "INTEGER"),                       # оценка клиента 1–5
+    ("review_text", "TEXT"),
+    ("review_at", "TIMESTAMP WITH TIME ZONE"),
 )
 
 
@@ -2431,6 +2499,8 @@ def ensure_branding_columns():
         "ADD COLUMN IF NOT EXISTS call_window_enabled BOOLEAN NOT NULL DEFAULT TRUE",
         # Голосовой режим владельца (ветка 0811-voice-jarvis): обращение и голос
         "ADD COLUMN IF NOT EXISTS owner_voice_prefs JSONB",
+        # ИИ-управляющий салона (Voksy Beauty 1.6б): сценарии, автономность, отчёты
+        "ADD COLUMN IF NOT EXISTS manager_settings JSONB",
         # Цель звонка (27.11.2026, звонок f9b4a269): к какому результату голосовой агент ведёт клиента;
         # пусто — цель ниши владельца (agent_voice_context.call_goal_block)
         "ADD COLUMN IF NOT EXISTS voice_goal TEXT",
@@ -3882,6 +3952,100 @@ def booking_public_page(slug: str, request: Request):
     return _salon_page_response(slug, "book", request)
 
 
+# Лист ожидания (Voksy Beauty, шаг 2.4): /w/<токен> — ответ на «освободилось время» (Записаться / Не подходит).
+@app.get("/w/{token}", include_in_schema=False)
+def waitlist_offer_page(token: str):
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/wait.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex"})
+
+
+# «Мои записи» (Voksy Beauty, шаг 2.5): /m/<токен> — записи клиента в салоне без входа: перенести, отменить,
+# подтвердить, записаться снова, отзыв, лист ожидания. Страница static/my.html, данные — /api/public/client/<токен>.
+@app.get("/m/{token}", include_in_schema=False)
+def client_cabinet_page(token: str):
+    import html as _html
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/my.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    name = ""
+    from backend.services import client_cabinet as _cc
+    if _cc.parse_token(token) is not None:
+        from backend.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            cl = _cc.resolve(db, token)
+            name = _cc._salon_out(db, cl)["name"]
+        except Exception:
+            name = ""
+        finally:
+            db.close()
+    e = lambda s: _html.escape(s or "", quote=True)   # noqa: E731
+    title = f"Мои записи — {name}" if name else "Мои записи"
+    head = (f"<title>{e(title)}</title>\n  <meta name=\"robots\" content=\"noindex\">\n"
+            f"  <meta property=\"og:title\" content=\"{e(title)}\">\n"
+            "  <meta property=\"og:description\" content=\"Ваши записи в салоне: перенести, отменить или записаться снова.\">")
+    text = text.replace("<!--MY_HEAD-->", head, 1)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex",
+                          "Referrer-Policy": "no-referrer"})
+
+
+# «Оцените визит» (Voksy Beauty, шаг 2.3): ссылка /r/<токен> из сообщения после визита (вставка {оценить}).
+# Страница static/review.html; заголовок с названием салона — для превью ссылки в WhatsApp/Telegram.
+@app.get("/r/{token}", include_in_schema=False)
+def review_public_page(token: str, request: Request):
+    import html as _html
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/review.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    name = ""
+    from backend.services import reviews_service
+    if reviews_service.booking_id_from_token(token) is not None:
+        from backend.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            name = reviews_service.link_state(db, token)["salon"]["name"]
+        except Exception:
+            name = ""
+        finally:
+            db.close()
+    e = lambda s: _html.escape(s or "", quote=True)   # noqa: E731
+    title = f"Оцените визит — {name}" if name else "Оцените визит"
+    head = (f"<title>{e(title)}</title>\n  <meta name=\"robots\" content=\"noindex\">\n"
+            f"  <meta property=\"og:title\" content=\"{e(title)}\">\n"
+            "  <meta property=\"og:description\" content=\"Пара секунд: поставьте звёзды и напишите, как всё прошло.\">")
+    text = text.replace("<!--REVIEW_HEAD-->", head, 1)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
+
+
 # Публичные страницы в /static, которые можно индексировать; остальные (кабинет) — noindex
 PUBLIC_STATIC_PAGES = {
     "/static/privacy-policy.html", "/static/terms-of-service.html", "/static/public-offer.html",
@@ -3925,6 +4089,56 @@ async def sitemap_xml():
 async def llms_txt():
     return FileResponse(os.path.join(_LANDING_DIR, "llms.txt"), media_type="text/plain; charset=utf-8",
                         headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ============================================================================
+# Мобильное приложение (26.11.2026). Android — настоящее приложение (Trusted Web Activity: тот же
+# кабинет внутри, без адресной строки), проект mobile/android/, пакет online.voksyai.app; скачивается
+# с сайта файлом .apk со страницы /app. iPhone — «Поделиться → На экран Домой» (Apple не даёт ставить
+# приложения с сайта). Без /.well-known/assetlinks.json Android покажет приложение с адресной строкой.
+# ============================================================================
+ANDROID_PACKAGE = "online.voksyai.app"
+# SHA-256 сертификата, которым подписан APK на сайте (ключ — у владельца, не в репозитории). После
+# публикации в Google Play добавьте отпечаток ключа Google (Play Console → Целостность приложения)
+# в env ANDROID_APP_SHA256 (через запятую) — без этого версия из Google Play откроется с адресной строкой.
+ANDROID_APP_SHA256 = ("16:77:F7:24:BC:99:E0:80:66:D5:9A:4B:38:E4:E9:6B:2D:17:81:89:B4:18:EF:CF:12:FC:00:53:E5:27:31:3D",)
+ANDROID_APK_PATH = "backend/static/download/voksy-ai.apk"
+
+
+def android_fingerprints() -> list:
+    out = []
+    extra = [f for f in os.getenv("ANDROID_APP_SHA256", "").replace(";", ",").split(",")]
+    for fp in list(ANDROID_APP_SHA256) + extra:
+        fp = fp.strip().upper()
+        if re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", fp) and fp not in out:
+            out.append(fp)
+    return out
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def android_assetlinks():
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": ANDROID_PACKAGE,
+                   "sha256_cert_fingerprints": android_fingerprints()},
+    }], headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+async def app_download_page():
+    """Страница «Скачать приложение»: Android — файл .apk, iPhone — на экран «Домой», компьютер — QR."""
+    return FileResponse("backend/static/app-download.html", media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/download/voksy-ai.apk", include_in_schema=False)
+async def app_download_apk():
+    if not os.path.isfile(ANDROID_APK_PATH):
+        from starlette.exceptions import HTTPException as _HTTPExc
+        raise _HTTPExc(status_code=404)
+    return FileResponse(ANDROID_APK_PATH, media_type="application/vnd.android.package-archive",
+                        filename="Voksy-AI.apk", headers={"Cache-Control": "no-cache"})
 
 
 # IndexNow (Яндекс и Bing; поиск ChatGPT опирается на индекс Bing): ключ в env INDEXNOW_KEY,

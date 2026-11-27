@@ -925,7 +925,40 @@ class SipGatewayService:
         except Exception as e:
             logger.warning(f"[SIP] inbound_known_contact_block timeline failed: {e}")
 
+        bookings = SipGatewayService.contact_bookings_line(db, contact)
+        if bookings:
+            lines.append(bookings)
         return "\n".join(lines) + (timeline or "")
+
+    @staticmethod
+    def contact_bookings_line(db: Session, contact) -> str:
+        """Ближайшие записи клиента одной строкой (шаг 2.6 Voksy Beauty): агент сразу видит, о какой записи
+        речь, а подтверждает, переносит и отменяет функциями client_bookings / change_booking. Только данные."""
+        try:
+            from backend.models.booking import Booking
+            from backend.services import booking_service as bs
+            from backend.services.client_cabinet import client_label
+            rows = (db.query(Booking).filter(Booking.user_id == contact.user_id, Booking.contact_id == contact.id,
+                                             Booking.status.in_(("booked", "confirmed")),
+                                             Booking.start_at > bs.now_utc())
+                    .order_by(Booking.start_at).limit(6).all())
+        except Exception as e:
+            logger.warning(f"[SIP] contact bookings failed: {e}")
+            db.rollback()
+            return ""
+        if not rows:
+            return ""
+        items, seen = [], set()
+        for b in rows:
+            key = str(b.visit_id or b.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            parts = [x for x in rows if x.visit_id == b.visit_id] if b.visit_id else [b]
+            items.append(client_label(parts) + (" (подтверждена)" if b.status == "confirmed" else " (не подтверждена)"))
+            if len(items) >= 3:
+                break
+        return "Записи клиента впереди: " + "; ".join(items) + "."
 
     @staticmethod
     def resolve_greeting(call: SipCall, number: Optional[SipPhoneNumber], assistant,

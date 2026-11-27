@@ -174,6 +174,8 @@ def save_profile(db: Session, page, data: Dict[str, Any]) -> Dict[str, Any]:
         prof["accent"] = a.lower()
     if "show_prices" in data:
         prof["show_prices"] = bool(data.get("show_prices"))
+    if "show_reviews" in data:
+        prof["show_reviews"] = bool(data.get("show_reviews"))
     if "gallery" in data:
         prof["gallery"] = reorder_gallery(prof.get("gallery"), data.get("gallery"))
     page.profile = prof
@@ -319,7 +321,20 @@ def public_view(db: Session, page, owner) -> Dict[str, Any]:
         "booking_enabled": bool(page.enabled),
         "page_path": page_path(page, owner.business_niche),
         "book_path": f"/b/{page.slug}",
+        "chat": _chat_state(db, page, owner),
+        "reviews": _reviews_block(db, owner, prof),
     }
+
+
+def _reviews_block(db: Session, owner, prof: Dict[str, Any]) -> Dict[str, Any]:
+    """Отзывы на витрине (шаг 2.3): рейтинг по опубликованным и первые отзывы с текстом."""
+    from backend.services import reviews_service
+    return reviews_service.public_block(db, owner.id, prof.get("show_reviews", True) is not False)
+
+
+def _chat_state(db: Session, page, owner) -> Dict[str, Any]:
+    from backend.services import webchat_service
+    return webchat_service.public_state(db, page, owner)
 
 
 # ───────────────────────────── кабинет: готовность ─────────────────────────────
@@ -405,6 +420,18 @@ def head_html(view: Dict[str, Any], host: str, canonical_path: str) -> str:
             for h in view.get("hours") or [] if h.get("open")]
     if spec:
         ld["openingHoursSpecification"] = spec
+    rv = view.get("reviews") or {}
+    if rv.get("enabled") and rv.get("count") and rv.get("avg"):
+        ld["aggregateRating"] = {"@type": "AggregateRating", "ratingValue": rv["avg"], "bestRating": 5,
+                                 "worstRating": 1, "ratingCount": rv["count"]}
+        if rv.get("texts"):
+            ld["aggregateRating"]["reviewCount"] = rv["texts"]
+        items = [it for it in rv.get("items") or [] if it.get("text")][:5]
+        if items:
+            ld["review"] = [{"@type": "Review", "reviewRating": {"@type": "Rating", "ratingValue": it["score"],
+                                                                 "bestRating": 5},
+                             "author": {"@type": "Person", "name": it.get("author") or "Клиент салона"},
+                             "datePublished": it.get("date"), "reviewBody": it["text"][:500]} for it in items]
     # </script> внутри строк JSON не должен закрыть тег
     blob = json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
     out.append(f'<script type="application/ld+json">{blob}</script>')

@@ -67,7 +67,7 @@ TIMELINE_MAX_EVENTS = 40      # сколько последних событий
 TIMELINE_DAYS_WINDOW = 30     # окно по времени (дни)
 TIMELINE_CALL_SNIPPET = 300   # длина сниппета транскрипта звонка в ленте
 
-_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷", "whatsapp": "🟢"}
+_CHANNEL_ICON = {"call": "📞", "sms": "✉️", "telegram": "✈️", "instagram": "📷", "whatsapp": "🟢", "webchat": "💬"}
 
 
 def _flag_memory(obj) -> None:
@@ -187,6 +187,30 @@ def _timeline_instagram_events(db, agent_contact, since, limit) -> list:
         return []
 
 
+def _timeline_webchat_events(db, agent_contact, since, limit) -> list:
+    """События чата на сайте (обе стороны) для таймлайна. Best-effort."""
+    try:
+        from backend.services.webchat_service import get_thread as web_get_thread
+        rows = web_get_thread(db, agent_contact.id, limit=limit)
+        events = []
+        for m in rows:
+            ts = m.sent_at or m.created_at
+            if not ts:
+                continue
+            if since is not None and _as_naive_utc(ts) < since:
+                continue
+            who = _thread_who(m)
+            events.append((ts, "webchat", f"Чат на сайте, {who}: {(m.body or '').strip()}"))
+        return events
+    except Exception as e:
+        logger.warning(f"[AGENT] timeline webchat events failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+
+
 def _timeline_whatsapp_events(db, agent_contact, since, limit) -> list:
     """События-WhatsApp (обе стороны) для таймлайна. Best-effort."""
     try:
@@ -213,6 +237,8 @@ def _thread_who(m) -> str:
         return "клиент → агент"
     if getattr(m, "sent_by", None) == "owner":
         return "владелец (написал сам) → клиент"
+    if getattr(m, "sent_by", None) == "auto":
+        return "служебный ответ системы (агент не ответил) → клиент"
     return "агент → клиент"
 
 
@@ -277,7 +303,7 @@ def _after_merge(db, result_str: str, agent_contact, agent_call):
 # («outbound» / «inbound» голосом) считаются попыткой звонка.
 MESSAGE_DIRECTIONS = frozenset({
     "sms_inbound", "telegram_inbound", "telegram_outbound",
-    "instagram_inbound", "whatsapp_inbound", "followup_outbound",
+    "instagram_inbound", "whatsapp_inbound", "followup_outbound", "webchat_inbound",
 })
 
 
@@ -285,11 +311,11 @@ MESSAGE_DIRECTIONS = frozenset({
 LEASE_WAIT_SECONDS = 150
 
 # Входящие сообщения клиента, на которые должен уйти ответ (перенос из 1111-clean-system).
-REPLY_EXPECTED_DIRECTIONS = frozenset({"whatsapp_inbound", "telegram_inbound", "instagram_inbound"})
+REPLY_EXPECTED_DIRECTIONS = frozenset({"whatsapp_inbound", "telegram_inbound", "instagram_inbound", "webchat_inbound"})
 CLIENT_REPLY_TOOLS = frozenset({
     "telegram_send_message", "telegram_send_file", "whatsapp_send_message", "whatsapp_send_file",
     "instagram_send_message", "instagram_send_file", "send_voice_message", "send_proposal",
-    "send_product_card",
+    "send_product_card", "send_staff_portfolio", "webchat_send_message", "webchat_send_file",
 })
 REPLY_NUDGE = (
     "Клиент написал, а ответ ему не отправлен. Отправь ответ сейчас инструментом отправки того канала, "
@@ -328,6 +354,7 @@ def build_conversation_timeline(
         events += _timeline_sms_events(db, agent_contact, since, max_events)
         events += _timeline_telegram_events(db, agent_contact, since, max_events)
         events += _timeline_instagram_events(db, agent_contact, since, max_events)
+        events += _timeline_webchat_events(db, agent_contact, since, max_events)
         events += _timeline_whatsapp_events(db, agent_contact, since, max_events)
         if not events:
             return ""
@@ -1154,6 +1181,7 @@ class PostCallOrchestrator:
         is_tg = (call_direction or "").lower() == "telegram_inbound"
         is_ig = (call_direction or "").lower() == "instagram_inbound"
         is_wa = (call_direction or "").lower() == "whatsapp_inbound"
+        is_web = (call_direction or "").lower() == "webchat_inbound"
         is_followup = (call_direction or "").lower() == "followup_outbound"
         is_tg_out = (call_direction or "").lower() in ("telegram_outbound", "followup_outbound")
         is_inbound = (call_direction or "outbound").lower() == "inbound"
@@ -1309,7 +1337,18 @@ class PostCallOrchestrator:
             "   нужна услуга, — не спам."
         )
 
-        if is_followup and followup_kind == "reengage":
+        if is_followup and followup_kind == "salon":
+            direction_line = (
+                "СОБЫТИЕ: ИИ-УПРАВЛЯЮЩИЙ САЛОНА. Это не входящее сообщение и не звонок: инициатива твоя, "
+                "по сценарию, который включил владелец (вернуть клиента, предложить свободное окно или "
+                "напомнить о повторе услуги). Напиши клиенту ОДНО короткое живое сообщение в канал из "
+                "инструкции. Свободное время и цены — только из инструкции или find_booking_slots / get_services."
+            )
+            callback_rule = ""
+            transcript_label = "ЧТО СДЕЛАТЬ (инструкция владельца, НЕ готовый текст)"
+            status_label = "СТАТУС"
+            analyze_line = ""
+        elif is_followup and followup_kind == "reengage":
             direction_line = (
                 "СОБЫТИЕ: КЛИЕНТ ЗАМОЛЧАЛ В ПЕРЕПИСКЕ. Он сам написал (или ответил), ты ответил, "
                 "а он молчит. Это не звонок и не входящее сообщение: инициатива твоя, по цепочке "
@@ -1428,6 +1467,31 @@ class PostCallOrchestrator:
                 + spam_rule
             )
             transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ INSTAGRAM"
+            status_label = "СТАТУС"
+            analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
+        elif is_web:
+            # Чат на сайте (Voksy Beauty 1.6в): окно чата на странице салона или на сайте владельца.
+            direction_line = (
+                "СОБЫТИЕ: ВХОДЯЩЕЕ СООБЩЕНИЕ В ЧАТЕ НА САЙТЕ (окно чата на странице салона "
+                "или на сайте владельца) — посетитель написал прямо со страницы, это не звонок."
+            )
+            callback_rule = (
+                "3. Ответь клиенту в чате на сайте через webchat_send_message (он сейчас на\n"
+                "   странице и ждёт ответа). Пиши как живой администратор, коротко, без markdown.\n"
+                "   ФОРМАТ: ОДИН ответ, 1–3 короткие строки; делить через «---» можно только на две\n"
+                "   части и только если вторая — вопрос или ссылка.\n"
+                "   НОМЕР: у посетителя чата номера может не быть (телефон карточки начинается с\n"
+                "   «web:»). Для записи нужен номер — попроси оставить его одной строкой («оставьте,\n"
+                "   пожалуйста, номер — пришлём напоминание»), в окне есть кнопка «Оставить номер».\n"
+                "   Номер он может написать и в сообщении — тогда запиши его (add_contact_phone) и\n"
+                "   продолжай. Не уводи его в мессенджер, если он сам не просит: ответ — здесь.\n"
+                "   Фото работ, карточки услуг и файлы — webchat_send_file / send_staff_portfolio\n"
+                "   (channel=webchat). Звонить сам — только если он оставил номер и просит звонок."
+                + handoff_rule
+                + chat_sales_rule
+                + spam_rule
+            )
+            transcript_label = "ТЕКСТ ВХОДЯЩЕГО СООБЩЕНИЯ В ЧАТЕ НА САЙТЕ"
             status_label = "СТАТУС"
             analyze_line = "Проанализируй сообщение клиента и выполни необходимые действия через tools:"
         elif is_sms:
@@ -1554,10 +1618,12 @@ class PostCallOrchestrator:
         # Разбор переписки кодом (chat_conscience): согласие, названное время, «не сейчас»,
         # что агент уже предлагал и спрашивал — готовым выводом, а не догадкой по хронологии.
         situation_text = ""
-        if is_tg or is_wa or is_ig:
+        if is_tg or is_wa or is_ig or is_web:
             try:
                 from backend.services import chat_conscience
-                if is_ig:
+                if is_web:
+                    from backend.services import webchat_service as _thread_svc
+                elif is_ig:
                     from backend.services import instagram_service as _thread_svc
                 elif is_tg:
                     from backend.services import telegram_user_service as _thread_svc
@@ -1574,6 +1640,13 @@ class PostCallOrchestrator:
                 situation_text = chat_conscience.situation_block(
                     _thread_svc.get_thread(db, agent_contact.id, limit=20),
                     can_call=can_call, call_reason=call_reason)
+                # Запись ждёт «да» клиента (Voksy Beauty 1.6а): бот видит итог и id между сообщениями
+                from backend.services import booking_confirm
+                situation_text += booking_confirm.pending_block(db, agent_call.user_id, agent_contact.id)
+                from backend.services import salon_manager
+                situation_text += salon_manager.review_hint(db, agent_call.user_id, agent_contact.id)
+                from backend.services import waitlist_service
+                situation_text += waitlist_service.offer_hint(db, agent_call.user_id, agent_contact.id)
             except Exception as e:
                 logger.warning(f"[POSTCALL] chat situation failed: {e}")
                 try:
@@ -1721,6 +1794,23 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
             openai_key=(user.openai_api_key or "") if user else "",
             db=db,
             call_direction="whatsapp_inbound",
+        )
+
+    async def run_for_webchat(self, agent_call, agent_contact, agent_config, user, message_body, db):
+        """Сообщение из чата на сайте (Voksy Beauty 1.6в) — тот же PostCall, что у мессенджеров."""
+        transcript = f'Клиент написал в чате на сайте: "{(message_body or "").strip()}"'
+        await self._analyze(
+            agent_call=agent_call,
+            agent_contact=agent_contact,
+            agent_config=agent_config,
+            user=user,
+            task=None,
+            transcript=transcript,
+            call_status="answered",
+            duration_seconds=0,
+            openai_key=(user.openai_api_key or "") if user else "",
+            db=db,
+            call_direction="webchat_inbound",
         )
 
     async def run_for_scheduled_telegram(self, agent_call, agent_contact, agent_config, user, task, db):
@@ -1890,7 +1980,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
         # Подставляем стратегию PreCall в текст (симуляция цепочки). Для входящего
         # SMS/Telegram и запланированной отправки в Telegram PreCall не было —
         # блок стратегии не добавляем.
-        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound", "whatsapp_inbound", "followup_outbound"):
+        if (call_direction or "").lower() not in ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound", "whatsapp_inbound", "followup_outbound", "webchat_inbound"):
             post_call_input += f"""
 
 СТРАТЕГИЯ КОТОРУЮ ТЫ ПЛАНИРОВАЛ ПЕРЕД ЗВОНКОМ:
@@ -1925,7 +2015,7 @@ AGENT_CONTACT_ID: {str(agent_contact.id)}{situation_text}
         is_tg_out = (call_direction or "").lower() in ("telegram_outbound", "followup_outbound")
         # Клиент сам вышел на связь из «Отказа (нет ответа)» → снова «В работе» (воронка v3).
         if (call_direction or "").lower() in ("inbound", "whatsapp_inbound", "telegram_inbound",
-                                              "instagram_inbound", "sms_inbound"):
+                                              "instagram_inbound", "sms_inbound", "webchat_inbound"):
             try:
                 from backend.services import sales_funnel
                 sales_funnel.on_client_message(db, agent_config, agent_contact)
@@ -3815,4 +3905,106 @@ async def handle_inbound_whatsapp(account_id: str, agent_contact_id: str, messag
     except Exception as e:
         logger.error(f"[AGENT-WA] handle_inbound_whatsapp error: {e}", exc_info=True)
     finally:
+        db.close()
+
+
+async def handle_inbound_webchat(session_id: str, agent_contact_id: str, message_body: str):
+    """
+    Сообщения посетителя из чата на сайте (Voksy Beauty 1.6в). Вызывается из
+    webchat_service.dispatch_later ПОСЛЕ того, как серия сообщений атомарно помечена
+    переданной (webchat_sessions.last_dispatched_at). Зеркалит handle_inbound_instagram:
+    доступ → пауза → AgentCall(call_direction="webchat_inbound") → PostCall; бот отвечает
+    тулзой webchat_send_message. Не смог ответить (агент выключен, тариф, кредиты, сбой) —
+    посетителю служебный ответ, владельцу оповещение: на сайте человек ждёт ответа в окне.
+    """
+    from backend.models.webchat import WebChatSession
+    from backend.services import contact_lease, webchat_service
+
+    db = SessionLocal()
+    leased_contact = None
+    failure = None
+    agent = None
+    contact = None
+    try:
+        session = db.query(WebChatSession).filter(WebChatSession.id == session_id).first()
+        if session is None:
+            return
+        agent = db.query(AgentConfig).filter(AgentConfig.id == session.agent_config_id).first()
+        user = db.query(User).filter(User.id == session.user_id).first()
+        contact = db.query(AgentContact).filter(
+            AgentContact.id == agent_contact_id,
+            AgentContact.agent_config_id == session.agent_config_id,
+        ).first() if agent is not None else None
+        if agent is None or user is None or contact is None:
+            return
+        if not agent.is_active:
+            failure = "бот выключен"
+            return
+        try:
+            if not user.has_agent_chat_access():
+                failure = "тариф не оплачен"
+                return
+        except Exception:
+            pass
+        if not getattr(agent, "uses_hardcoded_prompt", False) and not user.openai_api_key:
+            failure = "нет ключа OpenAI у агента старого типа"
+            return
+
+        if not await contact_lease.acquire(db, contact.id, wait_seconds=LEASE_WAIT_SECONDS):
+            logger.warning(f"[AGENT-INBOUND] contact {contact.id}: прошлый разбор не закончился "
+                           f"за {LEASE_WAIT_SECONDS} с — отвечаем без очереди")
+        leased_contact = contact.id
+        db.refresh(contact)
+        if agent_pause.is_paused(contact):
+            record_during_pause(contact, "webchat", message_body, db)
+            logger.info(f"[AGENT-WEB] contact {contact.id}: {agent_pause.describe(contact)}, skip reply (memory updated)")
+            return
+
+        inbound_call = AgentCall(
+            agent_contact_id=contact.id,
+            agent_config_id=agent.id,
+            user_id=user.id,
+            source_task_id=None,
+            call_session_id=None,
+            status="calling",
+            direction="inbound",
+            started_at=datetime.utcnow(),
+            postcall_log={"call_direction": "webchat_inbound"},
+        )
+        db.add(inbound_call)
+        db.commit()
+        logger.info(f"[AGENT-WEB] Inbound web chat -> agent {agent.id}, contact={contact.id}, call={inbound_call.id}")
+        await PostCallOrchestrator().run_for_webchat(inbound_call, contact, agent, user, message_body, db)
+        try:
+            db.refresh(inbound_call)
+            err = (inbound_call.postcall_log or {}).get("error") if isinstance(inbound_call.postcall_log, dict) else None
+            if err == "blocked_credits":
+                failure = "закончились кредиты бота"
+            elif err == "blocked_access":
+                failure = "тариф не оплачен"
+            elif err:
+                failure = "сбой разбора"
+        except Exception:
+            db.rollback()
+    except Exception as e:
+        logger.error(f"[AGENT-WEB] handle_inbound_webchat error: {e}", exc_info=True)
+        failure = failure or "сбой разбора"
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        if failure and contact is not None:
+            try:
+                if webchat_service.auto_reply(db, session_id, contact.id, failure) and agent is not None:
+                    from backend.services import owner_notifications
+                    await owner_notifications._send(agent, db, webchat_service.owner_alert_text(contact, message_body, failure))
+            except Exception as e:
+                logger.warning(f"[AGENT-WEB] fallback reply failed: {e}")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+        if leased_contact is not None:
+            contact_lease.release(db, leased_contact)
         db.close()

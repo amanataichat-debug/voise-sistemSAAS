@@ -102,6 +102,7 @@ def _new_contact(db, account, chat):
         phone=("+" + chat.phone) if chat.phone else f"wa:{chat.remote_jid.split('@')[0]}",
         name=chat.push_name,
         status="new",
+        source="whatsapp",
     )
     db.add(contact)
     db.flush()

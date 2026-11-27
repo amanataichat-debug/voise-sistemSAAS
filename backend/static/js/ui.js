@@ -813,7 +813,7 @@
       localStorage.removeItem('vf_admin_return');
       if (ret && ret.token) localStorage.setItem('auth_token', ret.token); else localStorage.removeItem('auth_token');
     } catch (e) { /* ignore */ }
-    location.href = ret && ret.token ? '/static/admin.html' + (ret.client_id ? '#client=' + ret.client_id : '') : '/';
+    location.href = ret && ret.token ? '/static/admin.html' + (ret.client_id ? '#client=' + ret.client_id : '') : '/static/login.html';
   }
   var IMP_STYLE = [
     'html.vf-imp::before{content:"";position:fixed;left:0;right:0;top:0;height:3px;background:#f97316;z-index:2147483000;pointer-events:none}',

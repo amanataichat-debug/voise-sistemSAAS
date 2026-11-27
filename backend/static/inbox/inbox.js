@@ -19,9 +19,10 @@
   var CH = {
     whatsapp: { label: 'WhatsApp', icon: 'message-circle', color: '#25D366' },
     instagram: { label: 'Instagram', icon: 'instagram', color: '#E1306C' },
-    telegram: { label: 'Telegram', icon: 'send', color: '#229ED9' }
+    telegram: { label: 'Telegram', icon: 'send', color: '#229ED9' },
+    webchat: { label: 'Сайт', icon: 'globe', color: '#b58a00' }
   };
-  var CH_ORDER = ['whatsapp', 'instagram', 'telegram'];
+  var CH_ORDER = ['whatsapp', 'instagram', 'telegram', 'webchat'];
   var FOLDERS = [
     { id: 'all', label: 'Все диалоги', icon: 'inbox' },
     { id: 'waiting', label: 'Ждут ответа', icon: 'hourglass', hot: true },
@@ -209,6 +210,8 @@
     return { connected: on, exists: exists };
   }
   function visibleChannel(ch) { return (st.settings.channels || {})[ch] !== false; }
+  // Чат на сайте (Voksy Beauty 1.6в) показываем, только если он есть у владельца (страница салона с чатом)
+  function chList() { return CH_ORDER.filter(function (k) { return k !== 'webchat' || channelState(k).exists; }); }
 
   function renderSide() {
     var c = st.counts || {};
@@ -217,7 +220,7 @@
       return '<button class="ib-nav-item' + (st.folder === f.id ? ' active' : '') + '" data-folder="' + f.id + '">' + icon(f.icon) +
         '<span>' + f.label + '</span><span class="n' + (f.hot && n ? ' hot' : '') + '">' + (n || '') + '</span></button>';
     }).join('');
-    var chans = CH_ORDER.map(function (k) {
+    var chans = chList().map(function (k) {
       var s = channelState(k), vis = visibleChannel(k);
       return '<button class="ib-nav-item' + (st.channel === k ? ' active' : '') + (vis ? '' : ' off') + '" data-channel="' + k + '" style="--c:' + CH[k].color + '">' +
         '<span class="dot"></span><span>' + CH[k].label + '</span>' +
@@ -256,7 +259,7 @@
       '<button class="ib-chip" data-set>' + icon('sliders-horizontal') + '</button>';
     S.$$('[data-f]', el).forEach(function (b) { b.addEventListener('click', function () { setFolder(b.dataset.f); }); });
     S.$('[data-ch]', el).addEventListener('click', function (e) {
-      pop(e.currentTarget, [{ label: 'Все каналы', sel: !st.channel, fn: function () { st.channel = null; renderSide(); loadList(true); } }].concat(CH_ORDER.map(function (k) {
+      pop(e.currentTarget, [{ label: 'Все каналы', sel: !st.channel, fn: function () { st.channel = null; renderSide(); loadList(true); } }].concat(chList().map(function (k) {
         return { label: CH[k].label, dot: CH[k].color, sel: st.channel === k, fn: function () { st.channel = k; renderSide(); loadList(true); } };
       })));
     });
@@ -273,8 +276,9 @@
   function renderBanner() {
     var el = S.$('#ib-banner');
     if (!el) return;
-    var off = CH_ORDER.filter(function (k) { return visibleChannel(k) && !channelState(k).connected; });
-    if (off.length === CH_ORDER.length) {
+    var list = chList();
+    var off = list.filter(function (k) { return visibleChannel(k) && !channelState(k).connected; });
+    if (off.length === list.length) {
       el.innerHTML = '<div class="ib-banner">' + icon('plug') + '<div>Каналы не подключены: ' + channelsLink('подключите WhatsApp, Instagram или Telegram') + ' — переписка появится здесь.</div></div>';
     } else el.innerHTML = '';
   }
@@ -476,6 +480,7 @@
     if (c.real_phone) handles.push(S.fmtPhone(c.real_phone));
     if (c.handles && c.handles.telegram && c.handles.telegram.username) handles.push('@' + c.handles.telegram.username);
     if (c.handles && c.handles.instagram && c.handles.instagram.username) handles.push('ig: @' + c.handles.instagram.username);
+    if (c.handles && c.handles.webchat && !handles.length) handles.push('чат на сайте');
     head.innerHTML =
       '<button class="btn btn-ghost btn-icon btn-sm ib-back" type="button" id="ib-back" aria-label="Назад">' + icon('arrow-left') + '</button>' +
       '<div class="who" id="ib-who"><div class="ib-ava">' + esc(S.initial(c.display_name)) + '</div><div style="min-width:0">' +
@@ -709,7 +714,7 @@
         '. ' + channelsLink('Подключить каналы') + '</div>';
       return;
     }
-    var chBtns = CH_ORDER.map(function (k) {
+    var chBtns = CH_ORDER.filter(function (k) { return k !== 'webchat' || (sc[k] || {}).can_send; }).map(function (k) {
       var s = sc[k] || {};
       return '<button type="button" data-rc="' + k + '" class="' + (st.replyChannel === k ? 'active' : '') + '" style="--c:' + CH[k].color + '"' +
         (s.can_send ? '' : ' disabled title="' + esc(s.reason || '') + '"') + '>' + icon(CH[k].icon) + '<span class="chl">' + CH[k].label + '</span></button>';
@@ -943,6 +948,8 @@
     if (hd.whatsapp) kv.push(['message-circle', 'WhatsApp ' + esc(hd.whatsapp.phone ? S.fmtPhone(hd.whatsapp.phone) : '') + (hd.whatsapp.name ? ' <small>· ' + esc(hd.whatsapp.name) + '</small>' : '')]);
     if (hd.telegram) kv.push(['send', 'Telegram ' + esc(hd.telegram.username ? '@' + hd.telegram.username : (hd.telegram.name || ''))]);
     if (hd.instagram) kv.push(['instagram', 'Instagram ' + esc(hd.instagram.username ? '@' + hd.instagram.username : '')]);
+    if (hd.webchat) kv.push(['globe', 'Чат на сайте' + (hd.webchat.origin === 'site' ? ' <small>· ваш сайт</small>' : ' <small>· страница салона</small>') +
+      (hd.webchat.last_seen ? ' <small>· был ' + esc(S.fmtDate(hd.webchat.last_seen, true)) + '</small>' : '')]);
     if (c.company || c.position) kv.push(['building', esc([c.company, c.position].filter(Boolean).join(' · '))]);
 
     var facts = (mem.key_facts || []).slice(0, 10).map(function (f) { return '<li>' + esc(typeof f === 'string' ? f : JSON.stringify(f)) + '</li>'; }).join('');
@@ -1131,7 +1138,7 @@
       return '<option value="' + v + '"' + (String(s.default_pause) === v ? ' selected' : '') + '>' + PAUSE_LABELS[v] + '</option>';
     }).join('');
     function sw(id, on) { return '<label class="switch"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><span class="track"></span></label>'; }
-    var chans = CH_ORDER.map(function (k) {
+    var chans = chList().map(function (k) {
       return '<div class="ib-set-row"><div><div class="t">' + CH[k].label + '</div><div class="d">' + (channelState(k).connected ? 'Подключён' : 'Не подключён') + '</div></div>' + sw('set-ch-' + k, (s.channels || {})[k] !== false) + '</div>';
     }).join('');
     var dlg = S.dialog({
@@ -1168,7 +1175,7 @@
         sound: S.$('#set-sound', dlg.el).checked,
         desktop_notify: S.$('#set-notify', dlg.el).checked
       };
-      CH_ORDER.forEach(function (k) { body.channels[k] = S.$('#set-ch-' + k, dlg.el).checked; });
+      chList().forEach(function (k) { body.channels[k] = S.$('#set-ch-' + k, dlg.el).checked; });
       if (body.desktop_notify && window.Notification && Notification.permission === 'default') Notification.requestPermission();
       api('/settings', { method: 'PUT', body: body }).then(function (r) {
         if (!r.ok) { S.toast(errText(r), 'error'); return; }
@@ -1184,10 +1191,12 @@
     var chs = agent.channels || {};
     var PAUSES = [[10, '10 минут'], [30, '30 минут'], [60, '1 час'], [1440, 'сутки'], [-1, 'до включения вручную']];
     var DELAYS = [5, 10, 15, 20, 30, 60];
-    var body = CH_ORDER.map(function (k) {
+    var body = chList().map(function (k) {
       var c = chs[k] || {};
       var head = '<div class="ib-set-h" style="display:flex;align-items:center;gap:8px"><span class="st-ch" style="--c:' + CH[k].color + '">' + icon(CH[k].icon) + '</span>' + CH[k].label +
         '<span class="muted small" style="font-weight:400">' + (c.connected ? 'подключён' + (c.account ? ' · ' + esc(c.account) : '') : 'не подключён') + '</span></div>';
+      if (k === 'webchat') return head + '<div class="muted small">Окно чата на странице салона и на вашем сайте. Бот отвечает всем, кто пишет. ' +
+        'Включить, выключить и поменять приветствие — <a href="/static/booking.html?view=page" target="_top">«Страница салона»</a>.</div>';
       if (!c.exists) return head + '<div class="muted small">Подключите канал в настройках бота: <a href="' + channelsHref() + '" target="_top">перейти</a></div>';
       var rows = '';
       if (k !== 'instagram') {

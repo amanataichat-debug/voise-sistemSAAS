@@ -193,6 +193,9 @@ class AgentConfig(Base):
     # {address: name|chef|boss|custom, address_text, formality: vy|ty, voice}. Колонку добавляет
     # app.ensure_branding_columns() в начале старта.
     owner_voice_prefs = Column(JSONB, nullable=True)
+    # ИИ-управляющий салона (Voksy Beauty 1.6б): {autonomy, winback, fill_gaps, repeat_review, reports} —
+    # services/salon_manager.py (settings_of — значения по умолчанию)
+    manager_settings = Column(JSONB, nullable=True)
 
     # ── CRM v2 (2510-crm-v2): настраиваемые стадии воронки ─────────────
     # JSON-строка со списком [{key,label,color,kind}], kind: open|won|lost.

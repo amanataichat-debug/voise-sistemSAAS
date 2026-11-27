@@ -60,6 +60,16 @@
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item' },
     // Финансы (19.11.2026): выручка, расходы (аренда, зарплаты мастеров), прибыль — у ниш с записями или заказами
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', modes: ['full', 'reactive'], money: true },
+    // Касса (Voksy Beauty 3.1): смены администраторов, оплата визитов, возвраты — у ниш с онлайн-записью
+    { href: '/static/cash.html', lucide: 'wallet', label: 'sidebar.cash', def: 'Касса', id: 'cash-nav-item', modes: ['full', 'reactive'], booking: true },
+    // ИИ-управляющий (Voksy Beauty 1.6б): утренний отчёт, предложения на одобрение, сценарии — у ниш с онлайн-записью
+    { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Журнал действий (Voksy Beauty 1.7): кто перенёс, отменил, поменял цену, что сделал бот — у ниш с онлайн-записью
+    { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Автоматизации (Voksy Beauty 2.2): напоминания, подтверждение, «спасибо», ДР, повтор, «давно не были» — тексты и журнал отправок
+    { href: '/static/automations.html', lucide: 'send', label: 'sidebar.automations', def: 'Автоматизации', id: 'automations-nav-item', modes: ['full', 'reactive'], booking: true },
+    // Отзывы (Voksy Beauty 2.3): рейтинг салона и мастеров, проверка оценок 1–3, ответ салона
+    { href: '/static/reviews.html', lucide: 'star', label: 'sidebar.reviews', def: 'Отзывы', id: 'reviews-nav-item', modes: ['full', 'reactive'], booking: true },
 
     { section: 'sidebar.section_account', def: 'Аккаунт', account: true },
     // Сотрудники (ветка 1811-niche-admin-speed): свой вход, только выбранные разделы — на Старте и Profi
@@ -85,6 +95,11 @@
     { href: '/static/analytics.html', lucide: 'chart-column', label: 'sidebar.analytics', def: 'Аналитика', id: 'analytics-nav-item',
       aliases: ['/static/start-analytics.html'] },
     { href: '/static/finance.html', lucide: 'banknote', label: 'sidebar.finance', def: 'Финансы', id: 'finance-nav-item', money: true },
+    { href: '/static/cash.html', lucide: 'wallet', label: 'sidebar.cash', def: 'Касса', id: 'cash-nav-item', booking: true },
+    { href: '/static/manager.html', lucide: 'sparkles', label: 'sidebar.manager', def: 'ИИ-управляющий', id: 'manager-nav-item', booking: true },
+    { href: '/static/activity.html', lucide: 'history', label: 'sidebar.activity', def: 'Журнал действий', id: 'activity-nav-item', booking: true },
+    { href: '/static/automations.html', lucide: 'send', label: 'sidebar.automations', def: 'Автоматизации', id: 'automations-nav-item', booking: true },
+    { href: '/static/reviews.html', lucide: 'star', label: 'sidebar.reviews', def: 'Отзывы', id: 'reviews-nav-item', booking: true },
     { href: '/static/start-bot.html', lucide: 'bot', label: 'sidebar.chatbot', def: 'Чат-бот', id: 'chatbot-nav-item' },
     // Автономный агент — только Profi: на Старте и пробном периоде пункт с замком (ведёт к оплате)
     { href: '/static/agent.html', lucide: 'headset', label: 'sidebar.agent', def: 'Агент обзвона', id: 'agent-nav-item', profi: true },
@@ -113,6 +128,8 @@
     menu.forEach(function (item) {
       // Финансы — где есть выручка: записи или заказы (у ниши без них раздел пустой)
       if (item.money && biz && biz.niche && !mods.booking && !mods.orders) return;
+      // ИИ-управляющий — где есть журнал записи (отчёт по записям, сценарии «вернуть / окна / повтор»)
+      if (item.booking && !(biz && mods.booking)) return;
       // Салону (Voksy Beauty) тариф Profi не продаётся — пункт с замком «Profi» не показываем
       if (item.profi && biz && biz.beauty && !profi) return;
       if (item.id === 'crm-nav-item' && profi) {
@@ -157,7 +174,7 @@
   function staffMenu(staff) {
     var out = [{ section: 'sidebar.section_work', def: 'Работа' }];
     (staff.menu || []).forEach(function (m) {
-      var lucide = { inbox: 'inbox', booking: 'calendar', orders: 'shopping-cart', crm: 'contact-round', catalog: 'package', analytics: 'chart-column' }[m.id] || m.icon;
+      var lucide = { inbox: 'inbox', booking: 'calendar', orders: 'shopping-cart', crm: 'contact-round', catalog: 'package', analytics: 'chart-column', cash: 'wallet' }[m.id] || m.icon;
       var item = { href: m.href, lucide: lucide, label: 'staff.' + m.id, def: m.label, id: m.id + '-nav-item' };
       if (m.id === 'crm') item.aliases = ['/static/crm.html', '/static/crm-contact.html'];
       if (m.id === 'analytics') item.aliases = ['/static/start-analytics.html'];
@@ -415,6 +432,11 @@
 
   function openTopupModal() {
     if (document.getElementById('vf-topup-modal')) return;
+    // Стили окна кладёт карточка кошелька в боковом меню; на странице без него (или пока её
+    // нет) окно на телефоне открывалось без вида шторки — кладём сами
+    if (!document.getElementById('vf-wallet-style')) {
+      var st = document.createElement('style'); st.id = 'vf-wallet-style'; st.textContent = WALLET_STYLE; document.head.appendChild(st);
+    }
     var presets = [100, 500, 1000, 3000];
     var overlay = document.createElement('div');
     overlay.className = 'vf-modal-overlay';
@@ -493,14 +515,14 @@
 
   // ---------------------------------------------------------------------
   // Выход. Единый для всех страниц: снимаем токен, чистим кэш признака
-  // админа и уводим на лендинг текущего домена.
+  // админа и уводим на экран входа (/static/login.html): в приложении сайт не открывается.
   // ---------------------------------------------------------------------
   function logout() {
     // Админ в кабинете клиента: «Выйти» = вернуться в свою админку, а не выйти совсем
     if (window.VF && window.VF.impersonation && window.VF.impersonation()) { window.VF.returnToAdmin(); return; }
     try { localStorage.removeItem('auth_token'); localStorage.removeItem(STAFF_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem('vf_is_admin'); sessionStorage.removeItem('vf_wallet'); } catch (e) { /* ignore */ }
-    window.location.href = '/';
+    window.location.href = '/static/login.html?reason=logout';
   }
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('#logout-button, #dropdown-logout, [data-logout]') : null;
@@ -676,8 +698,10 @@
     '.vf-credit-pk[disabled]{opacity:.6}'
   ].join('');
   var moreData = null;   // {me, credits} — последний ответ, чтобы шторка открывалась сразу
-  function planTitle(code) {
-    return { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный' }[code] || (code || '');
+  // Название тарифа: короткое для прежних, у Voksy Beauty и индивидуальных — имя из базы
+  // (было «Тариф beauty_pro» — код вместо названия)
+  function planTitle(code, name) {
+    return { start: 'Старт', profi: 'Profi', ai_voice: 'AI Voice', agent: 'Агент', free: 'Пробный' }[code] || name || (code || '');
   }
   function closeMore() {
     var ov = document.getElementById('vf-more');
@@ -696,10 +720,11 @@
     if (staff) name = staff.name || name;
     var sub = (moreData && moreData.sub) || {};
     var code = (sub.subscription_plan && sub.subscription_plan.code) || '';
+    var planName = (sub.subscription_plan && sub.subscription_plan.name) || '';
     var days = sub.days_left != null ? sub.days_left : (cr.days_remaining != null ? cr.days_remaining : null);
     var trial = sub.is_trial || me.is_trial || code === 'free';
     var line = staff ? (staff.role_title || (ky ? 'Кызматкер' : 'Сотрудник'))
-      : ((trial ? (ky ? 'Сыноо мөөнөтү' : 'Пробный период') : (ky ? 'Тариф ' : 'Тариф ') + planTitle(code)) +
+      : ((trial ? (ky ? 'Сыноо мөөнөтү' : 'Пробный период') : (ky ? 'Тариф ' : 'Тариф ') + planTitle(code, planName)) +
         (days != null ? ' · ' + (ky ? 'калды ' + days + ' күн' : 'осталось ' + days + ' дн.') : ''));
     var tabHrefs = currentTabs().map(function (t) { return (t.href || '').split('#')[0]; });
     var items = [];
@@ -724,7 +749,8 @@
       items.push({ href: '/static/agent-knowledge.html#catalog', lucide: 'package', def: (bz.catalog && bz.catalog.title) || 'Каталог' });
     }
     items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
-    var ORDER = ['dashboard', 'finance', 'booking', 'orders', 'catalog', 'crm', 'inbox', 'team', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    // Салон: «Отзывы» и «Автоматизации» — рядом с клиентами, а не после «Настроек» (шаги 2.2–2.3 Beauty)
+    var ORDER = ['dashboard', 'manager', 'finance', 'cash', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
     function rank(it) {
       var id = (it.id || '').replace('-nav-item', '');
       if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';
@@ -749,7 +775,7 @@
         '<button type="button" class="vf-more-m" data-more="credits"><span class="l">' + icon('coins') + (ky ? 'Бот кредити' : 'Кредиты бота') + '</span>' +
         '<span class="v">' + (cr.credits_balance != null ? Number(cr.credits_balance).toLocaleString('ru-RU') : '…') + '</span><span class="a">' + (ky ? 'Сатып алуу' : 'Купить') + '</span></button>' +
         '<button type="button" class="vf-more-m" data-more="plans"><span class="l">' + icon('crown') + (ky ? 'Тариф' : 'Тариф') + '</span>' +
-        '<span class="v">' + esc(trial ? (ky ? 'Сыноо' : 'Пробный') : planTitle(code) || '—') + '</span><span class="a">' + (ky ? 'Өзгөртүү' : 'Сменить') + '</span></button>' +
+        '<span class="v">' + esc(trial ? (ky ? 'Сыноо' : 'Пробный') : planTitle(code, planName) || '—') + '</span><span class="a">' + (ky ? 'Өзгөртүү' : 'Сменить') + '</span></button>' +
         '</div>';
     }
     if (showReports) {
@@ -1016,10 +1042,17 @@
     installEvt = null;
     ['vf-install-btn', 'vf-install-bar'].forEach(function (id) { var el = document.getElementById(id); if (el) el.remove(); });
   });
+  // Открыто как приложение: Android-приложение (TWA, ?source=twa, referrer android-app://),
+  // установленное с сайта (display-mode standalone) или с экрана «Домой» iPhone. Метка живёт до закрытия вкладки.
+  try { if (/[?&]source=(app|twa)\b/.test(location.search) || document.referrer.indexOf('android-app://') === 0) sessionStorage.setItem('vf_app', '1'); } catch (e) { /* ignore */ }
   function standalone() {
-    try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; }
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true ||
+        sessionStorage.getItem('vf_app') === '1';
+    } catch (e) { return false; }
   }
   function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function isAndroid() { return /android/i.test(navigator.userAgent); }
   function inAppBrowser() { return /Telegram|Instagram|FBAN|FBAV|WhatsApp/i.test(navigator.userAgent); }
   function registerSW() {
     if (!('serviceWorker' in navigator) || location.protocol !== 'https:' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') return;
@@ -1062,6 +1095,8 @@
     t.addEventListener('click', function (e) { if (e.target === t || e.target.classList.contains('ok')) t.remove(); });
   }
   function installApp() {
+    // Android — настоящее приложение (файл .apk со страницы /app, решение владельца 26.11.2026)
+    if (isAndroid() && !isIOS()) { location.href = '/app'; return; }
     if (installEvt) {
       var ev = installEvt; installEvt = null;
       ev.prompt();
@@ -1087,8 +1122,10 @@
     installStyle();
     var bar = document.createElement('div');
     bar.id = 'vf-install-bar'; bar.className = 'vf-install-bar';
-    bar.innerHTML = '<img src="/static/apple-touch-icon.png" alt=""><div class="t"><b>Установите приложение</b>Инбокс и каталог одним нажатием</div>' +
-      '<button type="button" class="go">Установить</button><button type="button" class="x" aria-label="Закрыть">×</button>';
+    var andr = isAndroid() && !isIOS();
+    bar.innerHTML = '<img src="/static/brand/app-maskable-192.png" alt=""><div class="t"><b>' + (andr ? 'Приложение Voksy AI для Android' : 'Установите приложение') +
+      '</b>' + (andr ? 'Чаты, записи и уведомления — без браузера' : 'Инбокс и каталог одним нажатием') + '</div>' +
+      '<button type="button" class="go">' + (andr ? 'Скачать' : 'Установить') + '</button><button type="button" class="x" aria-label="Закрыть">×</button>';
     host.insertBefore(bar, host.firstChild);
     bar.querySelector('.go').addEventListener('click', installApp);
     bar.querySelector('.x').addEventListener('click', function () {

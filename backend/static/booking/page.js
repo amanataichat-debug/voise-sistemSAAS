@@ -17,6 +17,7 @@
   var ctx = null;          // {root, back, canEdit, onChange}
   var st = { data: null, form: null, dirty: false, saving: false };
   var FIELDS = ['title', 'tagline', 'about', 'address', 'map_url', 'phone', 'whatsapp', 'instagram', 'telegram', 'website', 'hours_note'];
+  // поля чата на сайте (1.6в) — в том же st.form и той же кнопке «Сохранить», поля ввода — field()
 
   function load() {
     return S.api('/api/booking/page').then(function (r) {
@@ -36,6 +37,10 @@
     st.form.promos = (p.promos || []).map(function (x) { return { title: x.title, text: x.text || '', until: x.until || '' }; });
     st.form.accent = p.accent || '#d6336c';
     st.form.show_prices = p.show_prices !== false;
+    var ch = d.chat || {};
+    st.form.chat_enabled = ch.enabled !== false;
+    st.form.chat_title = ch.title || '';
+    st.form.chat_greeting = ch.greeting || '';
     st.dirty = false;
   }
   function open(c) {
@@ -130,6 +135,23 @@
       '<div class="hint">Считаются по графику мастеров (экран «Мастера»). Отдельно вводить не нужно.</div></div>' +
       field('hours_note', 'Примечание к часам', { ph: 'В праздники — по записи', max: 160 }));
 
+    // Чат на сайте (Voksy Beauty 1.6в): окно «Спросить» на странице салона и кнопка на сайт владельца
+    var ch = d.chat || {};
+    var chatState = !f.chat_enabled ? '<span class="pg-chat-st off">Выключен</span>'
+      : ch.live ? '<span class="pg-chat-st on">Работает — отвечает бот</span>'
+      : '<span class="pg-chat-st warn">Не виден клиентам: ' + esc(ch.reason || '') + '</span>';
+    var chat = card('chat', 'Чат с администратором', 'Кнопка «Спросить» на странице — отвечает ваш бот',
+      '<div class="st-switch-row"><div class="t"><b>Чат на странице салона</b><div>Клиент спрашивает про цены, мастеров и свободное время прямо на странице, бот отвечает и записывает. ' +
+      'Переписка — в Инбоксе (канал «Сайт»), ответить можно и самой.</div><div style="margin-top:6px">' + chatState + '</div></div>' +
+      '<label class="switch"><input type="checkbox" id="pg-chat"' + (f.chat_enabled ? ' checked' : '') + (ctx.canEdit ? '' : ' disabled') + '><span class="track"></span></label></div>' +
+      field('chat_title', 'Как подписан чат', { ph: 'Администратор', max: 40, hint: 'Например: «Администратор Алия». Так клиент видит шапку окна.' }) +
+      field('chat_greeting', 'Первое сообщение', { area: true, rows: 2, max: 300, counter: true,
+        ph: 'Здравствуйте! Подскажу по услугам, ценам и свободному времени и запишу вас. Что вас интересует?' }) +
+      (d.chat_widget_code ? '<div class="field" style="margin-top:12px"><label class="label">Кнопка чата на ваш сайт</label>' +
+        '<textarea class="input" id="pg-ccode" readonly rows="3" style="font:12.5px/1.4 ui-monospace,Menlo,monospace;height:auto;padding:10px">' + esc(d.chat_widget_code) + '</textarea>' +
+        '<div class="hint">Вставьте перед &lt;/body&gt;. Можно вместе с кнопкой записи — чат встанет над ней.</div>' +
+        '<button class="btn btn-sm" type="button" data-ccopy style="margin-top:8px">' + icon('copy') + '<span>Скопировать код</span></button></div>' : ''));
+
     var kit = card('kit', 'Ссылка, QR и кнопка на сайт', '',
       '<div class="pg-kit">' + (d.qr ? '<div class="pg-qr"><img src="' + esc(d.qr) + '" alt="QR-код страницы салона"><a class="btn btn-sm" download="salon-qr.svg" href="' + esc(d.qr) + '">' + icon('download') + '<span>QR страницы</span></a></div>' : '') +
       '<div class="pg-kt"><b>Где разместить</b><ul><li>Шапка профиля Instagram и кнопка «Записаться»</li><li>Карточка в 2ГИС и Google Картах</li><li>Автоответ и статус WhatsApp</li><li>QR — на ресепшн, кассу, визитки</li></ul>' +
@@ -144,7 +166,7 @@
 
     var preview = page.page_url ? '<aside class="pg-prev"><div class="pg-phone"><div class="pg-notch"></div><iframe id="pg-frame" title="Предпросмотр страницы" src="' + esc(previewSrc()) + '" loading="lazy"></iframe></div>' +
       '<div class="muted small" style="text-align:center;margin-top:8px">Так видит клиент на телефоне</div></aside>' : '';
-    ctx.root.innerHTML = '<div class="ms pg">' + head + '<div class="pg-cols"><div class="pg-ed">' + ready + link + photos + main + contacts + promos + amen + look + kit + '</div>' + preview + '</div>' +
+    ctx.root.innerHTML = '<div class="ms pg">' + head + '<div class="pg-cols"><div class="pg-ed">' + ready + link + photos + main + contacts + promos + amen + look + chat + kit + '</div>' + preview + '</div>' +
       (ctx.canEdit ? '<div class="pg-savebar' + (st.dirty ? ' on' : '') + '" id="pg-savebar"><span>Есть несохранённые изменения</span><button class="btn btn-primary" type="button" data-pg-save>' + (st.saving ? 'Сохраняем…' : 'Сохранить') + '</button></div>' : '') + '</div>';
     bind();
   }
@@ -173,6 +195,9 @@
     body.promos = f.promos.filter(function (p) { return (p.title || '').trim(); }).map(function (p) { return { title: p.title, text: p.text, until: p.until || null }; });
     body.accent = f.accent;
     body.show_prices = f.show_prices;
+    body.chat_enabled = f.chat_enabled;
+    body.chat_title = f.chat_title;
+    body.chat_greeting = f.chat_greeting;
     st.saving = true;
     S.$$('[data-pg-save]', ctx.root).forEach(function (b) { b.disabled = true; });
     return S.api('/api/booking/page', { method: 'PUT', body: body }).then(function (r) {
@@ -267,6 +292,14 @@
     });
     var pr = S.$('#pg-prices', root);
     if (pr) pr.addEventListener('change', function () { st.form.show_prices = pr.checked; markDirty(); });
+    var pc = S.$('#pg-chat', root);
+    if (pc) pc.addEventListener('change', function () { st.form.chat_enabled = pc.checked; markDirty(); });
+    var cc = S.$('[data-ccopy]', root);
+    if (cc) cc.addEventListener('click', function () {
+      var t = S.$('#pg-ccode', root);
+      (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(function () { S.toast('Код скопирован', 'success'); })
+        .catch(function () { t.select(); document.execCommand('copy'); S.toast('Код скопирован', 'success'); });
+    });
     var padd = S.$('[data-padd]', root);
     if (padd) padd.addEventListener('click', function () { collect(); st.form.promos.push({ title: '', text: '', until: '' }); markDirty(); draw(); var t = S.$$('[data-pi] [data-pf="title"]', root).pop(); if (t) t.focus(); });
     S.$$('[data-pdel]', root).forEach(function (b) { b.addEventListener('click', function () { collect(); st.form.promos.splice(+b.getAttribute('data-pdel'), 1); markDirty(); draw(); }); });

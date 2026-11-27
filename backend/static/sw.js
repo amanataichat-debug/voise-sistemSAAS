@@ -10,7 +10,7 @@
  *  - остальная статика без метки — из кэша сразу + обновление в фоне;
  *  - без сети всё открывается из кэша (кабинет работает офлайн на уровне интерфейса).
  * Новый SW включается сразу (skipWaiting); при изменении логики кэша поднимайте CACHE. */
-var CACHE = 'voksy-app-v3';   // v3 (19.11.2026): телефон — «Ещё», финансы, главная; старый кэш страниц сбрасывается
+var CACHE = 'voksy-app-v5';   // v5 (26.11.2026): новый экран входа и выход не на сайт (приложение); v4 — push ИИ-управляющего; v3 — телефон, «Ещё», финансы
 var PAGE_MAX_AGE = 5 * 24 * 3600 * 1000;
 var SHELL = [
   '/static/dashboard.html', '/static/inbox.html', '/static/start-bot.html', '/static/agent.html',
@@ -83,5 +83,36 @@ self.addEventListener('fetch', function (e) {
     var net = fetch(req).then(function (res) { put(req, res); return res; });
     if (hit) { e.waitUntil(net.catch(function () { /* ignore */ })); return hit; }
     return net;
+  }));
+});
+
+// ── Push-уведомления (Voksy Beauty 1.6б): утренний отчёт ИИ-управляющего, «нужно ваше одобрение»,
+// низкая оценка визита. Сервер шлёт JSON {title, body, url, tag} (services/push_service.py).
+self.addEventListener('push', function (e) {
+  var d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : '' }; }
+  var title = d.title || 'Voksy AI';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '',
+    tag: d.tag || 'voksy',
+    renotify: true,
+    icon: '/static/android-chrome-192x192.png',
+    badge: '/static/android-chrome-192x192.png',
+    data: { url: d.url || '/static/dashboard.html' }
+  }));
+});
+
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  var url = (e.notification.data && e.notification.data.url) || '/static/dashboard.html';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (c.url.indexOf('/static/') !== -1 && 'focus' in c) {
+        if ('navigate' in c) { try { c.navigate(url); } catch (err) { /* ignore */ } }
+        return c.focus();
+      }
+    }
+    return self.clients.openWindow ? self.clients.openWindow(url) : null;
   }));
 });

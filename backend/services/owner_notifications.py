@@ -30,6 +30,7 @@ CHANNEL_TITLES = {
     "whatsapp_inbound": "WhatsApp",
     "telegram_inbound": "Telegram",
     "instagram_inbound": "Instagram",
+    "webchat_inbound": "чат на сайте",
     "sms_inbound": "SMS",
     "inbound": "входящий звонок",
 }

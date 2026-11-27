@@ -388,7 +388,8 @@ def _clip(text: Optional[str], n: int) -> str:
     return t if len(t) <= n else t[: n - 1].rstrip() + "…"
 
 
-CHANNEL_NAMES = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram", "sms": "SMS"}
+CHANNEL_NAMES = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram", "sms": "SMS",
+                 "webchat": "чат на сайте"}
 
 
 def _section(title: str, rows: List[str]) -> str:

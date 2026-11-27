@@ -57,11 +57,11 @@ PERIODS = {
 _LENGTHS = {"7d": 7, "30d": 30, "90d": 90, "180d": 182, "365d": 365}
 MAX_DAYS = 731
 
-CHANNELS = ("whatsapp", "telegram", "instagram")
-CHANNEL_TITLES = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram",
+CHANNELS = ("whatsapp", "telegram", "instagram", "webchat")
+CHANNEL_TITLES = {"whatsapp": "WhatsApp", "telegram": "Telegram", "instagram": "Instagram", "webchat": "Чат на сайте",
                   "call": "Звонки", "booking": "Онлайн-запись", "manual": "Добавлены вручную"}
 MESSAGE_DIRECTIONS = ("sms_inbound", "telegram_inbound", "telegram_outbound", "instagram_inbound",
-                      "whatsapp_inbound", "followup_outbound")
+                      "whatsapp_inbound", "followup_outbound", "webchat_inbound")
 OUTCOME_TITLES = {"SUCCESS": "Успех", "FOLLOWUP": "Нужен перезвон", "NO_ANSWER": "Не ответил",
                   "REJECTED": "Отказ"}
 
@@ -337,7 +337,7 @@ def _has_table(db: Session, name: str) -> bool:
 
 
 _MSG_TABLES = {"whatsapp": "agent_whatsapp_messages", "telegram": "agent_telegram_messages",
-               "instagram": "agent_instagram_messages"}
+               "instagram": "agent_instagram_messages", "webchat": "agent_webchat_messages"}
 
 
 AD_MARK = "[Клиент пришёл из рекламы"
@@ -884,6 +884,16 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
                         "load_pct": _pct(st["minutes"], cap), "revenue": round(st["revenue"], 2)})
     masters.sort(key=lambda m: -m["count"])
     decided = tot["arrived"] + tot["no_show"]
+    # Касса (шаг 3.1): салон принимает оплату через кассу — выручка по оплатам (до начала кассы — по визитам)
+    basis = {"basis": "visits", "since": None}
+    try:
+        from backend.services import cashbox
+        basis = cashbox.revenue_basis(db, user.id)
+        if basis["basis"] == "payments":
+            tot["revenue"] = cashbox.booking_revenue(db, user.id, s, u)
+            tot["prev_revenue"] = cashbox.booking_revenue(db, user.id, ps, pu)
+    except Exception:
+        db.rollback()
     return {
         "series": series, "prev_visits": prev_visits,
         "total": tot["total"], "prev_total": tot["prev_total"], "arrived": tot["arrived"],
@@ -894,6 +904,7 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
         "avg_check": round(tot["revenue"] / tot["arrived"], 2) if tot["arrived"] else None,
         "sources": sources, "services": services, "masters": masters,
         "load_pct": _pct(tot["booked_min"], capacity_total), "clients": clients, "repeat_clients": repeat,
+        "revenue_basis": basis["basis"], "revenue_since": basis["since"],
     }
 
 
@@ -1385,7 +1396,7 @@ def invalidate(user_id) -> None:
 
 CSV_COLUMNS = [
     ("inbound", "Обращения"), ("whatsapp_in", "WhatsApp, сообщений"), ("telegram_in", "Telegram, сообщений"),
-    ("instagram_in", "Instagram, сообщений"), ("calls_in", "Входящие звонки"), ("calls_out", "Исходящие звонки"),
+    ("instagram_in", "Instagram, сообщений"), ("webchat_in", "Чат на сайте, сообщений"), ("calls_in", "Входящие звонки"), ("calls_out", "Исходящие звонки"),
     ("answered", "С разговором"), ("missed", "Пропущенные"), ("talk_min", "Минут разговора"),
     ("new_clients", "Новые клиенты"), ("bot_out", "Ответов бота"), ("owner_out", "Ваших ответов"),
     ("visits", "Записи"), ("arrived", "Пришли"), ("no_show", "Не пришли"), ("dialogs", "Разговоры ассистентов"),

@@ -84,6 +84,12 @@
     if (rp.bookings && rp.orders) {
       html += '<div class="fn-split"><div><span>Записи</span><b>' + money(rp.bookings) + '</b></div><div><span>Заказы</span><b>' + money(rp.orders) + '</b></div></div>';
     }
+    // Касса (шаг 3.1): с первой смены выручка записей — по оплатам, визит без оплаты в неё не входит
+    if (d.revenue_basis === 'payments' && d.revenue_since) {
+      var since = new Date(d.revenue_since + 'T12:00:00+06:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      html += '<div class="fn-basis">' + icon('wallet') + '<span>Выручка записей — по оплатам в <a href="/static/cash.html">кассе</a> с ' + esc(since) +
+        ' (раньше — по визитам «пришёл»). Визит без оплаты в выручку не входит.</span></div>';
+    }
 
     if (d.series && d.series.labels && d.series.labels.length > 1) {
       html += '<section class="fn-card"><div class="fn-card-h"><h3>По ' + ({ day: 'дням', week: 'неделям', month: 'месяцам' }[d.series.step] || 'дням') + '</h3>' +
@@ -274,7 +280,15 @@
     root = document.getElementById('fn');
     esc = S.esc; icon = S.icon;
     if (S.staff && S.staff()) { location.replace('/static/inbox.html'); return; }
-    readUrl(); bind(); load();
+    readUrl(); bind();
+    var q = new URLSearchParams(location.search);
+    var wantNew = q.get('new') === '1';     // «Расход» с главной салона (шаг 1.7)
+    if (wantNew) {
+      q.delete('new');
+      try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
+    }
+    load();
+    if (wantNew) S.api('/api/finance/expenses').then(function (r) { if (r.ok && !expCache) expCache = r.data; expenseDialog(null); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
