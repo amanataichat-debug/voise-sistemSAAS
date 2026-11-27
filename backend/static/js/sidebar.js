@@ -746,7 +746,8 @@
       items.push({ href: '/static/agent-knowledge.html#catalog', lucide: 'package', def: (bz.catalog && bz.catalog.title) || 'Каталог' });
     }
     items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
-    var ORDER = ['dashboard', 'manager', 'finance', 'booking', 'orders', 'catalog', 'crm', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    // Салон: «Отзывы» и «Автоматизации» — рядом с клиентами, а не после «Настроек» (шаги 2.2–2.3 Beauty)
+    var ORDER = ['dashboard', 'manager', 'finance', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
     function rank(it) {
       var id = (it.id || '').replace('-nav-item', '');
       if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';

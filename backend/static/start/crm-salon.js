@@ -219,6 +219,17 @@
       if (!r.ok) { box.innerHTML = ''; box.hidden = true; return; }
       drawCard(box, contact, r.data);
     });
+    if (!box._myCopy) {                 // «Скопировать ссылку» «Мои записи» (шаг 2.5)
+      box._myCopy = true;
+      box.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-copy-my]');
+        if (!b) return;
+        var url = b.getAttribute('data-copy-my');
+        var done = function () { S.toast('Ссылка скопирована — отправьте её клиенту', 'success'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { window.prompt('Ссылка клиента', url); });
+        else window.prompt('Ссылка клиента', url);
+      });
+    }
   }
 
   function drawCard(box, contact, c) {
@@ -247,6 +258,8 @@
       '<div class="row-between" style="gap:10px;flex-wrap:wrap;margin-bottom:10px"><h4 style="margin:0">В салоне</h4>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (againHref && lastSvc.master ? '<a class="btn btn-sm" href="' + esc(againHref) + '">' + icon('rotate-ccw') + '<span>Снова к ' + esc(lastSvc.master) + '</span></a>' : '') +
       '<a class="btn btn-primary btn-sm" href="' + esc(bookHref) + '">' + icon('calendar-plus') + '<span>Записать</span></a></div></div>' +
+      (c.my_url ? '<div class="cs-my"><span class="muted small">Клиент сам переносит и отменяет по ссылке «Мои записи» — она уходит в подтверждении записи.</span>' +
+        '<button type="button" class="btn btn-sm" data-copy-my="' + esc(c.my_url) + '">' + icon('copy') + '<span>Скопировать ссылку</span></button></div>' : '') +
       (seg ? '<div class="cs-segs-card">' + seg + '</div>' : '') +
       '<div class="cs-tiles">' + tiles.map(function (t) {
         return '<div class="cs-tile"><div class="lbl">' + esc(t[0]) + '</div><div class="val">' + esc(String(t[1])) + '</div><div class="sub">' + esc(t[2] || '') + '</div></div>';

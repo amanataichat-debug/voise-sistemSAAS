@@ -372,6 +372,8 @@ app.include_router(booking_api.public_router, prefix="/api/public/booking", tags
 from backend.api import webchat as webchat_api
 app.include_router(webchat_api.public_router, prefix="/api/public/chat", tags=["Web chat"])
 app.include_router(booking_api.waitlist_public_router, prefix="/api/public/waitlist", tags=["Booking"])   # /w/<токен>
+from backend.api import client_cabinet as client_cabinet_api  # «Мои записи» клиента салона по ссылке /m/<токен> (шаг 2.5)
+app.include_router(client_cabinet_api.router, prefix="/api/public/client", tags=["Booking"])
 app.include_router(booking_api.media_router, tags=["Booking"])   # /media/salon/{id} — фото салона и мастеров
 from backend.api import analytics as analytics_api  # аналитика: отчёт за период, виджеты главной, CSV
 app.include_router(analytics_api.router)
@@ -3959,6 +3961,45 @@ def waitlist_offer_page(token: str):
         return RedirectResponse(url="/", status_code=302)
     return _Resp(content=text, media_type="text/html",
                  headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex"})
+
+
+# «Мои записи» (Voksy Beauty, шаг 2.5): /m/<токен> — записи клиента в салоне без входа: перенести, отменить,
+# подтвердить, записаться снова, отзыв, лист ожидания. Страница static/my.html, данные — /api/public/client/<токен>.
+@app.get("/m/{token}", include_in_schema=False)
+def client_cabinet_page(token: str):
+    import html as _html
+    from starlette.responses import Response as _Resp
+    path = os.path.join(os.getcwd(), "backend/static/my.html")
+    try:
+        if _STATIC_FILES is not None:
+            body, _etag = _STATIC_FILES._versioned_html(path, os.stat(path))
+            text = body.decode("utf-8")
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except OSError:
+        return RedirectResponse(url="/", status_code=302)
+    name = ""
+    from backend.services import client_cabinet as _cc
+    if _cc.parse_token(token) is not None:
+        from backend.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            cl = _cc.resolve(db, token)
+            name = _cc._salon_out(db, cl)["name"]
+        except Exception:
+            name = ""
+        finally:
+            db.close()
+    e = lambda s: _html.escape(s or "", quote=True)   # noqa: E731
+    title = f"Мои записи — {name}" if name else "Мои записи"
+    head = (f"<title>{e(title)}</title>\n  <meta name=\"robots\" content=\"noindex\">\n"
+            f"  <meta property=\"og:title\" content=\"{e(title)}\">\n"
+            "  <meta property=\"og:description\" content=\"Ваши записи в салоне: перенести, отменить или записаться снова.\">")
+    text = text.replace("<!--MY_HEAD-->", head, 1)
+    return _Resp(content=text, media_type="text/html",
+                 headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex",
+                          "Referrer-Policy": "no-referrer"})
 
 
 # «Оцените визит» (Voksy Beauty, шаг 2.3): ссылка /r/<токен> из сообщения после визита (вставка {оценить}).

@@ -90,6 +90,8 @@
   }
   function years(n) { var a = n % 10, b = n % 100; return n + ' ' + (a === 1 && b !== 11 ? 'год' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'года' : 'лет'); }
   function plural(n, one, few, many) { var a = Math.abs(n) % 100, b = a % 10; return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many; }
+  // «Мои записи» (шаг 2.5): ссылка клиента запоминается на этом устройстве после записи — кнопка на странице салона
+  function myUrl() { var u = store('vxs_my_' + slug); return typeof u === 'string' && /^\/m\/[cb][0-9a-f]{44}$/.test(u) ? u : ''; }
   function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
   function get(path) {
     return fetch(API + path, { cache: 'no-store' }).then(function (r) {
@@ -260,7 +262,8 @@
         esc(ratingWord(RV().count)) + '</span></button>' + (SAL.niche ? '<i class="dot">·</i>' : '') : '') + esc(SAL.niche || '') + '</div>' : '') +
       (SAL.tagline ? '<div class="tag">' + esc(SAL.tagline) + '</div>' : '') +
       (SAL.address ? '<div class="addr">' + ic('pin') + '<span>' + esc(SAL.address) + '</span></div>' : '') +
-      '<div class="acts"><button class="btn wide" type="button" data-book>' + ic('calendar') + 'Записаться онлайн</button></div>' +
+      '<div class="acts"><button class="btn wide" type="button" data-book>' + ic('calendar') + 'Записаться онлайн</button>' +
+      (myUrl() ? '<a class="btn gh wide" href="' + esc(myUrl()) + '" style="margin-top:8px">' + ic('calendar') + 'Мои записи</a>' : '') + '</div>' +
       (qa.length ? '<div class="qa">' + qa.join('') + '</div>' : '') +
       '<nav class="nav" id="nav">' + navs.map(function (n, i) { return '<a href="#' + n[0] + '"' + (i ? '' : ' class="on"') + '>' + esc(n[1]) + '</a>'; }).join('') + '</nav>' +
       (promos.length ? '<section class="sec" id="promo"><h2>Акции</h2><div class="promos">' + promos.map(function (p) {
@@ -756,13 +759,14 @@
     B.err = ''; B.busy = true;
     var btn = sheet.querySelector('[data-submit]'); if (btn) { btn.disabled = true; btn.textContent = 'Записываем…'; }
     var req = isVisit()
-      ? post('/visit', { items: items(), start: B.slot.start, name: B.name, phone: B.phone, note: B.note || null }).then(function (d) { return { visit: d.visit }; })
+      ? post('/visit', { items: items(), start: B.slot.start, name: B.name, phone: B.phone, note: B.note || null }).then(function (d) { return { visit: d.visit, my_url: d.my_url }; })
       : post('', { start: B.slot.start, service_id: B.sel[0] || null, resource_id: (B.sel[0] ? B.pick[B.sel[0]] : B.pick._) || null,
-        name: B.name, phone: B.phone, note: B.note || null }).then(function (d) { return { booking: d.booking }; });
+        name: B.name, phone: B.phone, note: B.note || null }).then(function (d) { return { booking: d.booking, my_url: d.my_url }; });
     req.then(function (r) {
       B.busy = false;
       B.res = r;
       store('vxs_me', { name: B.name, phone: B.phone });
+      if (r.my_url) store('vxs_my_' + slug, r.my_url);
       B.cache = {}; B.avail = {}; B._availKey = null;
       go(5);
     }).catch(function (e) {
@@ -794,7 +798,10 @@
       (addr ? '<div class="contacts"><a href="' + esc(SAL.map_url || '#') + '" target="_blank" rel="noopener">' + ic('pin') + '<div>' + esc(addr) + '<span>Как добраться</span></div></a></div>' : '') +
       '<div class="row"><button class="btn gh" type="button" data-ics>' + ic('download') + 'В календарь</button>' +
       (wa ? '<a class="btn gh" href="' + esc(wa) + '" target="_blank" rel="noopener">' + ic('wa') + 'Написать</a>' : '') + '</div>' +
-      '<p class="hint" style="margin:16px 0 0;text-align:center">Напомним о записи в WhatsApp. Если планы изменятся — просто напишите нам.</p>' +
+      (r.my_url ? '<a class="btn wide" href="' + esc(r.my_url) + '"' + (EMBED ? ' target="_blank" rel="noopener"' : '') + ' style="margin-top:10px">' + ic('calendar') +
+        'Мои записи — перенести или отменить</a>' : '') +
+      '<p class="hint" style="margin:16px 0 0;text-align:center">Напомним о записи в WhatsApp. Если планы изменятся — ' +
+      (r.my_url ? 'перенесите сами в «Мои записи» или напишите нам.' : 'просто напишите нам.') + '</p>' +
       '<div class="pw">Работает на <a href="https://voksyai.online" target="_blank" rel="noopener">Voksy AI</a></div></div>');
     foot('', '<button class="btn" type="button" data-finish style="flex:1">' + (MODE === 'page' || EMBED ? 'Готово' : 'Записаться ещё') + '</button>');
     B._ics = { start: start, end: end, title: (v ? v.items.map(function (x) { return x.service; }).filter(Boolean).join(', ') : b.service) || 'Запись', addr: addr };

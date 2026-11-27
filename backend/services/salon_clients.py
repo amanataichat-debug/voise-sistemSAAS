@@ -464,7 +464,16 @@ def client_card(db: Session, user, contact_id) -> Optional[Dict[str, Any]]:
         "source": c.source, "source_title": SOURCE_TITLES.get(c.source or ""),
         "history": history[:30], "upcoming": upcoming[:10],
         "sources": [{"key": k, "title": t, "auto": a} for k, t, a in SOURCES],
+        "my_url": _my_url(cid),     # шаг 2.5: ссылка «Мои записи» — владелец может отправить клиенту сам
     }
+
+
+def _my_url(contact_id) -> Optional[str]:
+    try:
+        from backend.services import client_cabinet
+        return client_cabinet.link_for_contact(contact_id)
+    except Exception:
+        return None
 
 
 class _Empty:

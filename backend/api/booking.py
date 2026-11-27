@@ -1565,10 +1565,12 @@ def public_booking_create(slug: str, body: PublicBookingIn, request: Request,
     out = bs.booking_to_dict(b, names)
     _notify_owner_later(owner.id, b.id)
     cfg = bs.settings_of(page)
+    from backend.services import client_cabinet
     return {"ok": True, "booking": {"label": out["label"], "service": out["service"], "resource": out["resource"],
                                     "address": cfg.get("address") or "", "price": out["price"],
                                     "prepay_amount": out["prepay_amount"], "prepay_info": cfg.get("prepay_info") or "",
-                                    "start": out["start"], "end": out["end"]}}
+                                    "start": out["start"], "end": out["end"]},
+            "my_url": client_cabinet.path_for_booking(b)}   # «Мои записи» (шаг 2.5)
 
 
 class PublicVisitSlotsIn(BaseModel):
@@ -1616,6 +1618,7 @@ def public_visit_create(slug: str, body: PublicVisitIn, request: Request, db: Se
     except bs.BookingError as e:
         db.rollback()
         _err(e)
+    from backend.services import client_cabinet
     names = _names(db, owner.id)
     out = [bs.booking_to_dict(b, names) for b in rows]
     _notify_owner_later(owner.id, rows[0].id)
@@ -1625,7 +1628,8 @@ def public_visit_create(slug: str, body: PublicVisitIn, request: Request, db: Se
         "label": out[0]["label"], "start": out[0]["start"], "end": out[-1]["end"],
         "items": [{"service": b["service"], "resource": b["resource"], "start": b["start"], "price": b["price"]} for b in out],
         "price": sum(float(b.get("price") or 0) for b in out) or None,
-        "prepay_amount": prepay or None, "address": cfg.get("address") or "", "prepay_info": cfg.get("prepay_info") or ""}}
+        "prepay_amount": prepay or None, "address": cfg.get("address") or "", "prepay_info": cfg.get("prepay_info") or ""},
+        "my_url": client_cabinet.path_for_booking(rows[0])}
 
 
 # ───────────────────────────── ответ на предложение из листа ожидания (/w/<токен>) ─────────────────────────────
