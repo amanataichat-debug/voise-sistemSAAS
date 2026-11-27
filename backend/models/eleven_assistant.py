@@ -94,7 +94,10 @@ VOICE_ENGINES = [
      "description": "Речь в речь: слушает и говорит одновременно, перебивания обрабатывает сам. Кыргызский — на проверке."},
 ]
 VOICE_ENGINE_IDS = [e["id"] for e in VOICE_ENGINES]
-DEFAULT_VOICE_ENGINE = VOICE_ENGINE_ELEVEN
+# Новые карточки и агенты — на Voksy Live (решение владельца 28.11.2026): у клиентов на каскаде Voksy Voice голос
+# звучал хуже, чем у Анри на GPT-Live, а все доработки голоса делались для GPT-Live. Цена минуты та же.
+# Существующие карточки не трогаем; server_default колонки в базе остаётся «eleven» — новые строки ORM пишет сам.
+DEFAULT_VOICE_ENGINE = VOICE_ENGINE_GPT_LIVE
 
 DEFAULT_ELEVEN_GREETING = "Саламатсызбы! Мен сизге кантип жардам бере алам?"
 ELEVEN_SAMPLE_RATE = 24000  # частота выхода браузерных хендлеров
@@ -122,7 +125,7 @@ class ElevenAssistantConfig(Base):
 
     # Движок голоса: "eleven" | "gpt_live" | "gemini_live"; live_voice — голос GPT-Live (marin, cedar, …)
     # или Gemini Live (Aoede, Kore, …) в зависимости от движка
-    voice_engine = Column(String(20), default=DEFAULT_VOICE_ENGINE, server_default=DEFAULT_VOICE_ENGINE, nullable=False)
+    voice_engine = Column(String(20), default=DEFAULT_VOICE_ENGINE, server_default=VOICE_ENGINE_ELEVEN, nullable=False)
     live_voice = Column(String(50), nullable=True)
 
     # LLM settings (OpenAI Realtime на серверном ключе). В карточке не показывается: в режиме ASR

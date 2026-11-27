@@ -312,7 +312,8 @@ function elevenVoiceControlHtml(cur, ids){
   const langOpts = ELEVEN_LANGUAGES.map(l => `<option value="${l.code}" ${l.code===lang?'selected':''}>${l.title}</option>`).join('');
   const modelOpts = ELEVEN_TTS_MODELS.map(m => `<option value="${m.id}" ${m.id===model?'selected':''}>${esc(m.title)}</option>`).join('');
   const stabOpts = ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${x.v===stab?'selected':''}>${esc(x.title)}</option>`).join('');
-  const engine = LIVE_ENGINE_IDS.includes(cur.eleven_voice_engine) ? cur.eleven_voice_engine : 'eleven';
+  // Новый агент (движок ещё не выбран) — Voksy Live, как у новых карточек на сервере (DEFAULT_VOICE_ENGINE)
+  const engine = LIVE_ENGINE_IDS.includes(cur.eleven_voice_engine) ? cur.eleven_voice_engine : (cur.eleven_voice_engine ? 'eleven' : 'gpt_live');
   const liveVoice = String(cur.eleven_live_voice || '').toLowerCase();
   const liveOpts = liveVoiceOptionsHtml(engine, liveVoice || 'marin');
   const isLive = LIVE_ENGINE_IDS.includes(engine);
