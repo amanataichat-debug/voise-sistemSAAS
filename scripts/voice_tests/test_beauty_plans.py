@@ -235,6 +235,21 @@ with engine.begin() as conn:
     pro_c = conn.execute(text("SELECT (limits->>'credits_month')::int FROM subscription_plans WHERE code='beauty_pro'")).scalar()
     conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{credits_month}', '10000') WHERE code='beauty_pro'"))
 check("старт: 0, поставленный суперадмином после обновления, не перезаписывается", pro_c == 0, pro_c)
+# Прод 28.11.2026: у Beauty Pro в базе agent_mode «reactive» — салон видел «Агент обзвона» с замком.
+# Старт один раз делает его «full»; осознанную правку суперадмина потом не трогает.
+with engine.begin() as conn:
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits - 'agent_mode_v', '{agent_mode}', '\"reactive\"') "
+                      "WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_mode = conn.execute(text("SELECT limits->>'agent_mode' FROM subscription_plans WHERE code='beauty_pro'")).scalar()
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{agent_mode}', '\"reactive\"') WHERE code='beauty_pro'"))
+app_module.ensure_plan_catalog()
+with engine.begin() as conn:
+    pro_mode2 = conn.execute(text("SELECT limits->>'agent_mode' FROM subscription_plans WHERE code='beauty_pro'")).scalar()
+    conn.execute(text("UPDATE subscription_plans SET limits = jsonb_set(limits, '{agent_mode}', '\"full\"') WHERE code='beauty_pro'"))
+check("старт: Beauty Pro с режимом «как Старт» → автономный агент", pro_mode == "full", pro_mode)
+check("старт: режим, поставленный суперадмином после починки, не перезаписывается", pro_mode2 == "reactive", pro_mode2)
 check("старт: прежний тариф остался voksy, цена из конфига", start_row and start_row[1] == "voksy" and float(start_row[0]) == 7500.0, start_row)
 
 cl = TestClient(app_module.app, raise_server_exceptions=False)

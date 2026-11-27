@@ -221,6 +221,31 @@ def ensure_schema(engine) -> None:
             if res.rowcount:
                 logger.info(f"💅 Beauty plan seeded: {d['code']} ({d['price']} KGS)")
         _upgrade_pro_credits(conn)
+        _ensure_pro_full_agent(conn)
+
+
+PRO_AGENT_MARK = "agent_mode_v"
+
+
+def _ensure_pro_full_agent(conn) -> None:
+    """Beauty Pro = уровень Profi (агент обзвона, оркестратор). 28.11.2026: на проде салон с назначенным
+    Beauty Pro видел «Агент обзвона» с замком — в строке тарифа agent_mode был не «full». Чиним один раз
+    (метка в limits), чтобы потом суперадмин мог осознанно поменять режим во вкладке «Тарифы»."""
+    import json
+    from sqlalchemy import text
+    row = conn.execute(text("SELECT id, limits FROM subscription_plans WHERE code = 'beauty_pro'")).first()
+    if row is None:
+        return
+    limits = dict(row[1]) if isinstance(row[1], dict) else {}
+    if limits.get(PRO_AGENT_MARK):
+        return
+    was = limits.get("agent_mode")
+    limits["agent_mode"] = "full"
+    limits[PRO_AGENT_MARK] = 1
+    conn.execute(text("UPDATE subscription_plans SET limits = CAST(:l AS JSONB) WHERE id = :id"),
+                 {"l": json.dumps(limits), "id": row[0]})
+    if was != "full":
+        logger.warning(f"💅 Beauty Pro: agent_mode {was!r} → 'full' (агент обзвона открыт на Beauty Pro)")
 
 
 def _upgrade_pro_credits(conn) -> None:

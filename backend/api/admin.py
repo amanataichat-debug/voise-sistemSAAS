@@ -617,6 +617,18 @@ async def adjust_user_credits(
     return {"success": True, "balance": int(tx.balance_after or 0)}
 
 
+def _agent_access_note(user: User, entry: Dict[str, Any]) -> Optional[str]:
+    """Почему после смены тарифа «Агент обзвона» у клиента всё ещё с замком — словами для админа."""
+    if user.has_agent_access():
+        return None
+    if user.agent_subscription_blocked:
+        return "у клиента ручная блокировка агента — агент обзвона закрыт"
+    if entry.get("product") == "beauty":
+        return (f"у тарифа «{entry.get('name')}» режим ИИ «как Старт» — агента обзвона нет. "
+                "Нужен автономный режим: вкладка «Тарифы» → тариф → «ИИ-агент: Автономный»")
+    return "этот тариф не даёт агента обзвона (нужен Profi или Beauty Pro)"
+
+
 @router.post("/users/{user_id}/subscription", response_model=Dict[str, Any])
 async def update_user_subscription(
     user_id: str = Path(..., description="User ID"),
@@ -724,6 +736,8 @@ async def update_user_subscription(
                 # поэтому отдаём и фактический доступ, чтобы админ не гадал.
                 "grants_agent_access": entry["grants_agent_access"],
                 "agent_access_effective": user.has_agent_access(),
+                "agent_mode": user.agent_mode(),
+                "agent_access_note": _agent_access_note(user, entry),
                 "agent_subscription_blocked": bool(user.agent_subscription_blocked),
             }
         }
