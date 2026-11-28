@@ -60,6 +60,11 @@ function renderConnectorsBlock(){
   }).join('') + tgSummary;
 }
 
+// Строка «Звонки WhatsApp» (агент отвечает на звонки) — общий модуль js/wa-calls.js
+function mountWaCallsRow(){
+  if(window.VoksyWaCalls) VoksyWaCalls.mount('#wa-calls-row', { agentId: () => currentAgentId || null });
+}
+
 function openConnectorsModal(){
   const ov = document.getElementById('connectors-modal-overlay');
   if(ov) ov.classList.remove('hidden');
@@ -82,9 +87,11 @@ function renderConnectorsList(){
   // Строка личного Telegram (telegram-account.js) — в общем списке коннекторов.
   // и строка WhatsApp (whatsapp-account.js)
   const tgRow = ((typeof tgAccountConnectorRowHtml === 'function') ? tgAccountConnectorRowHtml() : '')
-    + ((typeof waAccountConnectorRowHtml === 'function') ? waAccountConnectorRowHtml() : '');
+    + ((typeof waAccountConnectorRowHtml === 'function') ? waAccountConnectorRowHtml() : '')
+    + '<div id="wa-calls-row"></div>';   // «Звонки WhatsApp» — рисует /static/js/wa-calls.js
   if(!s || !s.configured){
     el.innerHTML = tgRow || '<div class="empty">Коннекторы недоступны</div>';
+    mountWaCallsRow();
     return;
   }
   el.innerHTML = tgRow + (s.connectors || []).map(c => {
@@ -126,6 +133,7 @@ function renderConnectorsList(){
           + `</div>`
         : '');
   }).join('');
+  mountWaCallsRow();
 }
 
 // ── Настройки переписки Instagram (раскрываются под строкой коннектора) ──

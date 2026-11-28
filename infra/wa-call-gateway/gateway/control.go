@@ -3,7 +3,7 @@ package main
 // Управляющий сокет к бэкенду: {BACKEND_WS_URL}/ws/wa-call-gateway/control?token=…&gateway=…
 // Соединение исходящее (входящие порты на сервере не нужны), переподключение 1 → 30 с.
 // Шлюз → бэкенд: hello, account.state, call.event, pong, status.
-// Бэкенд → шлюз: accept, reject, originate, hangup, login, logout, ping, status.
+// Бэкенд → шлюз: accept, reject (с ignore=true — не сбрасывать, пусть звонит на телефоне), originate, hangup, login, logout, ping, status.
 
 import (
 	"context"

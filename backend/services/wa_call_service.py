@@ -20,7 +20,7 @@
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
@@ -54,6 +54,14 @@ REJECT_TEXT = {
 }
 
 
+# Агент на звонок не отвечает, но номер владельца на связи: звонок продолжает звонить на его телефоне,
+# а не сбрасывается (иначе клиент слышит «отклонено» и уходит).
+PASS_TO_PHONE = {"agent_inactive", "assistant_inactive", "assistant_missing", "wallet_empty", "no_access",
+                 "inbound_disabled", "feature_off"}
+# Выключил сам владельца — о каждом звонке в Telegram не пишем
+SILENT_REASONS = {"inbound_disabled"}
+
+
 def _utcnow() -> datetime:
     return datetime.utcnow()  # как в sip_gateway_service: naive UTC
 
@@ -77,6 +85,45 @@ def feature_enabled_for(user_id: Any) -> bool:
         return False
     users = allowed_users()
     return not users or str(user_id) in users
+
+
+PLAN_TITLES = {"start": "Старт", "profi": "Profi", "agent": "Агент", "beauty_ai": "Beauty AI",
+               "beauty_pro": "Beauty Pro"}
+
+
+def allowed_plans() -> set:
+    return {x.strip() for x in (settings.WA_CALLS_PLANS or "").split(",") if x.strip()}
+
+
+def plans_text() -> str:
+    codes = [c for c in ("start", "profi", "beauty_ai", "beauty_pro") if c in allowed_plans()]
+    return ", ".join(PLAN_TITLES.get(c, c) for c in codes) or "—"
+
+
+def plan_allows(owner) -> bool:
+    """Тариф владельца включает звонки WhatsApp: активный тариф из WA_CALLS_PLANS (пробный — нет), админ — да."""
+    if owner is None or getattr(owner, "agent_subscription_blocked", False):
+        return False
+    if getattr(owner, "is_admin", False):
+        return True
+    try:
+        plan = owner.subscription_plan_rel
+        end = owner.subscription_end_date
+        if plan is None or not end or plan.code not in allowed_plans():
+            return False
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return end > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def can_call_out(owner) -> bool:
+    """Звонить клиентам самому через WhatsApp — инициатива, только режим full (Profi, Beauty Pro)."""
+    try:
+        return plan_allows(owner) and owner.agent_mode() == "full"
+    except Exception:
+        return False
 
 
 def is_whatsapp_call(call: Optional[SipCall]) -> bool:
@@ -199,9 +246,14 @@ def decide_inbound(db: Session, gateway_id: str, event: Dict[str, Any]) -> Dict[
             db.rollback()
         if reason:
             logger.info(f"[WA-CALL] inbound {call_id} from {caller or caller_jid or '—'} rejected: {reason}")
-            if reason in REJECT_NOTIFY and agent is not None:
+            if reason in REJECT_NOTIFY and reason not in SILENT_REASONS and agent is not None:
                 notify_missed_call(agent, caller, caller_name, reason)
-            return {"type": "reject", "call_id": str(call_id), "reason": reason}
+            out = {"type": "reject", "call_id": str(call_id), "reason": reason}
+            if account is not None and reason in PASS_TO_PHONE:
+                # Агент не отвечает — звонок не сбрасываем: он звонит на телефоне владельца как обычно
+                # (шлюз со старой версией не знает поля и отклонит, как раньше)
+                out["ignore"] = True
+            return out
         logger.info(f"[WA-CALL] inbound {call_id} from {caller or caller_jid or '—'} accepted → {atype}/{aid}")
         return {"type": "accept", "call_id": str(call_id), "assistant_id": str(aid), "assistant_type": atype,
                 "metadata": {"agent_config_id": str(account.agent_config_id)}}
@@ -220,7 +272,7 @@ def decide_inbound(db: Session, gateway_id: str, event: Dict[str, Any]) -> Dict[
     if not agent.is_active:
         return reply("agent_inactive", agent)
     owner = _owner(db, account.user_id)
-    if owner is None or not owner.has_agent_chat_access():
+    if owner is None or not owner.has_agent_chat_access() or not plan_allows(owner):
         return reply("no_access", agent)
     from backend.services.sip_gateway_service import SipGatewayService
     assistant = SipGatewayService.load_assistant(db, atype, aid)
@@ -240,7 +292,8 @@ def notify_missed_call(agent: AgentConfig, caller: str, caller_name: str, reason
     who = caller_name or ""
     if caller:
         who = f"{who} (+{caller})" if who else f"+{caller}"
-    line = f"📞 Пропущенный звонок WhatsApp от {who or 'неизвестного номера'}: {REJECT_TEXT.get(reason, reason)}."
+    line = (f"📞 Пропущенный звонок WhatsApp от {who or 'неизвестного номера'}: {REJECT_TEXT.get(reason, reason)}. "
+            f"Агент не ответил — звонок шёл на ваш телефон.")
     if reason == "wallet_empty":
         line += " Пополните кошелёк в кабинете."
     _notify(agent, line)
@@ -546,10 +599,7 @@ def usable_outbound_account(db: Session, agent_config_id: Any) -> Optional[Agent
     if not feature_enabled_for(account.user_id):
         return None
     owner = _owner(db, account.user_id)
-    try:
-        if owner is None or owner.agent_mode() != "full":  # Старт — только входящие (исходящий = инициатива)
-            return None
-    except Exception:
+    if not can_call_out(owner):  # Старт и Beauty AI — только входящие (исходящий = инициатива)
         return None
     return account
 

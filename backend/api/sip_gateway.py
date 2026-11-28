@@ -376,6 +376,7 @@ async def sip_media(
     # 1. Первое сообщение — "start"
     try:
         first = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+        start_received_at = time.time()
         start = json.loads(first)
         if start.get("type") != "start":
             raise ValueError("first message is not start")
@@ -499,6 +500,7 @@ async def sip_media(
         inbound_hint = SipGatewayService.inbound_known_contact_block(call, agent_cfg, db)
         unknown_caller = False
         if inbound_hint:
+            assistant.greeting_known_client = True  # не колонка: приветствие знакомому — по имени, без представления
             client_note = (f"Клиент узнан по номеру в CRM: карточка и история общения ушли агенту в начало разговора "
                            f"({len(inbound_hint)} симв.)")
         if not inbound_hint:
@@ -593,6 +595,19 @@ async def sip_media(
                      + (f" ({who})" if who else "")
                      + f", номер агента +{call.did or '—'}, шлюз {gateway_id}, звук 16 кГц",
                      greeting="своё" if greeting else None)
+        # Где теряется время до разговора: звонок начался → трубку взяли → звук пошёл к нам
+        try:
+            t_created, t_answered = float(start.get("created_at") or 0), float(start.get("answered_at") or 0)
+            if t_created and t_answered and t_answered >= t_created:
+                ring = t_answered - t_created
+                media_wait = max(0.0, start_received_at - t_answered)
+                prep = max(0.0, time.time() - start_received_at)
+                call_log.add("sip", f"WhatsApp: от начала звонка до соединения {ring:.1f} с, от соединения до "
+                                    f"сервера {media_wait:.1f} с, подготовка звонка (промпт, знания, клиент) "
+                                    f"{prep:.1f} с",
+                             level="warning" if (media_wait + prep) > 5 else "info")
+        except (TypeError, ValueError):
+            pass
     else:
         call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
                             f"наш номер {call.did or '—'}, шлюз {gateway_id}",
@@ -679,6 +694,9 @@ async def sip_media(
             path = socket.audio_path_summary()
             if path:
                 call_log.add("diag", path[0], level="warning" if path[1] else "info")
+            voice = socket.voice_summary()
+            if voice:
+                call_log.add("diag", voice[0], level="warning" if voice[1] else "info")
             for line in socket.stall_lines():
                 call_log.add("diag", line, level="warning")
         except Exception as exc:  # диагностика не должна ломать завершение звонка

@@ -59,6 +59,7 @@ from backend.api import (
     agent_telegram,  # ✅ v2.2: Agent Telegram bot integration
     agent_telegram_account,  # ✅ Личный Telegram-аккаунт агента (MTProto)
     agent_whatsapp,  # ✅ WhatsApp агента (Evolution API, wa-gateway-1)
+    agent_wa_calls,  # 📞 Звонки WhatsApp агента: подключение по QR и выключатель в кабинете
     credits,  # ✅ Система кредитов оркестратора
 )
 from backend.models.base import create_tables
@@ -410,6 +411,7 @@ app.include_router(llm_streaming.router, tags=["LLM Streaming"])  # endpoints ha
 app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])  # ✅ v5.0: Voksy AI Agent
 app.include_router(agent_telegram.router, prefix="/api/agent/telegram", tags=["Agent Telegram"])  # ✅ v2.2
 app.include_router(agent_telegram_account.router, prefix="/api/agent/telegram-account", tags=["Agent Telegram Account"])  # ✅ Личный TG-аккаунт агента
+app.include_router(agent_wa_calls.router, prefix="/api/agent/wa-calls", tags=["Agent WhatsApp Calls"])  # 📞 звонки WhatsApp: QR, вкл/выкл
 app.include_router(agent_whatsapp.router, prefix="/api/agent/whatsapp", tags=["Agent WhatsApp"])  # ✅ WhatsApp агента (QR, настройки)
 app.include_router(agent_whatsapp.webhook_router, prefix="/api/whatsapp", tags=["WhatsApp Webhook"])  # ✅ Webhook Evolution API
 from backend.api import inbox as inbox_api  # инбокс: общий чат по WhatsApp/Telegram/Instagram (ветка 0411-inbox)

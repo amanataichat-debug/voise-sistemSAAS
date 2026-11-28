@@ -82,7 +82,7 @@ func LoadConfig() (Config, error) {
 		MaxCallSeconds:    envInt("MAX_CALL_SECONDS", 3600),
 		DecisionTimeout:   time.Duration(envInt("ACCEPT_TIMEOUT_MS", 6000)) * time.Millisecond,
 		RingTimeout:       time.Duration(envInt("OUTBOUND_RING_SECONDS", 45)) * time.Second,
-		MediaReadyWait:    time.Duration(envInt("MEDIA_READY_WAIT_MS", 4000)) * time.Millisecond,
+		MediaReadyWait:    time.Duration(envInt("MEDIA_READY_WAIT_MS", 1500)) * time.Millisecond,
 		EchoTest:          envBool("ECHO_TEST", false),
 		SendPresence:      envBool("SEND_PRESENCE", false),
 		RecordCalls:       envBool("RECORD_CALLS", true),
