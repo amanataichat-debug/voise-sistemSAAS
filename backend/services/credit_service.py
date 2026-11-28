@@ -120,6 +120,56 @@ class CreditService:
             )
 
     # ------------------------------------------------------------------
+    # ЧАТ ВЛАДЕЛЬЦА С АГЕНТОМ: кредиты кончились → платит кошелёк (28.11.2026)
+    # ------------------------------------------------------------------
+    # Владелец видит два баланса: кошелёк в сомах (минуты голоса) и кредиты агента (ИИ). Пополнил
+    # кошелёк, а AI-чат и голосовой помощник отвечали «кредиты закончились». Теперь для ЧАТА ВЛАДЕЛЬЦА
+    # (текст и голос) недостающее оплачивает кошелёк. Переписка бота с клиентами — по-прежнему кредиты.
+    @staticmethod
+    def wallet_tyiyn(user) -> int:
+        return int(getattr(user, "wallet_balance", 0) or 0)
+
+    @classmethod
+    def precheck_owner(cls, db: Session, user: User) -> None:
+        """Как precheck, но нехватку кредитов прощает, если в кошельке есть деньги."""
+        try:
+            cls.precheck(db, user)
+        except InsufficientCreditsError:
+            if cls.wallet_tyiyn(user) <= 0:
+                raise
+
+    @staticmethod
+    def credits_to_tyiyn(credits: int) -> int:
+        """Кредиты → тыйыны кошелька: себестоимость в $ × наценка кошелька / курс (как минута голоса)."""
+        import math
+        from backend.core.config import settings
+        from backend.services.agent_models import _CREDITS_PER_USD
+
+        if not credits or credits <= 0:
+            return 0
+        usd = credits / _CREDITS_PER_USD
+        rate = settings.WALLET_KGS_USD_RATE or 0.01143392
+        return max(1, int(math.ceil(usd * settings.WALLET_MARKUP / rate * 100)))
+
+    @classmethod
+    def charge_owner(cls, db: Session, user: User, *, model_slug: str, prompt_tokens: int, completion_tokens: int,
+                     ref_type: str, ref_id=None, notes: Optional[str] = None) -> int:
+        """Списать запрос владельца: кредиты, а чего не хватило — из кошелька. Возвращает тыйыны кошелька."""
+        cost = cls.calculate_cost(model_slug, prompt_tokens, completion_tokens)
+        locked = db.execute(select(User).where(User.id == user.id)).scalar_one_or_none()
+        have = max(0, (locked.credits_balance if locked is not None else 0) or 0)
+        cls.charge(db=db, user_id=user.id, model_slug=model_slug, prompt_tokens=prompt_tokens,
+                   completion_tokens=completion_tokens, ref_type=ref_type, ref_id=ref_id, notes=notes)
+        short = cost - min(cost, have)
+        if short <= 0:
+            return 0
+        from backend.services.wallet_service import WalletService
+        label = "Голосовой помощник" if ref_type == "voice_chat" else "AI-чат с агентом"
+        amount, _ = WalletService.charge_amount(db, user.id, cls.credits_to_tyiyn(short), channel="owner_chat",
+                                                note=f"{label}: кредиты закончились ({short} кр.)")
+        return amount
+
+    # ------------------------------------------------------------------
     # COST CALCULATION
     # ------------------------------------------------------------------
     @classmethod

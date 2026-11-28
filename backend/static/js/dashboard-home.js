@@ -778,9 +778,13 @@
     var t = token(), box = $('dh-report'), biz = business();
     if (!t || !box || !(biz.modules && biz.modules.booking)) return;
     try { var sf = JSON.parse(localStorage.getItem('vf_staff') || 'null'); if (sf && sf.staff) return; } catch (e) { /* ignore */ }
+    // один запрос за раз: vf:user приходил, пока первый ответ ещё в пути, — уходил второй такой же
+    if (loadReport.busy) return;
+    loadReport.busy = true;
     fetch('/api/manager/overview', { headers: { Authorization: 'Bearer ' + t } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (ov) {
+        loadReport.busy = false;
         if (!ov) return;
         var rep = ov.last_report, pending = salonOn() ? 0 : (ov.pending || 0);   // у салона — в «Требует внимания»
         var today = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);   // дата Бишкека
@@ -802,7 +806,7 @@
         box.innerHTML = html;
         box.hidden = false;
       })
-      .catch(function () { /* карточка просто не появится */ });
+      .catch(function () { loadReport.busy = false; /* карточка просто не появится */ });
   }
 
   function load() {

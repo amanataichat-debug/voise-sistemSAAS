@@ -326,7 +326,7 @@ script = [
 ]
 fake_or = FakeOR(script)
 saved = (ap.build_orchestrator_prompt, at.build_chat_tools, at.execute_tool, orc.get_openrouter_client,
-         CreditService.precheck, CreditService.charge)
+         CreditService.precheck, CreditService.charge, CreditService.charge_owner)
 
 async def fake_tools(agent_, db_):
     return [_t(n) for n in ("search_contacts", "whatsapp_send_message", "delete_agent_contact", "get_agent_stats")]
@@ -340,12 +340,14 @@ at.execute_tool = fake_exec
 orc.get_openrouter_client = lambda: fake_or
 CreditService.precheck = classmethod(lambda cls, db_, user_: None)
 CreditService.charge = classmethod(lambda cls, **kw: charged.append(kw))
+# с 28.11.2026 запрос владельца списывает charge_owner (кредиты, недостающее — из кошелька)
+CreditService.charge_owner = classmethod(lambda cls, db_, user_, **kw: charged.append(kw) or 0)
 try:
     agent.orchestrator_model = "deepseek/deepseek-v4-pro"
     res = run(ov.run_orchestrator_task("read", "Что писал Нурлан?", agent, user, None, [{"user": "привет", "assistant": "слушаю"}]))
 finally:
     (ap.build_orchestrator_prompt, at.build_chat_tools, at.execute_tool, orc.get_openrouter_client,
-     CreditService.precheck, CreditService.charge) = saved
+     CreditService.precheck, CreditService.charge, CreditService.charge_owner) = saved
 check("вопрос: модель видит только инструменты чтения", fake_or.tools_seen == ["search_contacts", "get_agent_stats"], fake_or.tools_seen)
 check("вопрос: удаление и отправка НЕ выполнены, поиск выполнен", executed == [("search_contacts", "owner_chat")], executed)
 check("ответ без markdown для голоса", res.get("answer") == "Нурлан писал в 14:05: спрашивал цену.", res)
@@ -733,7 +735,9 @@ check("смена обращения в разговоре: подсказка �
 _pp = ov.build_voice_prompt(_u, agent, "сводка", voice="Kore", prefs={"address": "boss"})
 check("промпт: блок ОБРАЩЕНИЕ с выбранным словом", "ОБРАЩЕНИЕ" in _pp and "«босс»" in _pp)
 check("промпт: цифры показывать карточкой через быструю функцию", "ПОКАЗЫВАЮТ владельцу карточку" in _pp and "даже если ответ есть в сводке" in _pp)
-check("дашборд при сбое базы — пустой, без падения", ov.dashboard_cards(BrokenDB(), user, agent) == [])
+_bc = ov.dashboard_cards(BrokenDB(), user, agent)
+check("дашборд при сбое базы — без падения, только балансы (они не ходят в базу)",
+      all(c.get("type") == "balance" for c in _bc), _bc)
 
 
 async def prefs_flow():

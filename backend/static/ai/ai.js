@@ -139,8 +139,14 @@
         return box.innerHTML;
       } catch (e) { /* ниже — простой текст */ }
     }
+    plainDrawn = true;   // библиотеки ещё грузятся — перерисуем, когда загрузятся
     return esc(text).replace(/\n/g, '<br>');
   }
+  var plainDrawn = false;
+  // marked и DOMPurify подключены async (не задерживают запуск экрана): пришли позже — перерисовать историю
+  window.addEventListener('load', function () {
+    if (plainDrawn && window.marked && window.DOMPurify && !busy && S.agent) { plainDrawn = false; loadHistory(); }
+  });
   function timeOf(iso) {
     try {
       var d = iso ? new Date(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + 'Z') : new Date();
@@ -301,7 +307,7 @@
     var code = det && typeof det === 'object' ? (det.error || det.message) : det;
     if (status === 402 || code === 'insufficient_credits') {
       return code === 'insufficient_credits'
-        ? 'Кончились кредиты агента. Пополните их: **Ещё → Кредиты бота → Купить**.'
+        ? 'Кошелёк пуст и кредиты агента закончились. Пополните кошелёк: **Ещё → Кошелёк → Пополнить** — агент сразу продолжит.'
         : 'Тариф закончился — продлите его: **Ещё → Тариф**.';
     }
     if (status === 404) return 'Агент не найден — создайте его на странице агента.';
@@ -338,7 +344,11 @@
         agentId: S.agentId || null,
         token: function () { return S.token(); },
         title: (S.agent && S.agent.name && S.agent.name !== 'Мой агент') ? S.agent.name : (ky() ? 'Үн жардамчы' : 'Голосовой помощник'),
-        onCredits: function () { location.href = full() ? '/static/agent.html' : '/static/start-bot.html#credits'; },
+        onCredits: function () {
+          if (window.VoksyVoice) window.VoksyVoice.close();
+          if (window.VoksiAISidebar && window.VoksiAISidebar.openTopup) window.VoksiAISidebar.openTopup();
+          else location.href = '/static/settings.html#wallet';
+        },
         // Разговор сервер уже записал в историю чата — показываем её заново
         onClose: function (lines) { if (lines && lines.length) setTimeout(loadHistory, 600); }
       });

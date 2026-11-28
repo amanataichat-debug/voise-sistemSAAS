@@ -1834,7 +1834,7 @@ async def run_orchestrator_task(kind: str, request: str, agent, user, db,
     request = (request or "").strip()
     if not request:
         return {"ok": False, "error": "Пустой запрос"}
-    CreditService.precheck(db, user)
+    CreditService.precheck_owner(db, user)   # кредиты кончились, а кошелёк пополнен — платит кошелёк
 
     note = VOICE_TASK_NOTE_READ if kind == "read" else VOICE_TASK_NOTE_ACTION
     system_prompt = build_orchestrator_prompt(agent, include_time_block=False, db=db) + note
@@ -1905,10 +1905,9 @@ async def run_orchestrator_task(kind: str, request: str, agent, user, db,
     finally:
         if total_prompt or total_completion:
             try:
-                CreditService.charge(db=db, user_id=user.id, model_slug=model,
-                                     prompt_tokens=total_prompt, completion_tokens=total_completion,
-                                     ref_type="voice_chat", ref_id=agent.id,
-                                     notes=f"voice {kind}: iterations {iteration}")
+                CreditService.charge_owner(db, user, model_slug=model, prompt_tokens=total_prompt,
+                                           completion_tokens=total_completion, ref_type="voice_chat",
+                                           ref_id=agent.id, notes=f"voice {kind}: iterations {iteration}")
             except Exception as exc:
                 logger.error(f"[OWNER-VOICE] charge failed: {exc}", exc_info=True)
     return {"ok": True, "answer": _clip_answer(final_text), "tools": used}
@@ -1949,20 +1948,44 @@ def voice_credits(seconds: float) -> int:
     return max(1, math.ceil(seconds / 60.0 * VOICE_COST_USD_PER_MIN * _CREDITS_PER_USD))
 
 
-def charge_voice_minutes(db, user, agent, seconds: float) -> int:
-    from backend.services.credit_service import CreditService
+def wallet_tyiyn(user) -> int:
+    return int(getattr(user, "wallet_balance", 0) or 0)
 
-    amount = voice_credits(seconds)
-    if amount <= 0:
+
+def can_pay(user) -> bool:
+    """Чем платить за голосового помощника: кошелёк в сомах (основной) или кредиты агента (запасной).
+    28.11.2026: раньше смотрели только кредиты — владелец пополнял кошелёк, а помощник твердил «пусто»."""
+    from backend.services.credit_service import CreditService
+    from backend.services.wallet_service import is_free_user
+
+    if user is None:
+        return False
+    if is_free_user(user):
+        return True
+    return wallet_tyiyn(user) > 0 or (getattr(user, "credits_balance", 0) or 0) >= CreditService.MIN_PRECHECK_BALANCE
+
+
+def charge_voice_minutes(db, user, agent, seconds: float) -> int:
+    """Минуты разговора: из кошелька (тариф движка Voksy Live Go), если в нём есть деньги; иначе — кредиты.
+    Возвращает списанное: тыйыны кошелька или кредиты (для журнала)."""
+    from backend.services.credit_service import CreditService
+    from backend.services.wallet_service import WalletService
+
+    if not seconds or seconds <= 0:
         return 0
     try:
+        if wallet_tyiyn(user) > 0:
+            amount, _ = WalletService.charge_call(db, user.id, engine="gemini_live", seconds=seconds,
+                                                  channel="owner_voice")
+            return amount
+        amount = voice_credits(seconds)
         CreditService.charge_amount(db=db, user_id=user.id, amount=amount, ref_type="voice_live",
                                     ref_id=agent.id, model_slug="gemini-live",
                                     notes=f"голосовой режим: {int(seconds)} с")
+        return amount
     except Exception as exc:
         logger.error(f"[OWNER-VOICE] voice charge failed: {exc}", exc_info=True)
         return 0
-    return amount
 
 
 def append_voice_history(db, agent, pairs: List[Dict[str, str]]) -> int:

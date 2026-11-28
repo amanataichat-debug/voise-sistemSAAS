@@ -68,8 +68,9 @@ def access_error(user, agent) -> Optional[Dict[str, str]]:
     if getattr(user, "agent_mode", None) is None or user.agent_mode() not in ("full", "reactive"):
         return {"code": "plan_required",
                 "message": "Голосовой разговор с агентом доступен на тарифах Старт и Profi"}
-    if (user.credits_balance or 0) < 100:
-        return {"code": "insufficient_credits", "message": "Недостаточно кредитов агента — пополните баланс"}
+    if not ov.can_pay(user):
+        return {"code": "insufficient_credits",
+                "message": "Кошелёк пуст и кредиты агента закончились — пополните кошелёк, и помощник заработает"}
     return None
 
 
@@ -202,7 +203,8 @@ class OwnerVoiceSession:
         except Exception as exc:
             name_err = type(exc).__name__
             if name_err in ("InsufficientCreditsError", "SubscriptionExpiredError", "SubscriptionRequiredError"):
-                return {"ok": False, "error": "Кредиты агента закончились или тариф истёк — скажи об этом владельцу."}
+                return {"ok": False, "error": "Кошелёк пуст и кредиты агента закончились (или тариф истёк) — скажи "
+                                              "владельцу коротко: пополнить кошелёк в разделе «Ещё → Кошелёк»."}
             _log(f"function {name} failed: {exc}\n{traceback.format_exc()}", "ERROR")
             return {"ok": False, "error": "Не получилось — попробуйте ещё раз"}
         finally:
@@ -322,7 +324,7 @@ class OwnerVoiceSession:
             agent = db.query(AgentConfig).filter(AgentConfig.id == self.agent_id).first()
             if user is not None and agent is not None:
                 if not getattr(user, "is_admin", False):
-                    credits = ov.charge_voice_minutes(db, user, agent, elapsed)
+                    credits = ov.charge_voice_minutes(db, user, agent, elapsed)   # кошелёк, иначе кредиты
                 ov.append_voice_history(db, agent, self.pairs)
         except Exception as exc:
             _log(f"finish failed: {exc}\n{traceback.format_exc()}", "ERROR")
@@ -334,6 +336,22 @@ class OwnerVoiceSession:
             db.close()
         _log(f"session finished ({reason}): {elapsed:.0f}s, pairs={len(self.pairs)}, functions={self.functions_called}, "
              f"actions={self.actions_done}, credits={credits}")
+
+
+def _affordable_seconds(user, limit: int) -> int:
+    """Платим из кошелька (кредитов не хватает) — разговор не дольше, чем хватает денег (минимум минута)."""
+    from backend.services.credit_service import CreditService
+    from backend.services.wallet_service import is_free_user, tyiyn_per_minute
+
+    try:
+        if is_free_user(user) or (user.credits_balance or 0) >= CreditService.MIN_PRECHECK_BALANCE * 5:
+            return limit
+        per_min = tyiyn_per_minute("gemini_live")
+        if per_min <= 0:
+            return limit
+        return int(max(60, min(limit, ov.wallet_tyiyn(user) / per_min * 60)))
+    except Exception:
+        return limit
 
 
 async def _fail(websocket: WebSocket, code: str, message: str, close_code: int = 1008) -> None:
@@ -459,6 +477,7 @@ async def handle_owner_voice_connection(websocket: WebSocket, db) -> None:
     _log(f"session {client_id} started in {connect_ms}ms: user={user_id} agent={agent_id} voice={voice} "
          f"prompt={client.system_prompt_chars} chars (brief {len(brief)})")
     session = OwnerVoiceSession(websocket, user_id, agent_id, client, in_rate=in_rate, prefs=prefs, owner=owner)
+    session.max_seconds = _affordable_seconds(user, session.max_seconds)
     await session.run()
     try:
         await websocket.close()

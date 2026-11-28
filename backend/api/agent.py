@@ -2775,7 +2775,7 @@ async def agent_chat_stream(
     # Subscription/credit precheck BEFORE the stream starts, so 402 returns as
     # an HTTP status (after 200 starts we could only emit an in-stream error).
     try:
-        CreditService.precheck(db, current_user)
+        CreditService.precheck_owner(db, current_user)   # кредиты кончились, а кошелёк пополнен — платит кошелёк
     except SubscriptionExpiredError:
         raise HTTPException(status_code=402, detail="subscription_expired")
     except SubscriptionRequiredError:

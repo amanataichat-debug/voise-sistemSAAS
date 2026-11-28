@@ -73,7 +73,8 @@ def tariffs() -> List[Dict[str, Any]]:
 
 
 def is_free_user(user: Optional[User]) -> bool:
-    return bool(user and (user.is_admin or (user.email or "").lower() in FREE_EMAILS))
+    return bool(user and (getattr(user, "is_admin", False)
+                          or (getattr(user, "email", None) or "").lower() in FREE_EMAILS))
 
 
 def to_som(tyiyn: int) -> float:
@@ -193,6 +194,28 @@ class WalletService:
         db.commit()
         logger.info(f"[WALLET] charge {amount / 100:.2f} KGS ({engine}{', outbound' if outbound else ''}, {seconds:.0f}s) → user {user.id}, "
                     f"balance {user.wallet_balance / 100:.2f}")
+        return amount, int(user.wallet_balance)
+
+    @classmethod
+    def charge_amount(cls, db: Session, user_id, amount_tyiyn: int, *, note: str, channel: Optional[str] = None,
+                      engine: Optional[str] = None, seconds: Optional[float] = None,
+                      session_id: Optional[str] = None) -> Tuple[int, int]:
+        """Списать готовую сумму (тыйын): голосовой помощник владельца, его запросы к агенту, когда кредиты
+        кончились. Как charge_call — может уйти в небольшой минус; бесплатным — ничего. Коммитит сам."""
+        user = cls._lock_user(db, user_id)
+        if user is None:
+            db.rollback()
+            return 0, 0
+        amount = int(math.ceil(amount_tyiyn or 0))
+        if is_free_user(user) or amount <= 0:
+            balance = int(user.wallet_balance or 0)
+            db.rollback()
+            return 0, balance
+        cls._add(db, user, WalletTransactionType.CHARGE, -amount, engine=engine,
+                 seconds=int(round(seconds)) if seconds else None,
+                 session_id=(session_id or None) and str(session_id)[:100], channel=channel, note=note[:200])
+        db.commit()
+        logger.info(f"[WALLET] charge {amount / 100:.2f} KGS ({note}) → user {user.id}, balance {user.wallet_balance / 100:.2f}")
         return amount, int(user.wallet_balance)
 
     # ------------------------------------------------------------------ история

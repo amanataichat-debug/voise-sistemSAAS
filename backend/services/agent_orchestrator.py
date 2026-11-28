@@ -2868,7 +2868,7 @@ class ChatOrchestrator:
     ) -> Dict[str, Any]:
         """Chat v3 — OpenRouter Chat Completions with AGENT_CHAT_TOOLS."""
         # Pre-flight проверка подписки/кредитов (раздел 5.1)
-        CreditService.precheck(db, user)
+        CreditService.precheck_owner(db, user)   # кредиты кончились — платит кошелёк
         total_prompt = 0
         total_completion = 0
 
@@ -2967,8 +2967,8 @@ class ChatOrchestrator:
         # Списываем кредиты за весь диалоговый цикл (раздел 5.2)
         if total_prompt or total_completion:
             try:
-                CreditService.charge(
-                    db=db, user_id=user.id,
+                CreditService.charge_owner(
+                    db, user,
                     model_slug=agent_config.orchestrator_model,
                     prompt_tokens=total_prompt, completion_tokens=total_completion,
                     ref_type="chat", ref_id=agent_config.id,
@@ -3128,7 +3128,7 @@ class ChatOrchestrator:
         # Pre-flight проверка подписки/кредитов (раздел 5.1) — ДО первого yield.
         # Если кинет Subscription*/InsufficientCredits — пробросится наружу,
         # эндпоинт превратит в 402 до старта StreamingResponse.
-        CreditService.precheck(db, user)
+        CreditService.precheck_owner(db, user)
 
         total_prompt = 0
         total_completion = 0
@@ -3289,8 +3289,8 @@ class ChatOrchestrator:
             # charge пропустится и фича не упадёт.
             if total_prompt or total_completion:
                 try:
-                    CreditService.charge(
-                        db=db, user_id=user.id,
+                    CreditService.charge_owner(
+                        db, user,
                         model_slug=agent_config.orchestrator_model,
                         prompt_tokens=total_prompt, completion_tokens=total_completion,
                         ref_type="chat", ref_id=agent_config.id,

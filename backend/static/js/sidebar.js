@@ -1008,7 +1008,12 @@
   // Прогрев вкладок (19.11.2026): через пару секунд после открытия кабинета телефон в фоне скачивает
   // страницы нижней панели и их скрипты/стили (через service worker они ложатся в кэш) — первое
   // нажатие на вкладку открывает страницу без ожидания сети. Раз за сессию, только при Wi-Fi/4G без «экономии».
+  var warmSeen = {};
   function warmTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll('script[src*="?v=h"],link[href*="?v=h"]'), function (el) {
+      var u = el.getAttribute('src') || el.getAttribute('href') || '';
+      if (u.indexOf('/static/') === 0) warmSeen[u] = 1;
+    });
     try {
       if (sessionStorage.getItem('vf_warm') === '1') return;
       if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
@@ -1025,9 +1030,11 @@
       var p = pages[i++];
       fetch(p, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (html) {
         // скрипты и стили страницы с меткой содержимого (?v=h…) — неизменяемые, кэшируются навсегда
-        var re = /(?:src|href)="(\/static\/[^"]+\?v=h[0-9a-f]{10})"/g, m, seen = {};
+        // каждый файл — один раз за прогрев (раньше общий sidebar.js, ui.js, voksiai.css качались заново
+        // для каждой вкладки: 2,5 МБ мобильного трафика на первом открытии) и не те, что уже на этой странице
+        var re = /(?:src|href)="(\/static\/[^"]+\?v=h[0-9a-f]{10})"/g, m;
         var jobs = [];
-        while ((m = re.exec(html))) { if (!seen[m[1]]) { seen[m[1]] = 1; jobs.push(fetch(m[1]).catch(function () { /* ignore */ })); } }
+        while ((m = re.exec(html))) { if (!warmSeen[m[1]]) { warmSeen[m[1]] = 1; jobs.push(fetch(m[1]).catch(function () { /* ignore */ })); } }
         return Promise.all(jobs);
       }).catch(function () { /* ignore */ }).then(function () { setTimeout(next, 150); });
     })();
@@ -1247,7 +1254,7 @@
       if (!window.VoksyVoice || window.VoksyVoice.isOpen()) return;
       window.VoksyVoice.open({
         agentId: null, token: token, title: lang() === 'ky' ? 'Үн жардамчы' : 'Голосовой помощник',
-        onCredits: function () { location.href = cachedMode() === 'full' ? '/static/agent.html' : '/static/start-bot.html#credits'; }
+        onCredits: function () { if (window.VoksyVoice) window.VoksyVoice.close(); openTopupModal(); }
       });
     });
   }
