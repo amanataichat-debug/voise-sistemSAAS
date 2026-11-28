@@ -219,6 +219,25 @@ func TestMediaSocketProtocol(t *testing.T) {
 		}
 		return n == 3
 	})
+	// WhatsApp отдаёт голос пачками (буфер дрожания): 6 кадров по 60 мс разом = 18 кадров по 20 мс —
+	// все доходят до бэкенда, ничего не выбрасывается (звонок c4b0c0fd: прежняя схема рвала речь)
+	for i := 0; i < 6; i++ {
+		b.onPeerFrame(tone(WAFrameSamples, 0.3, 300))
+	}
+	waitFor(t, "burst delivered whole", func() bool {
+		fb.mu.Lock()
+		defer fb.mu.Unlock()
+		n := 0
+		for _, fr := range fb.media {
+			if RMS(PCM16ToFloat(fr)) > 0.1 {
+				n++
+			}
+		}
+		return n == 21
+	})
+	if d := b.dropped.Load(); d != 0 {
+		t.Fatalf("voice frames dropped: %d", d)
+	}
 
 	// звук агента любыми кусками → очередь
 	_ = conn.Write(ctx, websocket.MessageBinary, FloatToPCM16(nil, tone(LineRate/2, 0.3, 500)))

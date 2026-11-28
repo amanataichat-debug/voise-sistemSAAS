@@ -590,6 +590,35 @@ check("медиа-сокет: звонок отвечен", row.status in (SipCa
 log_text = " ".join(str(e.get("text", "")) for ev_list in db.execute(text("SELECT events FROM call_logs")).scalars().all()
                     for e in (ev_list or []))
 check("журнал звонка: первая строка «Звонок WhatsApp»", "Звонок WhatsApp входящий" in log_text, log_text[:300])
+# Голос клиента во входящем звуке (звонок c4b0c0fd: звук шёл, а модель не услышала ни слова)
+_hs = sma.HandlerSocket(None, "openai", "x", line_rate=16000, channel="whatsapp")
+for _ in range(100):  # 2 с голоса
+    _f = tone(16000, 20, 300)
+    _hs._note_inbound(len(_f)); _hs._note_voice(_f)
+_hs.gateway_stats = {"frames_in": 100, "silence_frames": 400, "dropped_in": 0}
+_v = _hs.voice_summary()
+check("журнал: «Голос клиента» — речь посчитана, счётчики шлюза в строке, без тревоги",
+      _v and "речь ≈2.0 с" in _v[0] and "получено 2.0 с" in _v[0] and not _v[1], _v)
+_hs = sma.HandlerSocket(None, "openai", "x", line_rate=16000, channel="whatsapp")
+for _ in range(600):  # 12 с нулей
+    _f = b"\x00" * 640
+    _hs._note_inbound(len(_f)); _hs._note_voice(_f)
+_v = _hs.voice_summary()
+check("журнал: 12 с одной тишины → предупреждение «голос теряется до сервера»", _v and _v[1] and "одна тишина" in _v[0], _v)
+
+# Приветствие GPT-Live своими словами (28.11.2026): ориентир владельца — по смыслу, знакомому — без представления
+import types as _types  # noqa: E402
+from backend.websockets.live_client import OpenAILiveClient  # noqa: E402
+_c = OpenAILiveClient.__new__(OpenAILiveClient)
+_c.assistant_config = _types.SimpleNamespace(greeting_known_client=True)
+_txt = _c.greeting_instruction("Саламатсызбы! Бул Анри.")
+check("приветствие: не «дословно», ориентир по смыслу, знакомому — по имени и без представления",
+      "дословно" not in _txt and "смысл, не текст" in _txt and "не представляйся заново" in _txt, _txt)
+_c.assistant_config = _types.SimpleNamespace()
+check("приветствие новому: без блока «уже общался»", "уже общался" not in _c.greeting_instruction("Здравствуйте!"))
+os.environ["LIVE_GREETING_FREE"] = "0"
+check("приветствие: LIVE_GREETING_FREE=0 — прежнее дословное", "дословно" in _c.greeting_instruction("Здравствуйте!"))
+os.environ.pop("LIVE_GREETING_FREE")
 check("PostCall: входящий WhatsApp на номер агента ушёл на разбор", any(a and a[4] == "inbound" for a in scheduled),
       scheduled)
 ac = db.query(AgentCall).filter(AgentCall.call_session_id == call_id).first()

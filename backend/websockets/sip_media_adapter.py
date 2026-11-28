@@ -78,6 +78,7 @@ OUTBOUND_REBUFFER_MS = 120
 OUTBOUND_UNDERRUN_TOLERANCE_SEC = 0.04
 # Обрыв входящего звука от моста длиннее этого считается в диагностике пути звука
 INBOUND_GAP_WARN_SEC = 0.3
+INBOUND_VOICE_RMS = 300      # громче — голос (≈ −40 dBFS), для строки «Голос клиента» в журнале
 # Сколько последнего звука клиента оставить, когда хендлер впервые начинает читать (остальное — устаревшее)
 STALE_AUDIO_KEEP_SEC = 0.5
 
@@ -262,6 +263,12 @@ class HandlerSocket:
         # показывал 1,5–3 с). Вход: сколько звука клиента реально дошло и самые длинные обрывы между кадрами
         # моста; выход: насколько звук агента опережал проигрывание (очередь у моста = задержка для клиента).
         self.in_bytes = 0
+        # Есть ли в звуке клиента голос (28.11.2026, звонок WhatsApp c4b0c0fd: звук шёл непрерывно, а модель
+        # не услышала ни слова — по журналу нельзя было понять, пришла тишина или голос).
+        self.in_voice_sec = 0.0
+        self.gateway_stats: Optional[Dict[str, Any]] = None  # шлюз WhatsApp: кадров от WhatsApp / тишины
+        self.in_peak_rms = 0
+        self.in_zero_sec = 0.0
         self.in_first_at = 0.0
         self._in_last_at = 0.0
         self.in_gap_max = 0.0
@@ -328,6 +335,7 @@ class HandlerSocket:
                 if raw.get("bytes") is not None:
                     self.frames_in += 1
                     self._note_inbound(len(raw["bytes"]))
+                    self._note_voice(raw["bytes"])
                     self._in_buf.extend(self._up(raw["bytes"]))
                     if len(self._in_buf) >= self._in_batch_bytes:
                         pcm = bytes(self._in_buf)
@@ -355,6 +363,8 @@ class HandlerSocket:
                 if mtype == "ended":
                     self.ended_by_bridge = True
                     self.end_reason = data.get("reason")
+                    if self.channel == "whatsapp" and data.get("frames_in") is not None:
+                        self.gateway_stats = {k: data.get(k) for k in ("frames_in", "silence_frames", "dropped_in")}
                     break
                 if mtype == "mark" and data.get("name") == "hangup":
                     self._mark_hangup.set()
@@ -591,6 +601,39 @@ class HandlerSocket:
                 self.in_gaps_long += 1
         self._in_last_at = now
         self.in_bytes += nbytes
+
+    def _note_voice(self, pcm: bytes) -> None:
+        try:
+            rms = audioop.rms(pcm, 2)
+        except Exception:
+            return
+        dur = len(pcm) / (self.line_rate * 2)
+        if rms > self.in_peak_rms:
+            self.in_peak_rms = rms
+        if rms >= INBOUND_VOICE_RMS:
+            self.in_voice_sec += dur
+        elif rms == 0:
+            self.in_zero_sec += dur
+
+    def voice_summary(self) -> Optional[Tuple[str, bool]]:
+        """Голос клиента во входящем звуке: сколько секунд речи, пик, сколько чистой цифровой тишины."""
+        got = self.in_bytes / (self.line_rate * 2)
+        if got < 1.0:
+            return None
+        import math
+        peak = 20 * math.log10(self.in_peak_rms / 32768) if self.in_peak_rms else -99.0
+        text = (f"Голос клиента во входящем звуке: речь ≈{self.in_voice_sec:.1f} с из {got:.1f} с, "
+                f"пик {peak:.0f} dBFS, чистая тишина (нули) {self.in_zero_sec:.1f} с")
+        bad = got >= 10.0 and self.in_voice_sec < 0.5
+        gs = self.gateway_stats or {}
+        if gs.get("frames_in") is not None:
+            text += (f"; шлюз WhatsApp: от WhatsApp получено {int(gs.get('frames_in') or 0) * 0.02:.1f} с звука, "
+                     f"вставлено тишины {int(gs.get('silence_frames') or 0) * 0.02:.1f} с, "
+                     f"выброшено {int(gs.get('dropped_in') or 0) * 0.02:.1f} с")
+        if bad:
+            text += (" — от клиента пришла одна тишина: модель не могла его услышать. Голос теряется до сервера "
+                     "(шлюз / линия), а не в модели — проверьте запись звонка и журнал шлюза")
+        return text, bad
 
     def audio_path_summary(self) -> Optional[Tuple[str, bool]]:
         """Строка для «Логи звонка» о пути звука и признак «есть проблема» (для уровня WARN)."""
