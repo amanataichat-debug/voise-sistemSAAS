@@ -300,6 +300,13 @@ func (g *Gateway) handleIncoming(acc *Account, c *meowcaller.Call) {
 		if reason == "" {
 			reason = "rejected_by_backend"
 		}
+		if ignore, _ := decision["ignore"].(bool); ignore {
+			// Агент не отвечает (выключен владельцем, пуст кошелёк…): звонок не сбрасываем —
+			// он звонит на телефоне владельца, как будто шлюза нет.
+			g.log.Info("backend passed the call to the owner's phone", "call_id", b.ID, "reason", reason)
+			b.finish(reason)
+			return
+		}
 		g.log.Info("backend rejected the call", "call_id", b.ID, "reason", reason)
 		_ = c.Reject()
 		b.finish(reason)

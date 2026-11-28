@@ -78,7 +78,7 @@ LID→номер сессии; иначе бэкенд ищет номер по 
 
 | Бэкенд → шлюз | Поля |
 |---|---|
-| `accept` / `reject` | ответ на `started` входящего: `call_id, assistant_id, assistant_type, metadata` / `reason`. Нет ответа за `ACCEPT_TIMEOUT_MS` (6 с) → шлюз отклоняет |
+| `accept` / `reject` | ответ на `started` входящего: `call_id, assistant_id, assistant_type, metadata` / `reason` (+ `ignore: true` — агент не отвечает, но звонок НЕ отклоняется в WhatsApp: звонит на телефоне владельца; старая версия шлюза поле не знает и отклоняет). Нет ответа за `ACCEPT_TIMEOUT_MS` (6 с) → шлюз отклоняет |
 | `originate` | `call_id, account_id, to, caller_id, assistant_*, metadata` |
 | `hangup` | `call_id, reason` |
 | `login` / `logout` | `account_id` (`force:"true"` — новый QR даже при живой сессии) |

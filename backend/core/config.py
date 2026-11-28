@@ -341,6 +341,9 @@ class Settings(BaseSettings):
     # пусто при WA_CALLS_ENABLED=1 — всем (этап 3).
     WA_CALLS_ENABLED: bool = os.getenv("WA_CALLS_ENABLED", "0").strip().lower() in ("1", "true", "yes")
     WA_CALLS_USERS: str = os.getenv("WA_CALLS_USERS", "")
+    # Тарифы, на которых владелец сам подключает звонки WhatsApp в кабинете (коды subscription_plans).
+    # Входящие — всем из списка; исходящие — только режиму full (Profi, Beauty Pro, legacy agent).
+    WA_CALLS_PLANS: str = os.getenv("WA_CALLS_PLANS", "start,profi,agent,beauty_ai,beauty_pro")
     # Лимиты исходящих против блокировки номера: в сутки (по умолчанию для нового аккаунта) и в час
     WA_CALLS_DAILY_OUTBOUND: int = int(os.getenv("WA_CALLS_DAILY_OUTBOUND", "20") or 20)
     WA_CALLS_HOURLY_OUTBOUND: int = int(os.getenv("WA_CALLS_HOURLY_OUTBOUND", "6") or 6)
