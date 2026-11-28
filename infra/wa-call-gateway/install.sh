@@ -55,6 +55,7 @@ FILES=(
   gateway/recorder.go
   voksy-wa-call.service
   THIRD_PARTY_LICENSES.md
+  uninstall.sh
   licenses/meowcaller-MIT.txt
   licenses/hypermeow-MPL-2.0.txt
 )
@@ -70,7 +71,8 @@ die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 say "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq golang-go lame ufw curl ca-certificates >/dev/null
+apt-get install -y -qq golang-go lame curl ca-certificates >/dev/null
+command -v ufw >/dev/null 2>&1 || apt-get install -y -qq ufw >/dev/null
 
 say "downloading gateway source from $BASE"
 TMP="$(mktemp -d)"
@@ -158,12 +160,23 @@ chmod 600 "$ENV_FILE"
 # ---------------------------------------------------------------- install
 install -m 755 "$TMP/voksy-wa-call" "$APP_DIR/bin/voksy-wa-call"
 install -m 644 "$TMP/THIRD_PARTY_LICENSES.md" "$APP_DIR/THIRD_PARTY_LICENSES.md"
+install -m 755 "$TMP/uninstall.sh" "$APP_DIR/uninstall.sh"
 install -d -m 755 "$APP_DIR/licenses"
 install -m 644 "$TMP"/licenses/*.txt "$APP_DIR/licenses/"
 install -m 644 "$TMP/voksy-wa-call.service" /etc/systemd/system/voksy-wa-call.service
 
 # ---------------------------------------------------------------- firewall: входящие только SSH
-if [ "${VOKSY_SKIP_UFW:-0}" != 1 ]; then
+# На ОБЩЕМ сервере (рядом с WhatsApp-шлюзом переписки или SIP-шлюзом) файрвол не трогаем:
+# «закрыть всё входящее» отрезало бы Caddy (80/443) или SIP/RTP. Шлюзу звонков входящие порты
+# не нужны вовсе — все его соединения исходящие.
+SHARED_HOST=0
+for marker in /opt/voksy-wa /etc/voksy-bridge /etc/asterisk/pjsip.conf; do
+  [ -e "$marker" ] && SHARED_HOST=1
+done
+command -v docker >/dev/null 2>&1 && SHARED_HOST=1
+if [ "$SHARED_HOST" = 1 ]; then
+  say "shared server detected (other Voksy services here): firewall is left as is"
+elif [ "${VOKSY_SKIP_UFW:-0}" != 1 ]; then
   say "firewall: inbound SSH only (all gateway connections are outbound)"
   ufw allow OpenSSH >/dev/null
   ufw default deny incoming >/dev/null
