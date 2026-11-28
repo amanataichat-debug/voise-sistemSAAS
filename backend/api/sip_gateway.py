@@ -140,6 +140,12 @@ def _token_ok(token: Optional[str]) -> bool:
     return bool(token) and token == expected
 
 
+def _wa_token_ok(token: Optional[str]) -> bool:
+    """Токен шлюза звонков WhatsApp (infra/wa-call-gateway/): медиа-сокет и запись звонка — общие с SIP."""
+    expected = settings.WA_CALL_GATEWAY_TOKEN
+    return bool(expected) and bool(token) and token == expected
+
+
 # =============================================================================
 # Управляющий сокет шлюза
 # =============================================================================
@@ -349,12 +355,15 @@ async def sip_media(
     gateway: str = Query("sip-gw-1"),
     db: Session = Depends(get_db),
 ):
-    if not _token_ok(token):
+    # Шлюз звонков WhatsApp ходит сюда же со своим токеном: звонок WhatsApp — третий вход в тех же
+    # голосовых агентов (ТЗ docs/tz_whatsapp_calls.md), без своей логики разговора
+    wa_gateway = _wa_token_ok(token)
+    if not wa_gateway and not _token_ok(token):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     await websocket.accept()
     _ensure_tables()
-    gateway_id = gateway or settings.SIP_GATEWAY_DEFAULT_ID
+    gateway_id = gateway or (settings.WA_CALL_GATEWAY_DEFAULT_ID if wa_gateway else settings.SIP_GATEWAY_DEFAULT_ID)
 
     async def reject(reason: str) -> None:
         logger.warning(f"[SIP-MEDIA] call {call_id} rejected: {reason}")
@@ -383,10 +392,32 @@ async def sip_media(
     direction = start.get("direction") or "inbound"
     did = str(start.get("did") or "")
     caller = str(start.get("caller") or "")
+    channel = "whatsapp" if (wa_gateway or start.get("channel") == "whatsapp") else "phone"
+    # Частота линии из start: мост SIP — 8 кГц, шлюз WhatsApp — 16 кГц (широкая полоса)
+    try:
+        line_rate = int(((start.get("format") or {}).get("sample_rate")) or 8000)
+    except (TypeError, ValueError):
+        line_rate = 8000
+    if line_rate not in (8000, 16000):
+        await reject(f"bad_sample_rate: {line_rate}")
+        return
 
     # 2. Строка звонка и номер
     number: Optional[SipPhoneNumber] = None
-    if direction == "inbound":
+    if channel == "whatsapp":
+        # Строку заводит бэкенд заранее: входящему — решение accept (wa_call_service.decide_inbound),
+        # исходящему — очередь. Номера sip_phone_numbers у WhatsApp нет — его место занимает аккаунт.
+        from backend.services import wa_call_service
+        call = db.get(SipCall, call_uuid)
+        if call is None or not wa_call_service.is_whatsapp_call(call) or not wa_gateway:
+            await reject("unknown_call")
+            return
+        number = wa_call_service.line_for_call(db, call)
+        if call.direction == "inbound" and caller and not call.caller:
+            call.caller = normalize_sip_number(caller) or caller
+            db.commit()
+        direction = call.direction
+    elif direction == "inbound":
         number = SipGatewayService.find_number(db, did)
         if number is None:
             await reject("unknown_number")
@@ -524,7 +555,11 @@ async def sip_media(
     adapter_profile = "openai" if gpt_live else ("gemini" if gemini_live else call.assistant_type)
     # GPT-Live на телефоне — в G.711 μ-law 8 кГц без пересчёта частоты (LIVE_PHONE_G711): профиль
     # адаптера и кодек клиента Live включаются вместе (assistant.live_phone_g711 читает хендлер)
-    if adapter_profile == "openai" and settings.LIVE_PHONE_G711 and G711_AVAILABLE:
+    if channel == "whatsapp":
+        # Широкая полоса: без телефонной обработки (G.711, срез ASR до 8 кГц, АРУ Gemini для линии оператора)
+        assistant.line_wideband = True  # не колонка
+        assistant.line_channel = "whatsapp"  # не колонка: кошелёк пишет канал whatsapp, без минуты оператора
+    elif adapter_profile == "openai" and settings.LIVE_PHONE_G711 and G711_AVAILABLE:
         adapter_profile = "openai_g711"
         assistant.live_phone_g711 = True  # не колонка
     assistant.sip_direction = direction  # не колонка: автоответчик ищем только на исходящих
@@ -548,10 +583,20 @@ async def sip_media(
     call_log.assistant_type = call.assistant_type
     call_log.assistant_id = str(assistant.id)
     phone = call.caller if direction == "inbound" else call.to_number
-    call_log.meta.update({"phone": phone, "direction": direction, "did": call.did, "gateway": gateway_id})
-    call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
-                        f"наш номер {call.did or '—'}, шлюз {gateway_id}",
-                 greeting="своё" if greeting else None)
+    call_log.meta.update({"phone": phone, "direction": direction, "did": call.did, "gateway": gateway_id,
+                          "channel": channel})
+    if channel == "whatsapp":
+        meta = call.call_metadata or {}
+        who = (meta.get("caller_name") or "") if direction == "inbound" else ""
+        call_log.add("sip", "Звонок WhatsApp " + ("входящий от " if direction == "inbound" else "исходящий на ")
+                     + (f"+{phone}" if phone else (meta.get("caller_jid") or "скрытого номера"))
+                     + (f" ({who})" if who else "")
+                     + f", номер агента +{call.did or '—'}, шлюз {gateway_id}, звук 16 кГц",
+                     greeting="своё" if greeting else None)
+    else:
+        call_log.add("sip", f"Звонок {'входящий от' if direction == 'inbound' else 'исходящий на'} {phone or '—'}, "
+                            f"наш номер {call.did or '—'}, шлюз {gateway_id}",
+                     greeting="своё" if greeting else None)
     # Какой движок голоса реально обслуживает звонок (берётся из карточки в момент звонка)
     call_log.add("session",
                  f"Движок голоса карточки «{getattr(assistant, 'name', '')}» ({str(assistant.id)[:8]}): "
@@ -605,7 +650,8 @@ async def sip_media(
         call_log.add("kb", warning, level="warning")
 
     # 6. Запуск браузерного хендлера через адаптер
-    socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)
+    socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event,
+                           line_rate=line_rate, channel=channel)
     socket.transcript = transcript   # голосовые функции записи: перенос/отмена — только после ответа клиента на итог
     socket.start()
     started_at = datetime.utcnow()
@@ -623,7 +669,7 @@ async def sip_media(
             "sip",
             f"Звонок завершён: {'положил трубку абонент/мост' if socket.ended_by_bridge else 'завершил бэкенд'}"
             f", причина {socket.end_reason or '—'}; вход {socket.frames_in} кадров, "
-            f"выход {socket.audio_bytes_out / 16000:.1f} с звука, сбросов очереди {socket.barge_ins}"
+            f"выход {socket.audio_bytes_out / socket.bytes_per_second:.1f} с звука, сбросов очереди {socket.barge_ins}"
             + (f", провалов звука агента {socket.underruns}" if getattr(socket, "underruns", 0) else ""),
             level="error" if socket.handler_error else "info",
             handler_error=str(socket.handler_error) if socket.handler_error else None,
@@ -670,7 +716,7 @@ def _finish_call_sync(db, call, call_uuid, call_id, assistant, session_id, socke
                     pass
                 logger.info(
                     f"[SIP-MEDIA] call {call_id} finished: frames_in={socket.frames_in} deltas_out={socket.frames_out} "
-                    f"audio_out={socket.audio_bytes_out / 16000:.1f}s barge_ins={socket.barge_ins} "
+                    f"audio_out={socket.audio_bytes_out / socket.bytes_per_second:.1f}s barge_ins={socket.barge_ins} "
                     f"reply_latencies={socket.reply_latencies} "
                     f"reason={socket.end_reason} tagged_conversations={tagged}"
                     + (f" handler_error={socket.handler_error}" if socket.handler_error else "")
@@ -909,7 +955,7 @@ async def upload_recording(call_id: str, request: Request, db: Session = Depends
     ответы (R2 не настроен, ошибка R2, 401) он повторяет позже — файл не теряется.
     Повторная загрузка того же звонка перезаписывает тот же ключ в R2.
     """
-    if not _token_ok(request.headers.get("x-gateway-token")):
+    if not (_token_ok(request.headers.get("x-gateway-token")) or _wa_token_ok(request.headers.get("x-gateway-token"))):
         raise HTTPException(status_code=401, detail="bad_token")
     try:
         call_uuid = uuid.UUID(call_id)

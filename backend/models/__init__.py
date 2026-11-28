@@ -144,6 +144,9 @@ from .finance import BusinessExpense
 # ✅ Собственная SIP-телефония (шлюз Asterisk + мост, infra/sip-gateway/)
 from .sip_gateway import SipPhoneNumber, SipCall, SipCallStatus
 
+# Звонки WhatsApp голосового агента: аккаунты своего шлюза wa-call-1 (infra/wa-call-gateway/)
+from .wa_call import AgentWaCallAccount
+
 # Export specific models
 __all__ = [
     "Base", 

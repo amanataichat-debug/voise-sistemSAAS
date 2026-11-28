@@ -49,6 +49,7 @@
 ## Инфраструктура вне Render
 - [`infra/sip-gateway/claude-sip-gateway.md`](infra/sip-gateway/claude-sip-gateway.md) — собственная SIP-телефония: VPS Hetzner с Asterisk 20 и мостом `bridge.py`, протокол мост⇄бэкенд, файлы бэкенда (`api/sip_gateway.py`, `websockets/sip_media_adapter.py`, `services/sip_gateway_service.py`, `models/sip_gateway.py`), текущее состояние и что не сделано. Памятка по серверу для человека — `infra/sip-gateway/SERVER.md`, протокол — `infra/sip-gateway/README.md`.
 - [`infra/whatsapp-gateway/claude-whatsapp-gateway.md`](infra/whatsapp-gateway/claude-whatsapp-gateway.md) — WhatsApp-шлюз агентов обзвона: отдельный VPS Hetzner `wa-gateway-1` (`91.99.124.169`, `wa.voksyai.online`) с Evolution API в Docker (только переписка, звонки невозможны), связь с бэкендом, статус. Памятка для человека — `infra/whatsapp-gateway/SERVER.md`.
+- [`infra/wa-call-gateway/claude-wa-call-gateway.md`](infra/wa-call-gateway/claude-wa-call-gateway.md) — звонки WhatsApp голосового агента: свой шлюз на отдельном VPS `wa-call-1` (Go: meowcaller + hypermeow — форк whatsmeow), протокол шлюз⇄бэкенд (управляющий сокет `/ws/wa-call-gateway/control` + общий медиа-сокет `/ws/sip/{id}` на 16 кГц), файлы бэкенда (`api/wa_call_gateway.py`, `services/wa_call_service.py`, `models/wa_call.py`), правила входящих и исходящих, состояние. ТЗ — `docs/tz_whatsapp_calls.md`, памятка для человека — `infra/wa-call-gateway/SERVER.md`.
 
 ## Лендинг (React)
 - [`frontend/claude-frontend.md`](frontend/claude-frontend.md) — React + Vite лендинг (сборка → `backend/static/landing/`).

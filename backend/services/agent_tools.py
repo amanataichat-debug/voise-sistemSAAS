@@ -1104,6 +1104,14 @@ def agent_can_call_contact(db: Session, user, contact) -> tuple:
         return False, "звонки клиентам доступны на тарифе Profi"
     phone = dial_number(contact) if contact is not None else ""
     if not phone or not is_o_number(normalize_sip_number(phone)):
+        # Не O! — звонок через WhatsApp, если у агента подключён номер звонков WhatsApp (ТЗ docs/tz_whatsapp_calls.md)
+        try:
+            from backend.services import wa_call_service
+            channel, _, _ = wa_call_service.choose_outbound_channel(db, contact.agent_config_id, contact)
+            if channel == "whatsapp":
+                return True, ""
+        except Exception as e:
+            logger.warning(f"[AGENT-TOOLS] WhatsApp call route check failed: {e}")
         return False, "у клиента нет номера O!, мы звоним только на 050 и 070"
     return True, ""
 
@@ -4773,7 +4781,19 @@ def _check_call_guards(contact: AgentContact, scheduled_utc: datetime, *, allow_
     if not phone:
         return {"ok": False, "error": "no_phone", "hint": "У контакта не задан номер телефона."}
     digits = normalize_sip_number(phone)
-    if not is_o_number(digits):
+    wa_route = None
+    if not is_o_number(digits) and db is not None and contact is not None:
+        # Не O!, но у агента есть номер звонков WhatsApp с исходящими — звоним через WhatsApp
+        try:
+            from backend.services import wa_call_service
+            channel, _, wa_digits = wa_call_service.choose_outbound_channel(db, contact.agent_config_id, contact)
+            if channel == "whatsapp":
+                wa_route = wa_digits
+        except Exception as e:
+            logger.warning(f"[AGENT-TOOLS] WhatsApp call route check failed: {e}")
+    if wa_route:
+        digits = wa_route
+    elif not is_o_number(digits):
         return {
             "ok": False,
             "error": "other_operator",
@@ -5003,6 +5023,26 @@ async def fn_check_phone_operator(args: dict, user_id: str, agent_config_id: str
         return {"ok": False, "error": "phone_required", "hint": "Передай phone или agent_contact_id."}
 
     digits = normalize_sip_number(phone)
+    if not is_o_number(digits):
+        # Не O! — можно ли позвонить через WhatsApp (ТЗ docs/tz_whatsapp_calls.md, код решает канал)
+        try:
+            from backend.services import wa_call_service
+            account, refusal = wa_call_service.whatsapp_route(db, agent_config_id, digits)
+        except Exception as e:
+            logger.warning(f"[AGENT-TOOLS] WhatsApp call route check failed: {e}")
+            account, refusal = None, None
+        if account is not None:
+            return {
+                "ok": True,
+                "can_call": True,
+                "operator": "whatsapp",
+                "phone": phone,
+                "note": ("Позвоним клиенту в WhatsApp (номер не O!, но у него есть WhatsApp и он сам писал или "
+                         "звонил). Предложи звонок как обычно; по согласию — trigger_immediate_call."),
+            }
+        if refusal:
+            return {"ok": True, "can_call": False, "operator": "whatsapp_not_yet", "phone": phone,
+                    "note": refusal + " Пока предложи переписку или входящий звонок на наш номер (из базы знаний)."}
     if len(digits) != 12 or not digits.startswith("996"):
         return {
             "ok": True,

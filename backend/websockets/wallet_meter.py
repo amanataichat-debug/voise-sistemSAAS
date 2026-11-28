@@ -27,11 +27,13 @@ EMPTY_MESSAGE = "Баланс кошелька исчерпан. Пополни�
 
 
 class WalletMeter:
-    def __init__(self, user_id, engine: str, assistant_id: str, telephony: bool, outbound: bool = False) -> None:
+    def __init__(self, user_id, engine: str, assistant_id: str, telephony: bool, outbound: bool = False,
+                 channel: Optional[str] = None) -> None:
         self.user_id = user_id
         self.engine = engine
         self.assistant_id = assistant_id
-        self.channel = "phone" if telephony else "widget"
+        # channel: phone | widget | whatsapp (звонок WhatsApp — wallet_transactions.channel = "whatsapp")
+        self.channel = channel or ("phone" if telephony else "widget")
         self.outbound = bool(telephony and outbound)  # минута оператора только на исходящих звонках
         self.free = True
         self.balance = 0           # тыйын на старте

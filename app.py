@@ -47,6 +47,7 @@ from backend.api import (
     owner_voice_ws,  # Голосовой режим оркестратора: /ws/agent-voice (Gemini Live + оркестратор)
     demo_voice,  # Демо голосового агента для посторонних: /ws/demo-voice + Telegram-бот демо (без базы)
     sip_gateway,  # 📞 Собственная SIP-телефония (шлюз Asterisk + мост)
+    wa_call_gateway,  # 📞 Звонки WhatsApp голосового агента (свой шлюз wa-call-1)
     translate_assistants,  # 🆕 v1.0: Translate Assistants CRUD API
     translate_ws,  # 🆕 v1.0: Translate WebSocket API
     contacts,  # ✅ CRM API
@@ -356,6 +357,7 @@ app.include_router(eleven_ws.router, tags=["Eleven WebSocket"])  # BEFORE websoc
 app.include_router(owner_voice_ws.router, tags=["Owner Voice WebSocket"])  # BEFORE websocket.router — /ws/agent-voice
 app.include_router(demo_voice.router, tags=["Demo Voice"])  # BEFORE websocket.router — /ws/demo-voice (демо без базы)
 app.include_router(sip_gateway.router, tags=["SIP Gateway"])  # BEFORE websocket.router — /ws/sip/{call_id} and /ws/sip-gateway/control must match before /ws/{assistant_id}
+app.include_router(wa_call_gateway.router, tags=["WhatsApp Calls"])  # BEFORE websocket.router — /ws/wa-call-gateway/control
 app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(grok_ws.router, tags=["Grok WebSocket"])  # 🆕 v3.0
 app.include_router(healthcheck.router, tags=["Health"])
@@ -2203,6 +2205,25 @@ def ensure_live_voice_table():
         logger.error(f"❌ ensure_live_voice_table: {e}")
 
 
+def ensure_wa_call_tables():
+    """
+    Звонки WhatsApp голосового агента (ТЗ docs/tz_whatsapp_calls.md): таблица agent_wa_call_accounts.
+    Аддитивно, в начале старта в каждом воркере (create_all с checkfirst); сами звонки — в sip_calls.
+    """
+    try:
+        from sqlalchemy import inspect
+        from backend.models.base import Base as ModelsBase
+        from backend.models.wa_call import AgentWaCallAccount
+        existing = set(inspect(engine).get_table_names())
+        if not {"users", "agent_configs"} <= existing:
+            return  # пустая база: таблицы создаст общий create_all
+        if "agent_wa_call_accounts" not in existing:
+            ModelsBase.metadata.create_all(bind=engine, tables=[AgentWaCallAccount.__table__], checkfirst=True)
+            logger.info("✅ Created agent_wa_call_accounts")
+    except Exception as e:
+        logger.error(f"❌ ensure_wa_call_tables: {e}")
+
+
 def ensure_team_tables():
     """
     Сотрудники кабинета (ветка 1811-niche-admin-speed): таблица team_members. Нужна до первого
@@ -3469,6 +3490,7 @@ async def startup_event():
         ensure_order_tables()  # заказы магазинов и доставки
         ensure_finance_tables()  # расходы бизнеса и оплата мастеров (прибыль)
         ensure_live_voice_table()  # свои голоса GPT-Live (prompt-to-voice)
+        ensure_wa_call_tables()  # звонки WhatsApp голосового агента (аккаунты шлюза wa-call-1)
 
         # Векторный поиск по записям базы знаний: клиентов Pinecone/OpenAI создаём заранее,
         # чтобы первый поиск на звонке не платил за их создание. Сбой прогрева не мешает запуску.

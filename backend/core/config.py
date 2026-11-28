@@ -333,6 +333,18 @@ class Settings(BaseSettings):
     SIP_GATEWAY_TOKEN: Optional[str] = os.getenv("SIP_GATEWAY_TOKEN")
     # Имя шлюза по умолчанию для новых номеров/звонков (gateway_id моста)
     SIP_GATEWAY_DEFAULT_ID: str = os.getenv("SIP_GATEWAY_DEFAULT_ID", "sip-gw-1")
+    # Звонки WhatsApp голосового агента: свой шлюз wa-call-1 (infra/wa-call-gateway/, docs/tz_whatsapp_calls.md).
+    # Токен шлюза — отдельный от SIP: GATEWAY_TOKEN из /etc/voksy-wa-call/gateway.env на VPS.
+    WA_CALL_GATEWAY_TOKEN: Optional[str] = os.getenv("WA_CALL_GATEWAY_TOKEN")
+    WA_CALL_GATEWAY_DEFAULT_ID: str = os.getenv("WA_CALL_GATEWAY_DEFAULT_ID", "wa-call-1")
+    # Выключатель (по умолчанию выключено) и список владельцев на пробе: id через запятую,
+    # пусто при WA_CALLS_ENABLED=1 — всем (этап 3).
+    WA_CALLS_ENABLED: bool = os.getenv("WA_CALLS_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+    WA_CALLS_USERS: str = os.getenv("WA_CALLS_USERS", "")
+    # Лимиты исходящих против блокировки номера: в сутки (по умолчанию для нового аккаунта) и в час
+    WA_CALLS_DAILY_OUTBOUND: int = int(os.getenv("WA_CALLS_DAILY_OUTBOUND", "20") or 20)
+    WA_CALLS_HOURLY_OUTBOUND: int = int(os.getenv("WA_CALLS_HOURLY_OUTBOUND", "6") or 6)
+
     # Входящий с незнакомого номера на номер агента: за сколько часов показать
     # голосовому агенту недавних клиентов (вдруг это кто-то из них с другого номера).
     INBOUND_RECENT_CONTACTS_HOURS: int = int(os.getenv("INBOUND_RECENT_CONTACTS_HOURS", "72"))

@@ -552,7 +552,14 @@ class TaskScheduler:
                 user, task, assistant_type, db,
                 preferred=getattr(task, "caller_id", None) or (agent_config.default_caller_id if agent_config else None),
             )
-            if sip_number is not None:
+            # Канал звонка решает код (ТЗ docs/tz_whatsapp_calls.md, 5.3): номер O! → SIP-шлюз оператора,
+            # иначе — WhatsApp, если у агента подключён номер звонков WhatsApp с исходящими.
+            wa_account = self._whatsapp_route_for(agent_contact, db)
+            if wa_account is not None:
+                call_session_id, call_success = await self._agent_call_via_whatsapp(
+                    task, agent_contact, wa_account, assistant_id, assistant_name, assistant_type, db
+                )
+            elif sip_number is not None:
                 call_session_id, call_success = await self._agent_call_via_sip_gateway(
                     task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db
                 )
@@ -582,7 +589,7 @@ class TaskScheduler:
                 db.commit()
                 return
 
-            if call_success and call_session_id and sip_number is not None:
+            if call_success and call_session_id and (sip_number is not None or wa_account is not None):
                 # SIP-шлюз: звонок только в очереди. Итог (COMPLETED/FAILED) проставит событие моста,
                 # PostCall запустит AgentCallFinalizer по концу звонка — опрашивать базу не нужно.
                 agent_call.call_session_id = str(call_session_id)
@@ -774,6 +781,49 @@ class TaskScheduler:
                 "source": "task_scheduler",
             }.items() if v
         }
+
+    def _whatsapp_route_for(self, agent_contact, db):
+        """Аккаунт звонков WhatsApp для этого клиента или None (номер O! / аккаунта нет / клиент не писал)."""
+        try:
+            from backend.services import wa_call_service
+            channel, account, _ = wa_call_service.choose_outbound_channel(db, agent_contact.agent_config_id,
+                                                                          agent_contact)
+            return account if channel == "whatsapp" else None
+        except Exception as e:
+            logger.warning(f"[TASK-SCHEDULER] WhatsApp call route check failed: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return None
+
+    async def _agent_call_via_whatsapp(
+        self, task, agent_contact, account, assistant_id, assistant_name, assistant_type, db
+    ) -> Tuple[Optional[str], bool]:
+        """Исходящий агента через шлюз звонков WhatsApp. Итог звонка проставит событие шлюза, PostCall — финализатор."""
+        from backend.services import wa_call_service
+        try:
+            metadata = self._sip_call_metadata(task, agent_contact.name or "")
+            agent_call = db.get(AgentCall, task.agent_call_id) if task.agent_call_id else None
+            if agent_call is not None and agent_call.call_strategy:
+                metadata["call_strategy"] = agent_call.call_strategy[:1500]
+            to_number = wa_call_service.whatsapp_dial_number(agent_contact)
+            call = wa_call_service.queue_outbound_call(
+                db, account=account, to_number=to_number, assistant_type=assistant_type, assistant_id=assistant_id,
+                metadata=metadata, task_id=task.id,
+            )
+            logger.info(f"[TASK-SCHEDULER] 📞 WhatsApp call queued: +{account.phone} -> {to_number} "
+                        f"({assistant_name}), call {call.id}")
+            return str(call.id), True
+        except ValueError as e:
+            # Лимит против блокировки, кошелёк, клиент ещё не писал — причина для владельца, не сбой
+            logger.warning(f"[TASK-SCHEDULER] WhatsApp call rejected for task {task.id}: {e}")
+            task.call_result = str(e)
+            return None, False
+        except Exception as e:
+            logger.error(f"[TASK-SCHEDULER] ❌ WhatsApp call queue failed: {e}", exc_info=True)
+            task.call_result = f"WhatsApp call error: {e}"
+            return None, False
 
     async def _agent_call_via_sip_gateway(
         self, task, agent_contact, sip_number, assistant_id, assistant_name, assistant_type, db

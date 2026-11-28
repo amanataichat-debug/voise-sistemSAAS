@@ -211,8 +211,11 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
         voice_engine = assistant.voice_engine or ""
         engine = ("gpt_live" if voice_engine == VOICE_ENGINE_GPT_LIVE
                   else "gemini_live" if voice_engine == VOICE_ENGINE_GEMINI_LIVE else "eleven")
+        # Звонок WhatsApp: оператора нет — минута без надбавки за исходящий, канал в истории кошелька «whatsapp»
+        wa_line = getattr(assistant, "line_channel", None) == "whatsapp"
         meter = WalletMeter(assistant.user_id, engine, str(assistant.id), bool(getattr(assistant, "telephony_mode", False)),
-                            outbound=getattr(assistant, "sip_direction", None) == "outbound")
+                            outbound=getattr(assistant, "sip_direction", None) == "outbound" and not wa_line,
+                            channel="whatsapp" if wa_line else None)
         if not await meter.prepare():
             await fail("WALLET_EMPTY", WALLET_EMPTY_MESSAGE)
             return
@@ -236,6 +239,9 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             return
 
         telephony = bool(getattr(assistant, "telephony_mode", False))
+        # Узкая полоса — только линия оператора (8 кГц). Звонок WhatsApp идёт широкой полосой (16 кГц):
+        # распознавание получает полный звук, как в виджете.
+        narrowband = telephony and not getattr(assistant, "line_wideband", False)
         user_agent = ""
         try:
             user_agent = websocket.headers.get("user-agent", "")
@@ -279,7 +285,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             # Телефон: Scribe получает родные 8 кГц (SIP-адаптер отдаёт 24 кГц — сессия пересчитает обратно)
             return ScribeSTTClient(
                 settings.ELEVENLABS_API_KEY, language=asr_language,
-                sample_rate=8000 if (telephony and settings.ELEVEN_ASR_PHONE_8K) else LLM_INPUT_RATE,
+                sample_rate=8000 if (narrowband and settings.ELEVEN_ASR_PHONE_8K) else LLM_INPUT_RATE,
                 silence_ms=settings.ELEVEN_ASR_SILENCE_MS, label=client_id[:8], secondary_languages=asr_secondary,
             )
 
@@ -294,7 +300,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
             return YandexSTTClient(
                 settings.YANDEX_SPEECHKIT_API_KEY, settings.YANDEX_FOLDER_ID,
                 languages=[x.strip() for x in (settings.YANDEX_STT_LANGUAGES or "").split(",") if x.strip()],
-                sample_rate=8000 if telephony else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                sample_rate=8000 if narrowband else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
                 model=settings.YANDEX_STT_MODEL, label=client_id[:8],
             )
 
@@ -304,7 +310,7 @@ async def handle_eleven_websocket_connection(websocket: WebSocket, assistant_id:
                 api_key=settings.GOOGLE_SPEECH_API_KEY, project_id=settings.GOOGLE_SPEECH_PROJECT_ID,
                 location=settings.GOOGLE_SPEECH_LOCATION,
                 languages=[x.strip() for x in (settings.GOOGLE_STT_LANGUAGES or "").split(",") if x.strip()],
-                sample_rate=8000 if telephony else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
+                sample_rate=8000 if narrowband else 16000, silence_ms=settings.ELEVEN_ASR_SILENCE_MS,
                 model=settings.GOOGLE_STT_MODEL, endpointing=settings.GOOGLE_STT_ENDPOINTING,
                 denoise=settings.GOOGLE_STT_DENOISE,
                 phrases=[x.strip() for x in (settings.GOOGLE_STT_PHRASES or "").split(",") if x.strip()],

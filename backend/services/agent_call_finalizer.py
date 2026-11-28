@@ -152,10 +152,43 @@ class AgentCallFinalizer:
         return recognized
 
     @staticmethod
+    def _wa_outbound_agent_call(db: Session, call: SipCall) -> Optional[AgentCall]:
+        """
+        Исходящий звонок WhatsApp без задачи агента (проба, скрипт scripts/wa_call_account.py): звонок
+        принадлежит агенту аккаунта звонков — заводим AgentCall, чтобы PostCall разобрал разговор.
+        """
+        meta = call.call_metadata or {}
+        if meta.get("channel") != "whatsapp" or not meta.get("agent_config_id") or not call.to_number:
+            return None
+        existing = db.query(AgentCall).filter(AgentCall.call_session_id == str(call.id)).first()
+        if existing:
+            return existing
+        try:
+            agent = db.query(AgentConfig).filter(AgentConfig.id == uuid.UUID(str(meta["agent_config_id"]))).first()
+        except (ValueError, TypeError):
+            return None
+        if agent is None:
+            return None
+        contact = find_contact_by_phone(db, agent.id, call.to_number)
+        if contact is None:
+            contact = AgentContact(agent_config_id=agent.id, user_id=agent.user_id, phone=f"+{call.to_number}",
+                                   name=meta.get("contact_name") or None, status="new", source="call")
+            db.add(contact)
+            db.flush()
+        agent_call = AgentCall(
+            agent_contact_id=contact.id, agent_config_id=agent.id, user_id=agent.user_id, source_task_id=None,
+            call_session_id=str(call.id), status="calling", direction="outbound",
+            started_at=_naive_utc(call.answered_at) or datetime.utcnow(),
+        )
+        db.add(agent_call)
+        db.flush()
+        return agent_call
+
+    @staticmethod
     def _find_agent_call(db: Session, call: SipCall, number: Optional[SipPhoneNumber]) -> Tuple[Optional[AgentCall], str]:
         if call.direction == "outbound":
             if not call.task_id:
-                return None, "outbound"
+                return AgentCallFinalizer._wa_outbound_agent_call(db, call), "outbound"
             return db.query(AgentCall).filter(AgentCall.source_task_id == call.task_id).first(), "outbound"
         agent = AgentCallFinalizer.agent_for_number(db, number)
         if agent is None:

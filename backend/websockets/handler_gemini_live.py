@@ -248,7 +248,8 @@ class GeminiLiveVoiceSession:
         # для собеседника до _play_until, а не до turnComplete
         self._play_until = 0.0
         self.playback_barge_ins = 0
-        self.input_level = PhoneInputLevel() if telephony else None
+        # АРУ голоса звонящего — для тихой линии оператора; звонок WhatsApp (широкая полоса) идёт как есть
+        self.input_level = PhoneInputLevel() if (telephony and not getattr(assistant, "line_wideband", False)) else None
         # Эхо и шум линии, пока агент доигрывает ответ (07.11.2026, общий с GPT-Live echo_gate.py): на громкой связи
         # детектор речи Google слышал эхо голоса агента и обрывал его же фразу (on_voice_activity → barge-in)
         self.echo_gate = LineEchoGate(enabled=bool(telephony) and bool(getattr(settings, "LIVE_PHONE_ECHO_GATE", True)))

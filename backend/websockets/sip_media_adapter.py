@@ -50,6 +50,9 @@ ANTIALIAS_CUTOFF_HZ = 3400
 ANTIALIAS_TAPS = 63
 
 PHONE_RATE = 8000
+# Звонок WhatsApp (infra/wa-call-gateway/) идёт широкой полосой: шлюз отдаёт и ждёт PCM16 16 кГц.
+# Телефонная обработка (срез под G.711, PhoneVoice, G.711 у GPT-Live) к нему не применяется.
+WHATSAPP_RATE = 16000
 HANDLER_OUT_RATE = 24000  # хендлеры отдают 24 кГц (кроме GPT-Live на G.711, см. ниже)
 # "openai_g711" — GPT-Live в формате G.711 μ-law 8 кГц: хендлер принимает и отдаёт PCM16 8 кГц,
 # адаптер ничего не пересчитывает (кодирование μ-law делает клиент Live)
@@ -173,7 +176,7 @@ class Resampler:
         self._state = None
         self._filter = None
         if src_rate != dst_rate and numpy is not None:
-            self._filter = _LowPass(max(src_rate, dst_rate))
+            self._filter = _LowPass(max(src_rate, dst_rate), cutoff=antialias_cutoff(min(src_rate, dst_rate)))
 
     def __call__(self, pcm: bytes) -> bytes:
         if not pcm:
@@ -199,6 +202,14 @@ class Resampler:
         return numpy.clip(samples, -32768, 32767).astype(numpy.int16).tobytes()
 
 
+def antialias_cutoff(rate: int) -> int:
+    """Срез фильтра при смене частоты: телефонная полоса для 8 кГц, чуть ниже Найквиста для широкой
+    полосы (16 кГц WhatsApp → 7,4 кГц: иначе звонок WhatsApp обрезался бы до телефонных 3,4 кГц)."""
+    if rate <= PHONE_RATE:
+        return ANTIALIAS_CUTOFF_HZ
+    return int(rate * 0.46)
+
+
 class HandlerSocket:
     """
     Псевдо-WebSocket для голосового хендлера. Реальное соединение с мостом — `self.ws`.
@@ -207,21 +218,30 @@ class HandlerSocket:
     accept(), receive(), send_json(), close(), headers.
     """
 
-    def __init__(self, ws: WebSocket, provider: str, call_id: str, on_event=None) -> None:
+    # По умолчанию — линия оператора (SIP-мост, 8 кГц); звонок WhatsApp задаёт 16 кГц в конструкторе
+    line_rate = PHONE_RATE
+    channel = "phone"
+
+    def __init__(self, ws: WebSocket, provider: str, call_id: str, on_event=None,
+                 line_rate: int = PHONE_RATE, channel: str = "phone") -> None:
         self.ws = ws
         self.provider = provider
         self.call_id = call_id
         self.on_event = on_event  # необязательный колбэк(dict) для наблюдения за событиями хендлера
+        # Линия: "phone" — оператор через SIP-мост (PCM16 8 кГц), "whatsapp" — шлюз звонков WhatsApp
+        # (PCM16 16 кГц, без телефонной обработки голоса). Хендлеры и протокол одни и те же.
+        self.channel = channel
+        self.line_rate = int(line_rate or PHONE_RATE)
         self._queue: "asyncio.Queue[Optional[Dict[str, Any]]]" = asyncio.Queue()
-        self._up = Resampler(PHONE_RATE, HANDLER_IN_RATE.get(provider, 24000))
-        self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
-        self._voice = PhoneVoice()
+        self._up = Resampler(self.line_rate, HANDLER_IN_RATE.get(provider, 24000))
+        self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), self.line_rate)
+        self._voice = self._make_voice()
         in_rate = HANDLER_IN_RATE.get(provider, 24000)
         self._in_batch_bytes = int(in_rate * 2 * INBOUND_BATCH_MS.get(provider, 20) / 1000)
         self._in_buf = bytearray()
         self._in_batch_sec = INBOUND_BATCH_MS.get(provider, 20) / 1000
-        self._cushion_bytes = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
-        self._cushion_max = int(PHONE_RATE * 2 * OUTBOUND_CUSHION_MAX_MS / 1000)
+        self._cushion_bytes = int(self.line_rate * 2 * OUTBOUND_CUSHION_MS.get(provider, 0) / 1000)
+        self._cushion_max = int(self.line_rate * 2 * OUTBOUND_CUSHION_MAX_MS / 1000)
         self._hold_target = self._cushion_bytes
         self._stream_t0 = 0.0           # когда мосту ушло начало текущего потока
         self._stream_sent = 0           # сколько байт этого потока отдано мосту
@@ -263,6 +283,16 @@ class HandlerSocket:
         self._speech_started = asyncio.Event()
         self._speech_ended = asyncio.Event()
         self._mark_hangup = asyncio.Event()
+
+    def _make_voice(self):
+        """Подготовка голоса к линии: телефону — срез НЧ и ограничитель (PhoneVoice), WhatsApp — как есть."""
+        if self.line_rate != PHONE_RATE:
+            return lambda pcm: pcm
+        return PhoneVoice()
+
+    @property
+    def bytes_per_second(self) -> int:
+        return self.line_rate * 2
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
@@ -454,11 +484,11 @@ class HandlerSocket:
             since_delta = (time.time() - self._last_delta_at) if self._last_delta_at else -1
             logger.info(
                 f"[SIP-MEDIA] call {self.call_id}: barge-in #{self.barge_ins} ({mtype}, {self.provider}), "
-                f"{since_delta:.1f}s after last audio delta, {self.audio_bytes_out / 16000:.1f}s of audio sent so far"
+                f"{since_delta:.1f}s after last audio delta, {self.audio_bytes_out / self.bytes_per_second:.1f}s of audio sent so far"
             )
             await self._send_text({"type": "clear"})
-            self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), PHONE_RATE)
-            self._voice = PhoneVoice()
+            self._down = Resampler(HANDLER_OUT_RATES.get(self.provider, HANDLER_OUT_RATE), self.line_rate)
+            self._voice = self._make_voice()
             self._out_hold.clear()
             self._out_streaming = False
             self._hold_target = self._cushion_bytes
@@ -534,7 +564,7 @@ class HandlerSocket:
 
     async def _flush_hold_later(self) -> None:
         try:
-            await asyncio.sleep(self._hold_target / (PHONE_RATE * 2))
+            await asyncio.sleep(self._hold_target / (self.line_rate * 2))
             if not self._out_streaming and self._out_hold:
                 await self._flush_hold()
         except asyncio.CancelledError:
@@ -567,7 +597,7 @@ class HandlerSocket:
         if not self.in_first_at:
             return None
         span = max(0.0, (self._in_last_at or self.in_first_at) - self.in_first_at)
-        got = self.in_bytes / (PHONE_RATE * 2)
+        got = self.in_bytes / (self.line_rate * 2)
         missing = max(0.0, span - got)
         text = (f"Путь звука: от клиента дошло {got:.1f} с звука за {span:.1f} с (не дошло {missing:.1f} с, "
                 f"самый длинный обрыв {self.in_gap_max:.2f} с, обрывов длиннее {INBOUND_GAP_WARN_SEC:g} с: "
@@ -623,23 +653,23 @@ class HandlerSocket:
 
     def _stream_queued(self, now: float) -> float:
         """Оценка очереди моста, с: отдано в этом потоке минус проиграно с его начала (мост играет 1:1)."""
-        return self._stream_sent / (PHONE_RATE * 2) - (now - self._stream_t0)
+        return self._stream_sent / (self.line_rate * 2) - (now - self._stream_t0)
 
     def _on_underrun(self, now: float) -> None:
         """Очередь моста опустела посреди фразы: растим запас и добираем немного перед продолжением."""
         self.underruns += 1
         self._cushion_bytes = min(self._cushion_max,
-                                  self._cushion_bytes + int(PHONE_RATE * 2 * OUTBOUND_CUSHION_STEP_MS / 1000))
-        self._hold_target = int(PHONE_RATE * 2 * OUTBOUND_REBUFFER_MS / 1000)
+                                  self._cushion_bytes + int(self.line_rate * 2 * OUTBOUND_CUSHION_STEP_MS / 1000))
+        self._hold_target = int(self.line_rate * 2 * OUTBOUND_REBUFFER_MS / 1000)
         self._out_streaming = False
         gap = -self._stream_queued(now)
         logger.info(f"[SIP-MEDIA] call {self.call_id}: underrun #{self.underruns} ({gap:.2f}s без звука), "
-                    f"запас теперь {self._cushion_bytes / (PHONE_RATE * 2) * 1000:.0f} мс")
+                    f"запас теперь {self._cushion_bytes / (self.line_rate * 2) * 1000:.0f} мс")
         if self.underruns <= 5:
             call_log = CallLogRecorder.current()
             if call_log is not None:
                 call_log.add("sip", f"Звук агента прервался посреди фразы ({gap:.2f} с, сеть): запас увеличен до "
-                                    f"{self._cushion_bytes / (PHONE_RATE * 2) * 1000:.0f} мс")
+                                    f"{self._cushion_bytes / (self.line_rate * 2) * 1000:.0f} мс")
 
     async def _send_bytes(self, pcm: bytes) -> None:
         if self.closed:

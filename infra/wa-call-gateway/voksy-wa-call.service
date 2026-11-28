@@ -1,0 +1,31 @@
+[Unit]
+Description=Voksy AI WhatsApp call gateway (WhatsApp VoIP <-> backend WebSocket)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voksy-wa
+Group=voksy-wa
+EnvironmentFile=/etc/voksy-wa-call/gateway.env
+ExecStart=/opt/voksy-wa-call/bin/voksy-wa-call
+Restart=always
+RestartSec=2
+# Звонки кладутся аккуратно (ended уходит бэкенду) — дать на это время
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# сессии WhatsApp (SQLite) и записи звонков, ждущие отправки
+ReadWritePaths=/opt/voksy-wa-call/data /var/spool/voksy-wa-call-rec
+
+[Install]
+WantedBy=multi-user.target
