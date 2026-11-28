@@ -227,3 +227,28 @@
   .mc-hero { border-radius: 20px; padding: 16px; }
   .mc-stat b { font-size: 20px; }
 }
+
+/* отзывы клиентов мастера (шаг 2.3) — только опубликованные */
+.mc-rv { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.mc-rv-top { display: flex; align-items: baseline; gap: 8px; }
+.mc-rv-top b { font: 700 24px/1 var(--vf-font-display); font-variant-numeric: tabular-nums; }
+.mc-rv-top small { color: var(--vf-text-3); font-size: 12.5px; }
+.mc-stars { display: inline-flex; gap: 1px; font-style: normal; letter-spacing: 0; }
+.mc-stars i { font-style: normal; color: var(--vf-border-strong, #cbd5e1); font-size: 14px; line-height: 1; }
+.mc-stars i.on { color: #e8a317; }
+.mc-rv-it { border-top: 1px solid var(--vf-border); padding-top: 9px; }
+.mc-rv-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--vf-text-3); }
+.mc-rv-it p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--vf-text); white-space: pre-line; }
+
+/* шаг 3.3: зарплата за месяц */
+.mc-pay { border: 1px solid var(--vf-border); border-radius: 16px; padding: 4px 14px; background: var(--vf-surface); }
+.mc-pay > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--vf-border); font-size: 13.5px; }
+.mc-pay > div:last-child { border-bottom: 0; }
+.mc-pay > div span { min-width: 0; color: var(--vf-text-2); overflow-wrap: anywhere; }
+.mc-pay > div b { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mc-pay > div.sub span, .mc-pay > div.sub b { color: var(--vf-text-3); font-weight: 500; font-size: 12.5px; }
+.mc-pay > div.bad b { color: #b42020; }
+.mc-pay > div.good b { color: #0f7a3a; }
+.mc-pay > div.tot { border-top: 1px solid var(--vf-border); border-bottom: 0; }
+.mc-pay > div.tot span { color: var(--vf-text); font-weight: 700; }
+.mc-pay > div.tot b { font: 700 19px/1.2 var(--vf-font-display); }

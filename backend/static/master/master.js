@@ -149,7 +149,7 @@
       '<div class="mc-hero-grid">' +
       '<div class="mc-stat"><span>Записей сегодня</span><b>' + list.length + '</b><small>' + (list.length ? 'пришли ' + done + ' из ' + list.length : 'свободный день') + '</small></div>' +
       '<div class="mc-stat"><span>Заработано сегодня</span><b>' + money(e.today ? e.today.salary : 0) + '</b><small>' +
-      (e.expected_today && e.expected_today.salary ? 'ещё ≈ ' + money(e.expected_today.salary) : (e.configured ? 'по визитам «пришёл»' : 'ставку укажет администратор')) + '</small></div></div>' +
+      (e.expected_today && e.expected_today.salary ? 'ещё ≈ ' + money(e.expected_today.salary) : (e.configured ? 'по вашей ставке' : 'ставку укажет администратор')) + '</small></div></div>' +
       (list.length ? '<div class="mc-bar"><i style="width:' + pct + '%"></i></div>' : '') +
       (next ? '<button type="button" class="mc-next" data-bk="' + esc(next.id) + '">' + icon('clock') + '<span>Дальше: <b>' + esc(hm(next.start)) + '</b> · ' + esc(next.client_name || 'Клиент') +
         (next.service ? ' · ' + esc(next.service) : '') + '</span>' + icon('chevron-right') + '</button>' : '') +
@@ -343,18 +343,40 @@
     return '<div class="mc-moneys">' + card('today', 'Сегодня') + card('week', 'Эта неделя') + card('month', 'Этот месяц') + '</div>' +
       (e.expected_today && e.expected_today.visits ? '<div class="mc-note-in good">' + icon('trending-up') + '<span>Сегодня ещё ' + plural(e.expected_today.visits, 'запись', 'записи', 'записей') +
         ' — это ≈ <b>' + money(e.expected_today.salary) + '</b> к заработку.</span></div>' : '') +
-      '<div class="mc-how">' + icon('info') + '<span>' + (e.configured ? 'Считаем так: ' + (e.pay_percent ? '<b>' + e.pay_percent + '%</b> с визитов «пришёл»' : '') +
-        (e.pay_percent && e.pay_fixed ? ' + ' : '') + (e.pay_fixed ? 'оклад <b>' + money(e.pay_fixed) + '</b> в месяц' : '') + '. Визит засчитывается, когда отмечен «Пришёл».'
+      payrollBlock(e.payroll) +
+      '<div class="mc-how">' + icon('info') + '<span>' + (e.configured ? 'Ваша ставка: <b>' + esc(e.scheme_text) + '</b>. Процент — с оплаченных услуг (пока салон не работает через кассу — с визитов «пришёл»), материалы не вычитаются' +
+        (e.pay_shift ? '; выход отмечает администратор' : '') + '.'
         : 'Администратор ещё не указал вашу ставку — заработок появится, как только он её внесёт. Выручку по визитам видно уже сейчас.') + '</span></div>' +
       '<h3 class="mc-h3">За 30 дней</h3>' +
       '<div class="mc-kpis">' +
       kpi('Визитов', s.visits || 0) + kpi('Средний чек', s.avg_check ? money(s.avg_check) : '—') +
       kpi('Вернулись', (s.returning_pct || 0) + '%', s.clients ? s.returning + ' из ' + s.clients : '') +
       kpi('Неявки', (s.no_show_pct || 0) + '%', s.no_show ? plural(s.no_show, 'раз', 'раза', 'раз') : '', s.no_show_pct > 15 ? 'bad' : '') + '</div>' +
+      (s.rating ? '<h3 class="mc-h3">Отзывы клиентов</h3><div class="mc-rv"><div class="mc-rv-top"><b>' + String(s.rating.avg).replace('.', ',') +
+        '</b><span class="mc-stars">' + stars(s.rating.avg) + '</span><small>' + plural(s.rating.count, 'оценка', 'оценки', 'оценок') + '</small></div>' +
+        (s.reviews || []).map(function (r) {
+          return '<div class="mc-rv-it"><div class="mc-rv-h"><span class="mc-stars">' + stars(r.score) + '</span><span>' + esc(r.author || 'Клиент') +
+            (r.date ? ' · ' + esc(shortDate(r.date)) : '') + '</span></div><p>' + esc(r.text) + '</p></div>';
+        }).join('') + '</div>' : '') +
       ((s.top_services || []).length ? '<h3 class="mc-h3">Чаще всего делаете</h3><div class="mc-top">' + s.top_services.map(function (t) {
         return '<div class="mc-trow"><span class="n">' + esc(t.title) + '</span><span class="bar"><i style="width:' + Math.round(t.count * 100 / maxTop) + '%"></i></span><b>' + t.count + '</b></div>';
       }).join('') + '</div>' : '');
   }
+  // Зарплата за месяц (шаг 3.3): начислено, премии, штрафы с причиной, авансы, выплаты — «К выплате»
+  function payrollBlock(p) {
+    if (!p || (!p.accrued && !p.paid && !p.advances && !(p.adjustments || []).length)) return '';
+    var rows = '<div><span>Начислено' + (p.label ? ' за ' + esc(p.label) : '') + '</span><b>' + money(p.accrued) + '</b></div>';
+    if (p.shifts && p.shifts.count) rows += '<div class="sub"><span>в том числе выходы · ' + plural(p.shifts.count, 'день', 'дня', 'дней') + '</span><b>' + money(p.shifts.amount) + '</b></div>';
+    (p.adjustments || []).forEach(function (a) {
+      var minus = a.kind !== 'bonus';
+      rows += '<div class="' + (a.kind === 'fine' ? 'bad' : a.kind === 'bonus' ? 'good' : '') + '"><span>' + esc(a.title) + ' · ' + esc(shortDate(a.day)) + (a.comment ? ' · ' + esc(a.comment) : '') + '</span><b>' +
+        (a.kind === 'advance' ? '−' : minus ? '−' : '+') + money(a.amount) + '</b></div>';
+    });
+    (p.payouts || []).forEach(function (x) { rows += '<div><span>Выплачено · за ' + esc(x.period) + '</span><b>−' + money(x.amount) + '</b></div>'; });
+    return '<h3 class="mc-h3">Зарплата за месяц</h3><div class="mc-pay">' + rows +
+      '<div class="tot"><span>К выплате</span><b>' + money(p.to_pay) + '</b></div></div>';
+  }
+  function stars(v) { var n = Math.round(+v || 0), o = ''; for (var i = 1; i <= 5; i++) o += '<i class="' + (i <= n ? 'on' : '') + '">★</i>'; return o; }
   function kpi(t, v, sub, cls) { return '<div class="mc-kpi ' + (cls || '') + '"><span>' + esc(t) + '</span><b>' + esc(v) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>'; }
 
   // ── профиль ──

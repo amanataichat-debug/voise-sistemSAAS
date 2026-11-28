@@ -3,7 +3,8 @@
 
 Одна логика на страницу «Финансы», раздел аналитики и виджет главной:
 
-  выручка   = записи со статусом «пришёл» (цена услуги в записи) + заказы (кроме отменённых);
+  выручка   = оплаты визитов в кассе минус возвраты (шаг 3.1; до первой смены/чека салона — цена записей
+              «пришёл / завершён», services/cashbox.booking_revenue) + заказы (кроме отменённых);
   расходы   = разовые расходы за период + доля ежемесячных (по дням) + зарплаты мастеров
               (% с выручки его записей + доля оклада);
   прибыль   = выручка − расходы.
@@ -117,9 +118,24 @@ def _clean(data: Dict[str, Any], partial: bool = False) -> Dict[str, Any]:
     return out
 
 
+def _expense_line(e: BusinessExpense) -> str:
+    from backend.services import activity
+    return (f"{e.title} · {activity.money(e.amount)}" + (" в месяц" if e.repeat == "month" else "")
+            + (f" · {e.spent_on.strftime('%d.%m.%Y')}" if e.spent_on and e.repeat != "month" else ""))
+
+
+def _expense_state(e: BusinessExpense) -> Dict[str, Any]:
+    return {"title": e.title, "category": EXPENSE_CATEGORIES.get(e.category, e.category), "amount": e.amount,
+            "repeat": "в месяц" if e.repeat == "month" else "разовый", "spent_on": e.spent_on.isoformat() if e.spent_on else None,
+            "ends_on": e.ends_on.isoformat() if e.ends_on else None, "is_active": bool(e.is_active)}
+
+
 def create_expense(db: Session, user, data: Dict[str, Any]) -> BusinessExpense:
+    from backend.services import activity
     e = BusinessExpense(user_id=user.id, **_clean(data))
     db.add(e)
+    db.flush()
+    activity.log(db, user.id, "expense.create", "expense", _expense_line(e), object_id=e.id, user=user)
     db.commit()
     db.refresh(e)
     _invalidate(user.id)
@@ -138,9 +154,20 @@ def get_expense(db: Session, user_id, expense_id) -> BusinessExpense:
 
 
 def update_expense(db: Session, user, expense_id, data: Dict[str, Any]) -> BusinessExpense:
+    from backend.services import activity
     e = get_expense(db, user.id, expense_id)
+    before = _expense_state(e)
     for k, v in _clean(data, partial=True).items():
         setattr(e, k, v)
+    ch = activity.diff(before, _expense_state(e))
+    if ch:
+        labels = {"title": "название", "category": "категория", "amount": "сумма", "repeat": "повтор",
+                  "spent_on": "дата", "ends_on": "до", "is_active": "учитывать"}
+        def f(k, v):
+            return activity.money(v) if k == "amount" else ("—" if v in (None, "") else str(v))
+        activity.log(db, user.id, "expense.update", "expense",
+                     f"{e.title}: " + "; ".join(f"{labels[k]}: {f(k, a)} → {f(k, b)}" for k, (a, b) in ch.items()),
+                     object_id=e.id, changes=ch, user=user)
     db.commit()
     db.refresh(e)
     _invalidate(user.id)
@@ -148,7 +175,9 @@ def update_expense(db: Session, user, expense_id, data: Dict[str, Any]) -> Busin
 
 
 def delete_expense(db: Session, user, expense_id) -> None:
+    from backend.services import activity
     e = get_expense(db, user.id, expense_id)
+    activity.log(db, user.id, "expense.delete", "expense", _expense_line(e), object_id=e.id, user=user)
     db.delete(e)
     db.commit()
     _invalidate(user.id)
@@ -163,6 +192,7 @@ def set_pay(db: Session, user, resource_id, percent=None, fixed=None) -> Dict[st
     r = db.query(BookingResource).filter(BookingResource.id == rid, BookingResource.user_id == user.id).first()
     if not r:
         raise LookupError("Мастер не найден")
+    before = (r.pay_percent or 0, r.pay_fixed or 0)
     if percent is not None:
         p = float(percent or 0)
         if p < 0 or p > 100:
@@ -173,6 +203,13 @@ def set_pay(db: Session, user, resource_id, percent=None, fixed=None) -> Dict[st
         if f < 0 or f > 1e8:
             raise ValueError("Неверный оклад")
         r.pay_fixed = f or None
+    after = (r.pay_percent or 0, r.pay_fixed or 0)
+    if before != after:
+        from backend.services import activity
+        def f2(t):
+            return " + ".join(x for x in [f"{t[0]:g}% с выручки" if t[0] else "", f"оклад {activity.money(t[1])}" if t[1] else ""] if x) or "не задана"
+        activity.log(db, user.id, "payroll.update", "payroll", f"{r.name}: {f2(before)} → {f2(after)}", object_id=r.id,
+                     changes={"pay_percent": [before[0], after[0]], "pay_fixed": [before[1], after[1]]}, user=user)
     db.commit()
     _invalidate(user.id)
     return {"id": str(r.id), "name": r.name, "pay_percent": r.pay_percent or 0, "pay_fixed": r.pay_fixed or 0}
@@ -190,10 +227,9 @@ def _invalidate(user_id) -> None:
 
 def _revenue(db: Session, uid: str, s, u) -> Dict[str, float]:
     out = {"bookings": 0.0, "orders": 0.0}
-    try:
-        out["bookings"] = float(db.execute(text(
-            "SELECT COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid AND status IN ('arrived', 'completed') "
-            "AND start_at >= :s AND start_at < :u"), {"uid": uid, "s": s, "u": u}).scalar() or 0)
+    try:   # касса (шаг 3.1): по оплатам; до начала кассы — цена визитов «пришёл»
+        from backend.services import cashbox
+        out["bookings"] = cashbox.booking_revenue(db, uid, s, u)
     except Exception:
         db.rollback()
     try:
@@ -206,33 +242,22 @@ def _revenue(db: Session, uid: str, s, u) -> Dict[str, float]:
 
 
 def _payroll(db: Session, user, a: date, b: date, s, u) -> List[Dict[str, Any]]:
+    """Зарплаты мастеров за период — ведомость шага 3.3 (services/payroll.py): % с оплаченных услуг (свой по
+    категориям), выходы × ставка, доля оклада, премии − штрафы. Авансы и выплаты — не расход, а часть зарплаты."""
     try:
-        from backend.services import booking_service as bs
-        resources = bs.resources(db, user.id, active_only=False)
+        from backend.services import payroll
+        lines = payroll.sheet(db, user, a, b, check=False)["masters"]
     except Exception:
         db.rollback()
         return []
-    if not resources:
-        return []
-    by_res: Dict[str, Dict[str, float]] = {}
-    for rid, cnt, rev in db.execute(text(
-        "SELECT resource_id, count(*), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-        "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1"
-    ), {"uid": str(user.id), "s": s, "u": u}).fetchall():
-        by_res[str(rid)] = {"count": int(cnt or 0), "revenue": float(rev or 0)}
     out = []
-    for r in resources:
-        st = by_res.get(str(r.id), {"count": 0, "revenue": 0.0})
-        if not r.is_active and not st["count"]:
-            continue
-        pct = float(getattr(r, "pay_percent", None) or 0)
-        fixed = float(getattr(r, "pay_fixed", None) or 0)
-        start = (r.created_at.date() if getattr(r, "created_at", None) else a)
-        fixed_part = month_share(fixed, a, b, min(start, a), None) if fixed else 0.0
-        salary = st["revenue"] * pct / 100.0 + fixed_part
-        out.append({"id": str(r.id), "name": r.name, "role": r.role, "color": r.color, "visits": st["count"],
-                    "revenue": _r(st["revenue"]), "pay_percent": pct, "pay_fixed": fixed,
-                    "salary": _r(salary), "configured": bool(pct or fixed)})
+    for m in lines:
+        sc = m["scheme"]
+        out.append({"id": m["id"], "name": m["name"], "role": m["role"], "color": m["color"], "visits": m["visits"],
+                    "revenue": m["base"], "pay_percent": sc["percent"], "pay_fixed": sc["fixed"], "pay_shift": sc["shift"],
+                    "pay_categories": sc["categories"], "shifts": m["shifts"]["count"], "scheme_text": m["scheme_text"],
+                    "percent_amount": m["percent_amount"], "fixed_amount": m["fixed_amount"],
+                    "salary": m["accrued"], "configured": m["configured"]})
     out.sort(key=lambda m: -m["revenue"])
     return out
 
@@ -288,7 +313,18 @@ def summary(db: Session, user, period: Optional[str] = "30d", date_from: Optiona
         "expenses_count": len(expenses),
         "series": series,
         "categories_all": [{"key": k, "title": t, "icon": CATEGORY_ICONS.get(k, "circle")} for k, t in EXPENSE_CATEGORIES.items()],
+        **_basis(db, user.id),
     }
+
+
+def _basis(db: Session, user_id) -> Dict[str, Any]:
+    try:
+        from backend.services import cashbox
+        b = cashbox.revenue_basis(db, user_id)
+        return {"revenue_basis": b["basis"], "revenue_since": b["since"]}
+    except Exception:
+        db.rollback()
+        return {"revenue_basis": "visits", "revenue_since": None}
 
 
 def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str, Any]:
@@ -316,10 +352,16 @@ def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str
         return None
     s, u = rng.aware()
     off = int(BISHKEK_OFFSET.total_seconds() // 3600)
-    for q in ("SELECT date(start_at + interval '%d hour'), COALESCE(sum(price), 0) FROM bookings WHERE user_id = :uid "
-              "AND status IN ('arrived', 'completed') AND start_at >= :s AND start_at < :u GROUP BY 1",
-              "SELECT date(created_at + interval '%d hour'), COALESCE(sum(total), 0) FROM orders WHERE user_id = :uid "
-              "AND status <> 'cancelled' AND created_at >= :s AND created_at < :u GROUP BY 1"):
+    try:
+        from backend.services import cashbox
+        for day, v in cashbox.booking_revenue_by_day(db, user.id, s, u, off).items():
+            i = bi(day)
+            if i is not None:
+                rev[i] += float(v or 0)
+    except Exception:
+        db.rollback()
+    for q in ("SELECT date(created_at + interval '%d hour'), COALESCE(sum(total), 0) FROM orders WHERE user_id = :uid "
+              "AND status <> 'cancelled' AND created_at >= :s AND created_at < :u GROUP BY 1",):
         try:
             for day, v in db.execute(text(q % off), {"uid": str(user.id), "s": s, "u": u}).fetchall():
                 i = bi(day)
@@ -331,14 +373,14 @@ def _series(db: Session, user, rng, expenses: List[BusinessExpense]) -> Dict[str
     for e in expenses:
         for i, (x, y) in enumerate(buckets):
             exp[i] += _expense_in(e, x, y)
-    # Зарплата мастеров — пропорционально выручке шага (процент) + доля оклада
+    # Зарплата мастеров — всё, кроме оклада, пропорционально выручке шага; оклад — по дням
     payroll = _payroll(db, user, rng.a, rng.b, s, u)
-    pct_total = sum(m["revenue"] * m["pay_percent"] / 100.0 for m in payroll)
-    booking_rev_total = sum(m["revenue"] for m in payroll) or 0.0
+    var_total = sum(m["salary"] - m["fixed_amount"] for m in payroll)
     fixed_total = sum(m["pay_fixed"] for m in payroll)
+    rev_sum = sum(rev)
     for i, (x, y) in enumerate(buckets):
-        if booking_rev_total and pct_total:
-            exp[i] += pct_total * (rev[i] / max(sum(rev), 1e-9)) if sum(rev) else 0.0
+        if var_total and rev_sum:
+            exp[i] += var_total * (rev[i] / rev_sum)
         if fixed_total:
             exp[i] += month_share(fixed_total, x, y, rng.a, None)
     months = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]

@@ -26,7 +26,8 @@ from backend.services import booking_service as bs
 
 logger = logging.getLogger(__name__)
 
-TOOL_NAMES = {"find_booking_slots", "create_booking", "reschedule_booking", "cancel_booking", "list_bookings"}
+TOOL_NAMES = {"find_booking_slots", "create_booking", "reschedule_booking", "cancel_booking", "list_bookings",
+              "add_to_waitlist", "answer_waitlist_offer"}
 
 TOOLS = [
     {
@@ -116,7 +117,50 @@ TOOLS = [
                 "date": {"type": "string", "description": "День: YYYY-MM-DD, «сегодня», «завтра». Пусто — сегодня"},
                 "days": {"type": "integer", "description": "Сколько дней показать (по умолчанию 1)"},
                 "agent_contact_id": {"type": "string", "description": "Только записи этого клиента (ближайшие)"},
+                "unconfirmed_only": {"type": "boolean",
+                                     "description": "Только записи, которые клиент ещё не подтвердил (для звонков-подтверждений)"},
             },
+        },
+    },
+    {
+        "type": "function",
+        "name": "add_to_waitlist",
+        "description": (
+            "Лист ожидания: свободного времени под клиента нет (find_booking_slots пусто или всё не подходит) — "
+            "поставить его в очередь. Освободится подходящее время — клиенту придёт сообщение, ответить «да» можно "
+            "30 минут. Спроси, какие дни и время суток подходят, и к какому мастеру (или к любому)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service": {"type": "string", "description": "Услуга (название из прайса)"},
+                "master": {"type": "string", "description": "Мастер; пусто — любой"},
+                "date_from": {"type": "string", "description": "С какого дня, YYYY-MM-DD (пусто — сегодня)"},
+                "date_to": {"type": "string", "description": "По какой день, YYYY-MM-DD (пусто — две недели)"},
+                "time_from": {"type": "string", "description": "Не раньше, ЧЧ:ММ (например, «после 18» → 18:00)"},
+                "time_to": {"type": "string", "description": "Не позже, ЧЧ:ММ (начало визита)"},
+                "note": {"type": "string", "description": "Пожелание клиента"},
+                "agent_contact_id": {"type": "string", "description": "Клиент (в переписке — текущий)"},
+            },
+            "required": ["service"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "answer_waitlist_offer",
+        "description": (
+            "Ответ клиента на предложение из листа ожидания («освободилось время… записать вас?»): accept=true — "
+            "записать на это время сразу (итог второй раз не спрашивать), accept=false — не подходит (ждём другое), "
+            "stop=true — больше не нужно (убрать из листа)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "accept": {"type": "boolean"},
+                "stop": {"type": "boolean"},
+                "agent_contact_id": {"type": "string", "description": "Клиент (в переписке — текущий)"},
+            },
+            "required": ["accept"],
         },
     },
 ]
@@ -158,8 +202,28 @@ PROMPT_BLOCK = (
     "cancel_booking. Напоминание клиенту придёт само. "
     "Цену называй как в поле price_text (диапазон «1 500–2 500 сом» — так и говори, точную назовёт мастер). "
     "Если в ответе create_booking есть prepay — скажи клиенту сумму предоплаты и как её внести (prepay.how); "
-    "запись подтвердят после оплаты."
+    "запись подтвердят после оплаты. "
+    "Нет подходящего времени — предложи лист ожидания (add_to_waitlist): освободится — клиенту придёт сообщение. "
+    "Клиент ответил на «освободилось время» из листа ожидания — answer_waitlist_offer. "
+    "Подтверждать визиты звонком — только если так сказано в инструкции владельца или он попросил в чате: "
+    "list_bookings(unconfirmed_only=true) на нужный день → клиентам с can_call — create_agent_task (в notes — какую "
+    "запись подтвердить), остальным — сообщение. На звонке голосовой агент сам подтвердит, перенесёт или отменит "
+    "запись (client_bookings, change_booking)."
 )
+
+
+def _listed(b, names: Dict[str, str]) -> Dict[str, Any]:
+    """Запись для list_bookings + можно ли ей позвонить (номер O!) — чтобы агент сам решал, кому звонить
+    подтвердить визит, а кому написать (шаг 2.6: как у Profi — решает агент по инструкции владельца)."""
+    d = bs.booking_to_dict(b, names)
+    try:
+        from backend.models.sip_gateway import is_o_number, normalize_sip_number
+        digits = normalize_sip_number(b.client_phone or "")
+        d["can_call"] = bool(len(digits) == 12 and digits.startswith("996") and is_o_number(digits))
+    except Exception:
+        d["can_call"] = False
+    d["confirmed"] = b.status == "confirmed"
+    return d
 
 
 def _match_resource(db: Session, user_id, master: Optional[str]):
@@ -199,6 +263,14 @@ def _contact_booking(db: Session, user, args, context):
 
 
 async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any], db: Session) -> str:
+    # Журнал действий: в разборе переписки — ИИ-администратор, в чате владельца — ИИ по его команде
+    from backend.services import activity
+    who = "ИИ-администратор" if context.get("surface") == "postcall" else "ИИ по команде владельца"
+    with activity.acting("ai", who):
+        return await _execute(tool_name, args, context, db)
+
+
+async def _execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any], db: Session) -> str:
     from backend.models.user import User
     user = context.get("user")
     if user is None:
@@ -233,6 +305,8 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             return _reschedule(db, user, args, context, names)
         if tool_name == "cancel_booking":
             return _cancel(db, user, args, context, names)
+        if tool_name in ("add_to_waitlist", "answer_waitlist_offer"):
+            return _waitlist_tool(db, user, tool_name, args, context, names)
         if tool_name == "list_bookings":
             if _contact_for(context, args) and (context.get("surface") == "postcall" or args.get("agent_contact_id")):
                 rows = bs.upcoming_for_contact(db, user.id, _contact_for(context, args), limit=5)
@@ -241,7 +315,9 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
                 start, _ = bs.day_bounds(day)
                 rows = bs.list_bookings(db, user.id, start, start + timedelta(days=max(1, min(int(args.get("days") or 1), 14))),
                                         include_cancelled=False)
-            return json.dumps({"ok": True, "bookings": [bs.booking_to_dict(b, names) for b in rows]}, ensure_ascii=False)
+            if args.get("unconfirmed_only"):
+                rows = [b for b in rows if b.status == "booked" and bs._aw(b.start_at) > bs.now_utc()]
+            return json.dumps({"ok": True, "bookings": [_listed(b, names) for b in rows]}, ensure_ascii=False)
     except bs.BookingError as e:
         db.rollback()
         return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
@@ -253,6 +329,56 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
         logger.error(f"[BOOKING-TOOLS] {tool_name} failed: {e}", exc_info=True)
         return json.dumps({"ok": False, "error": "Не удалось выполнить запись, попробуйте ещё раз"}, ensure_ascii=False)
     return json.dumps({"ok": False, "error": "unknown_tool"}, ensure_ascii=False)
+
+
+def _waitlist_tool(db: Session, user, tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
+                   names: Dict[str, str]) -> str:
+    """Лист ожидания (шаг 2.4): в разборе переписки — только клиент этого обращения."""
+    from backend.services import waitlist_service as wl
+    cid = _contact_for(context, args)
+    if not cid:
+        return json.dumps({"ok": False, "error": "Не указан клиент"}, ensure_ascii=False)
+    try:
+        if tool_name == "add_to_waitlist":
+            res = _match_resource(db, user.id, args.get("master"))
+            if args.get("master") and res is None:
+                return json.dumps({"ok": False, "error": f"Мастера «{args['master']}» нет — уточни у клиента"},
+                                  ensure_ascii=False)
+            source = "bot" if context.get("surface") == "postcall" else "owner"
+            e = wl.add(db, user, service_query=args.get("service"), resource_id=res.id if res else None,
+                       date_from=args.get("date_from"), date_to=args.get("date_to"), time_from=args.get("time_from"),
+                       time_to=args.get("time_to"), contact_id=cid, note=args.get("note"), source=source)
+            db.commit()
+            return json.dumps({"ok": True, "service": e.service_title, "master": res.name if res else "любой",
+                               "period": wl._period_words(e),
+                               "next": ("Скажи клиенту одной фразой: он в листе ожидания, освободится время — придёт "
+                                        "сообщение, ответить «да» можно 30 минут.")}, ensure_ascii=False)
+        e = wl.active_offer(db, user.id, cid)
+        if e is None:
+            return json.dumps({"ok": False, "error": "Сейчас клиенту ничего не предложено из листа ожидания"},
+                              ensure_ascii=False)
+        if args.get("accept"):
+            from backend.services import booking_confirm
+            if booking_confirm.needs_client_confirmation(context) and e.offered_at is not None:
+                state, last = booking_confirm.consent_state(booking_confirm.messages_since(db, cid, e.offered_at))
+                if state != "yes":
+                    db.rollback()
+                    why = {"not_shown": "сообщение с предложением ещё не ушло клиенту — подожди его ответа",
+                           "wait": "клиент ещё не ответил на предложение",
+                           "no": "клиент не согласился (" + (last or "")[:100] + ") — вызови accept=false",
+                           }.get(state, "из ответа клиента (" + (last or "")[:100] + ") не ясно, согласен ли он — "
+                                        "коротко спроси, записывать ли")
+                    return json.dumps({"ok": False, "error": "Не записано: " + why}, ensure_ascii=False)
+            out = wl.accept(db, e.id, source="bot")
+            return json.dumps(dict(out, next="Подтверди запись одной фразой: день, время, мастер. Напоминание придёт само."),
+                              ensure_ascii=False)
+        out = wl.decline(db, e.id, stop=bool(args.get("stop")))
+        return json.dumps(dict(out, next=("Клиента убрали из листа ожидания — коротко попрощайся." if args.get("stop") else
+                                          "Ок, ждём другое время — коротко скажи, что напишешь, когда освободится.")),
+                          ensure_ascii=False)
+    except wl.WaitlistError as ex:
+        db.rollback()
+        return json.dumps({"ok": False, "error": str(ex)}, ensure_ascii=False)
 
 
 # ───────────────────────────── запись в два шага (шаг 1.6а) ─────────────────────────────
@@ -483,9 +609,9 @@ def _cancel(db: Session, user, args, context, names) -> str:
 
     def run(b, reason):
         if b.visit_id:
-            rows = bs.cancel_visit(db, user, b.visit_id, reason)
+            rows = bs.cancel_visit(db, user, b.visit_id, reason, source="bot")
         else:
-            rows = [bs.cancel_booking(db, user, b.id, reason)]
+            rows = [bs.cancel_booking(db, user, b.id, reason, source="bot")]
         return rows
 
     if two_step and args.get("confirmation_id"):

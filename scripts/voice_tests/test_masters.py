@@ -70,8 +70,8 @@ check("бухгалтер: кошелёк и тарифы по-прежнему 
       and not A(["finance"], "POST", "/api/payments/create-payment"))
 check("разделы: мастер → «Мой день»", [s["id"] for s in ts.sections(["booking_own"])] == ["booking_own"]
       and ts.home_page(["booking_own"]) == "/static/master.html")
-check("разделы: управляющий видит финансы последними",
-      [s["id"] for s in ts.sections(["finance", "booking", "booking_setup", "analytics", "inbox"])] == ["inbox", "booking", "analytics", "finance"])
+check("разделы: управляющий видит кассу, финансы и зарплату последними",
+      [s["id"] for s in ts.sections(["finance", "booking", "booking_setup", "analytics", "inbox"])] == ["inbox", "booking", "analytics", "cash", "finance", "payroll"])
 check("права: новые разделы известны и упорядочены",
       ts.clean_permissions(["finance", "booking_own", "booking"]) == ["booking", "booking_own", "finance"])
 
@@ -449,7 +449,7 @@ check("бухгалтер вносит расход", r.status_code == 200, r.te
 r = cl.get("/api/finance/summary", headers=HM)
 check("мастеру финансы закрыты", r.status_code == 403, r.status_code)
 r = cl.get("/api/users/me", headers=HB)
-check("меню бухгалтера: аналитика и финансы", [x["id"] for x in (r.json().get("staff") or {}).get("menu", [])] == ["analytics", "finance"])
+check("меню бухгалтера: аналитика, касса (смены), финансы и зарплата", [x["id"] for x in (r.json().get("staff") or {}).get("menu", [])] == ["analytics", "cash", "finance", "payroll"])
 
 # ── удаление: сотрудник → мастер без входа; мастер → фото удаляются
 r = cl.delete(f"/api/team/{meerim_member}", headers=HO)

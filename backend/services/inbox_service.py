@@ -595,6 +595,7 @@ def link_unlinked(db: Session, user, chat_id, contact_id=None, name: Optional[st
             phone=("+" + chat.phone) if chat.phone else f"wa:{chat.remote_jid.split('@')[0]}",
             name=(name or "").strip() or chat.push_name,
             status="new",
+            source="whatsapp",
             memory={},
         )
         db.add(contact)

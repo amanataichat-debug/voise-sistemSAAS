@@ -78,6 +78,76 @@ const OB_SLIDES = [
   },
 ];
 
+// Салон (Voksy Beauty Pro = Profi под салон, 27.11.2026): тот же агент и те же 5 шагов, но о записи,
+// напоминаниях и возврате клиентов, а не об обзвоне базы продаж. Выбор — в момент показа слайда:
+// salon-mode.js может понять, что это салон, уже после старта карусели.
+const OB_SLIDES_SALON = [
+  {
+    badge: 'ИИ-администратор салона',
+    title: 'Ведёт клиентов сам — в переписке и по телефону',
+    text: 'Агент отвечает клиентам салона в WhatsApp, Instagram и Telegram, записывает к мастеру, переносит и напоминает о визите. И сам звонит и пишет первым — подтвердить запись, вернуть тех, кто давно не был, заполнить пустые окна.',
+    art: () => `<div class="ob-art ob-art-intro">
+      <div class="ob-orb"><i class="fas fa-headset"></i><span class="ob-pulse"></span></div>
+      <div class="ob-chips">
+        <span class="ob-chip"><i class="fas fa-calendar"></i> Записывает</span>
+        <span class="ob-chip"><i class="fas fa-comments"></i> Отвечает</span>
+        <span class="ob-chip"><i class="fas fa-phone-volume"></i> Звонит сам</span>
+      </div>
+    </div>`,
+  },
+  {
+    badge: 'Запись',
+    title: 'Записывает по вашему журналу',
+    text: 'Агент видит свободное время мастеров, услуги и цены из вашего прайса. Перед записью присылает клиенту итог и записывает только после его «да» — запись сразу появляется в журнале.',
+    art: () => `<div class="ob-mock ob-talk">
+      <div class="ob-bubble client">Можно на маникюр в субботу?</div>
+      <div class="ob-bubble agent">В субботу у Айгуль свободно 11:00 и 15:30. Записать вас?</div>
+      <div class="ob-bubble client">Давайте 15:30</div>
+      <div class="ob-bubble agent">Записала ✅ Суббота, 15:30, маникюр у Айгуль</div>
+    </div>`,
+  },
+  {
+    badge: 'Звонки',
+    title: 'Звонит как живой администратор',
+    text: 'По вашей инструкции агент сам звонит клиентам: подтвердить завтрашнюю запись, перенести, пригласить на повтор услуги. Говорит по-русски и по-кыргызски, звонок разбирает и записывает итог в карточку клиента.',
+    art: () => `<div class="ob-mock ob-talk">
+      <div class="ob-bubble agent">Айжан, здравствуйте! Это салон «Айдана». Напоминаю: завтра в 15:30 у вас маникюр. Всё в силе?</div>
+      <div class="ob-bubble client">Да, приду</div>
+      <div class="ob-bubble agent">Отлично, ждём вас! <span class="ob-kb"><i class="fas fa-check"></i> запись подтверждена</span></div>
+    </div>`,
+  },
+  {
+    badge: 'Память',
+    title: 'Помнит каждого клиента',
+    text: 'После каждой переписки и звонка агент обновляет карточку клиента: любимый мастер, когда был последний раз, что не понравилось. Поэтому пишет и звонит к месту, а не по шаблону.',
+    art: () => `<div class="ob-mock">
+      <div class="ob-mock-head"><i class="fas fa-user"></i> Карточка клиента · автоматически</div>
+      <div class="ob-row"><span class="ob-k">Любимый мастер</span><span class="ob-v">Айгуль · маникюр</span></div>
+      <div class="ob-row"><span class="ob-k">Последний визит</span><span class="ob-v">45 дней назад</span></div>
+      <div class="ob-row"><span class="ob-k">Помнит</span><span class="ob-v">удобно после 18:00, по субботам</span></div>
+      <div class="ob-row"><span class="ob-k">Следующий шаг</span><span class="ob-v">пригласить на повтор</span></div>
+    </div>`,
+  },
+  {
+    badge: 'Управление словами',
+    title: 'Командуете обычными словами',
+    text: 'В чате с агентом вы пишете как администратору: «кто завтра не подтвердил запись — позвони им», «кого давно не было». Отчёты, записи и клиенты — в одном месте, здесь же настройки агента: инструкции, голос, номер, мессенджеры.',
+    art: () => `<div class="ob-mock ob-talk">
+      <div class="ob-bubble client">Кто завтра не подтвердил запись?</div>
+      <div class="ob-bubble agent">Трое: Айжан, Нурлан и Мээрим. Позвонить им утром?</div>
+      <div class="ob-bubble client">Да, в 10:00</div>
+      <div class="ob-bubble agent">Поставила 3 звонка на 10:00 ✅</div>
+    </div>`,
+  },
+];
+
+function obSalon(){
+  if(window.AGENT_SALON) return true;
+  try{ const b = JSON.parse(localStorage.getItem('vf_business') || 'null'); return !!(b && b.beauty && (!b.modules || b.modules.booking !== false)); }
+  catch(e){ return false; }
+}
+function obSlides(){ return obSalon() ? OB_SLIDES_SALON : OB_SLIDES; }
+
 /**
  * Запустить обучающий модуль. onDone вызывается после прохождения/пропуска —
  * туда передаётся открытие реального мастера (renderWizard через openWizardSteps).
@@ -92,9 +162,10 @@ function startOnboarding(onDone){
 }
 
 function renderOnboarding(){
-  const s = OB_SLIDES[obStep];
+  const slides = obSlides();
+  const s = slides[obStep];
 
-  const dots = OB_SLIDES.map((_, i) =>
+  const dots = slides.map((_, i) =>
     `<span class="ob-dot ${i===obStep?'on':''} ${i<obStep?'done':''}"></span>`
   ).join('');
 

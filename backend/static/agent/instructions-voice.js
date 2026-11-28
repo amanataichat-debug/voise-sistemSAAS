@@ -312,7 +312,8 @@ function elevenVoiceControlHtml(cur, ids){
   const langOpts = ELEVEN_LANGUAGES.map(l => `<option value="${l.code}" ${l.code===lang?'selected':''}>${l.title}</option>`).join('');
   const modelOpts = ELEVEN_TTS_MODELS.map(m => `<option value="${m.id}" ${m.id===model?'selected':''}>${esc(m.title)}</option>`).join('');
   const stabOpts = ELEVEN_STABILITY.map(x => `<option value="${x.v}" ${x.v===stab?'selected':''}>${esc(x.title)}</option>`).join('');
-  const engine = LIVE_ENGINE_IDS.includes(cur.eleven_voice_engine) ? cur.eleven_voice_engine : 'eleven';
+  // Новый агент (движок ещё не выбран) — Voksy Live, как у новых карточек на сервере (DEFAULT_VOICE_ENGINE)
+  const engine = LIVE_ENGINE_IDS.includes(cur.eleven_voice_engine) ? cur.eleven_voice_engine : (cur.eleven_voice_engine ? 'eleven' : 'gpt_live');
   const liveVoice = String(cur.eleven_live_voice || '').toLowerCase();
   const liveOpts = liveVoiceOptionsHtml(engine, liveVoice || 'marin');
   const isLive = LIVE_ENGINE_IDS.includes(engine);
@@ -445,6 +446,11 @@ function openInstructionsModal(section){
   document.getElementById('i-additional_instructions').value = agentData.additional_instructions || '';
   document.getElementById('i-webhook_url').value = agentData.webhook_url || '';
   document.getElementById('i-voice_additional_instructions').value = agentData.voice_additional_instructions || '';
+  const goalEl = document.getElementById('i-voice_goal');
+  if(goalEl){
+    goalEl.value = agentData.voice_goal || '';
+    if(agentData.voice_goal_default) goalEl.placeholder = 'По нише: ' + agentData.voice_goal_default;
+  }
   document.getElementById('i-inbound_first_phrase').value = agentData.inbound_first_phrase || '';
   fillCallWindow();
   const vType = agentData.assistant_type || 'eleven';
@@ -551,6 +557,7 @@ async function saveInstructions(){
     additional_instructions: document.getElementById('i-additional_instructions').value,
     webhook_url: document.getElementById('i-webhook_url').value.trim() || null,
     voice_additional_instructions: document.getElementById('i-voice_additional_instructions').value,
+    ...(document.getElementById('i-voice_goal') ? {voice_goal: document.getElementById('i-voice_goal').value.trim()} : {}),
     inbound_first_phrase: document.getElementById('i-inbound_first_phrase').value.trim() || null,
     orchestrator_model: document.getElementById('i-orchestrator_model').value,
     ...readVoiceBody(agentData.assistant_type || 'eleven', I_VOICE_IDS),

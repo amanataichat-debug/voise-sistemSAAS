@@ -129,6 +129,14 @@ from .team import TeamMember
 from .order import Order, OrderSettings
 from .salon_manager import ManagerAction, OwnerReport, PushSubscription, WebPushKey
 from .webchat import WebChatSession, AgentWebChatMessage
+# Журнал действий кабинета: кто что сделал (Voksy Beauty, шаг 1.7)
+from .activity import ActivityLog
+from .automation import NotificationQueue, AutomationRule
+from .review import SalonReview
+from .waitlist import WaitlistEntry
+# Касса салона: смены администраторов, чеки, строки оплат (Voksy Beauty, шаг 3.1)
+from .cashbox import CashShift, CashReceipt, CashPayment
+from .payroll import MasterShift, PayrollAdjustment, PayrollPayout
 
 # Доходы и расходы: аренда, зарплаты, материалы (ветка 1811-niche-admin-speed)
 from .finance import BusinessExpense

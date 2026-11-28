@@ -7,8 +7,9 @@
     заметку, перенести свою запись и записать клиента к себе (повторный визит). Отменять запись
     и переносить к другому мастеру — нет (это администратор);
   • своих клиентов: кто приходил и придёт к нему, сколько раз, что делал, заметки визитов;
-  • заработок: % с выручки визитов «пришёл» + доля оклада (booking_resources.pay_percent / pay_fixed —
-    те же цифры, что у владельца в «Финансах»), сегодня / неделя / месяц и «ещё ожидается сегодня»;
+  • заработок — тот же расчёт, что в ведомости (шаг 3.3, services/payroll.py): % с оплаченных услуг (свой по
+    категориям), выходы × ставка, доля оклада; сегодня / неделя / месяц, «ещё ожидается сегодня» и за месяц —
+    премии, штрафы, авансы, выплачено, к выплате;
   • статистику за 30 дней: визиты, неявки, средний чек, вернувшиеся клиенты, частые услуги;
   • новое: записи к нему и отмены за 7 дней (лента; непрочитанное считает страница).
 Телефоны клиентов мастер видит, только если владелец включил это в правилах записи
@@ -21,7 +22,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -66,37 +67,32 @@ def booking_view(b: Booking, show_phone: bool) -> Dict[str, Any]:
 
 # ───────────────────────────── заработок ─────────────────────────────
 
-def _sum_arrived(db: Session, rid, a: datetime, b: datetime) -> Tuple[int, float]:
-    row = db.execute(text(
-        "SELECT count(*), COALESCE(sum(price), 0) FROM bookings WHERE resource_id = :r AND status IN ('arrived', 'completed') "
-        "AND start_at >= :a AND start_at < :b"), {"r": str(rid), "a": a, "b": b}).first()
-    return int(row[0] or 0), float(row[1] or 0)
-
-
-def earnings(db: Session, r: BookingResource, today: Optional[date] = None) -> Dict[str, Any]:
-    """Сегодня / неделя (с понедельника) / месяц (с 1-го): визиты, выручка, заработок мастера."""
-    from backend.services.finance_service import month_share
+def earnings(db: Session, r: BookingResource, today: Optional[date] = None, owner=None) -> Dict[str, Any]:
+    """Сегодня / неделя (с понедельника) / месяц (с 1-го): визиты, база, заработок — тот же расчёт, что в ведомости
+    (шаг 3.3, services/payroll.py: % с оплаченных услуг и свой по категориям + выходы × ставка + доля оклада);
+    «месяц» ещё и с премиями, штрафами, авансами и выплатами — «к выплате»."""
+    from backend.models.user import User
+    from backend.services import payroll
     today = today or bs.to_local(bs.now_utc()).date()
-    pct = float(r.pay_percent or 0)
-    fixed = float(r.pay_fixed or 0)
-    started = bs.to_local(_aware(r.created_at)).date() if r.created_at else today
+    if owner is None:
+        owner = db.query(User).filter(User.id == r.user_id).first()
+    sc = payroll.scheme_of(r)
     periods = {"today": today, "week": today - timedelta(days=today.weekday()), "month": today.replace(day=1)}
-    out: Dict[str, Any] = {"pay_percent": pct, "pay_fixed": fixed, "configured": bool(pct or fixed)}
-    end = bs.day_bounds(today)[1]
+    out: Dict[str, Any] = {"pay_percent": sc["percent"], "pay_fixed": sc["fixed"], "pay_shift": sc["shift"],
+                           "pay_categories": sc["categories"], "scheme_text": payroll.scheme_text(sc),
+                           "configured": payroll.configured(sc)}
     for key, first in periods.items():
-        cnt, rev = _sum_arrived(db, r.id, bs.day_bounds(first)[0], end)
-        fixed_part = month_share(fixed, first, today, min(started, first), None) if fixed else 0.0
-        out[key] = {"visits": cnt, "revenue": round(rev, 2),
-                    "salary": round(rev * pct / 100.0 + fixed_part, 2)}
-    # ещё ожидается сегодня: записи, которые не отмечены (кроме неявок и отмен)
+        out[key] = payroll.earned(db, owner, r, first, today)
+    out["payroll"] = payroll.master_month(db, owner, r, today)
+    # ещё ожидается сегодня: записи, которые не отмечены (кроме неявок и отмен), по проценту их категорий
     a, b = bs.day_bounds(today)
-    row = db.execute(text(
-        "SELECT count(*), COALESCE(sum(price), 0) FROM bookings WHERE resource_id = :r "
-        "AND status IN ('booked', 'confirmed') AND start_at >= :a AND start_at < :b"),
-        {"r": str(r.id), "a": a, "b": b}).first()
-    exp_rev = float(row[1] or 0)
-    out["expected_today"] = {"visits": int(row[0] or 0), "revenue": round(exp_rev, 2),
-                             "salary": round(exp_rev * pct / 100.0, 2)}
+    rows = db.execute(text(
+        "SELECT b.price, e.collection FROM bookings b LEFT JOIN agent_knowledge_entries e ON e.id = b.service_entry_id "
+        "WHERE b.resource_id = :r AND b.status IN ('booked', 'confirmed') AND b.start_at >= :a AND b.start_at < :b"),
+        {"r": str(r.id), "a": a, "b": b}).fetchall()
+    exp_rev = sum(float(p or 0) for p, _c in rows)
+    exp_sal = sum(float(p or 0) * payroll.pct_for(sc, c) / 100.0 for p, c in rows)
+    out["expected_today"] = {"visits": len(rows), "revenue": round(exp_rev, 2), "salary": round(exp_sal, 2)}
     return out
 
 
@@ -143,7 +139,21 @@ def stats(db: Session, r: BookingResource, days: int = STATS_DAYS) -> Dict[str, 
         "clients": clients, "returning": returning,
         "returning_pct": round(returning * 100.0 / clients) if clients else 0,
         "top_services": [{"title": t, "count": int(n)} for t, n in top],
+        **_master_reviews(db, r),
     }
+
+
+def _master_reviews(db: Session, r: BookingResource) -> Dict[str, Any]:
+    """Рейтинг мастера и последние отзывы — только опубликованные (решает владелец, шаг 2.3)."""
+    try:
+        from backend.services import reviews_service
+        rt = reviews_service.master_ratings(db, r.user_id).get(str(r.id))
+        if not rt:
+            return {"rating": None, "reviews": []}
+        return {"rating": rt, "reviews": reviews_service.public_list(db, r.user_id, master_id=r.id, limit=3)["items"]}
+    except Exception:
+        db.rollback()
+        return {"rating": None, "reviews": []}
 
 
 # ───────────────────────────── лента «новое» ─────────────────────────────
@@ -249,7 +259,7 @@ def overview(db: Session, owner, r: BookingResource, day=None, days: int = 7) ->
         "show_phones": show_phone,
         "bookings": [booking_view(x, show_phone) for x in rows],
         "services": services,
-        "earnings": earnings(db, r),
+        "earnings": earnings(db, r, owner=owner),
         "stats": stats(db, r),
         "feed": feed(db, r, show_phone),
     }

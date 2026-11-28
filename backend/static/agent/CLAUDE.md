@@ -10,7 +10,7 @@ OpenAI-ассистентов, закрытой редиректом).
 В том же контроле — «Модель голоса»: ElevenLabs или OpenAI GPT-Live (`eleven_voice_engine` =
 `eleven | gpt_live`, голос GPT-Live — `eleven_live_voice`, список `LIVE_VOICES` — зеркало
 `backend/websockets/live_client.py`; переключение прячет контролы ElevenLabs — `voiceEngineChanged`).
-Тип агента при этом остаётся `eleven`, меняется только движок карточки голоса.
+Тип агента при этом остаётся `eleven`, меняется только движок карточки голоса. С 28.11.2026 НОВЫЙ агент по умолчанию — Voksy Live (`gpt_live`, `DEFAULT_VOICE_ENGINE` в `models/eleven_assistant.py`; в мастере плитка Voksy Live выбрана сразу), у существующих движок не меняется.
 Старые типы (`gemini | openai | cartesia | yandex | cascade | fish`) остаются у уже созданных агентов:
 их контролы голоса сохранены, в настройках показывается предупреждение.
 

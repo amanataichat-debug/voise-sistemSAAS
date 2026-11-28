@@ -307,12 +307,17 @@ def repeat_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set, 
     return out
 
 
-def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set) -> List[Dict[str, Any]]:
+def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: set, *, day: Optional[date] = None,
+                         resource=None, min_free: int = FILL_GAPS_MIN_FREE,
+                         limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Давние клиенты мастеров, у которых в день day (по умолчанию завтра) свободно min_free+ часов.
+    resource — только этот мастер (кнопка «Предложить клиентам» на главной салона)."""
     from backend.models.agent_contact import AgentContact
-    limit = cfg["fill_gaps"]["per_day"]
-    day = now_local().date() + timedelta(days=1)
+    limit = limit or cfg["fill_gaps"]["per_day"]
+    day = day or (now_local().date() + timedelta(days=1))
+    per_master_max = limit if resource is not None else 2
     out: List[Dict[str, Any]] = []
-    for r in bs.resources(db, user.id):
+    for r in ([resource] if resource is not None else bs.resources(db, user.id)):
         if not bs.bookable_online(r):
             continue
         try:
@@ -321,7 +326,7 @@ def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: se
             continue
         starts = (free[0]["slots"] if free else [])
         hours = len({s["time"][:2] for s in starts})
-        if hours < FILL_GAPS_MIN_FREE:
+        if hours < min_free:
             continue
         rows = db.execute(text("""
             SELECT b.contact_id, max(b.start_at) AS last_at, count(*) AS visits,
@@ -347,14 +352,16 @@ def fill_gaps_candidates(db: Session, user, agent, cfg: Dict[str, Any], skip: se
             slots = _slots(db, user, service, r, day, only_day=True)
             if not slots:
                 continue
+            when_word = "сегодня" if day == now_local().date() else "завтра" if day == now_local().date() + timedelta(days=1) \
+                else day.strftime("%d.%m")
             out.append({"contact": contact, "scenario": "fill_gaps", "kind": kind, "payload": {
-                "reason": f"у мастера {r.name} завтра свободно {hours} ч, клиент был у него {_times(int(visits))}",
+                "reason": f"у мастера {r.name} {when_word} свободно {hours} ч, клиент был у него {_times(int(visits))}",
                 "day": day.isoformat(), "service": service.title if service else None,
                 "service_id": str(service.id) if service else None, "master": r.name, "resource_id": str(r.id),
                 "slots": slots}})
             skip.add(str(cid))
             per_master += 1
-            if per_master >= 2 or len(out) >= limit:
+            if per_master >= per_master_max or len(out) >= limit:
                 break
         if len(out) >= limit:
             break
@@ -443,8 +450,8 @@ def list_actions(db: Session, user_id, statuses: Optional[List[str]] = None, day
     return [action_to_dict(r, contacts.get(r.contact_id)) for r in rows]
 
 
-def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool) -> int:
-    """Одобрить / отклонить предложения владельца (ids=None — все, что ждут)."""
+def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool, user=None) -> int:
+    """Одобрить / отклонить предложения владельца (ids=None — все, что ждут). user — для журнала действий."""
     params: Dict[str, Any] = {"uid": str(user_id), "st": "approved" if approve else "rejected"}
     sql = "UPDATE manager_actions SET status = :st, decided_at = now() WHERE user_id = :uid AND status = 'proposed'"
     if ids is not None:
@@ -458,9 +465,18 @@ def decide(db: Session, user_id, ids: Optional[List[str]], approve: bool) -> int
             return 0
         sql += " AND id = ANY(CAST(:ids AS uuid[]))"
         params["ids"] = clean
-    n = db.execute(text(sql), params).rowcount
+    rows = db.execute(text(sql + " RETURNING id, contact_id, scenario"), params).fetchall()
+    if rows:
+        from backend.services import activity
+        from backend.models.agent_contact import AgentContact
+        cids = [r[1] for r in rows if r[1]]
+        names = {c.id: c.name for c in db.query(AgentContact).filter(AgentContact.id.in_(cids)).all()} if cids else {}
+        who = [f"{names.get(r[1]) or 'клиент'} ({SCENARIOS.get(r[2], r[2]).lower()})" for r in rows[:6]]
+        activity.log(db, user_id, "manager.approve" if approve else "manager.reject", "manager",
+                     f"{len(rows)} {_plural(len(rows), 'предложение', 'предложения', 'предложений')}: " + ", ".join(who)
+                     + (" …" if len(rows) > 6 else ""), meta={"ids": [str(r[0]) for r in rows]}, user=user)
     db.commit()
-    return int(n or 0)
+    return len(rows)
 
 
 # ───────────────────────────── исполнение ─────────────────────────────
@@ -618,63 +634,9 @@ def review_text(b, resource_name: Optional[str]) -> str:
 
 
 def save_review(db: Session, user, contact_id, score, comment: Optional[str] = None) -> Dict[str, Any]:
-    from backend.models.booking import Booking
-    try:
-        score = int(score)
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "Оценка — число от 1 до 5"}
-    if not 1 <= score <= 5:
-        return {"ok": False, "error": "Оценка — число от 1 до 5"}
-    now = bs.now_utc()
-    q = db.query(Booking).filter(Booking.user_id == user.id, Booking.contact_id == contact_id,
-                                 Booking.status.in_(("arrived", "completed")),
-                                 Booking.start_at >= now - timedelta(days=14))
-    b = (q.filter(Booking.review_asked_at.isnot(None), Booking.review_score.is_(None))
-         .order_by(Booking.start_at.desc()).first()) or q.order_by(Booking.start_at.desc()).first()
-    if b is None:
-        return {"ok": False, "error": "Не нашёл недавний визит клиента — оценку некуда сохранить"}
-    b.review_score, b.review_text, b.review_at = score, (comment or "")[:1000] or None, now
-    db.commit()
-    names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
-    out = {"ok": True, "score": score, "service": b.service_title, "master": names.get(str(b.resource_id))}
-    if score <= REVIEW_LOW:
-        out["low"] = True
-        out["next"] = ("Оценка низкая: коротко извинись, спроси, что было не так, и скажи, что администратор "
-                       "свяжется. Не спорь и не оправдывайся. Владельцу уже сообщили.")
-        try:
-            from backend.core.spawn import spawn
-            spawn(_notify_low_review(user.id, b.id))
-        except Exception:
-            pass
-    else:
-        out["next"] = "Коротко и тепло поблагодари. Не проси ничего ещё."
-    return out
-
-
-async def _notify_low_review(owner_id, booking_id) -> None:
-    from backend.db.session import SessionLocal
-    from backend.models.booking import Booking
-    from backend.services import owner_notifications, push_service
-    db = SessionLocal()
-    try:
-        b = db.query(Booking).filter(Booking.id == booking_id).first()
-        agent = bs._first_agent(db, owner_id)
-        if b is None:
-            return
-        names = {str(r.id): r.name for r in bs.resources(db, owner_id, active_only=False)}
-        msg = (f"⚠️ Низкая оценка визита: {b.review_score} из 5 — {b.client_name or 'клиент'}"
-               + (f", «{b.service_title}»" if b.service_title else "")
-               + (f", мастер {names.get(str(b.resource_id))}" if b.resource_id else "")
-               + (f"\nКомментарий: {b.review_text}" if b.review_text else "")
-               + "\nСвяжитесь с клиентом, пока он не ушёл к другим.")
-        if agent is not None:
-            await owner_notifications._send(agent, db, msg)
-        push_service.send_to_user_sync(db, owner_id, f"Оценка {b.review_score} из 5", msg.split("\n")[0][2:],
-                                       "/static/inbox.html", tag="review")
-    except Exception as e:
-        logger.warning(f"[MANAGER] low review notify: {e}")
-    finally:
-        db.close()
+    """Оценка визита из переписки → отзыв (шаг 2.3: reviews_service — публикация 4–5, проверка 1–3, владельцу)."""
+    from backend.services import reviews_service
+    return reviews_service.save_from_chat(db, user, contact_id, score, comment)
 
 
 def review_hint(db: Session, user_id, contact_id) -> str:

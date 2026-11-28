@@ -26,8 +26,8 @@ from backend.services import booking_service as bs
 logger = logging.getLogger(__name__)
 
 TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio",
-              "get_salon_report", "save_review"}
-OWNER_TOOL_NAMES = {"get_salon_report"}      # только чат владельца: клиенту в переписке не даётся
+              "get_salon_report", "save_review", "get_cash_report"}
+OWNER_TOOL_NAMES = {"get_salon_report", "get_cash_report"}   # только чат владельца: клиенту в переписке не даётся
 LAPSED_DAYS = 45                             # «давно не приходил» по умолчанию
 MAX_PORTFOLIO_SEND = 4
 MAX_SERVICES_OUT = 40
@@ -147,6 +147,21 @@ OWNER_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "name": "get_cash_report",
+        "description": (
+            "Касса и долги салона для владельца: выручка за день по способам оплаты (наличные, карта, QR, перевод), "
+            "возвраты, смены администраторов и расхождения, кто не пришёл; кто из клиентов должен и сколько (визиты, "
+            "оплаченные не полностью). Для «кто должен», «сколько сегодня в кассе», «какие долги», «итог дня»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "day": {"type": "string", "description": "today, yesterday или дата ГГГГ-ММ-ДД (по умолчанию today)"},
+            },
+        },
+    },
 ]
 
 
@@ -225,7 +240,7 @@ def get_services(db: Session, user, query: Optional[str] = None, category: Optio
 
 # ───────────────────────────── мастера ─────────────────────────────
 
-def _staff_dict(r, services: Dict[str, Any], detailed: bool) -> Dict[str, Any]:
+def _staff_dict(r, services: Dict[str, Any], detailed: bool, ratings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from backend.services.salon_media import media_items
     does = [s for sid, s in services.items() if not r.service_ids or sid in {str(x) for x in r.service_ids}]
     own = r.service_prices or {}
@@ -246,9 +261,21 @@ def _staff_dict(r, services: Dict[str, Any], detailed: bool) -> Dict[str, Any]:
     certs = [c.get("title") for c in media_items(r.certificates, "title") if c.get("title")]
     if certs:
         d["certificates"] = certs[:6]
+    rt = (ratings or {}).get(str(r.id))
+    if rt:
+        d["rating"] = f"{rt['avg']} из 5 (оценок клиентов: {rt['count']})"
     if not d["online_booking"]:
         d["note"] = "К этому мастеру записывает только администратор"
     return d
+
+
+def _ratings(db: Session, user) -> Dict[str, Any]:
+    try:
+        from backend.services import reviews_service
+        return reviews_service.master_ratings(db, user.id)
+    except Exception:
+        db.rollback()
+        return {}
 
 
 def get_staff(db: Session, user, master: Optional[str] = None, service: Optional[str] = None) -> Dict[str, Any]:
@@ -258,13 +285,14 @@ def get_staff(db: Session, user, master: Optional[str] = None, service: Optional
         r = _match_master(rows, master)
         if r is None:
             return {"ok": False, "error": f"Мастера «{master}» нет — вот кто есть: " + ", ".join(x.name for x in rows)}
-        return {"ok": True, "master": _staff_dict(r, services, True)}
+        return {"ok": True, "master": _staff_dict(r, services, True, _ratings(db, user))}
     if service:
         svc = bs.find_service(db, user.id, None, service)
         if svc is None:
             return {"ok": False, "error": "Такой услуги в прайсе нет — уточни название (get_services)"}
         rows = [r for r in rows if bs._resource_does(r, svc)]
-    return {"ok": True, "masters": [_staff_dict(r, services, False) for r in rows],
+    rts = _ratings(db, user)
+    return {"ok": True, "masters": [_staff_dict(r, services, False, rts) for r in rows],
             "note": None if rows else "Мастеров пока нет в журнале"}
 
 
@@ -278,7 +306,9 @@ def get_customer_history(db: Session, user, contact_id) -> Dict[str, Any]:
             .order_by(Booking.start_at.desc()).limit(200).all())
     names = {str(r.id): r.name for r in bs.resources(db, user.id, active_only=False)}
     if not rows:
-        return {"ok": True, "visits": 0, "note": "Клиент у нас ещё не был — это новый клиент"}
+        out0: Dict[str, Any] = {"ok": True, "visits": 0, "note": "Клиент у нас ещё не был — это новый клиент"}
+        _add_profile(db, user, contact_id, out0)
+        return out0
     visited = [b for b in rows if b.status in VISITED_STATUSES]
     now = bs.now_utc()
     upcoming = sorted([b for b in rows if b.status in ("booked", "confirmed") and bs._aw(b.start_at) >= now],
@@ -310,7 +340,29 @@ def get_customer_history(db: Session, user, contact_id) -> Dict[str, Any]:
                                "master": names.get(str(b.resource_id))}
     if out["no_shows"] >= 2:
         out["note"] = "Клиент не раз не приходил — вежливо напомни подтвердить запись накануне"
+    _add_profile(db, user, contact_id, out)
     return out
+
+
+def _add_profile(db: Session, user, contact_id, out: Dict[str, Any]) -> None:
+    """ДР и источник из карточки (шаг 2.1) — бот поздравит и не спросит ДР второй раз."""
+    from backend.models.agent_contact import AgentContact
+    from backend.services import salon_clients
+    try:
+        c = db.query(AgentContact).filter(AgentContact.id == contact_id, AgentContact.user_id == user.id).first()
+    except Exception:
+        db.rollback()
+        return
+    if c is None:
+        return
+    info = salon_clients.birthday_info(c.birthday, bs.to_local(bs.now_utc()).date())
+    if info:
+        out["birthday"] = info["text"]
+        out["birthday_in_days"] = info["in_days"]
+    else:
+        out["birthday"] = None
+    if c.source:
+        out["source"] = salon_clients.SOURCE_TITLES.get(c.source, c.source)
 
 
 # ───────────────────────────── о салоне ─────────────────────────────
@@ -346,6 +398,8 @@ def get_salon_information(db: Session, user, host: Optional[str] = None) -> Dict
         "prepay_how": cfg.get("prepay_info") or None,
         "cancel_rule": (f"Отменить или перенести — не позже чем за {cfg['cancel_hours']} ч до визита"
                         if cfg.get("cancel_hours") else None),
+        "rating": (f"{v['reviews']['avg']} из 5 (оценок клиентов: {v['reviews']['count']})"
+                   if (v.get("reviews") or {}).get("enabled") else None),
     }
     return {k: val for k, val in out.items() if val not in (None, [], "")} | {"ok": True}
 
@@ -533,6 +587,11 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
             if context.get("surface") == "postcall":
                 return _dump({"ok": False, "error": "Отчёт салона — только владельцу"})
             return _dump(get_salon_report(db, user, args.get("period"), args.get("lapsed_days")))
+        if tool_name == "get_cash_report":
+            if context.get("surface") == "postcall":
+                return _dump({"ok": False, "error": "Касса и долги — только владельцу"})
+            from backend.services import cash_debts
+            return _dump(cash_debts.owner_summary(db, user, args.get("day")))
     except Exception as e:
         db.rollback()
         logger.error(f"[SALON-AI] {tool_name} failed: {e}", exc_info=True)
@@ -561,5 +620,9 @@ PROMPT_BLOCK = (
     "Цены, услуги и мастеров бери только из get_services и get_staff, адрес и часы — из get_salon_information. "
     "Постоянному клиенту сначала загляни в get_customer_history и предложи «как в прошлый раз» или его мастера. "
     "Хочет посмотреть работы — send_staff_portfolio. Не перечисляй весь прайс: две-три услуги под его вопрос. "
-    "Клиент ответил оценкой визита (1–5) на «спасибо» — сохрани её через save_review."
+    "Клиент ответил оценкой визита (1–5) на «спасибо» — сохрани её через save_review. "
+    "Назвал свой день рождения — запиши его в карточку (update_contact_info, birthday). Если ДР ещё не известен, "
+    "после подтверждённой записи можно один раз спросить его, чтобы поздравить; не настаивай и не спрашивай снова. "
+    "Попросил не присылать поздравления и акции — отметь update_contact_info(marketing_opt_out=true) и подтверди одной "
+    "фразой; напоминания о записи он всё равно получит."
 )

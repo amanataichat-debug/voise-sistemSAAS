@@ -3,8 +3,11 @@
 Запуск в Render Shell (нужен OPENAI_API_KEY и DATABASE_URL, как у сервера):
 
     python scripts/create_live_voice.py --list                 # свои голоса в базе
-    python scripts/create_live_voice.py --preset aliya         # женский голос «Бишкек», русский + кыргызский
-    python scripts/create_live_voice.py --preset azim        # мужской голос «Бишкек»
+    python scripts/create_live_voice.py --preset all           # пересоздать Алию, Алию 2 и Азима (27.11.2026)
+    python scripts/create_live_voice.py --preset aliya         # Алия — тёплый дикторский женский, рус + кырг
+    python scripts/create_live_voice.py --preset aliya2        # Алия 2 — звонкий живой женский
+    python scripts/create_live_voice.py --preset azim          # Азим — бархатный мужской
+    python scripts/create_live_voice.py --preset aliya2 --key aliya_2   # если у «Алии 2» в базе другой key
     python scripts/create_live_voice.py --preset aliya --dry-run   # показать запрос, ничего не создавать
     python scripts/create_live_voice.py --preset aliya --voice-id voice_…   # подключить УЖЕ созданный голос (без нового)
     python scripts/create_live_voice.py --disable aliya        # убрать голос из выбора (звонки уйдут на голос по умолчанию)
@@ -31,42 +34,66 @@ API_URL = "https://api.openai.com/v1/audio/voices"
 
 # Описание — по таблице качеств OpenAI (акцент, возраст, подача, высота, тембр, текстура, громкость, темп,
 # узнаваемость). Двуязычный голос: в script_hint оба языка (совет OpenAI для bilingual voice).
+# 27.11.2026 (владелец: «голос приятный, дикторский — Алия, Алия 2, мужской Азим; смех и эмоции»): прежнее описание
+# прямо запрещало дикторскую подачу («not an announcer»). Теперь — поставленная, приятная речь радиоведущего, который
+# говорит с ОДНИМ слушателем (разговорно, не зачитывает), чёткие согласные и плотная середина, чтобы голос не тонул в
+# телефонной линии 8 кГц, без придыхания и хрипа (на линии это шум), живая улыбка и смех. Звук отдельно от поведения
+# (совет OpenAI «Describe sound and behavior separately»): краткость, цель и перебивания — в инструкциях звонка.
+# Каждый запуск создаёт НОВЫЙ голос у OpenAI; key в базе остаётся, карточки с ним сразу звонят новым голосом,
+# прежний id скрипт печатает — вернуть: --preset <key> --voice-id <прежний id>.
 _RU_KY_ACCENT = (
     "Bilingual. Speaks Russian like a native resident of Bishkek: standard Russian pronunciation, correct stress "
-    "and natural Russian intonation, no English or foreign accent. Speaks Kyrgyz like a native urban Bishkek "
-    "speaker: clear Kyrgyz vowels ө, ү, ы, natural Kyrgyz stress (usually on the last syllable) and sentence "
-    "melody, everyday colloquial city register; Russian business words inside Kyrgyz speech (заказ, тариф, "
-    "доставка) sound natural, not foreign. Keep the same speaker identity, warmth and pitch in both languages. "
-    "Sounds like a friendly, confident sales consultant talking on the phone, not an announcer or a narrator."
+    "and natural Russian intonation, no foreign accent. Speaks Kyrgyz like a native urban Bishkek speaker: clear "
+    "Kyrgyz vowels ө, ү, ы, natural Kyrgyz stress and sentence melody, everyday city register; Russian business "
+    "words inside Kyrgyz speech (заказ, доставка, тариф) sound natural, not foreign. Keeps the same speaker "
+    "identity, warmth and pitch in both languages."
+)
+_BROADCAST_PHONE = (
+    "Polished, articulate, broadcast-quality delivery, like a warm radio host talking to one listener: pleasant and "
+    "easy to listen to, yet relaxed and conversational, never reading aloud or announcing. Crisp consonants and a "
+    "clear, forward mid-range presence that stays intelligible on a phone line; no breathiness, no vocal fry. "
+    "Naturally expressive: a smile in the voice, light natural laughter and warm empathy, always the same voice."
 )
 
-_SCRIPT_RU_KY = (
-    "Здравствуйте! Да, слушаю вас. Смотрите, всё просто: вы оставляете заявку, а мы сами перезваниваем в течение "
-    "пяти минут. Стоимость — пять тысяч пятьсот сомов в месяц, доставка по Бишкеку бесплатная. А у вас сейчас "
-    "кто отвечает клиентам — вы сами? Понимаю, это много времени съедает. Давайте так: завтра в десять созвонимся "
-    "и всё покажу. Договорились, хорошего дня!\n"
-    "Саламатсызбы! Ооба, угуп жатам. Мына, баары жөнөкөй: сиз заявка калтырасыз, биз беш мүнөттүн ичинде өзүбүз "
-    "чалабыз. Баасы айына беш миң беш жүз сом, Бишкек боюнча доставка бекер. Азыр кардарларга ким жооп берет — "
-    "өзүңүзбү? Түшүнөм, бул көп убакытты алат. Анан мындай кылалы: эртең саат ондо чалып, баарын көрсөтүп берем. "
-    "Макул, сүйлөштүк, жакшы күн болсун!"
+# Короткие фразы, как на настоящем звонке: приветствие, цена цифрой, выбор из двух, подтверждение, сочувствие,
+# прощание — по-русски и по-кыргызски (бишкекский аралаш).
+_SCRIPT_F = (
+    "Алло, здравствуйте! Да, слышу вас хорошо. Ой, отличный выбор, это наш хит. Восемь штук, восемьсот девяносто "
+    "сомов. Доставка или заберёте сами? Хорошо, записала: к семи вечера привезём. Оплата наличными или картой? "
+    "Отлично! Завтра в три есть свободное время, записываю? Ой, понимаю, неприятно вышло. Сейчас всё решим. "
+    "Спасибо, хорошего вечера!\n"
+    "Саламатсызбы! Ооба, угуп жатам. Ой, жакшы тандоо, бул биздин эң популярдуу роллубуз. Сегиз даана, сегиз жүз "
+    "токсон сом. Доставка кылабызбы же өзүңүз аласызбы? Макул, жазып алдым: саат жетиге алып барабыз. Төлөм "
+    "наличныйбы же карта мененби? Сонун! Эртең саат үчтө бош убакыт бар, жазып коёюнбу? Ой, түшүнөм, жаман "
+    "болуптур. Азыр баарын чечебиз. Рахмат, жакшы кечки тамак!"
 )
+_SCRIPT_M = _SCRIPT_F.replace("Хорошо, записала:", "Хорошо, записал:")
 
 PRESETS = {
     "aliya": {
-        "title": "Алия — Бишкек (рус + кырг)",
+        "title": "Алия — тёплый дикторский (рус + кырг)",
         "gender": "f",
-        "prompt": ("An original adult feminine voice, perceived age 28–35, from Bishkek, Kyrgyzstan. Warm, clear "
-                   "mid-range pitch, lightly bright timbre, smooth natural texture, moderate vocal effort, relaxed "
-                   "conversational pace, moderately distinctive. " + _RU_KY_ACCENT),
-        "script": _SCRIPT_RU_KY,
+        "prompt": ("An original adult feminine voice, perceived age 28–35, from Bishkek, Kyrgyzstan. Warm mid-range "
+                   "pitch, rich, smooth, velvety timbre, clean texture, moderate vocal effort, medium conversational "
+                   "pace, moderately distinctive. " + _BROADCAST_PHONE + " " + _RU_KY_ACCENT),
+        "script": _SCRIPT_F,
+    },
+    "aliya2": {
+        "title": "Алия 2 — звонкий живой (рус + кырг)",
+        "gender": "f",
+        "prompt": ("An original adult feminine voice, perceived age 24–30, from Bishkek, Kyrgyzstan. Slightly higher, "
+                   "bright pitch, clear, sparkling timbre with a smooth texture, moderate vocal effort, lively "
+                   "medium-brisk pace, moderately distinctive, sounds young and energetic but grown-up and "
+                   "confident. " + _BROADCAST_PHONE + " " + _RU_KY_ACCENT),
+        "script": _SCRIPT_F,
     },
     "azim": {
-        "title": "Азим — Бишкек (рус + кырг)",
+        "title": "Азим — бархатный мужской (рус + кырг)",
         "gender": "m",
-        "prompt": ("An original adult masculine voice, perceived age 30–40, from Bishkek, Kyrgyzstan. Calm, "
-                   "confident lower-middle pitch, warm resonant timbre, clean texture with a little natural grain, "
-                   "moderate vocal effort, steady easy conversational pace, moderately distinctive. " + _RU_KY_ACCENT),
-        "script": _SCRIPT_RU_KY,
+        "prompt": ("An original adult masculine voice, perceived age 30–40, from Bishkek, Kyrgyzstan. Calm, confident "
+                   "lower-middle pitch, warm, deep, resonant velvety timbre, clean smooth texture, moderate vocal "
+                   "effort, steady medium pace, moderately distinctive. " + _BROADCAST_PHONE + " " + _RU_KY_ACCENT),
+        "script": _SCRIPT_M,
     },
 }
 
@@ -97,6 +124,9 @@ def save_voice(key: str, voice_id: str, title: str, gender: str, prompt: str, sc
         if row is None:
             row = LiveCustomVoice(key=key)
             db.add(row)
+        elif row.voice_id and row.voice_id != voice_id:
+            print(f"Прежний голос {key}: {row.voice_id} — вернуть: python scripts/create_live_voice.py "
+                  f"--preset {key} --voice-id {row.voice_id}")
         row.voice_id, row.title, row.gender = voice_id, title, gender
         row.description, row.script_hint, row.active = prompt, script, True
         db.commit()
@@ -138,7 +168,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--disable")
-    ap.add_argument("--preset", choices=sorted(PRESETS))
+    ap.add_argument("--preset", choices=sorted(PRESETS) + ["all"], help="all — пересоздать Алию, Алию 2 и Азима")
     ap.add_argument("--key")
     ap.add_argument("--title")
     ap.add_argument("--gender", choices=["m", "f"])
@@ -151,6 +181,13 @@ def main() -> None:
         return list_voices()
     if a.disable:
         return disable(a.disable.strip().lower())
+    if a.preset == "all":
+        if a.key or a.voice_id:
+            ap.error("--preset all создаёт все голоса сразу: без --key и --voice-id")
+        for name in PRESETS:
+            sys.argv = [sys.argv[0], "--preset", name] + (["--dry-run"] if a.dry_run else [])
+            main()
+        return
     p = dict(PRESETS.get(a.preset) or {})
     key = (a.key or a.preset or "").strip().lower()
     title = a.title or p.get("title")

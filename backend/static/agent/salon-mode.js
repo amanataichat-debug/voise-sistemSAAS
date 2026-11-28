@@ -133,6 +133,12 @@
     setupStatCard();
     setupManagerCard();
     if (rerender) {
+      // Карусель и мастер создания агента уже открыты в общем виде — переодеть их под салон
+      var ob = document.getElementById('onboarding-overlay');
+      if (ob && !ob.classList.contains('hidden') && typeof renderOnboarding === 'function') renderOnboarding();
+      var wz = document.getElementById('wizard-overlay');
+      if (wz && !wz.classList.contains('hidden') && typeof renderWizard === 'function' && typeof wizardStep !== 'undefined'
+          && wizardStep >= 0 && wizardStep <= 6) renderWizard();
       if (typeof window.renderAgentTabs === 'function') window.renderAgentTabs();
       if (document.getElementById('chat-welcome') && typeof renderWelcome === 'function') renderWelcome();
       if (typeof renderDocsGrid === 'function' && typeof agentData !== 'undefined' && agentData) {

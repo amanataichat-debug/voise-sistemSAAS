@@ -18,6 +18,27 @@
     ['doc_rules_and_goals', 'Правила и цели', 'Чего бот добивается и чего не обещает.', 'Цель — принять заказ или записать на столик. Скидки не обещать, сложные вопросы передавать владельцу.']
   ];
 
+  // Салон (Voksy Beauty Start / AI, 27.11.2026): примеры полей — про салон, а не про кофейню, и одна строка о том,
+  // что агент обзвона (сам пишет и звонит первым) — на Beauty Pro: владелец искал его здесь и не находил
+  function isSalon() {
+    try { var b = JSON.parse(localStorage.getItem('vf_business') || 'null'); return !!(b && b.beauty); } catch (e) { return false; }
+  }
+  var DOCS_SALON_PH = {
+    doc_who_am_i: 'Мы — салон красоты «Айдана» в Бишкеке, 7 мкр. Маникюр, педикюр, окрашивание. Работаем с 9:00 до 21:00.',
+    doc_who_we_call: 'Женщины 20–45 лет из района. Спрашивают цены и свободное время мастеров, записываются.',
+    doc_how_we_talk: 'Тепло и коротко, на «вы». Зовут Айгерим, администратор салона.',
+    doc_what_we_offer: 'Маникюр с покрытием — 1 400 сом, педикюр — 1 800 сом. При записи на оба — скидка 10%.',
+    doc_rules_and_goals: 'Цель — записать клиента к мастеру. Скидки сверх акций не обещать, жалобы передавать администратору.'
+  };
+  function docPh(d) { return (isSalon() && DOCS_SALON_PH[d[0]]) || d[3]; }
+  function proNote() {
+    if (!isSalon()) return '';
+    return '<div class="st-pro-note">' + icon('headset') + '<div><b>Агент обзвона — на тарифе Beauty Pro.</b> ' +
+      'Здесь настраивается бот: он отвечает клиентам и записывает. Агент Beauty Pro ещё и сам пишет и звонит первым — ' +
+      'подтверждает записи, возвращает тех, кто давно не был, заполняет пустые окна.</div>' +
+      '<a class="btn btn-secondary btn-sm" href="/static/dashboard.html#plans:beauty_pro">О Beauty Pro</a></div>';
+  }
+
   var SECTIONS = [
     ['s-main', 'bot', 'Основное'], ['s-instr', 'file-text', 'Инструкции'], ['s-kb', 'book-open', 'База знаний'],
     ['s-channels', 'messages-square', 'Каналы'], ['s-voicemsg', 'mic', 'Голосовые сообщения'], ['s-docs', 'receipt', 'Документы бота'], ['s-calls', 'phone', 'Входящие звонки'], ['s-notify', 'bell', 'Оповещения вам'],
@@ -88,14 +109,14 @@
   function createView() {
     root.innerHTML =
       '<div class="st-head"><div><h2>Создайте чат-бота</h2><p>Бот будет отвечать клиентам в WhatsApp, Instagram и Telegram и принимать входящие звонки. ' +
-      'Расскажите о бизнесе: это можно будет поправить в любой момент.</p></div></div>' +
+      'Расскажите о бизнесе: это можно будет поправить в любой момент.</p></div></div>' + proNote() +
       '<div class="card"><div class="card-body" style="max-width:760px">' +
       '<div class="st-grid2"><div class="field"><label class="label">Имя бота *</label><input class="input" id="c-name" placeholder="Айгерим" maxlength="80"></div>' +
       '<div class="field"><label class="label">Язык разговора по телефону</label><select class="select-native" id="c-lang"><option value="ru">Русский</option><option value="ky">Кыргызский</option></select></div></div>' +
       '<div class="field"><label class="label">Голос по телефону</label><select class="select-native" id="c-voice"><option value="">Загрузка голосов…</option></select>' +
       '<div class="hint">Переписка не зависит от голоса: он нужен только для входящих звонков.</div></div>' +
       DOCS.map(function (d) {
-        return '<div class="field"><label class="label">' + esc(d[1]) + ' *</label><textarea class="textarea" id="c-' + d[0] + '" rows="3" placeholder="' + esc(d[3]) + '"></textarea><div class="hint">' + esc(d[2]) + '</div></div>';
+        return '<div class="field"><label class="label">' + esc(d[1]) + ' *</label><textarea class="textarea" id="c-' + d[0] + '" rows="3" placeholder="' + esc(docPh(d)) + '"></textarea><div class="hint">' + esc(d[2]) + '</div></div>';
       }).join('') +
       '<button class="btn btn-primary btn-lg" id="c-go" type="button">Создать бота</button></div></div>';
 
@@ -140,7 +161,7 @@
 
   function renderPage() {
     root.innerHTML =
-      '<div class="st-head"><div><h2>Чат-бот</h2><p>Всё, что нужно боту, чтобы отвечать вашим клиентам.</p></div></div>' +
+      '<div class="st-head"><div><h2>Чат-бот</h2><p>Всё, что нужно боту, чтобы отвечать вашим клиентам.</p></div></div>' + proNote() +
       '<div class="st-bot-layout"><nav class="st-nav" aria-label="Разделы">' + SECTIONS.map(function (s) {
         return '<a href="#' + s[0] + '">' + icon(s[1]) + '<span>' + s[2] + '</span></a>';
       }).join('') + '</nav><div class="st-bot-main">' +
@@ -345,6 +366,11 @@
       '<div class="hint">Пишите так, как объясняли бы новому сотруднику: как вежливо общаться, в какой момент отправлять файлы и фото, что узнавать у клиента, когда звать вас. Чем конкретнее, тем лучше ответы.</div></div>' +
       '<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="i-save-chat" type="button">Сохранить</button><button class="btn" id="i-gen-chat" type="button">' + icon('wand-2') + '<span>Сгенерировать по описанию</span></button><button class="btn" id="i-fix-chat" type="button"><span>Добавить правку</span></button><button class="btn" id="i-tpl-chat" type="button"><span>Вставить шаблон</span></button></div>' +
 
+      '<div class="st-sub-h" style="margin-top:26px">Цель звонка</div>' +
+      '<div class="field"><textarea class="textarea" id="i-goal" rows="2" maxlength="600" placeholder="' + esc(A.voice_goal_default ? ('По нише: ' + A.voice_goal_default) : 'Например: принять заказ — что и сколько, доставка или самовывоз, адрес, время, оплата') + '">' + esc(A.voice_goal || '') + '</textarea>' +
+      '<div class="hint">К какому результату бот ведёт каждый звонок: заказ, запись, встреча, заявка. Бот отвечает коротко и каждым ответом двигает разговор к этой цели, а всё собрав — подтверждает итог одной фразой. Пусто — цель по вашей нише' + (A.voice_goal_default ? '' : ' (выберите нишу в «Настройки → Мой бизнес»)') + '.</div></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn btn-primary" id="i-save-goal" type="button">Сохранить цель</button></div>' +
+
       '<div class="st-sub-h" style="margin-top:26px">Инструкция для звонков</div>' +
       '<div class="field"><textarea class="textarea" id="i-vadd" rows="6" placeholder="Стиль общения по телефону, манера, что говорить и чего не говорить">' + esc(A.voice_additional_instructions || '') + '</textarea>' +
       '<div class="hint">Как бот звучит и ведёт себя в телефонном разговоре: темп, тон, что уточнять, как заканчивать звонок. Знания из базы бот берёт сам.</div></div>' +
@@ -403,6 +429,9 @@
     S.$('#i-save-chat').addEventListener('click', function () {
       if (!filled(S.$('#i-add').value)) return;
       saveBody({ additional_instructions: S.$('#i-add').value }, this, 'Инструкция для переписки сохранена');
+    });
+    S.$('#i-save-goal').addEventListener('click', function () {
+      saveBody({ voice_goal: S.$('#i-goal').value.trim() }, this, 'Цель звонка сохранена');
     });
     S.$('#i-save-voice').addEventListener('click', function () {
       if (!filled(S.$('#i-vadd').value)) return;
@@ -1220,7 +1249,7 @@
   }
   function greetingField() {
     return '<div class="field"><label class="label" for="g-phrase">Первая фраза бота при входящем звонке</label>' +
-      '<input class="input" id="g-phrase" maxlength="500" value="' + esc(A.inbound_first_phrase || '') + '" placeholder="Здравствуйте! Кофейня «Алатоо», чем могу помочь?">' +
+      '<input class="input" id="g-phrase" maxlength="500" value="' + esc(A.inbound_first_phrase || '') + '" placeholder="' + (isSalon() ? 'Здравствуйте! Салон «Айдана», чем могу помочь?' : 'Здравствуйте! Кофейня «Алатоо», чем могу помочь?') + '">' +
       '<div class="hint">Если оставить пустой, бот поздоровается сам.</div></div><button class="btn btn-primary btn-sm" id="g-save" type="button">Сохранить фразу</button>';
   }
   function bindGreeting() {

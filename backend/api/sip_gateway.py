@@ -590,12 +590,23 @@ async def sip_media(
             trimmed="да" if kb_stats.get("trimmed") else None,
             context_clipped=kb_stats.get("context_clipped"),
         )
+    # Цель звонка (27.11.2026): к чему агент ведёт клиента — или предупреждение, что цели нет
+    if agent_cfg is not None and not kb_error:
+        if kb_stats.get("goal"):
+            own = bool((getattr(agent_cfg, "voice_goal", None) or "").strip()) if isinstance(
+                getattr(agent_cfg, "voice_goal", None), str) else False
+            call_log.add("kb", "Цель звонка: " + ("своя (поле «Цель звонка» агента)" if own else "по нише бизнеса")
+                         + " — агент ведёт разговор к результату")
+        else:
+            call_log.add("kb", "Цели звонка нет: ни поля «Цель звонка» у агента, ни ниши бизнеса — агент не знает, к "
+                         "чему вести разговор. Заполните «Цель звонка» в инструкциях агента", level="warning")
     # Где инструкции владельца вредят звонку (места шаблона «<имя>», слишком длинный текст)
     for warning in agent_voice_context.instruction_warnings(agent_cfg):
         call_log.add("kb", warning, level="warning")
 
     # 6. Запуск браузерного хендлера через адаптер
     socket = HandlerSocket(websocket, adapter_profile, call_id, on_event=transcript.on_event)
+    socket.transcript = transcript   # голосовые функции записи: перенос/отмена — только после ответа клиента на итог
     socket.start()
     started_at = datetime.utcnow()
     handler = SIP_HANDLERS[call.assistant_type]

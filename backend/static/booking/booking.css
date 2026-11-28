@@ -627,3 +627,77 @@ body.bk-dragging, body.bk-dragging * { user-select: none; -webkit-user-select: n
 .pg-chat-st.on { background: #e8f6ee; color: #15803d; }
 .pg-chat-st.warn { background: #fdf3e2; color: #8a5100; }
 .pg-chat-st.off { background: var(--vf-surface-2, #f3f4f6); color: var(--vf-text-3, #6b7280); }
+
+/* История записи (журнал действий, Voksy Beauty 1.7) */
+.bk-hist { margin-top: 16px; border-top: 1px solid var(--vf-border); padding-top: 10px; }
+.bk-hist-body { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.bk-hrow { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed var(--vf-border); font-size: 13.5px; }
+.bk-hrow:last-of-type { border-bottom: 0; }
+.bk-hava { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--vf-surface-2, #f1f3f8); color: var(--vf-text-2); }
+.bk-hava .ic { width: 15px; height: 15px; }
+.bk-hava.k-ai, .bk-hava.k-call { background: #efeafe; color: #6d3fd8; }
+.bk-hava.k-client { background: #e8f8f0; color: #0b7a4b; }
+.bk-hava.k-staff { background: #e8eefe; color: #2a5ce8; }
+.bk-hava.k-admin { background: #fff4e5; color: #a25a00; }
+.bk-hmain { flex: 1; min-width: 0; }
+.bk-hsum { color: var(--vf-text-2); overflow-wrap: anywhere; margin-top: 2px; }
+.bk-htime { flex: 0 0 auto; color: var(--vf-text-3); font-size: 12px; text-align: right; line-height: 1.35; }
+.bk-hist .dh-link { display: inline-block; margin-top: 8px; color: var(--vf-accent, #2a5ce8); text-decoration: none; font-weight: 600; }
+
+/* ── лист ожидания (шаг 2.4) ── */
+.bk-wait-btn { position: relative; }
+.bk-wait-n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--vf-accent); color: #fff;
+  font: 700 11px/18px var(--vf-font, Inter, sans-serif); text-align: center; }
+.wl .wl-tabs { margin: 0; }
+.wl-list { display: flex; flex-direction: column; gap: 10px; }
+.wl-it { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--vf-border); border-radius: 16px; background: var(--vf-surface); }
+.wl-it.off { border-color: color-mix(in srgb, var(--vf-accent) 45%, var(--vf-border)); }
+.wl-pos { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--vf-surface-2, #f1f3f8);
+  font: 700 13px/1 var(--vf-font, Inter, sans-serif); color: var(--vf-text-2); }
+.wl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.wl-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.wl-top b { font-size: 15px; }
+.wl-top .st-badge { display: inline-flex; align-items: center; gap: 5px; height: auto; min-height: 22px; padding: 2px 9px; white-space: normal; line-height: 1.3; }
+.wl-top .st-badge .ic { width: 13px; height: 13px; flex: none; }
+.wl-what { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--vf-text-2); }
+.wl-what .ic { width: 15px; height: 15px; flex: none; color: var(--vf-text-3); }
+.wl-note { font-size: 13.5px; color: var(--vf-text-2); font-style: italic; }
+.wl-hint { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; color: var(--vf-warning, #8a5100); }
+.wl-hint .ic { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.wl-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.wl-acts .btn .ic { width: 15px; height: 15px; }
+.wl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.wl-grid .field { min-width: 0; }
+.wl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.wl-chip { height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--vf-border); background: var(--vf-surface);
+  font: 600 13px/1 var(--vf-font, Inter, sans-serif); color: var(--vf-text-2); cursor: pointer; }
+.wl-chip.on { background: var(--vf-accent-soft); border-color: var(--vf-accent); color: var(--vf-accent); }
+.wl-who { padding: 10px 12px; border-radius: 12px; background: var(--vf-surface-2, #f1f3f8); margin-bottom: 12px; font-size: 14px; }
+#wl-sugg { position: relative; }
+@media (max-width: 760px) {
+  .wl-it { padding: 12px; gap: 10px; }
+  .wl-acts .btn:not(.btn-icon) { flex: 1 1 auto; justify-content: center; }
+  .wl-grid { grid-template-columns: 1fr 1fr; }
+  .bk-wait-btn .bk-wait-n { position: absolute; top: -6px; right: -6px; }
+}
+
+/* шаг 3.3: «Кто сегодня работает» — выход мастера для ставки за выход */
+.bk-att { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--vf-border); background: var(--vf-surface); }
+.bk-att[hidden] { display: none; }
+.bk-att-t { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--vf-text-2); white-space: nowrap; }
+.bk-att-t .ic { width: 15px; height: 15px; color: var(--vf-accent); }
+.bk-att-l { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.bk-att-c { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--vf-border); background: var(--vf-surface);
+  color: var(--vf-text-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.bk-att-c .ic { width: 14px; height: 14px; }
+.bk-att-c small { font-weight: 500; color: var(--vf-text-3); font-size: 11.5px; }
+.bk-att-c.hint { border-style: dashed; border-color: #d9a441; background: var(--vf-warning-soft); color: #8a4b00; }
+.bk-att-c.on { border-color: #34a36b; background: var(--vf-success-soft); color: #0f7a3a; }
+.bk-att-c.on small { color: #0f7a3a; }
+@media (max-width: 760px) {
+  .bk-att { order: 2; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .bk-att-l { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
+  .bk-att-c { flex: none; }
+  .bk-att-l::-webkit-scrollbar { display: none; }
+  .bk-att-t { font-size: 12.5px; }
+}

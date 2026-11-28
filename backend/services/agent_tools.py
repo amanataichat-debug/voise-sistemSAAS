@@ -69,7 +69,7 @@ UPDATE_CONTACT_INFO_TOOL = {
     "type": "function",
     "name": "update_contact_info",
     "description": (
-        "Записать в карточку имя, компанию или должность клиента — как только он их назвал "
+        "Записать в карточку имя, компанию, должность или день рождения клиента — как только он их назвал "
         "(в переписке или на звонке). notes дописывается к заметкам, старые не стираются."
     ),
     "parameters": {
@@ -79,6 +79,10 @@ UPDATE_CONTACT_INFO_TOOL = {
             "name": {"type": "string"},
             "company": {"type": "string"},
             "position": {"type": "string"},
+            "birthday": {"type": "string", "description": "День рождения: ДД.ММ.ГГГГ, или ДД.ММ, если год не назван"},
+            "marketing_opt_out": {"type": "boolean",
+                                  "description": "true — клиент попросил не присылать поздравления, акции и приглашения "
+                                                 "(напоминания о записи всё равно придут); false — снова согласен"},
             "notes": {"type": "string", "description": "Свободный текст с информацией о клиенте"},
         },
         "required": ["agent_contact_id"],
@@ -3784,6 +3788,16 @@ async def fn_update_contact_info(args: dict, user_id: str, agent_config_id: str,
         if isinstance(value, str) and value.strip():
             setattr(contact, field, value.strip()[:255])
             updated_fields.append(field)
+    if isinstance(args.get("marketing_opt_out"), bool):
+        from backend.services import salon_clients
+        updated_fields += salon_clients.update_profile(contact, {"marketing_opt_out": args["marketing_opt_out"]})
+    bday = args.get("birthday")
+    if isinstance(bday, str) and bday.strip():
+        from backend.services import salon_clients
+        try:
+            updated_fields += salon_clients.update_profile(contact, {"birthday": bday})
+        except ValueError as e:
+            return {"ok": False, "error": f"birthday: {e}"}
     # Заметки только дописываются (раньше перезаписывались — стирались записи владельца).
     note = (args.get("notes") or "").strip() if isinstance(args.get("notes"), str) else ""
     if note and note not in (contact.notes or ""):

@@ -1,0 +1,143 @@
+/* Касса (Voksy Beauty, шаг 3.1): /static/cash.html. Префикс cs-. Окна оплаты и строки чеков — booking/pay.css. */
+.cs { max-width: 920px; }
+.cs-tabs { margin-bottom: 14px; }
+.cs-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--vf-success); color: #fff; font-size: 11px; font-weight: 700; }
+.cs-card { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+.cs-card h3 { font-size: 15px; margin: 0 0 10px; }
+.cs-card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.cs-card-h h3 { margin: 0; }
+.cs-card-h .py-link { margin: 0; }
+
+/* смена не открыта */
+.cs-open { text-align: left; max-width: 520px; }
+.cs-open-ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--vf-warning-soft); color: #9a4f00; margin-bottom: 10px; }
+.cs-open-ic .ic { width: 22px; height: 22px; }
+.cs-open h2 { font-size: 19px; margin: 0 0 6px; }
+.cs-open p { color: var(--vf-text-2); font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
+.cs-big { width: 100%; height: 48px; margin-top: 14px; font-size: 15px; justify-content: center; }
+
+/* открытая смена */
+.cs-shift-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
+.cs-cashbig { padding: 14px; border-radius: 14px; background: var(--vf-surface-2); border: 1px solid var(--vf-border); margin-bottom: 12px; }
+.cs-cashbig span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-cashbig b { display: block; font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+.cs-cashbig small { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cs-tile { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--vf-border); min-width: 0; }
+.cs-tile span { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-tile span .ic { width: 14px; height: 14px; }
+.cs-tile b { display: block; font-size: 16px; margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-tile.zero b { color: var(--vf-text-4, #9aa6b8); font-weight: 600; }
+.cs-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.cs-line > div { min-width: 0; }
+.cs-line span { display: block; font-size: 12px; color: var(--vf-text-3); }
+.cs-line b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.cs-line b.neg { color: #b42020; }
+.cs-acts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 8px; margin-top: 14px; }
+.cs-acts .btn { justify-content: center; height: 44px; }
+
+.cs-orow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vf-border); }
+.cs-orow:last-child { border-bottom: 0; }
+.cs-orow > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-daytotal { margin-bottom: 12px; }
+.cs-daytotal span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-daytotal b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.cs-daytotal small { color: var(--vf-text-3); font-size: 12.5px; }
+.cs-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.45; padding: 4px 4px 16px; }
+.cs-note .ic { flex: none; width: 15px; height: 15px; margin-top: 1px; }
+.cs-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--vf-text-3); font-size: 13.5px; padding: 22px 10px; line-height: 1.45; }
+.cs-empty .ic { width: 26px; height: 26px; opacity: .6; }
+.cs-more { width: 100%; margin-top: 8px; justify-content: center; }
+
+/* чеки дня */
+.cs-daynav { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.cs-daynav b { min-width: 150px; text-align: center; font-size: 15px; }
+.cs-date { width: auto; height: 34px; margin-left: auto; font-size: 13px; }
+
+/* история смен */
+.cs-slist { padding: 6px 16px; }
+.cs-srow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 12px 0;
+  border: 0; border-bottom: 1px solid var(--vf-border); background: none; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.cs-srow:last-of-type { border-bottom: 0; }
+.cs-srow .a b { display: block; font-size: 14px; }
+.cs-srow .a span, .cs-srow .b span { display: block; font-size: 12px; color: var(--vf-text-3); }
+.cs-srow .b b { font-variant-numeric: tabular-nums; }
+.cs-srow:hover .a b { color: var(--vf-accent); }
+
+/* панель смены, закрытие */
+.cs-dsum { margin-bottom: 10px; }
+.cs-dnote { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; padding: 10px; border-radius: 10px; background: var(--vf-surface-2); font-size: 13px; }
+.cs-dnote .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; color: var(--vf-text-3); }
+.cs-dh { font-size: 14px; margin: 16px 0 4px; }
+.cs-diff { min-height: 26px; margin-top: 8px; }
+.cs-diff .py-chip { font-size: 13px; padding: 5px 11px; }
+.cs-closesum { margin-top: 14px; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.5; }
+
+@media (max-width: 760px) {
+  .cs-card { padding: 14px; border-radius: 14px; }
+  .cs-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cs-cashbig b { font-size: 28px; }
+  .cs-acts { grid-template-columns: 1fr 1fr; }
+  .cs-acts .btn-primary { grid-column: 1 / -1; order: -1; height: 48px; }
+  .cs-daynav b { min-width: 0; flex: 1; }
+  .cs-date { display: none; }
+  .cs-srow { grid-template-columns: minmax(0, 1fr) auto; }
+  .cs-srow .c { grid-column: 1 / -1; }
+}
+.st-drawer-body.cs-dr { padding: 16px 20px 24px; }
+.cs-dr > .btn-primary { width: 100%; justify-content: center; height: 44px; margin-top: 12px; }
+
+/* шаг 3.2: долги, итог дня, отчёт дня */
+.cs-n.warn { background: #d97706; }
+.cs-card h3 .ic { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: var(--vf-accent); }
+.cs-drows { margin-top: 12px; border-top: 1px solid var(--vf-border); }
+.cs-drow { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 9px 0; border: 0; border-bottom: 1px solid var(--vf-border);
+  background: none; font: inherit; color: inherit; text-align: left; }
+.cs-drow:last-child { border-bottom: 0; }
+.cs-drow > span { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; color: var(--vf-text-2); }
+.cs-drow > span .ic { flex: none; width: 15px; height: 15px; color: var(--vf-text-3); }
+.cs-drow > b { font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; min-width: 0; }
+.cs-drow > b.neg { color: #b42020; }
+.cs-drow > b.warn { color: #9a4f00; font-weight: 600; }
+.cs-drow.link { cursor: pointer; }
+.cs-drow.link:hover > span { color: var(--vf-accent); }
+.cs-rep { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--vf-surface-2); }
+.cs-rep-t { flex: 1; min-width: 0; }
+.cs-rep-t b { display: block; font-size: 14px; }
+.cs-rep-t span { display: block; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.4; }
+.cs-rep-h { width: auto; flex: none; height: 38px; }
+.cs-switch { position: relative; flex: none; width: 42px; height: 24px; }
+.cs-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+.cs-switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--vf-border-strong, #cbd5e1); transition: background .15s; }
+.cs-switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.cs-switch input:checked + span { background: var(--vf-accent); }
+.cs-switch input:checked + span::after { transform: translateX(18px); }
+.cs-dsum2 { display: flex; align-items: center; gap: 16px; }
+.cs-dsum2 > div span { display: block; font-size: 12.5px; color: var(--vf-text-3); }
+.cs-dsum2 > div b { display: block; font-size: 28px; color: #b42020; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.cs-dsum2 > div small { font-size: 12.5px; color: var(--vf-text-3); }
+.cs-dsum2 p { margin: 0 0 0 auto; max-width: 360px; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.45; }
+.cs-debts { padding: 4px 16px; }
+.cs-debt { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--vf-border); }
+.cs-debt:last-child { border-bottom: 0; }
+.cs-debt-m { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cs-debt-m b { font-size: 14.5px; }
+.cs-debt-m span { font-size: 12.5px; color: var(--vf-text-2); overflow-wrap: anywhere; }
+.cs-debt-m span.muted { color: var(--vf-text-3); }
+.cs-debt-ph { font-size: 12.5px; color: var(--vf-accent); text-decoration: none; width: fit-content; }
+.cs-debt-r { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.cs-debt-r > b { font-size: 16px; color: #b42020; font-variant-numeric: tabular-nums; }
+.cs-debt-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cs-msg-h { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); margin-bottom: 8px; }
+.cs-msg-h .ic { width: 14px; height: 14px; }
+.cs-msg { padding: 12px 14px; border-radius: 14px 14px 14px 4px; background: #e8f7ee; color: #12321f; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+@media (max-width: 760px) {
+  .cs-dsum2 { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .cs-dsum2 p { margin: 0; }
+  .cs-debts { padding: 2px 14px; }
+  .cs-debt { flex-direction: column; align-items: stretch; gap: 8px; }
+  .cs-debt-r { flex-direction: row; align-items: center; justify-content: space-between; }
+  .cs-debt-acts .btn { height: 38px; }
+  .cs-rep { flex-wrap: wrap; }
+  .cs-rep-h { width: 100%; }
+}

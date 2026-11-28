@@ -23,6 +23,11 @@
                    владельца 26.11.2026: автономный агент без кредитов вставал), Beauty Start/AI — 0
                    (ИИ-переписка по кредитам отдельно), голос — всегда кошельком;
   trial          — эти лимиты действуют у салона на пробном периоде.
+
+Сроки оплаты Beauty (решение владельца 26.11.2026): 1 месяц, 3 месяца −10% (плашка «Выгодно»),
+6 месяцев −20%, год −30% — BEAUTY_PERIOD_DISCOUNTS / BEAUTY_PERIOD_BADGES. Окно оплаты показывает
+экономию в сомах сразу на вкладках сроков; цену и экономию считает сервер (_periods), окно их не
+пересчитывает. У AI Voice / Старт / Profi сроки прежние (payments.PERIOD_DISCOUNTS: 1 · 6 мес · год).
 """
 
 from __future__ import annotations
@@ -46,6 +51,12 @@ MAX_STAFF = 500
 MAX_CREDITS = 10_000_000
 MAX_FEATURES = 15
 MAX_FEATURE_LEN = 120
+
+# Сроки оплаты Beauty: месяцев → скидка, %. Порядок ключей = порядок вкладок в окне оплаты.
+BEAUTY_PERIOD_DISCOUNTS: Dict[int, int] = {1: 0, 3: 10, 6: 20, 12: 30}
+# Плашка над вкладкой срока («Выгодно» — честно: 3 месяца выгоднее помесячной оплаты, а самая
+# большая скидка остаётся у года, и это видно по цифрам рядом).
+BEAUTY_PERIOD_BADGES: Dict[int, str] = {3: "Выгодно"}
 
 # Только то, что уже работает (при каждом шаге Beauty суперадмин дописывает новое в редакторе).
 _COMMON_FEATURES = [
@@ -210,6 +221,31 @@ def ensure_schema(engine) -> None:
             if res.rowcount:
                 logger.info(f"💅 Beauty plan seeded: {d['code']} ({d['price']} KGS)")
         _upgrade_pro_credits(conn)
+        _ensure_pro_full_agent(conn)
+
+
+PRO_AGENT_MARK = "agent_mode_v"
+
+
+def _ensure_pro_full_agent(conn) -> None:
+    """Beauty Pro = уровень Profi (агент обзвона, оркестратор). 28.11.2026: на проде салон с назначенным
+    Beauty Pro видел «Агент обзвона» с замком — в строке тарифа agent_mode был не «full». Чиним один раз
+    (метка в limits), чтобы потом суперадмин мог осознанно поменять режим во вкладке «Тарифы»."""
+    import json
+    from sqlalchemy import text
+    row = conn.execute(text("SELECT id, limits FROM subscription_plans WHERE code = 'beauty_pro'")).first()
+    if row is None:
+        return
+    limits = dict(row[1]) if isinstance(row[1], dict) else {}
+    if limits.get(PRO_AGENT_MARK):
+        return
+    was = limits.get("agent_mode")
+    limits["agent_mode"] = "full"
+    limits[PRO_AGENT_MARK] = 1
+    conn.execute(text("UPDATE subscription_plans SET limits = CAST(:l AS JSONB) WHERE id = :id"),
+                 {"l": json.dumps(limits), "id": row[0]})
+    if was != "full":
+        logger.warning(f"💅 Beauty Pro: agent_mode {was!r} → 'full' (агент обзвона открыт на Beauty Pro)")
 
 
 def _upgrade_pro_credits(conn) -> None:
@@ -237,17 +273,21 @@ def _upgrade_pro_credits(conn) -> None:
 # ───────────────────────────── цены и вид тарифа ─────────────────────────────
 
 def _periods(base_price: float) -> Dict[int, Dict[str, Any]]:
-    from backend.api.payments import PERIOD_DISCOUNTS, calculate_period_price, format_som
+    """Сроки оплаты Beauty-тарифа с ценой и экономией. Окно оплаты берёт отсюда всё как есть
+    (цена на кнопке «Оплатить» = сумма платежа Finik, в т.ч. при цене, которая не делится нацело)."""
+    from backend.api.payments import calculate_period_price, format_som
     out: Dict[int, Dict[str, Any]] = {}
-    for months in PERIOD_DISCOUNTS.keys():
-        p = calculate_period_price(base_price, months)
+    for months in BEAUTY_PERIOD_DISCOUNTS.keys():
+        p = calculate_period_price(base_price, months, BEAUTY_PERIOD_DISCOUNTS)
         out[months] = {
             "months": months, "days": p["days"], "price": p["final_price"],
             "price_formatted": format_som(p["final_price"]), "discount_percent": p["discount_percent"],
+            "full_price": round(p["full_price"]),
             "savings": p["savings"],
             "savings_formatted": format_som(p["savings"]) if p["savings"] > 0 else None,
             "monthly_effective": p["monthly_effective"],
             "monthly_formatted": format_som(p["monthly_effective"]) + "/мес", "label": p["label"],
+            "badge": BEAUTY_PERIOD_BADGES.get(months),
         }
     return out
 
@@ -296,7 +336,7 @@ def beauty_plans_for(db, user) -> List[Any]:
 
 def catalog_for(db, user) -> Dict[str, Any]:
     """Ответ /api/payments/my-plans: тарифы для окна оплаты именно этого клиента."""
-    from backend.api.payments import CURRENCY_CODE, CURRENCY_LABEL, PERIOD_DISCOUNTS, get_all_plans_with_prices
+    from backend.api.payments import CURRENCY_CODE, CURRENCY_LABEL, get_all_plans_with_prices
     cur = getattr(user, "subscription_plan_rel", None)
     current_code = cur.code if cur is not None else None
     if not is_beauty_user(user):
@@ -310,7 +350,8 @@ def catalog_for(db, user) -> Dict[str, Any]:
         or next((v["code"] for v in views if v["badge"]), None) \
         or (views[0]["code"] if views else None)
     return {"product": PRODUCT_BEAUTY, "plans": {v["code"]: v for v in views}, "order": [v["code"] for v in views],
-            "default_plan": default, "current_plan_code": current_code, "discounts": PERIOD_DISCOUNTS,
+            "default_plan": default, "current_plan_code": current_code, "discounts": BEAUTY_PERIOD_DISCOUNTS,
+            "period_badges": BEAUTY_PERIOD_BADGES,
             "currency": CURRENCY_CODE, "currency_label": CURRENCY_LABEL, "agent_price": None}
 
 
@@ -557,7 +598,9 @@ def admin_overview(db) -> Dict[str, Any]:
                       "features": list(cfg.get("features") or []), "max_assistants": cfg.get("max_assistants"),
                       "subscribers": int(counts.get(row.id, 0)) if row is not None else 0})
     from backend.api.payments import PERIOD_DISCOUNTS
-    return {"beauty": rows, "voksy": voksy, "discounts": PERIOD_DISCOUNTS, "beauty_niches": list(BEAUTY_NICHES)}
+    # discounts — сроки Beauty (их тарифы правятся здесь), voksy_discounts — сроки прежних тарифов
+    return {"beauty": rows, "voksy": voksy, "discounts": BEAUTY_PERIOD_DISCOUNTS, "voksy_discounts": PERIOD_DISCOUNTS,
+            "beauty_niches": list(BEAUTY_NICHES)}
 
 
 def _audit(db, admin, action_text: str, details: Dict[str, Any], target_user_id=None) -> None:

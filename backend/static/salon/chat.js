@@ -50,7 +50,7 @@
     return fetch(C.base + path, { method: method, headers: h, cache: 'no-store', body: body ? JSON.stringify(body) : undefined })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (d) {
-          if (!r.ok) { var e = new Error(d.detail || 'Не получилось — попробуйте ещё раз'); e.status = r.status; throw e; }
+          if (!r.ok) { var e = new Error((typeof d.message === 'string' && d.message) || (typeof d.detail === 'string' && d.detail) || 'Не получилось — попробуйте ещё раз'); e.status = r.status; throw e; }
           return d;
         });
       });

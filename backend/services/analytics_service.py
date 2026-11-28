@@ -884,6 +884,16 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
                         "load_pct": _pct(st["minutes"], cap), "revenue": round(st["revenue"], 2)})
     masters.sort(key=lambda m: -m["count"])
     decided = tot["arrived"] + tot["no_show"]
+    # Касса (шаг 3.1): салон принимает оплату через кассу — выручка по оплатам (до начала кассы — по визитам)
+    basis = {"basis": "visits", "since": None}
+    try:
+        from backend.services import cashbox
+        basis = cashbox.revenue_basis(db, user.id)
+        if basis["basis"] == "payments":
+            tot["revenue"] = cashbox.booking_revenue(db, user.id, s, u)
+            tot["prev_revenue"] = cashbox.booking_revenue(db, user.id, ps, pu)
+    except Exception:
+        db.rollback()
     return {
         "series": series, "prev_visits": prev_visits,
         "total": tot["total"], "prev_total": tot["prev_total"], "arrived": tot["arrived"],
@@ -894,6 +904,7 @@ def _bookings_block(db: Session, user, rng: Range, idx: BucketIndex, pidx: Bucke
         "avg_check": round(tot["revenue"] / tot["arrived"], 2) if tot["arrived"] else None,
         "sources": sources, "services": services, "masters": masters,
         "load_pct": _pct(tot["booked_min"], capacity_total), "clients": clients, "repeat_clients": repeat,
+        "revenue_basis": basis["basis"], "revenue_since": basis["since"],
     }
 
 

@@ -9,7 +9,7 @@
  *   Услуги и цены — какие услуги делает и свои цена/длительность (топ-мастер дороже);
  *   Работы — портфолио и сертификаты (показываются на странице салона);
  *   Вход и оплата — вход мастера в свой кабинет (создать / привязать) и % / оклад (владелец, бухгалтер).
- * API: /api/booking/resources*, /api/finance/payroll/{id}. Общее — window.BookingMasters.
+ * API: /api/booking/resources*, /api/payroll/masters/{id}/scheme (оплата мастера). Общее — window.BookingMasters.
  */
 (function () {
   'use strict';
@@ -221,9 +221,10 @@
           (r.certificates || []).forEach(function (it) { if (it.id === id) it.title = inp.value; });
         });
       } else if (cur === 'l' && canMoney) {
-        var pp = S.$('#me-pct', el), pf = S.$('#me-fix', el);
+        var pp = S.$('#me-pct', el), pf = S.$('#me-fix', el), ps = S.$('#me-shift', el);
         if (pp) r.pay_percent = pp.value === '' ? 0 : +pp.value;
         if (pf) r.pay_fixed = pf.value === '' ? 0 : +pf.value;
+        if (ps) r.pay_shift = ps.value === '' ? 0 : +ps.value;
       }
     }
 
@@ -452,14 +453,19 @@
         out += '</div>';
       }
       if (canMoney) {
-        out += '<div class="me-sec"><div class="me-sec-h"><div><b>Оплата мастера</b><div class="hint">Считаем зарплату в «Финансах» и показываем мастеру его заработок: % с визитов «пришёл» плюс оклад.</div></div></div>' +
-          '<div class="st-grid2"><div class="field"><label class="label" for="me-pct">% с выручки визитов</label><input class="input" id="me-pct" type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="40" value="' + (r.pay_percent ? esc(r.pay_percent) : '') + '"></div>' +
-          '<div class="field"><label class="label" for="me-fix">Оклад в месяц, сом</label><input class="input" id="me-fix" type="number" inputmode="numeric" min="0" step="500" placeholder="0" value="' + (r.pay_fixed ? esc(r.pay_fixed) : '') + '"></div></div></div>';
+        var own = Object.keys(r.pay_categories || {});
+        out += '<div class="me-sec"><div class="me-sec-h"><div><b>Оплата мастера</b><div class="hint">% с оплаченных услуг, ставка за выход и оклад — можно сочетать. Ведомость, авансы, штрафы, премии и выплаты — в «Зарплате».</div></div>' +
+          (r.id ? '<a class="btn btn-sm" href="/static/payroll.html?master=' + esc(r.id) + '">Зарплата</a>' : '') + '</div>' +
+          '<div class="st-grid2"><div class="field"><label class="label" for="me-pct">% с услуг</label><input class="input" id="me-pct" type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="40" value="' + (r.pay_percent ? esc(r.pay_percent) : '') + '"></div>' +
+          '<div class="field"><label class="label" for="me-shift">Ставка за выход, сом</label><input class="input" id="me-shift" type="number" inputmode="numeric" min="0" step="100" placeholder="0" value="' + (r.pay_shift ? esc(r.pay_shift) : '') + '"></div>' +
+          '<div class="field"><label class="label" for="me-fix">Оклад в месяц, сом</label><input class="input" id="me-fix" type="number" inputmode="numeric" min="0" step="500" placeholder="0" value="' + (r.pay_fixed ? esc(r.pay_fixed) : '') + '"></div></div>' +
+          (own.length ? '<div class="hint">Свой процент: ' + esc(own.map(function (k) { return k + ' ' + r.pay_categories[k] + '%'; }).join(', ')) + ' — меняется в «Зарплате» → мастер → «Оплата мастера».</div>' :
+            '<div class="hint">Свой процент на отдельные категории (например, окрашивание 50%) — в «Зарплате» → мастер → «Оплата мастера».</div>') + '</div>';
       }
       return out;
     }
     function bindLogin() {
-      S.$$('#me-pct,#me-fix', el).forEach(function (x) { x.addEventListener('input', mark); });
+      S.$$('#me-pct,#me-fix,#me-shift', el).forEach(function (x) { x.addEventListener('input', mark); });
       var un = S.$('[data-unlink]', el);
       if (un) un.addEventListener('click', function () {
         S.confirm({ title: 'Отвязать вход?', message: 'Сотрудник останется, но перестанет видеть журнал этого мастера.', confirmText: 'Отвязать' }).then(function (yes) {
@@ -570,15 +576,15 @@
         certificates: (r.certificates || []).map(function (it) { return { id: it.id, title: it.title || '' }; }) };
       var btn = S.$('[data-save]', el); btn.disabled = true;
       var reqs = [S.api('/api/booking/resources/' + r.id, { method: 'PATCH', body: body })];
-      if (canMoney && (r.pay_percent !== r0.pay_percent || r.pay_fixed !== r0.pay_fixed)) {
-        reqs.push(S.api('/api/finance/payroll/' + r.id, { method: 'PATCH', body: { pay_percent: r.pay_percent || 0, pay_fixed: r.pay_fixed || 0 } }));
+      if (canMoney && (r.pay_percent !== r0.pay_percent || r.pay_fixed !== r0.pay_fixed || (r.pay_shift || 0) !== (r0.pay_shift || 0))) {
+        reqs.push(S.api('/api/payroll/masters/' + r.id + '/scheme', { method: 'PUT', body: { percent: r.pay_percent || 0, shift: r.pay_shift || 0, fixed: r.pay_fixed || 0 } }));
       }
       Promise.all(reqs).then(function (rs) {
         btn.disabled = false;
         var bad = rs.filter(function (x) { return !x.ok; })[0];
         if (bad) { S.toast(S.apiError(bad), 'error'); return; }
         var fresh = rs[0].data.resource;
-        if (canMoney) { fresh.pay_percent = r.pay_percent || 0; fresh.pay_fixed = r.pay_fixed || 0; }
+        if (canMoney) { fresh.pay_percent = r.pay_percent || 0; fresh.pay_fixed = r.pay_fixed || 0; fresh.pay_shift = r.pay_shift || 0; fresh.pay_categories = r.pay_categories || {}; }
         replace(fresh);
         r0 = fresh; dirty = false;
         S.toast('Мастер сохранён');

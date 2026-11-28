@@ -65,6 +65,8 @@ class BookingResource(Base):
     position = Column(Integer, nullable=False, default=0)
     pay_percent = Column(Float, nullable=True)                  # % мастеру с выручки его записей «пришёл»
     pay_fixed = Column(Float, nullable=True)                    # оклад в месяц, сом
+    pay_categories = Column(JSONB, nullable=True)               # шаг 3.3: {"Волосы / Окрашивание": 40} — свой % по категориям
+    pay_shift = Column(Float, nullable=True)                    # шаг 3.3: ставка за выход (отмечает администратор), сом
     # — карточка мастера (Voksy Beauty) —
     photo_id = Column(UUID(as_uuid=True), nullable=True)        # salon_media.id
     bio = Column(Text, nullable=True)                           # «о себе» для страницы салона
@@ -128,6 +130,9 @@ class Booking(Base):
     review_score = Column(Integer, nullable=True)
     review_text = Column(Text, nullable=True)
     review_at = Column(DateTime(timezone=True), nullable=True)
+    # Долг списан владельцем (шаг 3.2, services/cash_debts.py): {at, reason, by, amount} у всех услуг визита —
+    # визит больше не долг клиента и выручкой не считается
+    debt_off = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -178,6 +183,9 @@ class BookingPage(Base):
     # Страница салона /beauty/<slug> (шаг 1.5): слоган, о салоне, логотип, обложка, галерея, контакты,
     # соцсети, карта, удобства, акции, цвет — services/salon_page.py
     profile = Column(JSONB, nullable=True)
+    # Касса (шаг 3.2): {"day_report": {"on", "hour"}, "day_report_sent": "YYYY-MM-DD"} — отчёт дня владельцу
+    # (services/cash_debts.py). Отдельно от settings: «Правила записи» пересобирают settings из известных ключей
+    cash_settings = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

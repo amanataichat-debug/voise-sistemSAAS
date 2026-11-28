@@ -297,9 +297,13 @@ sent = []
 
 async def fake_send(db_, user_, contact_, message):
     sent.append(message)
-    return True
+    return True, "whatsapp", None
 
-bn.send_to_client = fake_send
+# с шага 2.2 Voksy Beauty напоминания идут через очередь отправок (notify_queue): отправку подменяем там,
+# часы отправки — круглые сутки, чтобы тест не зависел от времени запуска
+from backend.services import notify_queue as nq  # noqa: E402
+nq.SENDER = fake_send
+nq.SERVICE_WINDOW = (0, 24)
 n1 = asyncio.run(bn.run_once(now))
 n2 = asyncio.run(bn.run_once(now))
 check("напоминания уходят один раз", n1 == 3 and n2 == 0, (n1, n2))

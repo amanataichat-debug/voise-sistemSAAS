@@ -215,14 +215,37 @@ body.vf .subscription-section { margin-top: 0; }
   }
   body.vf .payment-modal-title { font-size: 18px; }
   body.vf .payment-modal-body, body.vf .subscription-expired-body { padding: 12px 16px 16px !important; overflow-y: auto; flex: 1 1 auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-  body.vf .subscription-expired-header { position: relative; padding: 18px 16px 10px !important; flex: 0 0 auto; }
+  /* «Подписка истекла» (26.11.2026): шапка занимала треть экрана, в подвале «Продлить» сжималась
+     в столбик, а «Выйти» уезжала за правый край (у неё в разметке width:100%). Теперь шапка — одна
+     строка, «Продлить» во всю ширину, под ней «Выйти» и поддержка; сумма и экономия видны сразу. */
+  body.vf .subscription-expired-header {
+    position: relative; flex: 0 0 auto; display: grid !important; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px;
+    align-items: center; text-align: left !important; padding: 20px 16px 14px !important; border-radius: 20px 20px 0 0 !important;
+  }
+  body.vf .subscription-expired-header::before { background: rgba(255, 255, 255, .55); }
+  body.vf .subscription-expired-icon { grid-row: 1 / span 2; font-size: 30px !important; line-height: 1; margin: 0 !important; }
+  body.vf .subscription-expired-title { font-size: 20px !important; line-height: 1.2; margin: 0 !important; }
+  body.vf .subscription-expired-subtitle { font-size: 13px !important; line-height: 1.35; margin: 2px 0 0 !important; }
+  body.vf .expired-notice { padding: 10px 12px !important; margin-bottom: 12px !important; }
+  body.vf .expired-notice-title { display: none !important; }
+  body.vf .expired-notice-text { font-size: 13px !important; line-height: 1.45; }
+  body.vf .expired-selected-plan { padding: 12px !important; margin-bottom: 0 !important; }
+  body.vf .expired-plan-price { font-size: 30px !important; }
+  body.vf .expired-savings-badge { margin-top: 6px !important; }
   body.vf .payment-modal-footer, body.vf .subscription-expired-footer {
-    flex: 0 0 auto; display: flex !important; flex-direction: row !important; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    flex: 0 0 auto; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
     border-top: 1px solid var(--vf-border, #e2e8f0); background: var(--vf-surface, #fff);
   }
-  body.vf .payment-modal-footer .btn, body.vf .subscription-expired-footer .btn { min-height: 48px; margin: 0 !important; }
-  body.vf .payment-modal-footer .payment-cancel-btn, body.vf .subscription-expired-footer .btn-secondary { flex: 0 0 auto; padding: 0 16px; }
-  body.vf .payment-modal-footer .payment-pay-btn, body.vf .subscription-expired-footer .btn-primary { flex: 1 1 auto; justify-content: center; font-size: 16px; }
+  body.vf .payment-modal-footer { display: flex !important; flex-direction: row !important; }
+  body.vf .subscription-expired-footer { display: grid !important; grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+  body.vf .subscription-expired-footer .renew-subscription-btn {
+    grid-column: 1 / -1; width: 100%; min-height: 50px; padding: 0 16px !important; font-size: 16px; transform: none !important;
+  }
+  body.vf .subscription-expired-footer .btn-secondary { width: auto !important; min-height: 40px; margin: 0 !important; padding: 0 14px !important; }
+  body.vf .subscription-expired-footer .contact-support { text-align: right; font-size: 12.5px; line-height: 1.3; }
+  body.vf .payment-modal-footer .btn { min-height: 48px; margin: 0 !important; }
+  body.vf .payment-modal-footer .payment-cancel-btn { flex: 0 0 auto; padding: 0 16px; }
+  body.vf .payment-modal-footer .payment-pay-btn { flex: 1 1 auto; justify-content: center; font-size: 16px; }
   body.vf .plan-tabs, body.vf .period-tabs, body.vf .expired-plan-tabs, body.vf .expired-period-tabs {
     flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; padding: 4px !important; margin-bottom: 12px !important;
   }
@@ -233,6 +256,17 @@ body.vf .subscription-section { margin-top: 0; }
   body.vf .plan-tab .recommended-badge, body.vf .period-tab .best-value-badge,
   body.vf .expired-plan-tab .recommended-badge, body.vf .expired-period-tab .best-value-badge {
     top: -7px !important; right: 2px !important; transform: none !important; font-size: 9px !important; padding: 1px 5px !important;
+  }
+  /* Сроки Voksy Beauty — сетка 2×2: срок, скидка и экономия в сомах читаются целиком */
+  body.vf .period-tabs.beauty-periods, body.vf .expired-period-tabs.beauty-periods {
+    display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px !important; padding: 10px 6px 6px !important;
+  }
+  body.vf .beauty-periods .period-tab, body.vf .beauty-periods .expired-period-tab { min-height: 56px; padding: 8px 6px !important; gap: 3px; }
+  body.vf .beauty-periods .tab-label { font-size: 14px; }
+  body.vf .beauty-periods .tab-deal { flex-direction: row; flex-wrap: wrap; justify-content: center; column-gap: 6px; row-gap: 2px; }
+  body.vf .beauty-periods .tab-discount, body.vf .beauty-periods .tab-save, body.vf .beauty-periods .tab-plain { font-size: 12px; }
+  body.vf .beauty-periods .best-value-badge {
+    top: -8px !important; right: 50% !important; transform: translateX(50%) !important; font-size: 10px !important; padding: 1px 8px !important;
   }
   body.vf .payment-plan-info { margin-bottom: 12px; }
   body.vf .price-amount { font-size: 34px !important; }
@@ -321,3 +355,147 @@ body.vf .subscription-section { margin-top: 0; }
 /* ссылки кабинета красятся в акцент — у карточки отчёта свои цвета */
 .vf .dh-report a.dh-rep-main, .vf .dh-report a.dh-rep-main * { color: #fff !important; }
 .vf .dh-report a.dh-rep-ap, .vf .dh-report a.dh-rep-ap * { color: #8a4b00 !important; }
+
+/* ---------- Главная салона (Voksy Beauty 1.7): быстрые кнопки, сейчас в салоне, внимание, окна, загрузка ---------- */
+.dh-salon { display: flex; flex-direction: column; gap: 14px; margin-bottom: 6px; }
+.dh-salon .dh-grid { margin-bottom: 14px; }
+.dh-quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.dh-qbtn { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 15px; border-radius: 12px; text-decoration: none;
+  background: var(--vf-surface); border: 1px solid var(--vf-border); color: var(--vf-text) !important; font: 600 14px/1 var(--vf-font); box-shadow: var(--vf-shadow-1); }
+.dh-qbtn .ic { width: 17px; height: 17px; color: var(--vf-text-2); }
+.dh-qbtn.main { background: var(--vf-accent); border-color: var(--vf-accent); color: #fff !important; }
+.dh-qbtn.main .ic { color: #fff; }
+.dh-qbtn:hover { transform: translateY(-1px); }
+.dh-qbtn .sm { display: none; }
+.dh-cnt { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 7px; margin-left: 4px; border-radius: 999px;
+  background: #fdecec; color: #b42323; font-size: 12.5px; vertical-align: 1px; }
+
+/* сейчас в салоне */
+.dh-ntiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.dh-ntile { min-width: 0; border-radius: 14px; background: var(--vf-surface-2, #f6f7fb); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.dh-ntile span { font-size: 12.5px; color: var(--vf-text-3); }
+.dh-ntile b { font: 700 21px/1.15 var(--vf-font-display, Syne, sans-serif); color: var(--vf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-ntile i { font-style: normal; font-size: 11.5px; color: var(--vf-text-3); }
+.dh-ntile.warn b { color: #b42323; }
+.dh-ntile.money { background: #ecfdf3; text-decoration: none; }
+.dh-ntiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.dh-ntile.debt { background: #fff4ec; text-decoration: none; }
+.dh-ntile.debt b { color: #b42020; }
+.dh-nlist { display: flex; flex-direction: column; }
+.dh-nsec { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; font-size: 12px; font-weight: 700; color: var(--vf-text-3); text-transform: uppercase; letter-spacing: .03em; }
+.dh-nsec:first-child { margin-top: 0; }
+.dh-nsec .ic { width: 14px; height: 14px; }
+.dh-nrow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--vf-border); text-decoration: none; color: inherit; }
+.dh-nsec + .dh-nrow { border-top: 0; }
+.dh-nrow:hover .dh-nmain b { color: var(--vf-accent); }
+.dh-nrow.here { background: linear-gradient(90deg, #ecfdf3, transparent 75%); border-radius: 10px; padding-left: 8px; margin-left: -8px; border-top: 0; margin-top: 4px; }
+.dh-ntime { width: 46px; flex: none; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.dh-ntime b { font: 700 15px/1.2 var(--vf-font-display); color: var(--vf-text); }
+.dh-ntime i { font-style: normal; font-size: 11.5px; color: var(--vf-text-3); }
+.dh-nmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dh-nmain b { font-size: 14px; color: var(--vf-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-nmain span { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vf-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-mdot { flex: none; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dh-nrow .dh-badge .ic { width: 13px; height: 13px; }
+
+/* требует внимания: статус всегда со значком и словами */
+.dh-attn { display: flex; flex-direction: column; gap: 8px; }
+.dh-arow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; text-decoration: none; color: inherit;
+  background: var(--vf-surface-2, #f6f7fb); border: 1px solid transparent; }
+.dh-arow:hover { border-color: var(--vf-border-strong, #d5dae4); }
+.dh-arow > .ic { width: 16px; height: 16px; color: var(--vf-text-3); flex: none; }
+.dh-aic { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; }
+.dh-aic .ic { width: 17px; height: 17px; }
+.dh-amain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dh-amain b { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--vf-text); }
+.dh-amain b i { font-style: normal; font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--vf-surface); color: var(--vf-text-2); }
+.dh-amain span { font-size: 12.5px; color: var(--vf-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-bad .dh-aic { background: #fdecec; color: #b42323; }
+.lv-warn .dh-aic { background: #fff4e5; color: #a25a00; }
+.lv-accent .dh-aic { background: #e8eefe; color: #2a5ce8; }
+.lv-info .dh-aic { background: var(--vf-surface-3, #eceff4); color: var(--vf-text-2); }
+.lv-ok .dh-aic { background: #e6f7ec; color: #0b7a3b; }
+.dh-allok { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 14px; background: #e6f7ec; }
+.dh-allok > .ic { width: 22px; height: 22px; color: #0b7a3b; flex: none; }
+.dh-allok b { display: block; font-size: 14px; color: #0b5f2f; }
+.dh-allok span { font-size: 12.5px; color: #2d6a45; line-height: 1.45; }
+
+/* свободные окна */
+.dh-glist { display: flex; flex-direction: column; }
+.dh-grow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--vf-border); }
+.dh-grow:first-child { border-top: 0; padding-top: 0; }
+.dh-gwho { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 200px; }
+.dh-gwho b { display: block; font-size: 14px; color: var(--vf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-gwho span { font-size: 12.5px; color: var(--vf-text-3); }
+.dh-gava { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; display: grid; place-items: center; color: #fff !important; font-weight: 700; }
+.dh-gchips { display: flex; flex-wrap: wrap; gap: 6px; flex: 2 1 220px; }
+.dh-gchip { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px dashed #9fb4f2; background: #f5f8ff;
+  color: #1d3fb8 !important; font: 600 12.5px/1 var(--vf-font); text-decoration: none; font-variant-numeric: tabular-nums; }
+.dh-gchip.more { border-style: solid; border-color: var(--vf-border); background: var(--vf-surface); color: var(--vf-text-3) !important; }
+.dh-gfree { font-size: 12.5px; font-weight: 600; color: var(--vf-text-3); display: inline-flex; align-items: center; gap: 5px; }
+.dh-gfree.full { color: #0b7a3b; }
+.dh-gfree .ic { width: 14px; height: 14px; }
+.dh-goffer { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 10px; border: 0; cursor: pointer;
+  background: #efeafe; color: #5b2fc4; font: 600 12.5px/1 var(--vf-font); white-space: nowrap; }
+.dh-goffer .ic { width: 15px; height: 15px; }
+.dh-goffer:disabled { opacity: .75; cursor: default; }
+.dh-gfoot { display: flex; gap: 7px; align-items: flex-start; margin-top: 10px; font-size: 12.5px; color: var(--vf-text-3); line-height: 1.45; }
+.dh-gfoot .ic { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+
+/* загрузка мастеров: метр одного оттенка, дорожка — светлый шаг того же */
+.dh-lbig { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.dh-lbig b { font: 700 30px/1 var(--vf-font-display, Syne, sans-serif); color: var(--vf-text); }
+.dh-lbig span { font-size: 12.5px; color: var(--vf-text-3); }
+.dh-lrows { display: flex; flex-direction: column; gap: 10px; }
+.dh-lt { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 5px; }
+.dh-lt span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vf-text); }
+.dh-lt b { font-variant-numeric: tabular-nums; color: var(--vf-text); }
+.dh-meter { height: 8px; border-radius: 999px; background: #e8eefe; overflow: hidden; }
+.dh-meter span { display: block; height: 100%; border-radius: 999px; background: #2a5ce8; transition: width .4s ease; }
+
+/* последние действия (справа от графика) */
+.dh-recent { display: flex; flex-direction: column; }
+.dh-ract { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-top: 1px solid var(--vf-border); }
+.dh-ract:first-child { border-top: 0; padding-top: 0; }
+.dh-rava { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--vf-surface-2, #f1f3f8); color: var(--vf-text-2); }
+.dh-rava .ic { width: 15px; height: 15px; }
+.dh-rava.k-owner { background: #0e1729; color: #fff; }
+.dh-rava.k-staff { background: #e8eefe; color: #2a5ce8; }
+.dh-rava.k-ai, .dh-rava.k-call { background: #efeafe; color: #6d3fd8; }
+.dh-rava.k-client { background: #e8f8f0; color: #0b7a4b; }
+.dh-rava.k-admin { background: #fff4e5; color: #a25a00; }
+.dh-rmain { flex: 1; min-width: 0; font-size: 13px; color: var(--vf-text); }
+.dh-rmain b { font-weight: 700; }
+.dh-rmain span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; color: var(--vf-text-3); margin-top: 2px; }
+.dh-rtime { flex: none; font-size: 12px; color: var(--vf-text-3); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .dh-salon-grid { grid-template-columns: minmax(0, 1fr); }
+  .dh-salon-grid .dh-span-2 { grid-column: auto; }
+}
+@media (max-width: 760px) {
+  .dh-salon { gap: 10px; margin-bottom: 0; }
+  .dh-salon .dh-grid { gap: 10px; margin-bottom: 12px; }
+  .dh-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .dh-qbtn { justify-content: center; gap: 5px; padding: 0 6px; font-size: 13px; height: 42px; white-space: nowrap; min-width: 0; }
+  .dh-qbtn .ic { width: 15px; height: 15px; flex: none; }
+  .dh-qbtn .lg { display: none; } .dh-qbtn .sm { display: inline; }
+  .dh-ntiles, .dh-ntiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .dh-ntiles.five .dh-ntile.debt { grid-column: 1 / -1; }
+  .dh-ntile b { font-size: 19px; }
+  .dh-grow { gap: 8px 10px; }
+  .dh-gchips { flex-basis: 100%; }
+  .dh-goffer { width: 100%; justify-content: center; height: 36px; }
+  .dh-salon .dh-card-head { flex-wrap: wrap; }
+  /* салон на телефоне: приветствие → отчёт → салон сегодня → деньги → плитки → услуги и мастера → главное → последние действия → график */
+  body.dh-salon-on #dh-salon { order: 3; }
+  body.dh-salon-on #dh-money { order: 4; }
+  body.dh-salon-on #dh-kpis { order: 5; }
+  body.dh-salon-on #dh-biz { order: 6; }
+  body.dh-salon-on #dh-insights { order: 7; }
+  body.dh-salon-on #dh-side-card { order: 8; }
+  body.dh-salon-on #dh-chart-card { order: 9; }
+}
+/* салон: выручка за сегодня уже в «Сейчас в салоне» — в деньгах остаётся месяц */
+body.dh-salon-on .dh-money { grid-template-columns: minmax(0, 1fr); }
+body.dh-salon-on .dh-mcard.today { display: none; }

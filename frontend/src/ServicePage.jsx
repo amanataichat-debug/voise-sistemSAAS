@@ -1,7 +1,7 @@
 import React from 'react';
 import Icon from './components/Icon';
 import Logo from './components/Logo';
-import { SERVICES, SERVICE_SLUGS, SERVICE_UI } from './seo/services';
+import { SERVICES, SERVICE_SLUGS, SERVICE_UI, BEAUTY_PLANS, BEAUTY_PERIODS, BEAUTY_BEST_MONTHS, beautyPeriod } from './seo/services';
 import { LANG_PATH } from './i18n';
 import { PHONE, PHONE_DISPLAY, TELEGRAM_URL } from './components/contacts';
 
@@ -10,6 +10,66 @@ import { PHONE, PHONE_DISPLAY, TELEGRAM_URL } from './components/contacts';
 // Кнопка «Попробовать» ведёт на главную с ?signup=1 — там открывается окно регистрации.
 export function servicePath(lang, slug) {
   return `${LANG_PATH[lang]}${slug}/`;
+}
+
+const som = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+// Тарифы Voksy Beauty со сроками оплаты (26.11.2026): цена за каждый срок и «экономия N сом» сразу,
+// плашка «Выгодно» на 3 месяцах — как в окне оплаты кабинета. Без JS: просто разметка.
+function BeautyPrices({ ui, signup }) {
+  return (
+    <section className="sp-sec" id="prices">
+      <div className="lp-container">
+        <h2>{ui.prices_title}</h2>
+        <p className="sp-price-lead">{ui.prices_lead}</p>
+        <div className="sp-prices">
+          {BEAUTY_PLANS.map((p) => (
+            <div className={`sp-price${p.hit ? ' hit' : ''}`} key={p.name}>
+              {p.hit && <span className="sp-price-hit">{ui.hit}</span>}
+              <h3>{p.name}</h3>
+              <div className="sp-price-staff">{ui.staff_upto.replace('{n}', p.staff)}</div>
+              <div className="sp-price-main"><b>{som(p.price)}</b> {ui.per_month}</div>
+              {p.credits && <div className="sp-price-extra">{ui.credits.replace('{n}', som(p.credits))}</div>}
+              <ul className="sp-periods">
+                {BEAUTY_PERIODS.map(([months, discount]) => {
+                  const x = beautyPeriod(p.price, months, discount);
+                  return (
+                    <li key={months} className={months === BEAUTY_BEST_MONTHS ? 'best' : undefined}>
+                      <span className="sp-per-name">
+                        {ui.period[months]}
+                        {months === BEAUTY_BEST_MONTHS && <em>{ui.best}</em>}
+                      </span>
+                      <span className="sp-per-sum">{som(x.total)} {ui.som}</span>
+                      <span className="sp-per-save">
+                        {discount ? `−${discount}% · ${ui.save} ${som(x.save)} ${ui.som}` : ui.no_discount}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <a className={`btn ${p.hit ? 'btn-primary' : 'btn-secondary'}`} href={signup}>{ui.cta}</a>
+            </div>
+          ))}
+        </div>
+        <p className="sp-price-note">{ui.prices_note}</p>
+      </div>
+    </section>
+  );
+}
+
+function AppBlock({ ui }) {
+  return (
+    <section className="sp-sec sp-alt">
+      <div className="lp-container sp-app">
+        <img src="/static/brand/app-maskable-192.png" alt="" width="72" height="72" loading="lazy" />
+        <div>
+          <h2>{ui.app_title}</h2>
+          <p>{ui.app_text}</p>
+        </div>
+        <a className="btn btn-primary btn-lg" href="/app">{ui.app_btn}</a>
+      </div>
+    </section>
+  );
 }
 
 function ServicePage({ lang, slug }) {
@@ -91,10 +151,13 @@ function ServicePage({ lang, slug }) {
                   <li key={w}><Icon name="check" />{w}</li>
                 ))}
               </ul>
-              <a className="sp-link" href={`${home}#pricing`}>{ui.pricing_link} →</a>
+              <a className="sp-link" href={SERVICES[slug].beautyPrices ? '#prices' : `${home}#pricing`}>{ui.pricing_link} →</a>
             </div>
           </div>
         </section>
+
+        {SERVICES[slug].beautyPrices && <BeautyPrices ui={ui} signup={signup} />}
+        {SERVICES[slug].beautyPrices && <AppBlock ui={ui} />}
 
         <section className="sp-sec">
           <div className="lp-container">
@@ -137,7 +200,7 @@ function ServicePage({ lang, slug }) {
         <div className="lp-container lp-footer-bottom">
           <span>{ui.footer}</span>
           <span>
-            <a href={home}>{ui.home}</a> · <a href={TELEGRAM_URL} rel="noopener">Telegram</a> ·{' '}
+            <a href={home}>{ui.home}</a> · <a href="/app">{ui.app_link}</a> · <a href={TELEGRAM_URL} rel="noopener">Telegram</a> ·{' '}
             <a href="/static/privacy-policy.html">Privacy</a>
           </span>
         </div>

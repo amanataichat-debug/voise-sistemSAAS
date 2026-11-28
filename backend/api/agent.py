@@ -315,6 +315,8 @@ class AgentUpdateRequest(BaseModel):
     doc_rules_and_goals: Optional[str] = None
     additional_instructions: Optional[str] = None
     voice_additional_instructions: Optional[str] = None
+    # Цель звонка: к какому результату голосовой агент ведёт клиента (пусто — цель ниши)
+    voice_goal: Optional[str] = Field(None, max_length=600)
     inbound_first_phrase: Optional[str] = Field(None, max_length=500)
     working_hours_start: Optional[int] = Field(None, ge=0, le=23)
     working_hours_end: Optional[int] = Field(None, ge=1, le=24)
@@ -374,6 +376,11 @@ class AgentContactUpdateRequest(BaseModel):
     next_step_text: Optional[str] = None
     next_step_at: Optional[str] = None  # ISO; парсится ниже
     lost_reason: Optional[str] = None
+    # карточка клиента (Voksy Beauty, шаг 2.1): необязательные; "" / null очищает
+    birthday: Optional[str] = Field(None, max_length=20)     # 1990-03-12 | 12.03.1990 | 12.03 | --03-12
+    gender: Optional[str] = Field(None, max_length=1)        # f | m
+    source: Optional[str] = Field(None, max_length=24)       # ключ из salon_clients.SOURCES
+    marketing_opt_out: Optional[bool] = None                 # шаг 2.2: клиент не хочет поздравлений и приглашений
 
 
 class PublicAccessToggleRequest(BaseModel):
@@ -885,6 +892,19 @@ async def _rebind_agent_phone_numbers(db: Session, agent: AgentConfig,
     return len(numbers) + sip_rebound
 
 
+def _voice_goal_default(agent: AgentConfig) -> str:
+    """Цель звонка по нише владельца — подсказка в поле «Цель звонка», пока владелец не написал свою."""
+    try:
+        from sqlalchemy.orm import object_session
+        from backend.services.agent_voice_context import default_call_goal
+        goal, ask = default_call_goal(object_session(agent), agent)
+        if not goal:
+            return ""
+        return goal[:1].upper() + goal[1:] + (". Узнать: " + "; ".join(ask) if ask else "")
+    except Exception:
+        return ""
+
+
 def _agent_to_dict(agent: AgentConfig) -> dict:
     """Serialize AgentConfig to dict for API response."""
     voice = agent.get_voice_assistant() if agent.assistant_type else agent.gemini_assistant
@@ -932,6 +952,8 @@ def _agent_to_dict(agent: AgentConfig) -> dict:
         "doc_rules_and_goals": agent.doc_rules_and_goals,
         "additional_instructions": agent.additional_instructions,
         "voice_additional_instructions": agent.voice_additional_instructions,
+        "voice_goal": getattr(agent, "voice_goal", None),
+        "voice_goal_default": _voice_goal_default(agent),
         "inbound_first_phrase": agent.inbound_first_phrase,
         "working_hours_start": agent.working_hours_start,
         "working_hours_end": agent.working_hours_end,
@@ -1259,7 +1281,7 @@ async def update_agent(
             docs_changed = True
 
     for field in ['name', 'additional_instructions', 'voice_additional_instructions',
-                  'inbound_first_phrase',
+                  'inbound_first_phrase', 'voice_goal',
                   'working_hours_start', 'working_hours_end', 'call_window_enabled',
                   'is_active', 'default_caller_id',
                   'webhook_url',
@@ -4579,6 +4601,7 @@ async def create_agent_contact(
         notes=body.notes,
         status="new",
         memory={},
+        source="manual",
     )
     db.add(contact)
     db.flush()
@@ -4634,6 +4657,13 @@ async def update_agent_contact(
         raise HTTPException(status_code=404, detail="not_found")
 
     update_data = body.dict(exclude_unset=True)
+    profile = {k: update_data.pop(k) for k in ("birthday", "gender", "source", "marketing_opt_out") if k in update_data}
+    if profile:
+        from backend.services import salon_clients
+        try:
+            salon_clients.update_profile(contact, profile)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     # Нормализация CRM v2 полей:
     #   tags: List[str] → "a,b,c" (нижний регистр, пробелы, уникальные, max 10)
     #   next_step_at: ISO-строка → datetime (naive UTC); пустая → None
@@ -5109,6 +5139,7 @@ async def _run_contacts_import(
                 notes=notes,
                 status="new",
                 memory={},
+                source="import",
             )
             db.add(contact)
             db.flush()

@@ -1891,7 +1891,7 @@
         dropdownLogout.addEventListener('click', function(e) {
           e.preventDefault();
           localStorage.removeItem('auth_token');
-          window.location.href = '/';
+          window.location.href = '/static/login.html?reason=logout';
         });
       }
       
@@ -3276,10 +3276,12 @@
           let message = result.message || 'Тариф изменён';
           // Тариф даёт доступ к агенту, но ручная блокировка его перекрывает —
           // предупреждаем, иначе выглядит как будто смена тарифа не сработала.
-          if (sub.grants_agent_access && sub.agent_subscription_blocked) {
-            message += '. Внимание: у пользователя стоит ручная блокировка агента — доступ не выдан';
+          if (sub.agent_access_note) {
+            message += '. Агент обзвона НЕ открыт: ' + sub.agent_access_note;
+          } else if (sub.agent_access_effective) {
+            message += '. Агент обзвона открыт';
           }
-          ui.showNotification(message, 'success');
+          ui.showNotification(message, sub.agent_access_note ? 'info' : 'success');
           ui.hideModal();
           document.dispatchEvent(new CustomEvent('vf:admin-changed', { detail: { userId: selectedUserId } }));
           
@@ -3300,7 +3302,7 @@
       
       logoutButton.addEventListener('click', function() {
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
       
       // Окна тарифа, пароля и подробная аналитика — для вкладки «Клиенты» (static/admin/clients.js)

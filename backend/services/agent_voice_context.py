@@ -588,6 +588,54 @@ def fresh_card_prompt(assistant, agent) -> str:
         return stored
 
 
+# ── Цель звонка (27.11.2026, звонок f9b4a269) ───────────────────────────────────────────────────────────────
+# Демо суши-кафе: агент 4 минуты рассказывал о роллах и соусах, но так и не спросил ни адреса, ни времени, ни
+# оплаты — заказа не было, в конце «скину меню в ватсап». Владелец: «должна быть цель, к чему ведёт, чтобы
+# универсально настроить всю платформу». Цель у каждой ниши уже есть (niche_presets: goal + ask), но до звонка она
+# доходила, только если владелец оставил инструкцию пустой при выборе ниши. Теперь — отдельный раздел в начале
+# промпта звонка: цель владельца (agent_configs.voice_goal, поле «Цель звонка» в кабинете) или цель его ниши + что
+# узнать. Это поведение и данные бизнеса, без готовых фраз (docs/voice_live_standard.md).
+GOAL_HEADING = "ЦЕЛЬ ЗВОНКА"
+VOICE_GOAL_MAX = 600
+
+
+def default_call_goal(db, agent) -> Tuple[str, List[str]]:
+    """Цель ниши владельца и что узнать у клиента; ("", []) — ниша не выбрана."""
+    try:
+        from backend.models.user import User
+        from backend.services import niche_presets
+        uid = getattr(agent, "user_id", None)
+        user = db.query(User).filter(User.id == uid).first() if (db is not None and uid) else None
+        niche = getattr(user, "business_niche", None)
+        if not niche:
+            return "", []
+        p = niche_presets.preset(niche)
+        return str(p.get("goal") or ""), [str(x) for x in (p.get("ask") or [])]
+    except Exception as e:  # цель — подсказка, звонок важнее
+        logger.warning(f"[VOICE-KB] цель ниши не прочитана: {e}")
+        return "", []
+
+
+def call_goal_block(db, agent) -> str:
+    """Раздел «ЦЕЛЬ ЗВОНКА» для промпта звонка; пусто — нет ни своей цели, ни ниши."""
+    if agent is None:
+        return ""
+    own = getattr(agent, "voice_goal", None)
+    own = " ".join(own.split())[:VOICE_GOAL_MAX] if isinstance(own, str) else ""
+    goal, ask = (own, []) if own else default_call_goal(db, agent)
+    goal = goal.strip().rstrip(".")
+    if not goal:
+        return ""
+    lines = [f"# {GOAL_HEADING}", f"Звонок должен закончиться результатом: {goal}."]
+    if ask:
+        lines.append("Для этого по ходу разговора узнай — по одному вопросу и только то, чего ещё не знаешь: "
+                     + "; ".join(ask) + ".")
+    lines.append("Каждая реплика — ответ по сути и шаг к результату. Всё собрал — одной фразой подтверди итог (что, "
+                 "когда, сколько) и что будет дальше, затем попрощайся. Не готов — договорись о следующем шаге со "
+                 "временем или спокойно отпусти. Если в контексте звонка дана своя задача этого звонка — она главнее.")
+    return "\n".join(lines)
+
+
 def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                              max_chars: Optional[int] = None,
                              budget: int = VOICE_KNOWLEDGE_BUDGET
@@ -607,14 +655,17 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
     base = fresh_card_prompt(assistant, agent)
     context = (call_context or "").strip()
     tail = f"\n\n[Контекст звонка] {context}" if context else ""
+    # Цель звонка — первым разделом (обязательна, как правила): модель держит начало промпта лучше середины
+    goal = call_goal_block(db, agent)
+    head = f"{goal}{_SEP}" if goal else ""
 
     block, stats = build_voice_knowledge_block(db, agent, budget=budget)
 
     if max_chars and block:
-        room = max_chars - len(base) - len(tail) - len(_SEP)
+        room = max_chars - len(head) - len(base) - len(tail) - len(_SEP)
         want = min(len(block), MIN_CALL_KNOWLEDGE)
         if room < want and len(tail) > CONTEXT_FLOOR:
-            keep = max(CONTEXT_FLOOR, max_chars - len(base) - want - len(_SEP))
+            keep = max(CONTEXT_FLOOR, max_chars - len(head) - len(base) - want - len(_SEP))
             if keep < len(tail):
                 logger.warning(
                     f"[VOICE-KB] контекст звонка урезан с {len(tail)} до {keep} символов, "
@@ -622,7 +673,7 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                 )
                 stats["context_clipped"] = len(tail) - keep
                 tail = _clip_lines(tail, keep)
-                room = max_chars - len(base) - len(tail) - len(_SEP)
+                room = max_chars - len(head) - len(base) - len(tail) - len(_SEP)
         if room < len(block):
             if room < 400:
                 # Промпт карточки сам съел бюджет (длинные доп. инструкции
@@ -643,9 +694,11 @@ def build_call_system_prompt(db, assistant, agent, call_context: str = "",
                 stats["total"] = len(block)
                 stats["trimmed"] = 1
 
+    if goal:
+        stats["goal"] = len(goal)
     if block:
-        return f"{block.strip()}{_SEP}{base}{tail}".strip(), stats
-    return f"{base}{tail}".strip(), stats
+        return f"{head}{block.strip()}{_SEP}{base}{tail}".strip(), stats
+    return f"{head}{base}{tail}".strip(), stats
 
 
 # ============================================================================
@@ -762,6 +815,8 @@ def apply_live_kb_functions(db, assistant, agent) -> None:
 BOOKING_VOICE_FUNCTIONS = {
     "find_booking_slots": "Находит ближайшее свободное время для записи по услуге, мастеру и дню.",
     "book_appointment": "Записывает клиента на согласованное время; номер берёт из звонка.",
+    "client_bookings": "Предстоящие записи клиента по номеру звонка: когда, что, подтверждена ли, можно ли менять.",
+    "change_booking": "Подтверждает, переносит или отменяет запись клиента (перенос и отмена — после его согласия).",
 }
 
 

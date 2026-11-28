@@ -572,6 +572,7 @@ async def _poll_account(db, account):
                 phone=d.get("phone") or f"tg:{peer_id}",
                 name=d.get("name"),
                 status="new",
+                source="telegram",
             )
             db.add(contact)
             db.flush()

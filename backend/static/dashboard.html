@@ -1321,6 +1321,7 @@
       font-size: 1.75rem;
       font-weight: 700;
       margin-bottom: 0.375rem;
+      color: #fff;   /* общий стиль заголовков кабинета красил его в тёмный — на красном не читалось */
     }
 
     .subscription-expired-subtitle {
@@ -1471,6 +1472,72 @@
       border-radius: var(--radius-full);
       font-weight: 600;
     }
+
+    /* Сроки Voksy Beauty (26.11.2026): 1 · 3 · 6 мес · год, экономия в сомах — сразу на вкладке.
+       Вкладки рисует renderPeriodTabs(); на телефоне — сетка 2×2 (dashboard-home.css). */
+    .period-tabs.beauty-periods, .expired-period-tabs.beauty-periods {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.375rem;
+      padding-top: 0.625rem;
+    }
+    .beauty-periods .period-tab, .beauty-periods .expired-period-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      min-width: 0;
+      padding: 0.75rem 0.375rem 0.625rem;
+      border: 1px solid transparent;
+    }
+    .beauty-periods .period-tab.active, .beauty-periods .expired-period-tab.active {
+      border-color: rgba(42, 92, 232, 0.35);
+    }
+    .beauty-periods .tab-label {
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: var(--text-dark);
+    }
+    .beauty-periods .active .tab-label { color: var(--primary-blue); }
+    .beauty-periods .tab-deal {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.125rem;
+      line-height: 1.25;
+    }
+    .beauty-periods .tab-discount {
+      display: inline-block;
+      margin: 0;
+      padding: 0.05rem 0.4rem;
+      border-radius: var(--radius-full);
+      background: #e6f7ec;
+      color: #0b7a3b !important;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .beauty-periods .tab-save {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #0b7a3b;
+    }
+    .beauty-periods .tab-plain {
+      font-size: 0.72rem;
+      color: var(--text-light);
+    }
+    .beauty-periods .best-value-badge {
+      top: -9px;
+      right: 50%;
+      transform: translateX(50%);
+      white-space: nowrap;
+      font-size: 0.625rem;
+      padding: 0.125rem 0.45rem;
+      letter-spacing: 0.02em;
+      text-transform: none;
+    }
+    .beauty-periods .has-badge { border-color: rgba(234, 88, 12, 0.45); }
+    .beauty-periods .has-badge.active { border-color: rgba(42, 92, 232, 0.55); }
 
     /* Выбранный план в expired modal */
     .expired-selected-plan {
@@ -1808,6 +1875,10 @@
       <!-- Утренний отчёт ИИ-управляющего (Voksy Beauty 1.6б, ниши с записью) — dashboard-home.js → loadReport -->
       <section class="dh-report" id="dh-report" hidden></section>
 
+      <!-- Главная салона (Voksy Beauty 1.7, ниши с записью): быстрые кнопки, сейчас в салоне, требует внимания,
+           свободные окна, загрузка мастеров — dashboard-home.js → renderSalon из /api/beauty/home -->
+      <section class="dh-salon" id="dh-salon" hidden></section>
+
       <!-- Деньги сегодня и за месяц (ниши с записью или заказами) — рисует dashboard-home.js → renderMoney -->
       <section class="dh-money" id="dh-money" hidden></section>
 
@@ -2085,7 +2156,7 @@
             Ваша подписка завершилась
           </div>
           <div class="expired-notice-text">
-            К сожалению, <span id="subscription-type-text">тестовый период</span> завершился и ваши голосовые ассистенты временно отключены. Для восстановления доступа ко всем функциям платформы необходимо оформить подписку.
+            К сожалению, <span id="subscription-type-text">ваша подписка завершилась</span>, и работа платформы приостановлена. Выберите тариф и срок — доступ откроется сразу после оплаты.
           </div>
         </div>
         
@@ -2359,6 +2430,45 @@
         return Math.round(discountedPrice); // Округление до целых сомов (как на бэкенде)
       }
 
+      // Сроки оплаты тарифа. У Voksy Beauty (26.11.2026: 1 · 3 · 6 мес · год) цену, экономию и дни
+      // считает сервер (/payments/my-plans → plans[code].periods) — окно их не пересчитывает, поэтому
+      // сумма на кнопке «Оплатить» всегда равна сумме платежа. У AI Voice / Старт / Profi — прежние
+      // 1 · 6 мес · год из констант выше, вкладки из разметки.
+      function periodList(plan) {
+        if (plan && plan.periods) return Object.keys(plan.periods).map(Number).sort((a, b) => a - b);
+        return Object.keys(PERIOD_DAYS).map(Number);
+      }
+      function periodInfo(plan, months) {
+        if (!plan) return null;
+        const s = plan.periods ? plan.periods[months] : null;
+        if (s) {
+          return { months: months, price: Number(s.price) || 0, savings: Number(s.savings) || 0, days: s.days,
+            monthly: Number(s.monthly_effective) || 0, discount: Number(s.discount_percent) || 0,
+            label: s.label || PERIOD_LABELS[months] || (months + ' мес.'), badge: s.badge || '' };
+        }
+        if (plan.periods || !PERIOD_DAYS[months]) return null;
+        const price = calculatePrice(plan.basePrice, months);
+        return { months: months, price: price, savings: plan.basePrice * months - price, days: PERIOD_DAYS[months],
+          monthly: Math.round(price / months), discount: PERIOD_DISCOUNTS[months] || 0, label: PERIOD_LABELS[months], badge: '' };
+      }
+      // Вкладки сроков Beauty: экономия в сомах видна сразу, без нажатия; плашка срока — с сервера
+      function renderPeriodTabs(box, cls, plan) {
+        if (!box || !plan || !plan.periods) return;
+        box.classList.add('beauty-periods');
+        box.innerHTML = periodList(plan).map(m => {
+          const p = periodInfo(plan, m);
+          if (!p) return '';
+          return '<button type="button" class="' + cls + (p.badge ? ' has-badge' : '') + '" data-months="' + m + '">' +
+            '<span class="tab-label">' + escHtml(p.label) + '</span>' +
+            (p.discount > 0
+              ? '<span class="tab-deal"><span class="tab-discount">−' + p.discount + '%</span>' +
+                '<span class="tab-save">экономия ' + formatPrice(p.savings) + ' сом</span></span>'
+              : '<span class="tab-deal"><span class="tab-plain">без скидки</span></span>') +
+            (p.badge ? '<span class="best-value-badge">' + escHtml(p.badge) + '</span>' : '') +
+            '</button>';
+        }).join('');
+      }
+
       // ✅ Подтягиваем актуальные цены (сомы, из БД) с бэкенда и обновляем UI
       function escHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2381,6 +2491,7 @@
             restrictedFeatures: [],
             assistantsLabel: p.staff_label,
             badge: p.badge || (p.individual ? 'Для вас' : ''),
+            periods: p.periods || null,
             features: (p.features || []).map(text => ({ icon: 'fa-check', text: text, available: true }))
           };
         });
@@ -2394,7 +2505,7 @@
             (p.badge ? '<span class="recommended-badge">' + escHtml(p.badge) + '</span>' : '') + '</button>';
         }).join('');
         planTabs.innerHTML = tabHtml('plan-tab', ' сом/мес');
-        expiredPlanTabs.innerHTML = tabHtml('expired-plan-tab', ' сом');
+        expiredPlanTabs.innerHTML = tabHtml('expired-plan-tab', ' сом/мес');
         planTabs.classList.add('beauty-tabs');
         expiredPlanTabs.classList.add('beauty-tabs');
         const title = document.querySelector('#payment-modal .payment-modal-title');
@@ -2437,11 +2548,6 @@
         }
       }
 
-      function calculateSavings(basePrice, months) {
-        const fullPrice = basePrice * months;
-        const actualPrice = calculatePrice(basePrice, months);
-        return fullPrice - actualPrice;
-      }
 
       function getPlanDisplayName(planCode) {
         const plan = SUBSCRIPTION_PLANS[planCode];
@@ -2515,10 +2621,16 @@
         }
         document.getElementById('period-tabs').style.display = plan.singlePeriod ? 'none' : '';
 
+        // Срок, которого у тарифа нет, — на самый короткий из его сроков (обычно 1 месяц)
+        if (!periodInfo(plan, selectedPeriod)) selectedPeriod = periodList(plan)[0] || 1;
+        const period = periodInfo(plan, selectedPeriod);
         const basePrice = plan.basePrice;
-        const finalPrice = calculatePrice(basePrice, selectedPeriod);
-        const savings = calculateSavings(basePrice, selectedPeriod);
-        const days = PERIOD_DAYS[selectedPeriod];
+        const finalPrice = period.price;
+        const savings = period.savings;
+        const days = period.days;
+
+        // Вкладки сроков Beauty строятся под выбранный тариф (экономия у каждого своя)
+        renderPeriodTabs(periodTabs, 'period-tab', plan);
 
         // Обновляем активные табы тарифов
         document.querySelectorAll('#plan-tabs .plan-tab').forEach(tab => {
@@ -2551,7 +2663,7 @@
         const monthlyValue = document.getElementById('modal-monthly-value');
         const oldPrice = document.getElementById('modal-old-price');
         if (selectedPeriod > 1) {
-          const monthlyPrice = Math.round(finalPrice / selectedPeriod);
+          const monthlyPrice = period.monthly || Math.round(finalPrice / selectedPeriod);
           oldPrice.textContent = formatPrice(basePrice) + ' сом/мес';
           monthlyValue.textContent = formatPrice(monthlyPrice) + ' сом/мес';
           monthlyPriceInfo.style.display = 'block';
@@ -2582,10 +2694,13 @@
         }
         document.getElementById('expired-period-tabs').style.display = plan.singlePeriod ? 'none' : '';
 
-        const basePrice = plan.basePrice;
-        const finalPrice = calculatePrice(basePrice, expiredSelectedPeriod);
-        const savings = calculateSavings(basePrice, expiredSelectedPeriod);
-        const days = PERIOD_DAYS[expiredSelectedPeriod];
+        if (!periodInfo(plan, expiredSelectedPeriod)) expiredSelectedPeriod = periodList(plan)[0] || 1;
+        const period = periodInfo(plan, expiredSelectedPeriod);
+        const finalPrice = period.price;
+        const savings = period.savings;
+        const days = period.days;
+
+        renderPeriodTabs(expiredPeriodTabs, 'expired-period-tab', plan);
 
         // Обновляем активные табы тарифов
         document.querySelectorAll('#expired-plan-tabs .expired-plan-tab').forEach(tab => {
@@ -2639,7 +2754,7 @@
         if (!tab) return;
 
         const months = parseInt(tab.dataset.months);
-        if (months && PERIOD_DAYS[months]) {
+        if (months && periodInfo(SUBSCRIPTION_PLANS[selectedPlan], months)) {
           selectedPeriod = months;
           updatePaymentModalUI();
         }
@@ -2663,7 +2778,7 @@
         if (!tab) return;
 
         const months = parseInt(tab.dataset.months);
-        if (months && PERIOD_DAYS[months]) {
+        if (months && periodInfo(SUBSCRIPTION_PLANS[expiredSelectedPlan], months)) {
           expiredSelectedPeriod = months;
           updateExpiredModalUI();
         }
@@ -2704,7 +2819,7 @@
             
             if (response.status === 401) {
               localStorage.removeItem('auth_token');
-              window.location.href = '/';
+              window.location.href = '/static/login.html?reason=expired';
               throw new Error('Требуется авторизация');
             }
             
@@ -2792,11 +2907,8 @@
         showSubscriptionExpiredModal(isTrialExpired = true) {
           console.log('Показываем модальное окно истекшей подписки:', isTrialExpired);
           
-          if (isTrialExpired) {
-            subscriptionTypeText.textContent = 'тестовый период';
-          } else {
-            subscriptionTypeText.textContent = 'ваша подписка';
-          }
+          // Глагол — вместе с подлежащим: было «ваша подписка завершился»
+          subscriptionTypeText.textContent = isTrialExpired ? 'ваш пробный период закончился' : 'ваша подписка завершилась';
           
           // По умолчанию — текущий тариф пользователя (agent продлевается как agent),
           // для остальных сбрасываем на ai_voice и 1 месяц
@@ -2900,7 +3012,7 @@
       // Проверка авторизации
       function checkAuth() {
         if (!api.isAuthenticated()) {
-          window.location.href = '/';
+          window.location.href = '/static/login.html';
           return false;
         }
         return true;
@@ -3183,13 +3295,13 @@
       logoutButton.addEventListener('click', function(e) {
         e.preventDefault();
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
 
       dropdownLogout.addEventListener('click', function(e) {
         e.preventDefault();
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
 
       notificationClose.addEventListener('click', ui.hideNotification);
@@ -3245,10 +3357,12 @@
       // Ссылка /static/dashboard.html#plans (например, «Profi» на странице агента
       // на тарифе Старт) сразу открывает выбор тарифа с выделенным Profi; у салона — тариф Beauty
       // по умолчанию (текущий или рекомендованный).
+      // #plans:beauty_pro — выбор тарифа сразу на нём (замок «Beauty Pro» у агента обзвона в меню салона)
       function openPlansFromHash() {
-        if (location.hash !== '#plans') return;
+        var m = /^#plans(?::([a-z0-9_]+))?$/.exec(location.hash || '');
+        if (!m) return;
         setTimeout(function () {
-          showPaymentModal(PLAN_PRODUCT === 'beauty' ? null : 'profi');
+          showPaymentModal(m[1] || (PLAN_PRODUCT === 'beauty' ? null : 'profi'));
         }, 300);
       }
       openPlansFromHash();
@@ -3267,7 +3381,8 @@
           showPaymentLoading();
           
           const plan = SUBSCRIPTION_PLANS[planCode];
-          const finalPrice = calculatePrice(plan.basePrice, durationMonths);
+          const period = periodInfo(plan, durationMonths);
+          const finalPrice = period ? period.price : calculatePrice(plan.basePrice, durationMonths);
 
           console.log(`🚀 Создаем платеж: ${plan.name}, ${durationMonths} мес, ${finalPrice} сом`);
 
@@ -3335,7 +3450,7 @@
       // Кнопка выхода в модалке истекшей подписки
       expiredLogoutBtn.addEventListener('click', function() {
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       });
       
       // Закрытие по клавише Escape

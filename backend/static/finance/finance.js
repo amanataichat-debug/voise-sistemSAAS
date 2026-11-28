@@ -2,8 +2,8 @@
  * Финансы (ветка 1811-niche-admin-speed, 19.11.2026): /static/finance.html — выручка, расходы, прибыль.
  *
  * Сверху период (сегодня … год), большая карточка «Прибыль» со сравнением с прошлым периодом,
- * выручка и расходы, график по дням/неделям, расходы по категориям, зарплаты мастеров (процент
- * с выручки + оклад — нажатие открывает настройку), список расходов (ежемесячные и разовые).
+ * выручка и расходы, график по дням/неделям, расходы по категориям, зарплаты мастеров (начислено по
+ * ведомости — нажатие открывает «Зарплату»), список расходов (ежемесячные и разовые).
  * «+ Расход» — шторка: категория, сумма, название, разово/каждый месяц, дата.
  * API: /api/finance/* (services/finance_service.py — та же логика, что у аналитики и главной).
  */
@@ -84,6 +84,12 @@
     if (rp.bookings && rp.orders) {
       html += '<div class="fn-split"><div><span>Записи</span><b>' + money(rp.bookings) + '</b></div><div><span>Заказы</span><b>' + money(rp.orders) + '</b></div></div>';
     }
+    // Касса (шаг 3.1): с первой смены выручка записей — по оплатам, визит без оплаты в неё не входит
+    if (d.revenue_basis === 'payments' && d.revenue_since) {
+      var since = new Date(d.revenue_since + 'T12:00:00+06:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      html += '<div class="fn-basis">' + icon('wallet') + '<span>Выручка записей — по оплатам в <a href="/static/cash.html">кассе</a> с ' + esc(since) +
+        ' (раньше — по визитам «пришёл»). Визит без оплаты в выручку не входит.</span></div>';
+    }
 
     if (d.series && d.series.labels && d.series.labels.length > 1) {
       html += '<section class="fn-card"><div class="fn-card-h"><h3>По ' + ({ day: 'дням', week: 'неделям', month: 'месяцам' }[d.series.step] || 'дням') + '</h3>' +
@@ -104,15 +110,15 @@
     } else html += '<p class="muted fn-empty">Расходов за период нет.</p>';
     html += '</section>';
 
-    // Зарплаты мастеров
+    // Зарплаты мастеров — начислено по ведомости (шаг 3.3); выплаты, авансы и схема оплаты — на странице «Зарплата»
     if (d.payroll && d.payroll.length) {
-      html += '<section class="fn-card"><div class="fn-card-h"><h3>Зарплаты мастеров</h3><span class="muted">' + money(d.payroll_total) + '</span></div>' +
-        '<p class="fn-note">Процент с выручки записей «пришёл» + оклад. Нажмите на мастера, чтобы изменить.</p>' +
+      html += '<section class="fn-card"><div class="fn-card-h"><h3>Зарплаты мастеров</h3><a class="fn-link" href="' + esc(payrollHref()) + '">Ведомость' + icon('chevron-right') + '</a></div>' +
+        '<p class="fn-note">Начислено за период: процент с оплаченных услуг (свой по категориям), выходы, оклад, премии и штрафы. Нажмите на мастера — откроется ведомость с выплатами.</p>' +
         '<div class="fn-list">' + d.payroll.map(function (m) {
-          var how = m.configured ? ((m.pay_percent ? m.pay_percent + '%' : '') + (m.pay_percent && m.pay_fixed ? ' + ' : '') + (m.pay_fixed ? 'оклад ' + short(m.pay_fixed) : '')) : 'не настроено';
-          return '<button type="button" class="fn-row" data-pay="' + esc(m.id) + '"><span class="ava" style="background:' + esc(m.color || '#2a5ce8') + '">' + esc(S.initial(m.name)) + '</span>' +
-            '<div class="fn-row-m"><b>' + esc(m.name) + '</b><span>' + m.visits + ' визит' + plural(m.visits, '', 'а', 'ов') + ' · выручка ' + short(m.revenue) + ' · ' + esc(how) + '</span></div>' +
-            '<div class="fn-row-v' + (m.configured ? '' : ' muted') + '">' + (m.configured ? money(m.salary) : 'Настроить') + '</div></button>';
+          var how = m.configured ? m.scheme_text : 'оплата не настроена';
+          return '<a class="fn-row" href="' + esc(payrollHref(m.id)) + '"><span class="ava" style="background:' + esc(m.color || '#2a5ce8') + '">' + esc(S.initial(m.name)) + '</span>' +
+            '<div class="fn-row-m"><b>' + esc(m.name) + '</b><span>' + m.visits + ' визит' + plural(m.visits, '', 'а', 'ов') + ' · услуги ' + short(m.revenue) + ' · ' + esc(how) + '</span></div>' +
+            '<div class="fn-row-v' + (m.configured ? '' : ' muted') + '">' + (m.configured ? money(m.salary) : 'Настроить') + '</div></a>';
         }).join('') + '</div></section>';
     }
 
@@ -221,35 +227,13 @@
     });
   }
 
-  function payDialog(m) {
-    var body = '<div class="fn-form"><p class="fn-note">Зарплата за период = процент с выручки его записей со статусом «пришёл» + оклад (доля по дням).</p>' +
-      '<div class="fn-pct">' + [30, 40, 50, 60].map(function (p) { return '<button type="button" data-p="' + p + '" class="' + (m.pay_percent === p ? 'on' : '') + '">' + p + '%</button>'; }).join('') + '</div>' +
-      '<label class="fn-f"><span>Процент с выручки, %</span><input id="px-pct" type="number" inputmode="decimal" min="0" max="100" step="1" value="' + (m.pay_percent || '') + '" placeholder="0"></label>' +
-      '<label class="fn-f"><span>Оклад в месяц, сом</span><input id="px-fixed" type="number" inputmode="decimal" min="0" step="100" value="' + (m.pay_fixed || '') + '" placeholder="0"></label>' +
-      '<div class="fn-calc" id="px-calc"></div></div>';
-    var dlg = S.dialog({ title: m.name, body: body, foot: '<button type="button" class="btn btn-primary" data-save>Сохранить</button>', size: 'md' });
-    var el = dlg.el;
-    function calc() {
-      var p = Number(el.querySelector('#px-pct').value) || 0, f = Number(el.querySelector('#px-fixed').value) || 0;
-      el.querySelector('#px-calc').innerHTML = 'За ' + esc(st.data.period.label) + ': выручка ' + money(m.revenue) + ' × ' + p + '% = <b>' + money(m.revenue * p / 100) + '</b>' + (f ? ' + оклад ' + money(f) + '/мес' : '');
-    }
-    el.querySelectorAll('[data-p]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        el.querySelector('#px-pct').value = b.getAttribute('data-p');
-        el.querySelectorAll('[data-p]').forEach(function (x) { x.classList.toggle('on', x === b); }); calc();
-      });
-    });
-    el.querySelectorAll('input').forEach(function (i) { i.addEventListener('input', calc); });
-    calc();
-    el.querySelector('[data-save]').addEventListener('click', function () {
-      var btn = this; btn.disabled = true;
-      S.api('/api/finance/payroll/' + m.id, { method: 'PATCH', body: { pay_percent: Number(el.querySelector('#px-pct').value) || 0, pay_fixed: Number(el.querySelector('#px-fixed').value) || 0 } })
-        .then(function (r) {
-          btn.disabled = false;
-          if (!r.ok) { S.toast(S.apiError(r), 'error'); return; }
-          dlg.close(); S.toast('Сохранено', 'success'); reload();
-        });
-    });
+  // Ведомость за тот же период (страница «Зарплата» принимает до 92 дней; длиннее — её период по умолчанию)
+  function payrollHref(id) {
+    var p = (st.data && st.data.period) || {}, q = new URLSearchParams();
+    if (p.from && p.to && (p.days || 0) <= 92) { q.set('from', p.from); q.set('to', p.to); }
+    if (id) q.set('master', id);
+    var qs = q.toString();
+    return '/static/payroll.html' + (qs ? '?' + qs : '');
   }
 
   function bind() {
@@ -261,8 +245,6 @@
       if (e.target.closest('[data-add]')) { expenseDialog(null); return; }
       var x = e.target.closest('[data-exp]');
       if (x && expCache) { var id = x.getAttribute('data-exp'); expenseDialog((expCache.expenses || []).filter(function (q) { return q.id === id; })[0]); return; }
-      var m = e.target.closest('[data-pay]');
-      if (m && st.data) { var mid = m.getAttribute('data-pay'); payDialog(st.data.payroll.filter(function (q) { return q.id === mid; })[0]); }
     });
     var top = document.getElementById('fn-add-top');
     if (top) top.addEventListener('click', function () { expenseDialog(null); });
@@ -274,7 +256,15 @@
     root = document.getElementById('fn');
     esc = S.esc; icon = S.icon;
     if (S.staff && S.staff()) { location.replace('/static/inbox.html'); return; }
-    readUrl(); bind(); load();
+    readUrl(); bind();
+    var q = new URLSearchParams(location.search);
+    var wantNew = q.get('new') === '1';     // «Расход» с главной салона (шаг 1.7)
+    if (wantNew) {
+      q.delete('new');
+      try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); } catch (e) { /* ignore */ }
+    }
+    load();
+    if (wantNew) S.api('/api/finance/expenses').then(function (r) { if (r.ok && !expCache) expCache = r.data; expenseDialog(null); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

@@ -97,6 +97,30 @@ check("фото работ мастера — отправка клиенту (�
       "send_staff_portfolio" in agent_mode.SEND_TOOLS and "send_staff_portfolio" in CLIENT_REPLY_TOOLS)
 check("Beauty Pro: 10 000 кредитов в месяц", pc.BEAUTY_DEFAULTS[2]["limits"]["credits_month"] == 10000)
 
+# Где салон настраивает агента (27.11.2026: владелец не находил агента обзвона у салона)
+ROOT_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def src(rel):
+    return open(os.path.join(ROOT_, rel), encoding="utf-8").read()
+
+
+sb = src("backend/static/js/sidebar.js")
+check("меню салона без Beauty Pro: «Агент обзвона» не прячется, а с замком «Beauty Pro»",
+      "beautyLock: true" in sb and "#plans:beauty_pro" in sb and "'Beauty Pro'" in sb
+      and "if (item.profi && biz && biz.beauty && !profi) return;" not in sb)
+dh = src("backend/static/dashboard.html")
+check("ссылка #plans:<код> открывает выбор тарифа на этом тарифе", "#plans(?::([a-z0-9_]+))?$" in dh)
+ob, wz, sm = src("backend/static/agent/onboarding.js"), src("backend/static/agent/wizard.js"), src("backend/static/agent/salon-mode.js")
+check("Beauty Pro без агента: салонная карусель (запись, звонки, память), а не «обзвон продаж»",
+      "OB_SLIDES_SALON" in ob and "obSlides()" in ob and "Записывает по вашему журналу" in ob and "OB_SLIDES_SALON.length" not in ob)
+check("мастер создания у салона: салонные поля, «Что предлагаем» можно пропустить, без «тарифа Profi»",
+      "WIZ_DOCS_SALON" in wz and "optional:true" in wz and "!s.optional" in wz and "if(wizSalon())" in wz)
+check("салонный вид переодевает уже открытую карусель и мастер", "renderOnboarding()" in sm and "renderWizard()" in sm)
+bj = src("backend/static/start/bot.js")
+check("«Чат-бот» салона: примеры про салон и где агент обзвона (Beauty Pro)",
+      "DOCS_SALON_PH" in bj and "proNote()" in bj and "#plans:beauty_pro" in bj)
+
 if not PG:
     print("SKIP часть 2: SALON_AI_TEST_DATABASE_URL не задан")
     print(f"ПРОВАЛОВ: {failures}")

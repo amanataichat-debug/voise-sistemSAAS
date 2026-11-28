@@ -1609,7 +1609,7 @@
             
             if (response.status === 401) {
               localStorage.removeItem('auth_token');
-              window.location.href = '/';
+              window.location.href = '/static/login.html?reason=expired';
               throw new Error('Требуется авторизация');
             }
             
@@ -1709,7 +1709,7 @@
       // Проверка авторизации
       function checkAuth() {
         if (!api.isAuthenticated()) {
-          window.location.href = '/';
+          window.location.href = '/static/login.html';
           return false;
         }
         return true;
@@ -2146,7 +2146,7 @@
       // Выход из системы
       function logout() {
         localStorage.removeItem('auth_token');
-        window.location.href = '/';
+        window.location.href = '/static/login.html?reason=logout';
       }
       
       logoutButton.addEventListener('click', function(e) {

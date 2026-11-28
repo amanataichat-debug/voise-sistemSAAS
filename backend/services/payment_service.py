@@ -41,13 +41,14 @@ logger = get_logger(__name__)
 
 SUBSCRIPTION_PERIOD_DAYS = {
     1: 30,
+    3: 90,     # только у Voksy Beauty (plan_catalog.BEAUTY_PERIOD_DISCOUNTS)
     6: 180,
     12: 365,
 }
 
 
 def get_subscription_days_by_duration(duration_months: int) -> int:
-    """Количество дней подписки по периоду (1/6/12 месяцев)."""
+    """Количество дней подписки по периоду (1/3/6/12 месяцев)."""
     if duration_months in SUBSCRIPTION_PERIOD_DAYS:
         return SUBSCRIPTION_PERIOD_DAYS[duration_months]
     logger.warning(f"⚠️ Unknown duration {duration_months}, using default 30 days")

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--MY_HEAD-->
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <link rel="stylesheet" href="/static/my/my.css">
+  <link rel="stylesheet" href="/static/salon/chat.css">
+  <!-- «Мои записи» (Voksy Beauty, шаг 2.5): /m/<токен> — записи клиента в салоне без входа. Подтвердить, перенести,
+       отменить, записаться снова, отзыв, лист ожидания, чат. Данные — /api/public/client/<токен>. -->
+</head>
+<body class="my">
+<main id="app" class="my-app" aria-live="polite">
+  <div class="my-card"><div class="sk" style="height:56px"></div><div class="sk" style="height:120px"></div><div class="sk" style="height:120px"></div></div>
+</main>
+<div id="toast" class="my-toast" role="status" hidden></div>
+<script src="/static/salon/chat.js" defer></script>
+<script src="/static/my/my.js" defer></script>
+</body>
+</html>

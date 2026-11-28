@@ -11,10 +11,10 @@
 
   var root = null;
   var st = { data: null, busy: false };
-  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', booking_own: 'user-round', orders: 'shopping-cart', catalog: 'package', analytics: 'chart-column', finance: 'banknote' };
+  var PERM_ICONS = { inbox: 'inbox', crm: 'users', booking: 'calendar', booking_setup: 'clock', booking_own: 'user-round', orders: 'shopping-cart', catalog: 'package', analytics: 'chart-column', finance: 'banknote', activity: 'history' };
   // Готовые роли. Мастер — только свой журнал (кабинет мастера на телефоне), бухгалтер — финансы.
   var PRESETS = [
-    { id: 'manager', title: 'Управляющий', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics', 'finance'] },
+    { id: 'manager', title: 'Управляющий', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics', 'finance', 'activity'] },
     { id: 'admin', title: 'Администратор', perms: ['inbox', 'crm', 'booking', 'booking_setup', 'orders', 'catalog', 'analytics'] },
     { id: 'master', title: 'Мастер', perms: ['booking_own'] },
     { id: 'accountant', title: 'Бухгалтер', perms: ['finance', 'analytics'] },
@@ -484,7 +484,7 @@
   function start() {
     root = document.getElementById('tm-root');
     if (!root) return;
-    if (!tok()) { location.href = '/'; return; }
+    if (!tok()) { location.href = '/static/login.html'; return; }
     load();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
