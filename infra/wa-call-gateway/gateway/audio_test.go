@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -291,5 +293,12 @@ func TestMapEndReason(t *testing.T) {
 func TestMaskPhone(t *testing.T) {
 	if got := maskPhone("996555123456"); got != "••••••••3456" {
 		t.Fatalf("mask %q", got)
+	}
+}
+
+func TestRedactToken(t *testing.T) {
+	err := fmt.Errorf("Get \"https://x/ws?gateway=g&token=SECRET123\": context deadline exceeded")
+	if got := redact(err, "SECRET123"); strings.Contains(got, "SECRET123") {
+		t.Fatalf("token leaked: %s", got)
 	}
 }

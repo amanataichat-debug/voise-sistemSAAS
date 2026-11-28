@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -64,7 +65,7 @@ func (c *Control) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		c.log.Warn("control socket down", "error", err, "retry_in", backoff.String())
+		c.log.Warn("control socket down", "error", redact(err, c.cfg.Token), "retry_in", backoff.String())
 		select {
 		case <-ctx.Done():
 			return
@@ -184,4 +185,17 @@ func str(m map[string]any, key string) string {
 func jsonNumber(f float64) string {
 	b, _ := json.Marshal(f)
 	return string(b)
+}
+
+// redact убирает токен шлюза из текста ошибки (в ошибках соединения есть полный адрес с ?token=…).
+func redact(err error, token string) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if token != "" {
+		msg = strings.ReplaceAll(msg, token, "***")
+		msg = strings.ReplaceAll(msg, url.QueryEscape(token), "***")
+	}
+	return msg
 }

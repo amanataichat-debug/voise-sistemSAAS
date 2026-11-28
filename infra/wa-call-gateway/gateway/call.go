@@ -290,7 +290,7 @@ func (b *CallBridge) runMedia() {
 	ws, _, err := websocket.Dial(dctx, b.mediaURL(), nil)
 	cancel()
 	if err != nil {
-		b.g.log.Error("cannot reach backend media socket", "call_id", b.ID, "error", err)
+		b.g.log.Error("cannot reach backend media socket", "call_id", b.ID, "error", redact(err, b.g.cfg.Token))
 		b.Hangup("backend_unavailable")
 		return
 	}
