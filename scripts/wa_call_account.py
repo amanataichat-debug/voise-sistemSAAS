@@ -3,6 +3,7 @@
 Звонки WhatsApp голосового агента — управление аккаунтом шлюза из Render Shell (этап 1, проба).
 ТЗ: docs/tz_whatsapp_calls.md, шлюз: infra/wa-call-gateway/.
 
+  python scripts/wa_call_account.py agents --email you@mail.com   # id агентов и владельца (для WA_CALLS_USERS)
   python scripts/wa_call_account.py list
   python scripts/wa_call_account.py create --agent <id агента>      # аккаунт + QR в терминале
   python scripts/wa_call_account.py qr <id аккаунта>                 # новый QR (номер отвязали / QR истёк)
@@ -111,6 +112,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
+    ag = sub.add_parser("agents")
+    ag.add_argument("--email", help="email владельца (часть адреса тоже подходит)")
     c = sub.add_parser("create")
     c.add_argument("--agent", required=True)
     c.add_argument("--gateway", default=settings.WA_CALL_GATEWAY_DEFAULT_ID)
@@ -139,6 +142,19 @@ def main() -> None:
     _ensure_table()
     db = SessionLocal()
     try:
+        if args.cmd == "agents":
+            from backend.models.user import User
+            q = db.query(AgentConfig, User).join(User, User.id == AgentConfig.user_id)
+            if args.email:
+                q = q.filter(User.email.ilike(f"%{args.email.strip()}%"))
+            rows = q.order_by(User.email, AgentConfig.created_at).limit(50).all()
+            if not rows:
+                print("Агентов не найдено")
+            for agent, user in rows:
+                print(f"агент {agent.id}  «{agent.name}»  голос: {agent.assistant_type or '—'}  "
+                      f"{'включён' if agent.is_active else 'выключен'}  |  владелец {user.email}  id {user.id}")
+            print("\nWA_CALLS_USERS = id владельца, create --agent = id агента")
+            return
         if args.cmd == "list":
             rows = db.query(AgentWaCallAccount).order_by(AgentWaCallAccount.created_at.asc()).all()
             if not rows:
