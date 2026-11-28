@@ -68,6 +68,8 @@ OWNER_CHAT_READONLY_ALLOWED = {"get_period_report", "get_agent_stats", "notify_o
                                "update_product_stock",
                                # онлайн-запись: владелец Старта записывает и переносит клиентов командой
                                "create_booking", "reschedule_booking", "cancel_booking",
+                               # салон: закрыть время мастера и записать расход по команде владельца
+                               "block_master_time", "add_expense",
                                # заказы: оформить и поменять статус по команде владельца
                                "create_order", "update_order"} | SEND_TOOLS
 

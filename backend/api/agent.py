@@ -3097,6 +3097,27 @@ async def agent_transcribe(
     return {"text": text}
 
 
+@router.get("/chat/history")
+def agent_chat_history(
+    agent_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Последние реплики веб-чата владельца с агентом (до 20) — экран «AI» на телефоне продолжает разговор."""
+    agent = _resolve_agent(db, current_user, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="not_found")
+    out = []
+    for m in (agent.chat_history or [])[-20:]:
+        if not isinstance(m, dict) or m.get("role") not in ("user", "assistant"):
+            continue
+        text = m.get("content")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        out.append({"role": m["role"], "text": text, "ts": m.get("ts"), "voice": bool(m.get("voice"))})
+    return {"messages": out, "agent_name": agent.name}
+
+
 @router.post("/chat/clear")
 async def agent_chat_clear(
     agent_id: Optional[str] = Query(None),

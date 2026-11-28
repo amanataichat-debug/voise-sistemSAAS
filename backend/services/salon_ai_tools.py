@@ -26,8 +26,9 @@ from backend.services import booking_service as bs
 logger = logging.getLogger(__name__)
 
 TOOL_NAMES = {"get_services", "get_staff", "get_customer_history", "get_salon_information", "send_staff_portfolio",
-              "get_salon_report", "save_review", "get_cash_report"}
-OWNER_TOOL_NAMES = {"get_salon_report", "get_cash_report"}   # только чат владельца: клиенту в переписке не даётся
+              "get_salon_report", "save_review", "get_cash_report", "block_master_time", "add_expense",
+              "offer_free_slots"}
+OWNER_TOOL_NAMES = {"get_salon_report", "get_cash_report", "block_master_time", "add_expense", "offer_free_slots"}   # только чат владельца: клиенту в переписке не даётся
 LAPSED_DAYS = 45                             # «давно не приходил» по умолчанию
 MAX_PORTFOLIO_SEND = 4
 MAX_SERVICES_OUT = 40
@@ -160,6 +161,69 @@ OWNER_TOOLS = [
             "properties": {
                 "day": {"type": "string", "description": "today, yesterday или дата ГГГГ-ММ-ДД (по умолчанию today)"},
             },
+        },
+    },
+    # Команды владельца с телефона (28.11.2026): «мастер заболел», «запиши расход», «заполни окна»
+    {
+        "type": "function",
+        "name": "block_master_time",
+        "description": (
+            "Закрыть время в журнале записи по команде владельца: мастер заболел, ушёл в отпуск, обучение, "
+            "перерыв, «закрой мне 15–17». Новые записи на это время не встанут (ни по ссылке, ни ботом). "
+            "Уже стоящие записи НЕ трогаются — в ответе их число: скажи владельцу и предложи перенести "
+            "(list_bookings + reschedule_booking). Нет мастера — время закрывается у всего салона."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "master": {"type": "string", "description": "Имя мастера (пусто — весь салон)"},
+                "date_from": {"type": "string", "description": "День начала: today, tomorrow или ГГГГ-ММ-ДД"},
+                "date_to": {"type": "string", "description": "Последний день (для отпуска/болезни на несколько дней; по умолчанию = date_from)"},
+                "time_from": {"type": "string", "description": "С какого времени ЧЧ:ММ (пусто — весь день)"},
+                "time_to": {"type": "string", "description": "До какого времени ЧЧ:ММ (пусто — весь день)"},
+                "kind": {"type": "string", "enum": ["block", "break", "training", "vacation", "sick"],
+                         "description": "Вид: block — закрыто, break — перерыв, training — обучение, vacation — отпуск, sick — болеет"},
+                "note": {"type": "string", "description": "Комментарий"},
+            },
+            "required": ["date_from"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "add_expense",
+        "description": (
+            "Записать расход салона в «Финансы» по команде владельца: «запиши расход 3000 на краску», "
+            "«аренда 40 000 каждый месяц». Повтори владельцу сумму и на что — одной фразой."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "number", "description": "Сумма в сомах"},
+                "title": {"type": "string", "description": "На что (коротко)"},
+                "category": {"type": "string", "enum": ["rent", "salary", "supplies", "ads", "utilities", "taxes", "other"],
+                             "description": "rent аренда, salary зарплаты, supplies материалы, ads реклама, utilities коммуналка и связь, taxes налоги и банк, other другое"},
+                "monthly": {"type": "boolean", "description": "true — повторяется каждый месяц (аренда, интернет)"},
+                "day": {"type": "string", "description": "Дата расхода ГГГГ-ММ-ДД (по умолчанию сегодня)"},
+            },
+            "required": ["amount"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "offer_free_slots",
+        "description": (
+            "Заполнить свободные окна мастера: агент подбирает давних клиентов этого мастера (кому пора на повтор) "
+            "и готовит им предложения записаться. Предложения ВСЕГДА уходят на одобрение владельцу "
+            "(экран «ИИ-управляющий → Ждут одобрения»), сами клиентам не отправляются. "
+            "Для «у Айгерим завтра пусто — позови клиентов», «заполни окна на сегодня»."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "master": {"type": "string", "description": "Имя мастера"},
+                "day": {"type": "string", "description": "today, tomorrow или ГГГГ-ММ-ДД (по умолчанию today)"},
+            },
+            "required": ["master"],
         },
     },
 ]
@@ -551,6 +615,94 @@ def _years_word(n: int) -> str:
     return {1: "год", 2: "года", 3: "года", 4: "года"}.get(n % 10, "лет")
 
 
+# ───────────────────────────── команды владельца ─────────────────────────────
+
+_BLOCK_WORDS = {"block": "закрыто", "break": "перерыв", "training": "обучение", "vacation": "отпуск", "sick": "болеет"}
+
+
+def _hhmm(v: Any) -> Optional[str]:
+    raw = str(v or "").strip().replace(".", ":")
+    if not raw:
+        return None
+    if raw.isdigit():
+        raw = f"{int(raw):02d}:00"
+    try:
+        h, m = raw.split(":")[:2]
+        h, m = int(h), int(m)
+    except (ValueError, TypeError):
+        raise bs.BookingError("Время нужно в виде ЧЧ:ММ, например 15:00")
+    if not (0 <= h <= 24 and 0 <= m <= 59):
+        raise bs.BookingError("Время нужно в виде ЧЧ:ММ, например 15:00")
+    return f"{h:02d}:{m:02d}"
+
+
+def block_master_time(db: Session, user, args: Dict[str, Any]) -> Dict[str, Any]:
+    from datetime import timedelta
+    kind = args.get("kind") if args.get("kind") in _BLOCK_WORDS else "block"
+    rid, name = None, "весь салон"
+    if (args.get("master") or "").strip():
+        r = _match_master(bs.resources(db, user.id), args.get("master"))
+        if r is None:
+            return {"ok": False, "error": "Такого мастера нет — проверь имя через get_staff"}
+        rid, name = r.id, r.name
+    try:
+        d1 = bs.parse_day(args.get("date_from"))
+        d2 = bs.parse_day(args.get("date_to")) if args.get("date_to") else d1
+        if d2 < d1:
+            d1, d2 = d2, d1
+        t1, t2 = _hhmm(args.get("time_from")), _hhmm(args.get("time_to"))
+        if (t1 is None) != (t2 is None):
+            return {"ok": False, "error": "Нужно и «с», и «до» — или ни того, ни другого (весь день)"}
+        start = f"{d1.isoformat()}T{t1 or '00:00'}"
+        end = (f"{d2.isoformat()}T{t2}" if t2 and t2 != "24:00"
+               else f"{(d2 + timedelta(days=1)).isoformat()}T00:00")
+        block, clash = bs.create_block(db, user, start=start, end=end, resource_id=rid, kind=kind,
+                                       note=args.get("note"))
+        db.commit()
+    except bs.BookingError as e:
+        db.rollback()
+        return {"ok": False, "error": str(e)}
+    when = d1.strftime("%d.%m") + (f"–{d2.strftime('%d.%m')}" if d2 != d1 else "") + \
+        (f" {t1}–{t2}" if t1 else " весь день")
+    out = {"ok": True, "master": name, "kind": _BLOCK_WORDS[kind], "when": when, "block_id": str(block.id)}
+    if clash:
+        out["bookings_inside"] = clash
+        out["note"] = (f"В этом времени уже {clash} зап. — они остались. Скажи владельцу и предложи перенести "
+                       "(list_bookings, затем reschedule_booking с его согласия).")
+    return out
+
+
+def add_expense(db: Session, user, args: Dict[str, Any]) -> Dict[str, Any]:
+    from backend.services import finance_service as fs
+    try:
+        e = fs.create_expense(db, user, {"amount": args.get("amount"), "title": args.get("title"),
+                                         "category": args.get("category") or "other",
+                                         "repeat": "month" if args.get("monthly") else "once",
+                                         "spent_on": args.get("day")})
+    except ValueError as err:
+        db.rollback()
+        return {"ok": False, "error": str(err)}
+    return {"ok": True, "title": e.title, "amount": e.amount, "monthly": e.repeat == "month",
+            "day": e.spent_on.isoformat() if e.spent_on else None}
+
+
+def offer_free_slots(db: Session, user, args: Dict[str, Any]) -> Dict[str, Any]:
+    from backend.services import salon_home
+    r = _match_master(bs.resources(db, user.id), args.get("master"))
+    if r is None:
+        return {"ok": False, "error": "Такого мастера нет — проверь имя через get_staff"}
+    try:
+        res = salon_home.offer_gaps(db, user, str(r.id), args.get("day") or None)
+    except bs.BookingError as e:
+        db.rollback()
+        return {"ok": False, "error": str(e)}
+    names = [a.get("contact_name") for a in res.get("actions") or []]
+    return {"ok": True, "master": res.get("master"), "day": res.get("day"), "proposed": res.get("proposed"),
+            "clients": [n for n in names if n][:5],
+            "note": ("Предложения ждут одобрения владельца в «ИИ-управляющий → Ждут одобрения»." if res.get("proposed")
+                     else "Подходящих клиентов не нашлось — скажи об этом и предложи акцию или пост в соцсетях.")}
+
+
 # ───────────────────────────── вход ─────────────────────────────
 
 def _contact_for(context: Dict[str, Any], args: Dict[str, Any]) -> Optional[str]:
@@ -592,6 +744,16 @@ async def execute(tool_name: str, args: Dict[str, Any], context: Dict[str, Any],
                 return _dump({"ok": False, "error": "Касса и долги — только владельцу"})
             from backend.services import cash_debts
             return _dump(cash_debts.owner_summary(db, user, args.get("day")))
+        if tool_name in ("block_master_time", "add_expense", "offer_free_slots"):
+            if context.get("surface") == "postcall":
+                return _dump({"ok": False, "error": "Это команда только для владельца"})
+            from backend.services import activity
+            with activity.acting("ai", "ИИ по команде владельца"):
+                if tool_name == "block_master_time":
+                    return _dump(block_master_time(db, user, args))
+                if tool_name == "add_expense":
+                    return _dump(add_expense(db, user, args))
+                return _dump(offer_free_slots(db, user, args))
     except Exception as e:
         db.rollback()
         logger.error(f"[SALON-AI] {tool_name} failed: {e}", exc_info=True)

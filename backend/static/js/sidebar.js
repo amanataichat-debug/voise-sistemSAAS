@@ -607,7 +607,7 @@
     '.vf-desktop-only{display:none!important}',
     'body.vf-has-tabbar{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}',
     'body.vf-has-tabbar .st-bulk{bottom:calc(72px + env(safe-area-inset-bottom,0px))}',
-    '.vf-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(255,255,255,.97);',
+    '.vf-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:#fff;',
     'border-top:1px solid var(--vf-border,#e2e8f0);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));',
     'box-shadow:0 -6px 20px rgba(15,23,42,.06)}',
     '.vf-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:52px;',
@@ -637,10 +637,12 @@
   function isPhone() { try { return window.matchMedia(PHONE).matches; } catch (e) { return false; } }
   function lang() { try { return localStorage.getItem('vs_lang') || 'ru'; } catch (e) { return 'ru'; } }
   // Profi (решение владельца 18.11.2026): Чаты · Звонки · Агент · Клиенты · Ещё
+  // С 28.11.2026: Главная · Звонки · AI · Клиенты · Ещё (инбокс и агент обзвона — в «Ещё»; основной набор
+  // приходит с сервера: business_profile.tabs_for, это запасной на случай пустого профиля)
   var PROFI_TABS = [
-    { id: 'inbox', href: '/static/inbox.html', icon: 'inbox', label: 'Чаты', ky: 'Чаттар' },
+    { id: 'home', href: '/static/dashboard.html', icon: 'house', label: 'Главная', ky: 'Башкы' },
     { id: 'calls', href: '/static/conversations.html', icon: 'phone', label: 'Звонки', ky: 'Чалуулар' },
-    { id: 'agent', href: '/static/agent.html', icon: 'headset', label: 'Агент', ky: 'Агент' },
+    { id: 'ai', href: '/static/ai.html', icon: 'sparkles', label: 'AI', ky: 'AI' },
     { id: 'clients', href: '/static/start-crm.html', icon: 'users', label: 'Клиенты', ky: 'Кардарлар' },
     { id: 'more', icon: 'menu', label: 'Ещё', ky: 'Дагы' }
   ];
@@ -658,6 +660,7 @@
     }
     if (p === '/static/crm-contact.html' || p === '/static/start-crm.html' || p === '/static/crm.html') return 'clients';
     if (p === '/static/agent-knowledge.html' || p === '/static/agent.html') return tabs.some(function (t) { return t.id === 'agent'; }) ? 'agent' : 'more';
+    if (p === '/static/ai.html') return 'ai';
     return 'more';
   }
   function markTabs() {
@@ -697,6 +700,7 @@
     'background:var(--vf-surface,#fff);border:1px solid var(--vf-border,#e2e8f0);text-decoration:none;color:var(--vf-text,#0e1729);font-size:12.5px;font-weight:550;text-align:center;line-height:1.2;position:relative}',
     '.vf-more-it .ic{width:24px;height:24px;color:var(--vf-accent,#2a5ce8)}',
     '.vf-more-it.on{border-color:var(--vf-accent,#2a5ce8);background:var(--vf-accent-soft,#eaf0fe)}',
+    '.vf-more-it .nb{position:absolute;top:6px;right:6px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font:700 10.5px/18px Inter,sans-serif}',
     '.vf-more-it .lk{position:absolute;top:6px;right:6px;font-size:9.5px;font-weight:700;color:#8a5a00;background:#ffe7a8;border-radius:999px;padding:1px 6px}',
     '.vf-more-foot{display:flex;align-items:center;gap:8px}',
     '.vf-more-foot .vf-more-lang{display:inline-flex;padding:3px;border-radius:999px;background:var(--vf-surface,#fff);border:1px solid var(--vf-border,#e2e8f0)}',
@@ -722,6 +726,10 @@
     setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 200);
     document.body.style.overflow = '';
     if (history.state && history.state.vfMore) history.back();
+  }
+  function unreadText() {
+    var el = document.getElementById('vf-tab-unread');
+    return el && !el.hidden ? el.textContent : '';
   }
   function moreHtml() {
     var ky = lang() === 'ky';
@@ -762,7 +770,7 @@
     }
     items = items.map(function (it) { return it.id === 'dashboard-nav-item' ? Object.assign({}, it, { label: '', def: ky ? 'Башкы бет' : 'Главная' }) : it; });
     // Салон: «Отзывы» и «Автоматизации» — рядом с клиентами, а не после «Настроек» (шаги 2.2–2.3 Beauty)
-    var ORDER = ['dashboard', 'manager', 'finance', 'cash', 'payroll', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
+    var ORDER = ['dashboard', 'inbox', 'agent', 'manager', 'finance', 'cash', 'payroll', 'booking', 'orders', 'catalog', 'crm', 'reviews', 'automations', 'inbox', 'team', 'activity', 'chatbot', 'conversations', 'telephony', 'assistants', 'agent', 'settings', 'admin'];
     function rank(it) {
       var id = (it.id || '').replace('-nav-item', '');
       if ((it.href || '').indexOf('#catalog') >= 0) id = 'catalog';
@@ -800,7 +808,8 @@
       var href = locked ? lockUrl(it) : it.href;
       var on = isActive(it) ? ' on' : '';
       return '<a class="vf-more-it' + on + '" href="' + esc(href) + '">' + icon(it.lucide || it.icon || 'circle') +
-        '<span>' + esc(it.label ? T(it.label, it.def) : it.def) + '</span>' + (locked ? '<span class="lk">' + esc(lockPill(it)) + '</span>' : '') + '</a>';
+        '<span>' + esc(it.label ? T(it.label, it.def) : it.def) + '</span>' + (locked ? '<span class="lk">' + esc(lockPill(it)) + '</span>' : '') +
+        (it.href.split('#')[0] === '/static/inbox.html' && unreadText() ? '<span class="nb">' + esc(unreadText()) + '</span>' : '') + '</a>';
     }).join('') + '</div>';
     html += '<div class="vf-more-foot"><div class="vf-more-lang">' +
       '<button type="button" data-lang="ru" class="' + (ky ? '' : 'on') + '">RU</button>' +
@@ -958,8 +967,11 @@
     var ky = lang() === 'ky';
     var bar = document.createElement('nav');
     bar.id = 'vf-tabbar'; bar.className = 'vf-tabbar'; bar.setAttribute('aria-label', 'Меню');
-    bar.innerHTML = currentTabs().map(function (t) {
-      var inner = icon(t.icon) + '<span>' + (ky ? t.ky : t.label) + '</span>' + (t.id === 'inbox' ? '<span class="vf-badge" id="vf-tab-unread" hidden></span>' : '');
+    var tabsNow = currentTabs();
+    // Непрочитанные чаты: на вкладке «Чаты», а если её нет (Profi, салон) — на «Ещё», где теперь живёт инбокс
+    var badgeOn = tabsNow.some(function (t) { return t.id === 'inbox'; }) ? 'inbox' : (cachedStaff() ? '' : 'more');
+    bar.innerHTML = tabsNow.map(function (t) {
+      var inner = icon(t.icon) + '<span>' + (ky ? t.ky : t.label) + '</span>' + (t.id === badgeOn ? '<span class="vf-badge" id="vf-tab-unread" hidden></span>' : '');
       return t.href ? '<a class="vf-tab" data-tab="' + t.id + '" href="' + t.href + '">' + inner + '</a>'
         : '<button type="button" class="vf-tab" data-tab="' + t.id + '">' + inner + '</button>';
     }).join('');
@@ -1181,7 +1193,7 @@
     '@media (prefers-reduced-motion:reduce){.vf-voice-fab .vf-vf-wave i{animation:none}}'
   ].join('');
   // Инбокс (19.11.2026): кнопка есть и там — в списке диалогов; в открытом чате прячется (поле ввода)
-  var VOICE_SKIP = ['/static/agent.html', '/static/voice-live.html', '/static/admin.html', '/static/master.html'];
+  var VOICE_SKIP = ['/static/agent.html', '/static/ai.html', '/static/voice-live.html', '/static/admin.html', '/static/master.html'];
   function renderVoiceFab() {
     var mode = cachedMode();
     var old = document.getElementById('vf-voice-fab');

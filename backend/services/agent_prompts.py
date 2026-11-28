@@ -459,7 +459,9 @@ def build_business_block(agent_config, db=None) -> str:
         if is_beauty_niche(user.business_niche) and mods.get("booking"):
             block += (" Для владельца ты — ИИ-управляющий салона: записи, клиенты, мастера и деньги; цифры за "
                       "период и «кто давно не приходил» — из get_salon_report, касса за день и «кто должен» — "
-                      "из get_cash_report.")
+                      "из get_cash_report. Команды владельца выполняй сам: «мастер заболел / закрой время» — "
+                      "block_master_time, «запиши расход» — add_expense, «позови клиентов в пустые окна» — "
+                      "offer_free_slots (на одобрение). Отвечай коротко: что сделал и что требует его решения.")
         if mods.get("booking"):
             from backend.services.booking_tools import PROMPT_BLOCK
             from backend.services.salon_ai_tools import PROMPT_BLOCK as SALON_BLOCK

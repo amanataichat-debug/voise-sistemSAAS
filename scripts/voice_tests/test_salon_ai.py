@@ -465,6 +465,54 @@ pc_tools = asyncio.run(agent_tools.build_postcall_tools(agent, db))
 ptn = {(t.get("function") or {}).get("name") for t in pc_tools}
 check("отчёт салона: в чате владельца есть, в разборе переписки нет", "get_salon_report" in ctn and "get_salon_report" not in ptn)
 
+# ── команды владельца с телефона (28.11.2026): закрыть время, расход, пустые окна
+OWN = ctx(contact=None, surface="chat", direction=None)
+check("команды владельца: в чате есть, в разборе переписки нет",
+      {"block_master_time", "add_expense", "offer_free_slots"} <= ctn
+      and not ({"block_master_time", "add_expense", "offer_free_slots"} & ptn))
+r = run("block_master_time", {"master": "Айгуль"}, ctx())
+check("закрыть время клиенту в переписке нельзя", not r.get("ok"), r)
+from backend.models.booking import BookingBlock  # noqa: E402
+r = run("block_master_time", {"master": "Бегимай", "date_from": THU, "kind": "sick", "note": "заболела"}, OWN)
+check("мастер заболел: весь день закрыт", r.get("ok") and r.get("master") == "Бегимай" and "весь день" in r.get("when", ""), r)
+db.expire_all()
+blk = db.query(BookingBlock).filter(BookingBlock.user_id == u.id, BookingBlock.kind == "sick").first()
+check("блок в базе: у мастера, с начала до конца дня", blk is not None and str(blk.resource_id) == m_hair
+      and bs.to_local(blk.start_at).hour == 0 and (blk.end_at - blk.start_at).total_seconds() == 86400, blk)
+slots = run("find_booking_slots", {"service": "Женская стрижка", "date": THU, "master": "Бегимай"}, OWN)
+check("в закрытый день к мастеру не записать",
+      not [x for x in slots.get("slots") or [] if bs.to_local(bs.parse_start(x["start"])).date().isoformat() == THU], slots)
+r = run("block_master_time", {"date_from": WED, "time_from": "14:00", "time_to": "16"}, OWN)
+check("закрыть время всего салона 14–16", r.get("ok") and r.get("master") == "весь салон" and "14:00–16:00" in r.get("when", ""), r)
+r = run("block_master_time", {"master": "Нет-такого", "date_from": WED}, OWN)
+check("неизвестный мастер — понятный отказ", not r.get("ok") and "мастер" in r.get("error", "").lower(), r)
+r = run("block_master_time", {"date_from": WED, "time_from": "14:00"}, OWN)
+check("только «с» без «до» — отказ", not r.get("ok"), r)
+r = run("add_expense", {"amount": 3000, "title": "Краска", "category": "supplies"}, OWN)
+check("расход записан", r.get("ok") and r.get("amount") == 3000 and r.get("title") == "Краска" and not r.get("monthly"), r)
+r = run("add_expense", {"amount": 40000, "title": "Аренда", "category": "rent", "monthly": True}, OWN)
+check("ежемесячный расход", r.get("ok") and r.get("monthly"), r)
+r = run("add_expense", {"amount": 0}, OWN)
+check("расход без суммы — отказ", not r.get("ok"), r)
+from backend.models.activity import ActivityLog  # noqa: E402
+acts = db.query(ActivityLog).filter(ActivityLog.user_id == u.id, ActivityLog.action.in_(("block.create", "expense.create"))).all()
+check("журнал действий: «ИИ по команде владельца»", acts and all("владельца" in (a.actor_name or "") for a in acts),
+      [(a.action, a.actor_name) for a in acts])
+r = run("offer_free_slots", {"master": "Айгуль", "day": WED}, OWN)
+check("пустые окна: ответ с числом предложений", r.get("ok") and r.get("master") == "Айгуль" and "proposed" in r, r)
+
+# ── история чата для экрана «AI» на телефоне
+ag = db.query(AgentConfig).get(agent.id)
+ag.chat_history = [{"role": "user", "content": "Итоги дня", "ts": "2026-11-28T10:00:00"},
+                   {"role": "assistant", "content": "Сегодня 3 записи", "ts": "2026-11-28T10:00:05"},
+                   {"role": "tool", "content": "x"}, {"role": "assistant", "content": "🎙 (голосом) ок", "voice": True}]
+db.commit()
+r = cl.get("/api/agent/chat/history", headers=H)
+msgs = r.json().get("messages") if r.status_code == 200 else None
+check("GET /chat/history: реплики владельца и агента, служебные — нет", msgs is not None and [m["role"] for m in msgs] ==
+      ["user", "assistant", "assistant"] and msgs[2]["voice"] is True, r.text[:300])
+check("/chat/history без входа — 401/403", cl.get("/api/agent/chat/history").status_code in (401, 403))
+
 # ── набор инструментов бота
 tools = asyncio.run(agent_tools.build_postcall_tools(agent, db))
 tn = {(t.get("function") or {}).get("name") for t in tools}

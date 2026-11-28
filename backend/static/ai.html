@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru" class="vf">
+<head>
+<script>
+(function(){ try{
+  // Тёмная тема убрана (06.11.2026): кабинет только светлый; старый выбор темы стираем
+  localStorage.removeItem('vs_theme');
+}catch(e){} })();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>AI-помощник | Voksy AI</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Voksy AI">
+  <link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/syne-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <link rel="stylesheet" href="/static/css/voksiai.css">
+  <link rel="stylesheet" href="/static/start/start.css">
+  <link rel="stylesheet" href="/static/ai/ai.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script defer src="/static/js/i18n.js"></script>
+  <script defer src="/static/js/ui.js"></script>
+</head>
+<body class="vf ai-page">
+<div class="vf-app">
+  <aside class="sidebar vf-sidebar" id="sidebar">
+    <div class="vf-sidebar-head">
+      <a href="/static/dashboard.html" class="vf-logo">
+        <img class="mark-img" src="/static/brand/logo.svg" alt="" width="30" height="30">
+        <span class="wordmark">Voksy AI</span>
+      </a>
+      <button class="btn btn-ghost btn-icon btn-sm mobile-toggle" id="sidebar-close" aria-label="Закрыть меню">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-x"></use></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer">
+      <a href="/" data-logout class="btn btn-ghost" style="width:100%;justify-content:flex-start" id="logout-button">
+        <svg class="ic"><use href="/static/icons/ui.svg#i-log-out"></use></svg> <span data-i18n="sidebar.logout">Выйти</span>
+      </a>
+    </div>
+  </aside>
+  <div class="st-scrim" id="st-scrim"></div>
+  <script defer src="/static/js/theme.js"></script>
+  <script defer src="/static/js/sidebar.js"></script>
+
+  <main class="vf-main">
+    <header class="vf-topbar">
+      <div class="vf-topbar-left">
+        <button class="btn btn-ghost btn-icon mobile-toggle" id="sidebar-toggle" aria-label="Меню">
+          <svg class="ic"><use href="/static/icons/ui.svg#i-menu"></use></svg>
+        </button>
+        <h1 id="ai-title">AI-помощник</h1>
+      </div>
+      <div class="vf-topbar-right" id="ai-top"></div>
+    </header>
+    <div class="vf-content ai-content">
+      <div class="ai" id="ai">
+        <div class="ai-feed" id="ai-feed"><div class="skeleton" style="height:220px;border-radius:20px"></div></div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="ai-composer" id="ai-composer" hidden>
+  <button type="button" class="ai-talk" id="ai-talk" aria-label="Поговорить голосом">
+    <span class="ai-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+  </button>
+  <textarea id="ai-input" rows="1" placeholder="Команда или вопрос…" enterkeyhint="send"></textarea>
+  <button type="button" class="ai-send" id="ai-send" aria-label="Отправить" disabled>
+    <svg class="ic"><use href="/static/icons/ui.svg#i-arrow-up"></use></svg>
+  </button>
+</div>
+<script defer src="/static/start/common.js"></script>
+<script defer src="/static/ai/ai.js"></script>
+</body>
+</html>

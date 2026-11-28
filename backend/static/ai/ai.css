@@ -1,0 +1,132 @@
+/* ai/ai.css — экран «AI» (чат владельца с агентом). Префикс ai-. */
+.ai-page .ai-content { padding-bottom: 140px; }
+.ai { max-width: 760px; margin: 0 auto; }
+.ai-feed { display: flex; flex-direction: column; gap: 14px; }
+
+/* Шапка */
+.ai-topbtn { display: inline-flex; align-items: center; gap: 6px; height: 38px; min-width: 38px; padding: 0 10px; border-radius: 12px;
+  border: 1px solid var(--vf-border); background: var(--vf-surface); color: var(--vf-text-2, #334155); font: 600 13px/1 Inter, sans-serif;
+  text-decoration: none; justify-content: center; cursor: pointer; position: relative; }
+.ai-topbtn .ic { width: 18px; height: 18px; }
+.ai-chats b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font: 700 11px/18px Inter, sans-serif; text-align: center; }
+#ai-top { display: flex; gap: 8px; }
+
+/* Приветствие */
+.ai-hero { position: relative; overflow: hidden; border-radius: 24px; padding: 20px 18px 18px; color: #fff;
+  background: radial-gradient(120% 90% at 100% 0%, #6d3ff0 0%, transparent 60%), linear-gradient(140deg, #2a5ce8 0%, #3b4fe0 55%, #5a3fe6 100%);
+  box-shadow: 0 18px 36px -20px rgba(42, 92, 232, .75); }
+.ai-hero-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.ai-hero-k { font-size: 12.5px; font-weight: 600; opacity: .85; letter-spacing: .01em; }
+.ai-hero h2 { margin: 2px 0 0; font: 700 24px/1.15 Inter, sans-serif; color: #fff; }
+.ai-hero p { margin: 0 0 16px; font-size: 14.5px; line-height: 1.45; opacity: .92; }
+.ai-orb { width: 48px; height: 48px; border-radius: 50%; position: relative; flex: none;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #c9d6ff 22%, #7d8bff 55%, #4b2fd6 100%);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, .12), 0 8px 22px rgba(10, 10, 60, .35); animation: ai-breathe 3.2s ease-in-out infinite; }
+.ai-orb i { position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .35); animation: ai-ring 3.2s ease-out infinite; }
+.ai-orb i + i { animation-delay: 1.6s; }
+@keyframes ai-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes ai-ring { 0% { transform: scale(.9); opacity: .9; } 100% { transform: scale(1.5); opacity: 0; } }
+.ai-hero-talk { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 54px; border: 0; border-radius: 16px;
+  background: #fff; color: #2a3fd6; font: 700 16px/1 Inter, sans-serif; cursor: pointer; box-shadow: 0 8px 20px -10px rgba(0, 0, 0, .35);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.ai-hero-talk:active { transform: scale(.98); }
+.ai-hero-talk .ai-wave i { background: #2a5ce8; }
+
+/* Волна (кнопки голоса) */
+.ai-wave { display: inline-flex; align-items: center; gap: 3px; height: 20px; }
+.ai-wave i { width: 3px; border-radius: 3px; background: currentColor; animation: ai-wave 1.1s ease-in-out infinite; }
+.ai-wave i:nth-child(1) { height: 8px; animation-delay: 0s; }
+.ai-wave i:nth-child(2) { height: 16px; animation-delay: .15s; }
+.ai-wave i:nth-child(3) { height: 12px; animation-delay: .3s; }
+.ai-wave i:nth-child(4) { height: 7px; animation-delay: .45s; }
+@keyframes ai-wave { 0%, 100% { transform: scaleY(.6); } 50% { transform: scaleY(1.15); } }
+.busy .ai-wave i { animation-duration: .5s; }
+
+/* Группы быстрых команд */
+.ai-group h3 { margin: 4px 2px 8px; font: 700 13px/1 Inter, sans-serif; color: var(--vf-text-3); text-transform: uppercase; letter-spacing: .04em; }
+.ai-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ai-chip { display: flex; align-items: center; gap: 9px; min-height: 50px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--vf-border);
+  background: var(--vf-surface); color: var(--vf-text); font: 600 13.5px/1.25 Inter, sans-serif; text-align: left; cursor: pointer; min-width: 0;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.ai-chip .ic { width: 18px; height: 18px; flex: none; color: var(--vf-accent); }
+.ai-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ai-chip:active { transform: scale(.97); background: var(--vf-accent-soft); }
+@media (min-width: 761px) { .ai-chips { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Сообщения */
+.ai-msgs { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.ai-msg { display: flex; flex-direction: column; max-width: 100%; }
+.ai-msg.me { align-items: flex-end; }
+.ai-msg.me .ai-bub { max-width: 86%; background: var(--vf-accent); color: #fff; border-radius: 18px 18px 6px 18px; padding: 10px 14px;
+  font-size: 15px; line-height: 1.4; word-wrap: break-word; }
+.ai-msg.bot { flex-direction: row; align-items: flex-start; gap: 9px; }
+.ai-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.ai-msg.bot .ai-bub { background: var(--vf-surface); border: 1px solid var(--vf-border); border-radius: 6px 18px 18px 18px; padding: 11px 14px;
+  font-size: 15px; line-height: 1.5; color: var(--vf-text); overflow-wrap: anywhere; }
+.ai-msg.bot .ai-bub.err { border-color: #fecaca; background: #fff5f5; }
+.ai-bub.md p { margin: 0 0 8px; } .ai-bub.md p:last-child { margin-bottom: 0; }
+.ai-bub.md ul, .ai-bub.md ol { margin: 4px 0 8px; padding-left: 20px; }
+.ai-bub.md li { margin: 2px 0; }
+.ai-bub.md h1, .ai-bub.md h2, .ai-bub.md h3, .ai-bub.md h4 { font-size: 15.5px; margin: 10px 0 6px; }
+.ai-bub.md a { color: var(--vf-accent); }
+.ai-table { overflow-x: auto; margin: 6px 0; }
+.ai-table table { border-collapse: collapse; font-size: 13.5px; min-width: 100%; }
+.ai-table th, .ai-table td { border-bottom: 1px solid var(--vf-border); padding: 6px 8px; text-align: left; white-space: nowrap; }
+.ai-time { font-size: 11px; color: var(--vf-text-3); padding: 0 4px; }
+.ai-vtag { display: inline-block; font-size: 11.5px; opacity: .8; margin-right: 6px; }
+.ai-ava { width: 30px; height: 30px; border-radius: 50%; flex: none; margin-top: 2px; position: relative;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #c9d6ff 22%, #7d8bff 55%, #4b2fd6 100%); }
+.ai-ava.live { animation: ai-breathe 1.4s ease-in-out infinite; }
+
+/* Шаги агента */
+.ai-steps { display: flex; flex-direction: column; gap: 4px; }
+.ai-step { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--vf-text-3); }
+.ai-step .ic { width: 14px; height: 14px; }
+.ai-step.ok .ic { color: #16a34a; } .ai-step.err .ic { color: #dc2626; }
+.ai-step .sp { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--vf-accent-soft); border-top-color: var(--vf-accent); animation: ai-spin .8s linear infinite; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-think { display: inline-flex; align-items: center; gap: 4px; padding: 10px 14px; border-radius: 6px 18px 18px 18px; background: var(--vf-surface);
+  border: 1px solid var(--vf-border); width: max-content; }
+.ai-think span { width: 6px; height: 6px; border-radius: 50%; background: var(--vf-accent); opacity: .35; animation: ai-dot 1.2s infinite; }
+.ai-think span:nth-child(2) { animation-delay: .15s; } .ai-think span:nth-child(3) { animation-delay: .3s; }
+.ai-think em { font-style: normal; font-size: 13px; color: var(--vf-text-3); margin-left: 6px; }
+@keyframes ai-dot { 0%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+.ai-steps-sum { display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--vf-accent-soft); color: var(--vf-accent);
+  font: 600 12px/1 Inter, sans-serif; border-radius: 999px; padding: 6px 10px; width: max-content; cursor: pointer; }
+.ai-steps-sum .ic { width: 13px; height: 13px; }
+.ai-steps-list { display: flex; flex-direction: column; gap: 4px; padding: 4px 2px; }
+
+/* Поле ввода — над нижней панелью телефона */
+.ai-composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 800; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: rgba(246, 248, 251, .96);
+  border-top: 1px solid var(--vf-border); }
+@supports (backdrop-filter: blur(10px)) { .ai-composer { background: rgba(246, 248, 251, .85); backdrop-filter: blur(12px); } }
+.ai-quick { flex: 1 0 100%; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px 2px; padding: 0 12px; }
+.ai-quick::-webkit-scrollbar { display: none; }
+.ai-quick .ai-chip { flex: none; min-height: 34px; padding: 6px 11px; border-radius: 999px; font-size: 13px; gap: 6px; }
+.ai-quick .ai-chip .ic { width: 15px; height: 15px; }
+.ai-composer textarea { flex: 1; min-width: 0; resize: none; min-height: 46px; max-height: 140px; padding: 12px 14px; border-radius: 22px;
+  border: 1px solid var(--vf-border-strong, #cbd5e1); background: var(--vf-surface); font: 16px/1.35 Inter, sans-serif; color: var(--vf-text); outline: none; }
+.ai-composer textarea:focus { border-color: var(--vf-accent); box-shadow: 0 0 0 3px var(--vf-accent-soft); }
+.ai-talk, .ai-send { width: 46px; height: 46px; flex: none; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.ai-talk { color: #fff; background: linear-gradient(135deg, #2a5ce8, #6d3ff0); box-shadow: 0 6px 16px -6px rgba(76, 63, 230, .7); }
+.ai-send { background: var(--vf-accent); color: #fff; }
+.ai-send .ic { width: 20px; height: 20px; }
+.ai-send[disabled] { background: var(--vf-border); color: var(--vf-text-3); cursor: default; }
+.ai-talk:active, .ai-send:active { transform: scale(.92); }
+@media (min-width: 761px) {
+  .ai-composer { left: var(--vf-sidebar-w, 260px); }
+}
+@media (max-width: 760px) {
+  body.vf-has-tabbar .ai-composer { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); padding-bottom: 8px; }
+  .ai-page .ai-content { padding-bottom: 150px; }
+  .ai-page .vf-topbar h1 { font-size: 18px; }
+  .ai-desk { display: none; }
+  .ai-chats span { display: none; }
+}
+/* Клавиатура открыта (телефон): поле ввода прижимается к ней, нижнюю панель прячем */
+body.ai-typing .vf-tabbar { display: none; }
+body.ai-typing .ai-composer { bottom: 0 !important; }
+.ai-steps-list[hidden], .ai-bub[hidden] { display: none; }
+.ai-composer textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

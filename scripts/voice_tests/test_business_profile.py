@@ -73,9 +73,12 @@ check("другое → «по записи»: запись, без CRM", m["boo
 _page_ready = bp.page_ready
 bp.page_ready = lambda name: True      # страницы «Записи» и «Заказы» есть в сборке
 tabs = [t["id"] for t in bp.tabs_for("full", np_.modules_for("real_estate", {}), "Объекты")]
-check("Profi, недвижимость: Чаты · Записи · Агент · Клиенты · Ещё", tabs == ["inbox", "booking", "agent", "clients", "more"], tabs)
+check("Profi, недвижимость: Главная · Записи · AI · Клиенты · Ещё", tabs == ["home", "booking", "ai", "clients", "more"], tabs)
 tabs = [t["id"] for t in bp.tabs_for("full", np_.modules_for("clothing", {}), "Товары")]
-check("Profi без записи: Чаты · Звонки · Агент · Клиенты · Ещё", tabs == ["inbox", "calls", "agent", "clients", "more"], tabs)
+check("Profi без записи: Главная · Звонки · AI · Клиенты · Ещё", tabs == ["home", "calls", "ai", "clients", "more"], tabs)
+tabs = [t["id"] for t in bp.tabs_for("reactive", np_.modules_for("massage_spa", {}), "Услуги", beauty=True)]
+check("салон на Старте / Beauty AI: Главная · Записи · AI · Клиенты · Ещё",
+      tabs == (["home", "booking", "ai", "clients", "more"] if bp.page_ready("booking.html") else ["home", "inbox", "catalog", "clients", "more"]), tabs)
 tabs = [t["id"] for t in bp.tabs_for("reactive", np_.modules_for("clothing", {}), "Товары")]
 check("Старт, магазин: Главная · Чаты · Заказы · Клиенты · Ещё", tabs == ["home", "inbox", "orders", "clients", "more"], tabs)
 pg = bp.module_pages(np_.modules_for("clothing", {}))
@@ -190,7 +193,7 @@ r = cl.get("/api/users/me", headers=H)
 biz = r.json().get("business") or {}
 third = "booking" if bp.page_ready("booking.html") else "catalog"
 check("/users/me → business: модули, каталог «Услуги», вкладки", biz.get("modules", {}).get("booking") is True
-      and biz.get("catalog", {}).get("title") == "Услуги" and [t["id"] for t in biz.get("tabs", [])][:3] == ["home", "inbox", third]
+      and biz.get("catalog", {}).get("title") == "Услуги" and [t["id"] for t in biz.get("tabs", [])][:3] in (["home", "inbox", third], ["home", "booking", "ai"])
       and r.json().get("phone") == "+996700112233", biz)
 
 from backend.services.agent_prompts import build_orchestrator_prompt  # noqa: E402

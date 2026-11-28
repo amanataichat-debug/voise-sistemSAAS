@@ -61,16 +61,22 @@ def modules_of(user) -> Dict[str, bool]:
     return mods
 
 
-def tabs_for(mode: Optional[str], modules: Dict[str, bool], catalog_title: str) -> List[Dict[str, str]]:
+def tabs_for(mode: Optional[str], modules: Dict[str, bool], catalog_title: str,
+             beauty: bool = False) -> List[Dict[str, str]]:
     """
-    Нижние вкладки телефона (как в WhatsApp). Profi (full): Чаты · Звонки · Агент · Клиенты · Ещё
-    (решение владельца 18.11.2026); у ниш с записью «Звонки» → «Записи». Старт и пробный:
-    Главная · Чаты · (Записи | Заказы | каталог ниши) · Клиенты · Ещё.
+    Нижние вкладки телефона (как в приложении). С 28.11.2026 (решение владельца): на телефоне инбоксом и
+    страницей «Агент обзвона» не пользуются — вместо них «Главная» и «AI» (чат с агентом: отчёты, команды,
+    кнопка «Поговорить»). Profi: Главная · (Записи | Звонки) · AI · Клиенты · Ещё. Салон на Старте /
+    Beauty AI: Главная · Записи · AI · Клиенты · Ещё. Старт других ниш: Главная · Чаты ·
+    (Записи | Заказы | каталог ниши) · Клиенты · Ещё (продавцы отвечают клиентам с телефона).
+    Чаты и агент обзвона остаются в «Ещё».
     """
     chats = {"id": "inbox", "href": "/static/inbox.html", "icon": "inbox", "label": "Чаты", "ky": "Чаттар"}
     clients_href = "/static/start-crm.html"   # CRM клиентов агента — одна для Старта и Profi
     clients = {"id": "clients", "href": clients_href, "icon": "users", "label": "Клиенты", "ky": "Кардарлар"}
     more = {"id": "more", "icon": "menu", "label": "Ещё", "ky": "Дагы"}
+    home = {"id": "home", "href": "/static/dashboard.html", "icon": "house", "label": "Главная", "ky": "Башкы"}
+    ai = {"id": "ai", "href": "/static/ai.html", "icon": "sparkles", "label": "AI", "ky": "AI"}
     booking = {"id": "booking", "href": "/static/booking.html", "icon": "calendar", "label": "Записи", "ky": "Жазуулар"}
     orders = {"id": "orders", "href": "/static/orders.html", "icon": "shopping-cart", "label": "Заказы", "ky": "Заказдар"}
     catalog = {"id": "catalog", "href": "/static/start-bot.html#catalog" if mode != "full" else "/static/agent-knowledge.html#catalog",
@@ -79,13 +85,17 @@ def tabs_for(mode: Optional[str], modules: Dict[str, bool], catalog_title: str) 
         modules = {**modules, "booking": False}
     if not page_ready("orders.html"):
         modules = {**modules, "orders": False}
+    ai_ready = page_ready("ai.html")
     if mode == "full":
         second = booking if modules.get("booking") else {"id": "calls", "href": "/static/conversations.html", "icon": "phone",
                                                           "label": "Звонки", "ky": "Чалуулар"}
-        agent = {"id": "agent", "href": "/static/agent.html", "icon": "headset", "label": "Агент", "ky": "Агент"}
-        return [chats, second, agent, clients, more]
-    home = {"id": "home", "href": "/static/dashboard.html", "icon": "house", "label": "Главная", "ky": "Башкы"}
+        if not ai_ready:
+            agent = {"id": "agent", "href": "/static/agent.html", "icon": "headset", "label": "Агент", "ky": "Агент"}
+            return [chats, second, agent, clients, more]
+        return [home, second, ai, clients, more]
     third = booking if modules.get("booking") else (orders if modules.get("orders") else catalog)
+    if beauty and modules.get("booking") and ai_ready:
+        return [home, booking, ai, clients, more]
     return [home, chats, third, clients, more]
 
 
@@ -112,7 +122,7 @@ def resolve(user) -> Dict[str, Any]:
         "catalog": {k: cat.get(k) for k in ("kind", "title", "one", "many", "stock", "duration", "attr_keys",
                                               "size_presets", "colors", "variants_label")},
         "collections_hint": p["collections"],
-        "tabs": tabs_for(mode, mods, cat.get("title")),
+        "tabs": tabs_for(mode, mods, cat.get("title"), _is_beauty(user)),
         # Страницы модулей для бокового меню — все включённые, а не только влезшие в 5 вкладок телефона
         # (у Profi с магазином и у СТО с записью и заказами «Заказы» иначе не было в меню)
         "pages": module_pages(mods),
