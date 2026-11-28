@@ -220,7 +220,7 @@ def render_text(row) -> str:
         "=" * 60,
         f"Сессия:        {row.session_id}",
         f"Ассистент:     {meta.get('assistant_name') or '—'} ({row.assistant_type or '—'}, {row.assistant_id or '—'})",
-        f"Канал:         {_CHANNEL_LABEL.get(row.channel, row.channel or '—')}",
+        f"Канал:         {'WhatsApp-звонок' if meta.get('channel') == 'whatsapp' else _CHANNEL_LABEL.get(row.channel, row.channel or '—')}",
     ]
     if meta.get("phone"):
         lines.append(f"Номер:         {meta.get('phone')} ({meta.get('direction') or '—'})")

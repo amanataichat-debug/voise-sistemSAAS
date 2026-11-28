@@ -195,20 +195,30 @@ func TestMediaSocketProtocol(t *testing.T) {
 		t.Fatalf("bad start: %v", start)
 	}
 
-	// голос собеседника: кадр 60 мс → три кадра по 640 байт
+	// пока собеседник молчит, шлюз всё равно шлёт тишину кадрами 20 мс (WhatsApp в паузах звук не передаёт)
+	time.Sleep(300 * time.Millisecond)
+	fb.mu.Lock()
+	silent := len(fb.media)
+	fb.mu.Unlock()
+	if silent < 8 {
+		t.Fatalf("no continuous silence stream: %d frames in 300 ms", silent)
+	}
+	// голос собеседника: кадр 60 мс → три кадра по 640 байт среди тишины
 	b.onPeerFrame(tone(WAFrameSamples, 0.3, 300))
-	waitFor(t, "3 media frames", func() bool {
+	waitFor(t, "3 voiced frames", func() bool {
 		fb.mu.Lock()
 		defer fb.mu.Unlock()
-		return len(fb.media) == 3
-	})
-	fb.mu.Lock()
-	for _, fr := range fb.media {
-		if len(fr) != 640 {
-			t.Fatalf("frame %d bytes", len(fr))
+		n := 0
+		for _, fr := range fb.media {
+			if len(fr) != 640 {
+				t.Errorf("frame %d bytes", len(fr))
+			}
+			if RMS(PCM16ToFloat(fr)) > 0.1 {
+				n++
+			}
 		}
-	}
-	fb.mu.Unlock()
+		return n == 3
+	})
 
 	// звук агента любыми кусками → очередь
 	_ = conn.Write(ctx, websocket.MessageBinary, FloatToPCM16(nil, tone(LineRate/2, 0.3, 500)))

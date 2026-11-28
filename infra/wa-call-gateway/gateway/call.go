@@ -61,6 +61,8 @@ type CallBridge struct {
 	framesIn  atomic.Int64
 	framesOut atomic.Int64
 	dropped   atomic.Int64
+	// кадров тишины, вставленных вместо молчания WhatsApp
+	silenceOut atomic.Int64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -341,18 +343,38 @@ func (b *CallBridge) runMedia() {
 	b.Hangup(reason)
 }
 
+// pumpToBackend шлёт бэкенду звук собеседника НЕПРЕРЫВНО, кадр 20 мс на каждый тик, как линия оператора.
+// WhatsApp, пока человек молчит, звук не передаёт (экономия трафика), и без вставки тишины бэкенд видел
+// поток с дырами: голосовая модель не понимала, что собеседник замолчал, и не клала трубку после прощания
+// (звонок 4c80dde7, 28.11.2026: из 98 с дошло 40 с звука, 165 обрывов). Нет кадра — шлём тишину;
+// накопилось больше backlogMax кадров — старые выбрасываем, задержка не копится.
 func (b *CallBridge) pumpToBackend(ws *websocket.Conn) {
+	const backlogMax = 10 // 200 мс
+	silence := make([]byte, LineFrameBytes)
+	tick := time.NewTicker(LineFrameMs * time.Millisecond)
+	defer tick.Stop()
 	for {
 		select {
 		case <-b.ctx.Done():
 			return
+		case <-tick.C:
+		}
+		for len(b.in) > backlogMax {
+			<-b.in
+			b.dropped.Add(1)
+		}
+		frame := silence
+		select {
 		case chunk := <-b.in:
-			wctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-			err := ws.Write(wctx, websocket.MessageBinary, chunk)
-			cancel()
-			if err != nil {
-				return
-			}
+			frame = chunk
+		default:
+			b.silenceOut.Add(1)
+		}
+		wctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+		err := ws.Write(wctx, websocket.MessageBinary, frame)
+		cancel()
+		if err != nil {
+			return
 		}
 	}
 }
@@ -451,7 +473,7 @@ func (b *CallBridge) finish(reason string) {
 	}
 	b.g.log.Info("call ended", "call_id", b.ID, "direction", b.Direction, "reason", b.endReason,
 		"duration", pub["duration_sec"], "frames_in", pub["frames_in"], "frames_out", pub["frames_out"],
-		"underruns", b.queue.UnderrunCount(), "dropped_in", b.dropped.Load())
+		"underruns", b.queue.UnderrunCount(), "dropped_in", b.dropped.Load(), "silence_frames", b.silenceOut.Load())
 	if b.echo {
 		b.g.forget(b)
 		return
