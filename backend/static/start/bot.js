@@ -799,6 +799,8 @@
     else if (wa.status === 'pending_qr') html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Ждём сканирования QR-кода', btn('wa-on', 'Показать QR', 'btn-primary'));
     else if (wa.status === 'disconnected') html += chRow('#25D366', 'message-circle', 'WhatsApp', '<span style="color:var(--vf-warning)">Номер вышел из WhatsApp Web (отключили на телефоне или WhatsApp завершил сессию). Нужен новый QR-код</span>', btn('wa-on', 'Переподключить', 'btn-primary'));
     else html += chRow('#25D366', 'message-circle', 'WhatsApp', 'Бот отвечает клиентам на ваш номер WhatsApp', btn('wa-on', 'Подключить', 'btn-primary'));
+    // Звонки WhatsApp: агент берёт трубку (js/wa-calls.js рисует строку сам; не включены на сервере — строки нет)
+    html += '<div id="wa-calls-row"></div>';
     // Telegram личный
     if (!tg || !tg.configured) html += chRow('#229ED9', 'send', 'Telegram', 'Недоступно на сервере, напишите в поддержку', '');
     else if (tg.status === 'connected') html += chRow('#229ED9', 'send', 'Telegram', 'Подключён: ' + esc(tg.tg_username ? '@' + tg.tg_username : (tg.tg_first_name || tg.phone_masked || '')) + scopeText(tg) + (tg.auto_reply_enabled ? (tg.live_listener ? ' · <span style="color:var(--vf-success,#16a34a)">⚡ отвечает сразу</span>' : ' · <span style="color:var(--vf-warning)">мгновенные ответы ещё не включились — обновите страницу через минуту</span>') : '') + (tg.last_error ? '<br><span style="color:var(--vf-warning)">⚠ Telegram: ' + esc(tg.last_error) + '</span>' : ''), btn('tg-set', 'Настройки') + btn('tg-off', 'Отключить', 'btn-ghost'));
@@ -813,8 +815,9 @@
     // Gmail и Google Календарь (через Composio, как у агента Profi)
     html += connRow('gmail', 'mail', '#EA4335', 'Gmail', 'Бот читает письма и отвечает клиентам с вашей почты', 'Подключить', ch.gmail);
     html += connRow('gcal', 'calendar', '#4285F4', 'Google Календарь', 'Бот смотрит свободное время и записывает клиентов в ваш календарь', 'Подключить', ch.gcal);
-    b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает клиентам и может писать первым в WhatsApp и Telegram: по вашей команде в чате и в рамках суточного лимита новых чатов. В Instagram первым написать нельзя, только в диалог, который уже есть. Звонить клиентам и вести рассылки по расписанию бот на тарифе Старт не будет.</div>';
+    b.innerHTML = html + '<div class="st-note" style="margin-top:12px">Бот отвечает клиентам и может писать первым в WhatsApp и Telegram: по вашей команде в чате и в рамках суточного лимита новых чатов. В Instagram первым написать нельзя, только в диалог, который уже есть. Звонить клиентам первым и вести рассылки по расписанию бот на тарифе Старт не будет, но на звонки в WhatsApp отвечает, если подключить «Звонки WhatsApp».</div>';
 
+    if (window.VoksyWaCalls) VoksyWaCalls.mount('#wa-calls-row', { agentId: function () { return S.agentId || null; } });
     on('wa-on', openWa); on('wa-set', function () { settingsDialog('WhatsApp', '/whatsapp/settings', ch.wa, true, false, 'wa'); }); on('wa-off', function () { disconnect('WhatsApp', '/whatsapp'); });
     on('tg-on', openTg); on('tg-set', function () { settingsDialog('Telegram', '/telegram-account/settings', ch.tg, false, false, 'tg'); }); on('tg-off', function () { disconnect('Telegram', '/telegram-account'); });
     on('gmail-on', function () { connectToolkit('gmail'); }); on('gmail-off', function () { disconnect('Gmail', '/connectors/gmail'); });

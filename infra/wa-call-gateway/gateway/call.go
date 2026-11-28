@@ -126,6 +126,9 @@ func (b *CallBridge) Public() map[string]any {
 		"frames_in":      b.framesIn.Load(),
 		"frames_out":     b.framesOut.Load(),
 		"underruns":      underruns,
+		// кадров голоса от WhatsApp (20 мс) и вставленной шлюзом тишины — по журналу видно, дошёл ли голос
+		"silence_frames": b.silenceOut.Load(),
+		"dropped_in":     b.dropped.Load(),
 	}
 	return out
 }
@@ -343,38 +346,55 @@ func (b *CallBridge) runMedia() {
 	b.Hangup(reason)
 }
 
-// pumpToBackend шлёт бэкенду звук собеседника НЕПРЕРЫВНО, кадр 20 мс на каждый тик, как линия оператора.
-// WhatsApp, пока человек молчит, звук не передаёт (экономия трафика), и без вставки тишины бэкенд видел
-// поток с дырами: голосовая модель не понимала, что собеседник замолчал, и не клала трубку после прощания
-// (звонок 4c80dde7, 28.11.2026: из 98 с дошло 40 с звука, 165 обрывов). Нет кадра — шлём тишину;
-// накопилось больше backlogMax кадров — старые выбрасываем, задержка не копится.
+// pumpToBackend шлёт бэкенду звук собеседника.
+//
+// Голос — СРАЗУ, как пришёл, без выравнивания по таймеру и без выбрасывания: WhatsApp отдаёт кадры пачками
+// (буфер дрожания), и прежняя схема «ровно кадр 20 мс на тик, сверх 200 мс в очереди — выбросить»
+// (0aeb9e9) рвала речь: часть слов выбрасывалась, дыры заполнялись тишиной, и голосовая модель не
+// распознавала ни слова (звонок c4b0c0fd, 28.11.2026: агент поздоровался и замолчал, реплик клиента 0).
+//
+// Тишина — только в настоящей паузе: WhatsApp, пока человек молчит, звук не передаёт, и без неё бэкенд видел
+// поток с дырами — модель не понимала, что собеседник замолчал, и не клала трубку после прощания
+// (звонок 4c80dde7). Нет голоса дольше fillAfter — шлём кадр тишины на каждый тик 20 мс, пока голос не вернётся.
 func (b *CallBridge) pumpToBackend(ws *websocket.Conn) {
-	const backlogMax = 10 // 200 мс
+	const fillAfter = 120 * time.Millisecond
+	const backlogMax = 150 // 3 с: столько копится, только если бэкенд не принимает
 	silence := make([]byte, LineFrameBytes)
 	tick := time.NewTicker(LineFrameMs * time.Millisecond)
 	defer tick.Stop()
+	lastVoice := time.Now()
+	write := func(frame []byte) bool {
+		wctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+		err := ws.Write(wctx, websocket.MessageBinary, frame)
+		cancel()
+		return err == nil
+	}
+	// Накопленное, пока бэкенд подключался, — не больше 200 мс (свежая речь, а не старое «алло»)
+	for len(b.in) > 10 {
+		<-b.in
+		b.dropped.Add(1)
+	}
 	for {
 		select {
 		case <-b.ctx.Done():
 			return
-		case <-tick.C:
-		}
-		for len(b.in) > backlogMax {
-			<-b.in
-			b.dropped.Add(1)
-		}
-		frame := silence
-		select {
 		case chunk := <-b.in:
-			frame = chunk
-		default:
+			for len(b.in) > backlogMax {
+				<-b.in
+				b.dropped.Add(1)
+			}
+			if !write(chunk) {
+				return
+			}
+			lastVoice = time.Now()
+		case now := <-tick.C:
+			if now.Sub(lastVoice) < fillAfter {
+				continue
+			}
 			b.silenceOut.Add(1)
-		}
-		wctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-		err := ws.Write(wctx, websocket.MessageBinary, frame)
-		cancel()
-		if err != nil {
-			return
+			if !write(silence) {
+				return
+			}
 		}
 	}
 }

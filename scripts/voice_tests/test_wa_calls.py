@@ -294,11 +294,17 @@ r = wcs.decide_inbound(db, "wa-call-1", started())
 check("входящий: агент выключен → reject + владельцу «пропущенный звонок WhatsApp»",
       r["reason"] == "agent_inactive" and notes and "Пропущенный звонок WhatsApp" in notes[0] and "Нурлан" in notes[0],
       notes)
+check("входящий: агент выключен → ignore (звонок идёт на телефон владельца)", r.get("ignore") is True, r)
+r = wcs.decide_inbound(db, "wa-call-1", started(account_id=str(uuid.uuid4())))
+check("входящий: чужой аккаунт — без ignore (просто отказ)", not r.get("ignore"), r)
 agent.is_active = True
 acc.inbound_enabled = False
 db.commit()
+notes.clear()
 r = wcs.decide_inbound(db, "wa-call-1", started())
 check("входящий: приём выключен → reject inbound_disabled", r["reason"] == "inbound_disabled", r)
+check("входящий: агент выключен владельцем → звонок не сбрасываем (ignore — звонит на телефоне), без сообщения",
+      r.get("ignore") is True and not notes, (r, notes))
 acc.inbound_enabled = True
 owner.wallet_balance = 0
 db.commit()
@@ -306,6 +312,27 @@ r = wcs.decide_inbound(db, "wa-call-1", started())
 check("входящий: кошелёк пуст → reject wallet_empty", r["reason"] == "wallet_empty", r)
 owner.wallet_balance = 50000
 db.commit()
+
+# ---- тарифы: Старт, Profi, Beauty AI, Beauty Pro — да; пробный и Beauty Start — нет
+trial = SubscriptionPlan(code="free", name="Trial", price=0, max_assistants=1, description="t", is_active=True)
+b_ai = SubscriptionPlan(code="beauty_ai", name="Beauty AI", price=3990, max_assistants=1, description="b",
+                        is_active=True, product="beauty", limits={"agent_mode": "reactive"})
+b_start = SubscriptionPlan(code="beauty_start", name="Beauty Start", price=1990, max_assistants=1, description="b",
+                           is_active=True, product="beauty", limits={"agent_mode": "reactive"})
+db.add_all([trial, b_ai, b_start])
+db.commit()
+for plan, want_in, want_out in ((trial, False, False), (b_start, False, False), (b_ai, True, False),
+                                (start, True, False), (profi, True, True)):
+    owner.subscription_plan_id = plan.id
+    db.commit()
+    db.expire_all()
+    owner = db.get(User, owner.id)
+    r = wcs.decide_inbound(db, "wa-call-1", started())
+    check(f"тариф {plan.code}: входящий {'принимаем' if want_in else 'нет'}, исходящий {'да' if want_out else 'нет'}",
+          (r["type"] == "accept") == want_in and wcs.can_call_out(owner) == want_out
+          and (want_in or (r.get("reason") == "no_access" and r.get("ignore") is True)), (r, wcs.can_call_out(owner)))
+acc = db.get(AgentWaCallAccount, acc.id)
+agent = db.get(AgentConfig, agent.id)
 
 # LID: номер — из переписки с тем же JID
 chat = AgentWhatsAppChat(account_id=wa_acc.id, remote_jid="12345678901234@lid", phone="996777123123", push_name="Асель")
@@ -563,6 +590,35 @@ check("медиа-сокет: звонок отвечен", row.status in (SipCa
 log_text = " ".join(str(e.get("text", "")) for ev_list in db.execute(text("SELECT events FROM call_logs")).scalars().all()
                     for e in (ev_list or []))
 check("журнал звонка: первая строка «Звонок WhatsApp»", "Звонок WhatsApp входящий" in log_text, log_text[:300])
+# Голос клиента во входящем звуке (звонок c4b0c0fd: звук шёл, а модель не услышала ни слова)
+_hs = sma.HandlerSocket(None, "openai", "x", line_rate=16000, channel="whatsapp")
+for _ in range(100):  # 2 с голоса
+    _f = tone(16000, 20, 300)
+    _hs._note_inbound(len(_f)); _hs._note_voice(_f)
+_hs.gateway_stats = {"frames_in": 100, "silence_frames": 400, "dropped_in": 0}
+_v = _hs.voice_summary()
+check("журнал: «Голос клиента» — речь посчитана, счётчики шлюза в строке, без тревоги",
+      _v and "речь ≈2.0 с" in _v[0] and "получено 2.0 с" in _v[0] and not _v[1], _v)
+_hs = sma.HandlerSocket(None, "openai", "x", line_rate=16000, channel="whatsapp")
+for _ in range(600):  # 12 с нулей
+    _f = b"\x00" * 640
+    _hs._note_inbound(len(_f)); _hs._note_voice(_f)
+_v = _hs.voice_summary()
+check("журнал: 12 с одной тишины → предупреждение «голос теряется до сервера»", _v and _v[1] and "одна тишина" in _v[0], _v)
+
+# Приветствие GPT-Live своими словами (28.11.2026): ориентир владельца — по смыслу, знакомому — без представления
+import types as _types  # noqa: E402
+from backend.websockets.live_client import OpenAILiveClient  # noqa: E402
+_c = OpenAILiveClient.__new__(OpenAILiveClient)
+_c.assistant_config = _types.SimpleNamespace(greeting_known_client=True)
+_txt = _c.greeting_instruction("Саламатсызбы! Бул Анри.")
+check("приветствие: не «дословно», ориентир по смыслу, знакомому — по имени и без представления",
+      "дословно" not in _txt and "смысл, не текст" in _txt and "не представляйся заново" in _txt, _txt)
+_c.assistant_config = _types.SimpleNamespace()
+check("приветствие новому: без блока «уже общался»", "уже общался" not in _c.greeting_instruction("Здравствуйте!"))
+os.environ["LIVE_GREETING_FREE"] = "0"
+check("приветствие: LIVE_GREETING_FREE=0 — прежнее дословное", "дословно" in _c.greeting_instruction("Здравствуйте!"))
+os.environ.pop("LIVE_GREETING_FREE")
 check("PostCall: входящий WhatsApp на номер агента ушёл на разбор", any(a and a[4] == "inbound" for a in scheduled),
       scheduled)
 ac = db.query(AgentCall).filter(AgentCall.call_session_id == call_id).first()
@@ -587,6 +643,67 @@ acf.AgentCallFinalizer.on_media_finished(db, out, wcs.line_for_call(db, out), Tr
 ac = db.query(AgentCall).filter(AgentCall.call_session_id == str(out.id)).first()
 check("PostCall: исходящий WhatsApp из скрипта → карточка клиента и разбор",
       ac is not None and ac.direction == "outbound" and scheduled and scheduled[0][4] == "outbound")
+
+# ---- кабинет: /api/agent/wa-calls (подключение по QR, выключатель, отвязать)
+from backend.core.security import create_jwt_token  # noqa: E402
+owner = db.get(User, owner.id)
+H = {"Authorization": f"Bearer {create_jwt_token(owner.id)}"}
+agent2 = AgentConfig(user_id=owner.id, name="Второй", is_active=True, assistant_type="eleven",
+                     eleven_assistant_id=card.id)
+db.add(agent2)
+db.commit()
+A2 = f"?agent_id={agent2.id}"
+st = cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+check("кабинет: GET — доступно, тариф подходит, номера нет", st.get("available") and st.get("plan_ok")
+      and st.get("status") == "not_connected" and st.get("can_outbound") is True and st["agent"]["has_voice"], st)
+r = cl.post("/api/agent/wa-calls/connect" + A2, headers=H)
+st = r.json()
+check("кабинет: «Подключить» → аккаунт ждёт QR, шлюзу уйдёт login", r.status_code == 200
+      and st.get("status") == "pending_qr" and st["account"]["waiting_gateway"] is True, st)
+acc2 = wcs.account_for_agent(db, agent2.id)
+cmds = wcs.pending_account_commands(db, "wa-call-1")
+check("кабинет: команда login для нового аккаунта", any(c["type"] == "login" and c["account_id"] == str(acc2.id)
+                                                       for c in cmds), cmds)
+wcs.apply_account_state(db, "wa-call-1", {"account_id": str(acc2.id), "state": "qr", "qr": "2@xyz,abc,def",
+                                          "expires_in": 60})
+st = cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+check("кабинет: QR от шлюза → картинка SVG в ответе", (st.get("qr") or "").startswith("data:image/svg+xml;base64,"),
+      st.get("qr_error"))
+wcs.apply_account_state(db, "wa-call-1", {"account_id": str(acc2.id), "state": "connected", "phone": "996700555444"})
+st = cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+check("кабинет: на связи, номер скрыт наполовину", st["status"] == "connected"
+      and st["account"]["phone_masked"].startswith("+996") and "555444" not in st["account"]["phone_masked"], st)
+st = cl.patch("/api/agent/wa-calls/settings" + A2, headers=H, json={"inbound_enabled": False}).json()
+check("кабинет: переключатель «агент выключен»", st["account"]["inbound_enabled"] is False, st)
+st = cl.patch("/api/agent/wa-calls/settings" + A2, headers=H,
+              json={"inbound_enabled": True, "outbound_enabled": True, "daily_outbound_limit": 999}).json()
+check("кабинет: Profi включает исходящие, лимит не выше 50", st["account"]["outbound_enabled"] is True
+      and st["account"]["daily_outbound_limit"] == 50, st)
+owner.subscription_plan_id = b_ai.id
+db.commit()
+r = cl.patch("/api/agent/wa-calls/settings" + A2, headers=H, json={"outbound_enabled": True})
+check("кабинет: Beauty AI — исходящие нельзя (402)", r.status_code == 402, r.status_code)
+r = cl.patch("/api/agent/wa-calls/settings" + A2, headers=H, json={"inbound_enabled": True})
+check("кабинет: Beauty AI — выключатель входящих работает", r.status_code == 200, r.status_code)
+owner.subscription_plan_id = trial.id
+db.commit()
+r = cl.post("/api/agent/wa-calls/connect" + A2, headers=H)
+st = cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+check("кабинет: пробный период — подключить нельзя (402), строка зовёт к тарифам",
+      r.status_code == 402 and st.get("plan_ok") is False, (r.status_code, st.get("plan_ok")))
+owner.subscription_plan_id = profi.id
+db.commit()
+st = cl.delete("/api/agent/wa-calls" + A2, headers=H).json()
+cmds = wcs.pending_account_commands(db, "wa-call-1")
+check("кабинет: «Отвязать» → logout шлюзу, статус logged_out, исходящие выключены",
+      st["status"] == "logged_out" and st["account"]["outbound_enabled"] is False
+      and any(c["type"] == "logout" and c["account_id"] == str(acc2.id) for c in cmds), (st, cmds))
+settings.WA_CALLS_USERS = "someone-else"
+st = cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+check("кабинет: владелец не в списке пробы → строки нет (available=false)", st.get("available") is False, st)
+settings.WA_CALLS_USERS = ""
+check("кабинет: WA_CALLS_ENABLED=1 и пустой список → всем", cl.get("/api/agent/wa-calls" + A2, headers=H).json()
+      .get("available") is True)
 
 db.close()
 print(f"ПРОВАЛОВ: {failures}")
